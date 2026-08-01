@@ -37,7 +37,7 @@ jobs:
         # Pinned to the same versions as back/requirements-dev.txt so a local
         # `make docs-build` and this job produce the same site. MkDocs 2.0 drops
         # the plugin system entirely, so an unpinned install would break.
-        run: pip install mkdocs-material==9.6.24 mkdocs-swagger-ui-tag==0.7.2
+        run: pip install mkdocs-material==9.6.23 mkdocs-swagger-ui-tag==0.7.2
 
       - name: Stage the exported OpenAPI document
         # The interactive reference renders the schema the backend exports, so it
