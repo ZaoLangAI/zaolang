@@ -20,9 +20,7 @@ for (const theme of ['dark', 'light']) {
       viewport: { width: 1440, height: 1024 },
       locale: 'zh-CN',
     });
-    await context.addCookies([
-      { name: 'zl_theme', value: theme, domain: '127.0.0.1', path: '/' },
-    ]);
+    await context.addCookies([{ name: 'zl_theme', value: theme, domain: '127.0.0.1', path: '/' }]);
     const page = await context.newPage();
     await page.goto(`${baseURL}${target}`, { waitUntil: 'networkidle' });
 
