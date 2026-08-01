@@ -1,0 +1,196 @@
+{
+  "zh-CN": {
+    "admin": {
+      "save": "保存",
+      "timeline": "时间线"
+    },
+    "work": {
+      "notFound": "作品不存在或已被移除"
+    },
+    "adminAgents": {
+      "colTokens": "token"
+    },
+    "adminModeration": {
+      "duplicates": "指纹重复项",
+      "duplicatesHint": "同一 pHash 的多次上传，通常是洗稿或重复投放。"
+    },
+    "adminUsers": {
+      "requestType": "请求类型",
+      "approveRequest": "批准请求",
+      "rejectRequest": "驳回请求",
+      "dataRequestsHint": "批准删除会匿名化账号，但保留创作链墓碑，二创仍可溯源。"
+    },
+    "adminCredits": {
+      "colCreated": "时间",
+      "colReason": "理由",
+      "ledger": "积分账本",
+      "accounts": "账户数",
+      "mismatched": "余额不一致",
+      "mismatchedHint": "账本累计与账户余额不相等",
+      "danglingHint": "reserve 超过两小时仍未 capture 或 release",
+      "noDangling": "没有悬挂预扣，积分不变量成立",
+      "ageHours": "悬挂时长",
+      "generatedAt": "生成于 {at}"
+    },
+    "adminConfig": {
+      "keys": "配置项",
+      "value": "配置值（JSON）",
+      "valueHint": "保存前会按 schema 校验，非法值直接拒绝。",
+      "readOnly": "当前角色只能查看，修改需要 admin。",
+      "note": "变更说明",
+      "fields": "schema 字段：{fields}",
+      "pendingDiff": "待保存的差异",
+      "activeVersion": "生效中",
+      "rollbackHint": "回滚会把 v{version} 作为新版本重新应用，历史不会被抹掉。",
+      "saved": "配置已更新",
+      "rolledBack": "已回滚",
+      "featureFlags": "Feature Flag",
+      "flagOn": "开启",
+      "flagOff": "关闭",
+      "rollout": "灰度",
+      "flagsNote": "后台调整 Feature Flag"
+    },
+    "adminData": {
+      "bucket": "存储桶",
+      "objectCount": "对象数",
+      "totalSize": "占用空间",
+      "applyLifecycle": "应用标准策略",
+      "lifecycleApplied": "生命周期策略已应用",
+      "noLifecycle": "尚未设置生命周期策略",
+      "backupsHint": "备份同步执行 pg_dump 并写入对象存储，失败原因会记录在下面。",
+      "triggerBackup": "触发备份",
+      "backupTriggered": "备份已完成",
+      "backupKind": "类型",
+      "backupStatus": "状态",
+      "backupSize": "大小",
+      "backupObject": "对象键 / 失败原因",
+      "backupCreated": "时间",
+      "seedHint": "写入演示数据；生产环境由服务端直接拒绝。",
+      "seedReset": "先清空现有数据",
+      "seedAction": "写入种子数据",
+      "seedResetAction": "清空并重建",
+      "seedResetWarning": "清空会删除现有作品、任务与账本数据，不可恢复。",
+      "seedDone": "种子数据已写入"
+    },
+    "adminAudit": {
+      "colCreated": "时间",
+      "dangerous": "高危",
+      "changes": "前后值差异"
+    },
+    "adminAnnouncements": {
+      "compose": "撰写公告",
+      "published": "已下发",
+      "kind": "类型",
+      "kind_notice": "普通公告",
+      "kind_maintenance": "维护公告",
+      "kind_incident": "故障公告",
+      "titleZh": "标题（中文）",
+      "titleEn": "标题（英文）",
+      "bodyZh": "正文（中文）",
+      "bodyEn": "正文（英文）",
+      "publishNow": "立即发布",
+      "broadcast": "同时发送站内信",
+      "broadcastHint": "会给所有正常状态的账号各生成一条通知。",
+      "statusPublished": "已发布",
+      "statusDraft": "草稿",
+      "created": "公告已创建"
+    }
+  },
+  "en": {
+    "admin": {
+      "save": "Save",
+      "timeline": "Timeline"
+    },
+    "work": {
+      "notFound": "This work does not exist or was removed"
+    },
+    "adminAgents": {
+      "colTokens": "Tokens"
+    },
+    "adminModeration": {
+      "duplicates": "Fingerprint duplicates",
+      "duplicatesHint": "The same pHash uploaded more than once, usually a reupload."
+    },
+    "adminUsers": {
+      "requestType": "Request",
+      "approveRequest": "Approve",
+      "rejectRequest": "Reject",
+      "dataRequestsHint": "Approving a deletion anonymises the account but keeps lineage tombstones, so remixes can still resolve their provenance."
+    },
+    "adminCredits": {
+      "colCreated": "When",
+      "colReason": "Reason",
+      "ledger": "Ledger",
+      "accounts": "Accounts",
+      "mismatched": "Balance mismatches",
+      "mismatchedHint": "Ledger sum does not equal the stored balance",
+      "danglingHint": "Reserved over two hours ago and still neither captured nor released",
+      "noDangling": "No dangling reservations; the credit invariant holds",
+      "ageHours": "Age",
+      "generatedAt": "Generated {at}"
+    },
+    "adminConfig": {
+      "keys": "Keys",
+      "value": "Value (JSON)",
+      "valueHint": "Validated against the schema before it is stored; an invalid value is refused.",
+      "readOnly": "Your role can read this. Editing needs admin.",
+      "note": "Change note",
+      "fields": "Schema fields: {fields}",
+      "pendingDiff": "Unsaved difference",
+      "activeVersion": "Active",
+      "rollbackHint": "A rollback re-applies v{version} as a new version, so nothing is erased from the history.",
+      "saved": "Configuration updated",
+      "rolledBack": "Rolled back",
+      "featureFlags": "Feature flags",
+      "flagOn": "On",
+      "flagOff": "Off",
+      "rollout": "Rollout",
+      "flagsNote": "Feature flags changed from the console"
+    },
+    "adminData": {
+      "bucket": "Bucket",
+      "objectCount": "Objects",
+      "totalSize": "Size",
+      "applyLifecycle": "Apply standard rules",
+      "lifecycleApplied": "Lifecycle rules applied",
+      "noLifecycle": "No lifecycle rules set",
+      "backupsHint": "A backup runs pg_dump inline and stores the archive; failures are recorded below.",
+      "triggerBackup": "Run a backup",
+      "backupTriggered": "Backup finished",
+      "backupKind": "Kind",
+      "backupStatus": "Status",
+      "backupSize": "Size",
+      "backupObject": "Object key / failure",
+      "backupCreated": "When",
+      "seedHint": "Loads demo data. The server refuses this in production.",
+      "seedReset": "Wipe existing data first",
+      "seedAction": "Load seed data",
+      "seedResetAction": "Wipe and rebuild",
+      "seedResetWarning": "Wiping deletes existing works, jobs and ledger entries. It cannot be undone.",
+      "seedDone": "Seed data loaded"
+    },
+    "adminAudit": {
+      "colCreated": "When",
+      "dangerous": "Privileged",
+      "changes": "Before and after"
+    },
+    "adminAnnouncements": {
+      "compose": "Compose",
+      "published": "Sent",
+      "kind": "Kind",
+      "kind_notice": "Notice",
+      "kind_maintenance": "Maintenance",
+      "kind_incident": "Incident",
+      "titleZh": "Title (Chinese)",
+      "titleEn": "Title (English)",
+      "bodyZh": "Body (Chinese)",
+      "bodyEn": "Body (English)",
+      "publishNow": "Publish immediately",
+      "broadcast": "Also send in-app notifications",
+      "broadcastHint": "Creates one notification for every active account.",
+      "statusPublished": "Published",
+      "statusDraft": "Draft",
+      "created": "Announcement created"
+    }
+  }
+}

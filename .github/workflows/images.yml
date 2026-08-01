@@ -1,0 +1,108 @@
+name: images
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  # release-please publishes a release, which triggers the tagged build.
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Extra tag to publish (in addition to the computed ones)'
+        required: false
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+  # Required for the keyless provenance attestation.
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: ${{ matrix.component }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: back
+            image: zaolang-back
+          - component: front
+            image: zaolang-front
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,format=short
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+          labels: |
+            org.opencontainers.image.title=zaolang ${{ matrix.component }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.component }}
+          # arm64 is emulated, which is slow; the layer cache keeps repeat
+          # builds tolerable.
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL || 'http://localhost:8000' }}
+            SOURCE_REPOSITORY_URL=https://github.com/${{ github.repository }}
+            APP_VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summarise
+        run: |
+          {
+            echo "## ${{ matrix.image }}"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo
+            echo "Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "Platforms: linux/amd64, linux/arm64 · SBOM and provenance attached"
+          } >> "$GITHUB_STEP_SUMMARY"

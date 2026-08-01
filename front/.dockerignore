@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.env.local
+.env.*.local
+playwright-report/
+test-results/
+tsconfig.tsbuildinfo
+e2e/

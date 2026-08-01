@@ -1,0 +1,62 @@
+# --- secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/*.key.example
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- node ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# --- playwright ---
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# --- generated artifacts ---
+# `back/openapi.json` and `front/src/lib/api/schema.d.ts` are generated but
+# committed on purpose: `make openapi-check` diffs them to catch a backend schema
+# change that was not regenerated on the frontend, and the docs site renders the
+# exported document.
+docs/openapi.json
+.site/
+site/
+docs/.cache/
+
+# --- local media / assets pack payloads ---
+assets-pack/media/
+!assets-pack/media/.gitkeep
+
+# --- infra local state ---
+infra/data/
+infra/backups/
+
+# --- os / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

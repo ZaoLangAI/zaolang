@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "pack_id": "zaolang-launch-2026",
+  "description": "示例素材包。把真实媒体文件放进本目录，按下面的结构描述后运行 `make import-assets`。",
+  "defaults": {
+    "license": "CC-BY-4.0",
+    "attribution": "造浪示例素材"
+  },
+  "items": [
+    {
+      "slug": "coastal-dusk-hero",
+      "file": "media/coastal-dusk-hero.png",
+      "mime_type": "image/png",
+      "role": "generation_output",
+      "title": "海岸黄昏",
+      "description": "用于 discover 首屏的主视觉。",
+      "width": 1920,
+      "height": 1080,
+      "duration_ms": null,
+      "replaces_prototype": "seed:coastal-dusk",
+      "license": "CC-BY-4.0",
+      "attribution": "示例作者",
+      "consent": null
+    },
+    {
+      "slug": "portrait-reference",
+      "file": "media/portrait-reference.jpg",
+      "mime_type": "image/jpeg",
+      "role": "generation_reference",
+      "title": "人像参考图",
+      "description": "含真人肖像，必须附授权证明。",
+      "width": 1024,
+      "height": 1024,
+      "duration_ms": null,
+      "replaces_prototype": null,
+      "license": "proprietary",
+      "attribution": "示例摄影师",
+      "consent": {
+        "subject_name": "示例模特",
+        "evidence_file": "consent/portrait-reference-release.pdf",
+        "granted_at": "2026-01-15T00:00:00Z",
+        "expires_at": null
+      }
+    }
+  ]
+}

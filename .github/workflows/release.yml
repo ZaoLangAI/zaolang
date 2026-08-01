@@ -1,0 +1,47 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      # Keeps an open "chore(main): release x.y.z" PR up to date from the
+      # Conventional Commits on main. Merging it tags the release, which is what
+      # triggers the image build in images.yml.
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Summarise
+        run: |
+          {
+            echo '## release-please'
+            echo
+            if [ "${{ steps.release.outputs.release_created }}" = "true" ]; then
+              echo "Released **${{ steps.release.outputs.tag_name }}**. GHCR images build from the tag."
+            elif [ -n "${{ steps.release.outputs.pr }}" ]; then
+              echo 'Release pull request updated. Merge it to cut a release.'
+            else
+              echo 'Nothing to release: no user-visible commits since the last tag.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

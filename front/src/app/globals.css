@@ -1,0 +1,215 @@
+@import 'tailwindcss';
+
+/*
+ * Two layers of tokens.
+ *
+ * The raw values below are the design baseline and must not drift. Light mode
+ * is a second set of values for the *same* semantic names,
+ * so component code only ever consumes the semantic token and never a literal
+ * colour. Adding a colour means adding it to both blocks, not to a component.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #080b0d;
+  --surface: #101418;
+  --surface-raised: #151a1f;
+  --surface-soft: #1a2025;
+  --text: #f5f1eb;
+  --text-muted: #9c9b99;
+  --border: #293038;
+  --primary: #ff795b;
+  --primary-hover: #ff8d72;
+  --on-primary: #1a0a05;
+  --amber: #d9ad59;
+  --success: #79d79a;
+  --danger: #ef6d6d;
+  --focus: #ffd0c4;
+
+  /* Cinematic media sits on a dark page, so overlays only need to deepen it. */
+  --poster-scrim: linear-gradient(180deg, rgb(8 11 13 / 0%) 38%, rgb(8 11 13 / 88%) 100%);
+  --poster-tint: rgb(8 11 13 / 35%);
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  --card-shadow-raised: 0 18px 40px -24px rgb(0 0 0 / 90%);
+  --overlay: rgb(4 6 8 / 78%);
+  --skeleton: rgb(255 255 255 / 6%);
+  --track: rgb(255 255 255 / 14%);
+  --gateway-panel:
+    radial-gradient(120% 160% at 0% 0%, rgb(121 215 154 / 10%) 0%, transparent 55%), #0e1315;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #f7f4f0;
+  --surface: #ffffff;
+  --surface-raised: #fffdfb;
+  --surface-soft: #f1ece6;
+  --text: #1a1714;
+  --text-muted: #6b635b;
+  --border: #ded5cb;
+  /* Darker than the dark theme's coral by necessity: this value has to clear
+     4.5:1 both as text on the pale page and as a background under
+     `--on-primary`, including behind the 12% tint used for selected chips. */
+  --primary: #a8321a;
+  --primary-hover: #8f2a14;
+  --on-primary: #fff6f3;
+  --amber: #8a6410;
+  --success: #1d7a44;
+  --danger: #b4271f;
+  --focus: #7a2a14;
+
+  /* The same poster on a pale page needs a stronger scrim for legible captions. */
+  --poster-scrim: linear-gradient(180deg, rgb(26 23 20 / 0%) 30%, rgb(26 23 20 / 82%) 100%);
+  --poster-tint: rgb(26 23 20 / 8%);
+  --card-shadow: 0 1px 2px rgb(26 23 20 / 8%);
+  --card-shadow-raised: 0 18px 40px -28px rgb(26 23 20 / 35%);
+  --overlay: rgb(26 23 20 / 45%);
+  --skeleton: rgb(26 23 20 / 6%);
+  --track: rgb(26 23 20 / 14%);
+  --gateway-panel:
+    radial-gradient(120% 160% at 0% 0%, rgb(29 122 68 / 8%) 0%, transparent 55%), #ffffff;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-soft: var(--surface-soft);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-amber: var(--amber);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-focus: var(--focus);
+  --color-skeleton: var(--skeleton);
+  --color-track: var(--track);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  --shadow-card: var(--card-shadow);
+  --shadow-raised: var(--card-shadow-raised);
+
+  --font-sans:
+    'Inter', 'Noto Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --breakpoint-sm: 760px;
+  --breakpoint-md: 1024px;
+  --breakpoint-lg: 1180px;
+  --breakpoint-xl: 1440px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    /* The design puts every page on the same dark stage; an overscroll flash of
+       white breaks it. */
+    background-color: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-feature-settings: 'tnum' 1;
+    /* Horizontal overflow is an explicit acceptance criterion. */
+    overflow-x: hidden;
+  }
+
+  :focus-visible {
+    /* Never colour alone: the ring is a shape change too. */
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--primary);
+    color: var(--on-primary);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--text);
+    text-wrap: balance;
+  }
+
+  /* Numbers and money read as Inter even inside Chinese copy. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+
+  .gateway-panel {
+    background: var(--gateway-panel);
+  }
+
+  .poster-scrim::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--poster-scrim);
+    pointer-events: none;
+  }
+
+  .page-x {
+    padding-inline: 12px;
+  }
+
+  @media (width >= 760px) {
+    .page-x {
+      padding-inline: 24px;
+    }
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Opt-in equivalent of the OS setting, for users whose device cannot set it. */
+[data-reduced-motion='true'] *,
+[data-reduced-motion='true'] *::before,
+[data-reduced-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}

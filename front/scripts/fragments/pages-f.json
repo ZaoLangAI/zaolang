@@ -1,0 +1,113 @@
+{
+  "zh-CN": {
+    "profilePage": {
+      "activityPublished": "发布了《{title}》",
+      "activityPublishedHint": "来源和许可快照已写入创作链",
+      "activityBookmarked": "收藏了《{title}》",
+      "activityJob": "创建了一个{tier}二创任务",
+      "activityJobHint": "消耗 {credits} 积分",
+      "styleTags": "常用风格"
+    },
+    "notificationsPage": {
+      "filterAll": "全部",
+      "filterUnread": "未读",
+      "allRead": "已全部标记为已读",
+      "open": "查看"
+    },
+    "learnPage": {
+      "course1Desc": "跟着做一遍：挑一个允许二创的作品，改一句描述，发布你的第一个版本。",
+      "course2Desc": "主体、动作、镜头、光线、声音——五个位置写清楚，模型就不会乱猜。",
+      "course3Desc": "许可决定别人能不能继续创作，署名决定功劳算给谁。",
+      "duration": "{minutes} 分钟"
+    },
+    "billingPage": {
+      "buyFailed": "下单失败，请稍后重试。",
+      "packageCredits": "{count} 积分"
+    },
+    "settingsPage": {
+      "saved": "设置已保存",
+      "themeSection": "主题",
+      "languageLabel": "界面语言",
+      "regionLabel": "地区与货币",
+      "exportRequested": "导出请求已提交，处理完成后会通知你。",
+      "deleteRequested": "删除请求已提交，需要管理员审核。",
+      "deleteConfirmTitle": "确认删除账号",
+      "deleteConfirmBody": "账号资料会被匿名化，你在创作链中的位置会保留为墓碑节点。这个操作无法撤销。",
+      "reasonLabel": "说明原因"
+    }
+  },
+  "en": {
+    "profilePage": {
+      "activityPublished": "Published “{title}”",
+      "activityPublishedHint": "Source and licence snapshot written into the lineage",
+      "activityBookmarked": "Bookmarked “{title}”",
+      "activityJob": "Started a {tier} remix job",
+      "activityJobHint": "Spent {credits} credits",
+      "styleTags": "Frequent styles"
+    },
+    "notificationsPage": {
+      "filterAll": "All",
+      "filterUnread": "Unread",
+      "allRead": "Everything marked as read",
+      "open": "Open"
+    },
+    "learnPage": {
+      "course1Desc": "Do it once: pick a remixable work, change one sentence, publish your first version.",
+      "course2Desc": "Subject, action, camera, light, sound — fill those five and the model stops guessing.",
+      "course3Desc": "The licence decides who may continue; the credit decides who gets the credit.",
+      "duration": "{minutes} min"
+    },
+    "billingPage": {
+      "buyFailed": "Could not start checkout. Please try again.",
+      "packageCredits": "{count} credits"
+    },
+    "settingsPage": {
+      "saved": "Settings saved",
+      "themeSection": "Theme",
+      "languageLabel": "Interface language",
+      "regionLabel": "Region and currency",
+      "exportRequested": "Export requested. We will notify you when it is ready.",
+      "deleteRequested": "Deletion requested. An administrator has to review it.",
+      "deleteConfirmTitle": "Confirm account deletion",
+      "deleteConfirmBody": "Your profile is anonymised and your place in the lineage stays as a tombstone. This cannot be undone.",
+      "reasonLabel": "Tell us why"
+    }
+  },
+  "ja": {
+    "profilePage": {
+      "activityPublished": "「{title}」を公開しました",
+      "activityPublishedHint": "出典とライセンススナップショットを創作チェーンに記録しました",
+      "activityBookmarked": "「{title}」を保存しました",
+      "activityJob": "{tier}の二次創作ジョブを作成しました",
+      "activityJobHint": "{credits} クレジットを消費",
+      "styleTags": "よく使うスタイル"
+    },
+    "notificationsPage": {
+      "filterAll": "すべて",
+      "filterUnread": "未読",
+      "allRead": "すべて既読にしました",
+      "open": "開く"
+    },
+    "learnPage": {
+      "course1Desc": "まず一度やってみる：二次創作可の作品を選び、一文だけ変えて公開します。",
+      "course2Desc": "被写体・動き・カメラ・光・音の五つを書けば、モデルは迷いません。",
+      "course3Desc": "ライセンスは続けてよいかを、クレジットは誰の功績かを決めます。",
+      "duration": "{minutes} 分"
+    },
+    "billingPage": {
+      "buyFailed": "決済を開始できませんでした。時間をおいて再試行してください。",
+      "packageCredits": "{count} クレジット"
+    },
+    "settingsPage": {
+      "saved": "設定を保存しました",
+      "themeSection": "テーマ",
+      "languageLabel": "表示言語",
+      "regionLabel": "地域と通貨",
+      "exportRequested": "エクスポートを申請しました。完了したらお知らせします。",
+      "deleteRequested": "削除を申請しました。管理者の確認が必要です。",
+      "deleteConfirmTitle": "アカウント削除の確認",
+      "deleteConfirmBody": "プロフィールは匿名化され、創作チェーン上の位置は墓標として残ります。取り消せません。",
+      "reasonLabel": "理由を記入"
+    }
+  }
+}

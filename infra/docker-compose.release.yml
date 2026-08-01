@@ -1,0 +1,137 @@
+name: zaolang-release
+
+# One-command trial run against published GHCR images: no local toolchain, no
+# build step. Pin ZAOLANG_VERSION to a release tag for a reproducible run; the
+# default `edge` follows main.
+#
+#   docker compose -f infra/docker-compose.release.yml up -d
+#
+# The secrets below are development defaults and must be replaced before this is
+# exposed to anything other than localhost.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: zaolang
+      POSTGRES_PASSWORD: zaolang
+      POSTGRES_DB: zaolang
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U zaolang -d zaolang']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: zaolang
+      MINIO_ROOT_PASSWORD: zaolang-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: zaolang
+      MINIO_ROOT_PASSWORD: zaolang-secret
+      MEDIA_BUCKET: zaolang-media
+    entrypoint: ['/bin/sh', '/scripts/minio-init.sh']
+    volumes:
+      - ./scripts:/scripts:ro
+
+  # Migrations run as their own unit so the API never races the schema.
+  migrate:
+    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &backend-env
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://zaolang:zaolang@postgres:5432/zaolang
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: change-me-before-exposing-this
+      ADMIN_JWT_SECRET: change-me-before-exposing-this-admin
+      PAYMENT_WEBHOOK_SECRET: change-me-before-exposing-this-webhook
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: zaolang-media
+      S3_ACCESS_KEY: zaolang
+      S3_SECRET_KEY: zaolang-secret
+      # No gateway key in a trial run, so agents stay on the deterministic stub.
+      LLM_MODE: ${LLM_MODE:-stub}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://aihubmix.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      CORS_ORIGINS: http://localhost:3000
+    command: ['alembic', 'upgrade', 'head']
+    restart: 'no'
+
+  api:
+    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment: *backend-env
+    ports:
+      - '8000:8000'
+
+  worker:
+    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - worker
+      - -Q
+      - moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile
+      - --loglevel=info
+
+  web:
+    image: ghcr.io/zaolangai/zaolang-front:${ZAOLANG_VERSION:-edge}
+    depends_on:
+      - api
+    environment:
+      # Server components talk to the API over the compose network; the browser
+      # bundle uses the URL baked in at image build time.
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - '3000:3000'
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

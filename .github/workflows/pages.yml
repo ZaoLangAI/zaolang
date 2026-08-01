@@ -1,0 +1,65 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'back/openapi.json'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: back/requirements-dev.txt
+
+      - name: Install MkDocs
+        # Pinned to the same versions as back/requirements-dev.txt so a local
+        # `make docs-build` and this job produce the same site. MkDocs 2.0 drops
+        # the plugin system entirely, so an unpinned install would break.
+        run: pip install mkdocs-material==9.6.24 mkdocs-swagger-ui-tag==0.7.2
+
+      - name: Stage the exported OpenAPI document
+        # The interactive reference renders the schema the backend exports, so it
+        # cannot drift from the running API.
+        run: cp back/openapi.json docs/openapi.json
+
+      - name: Build
+        run: mkdocs build --strict
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

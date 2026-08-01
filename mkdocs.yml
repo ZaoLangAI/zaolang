@@ -1,0 +1,80 @@
+site_name: 造浪 ZaoLang
+site_description: 全球 AI 二创共享平台的架构、运维与接口文档
+site_url: https://zaolangai.github.io/zaolang/
+repo_url: https://github.com/ZaoLangAI/zaolang
+repo_name: ZaoLangAI/zaolang
+copyright: AGPL-3.0-or-later · 源码即产品的一部分
+
+docs_dir: docs
+site_dir: .site
+
+# Broken links and orphan pages fail the build rather than shipping a docs site
+# that quietly 404s.
+strict: true
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: 切换到浅色
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: 切换到深色
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
+    - search.highlight
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+  # Renders the OpenAPI document the backend exports, so the reference cannot
+  # drift from the running API.
+  - swagger-ui-tag
+
+nav:
+  - 首页: index.md
+  - 本地开发: local-development.md
+  - 架构说明: architecture.md
+  - 接口参考: api.md
+  - 运维手册: ops-runbook.md
+  - 工程与发布: ci-release.md
+  - 仓库设置清单: github-setup.md

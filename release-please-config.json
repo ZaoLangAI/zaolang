@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "zaolang",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": false,
+      "prerelease": false,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "front/package.json",
+          "jsonpath": "$.version"
+        }
+      ],
+      "changelog-sections": [
+        { "type": "feat", "section": "功能 Features" },
+        { "type": "fix", "section": "修复 Bug Fixes" },
+        { "type": "perf", "section": "性能 Performance" },
+        { "type": "refactor", "section": "重构 Refactoring" },
+        { "type": "docs", "section": "文档 Documentation" },
+        { "type": "test", "section": "测试 Tests", "hidden": true },
+        { "type": "build", "section": "构建 Build", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "chore", "section": "杂项 Chores", "hidden": true }
+      ]
+    }
+  }
+}

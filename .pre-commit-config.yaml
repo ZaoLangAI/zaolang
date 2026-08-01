@@ -1,0 +1,81 @@
+# Local quality gate. Install once with `make hooks`.
+#
+# Every hook runs from the repository root and shells into the right toolchain
+# (conda for Python, fnm for Node) so a commit made from an editor without those
+# environments activated still runs the same checks as `make check`.
+minimum_pre_commit_version: "3.5.0"
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        exclude: ^infra/docker-compose\.ya?ml$
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: \.svg$
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: detect-private-key
+      - id: check-added-large-files
+        # Real media belongs in assets-pack/, which is not committed.
+        args: [--maxkb=512]
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint + format)
+        entry: bash -c 'cd back && conda run -n zaolang --no-capture-output ruff check --fix . && conda run -n zaolang --no-capture-output ruff format .'
+        language: system
+        files: ^back/.*\.py$
+        pass_filenames: false
+
+      - id: mypy
+        name: mypy
+        entry: bash -c 'cd back && conda run -n zaolang --no-capture-output mypy app'
+        language: system
+        files: ^back/.*\.py$
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: bash -c 'cd front && eval "$(fnm env)" && fnm use --install-if-missing >/dev/null && npm run format'
+        language: system
+        files: ^front/.*\.(ts|tsx|css|json|mjs)$
+        pass_filenames: false
+
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd front && eval "$(fnm env)" && fnm use --install-if-missing >/dev/null && npm run lint'
+        language: system
+        files: ^front/src/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: tsc
+        name: tsc --noEmit
+        entry: bash -c 'cd front && eval "$(fnm env)" && fnm use --install-if-missing >/dev/null && npm run typecheck'
+        language: system
+        files: ^front/.*\.(ts|tsx)$
+        pass_filenames: false
+
+      - id: messages
+        name: i18n catalogues agree and every key exists
+        entry: bash -c 'cd front && eval "$(fnm env)" && fnm use --install-if-missing >/dev/null && npm run check:messages'
+        language: system
+        files: ^front/(src/i18n/messages/.*\.json|src/.*\.tsx?)$
+        pass_filenames: false
+
+      - id: openapi-drift
+        name: openapi types are up to date
+        # Catches the failure mode where a backend schema changes and the
+        # generated frontend types are not regenerated, which turns a compile
+        # error into a runtime surprise.
+        entry: make openapi-check
+        language: system
+        files: ^back/app/(api|models|platform_config)/.*\.py$
+        pass_filenames: false

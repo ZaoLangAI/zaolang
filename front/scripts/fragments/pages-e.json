@@ -1,0 +1,41 @@
+{
+  "zh-CN": {
+    "discover": {
+      "title": "发现",
+      "subtitle": "看见社区正在创作的作品，找到值得继续的那一个。",
+      "filterTags": "按标签筛选"
+    },
+    "workPage": {
+      "similarEmpty": "还没有找到相似作品",
+      "tags": "标签",
+      "stats": "数据",
+      "openInLineage": "在创作链中查看"
+    }
+  },
+  "en": {
+    "discover": {
+      "title": "Discover",
+      "subtitle": "See what the community is making, and find the one worth continuing.",
+      "filterTags": "Filter by tag"
+    },
+    "workPage": {
+      "similarEmpty": "No similar works yet",
+      "tags": "Tags",
+      "stats": "Stats",
+      "openInLineage": "Open in the lineage"
+    }
+  },
+  "ja": {
+    "discover": {
+      "title": "発見",
+      "subtitle": "コミュニティの制作を眺めて、続けたい一本を見つけましょう。",
+      "filterTags": "タグで絞り込む"
+    },
+    "workPage": {
+      "similarEmpty": "似た作品はまだありません",
+      "tags": "タグ",
+      "stats": "統計",
+      "openInLineage": "創作チェーンで見る"
+    }
+  }
+}

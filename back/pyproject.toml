@@ -1,0 +1,43 @@
+[project]
+name = "zaolang-back"
+version = "0.0.0"
+description = "ZaoLang product API, domain services, agent gateway and workers"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+  "B008",
+  # User-facing copy is Chinese, so fullwidth punctuation is correct, not a typo.
+  "RUF001",
+  "RUF002",
+  "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
+exclude = ["alembic/versions"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+  "live: hits the real LLM gateway; requires LLM_API_KEY and is excluded from CI",
+]
+filterwarnings = ["ignore::DeprecationWarning"]

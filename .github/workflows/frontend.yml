@@ -1,0 +1,87 @@
+name: frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'front/**'
+      - '.github/workflows/frontend.yml'
+  pull_request:
+    paths:
+      - 'front/**'
+      - '.github/workflows/frontend.yml'
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: front
+
+jobs:
+  check:
+    name: eslint + tsc + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # The build must not need a reachable backend: every page that reads data
+      # is dynamic, so nothing is fetched at build time.
+      API_INTERNAL_URL: http://127.0.0.1:8000
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+      SOURCE_REPOSITORY_URL: https://github.com/${{ github.repository }}
+      APP_VERSION: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          # Same source of truth as local fnm, so CI cannot drift to a
+          # different major version than the one developers use.
+          node-version-file: front/.node-version
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache the Next.js build
+        uses: actions/cache@v4
+        with:
+          path: front/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('front/package-lock.json') }}-${{ hashFiles('front/src/**/*.{ts,tsx,css}') }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('front/package-lock.json') }}-
+            next-${{ runner.os }}-
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Message catalogues
+        run: npm run check:messages
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '## Frontend checks'
+            echo
+            echo "- Node: $(node --version)"
+            echo "- Next.js: $(node -p "require('next/package.json').version")"
+            echo
+            echo 'E2E, axe and OpenAPI drift checks run locally via `make check`, not here.'
+          } >> "$GITHUB_STEP_SUMMARY"

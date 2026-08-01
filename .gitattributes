@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp4 binary
+*.webm binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+docs/** linguist-documentation
+LICENSE linguist-vendored

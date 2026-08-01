@@ -1,0 +1,71 @@
+name: zaolang
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: zaolang-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zaolang}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zaolang}
+      POSTGRES_DB: ${POSTGRES_DB:-zaolang}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zaolang} -d ${POSTGRES_DB:-zaolang}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    container_name: zaolang-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    container_name: zaolang-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-zaolang}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-zaolang-secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: zaolang-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-zaolang}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-zaolang-secret}
+      MEDIA_BUCKET: ${S3_BUCKET:-zaolang-media}
+    entrypoint: ["/bin/sh", "/scripts/minio-init.sh"]
+    volumes:
+      - ./scripts:/scripts:ro
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
