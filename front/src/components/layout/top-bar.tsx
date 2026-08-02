@@ -39,9 +39,9 @@ export function TopBar() {
   const searchParams = useSearchParams();
   const { user, status, openLogin, signOut } = useSession();
 
-  const [query, setQuery] = useState(() =>
-    pathname === '/discover' ? (searchParams.get('q') ?? '') : '',
-  );
+  const routeQuery = pathname === '/discover' ? (searchParams.get('q') ?? '') : '';
+  const [query, setQuery] = useState(routeQuery);
+  const [mirroredQuery, setMirroredQuery] = useState({ pathname, q: routeQuery });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [menuPath, setMenuPath] = useState(pathname);
@@ -56,13 +56,10 @@ export function TopBar() {
 
   // Mirror discover's `q` into the search box (and clear it off-route) so
   // Cmd+K / shared links land with the keyword already filled.
-  useEffect(() => {
-    if (pathname === '/discover') {
-      setQuery(searchParams.get('q') ?? '');
-    } else {
-      setQuery('');
-    }
-  }, [pathname, searchParams]);
+  if (mirroredQuery.pathname !== pathname || mirroredQuery.q !== routeQuery) {
+    setMirroredQuery({ pathname, q: routeQuery });
+    setQuery(routeQuery);
+  }
 
   useEffect(() => {
     if (status !== 'authenticated') return;

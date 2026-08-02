@@ -33,7 +33,8 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const router = useRouter();
   const { status, openLogin } = useSession();
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => openSignal > 0);
+  const [seenSignal, setSeenSignal] = useState(openSignal);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [works, setWorks] = useState<WorkSummary[]>([]);
@@ -50,9 +51,11 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   }, []);
 
   // Host bumps this when a shortcut fires before the chunk finished loading.
-  useEffect(() => {
+  // Adjust during render (same pattern as top-bar) to avoid set-state-in-effect.
+  if (openSignal !== seenSignal) {
+    setSeenSignal(openSignal);
     if (openSignal > 0) setOpen(true);
-  }, [openSignal]);
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
