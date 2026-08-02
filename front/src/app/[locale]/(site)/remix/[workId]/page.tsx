@@ -5,8 +5,7 @@ import { GenerationStudio } from '@/components/studio/generation-studio';
 import { IconArrowLeft } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
-import { serverFetchOrNull } from '@/lib/api/server';
-import type { WorkDetail } from '@/lib/api/types';
+import { getWork } from '@/lib/api/work-loaders';
 
 interface Params {
   params: Promise<{ workId: string }>;
@@ -14,7 +13,7 @@ interface Params {
 
 export async function generateMetadata({ params }: Params) {
   const { workId } = await params;
-  const work = await serverFetchOrNull<WorkDetail>(`/v1/works/${workId}`);
+  const work = await getWork(workId, true);
   const t = await getTranslations('remixPage');
   return { title: work ? t('titleFrom', { title: work.title }) : t('eyebrow') };
 }
@@ -23,7 +22,7 @@ export default async function RemixPage({ params }: Params) {
   const { workId } = await params;
   const t = await getTranslations('remixPage');
 
-  const work = await serverFetchOrNull<WorkDetail>(`/v1/works/${workId}`, { authenticated: true });
+  const work = await getWork(workId, true);
   if (!work) notFound();
 
   return (

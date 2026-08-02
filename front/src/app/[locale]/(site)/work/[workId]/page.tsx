@@ -6,8 +6,9 @@ import { WorkStage } from '@/components/work/work-stage';
 import { WorkCard } from '@/components/work/work-card';
 import { Badge, EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { IconTombstone } from '@/components/ui/icons';
-import { serverFetch, serverFetchOrNull } from '@/lib/api/server';
-import type { Page, WorkDetail, WorkSummary } from '@/lib/api/types';
+import { serverFetch } from '@/lib/api/server';
+import { getWork } from '@/lib/api/work-loaders';
+import type { Page, WorkSummary } from '@/lib/api/types';
 
 interface Params {
   params: Promise<{ workId: string }>;
@@ -15,7 +16,8 @@ interface Params {
 
 export async function generateMetadata({ params }: Params) {
   const { workId } = await params;
-  const work = await serverFetchOrNull<WorkDetail>(`/v1/works/${workId}`);
+  // Same loader + auth flag as the page so React cache() collapses the two.
+  const work = await getWork(workId, true);
   if (!work) {
     const t = await getTranslations('workPage');
     return { title: t('notFound') };
@@ -31,12 +33,13 @@ export default async function WorkPage({ params }: Params) {
   const t = await getTranslations('work');
   const tPage = await getTranslations('workPage');
 
-  const work = await serverFetchOrNull<WorkDetail>(`/v1/works/${workId}`, { authenticated: true });
+  const [work, similar] = await Promise.all([
+    getWork(workId, true),
+    serverFetch<Page<WorkSummary>>(`/v1/works/${workId}/similar`, {
+      query: { limit: 6 },
+    }).catch(() => ({ items: [] }) as Page<WorkSummary>),
+  ]);
   if (!work) notFound();
-
-  const similar = await serverFetch<Page<WorkSummary>>(`/v1/works/${workId}/similar`, {
-    query: { limit: 6 },
-  }).catch(() => ({ items: [] }) as Page<WorkSummary>);
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-6 sm:px-6">

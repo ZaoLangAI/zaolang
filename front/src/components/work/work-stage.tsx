@@ -8,7 +8,14 @@ import type { WorkDetail } from '@/lib/api/types';
  * Video gets the player; stills get a plain poster, because a control bar over
  * an image is a lie about what the medium is.
  */
-export function WorkStage({ work }: { work: WorkDetail }) {
+export function WorkStage({
+  work,
+  lazyMedia = false,
+}: {
+  work: WorkDetail;
+  /** Discover hero: poster-first, attach video src on play. */
+  lazyMedia?: boolean;
+}) {
   const version = work.current_version;
   const isVideo = (work.media_type ?? version?.media_type) === 'video';
 
@@ -19,6 +26,7 @@ export function WorkStage({ work }: { work: WorkDetail }) {
         poster={version?.cover_url ?? work.cover_url}
         title={work.title}
         className="rounded-[var(--radius-lg)]"
+        lazyMedia={lazyMedia}
       />
     );
   }

@@ -26,7 +26,7 @@ interface Command {
  * to a screen reader: the input keeps focus and `aria-activedescendant` moves
  * the virtual cursor, so arrow keys read out options without stealing focus.
  */
-export function CommandPalette() {
+export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const t = useTranslations('commandPalette');
   const tNav = useTranslations('nav');
   const locale = useLocale() as Locale;
@@ -48,6 +48,11 @@ export function CommandPalette() {
     setActive(0);
     setWorks([]);
   }, []);
+
+  // Host bumps this when a shortcut fires before the chunk finished loading.
+  useEffect(() => {
+    if (openSignal > 0) setOpen(true);
+  }, [openSignal]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

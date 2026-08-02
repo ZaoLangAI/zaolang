@@ -16,23 +16,25 @@ export async function generateMetadata() {
 export default async function DiscoverPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tag?: string; sort?: string }>;
+  searchParams: Promise<{ q?: string; tag?: string; sort?: string }>;
 }) {
-  const { tag, sort } = await searchParams;
+  const { q, tag, sort } = await searchParams;
   const t = await getTranslations('discover');
+  const filtered = Boolean(q?.trim() || tag);
 
   const [feed, tags] = await Promise.all([
     serverFetch<Page<WorkSummary>>('/v1/works', {
-      query: { tag, sort: sort ?? 'popular', limit: 24 },
+      query: { q: q?.trim() || undefined, tag, sort: sort ?? 'popular', limit: 24 },
     }),
     serverFetch<Page<Tag>>('/v1/tags', { query: { limit: 24 }, revalidate: 300 }),
   ]);
 
   // The stage shows the most prominent work in full; the rail below carries
   // the rest. Fetching the detail separately is what gives the panel its
-  // lineage, licence and reusable parameters.
+  // lineage, licence and reusable parameters. Public fetch keeps the hero
+  // cacheable — like/bookmark state is filled in by the client session.
   const featured = feed.items[0]
-    ? await serverFetchOrNull<WorkDetail>(`/v1/works/${feed.items[0].id}`, { authenticated: true })
+    ? await serverFetchOrNull<WorkDetail>(`/v1/works/${feed.items[0].id}`)
     : null;
 
   const rail = feed.items.slice(featured ? 1 : 0);
@@ -40,7 +42,10 @@ export default async function DiscoverPage({
   if (!featured) {
     return (
       <div className="mx-auto w-full max-w-[1440px] px-4 py-16 sm:px-6">
-        <EmptyState title={t('emptyFeed')} description={t('emptyFeedHint')} />
+        <EmptyState
+          title={filtered ? t('noResults') : t('emptyFeed')}
+          description={filtered ? t('noResultsHint') : t('emptyFeedHint')}
+        />
       </div>
     );
   }
@@ -48,7 +53,7 @@ export default async function DiscoverPage({
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-6 sm:px-6">
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1.72fr)_minmax(0,1fr)]">
-        <WorkStage work={featured} />
+        <WorkStage work={featured} lazyMedia />
         <aside className="rounded-[var(--radius-lg)] border border-border bg-surface p-5 lg:p-6">
           <WorkInfoPanel work={featured} compact />
         </aside>
@@ -56,7 +61,7 @@ export default async function DiscoverPage({
 
       <section>
         <SectionHeading title={t('inspiration')} description={t('inspirationHint')} />
-        <TagFilter tags={tags.items} active={tag} />
+        <TagFilter tags={tags.items} active={tag} q={q?.trim() || undefined} sort={sort} />
         <div className="mt-5">
           {rail.length > 0 ? (
             <WorkRail works={rail} />

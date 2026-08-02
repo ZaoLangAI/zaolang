@@ -1,6 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
@@ -35,9 +36,12 @@ export function TopBar() {
   const locale = useLocale() as Locale;
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, status, openLogin, signOut } = useSession();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() =>
+    pathname === '/discover' ? (searchParams.get('q') ?? '') : '',
+  );
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [menuPath, setMenuPath] = useState(pathname);
@@ -50,6 +54,16 @@ export function TopBar() {
     setMobileOpen(false);
   }
 
+  // Mirror discover's `q` into the search box (and clear it off-route) so
+  // Cmd+K / shared links land with the keyword already filled.
+  useEffect(() => {
+    if (pathname === '/discover') {
+      setQuery(searchParams.get('q') ?? '');
+    } else {
+      setQuery('');
+    }
+  }, [pathname, searchParams]);
+
   useEffect(() => {
     if (status !== 'authenticated') return;
     void api
@@ -60,7 +74,18 @@ export function TopBar() {
 
   const onSearch = (event: React.FormEvent) => {
     event.preventDefault();
-    router.push(query.trim() ? `/discover?q=${encodeURIComponent(query.trim())}` : '/discover');
+    const params = new URLSearchParams();
+    const trimmed = query.trim();
+    if (trimmed) params.set('q', trimmed);
+    // Preserve tag/sort filters when refining the keyword from the top bar.
+    if (pathname === '/discover') {
+      const tag = searchParams.get('tag');
+      const sort = searchParams.get('sort');
+      if (tag) params.set('tag', tag);
+      if (sort) params.set('sort', sort);
+    }
+    const qs = params.toString();
+    router.push(qs ? `/discover?${qs}` : '/discover');
   };
 
   return (
@@ -73,7 +98,7 @@ export function TopBar() {
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((value) => !value)}
         >
-          {mobileOpen ? <IconMenu className="size-5" /> : <IconMenu className="size-5" />}
+          {mobileOpen ? <IconClose className="size-5" /> : <IconMenu className="size-5" />}
         </button>
 
         <Brand />

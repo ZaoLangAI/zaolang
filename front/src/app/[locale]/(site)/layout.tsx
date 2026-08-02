@@ -1,7 +1,8 @@
+import { Suspense } from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
 import { LoginDialog } from '@/components/auth/login-dialog';
-import { CommandPalette } from '@/components/command/command-palette';
+import { CommandPaletteHost } from '@/components/command/command-palette-host';
 import { SiteFooter } from '@/components/layout/site-footer';
 import { TopBar } from '@/components/layout/top-bar';
 
@@ -26,13 +27,15 @@ export default async function SiteLayout({
       >
         {t('skipToContent')}
       </a>
-      <TopBar />
+      <Suspense fallback={<div className="h-16 border-b border-border" aria-hidden="true" />}>
+        <TopBar />
+      </Suspense>
       <main id="main" className="flex-1">
         {children}
       </main>
       <SiteFooter />
       <LoginDialog />
-      <CommandPalette />
+      <CommandPaletteHost />
     </div>
   );
 }

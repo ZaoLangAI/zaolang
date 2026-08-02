@@ -14,22 +14,42 @@ function label(tag: Tag, locale: Locale): string {
   return tag.label_zh;
 }
 
-export function TagFilter({ tags, active }: { tags: Tag[]; active?: string }) {
+function discoverQuery(base: Record<string, string | undefined>) {
+  const query: Record<string, string> = {};
+  for (const [key, value] of Object.entries(base)) {
+    if (value) query[key] = value;
+  }
+  return Object.keys(query).length > 0 ? query : undefined;
+}
+
+export function TagFilter({
+  tags,
+  active,
+  q,
+  sort,
+}: {
+  tags: Tag[];
+  active?: string;
+  q?: string;
+  sort?: string;
+}) {
   const t = useTranslations('discover');
   const locale = useLocale() as Locale;
   const pathname = usePathname();
 
   if (tags.length === 0) return null;
 
+  const allQuery = discoverQuery({ q, sort });
+
   return (
     <nav aria-label={t('filterTags')} className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-      <Chip href={pathname} active={!active}>
+      <Chip href={allQuery ? { pathname, query: allQuery } : pathname} active={!active}>
         {t('allTags')}
       </Chip>
       {tags.map((tag) => (
         <Chip
           key={tag.slug}
-          href={{ pathname, query: { tag: tag.slug } }}
+          href={{ pathname, query: discoverQuery({ q, sort, tag: tag.slug })! }}
           active={active === tag.slug}
         >
           {label(tag, locale)}
