@@ -20,6 +20,7 @@
   --text: #f5f1eb;
   --text-muted: #9c9b99;
   --border: #293038;
+  --border-strong: #40484f;
   --primary: #ff795b;
   --primary-hover: #ff8d72;
   --on-primary: #1a0a05;
@@ -50,6 +51,7 @@
   --text: #1a1714;
   --text-muted: #6b635b;
   --border: #ded5cb;
+  --border-strong: #b8ab9d;
   /* Darker than the dark theme's coral by necessity: this value has to clear
      4.5:1 both as text on the pale page and as a background under
      `--on-primary`, including behind the 12% tint used for selected chips. */
@@ -81,6 +83,7 @@
   --color-text: var(--text);
   --color-muted: var(--text-muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-on-primary: var(--on-primary);
@@ -130,6 +133,8 @@
     font-feature-settings: 'tnum' 1;
     /* Horizontal overflow is an explicit acceptance criterion. */
     overflow-x: hidden;
+    /* Faded out while a locale switch is navigating; see `[data-navigating]` below. */
+    transition: opacity 160ms ease;
   }
 
   :focus-visible {
@@ -211,6 +216,26 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+/*
+ * Theme switch crossfade, triggered from `theme-provider.tsx` via
+ * `document.startViewTransition`. Left at the browser default duration
+ * otherwise (250ms), which reads as sluggish next to the rest of the UI.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+/*
+ * Locale switch fade, driven by `lib/locale-transition.ts`: it flips this
+ * attribute right before the `[locale]`-prefixed navigation starts, and
+ * `NavigationFadeWatcher` clears it once the new page has mounted.
+ */
+html[data-navigating='true'] body {
+  opacity: 0.5;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -555,7 +555,11 @@
     "loadMore": "Load more inspiration",
     "loadingMore": "Loading more inspiration",
     "loadMoreFailed": "Could not load more — tap to retry",
-    "feedEnd": "You have reached the end"
+    "feedEnd": "You have reached the end",
+    "featuredCarousel": "Trending picks carousel",
+    "previousFeatured": "Previous trending pick",
+    "nextFeatured": "Next trending pick",
+    "goToSlide": "Go to slide {index}"
   },
   "footer": {
     "source": "Source code",
@@ -680,7 +684,7 @@
     "loading": "Loading the lineage",
     "failed": "Could not load the lineage",
     "currentWork": "This work",
-    "selectHint": "Pick any node on the left to see how it differs from its parent version."
+    "selectHint": "Pick any node above to see how it differs from its parent version."
   },
   "nav": {
     "discover": "Discover",
@@ -864,6 +868,12 @@
     "pushEnable": "Enable push notifications",
     "pushEnableDesc": "Get notified about job progress, remixes and followers",
     "pushOpenSystemSettings": "Notifications are off — open system settings"
+  },
+  "search": {
+    "recentSearches": "Recent searches",
+    "hotSearches": "Trending searches",
+    "clearHistory": "Clear history",
+    "removeHistoryItem": "Remove “{query}” from history"
   },
   "shortform": {
     "eyebrow": "Short video",

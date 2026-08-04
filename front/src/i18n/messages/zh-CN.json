@@ -555,7 +555,11 @@
     "loadMore": "加载更多灵感",
     "loadingMore": "正在加载更多灵感",
     "loadMoreFailed": "加载失败，点击重试",
-    "feedEnd": "已经看到底了"
+    "feedEnd": "已经看到底了",
+    "featuredCarousel": "热门推荐轮播",
+    "previousFeatured": "上一条热门内容",
+    "nextFeatured": "下一条热门内容",
+    "goToSlide": "跳转到第 {index} 条"
   },
   "footer": {
     "source": "源代码",
@@ -680,7 +684,7 @@
     "loading": "正在加载创作链",
     "failed": "创作链加载失败",
     "currentWork": "当前作品",
-    "selectHint": "点击左侧任意节点，这里会显示它与父版本的参数差异。"
+    "selectHint": "点击上方任意节点，这里会显示它与父版本的参数差异。"
   },
   "nav": {
     "discover": "发现",
@@ -864,6 +868,12 @@
     "pushEnable": "开启推送通知",
     "pushEnableDesc": "接收任务进度、二创与新粉丝的提醒",
     "pushOpenSystemSettings": "通知已关闭 — 前往系统设置开启"
+  },
+  "search": {
+    "recentSearches": "最近搜索",
+    "hotSearches": "热门搜索",
+    "clearHistory": "清空历史",
+    "removeHistoryItem": "删除搜索记录“{query}”"
   },
   "shortform": {
     "eyebrow": "短视频",

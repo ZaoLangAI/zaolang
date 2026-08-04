@@ -2,14 +2,13 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
-import { useState } from 'react';
 
 import { Poster } from '@/components/media/poster';
 import { VideoPlayer } from '@/components/media/video-player';
 import { Avatar } from '@/components/work/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { IconBranch, IconHeart, IconRemix, IconSparkle } from '@/components/ui/icons';
+import { IconHeart, IconRemix, IconSparkle } from '@/components/ui/icons';
 import { Badge, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -17,8 +16,8 @@ import type { WorkDetail, WorkSummary } from '@/lib/api/types';
 import { formatCount, formatDate } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
-const LineageDialog = dynamic(() =>
-  import('@/components/lineage/lineage-dialog').then((module) => module.LineageDialog),
+const LineageExplorer = dynamic(() =>
+  import('@/components/lineage/lineage-explorer').then((module) => module.LineageExplorer),
 );
 
 const PROMPT_MAX_LENGTH = 600;
@@ -42,10 +41,10 @@ export function InspirationDialog({
   const t = useTranslations('discover');
   const tWork = useTranslations('work');
   const tPage = useTranslations('workPage');
+  const tPanel = useTranslations('lineagePanel');
+  const tActions = useTranslations('actions');
   const locale = useLocale() as Locale;
   const router = useRouter();
-
-  const [lineageOpen, setLineageOpen] = useState(false);
 
   const detail = useResource<WorkDetail>(open && work ? `/v1/works/${work.id}` : null);
   const full = detail.data;
@@ -73,133 +72,131 @@ export function InspirationDialog({
     });
   };
 
+  const openWork = (workId: string) => {
+    onClose();
+    router.push(`/work/${workId}`);
+  };
+
   return (
-    <>
-      <Dialog open={open} onClose={onClose} title={work.title} size="lg">
-        <div className="flex flex-col gap-5">
-          {mediaType === 'video' && mediaUrl ? (
-            <VideoPlayer src={mediaUrl} poster={cover} title={work.title} />
-          ) : (
-            <Poster
-              src={cover}
-              alt={work.title}
-              aspect="video"
-              sizes="(max-width: 768px) 100vw, 720px"
-              className="border border-border"
-            />
-          )}
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={work.title}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" size="sm" onClick={() => openWork(work.id)}>
+            {tPage('versionDetail')}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            {tActions('close')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        {mediaType === 'video' && mediaUrl ? (
+          <VideoPlayer src={mediaUrl} poster={cover} title={work.title} />
+        ) : (
+          <Poster
+            src={cover}
+            alt={work.title}
+            aspect="video"
+            sizes="(max-width: 768px) 100vw, 720px"
+            className="border border-border"
+          />
+        )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Link
-              href={`/profile/${work.author.handle}`}
-              className="flex items-center gap-2.5 text-sm"
-            >
-              <Avatar src={work.author.avatar_url} name={work.author.display_name} />
-              <span>
-                <span className="block font-medium">{work.author.display_name}</span>
-                <span className="block text-xs text-muted">
-                  {work.published_at ? formatDate(work.published_at, locale) : tWork('viewOnly')}
-                </span>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href={`/profile/${work.author.handle}`}
+            className="flex items-center gap-2.5 text-sm"
+          >
+            <Avatar src={work.author.avatar_url} name={work.author.display_name} />
+            <span>
+              <span className="block font-medium">{work.author.display_name}</span>
+              <span className="block text-xs text-muted">
+                {work.published_at ? formatDate(work.published_at, locale) : tWork('viewOnly')}
               </span>
-            </Link>
+            </span>
+          </Link>
 
-            <dl className="tabular flex items-center gap-4 text-xs text-muted">
-              <div className="flex items-center gap-1.5">
-                <dt className="sr-only">{tWork('likes')}</dt>
-                <IconHeart className="size-3.5" aria-hidden="true" />
-                <dd>{formatCount(work.stats.like_count, locale)}</dd>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <dt className="sr-only">{tWork('remixes')}</dt>
-                <IconRemix className="size-3.5" aria-hidden="true" />
-                <dd>{formatCount(work.stats.remix_count, locale)}</dd>
-              </div>
-            </dl>
-          </div>
-
-          {tags.length > 0 ? (
-            <ul className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <li key={tag}>
-                  <Badge>{tag}</Badge>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {detail.status === 'failed' ? (
-            <ErrorNotice title={tPage('notFound')} />
-          ) : !full ? (
-            <div className="flex flex-col gap-2" aria-busy="true">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-[70%]" />
-              <Skeleton className="h-20 w-full" />
+          <dl className="tabular flex items-center gap-4 text-xs text-muted">
+            <div className="flex items-center gap-1.5">
+              <dt className="sr-only">{tWork('likes')}</dt>
+              <IconHeart className="size-3.5" aria-hidden="true" />
+              <dd>{formatCount(work.stats.like_count, locale)}</dd>
             </div>
-          ) : (
-            <>
-              {full.description ? (
-                <p className="text-sm leading-relaxed text-muted">{full.description}</p>
-              ) : null}
-
-              {full.license ? (
-                <p className="flex items-center gap-1.5 text-xs text-muted">
-                  <IconSparkle className="size-3.5 text-amber" />
-                  {full.license.attribution_text || full.license.license_type}
-                </p>
-              ) : null}
-
-              {prompt ? (
-                <section className="rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
-                  <h3 className="text-sm font-semibold">{t('promptTitle')}</h3>
-                  <p className="mt-1 text-xs text-muted">{t('promptHint')}</p>
-                  <button
-                    type="button"
-                    onClick={() => createFromPrompt(prompt)}
-                    className="mt-3 w-full rounded-[var(--radius-sm)] border border-border bg-surface p-3 text-left text-sm leading-relaxed transition-colors hover:border-primary hover:text-primary focus-visible:outline-2"
-                  >
-                    {prompt}
-                  </button>
-                  <Button
-                    className="mt-3"
-                    size="sm"
-                    icon={<IconSparkle className="size-4" />}
-                    onClick={() => createFromPrompt(prompt)}
-                  >
-                    {t('createFromPrompt')}
-                  </Button>
-                </section>
-              ) : (
-                <p className="text-xs text-muted">{t('promptUnavailable')}</p>
-              )}
-            </>
-          )}
-
-          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<IconBranch className="size-4" />}
-              onClick={() => setLineageOpen(true)}
-            >
-              {tWork('viewLineage')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                onClose();
-                router.push(`/work/${work.id}`);
-              }}
-            >
-              {tPage('versionDetail')}
-            </Button>
-          </div>
+            <div className="flex items-center gap-1.5">
+              <dt className="sr-only">{tWork('remixes')}</dt>
+              <IconRemix className="size-3.5" aria-hidden="true" />
+              <dd>{formatCount(work.stats.remix_count, locale)}</dd>
+            </div>
+          </dl>
         </div>
-      </Dialog>
 
-      {lineageOpen ? (
-        <LineageDialog workId={work.id} open onClose={() => setLineageOpen(false)} />
-      ) : null}
-    </>
+        {tags.length > 0 ? (
+          <ul className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <li key={tag}>
+                <Badge>{tag}</Badge>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {detail.status === 'failed' ? (
+          <ErrorNotice title={tPage('notFound')} />
+        ) : !full ? (
+          <div className="flex flex-col gap-2" aria-busy="true">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-[70%]" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        ) : (
+          <>
+            {full.description ? (
+              <p className="text-sm leading-relaxed text-muted">{full.description}</p>
+            ) : null}
+
+            {full.license ? (
+              <p className="flex items-center gap-1.5 text-xs text-muted">
+                <IconSparkle className="size-3.5 text-amber" />
+                {full.license.attribution_text || full.license.license_type}
+              </p>
+            ) : null}
+
+            {prompt ? (
+              <section className="rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
+                <h3 className="text-sm font-semibold">{t('promptTitle')}</h3>
+                <p className="mt-1 text-xs text-muted">{t('promptHint')}</p>
+                <button
+                  type="button"
+                  onClick={() => createFromPrompt(prompt)}
+                  className="mt-3 w-full rounded-[var(--radius-sm)] border border-border bg-surface p-3 text-left text-sm leading-relaxed transition-colors hover:border-primary hover:text-primary focus-visible:outline-2"
+                >
+                  {prompt}
+                </button>
+                <Button
+                  className="mt-3"
+                  size="sm"
+                  icon={<IconSparkle className="size-4" />}
+                  onClick={() => createFromPrompt(prompt)}
+                >
+                  {t('createFromPrompt')}
+                </Button>
+              </section>
+            ) : (
+              <p className="text-xs text-muted">{t('promptUnavailable')}</p>
+            )}
+          </>
+        )}
+
+        <section className="border-t border-border pt-4">
+          <h3 className="mb-3 text-sm font-semibold">{tPanel('title')}</h3>
+          <LineageExplorer workId={work.id} onOpenWork={openWork} />
+        </section>
+      </div>
+    </Dialog>
   );
 }

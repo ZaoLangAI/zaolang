@@ -26,6 +26,7 @@ import { regionLocale, regions, type Region } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import type { Me, ThemePreference } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
+import { beginLocaleTransition } from '@/lib/locale-transition';
 import { uploadFile } from '@/lib/upload';
 
 const SECTIONS = ['profile', 'privacy', 'notifications', 'display'] as const;
@@ -272,6 +273,7 @@ export function SettingsShell({ me }: { me: Me }) {
                 onChange={(next: Region) => {
                   const locale = regionLocale[next];
                   void savePreferences({ region: next, locale });
+                  beginLocaleTransition();
                   router.replace(pathname, { locale });
                 }}
                 options={regions.map((value) => ({ value, label: tRegion(value) }))}

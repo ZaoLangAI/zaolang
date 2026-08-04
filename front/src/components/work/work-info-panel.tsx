@@ -8,7 +8,13 @@ import { Avatar } from '@/components/work/avatar';
 import { LineageStrip } from '@/components/work/lineage-strip';
 import { ReusableParamsList } from '@/components/work/reusable-params';
 import { Button } from '@/components/ui/button';
-import { IconBookmark, IconHeart, IconRemix, IconSparkle } from '@/components/ui/icons';
+import {
+  IconBookmark,
+  IconBookmarkFilled,
+  IconHeart,
+  IconRemix,
+  IconSparkle,
+} from '@/components/ui/icons';
 import { Badge } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
@@ -27,10 +33,19 @@ import { formatCount, formatDate } from '@/lib/format';
 export function WorkInfoPanel({
   work,
   compact = false,
+  onBookmarkedChange,
 }: {
   work: WorkDetail;
   /** Discover's hero panel trims the sections a detail page shows in full. */
   compact?: boolean;
+  /**
+   * The hero carousel unmounts cards once they rotate out of view, which
+   * would otherwise reset `bookmarked` back to the server snapshot next time
+   * this work rotates in. Letting the carousel mirror each toggle lets it
+   * feed the current value back in through `work.viewer_bookmarked` on the
+   * next mount.
+   */
+  onBookmarkedChange?: (bookmarked: boolean) => void;
 }) {
   const t = useTranslations('work');
   const tPage = useTranslations('workPage');
@@ -68,11 +83,13 @@ export function WorkInfoPanel({
       run: async () => {
         const next = !bookmarked;
         setBookmarked(next);
+        onBookmarkedChange?.(next);
         try {
           if (next) await api.post(`/v1/works/${work.id}/bookmark`);
           else await api.delete(`/v1/works/${work.id}/bookmark`);
         } catch {
           setBookmarked(!next);
+          onBookmarkedChange?.(!next);
         }
       },
     });
@@ -146,7 +163,10 @@ export function WorkInfoPanel({
         descendantCount={work.descendant_count}
       />
 
-      {work.reusable_params ? (
+      {/* Discover's hero panel is a teaser, not a remix workbench — the
+          reusable-params breakdown belongs on the work page, where a reader
+          has already committed to this piece. */}
+      {work.reusable_params && !compact ? (
         <ReusableParamsList params={work.reusable_params} version={work.current_version} />
       ) : null}
 
@@ -163,7 +183,13 @@ export function WorkInfoPanel({
         <Button
           size="lg"
           variant="secondary"
-          icon={<IconBookmark className="size-5" />}
+          icon={
+            bookmarked ? (
+              <IconBookmarkFilled className="size-5" />
+            ) : (
+              <IconBookmark className="size-5" />
+            )
+          }
           aria-pressed={bookmarked}
           onClick={toggleBookmark}
         >

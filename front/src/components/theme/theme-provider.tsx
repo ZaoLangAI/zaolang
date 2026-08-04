@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -64,6 +65,19 @@ function applyToDocument(resolved: ResolvedTheme): void {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor[resolved]);
 }
 
+/**
+ * 是否应该跳过 View Transition，直接硬切。
+ *
+ * 覆盖三种情况：浏览器不支持该 API（如 Firefox）、应用内"减少动态效果"开关、
+ * OS 级 `prefers-reduced-motion`。任意一种为真都不触发转场，从而不产生
+ * `::view-transition-*` 伪元素——这比事后用 CSS 覆盖它们更简单可靠。
+ */
+function shouldSkipViewTransition(reduceMotion: boolean): boolean {
+  if (!('startViewTransition' in document)) return true;
+  if (reduceMotion) return true;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function ThemeProvider({
   children,
   initialPreference,
@@ -81,10 +95,24 @@ export function ThemeProvider({
   const systemPrefersDark = useSystemPrefersDark();
 
   const resolved = resolveTheme(preference, systemPrefersDark);
+  const hasMountedRef = useRef(false);
 
   useEffect(() => {
-    applyToDocument(resolved);
-  }, [resolved]);
+    // 首次挂载时 `<html>` 已经是服务端渲染好的目标主题，直接落地即可，
+    // 不需要（也不应该）对着同一个状态放一次转场动画。
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      applyToDocument(resolved);
+      return;
+    }
+
+    if (shouldSkipViewTransition(reduceMotion)) {
+      applyToDocument(resolved);
+      return;
+    }
+
+    document.startViewTransition(() => applyToDocument(resolved));
+  }, [resolved, reduceMotion]);
 
   useEffect(() => {
     document.documentElement.dataset.reducedMotion = String(reduceMotion);

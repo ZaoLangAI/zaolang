@@ -20,7 +20,8 @@ export function Poster({
 }: {
   src?: string | null;
   alt: string;
-  aspect?: 'video' | 'square' | 'portrait';
+  /** `fill` takes no preset ratio at all — the caller's `className` must supply a height instead. */
+  aspect?: 'video' | 'square' | 'portrait' | 'fill';
   /** Width over height. Overrides `aspect`, for covers of any shape. */
   ratio?: number;
   priority?: boolean;
@@ -29,7 +30,13 @@ export function Poster({
   children?: React.ReactNode;
 }) {
   const preset =
-    aspect === 'video' ? 'aspect-video' : aspect === 'square' ? 'aspect-square' : 'aspect-[3/4]';
+    aspect === 'fill'
+      ? null
+      : aspect === 'video'
+        ? 'aspect-video'
+        : aspect === 'square'
+          ? 'aspect-square'
+          : 'aspect-[3/4]';
 
   return (
     <div

@@ -555,7 +555,11 @@
     "loadMore": "さらに読み込む",
     "loadingMore": "さらに読み込んでいます",
     "loadMoreFailed": "読み込めませんでした。タップで再試行",
-    "feedEnd": "すべて表示しました"
+    "feedEnd": "すべて表示しました",
+    "featuredCarousel": "注目の作品カルーセル",
+    "previousFeatured": "前の注目作品",
+    "nextFeatured": "次の注目作品",
+    "goToSlide": "{index} 番目のスライドに移動"
   },
   "footer": {
     "source": "ソースコード",
@@ -680,7 +684,7 @@
     "loading": "創作チェーンを読み込み中",
     "failed": "創作チェーンを読み込めませんでした",
     "currentWork": "この作品",
-    "selectHint": "左のノードを選ぶと、親バージョンとの差分がここに表示されます。"
+    "selectHint": "上のノードを選ぶと、親バージョンとの差分がここに表示されます。"
   },
   "nav": {
     "discover": "発見",
@@ -864,6 +868,12 @@
     "pushEnable": "プッシュ通知を有効にする",
     "pushEnableDesc": "タスクの進捗、リミックス、フォロワーの通知を受け取れます",
     "pushOpenSystemSettings": "通知がオフです — システム設定を開く"
+  },
+  "search": {
+    "recentSearches": "最近の検索",
+    "hotSearches": "人気の検索",
+    "clearHistory": "履歴を消去",
+    "removeHistoryItem": "「{query}」を履歴から削除"
   },
   "shortform": {
     "eyebrow": "ショート動画",

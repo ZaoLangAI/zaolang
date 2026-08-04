@@ -1,12 +1,12 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { Brand } from '@/components/layout/brand';
 import { PreferenceMenu } from '@/components/layout/preference-menu';
+import { SearchBox } from '@/components/layout/search-box';
 import { Button } from '@/components/ui/button';
 import {
   IconBell,
@@ -14,7 +14,6 @@ import {
   IconClose,
   IconMenu,
   IconPlus,
-  IconSearch,
   IconSparkle,
   IconUser,
 } from '@/components/ui/icons';
@@ -36,12 +35,8 @@ export function TopBar() {
   const locale = useLocale() as Locale;
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { user, status, openLogin, signOut } = useSession();
 
-  const routeQuery = pathname === '/discover' ? (searchParams.get('q') ?? '') : '';
-  const [query, setQuery] = useState(routeQuery);
-  const [mirroredQuery, setMirroredQuery] = useState({ pathname, q: routeQuery });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [menuPath, setMenuPath] = useState(pathname);
@@ -54,13 +49,6 @@ export function TopBar() {
     setMobileOpen(false);
   }
 
-  // Mirror discover's `q` into the search box (and clear it off-route) so
-  // Cmd+K / shared links land with the keyword already filled.
-  if (mirroredQuery.pathname !== pathname || mirroredQuery.q !== routeQuery) {
-    setMirroredQuery({ pathname, q: routeQuery });
-    setQuery(routeQuery);
-  }
-
   useEffect(() => {
     if (status !== 'authenticated') return;
     void api
@@ -68,22 +56,6 @@ export function TopBar() {
       .then((body) => setUnread(body.count))
       .catch(() => undefined);
   }, [status, pathname]);
-
-  const onSearch = (event: React.FormEvent) => {
-    event.preventDefault();
-    const params = new URLSearchParams();
-    const trimmed = query.trim();
-    if (trimmed) params.set('q', trimmed);
-    // Preserve tag/sort filters when refining the keyword from the top bar.
-    if (pathname === '/discover') {
-      const tag = searchParams.get('tag');
-      const sort = searchParams.get('sort');
-      if (tag) params.set('tag', tag);
-      if (sort) params.set('sort', sort);
-    }
-    const qs = params.toString();
-    router.push(qs ? `/discover?${qs}` : '/discover');
-  };
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur">
@@ -128,27 +100,7 @@ export function TopBar() {
           })}
         </nav>
 
-        <form
-          role="search"
-          onSubmit={onSearch}
-          className="mx-auto hidden h-10 w-full min-w-0 max-w-md items-center gap-2 rounded-full border border-border bg-surface-soft px-4 md:flex"
-        >
-          <IconSearch className="size-4 shrink-0 text-muted" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('actions.search')}
-            aria-label={t('actions.search')}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-          />
-          <kbd
-            aria-hidden="true"
-            className="hidden rounded border border-border px-1.5 text-[11px] text-muted lg:block"
-          >
-            /
-          </kbd>
-        </form>
+        <SearchBox />
 
         <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
           <div className="hidden shrink-0 md:block">

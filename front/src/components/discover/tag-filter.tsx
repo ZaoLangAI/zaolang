@@ -8,7 +8,7 @@ import type { Tag } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
 /** Tag labels ship in all three languages so one cached response serves every locale. */
-function label(tag: Tag, locale: Locale): string {
+export function tagLabel(tag: Tag, locale: Locale): string {
   if (locale === 'en') return tag.label_en;
   if (locale === 'ja') return tag.label_ja;
   return tag.label_zh;
@@ -52,7 +52,7 @@ export function TagFilter({
           href={{ pathname, query: discoverQuery({ q, sort, tag: tag.slug })! }}
           active={active === tag.slug}
         >
-          {label(tag, locale)}
+          {tagLabel(tag, locale)}
         </Chip>
       ))}
     </nav>

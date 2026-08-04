@@ -68,6 +68,13 @@ export const IconBookmark = (p: IconProps) => (
   </Icon>
 );
 
+/** The bookmarked state of {@link IconBookmark} — filled rather than outlined. */
+export const IconBookmarkFilled = (p: IconProps) => (
+  <Icon {...p} fill="currentColor" stroke="none">
+    <path d="M6 4h12v16l-6-4-6 4Z" />
+  </Icon>
+);
+
 export const IconHeart = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 20s-7-4.4-7-9.3A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.7C19 15.6 12 20 12 20Z" />

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import { cn } from '@/lib/cn';
 import { loadAnime, useIsomorphicLayoutEffect, useReducedMotion } from '@/lib/motion';
@@ -34,7 +35,7 @@ export function Dialog({
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -134,9 +135,14 @@ export function Dialog({
     [onClose],
   );
 
-  if (!render) return null;
+  if (!render || typeof document === 'undefined') return null;
 
-  return (
+  // Portalled to `document.body` rather than rendered in place: a `fixed`
+  // backdrop only escapes to the viewport if none of its ancestors set a
+  // `transform`/`perspective`/`will-change: transform` — the discover hero
+  // carousel's 3D card stack does exactly that, which would otherwise shrink
+  // this dialog down to the carousel card's own clipped box.
+  return createPortal(
     <div
       ref={backdropRef}
       className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6"
@@ -154,24 +160,35 @@ export function Dialog({
         tabIndex={-1}
         onKeyDown={onKeyDown}
         className={cn(
-          'max-h-[92vh] w-full overflow-y-auto rounded-t-[var(--radius-lg)] border border-border',
-          'bg-surface-raised p-6 shadow-raised outline-none sm:rounded-[var(--radius-lg)]',
+          'flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[var(--radius-lg)] border border-border',
+          'bg-surface-raised shadow-raised outline-none sm:rounded-[var(--radius-lg)]',
           size === 'sm' && 'sm:max-w-md',
           size === 'md' && 'sm:max-w-lg',
           size === 'lg' && 'sm:max-w-3xl',
+          size === 'xl' && 'sm:w-[60vw] sm:max-w-[60vw]',
         )}
       >
-        <h2 id={titleId} className="text-xl font-semibold">
-          {title}
-        </h2>
-        {description ? (
-          <p id={descriptionId} className="mt-1.5 text-sm text-muted">
-            {description}
-          </p>
+        {/* Only this pane scrolls — the footer below stays put so the
+            primary actions never wander off while the reader scrolls
+            through a long body. */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+          <h2 id={titleId} className="text-xl font-semibold">
+            {title}
+          </h2>
+          {description ? (
+            <p id={descriptionId} className="mt-1.5 text-sm text-muted">
+              {description}
+            </p>
+          ) : null}
+          <div className="mt-5">{children}</div>
+        </div>
+        {footer ? (
+          <div className="flex shrink-0 justify-end gap-3 border-t border-border px-6 py-4">
+            {footer}
+          </div>
         ) : null}
-        <div className="mt-5">{children}</div>
-        {footer ? <div className="mt-6 flex justify-end gap-3">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 
 import { SessionProvider } from '@/components/auth/session-provider';
+import { NavigationFadeWatcher } from '@/components/layout/navigation-fade-watcher';
 import { ThemeProvider } from '@/components/theme/theme-provider';
 import { ToastProvider } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
@@ -30,6 +31,7 @@ export function AppProviders({
       initialReduceMotion={initialReduceMotion}
       onPersist={persistTheme}
     >
+      <NavigationFadeWatcher />
       <SessionProvider>
         <ToastProvider>{children}</ToastProvider>
       </SessionProvider>
