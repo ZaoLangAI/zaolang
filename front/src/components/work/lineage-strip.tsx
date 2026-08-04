@@ -100,9 +100,7 @@ export function LineageStrip({
         ) : null}
       </ol>
 
-      {open ? (
-        <LineageDialog workId={workId} open={open} onClose={() => setOpen(false)} />
-      ) : null}
+      {open ? <LineageDialog workId={workId} open={open} onClose={() => setOpen(false)} /> : null}
     </section>
   );
 }

@@ -3,11 +3,19 @@ import { test } from '@playwright/test';
 import { expectNoAxeViolations, expectNoHorizontalOverflow } from './support/axe';
 import { setTheme } from './support/theme';
 
+/**
+ * Run twice by the `a11y` and `a11y-mobile` projects, at 1440×1024 and
+ * 390×844. The narrow pass is not redundant: the phone layouts move controls
+ * into sheets and fixed bars, and those are exactly the constructs that lose a
+ * label or trap focus.
+ */
+
 /** Pages reachable without a session, in both themes. */
 const PUBLIC_PAGES = [
   { path: '/zh-CN/discover', label: 'discover' },
   { path: '/zh-CN/learn', label: 'learn' },
   { path: '/zh-CN/create', label: 'create' },
+  { path: '/zh-CN/create/short', label: 'create-short' },
   { path: '/zh-CN/admin/login', label: 'admin-login' },
 ];
 

@@ -104,10 +104,18 @@ export function SectionHeading({
   );
 }
 
-export function Skeleton({ className }: { className?: string }) {
+export function Skeleton({
+  className,
+  style,
+}: {
+  className?: string;
+  /** For dimensions a utility class cannot express, e.g. a computed ratio. */
+  style?: React.CSSProperties;
+}) {
   return (
     <div
       aria-hidden="true"
+      style={style}
       className={cn('animate-pulse rounded-[var(--radius-sm)] bg-skeleton', className)}
     />
   );

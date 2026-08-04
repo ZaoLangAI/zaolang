@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { expectNoHorizontalOverflow } from './support/axe';
-import { watchForPageErrors } from './support/session';
+import { STATE_FILES, watchForPageErrors } from './support/session';
 import { expectTheme, setTheme } from './support/theme';
 
 /**
@@ -22,6 +22,9 @@ const PAGES = [
   { path: '/zh-CN/discover', label: 'discover' },
   { path: '/zh-CN/learn', label: 'learn' },
   { path: '/zh-CN/create', label: 'create' },
+  // The vertical studio is the narrowest layout in the product: a phone frame,
+  // a form and a fixed submit bar inside a 390px viewport.
+  { path: '/zh-CN/create/short', label: 'create-short' },
   { path: '/zh-CN/admin/login', label: 'admin-login' },
 ] as const;
 
@@ -49,6 +52,69 @@ for (const theme of ['dark', 'light'] as const) {
     });
   }
 }
+
+/**
+ * The three pages of the creation chain that need a session and an id.
+ *
+ * The seed generates ids, so they are read back from the API rather than
+ * pinned: a hard-coded id would turn a reseed into a suite-wide failure that
+ * says nothing about the layout these tests are actually about.
+ */
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:8000';
+
+async function seededPaths(page: Page) {
+  // The refresh cookie rides in the saved storage state; the access token does
+  // not exist until it is redeemed, exactly as in the browser.
+  const refreshed = await page.request.post(`${API_URL}/v1/auth/refresh`);
+  const { access_token: token } = (await refreshed.json()) as { access_token: string };
+  const authorization = { authorization: `Bearer ${token}` };
+
+  const works = await page.request.get(`${API_URL}/v1/works`, { params: { limit: 1 } });
+  const drafts = await page.request.get(`${API_URL}/v1/drafts`, { headers: authorization });
+
+  const work = ((await works.json()) as { items: Array<{ id: string }> }).items[0];
+  const draft = ((await drafts.json()) as { items: Array<{ id: string; latest_job_id?: string }> })
+    .items[0];
+
+  return [
+    work ? { path: `/zh-CN/work/${work.id}`, label: 'work' } : null,
+    draft?.latest_job_id ? { path: `/zh-CN/jobs/${draft.latest_job_id}`, label: 'jobs' } : null,
+    draft ? { path: `/zh-CN/publish/${draft.id}`, label: 'publish' } : null,
+  ].filter((entry) => entry !== null);
+}
+
+test.describe('signed in', () => {
+  test.use({ storageState: STATE_FILES.consumer });
+
+  for (const theme of ['dark', 'light'] as const) {
+    for (const viewport of VIEWPORTS) {
+      test(`the creation chain renders without overflow · ${theme} · ${viewport.label}`, async ({
+        page,
+      }, info) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await setTheme(page, theme);
+        await page.goto('/zh-CN/collection', { waitUntil: 'networkidle' });
+
+        const targets = await seededPaths(page);
+        expect(targets.length, 'seeded work and draft').toBeGreaterThan(0);
+
+        for (const target of targets) {
+          // Not `networkidle`: the job page holds a live progress stream open, so
+          // the network never goes idle and the wait would always time out.
+          await page.goto(target.path, { waitUntil: 'domcontentloaded' });
+          await page.waitForLoadState('load');
+          await expectTheme(page, theme);
+          await expectNoHorizontalOverflow(page);
+
+          await info.attach(`${target.label}-${theme}-${viewport.label}.png`, {
+            body: await page.screenshot({ fullPage: true }),
+            contentType: 'image/png',
+          });
+        }
+      });
+    }
+  }
+});
 
 test.describe('reduced motion', () => {
   test('animations are suppressed when the user asks for it', async ({ page }) => {

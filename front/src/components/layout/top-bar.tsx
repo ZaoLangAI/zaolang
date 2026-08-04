@@ -102,7 +102,7 @@ export function TopBar() {
 
         <nav
           aria-label={t('nav.mainNavigation')}
-          className="ml-2 hidden items-center gap-1 lg:flex"
+          className="ml-2 hidden shrink-0 items-center gap-1 lg:flex"
         >
           {NAV.map((item) => {
             const activeItem = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -112,7 +112,7 @@ export function TopBar() {
                 href={item.href}
                 aria-current={activeItem ? 'page' : undefined}
                 className={cn(
-                  'relative flex h-16 items-center px-3 text-sm font-medium transition-colors',
+                  'relative flex h-16 items-center whitespace-nowrap px-3 text-sm font-medium transition-colors',
                   activeItem ? 'text-primary' : 'text-muted hover:text-text',
                 )}
               >
@@ -131,7 +131,7 @@ export function TopBar() {
         <form
           role="search"
           onSubmit={onSearch}
-          className="mx-auto hidden h-10 w-full max-w-md items-center gap-2 rounded-full border border-border bg-surface-soft px-4 md:flex"
+          className="mx-auto hidden h-10 w-full min-w-0 max-w-md items-center gap-2 rounded-full border border-border bg-surface-soft px-4 md:flex"
         >
           <IconSearch className="size-4 shrink-0 text-muted" />
           <input
@@ -150,17 +150,17 @@ export function TopBar() {
           </kbd>
         </form>
 
-        <div className="ml-auto flex items-center gap-2 md:ml-0">
-          <div className="hidden md:block">
+        <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
+          <div className="hidden shrink-0 md:block">
             <PreferenceMenu />
           </div>
 
           {status === 'authenticated' && user ? (
             <Link
               href="/billing"
-              className="hidden h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-amber/35 bg-amber/12 px-2.5 text-xs font-semibold text-amber sm:inline-flex"
+              className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-sm)] border border-amber/35 bg-amber/12 px-2.5 text-xs font-semibold text-amber sm:inline-flex"
             >
-              <IconSparkle className="size-4" />
+              <IconSparkle className="size-4 shrink-0" />
               <span className="tabular">
                 {t('credits.amount', { count: formatCount(user.available_credits, locale) })}
               </span>
@@ -169,17 +169,20 @@ export function TopBar() {
 
           <Button
             size="sm"
+            className="shrink-0"
             icon={<IconPlus className="size-4" />}
             onClick={() => router.push('/create')}
           >
-            <span className="hidden sm:inline">{t('actions.create')}</span>
+            {/* Hidden, not removed: below `sm` this is an icon-only button, and
+                `display: none` would leave it with no accessible name at all. */}
+            <span className="sr-only whitespace-nowrap sm:not-sr-only">{t('actions.create')}</span>
           </Button>
 
           {status === 'authenticated' ? (
             <Link
               href="/notifications"
               aria-label={t('nav.notifications')}
-              className="relative inline-flex size-9 items-center justify-center rounded-[var(--radius-sm)] text-muted hover:bg-surface-soft hover:text-text"
+              className="relative inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-muted hover:bg-surface-soft hover:text-text"
             >
               <IconBell className="size-5" />
               {status === 'authenticated' && unread > 0 ? (
@@ -194,11 +197,14 @@ export function TopBar() {
               onSignOut={() => void signOut()}
             />
           ) : status === 'anonymous' ? (
-            <Button variant="secondary" size="sm" onClick={openLogin}>
+            <Button variant="secondary" size="sm" className="shrink-0" onClick={openLogin}>
               {t('auth.signIn')}
             </Button>
           ) : (
-            <div className="size-9 animate-pulse rounded-full bg-skeleton" aria-hidden="true" />
+            <div
+              className="size-9 shrink-0 animate-pulse rounded-full bg-skeleton"
+              aria-hidden="true"
+            />
           )}
         </div>
       </div>
@@ -261,14 +267,14 @@ function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) 
   ] as const;
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t('nav.userMenu')}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-soft p-1 pr-1.5 text-muted hover:text-text"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface-soft p-1 pr-1.5 text-muted hover:text-text"
       >
         <span className="inline-flex size-7 items-center justify-center rounded-full bg-surface-raised">
           <IconUser className="size-4" />

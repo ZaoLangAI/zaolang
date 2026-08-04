@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { ACCOUNTS, STATE_FILES, signInThroughDialog, watchForPageErrors } from '../support/session';
 import { expectTheme, setTheme } from '../support/theme';
@@ -11,34 +11,58 @@ import { expectTheme, setTheme } from '../support/theme';
  * behaviour preserves the test.
  */
 
+/**
+ * Walks the discover wall the way a visitor does: a tile opens the preview
+ * dialog, and the dialog is what links on to the work page.
+ *
+ * Reached through a search rather than the bare feed. The wall loads twenty
+ * tiles at a time and the seeded chain sits well down the popular sort, so
+ * naming a specific work in the unfiltered feed would be a coin flip.
+ */
+async function openSeededWorkFromFeed(page: Page) {
+  await page.goto('/zh-CN/discover?q=潮汐之上', { waitUntil: 'networkidle' });
+  await page
+    .getByRole('button', { name: /^预览《潮汐之上/ })
+    .first()
+    .click();
+
+  const preview = page.getByRole('dialog');
+  await expect(preview).toContainText('潮汐之上');
+  await preview.getByRole('button', { name: '查看详情' }).click();
+  await expect(page).toHaveURL(/\/work\/wrk_/);
+}
+
 test.describe('anonymous browsing', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test('a visitor can browse the feed and open a work', async ({ page }) => {
     const problems = watchForPageErrors(page);
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover?q=潮汐之上', { waitUntil: 'networkidle' });
 
-    // The seeded chain puts a root work and its remix in the public feed.
-    await expect(page.getByRole('link', { name: '潮汐之上', exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('link', { name: '潮汐之上 · 夜行' }).first()).toBeVisible();
+    // The seeded chain puts a root work and its remix in the public feed; one of
+    // them leads the page as the hero and the other lands on the wall.
+    await expect(page.getByText('潮汐之上', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('潮汐之上 · 夜行').first()).toBeVisible();
 
-    await page.getByRole('link', { name: '潮汐之上', exact: true }).first().click();
-    await expect(page).toHaveURL(/\/work\/wrk_/);
+    await openSeededWorkFromFeed(page);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
     expect(problems(), 'console errors while browsing').toEqual([]);
   });
 
   test('the withdrawn work is not in the feed', async ({ page }) => {
-    // Its lineage edge survives as a tombstone, but the work itself is private.
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('link', { name: 'Night Tide (withdrawn)' })).toHaveCount(0);
+    // Searched by name, so a leak would show up rather than being buried under
+    // the popular sort. The title still appears as the tombstone in its remix's
+    // lineage — that is the point of a tombstone — so the assertion is about the
+    // wall, not about the string being absent from the page.
+    await page.goto('/zh-CN/discover?q=Night Tide', { waitUntil: 'networkidle' });
+    await expect(
+      page.getByRole('button', { name: '预览《Night Tide (withdrawn)》', exact: true }),
+    ).toHaveCount(0);
   });
 
   test('a protected action opens the login wall and resumes afterwards', async ({ page }) => {
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
-    await page.getByRole('link', { name: '潮汐之上', exact: true }).first().click();
-    await expect(page).toHaveURL(/\/work\/wrk_/);
+    await openSeededWorkFromFeed(page);
 
     await page.getByRole('button', { name: '点赞', exact: true }).click();
 
@@ -57,8 +81,7 @@ test.describe('anonymous browsing', () => {
   });
 
   test('cancelling the login wall abandons the action', async ({ page }) => {
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
-    await page.getByRole('link', { name: '潮汐之上', exact: true }).first().click();
+    await openSeededWorkFromFeed(page);
 
     await page.getByRole('button', { name: '收藏', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
@@ -112,11 +135,13 @@ test.describe('theme', () => {
     await expectTheme(page, 'light');
   });
 
-  test('switching to dark from the preference menu persists', async ({ page }) => {
+  test('switching to dark from the theme menu persists', async ({ page }) => {
     await setTheme(page, 'light');
     await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
 
-    await page.locator('button[aria-haspopup="menu"]').first().click();
+    // Theme has its own menu now, so it is addressed by name rather than by
+    // being the only popover in the top bar.
+    await page.getByRole('button', { name: '切换主题' }).first().click();
     await page.getByRole('menuitemradio', { name: '深色' }).click();
     await expectTheme(page, 'dark');
 

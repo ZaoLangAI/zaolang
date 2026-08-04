@@ -6,9 +6,7 @@ export type Locale = (typeof locales)[number];
 export const defaultLocale: Locale = 'zh-CN';
 
 /**
- * Region is deliberately separate from locale: a reader in Japan may want the
- * Chinese interface, and pricing has to follow where they are rather than what
- * they read. The values mirror the backend `Region` enum.
+ * The values mirror the backend `Region` enum.
  */
 export const regions = ['CN', 'GLOBAL', 'JP'] as const;
 export type Region = (typeof regions)[number];
@@ -19,6 +17,17 @@ export const regionCurrency: Record<Region, string> = {
   CN: 'CNY',
   GLOBAL: 'USD',
   JP: 'JPY',
+};
+
+/**
+ * Interface language now follows region: there is no standalone language
+ * switcher, so this is the single source of truth for which locale a region
+ * renders in.
+ */
+export const regionLocale: Record<Region, Locale> = {
+  CN: 'zh-CN',
+  GLOBAL: 'en',
+  JP: 'ja',
 };
 
 export const routing = defineRouting({

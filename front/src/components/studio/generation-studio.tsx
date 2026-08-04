@@ -1,29 +1,33 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import { useSession } from '@/components/auth/session-provider';
 import { SourceMaterialRail } from '@/components/studio/source-material-rail';
 import { OptionGroup } from '@/components/studio/option-group';
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
-import { IconClock, IconSparkle, IconVolume, IconVolumeOff } from '@/components/ui/icons';
+import { IconClock, IconGear, IconSparkle, IconVolume, IconVolumeOff } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
+import { Sheet } from '@/components/ui/sheet';
+import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import { api, newIdempotencyKey } from '@/lib/api/client';
-import { ApiError } from '@/lib/api/errors';
-import type { GenerationJob, Quote, ReusableParams, WorkDetail } from '@/lib/api/types';
+import type { ReusableParams, WorkDetail } from '@/lib/api/types';
 import { formatCount, formatDuration } from '@/lib/format';
+import { DEFAULT_DEVICE_ID } from '@/lib/devices';
 import type { Asset } from '@/lib/upload';
+import { useGenerationSubmit } from '@/lib/use-generation-submit';
+import { useMinWidth } from '@/lib/use-media-query';
 
 type Tier = 'preview' | 'standard' | 'cinematic';
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video' | 'text_to_image';
 
 const ASPECTS = ['16:9', '9:16', '1:1'] as const;
 const DURATIONS = [8, 12, 20] as const;
+const PORTRAIT_ASPECT = '9:16';
+const PROMPT_MAX_LENGTH = 600;
 
 export interface StudioSource {
   work: WorkDetail;
@@ -35,67 +39,62 @@ export interface StudioSource {
  *
  * Both routes submit the same job with the same pricing rules; the only real
  * difference is whether a source work seeds the materials and the prompt. One
- * component means the remix path cannot silently drift from the create path.
+ * component means the remix path cannot silently drift from the create path,
+ * and the parts a differently shaped shell would still have to repeat live in
+ * `use-generation-submit`.
+ *
+ * The three columns collapse rather than shrink below `lg`: the preview leads,
+ * the materials scroll sideways under it, and the parameters move into a bottom
+ * sheet with the estimate pinned above the thumb.
  */
 export function GenerationStudio({
   operation: initialOperation,
   source,
+  reference,
+  initialPrompt,
 }: {
   operation: Operation;
+  /** A licensed remix source. Submitted as `source_work_id`. */
   source?: StudioSource;
+  /**
+   * A work the idea came from, carried over from the discover feed.
+   *
+   * Never submitted as `source_work_id` and never added to the reference
+   * assets: doing either would fabricate a lineage edge that no author
+   * authorised, which is exactly what `assert_remixable` exists to prevent.
+   */
+  reference?: WorkDetail;
+  initialPrompt?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
-  const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { requireAuth, status: sessionStatus } = useSession();
 
-  const [prompt, setPrompt] = useState(source?.params.prompt ?? '');
+  const [prompt, setPrompt] = useState(source?.params.prompt ?? initialPrompt ?? '');
   const [aspect, setAspect] = useState<string>('16:9');
   const [duration, setDuration] = useState<number>(8);
   const [sound, setSound] = useState(true);
   const [tier, setTier] = useState<Tier>('standard');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [uploads, setUploads] = useState<Asset[]>([]);
-
-  const [quote, setQuote] = useState<Quote | null>(null);
-  const [quoteFailed, setQuoteFailed] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [paramsRequested, setParamsRequested] = useState(false);
 
   const operation: Operation =
     initialOperation === 'text_to_video' && (source || uploads.length > 0)
       ? 'image_to_video'
       : initialOperation;
 
-  // Re-quote whenever the priced inputs change. Debounced because the tier and
-  // duration controls are adjacent and users sweep across them.
-  const quoteKey = `${operation}:${tier}:${duration}`;
-  const latestQuote = useRef(0);
-  useEffect(() => {
-    if (sessionStatus !== 'authenticated') return;
-    const ticket = ++latestQuote.current;
-    const timer = setTimeout(() => {
-      void api
-        .post<Quote>('/v1/generation-jobs/quote', {
-          operation,
-          quality_tier: tier,
-          duration_seconds: duration,
-        })
-        .then((body) => {
-          if (ticket !== latestQuote.current) return;
-          setQuote(body);
-          setQuoteFailed(false);
-        })
-        .catch(() => {
-          if (ticket !== latestQuote.current) return;
-          setQuoteFailed(true);
-        });
-    }, 250);
-    return () => clearTimeout(timer);
-    // `quoteKey` collapses the three priced inputs into one dependency.
-  }, [quoteKey, operation, tier, duration, sessionStatus]);
+  const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
+    { operation, qualityTier: tier, durationSeconds: duration },
+    { label: t('submit') },
+  );
+
+  // The sheet is the narrow layout's third column. Derived rather than closed
+  // in an effect: at `lg` those controls are on the page, so "open" is not a
+  // state the wide layout can be in at all.
+  const isDesktop = useMinWidth('lg');
+  const paramsOpen = paramsRequested && !isDesktop;
 
   const tierOptions = useMemo(
     () => [
@@ -106,59 +105,153 @@ export function GenerationStudio({
     [t],
   );
 
-  const referenceAssetIds = [...uploads.map((asset) => asset.id)];
   const canSubmit =
     prompt.trim().length > 0 && rightsConfirmed && !submitting && (quote?.sufficient ?? true);
 
-  const submit = () =>
-    requireAuth({
-      label: t('submit'),
-      run: async () => {
-        setSubmitting(true);
-        setError(null);
-        try {
-          const job = await api.post<GenerationJob>(
-            '/v1/generation-jobs',
-            {
-              operation,
-              quality_tier: tier,
-              source_work_id: source?.work.id,
-              params: {
-                prompt: prompt.trim(),
-                aspect_ratio: aspect,
-                duration_seconds: duration,
-                reference_asset_ids: referenceAssetIds,
-                extra: { sound },
-              },
-              max_credits: quote?.credits,
-            },
-            // One key per intent: a retried submit must not create a second job.
-            { idempotencyKey: newIdempotencyKey() },
-          );
-          router.push(`/jobs/${job.id}`);
-        } catch (caught) {
-          setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
-          setSubmitting(false);
-        }
-      },
+  const runSubmit = () =>
+    submit({
+      operation,
+      qualityTier: tier,
+      durationSeconds: duration,
+      prompt: prompt.trim(),
+      aspectRatio: aspect,
+      referenceAssetIds: uploads.map((asset) => asset.id),
+      extra: { sound },
+      sourceWorkId: source?.work.id,
+      maxCredits: quote?.credits,
+      draftTitle: source?.work.title ?? null,
     });
 
-  return (
-    <div className="grid gap-5 lg:grid-cols-[184px_minmax(0,1fr)_340px]">
-      <SourceMaterialRail
-        source={source}
-        uploads={uploads}
-        onUploaded={(asset) => setUploads((current) => [...current, asset])}
-        onRemove={(id) => setUploads((current) => current.filter((asset) => asset.id !== id))}
+  const cover = source?.work.current_version?.cover_url ?? source?.work.cover_url;
+  const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
+  const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
+
+  // One element rendered in two slots: the wide layout's aside and the narrow
+  // layout's sheet. Only one of them is ever visible, so the controls stay
+  // bound to a single piece of state either way.
+  const paramsPanel = (
+    <>
+      <div>
+        <TextArea
+          label={t('promptLabel')}
+          placeholder={t('promptPlaceholder')}
+          value={prompt}
+          maxLength={PROMPT_MAX_LENGTH}
+          onChange={(event) => setPrompt(event.target.value)}
+        />
+        <p className="tabular mt-1 text-right text-[11px] text-muted">
+          {prompt.length}/{PROMPT_MAX_LENGTH}
+        </p>
+      </div>
+
+      <OptionGroup
+        label={t('aspect')}
+        value={aspect}
+        onChange={setAspect}
+        options={ASPECTS.map((value) => ({ value, label: value }))}
       />
 
-      <div className="flex flex-col gap-4">
-        <Poster
-          src={source?.work.current_version?.cover_url ?? source?.work.cover_url}
-          alt={source?.work.title ?? t('promptLabel')}
-          aspect="video"
-          className="border border-border"
+      <OptionGroup
+        label={t('duration')}
+        value={duration}
+        onChange={setDuration}
+        options={DURATIONS.map((value) => ({
+          value,
+          label: t('durationSeconds', { count: value }),
+        }))}
+      />
+
+      <OptionGroup
+        label={t('sound')}
+        value={sound ? 'on' : 'off'}
+        onChange={(value) => setSound(value === 'on')}
+        columns={2}
+        options={[
+          { value: 'off', label: t('soundOff'), icon: <IconVolumeOff className="size-4" /> },
+          { value: 'on', label: t('soundAmbient'), icon: <IconVolume className="size-4" /> },
+        ]}
+      />
+
+      <OptionGroup
+        label={t('quality')}
+        value={tier}
+        onChange={setTier}
+        options={tierOptions.map((option) => ({
+          ...option,
+          trailing: quote && option.value === tier ? `${quote.credits}+` : undefined,
+        }))}
+      />
+
+      <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
+        <input
+          type="checkbox"
+          checked={rightsConfirmed}
+          onChange={(event) => setRightsConfirmed(event.target.checked)}
+          className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
         />
+        {t('rightsConfirm')}
+      </label>
+
+      {quoteFailed ? (
+        <ErrorNotice title={t('quoteFailed')} />
+      ) : (
+        <div className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2.5">
+          <div>
+            <p className="flex items-center gap-1.5 text-xs">
+              <IconClock className="size-3.5 text-muted" />
+              {estimate}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted">{t('estimateHint')}</p>
+          </div>
+          <p className="tabular shrink-0 text-sm font-semibold text-amber">{price}</p>
+        </div>
+      )}
+
+      {quote && !quote.sufficient ? (
+        <ErrorNotice
+          title={tCredits('insufficient')}
+          action={
+            <Button size="sm" variant="secondary" onClick={() => router.push('/billing')}>
+              {tCredits('manage')}
+            </Button>
+          }
+        />
+      ) : null}
+
+      {error ? <ErrorNotice title={error} /> : null}
+    </>
+  );
+
+  return (
+    <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[184px_minmax(0,1fr)_340px]">
+      <div className="order-2 min-w-0 lg:order-none">
+        <SourceMaterialRail
+          source={source}
+          reference={reference}
+          uploads={uploads}
+          onUploaded={(asset) => setUploads((current) => [...current, asset])}
+          onRemove={(id) => setUploads((current) => current.filter((asset) => asset.id !== id))}
+        />
+      </div>
+
+      <div className="order-1 flex min-w-0 flex-col gap-4 lg:order-none">
+        {aspect === PORTRAIT_ASPECT ? (
+          // A vertical framing is the one the author cannot judge from a
+          // 16:9 box, so that is where the phone frame earns its place.
+          <DevicePreview
+            poster={cover}
+            title={source?.work.title ?? t('promptLabel')}
+            defaultDeviceId={DEFAULT_DEVICE_ID}
+            maxHeight={480}
+          />
+        ) : (
+          <Poster
+            src={cover}
+            alt={source?.work.title ?? t('promptLabel')}
+            aspect="video"
+            className="border border-border"
+          />
+        )}
 
         {source ? (
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -182,101 +275,12 @@ export function GenerationStudio({
         </div>
       </div>
 
-      <aside className="flex flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4">
+      <aside className="order-3 hidden flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4 lg:flex">
         <h2 className="text-sm font-semibold">{t('howToGenerate')}</h2>
-
-        <div>
-          <TextArea
-            label={t('promptLabel')}
-            placeholder={t('promptPlaceholder')}
-            value={prompt}
-            maxLength={600}
-            onChange={(event) => setPrompt(event.target.value)}
-          />
-          <p className="tabular mt-1 text-right text-[11px] text-muted">{prompt.length}/600</p>
-        </div>
-
-        <OptionGroup
-          label={t('aspect')}
-          value={aspect}
-          onChange={setAspect}
-          options={ASPECTS.map((value) => ({ value, label: value }))}
-        />
-
-        <OptionGroup
-          label={t('duration')}
-          value={duration}
-          onChange={setDuration}
-          options={DURATIONS.map((value) => ({
-            value,
-            label: t('durationSeconds', { count: value }),
-          }))}
-        />
-
-        <OptionGroup
-          label={t('sound')}
-          value={sound ? 'on' : 'off'}
-          onChange={(value) => setSound(value === 'on')}
-          columns={2}
-          options={[
-            { value: 'off', label: t('soundOff'), icon: <IconVolumeOff className="size-4" /> },
-            { value: 'on', label: t('soundAmbient'), icon: <IconVolume className="size-4" /> },
-          ]}
-        />
-
-        <OptionGroup
-          label={t('quality')}
-          value={tier}
-          onChange={setTier}
-          options={tierOptions.map((option) => ({
-            ...option,
-            trailing: quote && option.value === tier ? `${quote.credits}+` : undefined,
-          }))}
-        />
-
-        <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
-          <input
-            type="checkbox"
-            checked={rightsConfirmed}
-            onChange={(event) => setRightsConfirmed(event.target.checked)}
-            className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
-          />
-          {t('rightsConfirm')}
-        </label>
-
-        {quoteFailed ? (
-          <ErrorNotice title={t('quoteFailed')} />
-        ) : (
-          <div className="flex items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2.5">
-            <div>
-              <p className="flex items-center gap-1.5 text-xs">
-                <IconClock className="size-3.5 text-muted" />
-                {quote ? formatDuration(quote.estimated_seconds) : '—'}
-              </p>
-              <p className="mt-0.5 text-[11px] text-muted">{t('estimateHint')}</p>
-            </div>
-            <p className="tabular shrink-0 text-sm font-semibold text-amber">
-              {quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—'}
-            </p>
-          </div>
-        )}
-
-        {quote && !quote.sufficient ? (
-          <ErrorNotice
-            title={tCredits('insufficient')}
-            action={
-              <Button size="sm" variant="secondary" onClick={() => router.push('/billing')}>
-                {tCredits('manage')}
-              </Button>
-            }
-          />
-        ) : null}
-
-        {error ? <ErrorNotice title={error} /> : null}
-
+        {paramsPanel}
         <Button
           size="lg"
-          onClick={submit}
+          onClick={runSubmit}
           disabled={!canSubmit}
           loading={submitting}
           icon={<IconSparkle className="size-5" />}
@@ -284,6 +288,62 @@ export function GenerationStudio({
           {submitting ? t('submitting') : t('submit')}
         </Button>
       </aside>
+
+      {/* Keeps the end of the page clear of the fixed bar below. */}
+      <div aria-hidden="true" className="safe-mb order-4 h-24 lg:hidden" />
+
+      <div className="safe-b fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface lg:hidden">
+        <div className="mx-auto flex max-w-[1440px] flex-col gap-2 px-4 py-3">
+          {error && !paramsOpen ? (
+            <p role="alert" className="text-xs text-danger">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <p className="tabular font-semibold text-amber">{price}</p>
+            <p className="tabular flex items-center gap-1.5 text-muted">
+              <IconClock className="size-3.5" />
+              {estimate}
+            </p>
+          </div>
+          {/* The submit button takes the rest of the row rather than sizing to
+              its label: it is the only control here that spends credits, and
+              the label is the longest string in three languages. */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setParamsRequested(true)}
+              icon={<IconGear className="size-4" />}
+              className="shrink-0"
+            >
+              {t('adjustParams')}
+            </Button>
+            <Button
+              onClick={runSubmit}
+              disabled={!canSubmit}
+              loading={submitting}
+              icon={<IconSparkle className="size-4" />}
+              className="min-w-0 flex-1"
+            >
+              {submitting ? t('submitting') : t('submit')}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Sheet
+        open={paramsOpen}
+        onClose={() => setParamsRequested(false)}
+        title={t('howToGenerate')}
+        description={t('adjustParamsHint')}
+        footer={
+          <Button variant="secondary" fullWidth onClick={() => setParamsRequested(false)}>
+            {t('paramsDone')}
+          </Button>
+        }
+      >
+        {paramsPanel}
+      </Sheet>
     </div>
   );
 }

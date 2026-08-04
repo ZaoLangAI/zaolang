@@ -1,9 +1,9 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { VideoPlayer } from '@/components/media/video-player';
+import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -16,6 +16,10 @@ import type { GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDateTime } from '@/lib/format';
 import { useJobStream } from '@/lib/use-job-stream';
+import { loadAnime, useReducedMotion } from '@/lib/motion';
+
+const PROGRESS_DURATION = 650;
+const STAGE_POP_DURATION = 420;
 
 /** Ordered stages from the design's progress rail, mapped from event types. */
 const STAGES = ['queued', 'planning', 'safety', 'generating', 'sound', 'quality', 'done'] as const;
@@ -57,6 +61,59 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
 
   const activeIndex = STAGES.findIndex((stage) => !reached.has(stage));
   const finished = ['succeeded', 'failed', 'cancelled', 'expired'].includes(current.status);
+  const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
+
+  const reduced = useReducedMotion();
+  // Frozen at mount so React never rewrites `style.width` on a later render —
+  // once mounted, the bar is driven purely by the imperative effect below, or
+  // this snapshot would race with anime and always win, snapping the value
+  // before the animation had a chance to run. State (not a ref) because the
+  // value is read during render, for the very first paint's inline style.
+  const [initialProgress] = useState(current.progress);
+  const barRef = useRef<HTMLDivElement>(null);
+  const dotRefs = useRef<Partial<Record<Stage, HTMLSpanElement | null>>>({});
+  const previousReachedRef = useRef<Set<Stage>>(new Set());
+  const stageAnimationReady = useRef(false);
+
+  useEffect(() => {
+    const node = barRef.current;
+    if (!node) return;
+    if (reduced) {
+      node.style.width = `${current.progress}%`;
+      return;
+    }
+    loadAnime().then(({ animate }) => {
+      animate(node, {
+        width: `${current.progress}%`,
+        duration: PROGRESS_DURATION,
+        ease: 'outExpo',
+      });
+    });
+  }, [current.progress, reduced]);
+
+  useEffect(() => {
+    const previous = previousReachedRef.current;
+    previousReachedRef.current = reached;
+    // Skip the first snapshot: a job opened mid-flight would otherwise pop
+    // every already-completed dot at once instead of just the next one.
+    if (!stageAnimationReady.current) {
+      stageAnimationReady.current = true;
+      return;
+    }
+    if (reduced) return;
+    const newlyDone = STAGES.filter((stage) => reached.has(stage) && !previous.has(stage));
+    if (newlyDone.length === 0) return;
+    loadAnime().then(({ animate }) => {
+      for (const stage of newlyDone) {
+        const node = dotRefs.current[stage];
+        if (node)
+          animate(node, { scale: [1, 1.3, 1], duration: STAGE_POP_DURATION, ease: 'outQuad' });
+      }
+    });
+    // `reached` is a fresh Set every render; `reachedKey` is its stable
+    // fingerprint, so the effect only re-runs when membership actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reachedKey, reduced]);
 
   const cancel = async () => {
     setCancelling(true);
@@ -72,11 +129,10 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <div className="flex flex-col gap-5">
         {current.output_url ? (
-          <VideoPlayer
-            src={current.output_url}
-            title={t('title')}
-            className="rounded-[var(--radius-lg)]"
-          />
+          // The result is the first thing an author checks against the phone
+          // they will publish from, so the frames are offered here rather than
+          // one page later.
+          <DevicePreview src={current.output_url} title={t('title')} />
         ) : (
           <Poster src={null} alt={t('waiting')} aspect="video" className="border border-border">
             <div className="absolute inset-0 grid place-items-center">
@@ -98,8 +154,9 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
             className="h-1.5 overflow-hidden rounded-full bg-track"
           >
             <div
-              className="h-full rounded-full bg-primary transition-[width] duration-500"
-              style={{ width: `${current.progress}%` }}
+              ref={barRef}
+              className="h-full rounded-full bg-primary"
+              style={{ width: `${initialProgress}%` }}
             />
           </div>
 
@@ -117,6 +174,9 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                   )}
                 >
                   <span
+                    ref={(node) => {
+                      dotRefs.current[stage] = node;
+                    }}
                     className={cn(
                       'grid size-4 place-items-center rounded-full border',
                       done
@@ -166,7 +226,12 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
           <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Keeps the tail of the page clear of the fixed bar below. */}
+        <div aria-hidden="true" className="safe-mb h-16 lg:hidden" />
+
+        {/* One row, two homes: pinned above the home indicator on a phone,
+            inline under the timeline once there is room for it. */}
+        <div className="safe-b fixed inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-3 border-t border-border bg-surface px-4 py-3 lg:static lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
           {current.status === 'succeeded' && current.draft_id ? (
             <Button onClick={() => router.push(`/publish/${current.draft_id}`)}>
               {tJob('publish')}

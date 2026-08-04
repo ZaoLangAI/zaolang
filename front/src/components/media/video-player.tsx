@@ -21,12 +21,17 @@ import { formatDuration } from '@/lib/format';
  * all have to sit in the themed surface — but every control is a real button
  * with a label, and the whole bar is keyboard reachable.
  */
+const DEFAULT_ASPECT_RATIO = '16 / 9';
+
 export function VideoPlayer({
   src,
   poster,
   title,
   className,
   lazyMedia = false,
+  aspectRatio,
+  objectFit = 'contain',
+  bare = false,
 }: {
   src?: string | null;
   poster?: string | null;
@@ -34,6 +39,19 @@ export function VideoPlayer({
   className?: string;
   /** When true, keep the poster until the user presses play (discover hero). */
   lazyMedia?: boolean;
+  /**
+   * CSS `aspect-ratio` for the media box.
+   *
+   * Left out, the box starts at 16:9 and adopts the file's own ratio once the
+   * metadata arrives — a vertical clip letterboxed into a fixed 16:9 frame is
+   * squashed, which is precisely the case the short-form work is about. Pass
+   * `null` when the parent already has a fixed size, as the device frame does.
+   */
+  aspectRatio?: string | null;
+  /** `cover` fills a frame whose ratio is not the file's, e.g. a phone screen. */
+  objectFit?: 'contain' | 'cover';
+  /** Drops the rounded border; the device frame supplies its own screen edge. */
+  bare?: boolean;
 }) {
   const t = useTranslations('a11y');
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -47,6 +65,9 @@ export function VideoPlayer({
   const [muted, setMuted] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [intrinsicRatio, setIntrinsicRatio] = useState<string | null>(null);
+
+  const ratio = aspectRatio === undefined ? (intrinsicRatio ?? DEFAULT_ASPECT_RATIO) : aspectRatio;
 
   const togglePlay = useCallback(() => {
     if (lazyMedia && !activeSrc && src) {
@@ -67,7 +88,12 @@ export function VideoPlayer({
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     const onTime = () => setCurrent(video.currentTime);
-    const onMeta = () => setDuration(video.duration || 0);
+    const onMeta = () => {
+      setDuration(video.duration || 0);
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setIntrinsicRatio(`${video.videoWidth} / ${video.videoHeight}`);
+      }
+    };
     const onVolume = () => setMuted(video.muted);
 
     video.addEventListener('play', onPlay);
@@ -109,12 +135,16 @@ export function VideoPlayer({
     <div
       ref={containerRef}
       className={cn(
-        'relative overflow-hidden rounded-[var(--radius-md)] border border-border bg-black',
+        'relative overflow-hidden bg-black',
+        !bare && 'rounded-[var(--radius-md)] border border-border',
         className,
       )}
       onKeyDown={onKeyDown}
     >
-      <div className="aspect-video w-full">
+      <div
+        className={cn('w-full', ratio === null && 'h-full')}
+        style={ratio ? { aspectRatio: ratio } : undefined}
+      >
         {activeSrc ? (
           // Caption tracks arrive with the asset pack; until then there is
           // nothing to attach to a <track>.
@@ -125,7 +155,7 @@ export function VideoPlayer({
             playsInline
             preload={lazyMedia ? 'none' : 'metadata'}
             aria-label={title}
-            className="size-full object-contain"
+            className={cn('size-full', objectFit === 'cover' ? 'object-cover' : 'object-contain')}
             onClick={togglePlay}
           />
         ) : poster ? (
@@ -141,7 +171,7 @@ export function VideoPlayer({
         )}
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-black/85 to-transparent px-4 pb-3 pt-10">
+      <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/85 to-transparent px-3 pb-3 pt-10 xs:gap-3 xs:px-4">
         <button
           type="button"
           onClick={togglePlay}
@@ -166,7 +196,7 @@ export function VideoPlayer({
             const video = videoRef.current;
             if (video) video.currentTime = Number(event.target.value);
           }}
-          className="h-1 w-full appearance-none rounded-full bg-white/25 accent-[var(--primary)]"
+          className="h-1 w-full min-w-0 appearance-none rounded-full bg-white/25 accent-[var(--primary)]"
         />
 
         <button

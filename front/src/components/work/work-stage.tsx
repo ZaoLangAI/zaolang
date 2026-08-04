@@ -1,3 +1,4 @@
+import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { VideoPlayer } from '@/components/media/video-player';
 import type { WorkDetail } from '@/lib/api/types';
@@ -11,13 +12,30 @@ import type { WorkDetail } from '@/lib/api/types';
 export function WorkStage({
   work,
   lazyMedia = false,
+  devicePreview = false,
 }: {
   work: WorkDetail;
   /** Discover hero: poster-first, attach video src on play. */
   lazyMedia?: boolean;
+  /**
+   * Offers the phone frames. The detail page wants it; the discover hero does
+   * not, because a feed is for deciding what to watch, not how it crops.
+   */
+  devicePreview?: boolean;
 }) {
   const version = work.current_version;
   const isVideo = (work.media_type ?? version?.media_type) === 'video';
+
+  if (isVideo && devicePreview) {
+    return (
+      <DevicePreview
+        src={version?.media_url}
+        poster={version?.cover_url ?? work.cover_url}
+        title={work.title}
+        edgeToEdge
+      />
+    );
+  }
 
   if (isVideo) {
     return (

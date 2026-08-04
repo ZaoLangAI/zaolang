@@ -30,6 +30,19 @@ export type JobEvent = S['JobEventResponse'];
 export type Quote = S['QuoteResponse'];
 export type RouteSummary = S['RouteSummary'];
 
+export type ShortformProfile = S['ShortformProfileResponse'];
+export type ShortformProfiles = S['ShortformProfilesResponse'];
+export type ComplianceCheck = S['ComplianceCheckItem'];
+export type ComplianceReport = S['ComplianceCheckResponse'];
+export type PublicationIntent = S['PublicationIntentResponse'];
+export type DistributionChannel = S['DistributionChannel'];
+export type PublicationStatus = S['PublicationStatus'];
+
+export type Character = S['CharacterResponse'];
+export type Series = S['SeriesResponse'];
+export type SeriesDetail = S['SeriesDetailResponse'];
+export type SeriesEpisode = S['SeriesEpisodeSummary'];
+
 export type Collection = S['CollectionResponse'];
 export type Notification = S['NotificationResponse'];
 export type LedgerEntry = S['LedgerEntryResponse'];

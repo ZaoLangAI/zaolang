@@ -1,0 +1,71 @@
+{
+  "zh-CN": {
+    "a11y": {
+      "localeMenu": "切换界面语言",
+      "themeMenu": "切换主题",
+      "regionMenu": "切换地区"
+    },
+    "discover": {
+      "openPreview": "预览《{title}》",
+      "promptTitle": "这条作品的提示词",
+      "promptHint": "点击提示词即可带着它去创作，原作会作为灵感参考保留。",
+      "createFromPrompt": "用这段提示词创作",
+      "promptUnavailable": "作者没有公开这条作品的提示词。",
+      "loadMore": "加载更多灵感",
+      "loadingMore": "正在加载更多灵感",
+      "loadMoreFailed": "加载失败，点击重试",
+      "feedEnd": "已经看到底了"
+    },
+    "remixPage": {
+      "inspirationReference": "灵感参考",
+      "inspirationReferenceHint": "仅作参考，不会继承授权与署名",
+      "viewSourceWork": "查看原作"
+    }
+  },
+  "en": {
+    "a11y": {
+      "localeMenu": "Change interface language",
+      "themeMenu": "Change theme",
+      "regionMenu": "Change region"
+    },
+    "discover": {
+      "openPreview": "Preview “{title}”",
+      "promptTitle": "Prompt behind this work",
+      "promptHint": "Tap the prompt to start creating with it; the original stays attached as inspiration.",
+      "createFromPrompt": "Create with this prompt",
+      "promptUnavailable": "The author has not published the prompt for this work.",
+      "loadMore": "Load more inspiration",
+      "loadingMore": "Loading more inspiration",
+      "loadMoreFailed": "Could not load more — tap to retry",
+      "feedEnd": "You have reached the end"
+    },
+    "remixPage": {
+      "inspirationReference": "Inspiration",
+      "inspirationReferenceHint": "Reference only — no licence or credit is inherited",
+      "viewSourceWork": "View the original"
+    }
+  },
+  "ja": {
+    "a11y": {
+      "localeMenu": "表示言語を切り替える",
+      "themeMenu": "テーマを切り替える",
+      "regionMenu": "地域を切り替える"
+    },
+    "discover": {
+      "openPreview": "「{title}」をプレビュー",
+      "promptTitle": "この作品のプロンプト",
+      "promptHint": "プロンプトをタップするとそのまま制作に進みます。原作は参考として残ります。",
+      "createFromPrompt": "このプロンプトで制作する",
+      "promptUnavailable": "作者はこの作品のプロンプトを公開していません。",
+      "loadMore": "さらに読み込む",
+      "loadingMore": "さらに読み込んでいます",
+      "loadMoreFailed": "読み込めませんでした。タップで再試行",
+      "feedEnd": "すべて表示しました"
+    },
+    "remixPage": {
+      "inspirationReference": "インスピレーション",
+      "inspirationReferenceHint": "参考のみ。ライセンスとクレジットは継承されません",
+      "viewSourceWork": "原作を見る"
+    }
+  }
+}

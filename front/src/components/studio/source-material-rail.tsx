@@ -5,9 +5,11 @@ import { useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
 
 import type { StudioSource } from '@/components/studio/generation-studio';
-import { IconClose, IconUpload } from '@/components/ui/icons';
+import { IconClose, IconSparkle, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
+import { Link } from '@/i18n/navigation';
+import type { WorkDetail } from '@/lib/api/types';
 import { type Asset, uploadFile } from '@/lib/upload';
 
 /**
@@ -20,11 +22,18 @@ import { type Asset, uploadFile } from '@/lib/upload';
  */
 export function SourceMaterialRail({
   source,
+  reference,
   uploads,
   onUploaded,
   onRemove,
 }: {
   source?: StudioSource;
+  /**
+   * A work the prompt was borrowed from. Kept in its own block, visually apart
+   * from the source materials, because it carries no licence and contributes
+   * nothing to the generation request.
+   */
+  reference?: WorkDetail;
   uploads: Asset[];
   onUploaded: (asset: Asset) => void;
   onRemove: (assetId: string) => void;
@@ -110,6 +119,30 @@ export function SourceMaterialRail({
           />
         </li>
       </ul>
+
+      {reference ? (
+        <section className="mt-5 border-t border-border pt-4">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold">
+            <IconSparkle className="size-4 text-amber" />
+            {t('inspirationReference')}
+          </h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            {t('inspirationReferenceHint')}
+          </p>
+          <div className="mt-3 w-28 lg:w-full">
+            <Thumb
+              url={reference.current_version?.cover_url ?? reference.cover_url}
+              label={reference.title}
+            />
+          </div>
+          <Link
+            href={`/work/${reference.id}`}
+            className="mt-2 inline-block text-[11px] text-muted hover:text-text"
+          >
+            {t('viewSourceWork')}
+          </Link>
+        </section>
+      ) : null}
     </aside>
   );
 }

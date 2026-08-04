@@ -12,6 +12,7 @@ export function Poster({
   src,
   alt,
   aspect = 'video',
+  ratio,
   priority,
   sizes = '(max-width: 760px) 100vw, 33vw',
   className,
@@ -20,19 +21,22 @@ export function Poster({
   src?: string | null;
   alt: string;
   aspect?: 'video' | 'square' | 'portrait';
+  /** Width over height. Overrides `aspect`, for covers of any shape. */
+  ratio?: number;
   priority?: boolean;
   sizes?: string;
   className?: string;
   children?: React.ReactNode;
 }) {
-  const ratio =
+  const preset =
     aspect === 'video' ? 'aspect-video' : aspect === 'square' ? 'aspect-square' : 'aspect-[3/4]';
 
   return (
     <div
+      style={ratio ? { aspectRatio: ratio } : undefined}
       className={cn(
         'poster-scrim relative overflow-hidden rounded-[var(--radius-md)] bg-surface-soft',
-        ratio,
+        ratio ? null : preset,
         className,
       )}
     >

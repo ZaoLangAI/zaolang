@@ -25,6 +25,9 @@ export const viewport: Viewport = {
   themeColor: themeColor.dark,
   width: 'device-width',
   initialScale: 1,
+  // Without `cover` the page stops at the notch and the safe-area insets all
+  // resolve to 0, which would make the bottom bars unreachable on iOS.
+  viewportFit: 'cover',
 };
 
 export async function generateMetadata({

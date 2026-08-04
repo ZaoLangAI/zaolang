@@ -22,7 +22,7 @@ import {
 import { ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { usePathname, useRouter } from '@/i18n/navigation';
-import { locales, regions, type Locale, type Region } from '@/i18n/routing';
+import { regionLocale, regions, type Region } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import type { Me, ThemePreference } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
@@ -41,7 +41,6 @@ type Section = (typeof SECTIONS)[number];
 export function SettingsShell({ me }: { me: Me }) {
   const t = useTranslations('settingsPage');
   const tTheme = useTranslations('theme');
-  const tLocale = useTranslations('locale');
   const tRegion = useTranslations('region');
   const tActions = useTranslations('actions');
   const { notify } = useToast();
@@ -268,22 +267,13 @@ export function SettingsShell({ me }: { me: Me }) {
 
             <div>
               <OptionGroup
-                label={t('languageLabel')}
-                value={me.locale as Locale}
-                onChange={(next: Locale) => {
-                  void savePreferences({ locale: next });
-                  router.replace(pathname, { locale: next });
-                }}
-                options={locales.map((value) => ({ value, label: tLocale(value) }))}
-              />
-              <p className="mt-2 text-xs text-muted">{t('languageDesc')}</p>
-            </div>
-
-            <div>
-              <OptionGroup
                 label={t('regionLabel')}
                 value={me.region as Region}
-                onChange={(next: Region) => void savePreferences({ region: next })}
+                onChange={(next: Region) => {
+                  const locale = regionLocale[next];
+                  void savePreferences({ region: next, locale });
+                  router.replace(pathname, { locale });
+                }}
                 options={regions.map((value) => ({ value, label: tRegion(value) }))}
               />
               <p className="mt-2 text-xs text-muted">{t('regionDesc')}</p>

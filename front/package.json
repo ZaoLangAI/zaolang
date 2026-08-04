@@ -14,11 +14,12 @@
     "gen:api": "openapi-typescript ../back/openapi.json -o src/lib/api/schema.d.ts",
     "check:messages": "node scripts/check-messages.mjs && node scripts/check-message-usage.mjs",
     "test:e2e": "playwright test --project=e2e",
-    "test:a11y": "playwright test --project=a11y",
+    "test:a11y": "playwright test --project=a11y --project=a11y-mobile",
     "qa:visual": "playwright test --project=visual-qa"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "animejs": "^4.5.0",
     "next": "16.2.12",
     "next-intl": "^4.13.4",
     "react": "19.2.8",

@@ -48,30 +48,38 @@ export function LineageDialog({
         </div>
       ) : (
         <div className="flex flex-col gap-5">
-          <LineageGraph
-            lineage={lineage.data}
-            selectedVersionId={selected?.workVersionId}
-            onSelect={setSelected}
-          />
+          {/* The graph reads left to right, so the detail panel sits to its
+              right on wide viewports and stacks underneath on narrow ones. */}
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <LineageGraph
+              lineage={lineage.data}
+              selectedVersionId={selected?.workVersionId}
+              onSelect={setSelected}
+            />
 
-          {selected ? (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium">{selected.title}</p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    onClose();
-                    router.push(`/work/${selected.workId}`);
-                  }}
-                >
-                  {t('openWork')}
-                </Button>
-              </div>
-              <VersionDiffPanel childVersionId={selected.workVersionId} />
-            </div>
-          ) : null}
+            <aside className="rounded-[var(--radius-md)] border border-border bg-surface p-4">
+              {selected ? (
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm font-medium">{selected.title}</p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      onClose();
+                      router.push(`/work/${selected.workId}`);
+                    }}
+                  >
+                    {t('openWork')}
+                  </Button>
+                  <div className="border-t border-border pt-3">
+                    <VersionDiffPanel childVersionId={selected.workVersionId} />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs leading-relaxed text-muted">{t('selectHint')}</p>
+              )}
+            </aside>
+          </div>
 
           <div className="flex justify-end">
             <Button variant="ghost" onClick={onClose}>

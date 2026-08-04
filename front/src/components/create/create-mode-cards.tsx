@@ -3,11 +3,11 @@
 import { useTranslations } from 'next-intl';
 
 import { useSession } from '@/components/auth/session-provider';
-import { IconArrowRight, IconImage, IconRemix, IconVideo } from '@/components/ui/icons';
+import { IconArrowRight, IconImage, IconPhone, IconRemix, IconVideo } from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
 
-type ModeId = 'text_to_video' | 'image_to_video' | 'remix';
+type ModeId = 'text_to_video' | 'image_to_video' | 'shortform' | 'remix';
 
 const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: string }> = [
   {
@@ -23,6 +23,12 @@ const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: stri
     tone: 'bg-amber/15 text-amber',
   },
   {
+    id: 'shortform',
+    icon: <IconPhone className="size-5" />,
+    href: '/create/short',
+    tone: 'bg-amber/15 text-amber',
+  },
+  {
     id: 'remix',
     icon: <IconRemix className="size-5" />,
     href: '/discover',
@@ -31,7 +37,7 @@ const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: stri
 ];
 
 /**
- * The three entry points from the design.
+ * The four entry points from the design.
  *
  * Choosing a mode is a protected action: it goes through `requireAuth` so an
  * anonymous visitor lands back on the same mode after signing in rather than
@@ -53,11 +59,16 @@ export function CreateModeCards({ className }: { className?: string }) {
       desc: t('modeImageToVideoDesc'),
       tag: t('modeImageToVideoTag'),
     },
+    shortform: {
+      title: t('modeShortformTitle'),
+      desc: t('modeShortformDesc'),
+      tag: t('modeShortformTag'),
+    },
     remix: { title: t('modeRemixTitle'), desc: t('modeRemixDesc'), tag: t('modeRemixTag') },
   };
 
   return (
-    <ul className={cn('grid gap-4 md:grid-cols-3', className)}>
+    <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
       {MODES.map((mode) => {
         const label = labels[mode.id];
         return (

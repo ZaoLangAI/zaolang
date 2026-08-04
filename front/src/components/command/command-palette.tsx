@@ -29,6 +29,7 @@ interface Command {
 export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const t = useTranslations('commandPalette');
   const tNav = useTranslations('nav');
+  const tShortform = useTranslations('shortform');
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { status, openLogin } = useSession();
@@ -123,6 +124,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
     const navigate: Command[] = [
       { id: 'discover', label: tNav('discover'), path: '/discover' },
       { id: 'create', label: tNav('create'), path: '/create' },
+      { id: 'create-short', label: tShortform('title'), path: '/create/short' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
       { id: 'collection', label: tNav('collection'), path: '/collection' },
       { id: 'profile', label: tNav('profile'), path: '/profile' },
@@ -173,7 +175,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       : navigate;
 
     return [...search, ...filteredNavigate, ...workResults];
-  }, [close, go, openLogin, searchable, status, t, tNav, trimmed, works]);
+  }, [close, go, openLogin, searchable, status, t, tNav, tShortform, trimmed, works]);
 
   if (!open) return null;
 

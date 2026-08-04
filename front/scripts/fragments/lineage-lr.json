@@ -1,0 +1,20 @@
+{
+  "zh-CN": {
+    "lineagePanel": {
+      "currentWork": "当前作品",
+      "selectHint": "点击左侧任意节点，这里会显示它与父版本的参数差异。"
+    }
+  },
+  "en": {
+    "lineagePanel": {
+      "currentWork": "This work",
+      "selectHint": "Pick any node on the left to see how it differs from its parent version."
+    }
+  },
+  "ja": {
+    "lineagePanel": {
+      "currentWork": "この作品",
+      "selectHint": "左のノードを選ぶと、親バージョンとの差分がここに表示されます。"
+    }
+  }
+}

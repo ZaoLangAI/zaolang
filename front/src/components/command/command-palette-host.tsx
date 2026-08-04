@@ -20,8 +20,7 @@ export function CommandPaletteHost() {
     if (ready) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      const isPaletteShortcut =
-        (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
+      const isPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
       const target = event.target as HTMLElement | null;
       const typing =
         target?.tagName === 'INPUT' ||

@@ -101,6 +101,10 @@
   --font-sans:
     'Inter', 'Noto Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
+  /* `sm` is where the desktop shell starts, not where phones end. `xs` is the
+     one the phone layouts key off; the other four are unchanged because the
+     whole site is already built against them. */
+  --breakpoint-xs: 480px;
   --breakpoint-sm: 760px;
   --breakpoint-md: 1024px;
   --breakpoint-lg: 1180px;
@@ -183,6 +187,21 @@
     .page-x {
       padding-inline: 24px;
     }
+  }
+
+  /*
+   * The home indicator overlaps anything pinned to the bottom of the viewport.
+   * `.safe-b` pads a fixed bar out of its way; `.safe-mb` grows the in-flow
+   * spacer that keeps the bar from covering the end of the page. They are
+   * separate because padding on a `position: fixed` bar and margin on a static
+   * spacer are not interchangeable.
+   */
+  .safe-b {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-mb {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .no-scrollbar {

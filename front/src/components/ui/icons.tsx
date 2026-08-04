@@ -255,6 +255,14 @@ export const IconVideo = (p: IconProps) => (
   </Icon>
 );
 
+/** A phone held upright: the short-form entry point and its previews. */
+export const IconPhone = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+    <path d="M10.5 5h3M10.5 19h3" />
+  </Icon>
+);
+
 export const IconUpload = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 16V4.5M8 8.5 12 4.5l4 4" />

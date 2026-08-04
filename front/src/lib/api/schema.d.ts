@@ -558,6 +558,196 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shortform/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Profiles
+         * @description The spec catalogue the studio renders its selector and limits from.
+         */
+        get: operations["list_profiles_v1_shortform_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shortform/compliance-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compliance Check
+         * @description Checks one clip and its caption against a spec, rule by rule.
+         */
+        post: operations["compliance_check_v1_shortform_compliance_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shortform/prompt/enhance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enhance Prompt
+         * @description 把画面描述交给文案 Agent 润色，保留用户核心意图。
+         */
+        post: operations["enhance_prompt_v1_shortform_prompt_enhance_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/works/{work_id}/publications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Publications */
+        get: operations["list_publications_v1_works__work_id__publications_get"];
+        put?: never;
+        /**
+         * Create Publication
+         * @description Records an export intent and returns the material to post with.
+         *
+         *     Direct publishing is not implemented; the intent exists so the history is
+         *     already there when it is.
+         */
+        post: operations["create_publication_v1_works__work_id__publications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Characters */
+        get: operations["list_characters_v1_characters_get"];
+        put?: never;
+        /** Create Character */
+        post: operations["create_character_v1_characters_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{character_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Character */
+        get: operations["get_character_v1_characters__character_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Character */
+        delete: operations["delete_character_v1_characters__character_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Character */
+        patch: operations["update_character_v1_characters__character_id__patch"];
+        trace?: never;
+    };
+    "/v1/series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Series */
+        get: operations["list_series_v1_series_get"];
+        put?: never;
+        /** Create Series */
+        post: operations["create_series_v1_series_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/series/{series_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Series */
+        get: operations["get_series_v1_series__series_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/series/{series_id}/characters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Character To Series */
+        post: operations["add_character_to_series_v1_series__series_id__characters_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/series/{series_id}/characters/{character_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Character From Series */
+        delete: operations["remove_character_from_series_v1_series__series_id__characters__character_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -2286,6 +2476,53 @@ export interface components {
              */
             kind: "database" | "objects";
         };
+        /** CharacterCreateRequest */
+        CharacterCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Reference Asset Ids */
+            reference_asset_ids?: string[];
+            /** Voice Description */
+            voice_description?: string | null;
+        };
+        /** CharacterResponse */
+        CharacterResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Reference Asset Ids */
+            reference_asset_ids?: string[];
+            /** Reference Asset Urls */
+            reference_asset_urls?: string[];
+            /** Voice Description */
+            voice_description?: string | null;
+        };
+        /** CharacterUpdateRequest */
+        CharacterUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Reference Asset Ids */
+            reference_asset_ids?: string[] | null;
+            /** Voice Description */
+            voice_description?: string | null;
+        };
         /** CheckoutRequest */
         CheckoutRequest: {
             /** Package Id */
@@ -2333,6 +2570,47 @@ export interface components {
             item_count: number;
             /** Cover Urls */
             cover_urls?: string[];
+        };
+        /** ComplianceCheckItem */
+        ComplianceCheckItem: {
+            /** Code */
+            code: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "pass" | "warn" | "block";
+            /** Message */
+            message: string;
+        };
+        /** ComplianceCheckRequest */
+        ComplianceCheckRequest: {
+            /** Draft Id */
+            draft_id?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Profile */
+            profile?: string | null;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Hashtags */
+            hashtags?: string[];
+        };
+        /** ComplianceCheckResponse */
+        ComplianceCheckResponse: {
+            profile: components["schemas"]["ShortformProfileResponse"];
+            /** Checks */
+            checks: components["schemas"]["ComplianceCheckItem"][];
+            /** Passed */
+            passed: boolean;
         };
         /** ConfigDiffEntry */
         ConfigDiffEntry: {
@@ -2511,6 +2789,16 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * DistributionChannel
+         * @description Where an export is headed.
+         *
+         *     `MANUAL_DOWNLOAD` is the only channel that completes today; `DOUYIN` names
+         *     the destination so an intent recorded now stays meaningful once direct
+         *     publishing exists.
+         * @enum {string}
+         */
+        DistributionChannel: "douyin" | "manual_download";
         /** DraftCreateRequest */
         DraftCreateRequest: {
             /** Source Work Id */
@@ -2681,6 +2969,10 @@ export interface components {
             reference_asset_ids?: string[];
             /** Style Preset Id */
             style_preset_id?: string | null;
+            /** Shortform Profile */
+            shortform_profile?: string | null;
+            /** Character Ids */
+            character_ids?: string[];
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -3339,6 +3631,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[PublicationIntentResponse] */
+        Page_PublicationIntentResponse_: {
+            /** Items */
+            items: components["schemas"]["PublicationIntentResponse"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[ReportCaseView] */
         Page_ReportCaseView_: {
             /** Items */
@@ -3444,6 +3748,18 @@ export interface components {
             cover_asset_id?: string | null;
             /** Public Profile */
             public_profile?: boolean | null;
+        };
+        /** PromptEnhanceRequest */
+        PromptEnhanceRequest: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** PromptEnhanceResponse */
+        PromptEnhanceResponse: {
+            /** Prompt */
+            prompt: string;
+            /** Degraded */
+            degraded: boolean;
         };
         /**
          * ProvenanceResponse
@@ -3556,6 +3872,54 @@ export interface components {
              */
             is_self: boolean;
         };
+        /** PublicationCreateRequest */
+        PublicationCreateRequest: {
+            /** @default manual_download */
+            channel: components["schemas"]["DistributionChannel"];
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Hashtags */
+            hashtags?: string[];
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /** Scheduled At */
+            scheduled_at?: string | null;
+        };
+        /** PublicationIntentResponse */
+        PublicationIntentResponse: {
+            /** Id */
+            id: string;
+            /** Work Id */
+            work_id: string;
+            channel: components["schemas"]["DistributionChannel"];
+            status: components["schemas"]["PublicationStatus"];
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+            /** Download Url */
+            download_url?: string | null;
+            /** External Post Id */
+            external_post_id?: string | null;
+            /** Submitted At */
+            submitted_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * PublicationStatus
+         * @description Lifecycle of one distribution intent.
+         *
+         *     Nothing reaches `SUBMITTED` yet: it belongs to the OAuth direct-publish path
+         *     that is deliberately left unimplemented, together with `FAILED`.
+         * @enum {string}
+         */
+        PublicationStatus: "draft" | "ready" | "exported" | "submitted" | "failed";
         /** PublishRequest */
         PublishRequest: {
             /** Title */
@@ -3804,6 +4168,88 @@ export interface components {
              */
             reset: boolean;
         };
+        /** SeriesAddCharacterRequest */
+        SeriesAddCharacterRequest: {
+            /** Character Id */
+            character_id: string;
+        };
+        /** SeriesCreateRequest */
+        SeriesCreateRequest: {
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Shortform Profile Key */
+            shortform_profile_key?: string | null;
+        };
+        /** SeriesDetailResponse */
+        SeriesDetailResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Shortform Profile Key */
+            shortform_profile_key?: string | null;
+            /** Character Ids */
+            character_ids?: string[];
+            /** Characters */
+            characters?: components["schemas"]["CharacterResponse"][];
+            /** Episodes */
+            episodes?: components["schemas"]["SeriesEpisodeSummary"][];
+            /**
+             * Next Episode Number
+             * @default 1
+             */
+            next_episode_number: number;
+        };
+        /** SeriesEpisodeSummary */
+        SeriesEpisodeSummary: {
+            /** Work Id */
+            work_id: string;
+            /** Episode Number */
+            episode_number?: number | null;
+            /** Title */
+            title: string;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Published At */
+            published_at?: string | null;
+        };
+        /** SeriesResponse */
+        SeriesResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Shortform Profile Key */
+            shortform_profile_key?: string | null;
+            /** Character Ids */
+            character_ids?: string[];
+        };
         /** ServiceHealth */
         ServiceHealth: {
             /** Name */
@@ -3817,6 +4263,46 @@ export interface components {
             detail: string;
             /** Latency Ms */
             latency_ms?: number | null;
+        };
+        /**
+         * ShortformProfileResponse
+         * @description One delivery spec, flattened so the client can validate locally.
+         *
+         *     The same numbers drive the server-side checks, so a client that enforces
+         *     them is only saving a round trip, never defining the rule.
+         */
+        ShortformProfileResponse: {
+            /** Key */
+            key: string;
+            /** Aspect Ratio */
+            aspect_ratio: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Min Duration Seconds */
+            min_duration_seconds: number;
+            /** Max Duration Seconds */
+            max_duration_seconds: number;
+            /** Max Title Length */
+            max_title_length: number;
+            /** Max Hashtags */
+            max_hashtags: number;
+            /** Safe Area Top Pct */
+            safe_area_top_pct: number;
+            /** Safe Area Bottom Pct */
+            safe_area_bottom_pct: number;
+            /** Safe Area Right Pct */
+            safe_area_right_pct: number;
+            /** Require Ai Disclosure */
+            require_ai_disclosure: boolean;
+        };
+        /** ShortformProfilesResponse */
+        ShortformProfilesResponse: {
+            /** Default Profile */
+            default_profile: string;
+            /** Profiles */
+            profiles: components["schemas"]["ShortformProfileResponse"][];
         };
         /** StorageUsageResponse */
         StorageUsageResponse: {
@@ -4050,6 +4536,10 @@ export interface components {
             lifecycle_status: components["schemas"]["LifecycleStatus"];
             /** Cover Url */
             cover_url?: string | null;
+            /** Cover Width */
+            cover_width?: number | null;
+            /** Cover Height */
+            cover_height?: number | null;
             media_type?: components["schemas"]["MediaType"] | null;
             author: components["schemas"]["AuthorSummary"];
             stats: components["schemas"]["WorkStats"];
@@ -4128,6 +4618,10 @@ export interface components {
             lifecycle_status: components["schemas"]["LifecycleStatus"];
             /** Cover Url */
             cover_url?: string | null;
+            /** Cover Width */
+            cover_width?: number | null;
+            /** Cover Height */
+            cover_height?: number | null;
             media_type?: components["schemas"]["MediaType"] | null;
             author: components["schemas"]["AuthorSummary"];
             stats: components["schemas"]["WorkStats"];
@@ -5283,6 +5777,517 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_profiles_v1_shortform_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShortformProfilesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compliance_check_v1_shortform_compliance_check_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ComplianceCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplianceCheckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enhance_prompt_v1_shortform_prompt_enhance_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptEnhanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptEnhanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_publications_v1_works__work_id__publications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PublicationIntentResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_publication_v1_works__work_id__publications_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationIntentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_characters_v1_characters_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_character_v1_characters_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_character_v1_characters__character_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_character_v1_characters__character_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_v1_characters__character_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_series_v1_series_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_series_v1_series_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeriesCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_series_v1_series__series_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_character_to_series_v1_series__series_id__characters_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeriesAddCharacterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_character_from_series_v1_series__series_id__characters__character_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesResponse"];
                 };
             };
             /** @description Validation Error */

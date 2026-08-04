@@ -41,10 +41,12 @@ export default async function WorkPage({ params }: Params) {
   ]);
   if (!work) notFound();
 
+  // No horizontal gutter below `sm`: the media stage runs to both edges of a
+  // phone, and every other block puts the gutter back on itself.
   return (
-    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 px-4 py-6 sm:px-6">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 py-6 sm:px-6">
       {work.lifecycle_status === 'tombstone' ? (
-        <div className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/8 px-4 py-3">
+        <div className="mx-4 flex items-center gap-3 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/8 px-4 py-3 sm:mx-0">
           <IconTombstone className="size-5 shrink-0 text-danger" />
           <div>
             <p className="text-sm font-medium text-danger">{t('tombstoned')}</p>
@@ -54,11 +56,11 @@ export default async function WorkPage({ params }: Params) {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.72fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-5">
-          <WorkStage work={work} />
+        <div className="flex min-w-0 flex-col gap-5">
+          <WorkStage work={work} devicePreview />
 
           {work.tags && work.tags.length > 0 ? (
-            <div>
+            <div className="px-4 sm:px-0">
               <h2 className="mb-2 text-sm font-semibold">{tPage('tags')}</h2>
               <ul className="flex flex-wrap gap-2">
                 {work.tags.map((tag) => (
@@ -71,12 +73,15 @@ export default async function WorkPage({ params }: Params) {
           ) : null}
         </div>
 
-        <aside className="rounded-[var(--radius-lg)] border border-border bg-surface p-5 lg:p-6">
+        {/* `min-w-0`: the lineage strip inside scrolls sideways, and a grid item
+            defaults to `min-width: auto` — without this the strip's intrinsic
+            width sets the single-column track and the page overflows on mobile. */}
+        <aside className="mx-4 min-w-0 rounded-[var(--radius-lg)] border border-border bg-surface p-5 sm:mx-0 lg:p-6">
           <WorkInfoPanel work={work} />
         </aside>
       </div>
 
-      <section>
+      <section className="px-4 sm:px-0">
         <SectionHeading title={tPage('relatedTitle')} description={tPage('relatedHint')} />
         {similar.items.length > 0 ? (
           <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">

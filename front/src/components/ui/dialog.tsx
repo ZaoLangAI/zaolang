@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useId, useRef } from 'react';
 
 import { cn } from '@/lib/cn';
+import { loadAnime, useIsomorphicLayoutEffect, useReducedMotion } from '@/lib/motion';
+import { useOverlayTransition } from '@/lib/use-overlay-transition';
+
+const ENTER_DURATION = 220;
+const EXIT_DURATION = 160;
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -32,9 +37,58 @@ export function Dialog({
   size?: 'sm' | 'md' | 'lg';
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const descriptionId = `${titleId}-description`;
+  const reduced = useReducedMotion();
+
+  const animateExit = useCallback(async (signal: AbortSignal) => {
+    const { animate } = await loadAnime();
+    if (signal.aborted) return;
+    const backdrop = backdropRef.current;
+    const panel = panelRef.current;
+    await Promise.all([
+      backdrop
+        ? animate(backdrop, { opacity: [1, 0], duration: EXIT_DURATION, ease: 'inQuad' }).then()
+        : undefined,
+      panel
+        ? animate(panel, {
+            opacity: [1, 0],
+            scale: [1, 0.96],
+            translateY: [0, 8],
+            duration: EXIT_DURATION,
+            ease: 'inQuad',
+          }).then()
+        : undefined,
+    ]);
+  }, []);
+
+  const render = useOverlayTransition(open, animateExit);
+
+  // Keyed on `render` rather than `open`: `render` flips true exactly once
+  // per open, in the same commit that first mounts the panel, so this is the
+  // one point where the refs are guaranteed to be attached. Keying on `open`
+  // instead would fire a commit early — before `useOverlayTransition` has
+  // mounted anything — while the refs are still null.
+  useIsomorphicLayoutEffect(() => {
+    if (!render || reduced) return;
+    const backdrop = backdropRef.current;
+    const panel = panelRef.current;
+    if (!backdrop || !panel) return;
+    backdrop.style.opacity = '0';
+    panel.style.opacity = '0';
+    loadAnime().then(({ animate }) => {
+      animate(backdrop, { opacity: [0, 1], duration: ENTER_DURATION, ease: 'outQuad' });
+      animate(panel, {
+        opacity: [0, 1],
+        scale: [0.96, 1],
+        translateY: [8, 0],
+        duration: ENTER_DURATION,
+        ease: 'outQuad',
+      });
+    });
+  }, [render, reduced]);
 
   useEffect(() => {
     if (!open) return;
@@ -80,10 +134,11 @@ export function Dialog({
     [onClose],
   );
 
-  if (!open) return null;
+  if (!render) return null;
 
   return (
     <div
+      ref={backdropRef}
       className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6"
       style={{ background: 'var(--overlay)' }}
       onMouseDown={(event) => {

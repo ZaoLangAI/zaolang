@@ -23,6 +23,11 @@ interface PublishResult {
 
 const VISIBILITIES: Visibility[] = ['public_remixable', 'public_view_only', 'private'];
 
+/** Drafts created by the short-form studio carry the spec they were made for. */
+function isShortform(draft: Draft): boolean {
+  return typeof draft.params?.shortform_profile === 'string';
+}
+
 /**
  * The last step before a work becomes public.
  *
@@ -60,7 +65,12 @@ export function PublishForm({ draft }: { draft: Draft }) {
         },
         { idempotencyKey: newIdempotencyKey() },
       );
-      router.push(`/work/${result.work_id}`);
+      // A vertical draft has one step left: the export kit, which is where its
+      // caption and the compliance checklist live. Everything else is done once
+      // the work exists.
+      router.push(
+        isShortform(draft) ? `/create/short?draftId=${draft.id}` : `/work/${result.work_id}`,
+      );
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
       setPublishing(false);
@@ -147,14 +157,20 @@ export function PublishForm({ draft }: { draft: Draft }) {
 
         {error ? <ErrorNotice title={error} /> : null}
 
-        <Button
-          size="lg"
-          loading={publishing}
-          disabled={!title.trim() || !rights || !disclosure}
-          onClick={() => void publish()}
-        >
-          {publishing ? t('publishing') : t('publishNow')}
-        </Button>
+        {/* Keeps the last checkbox clear of the fixed bar below. */}
+        <div aria-hidden="true" className="safe-mb h-16 lg:hidden" />
+
+        <div className="safe-b fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface px-4 py-3 lg:static lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
+          <Button
+            size="lg"
+            fullWidth
+            loading={publishing}
+            disabled={!title.trim() || !rights || !disclosure}
+            onClick={() => void publish()}
+          >
+            {publishing ? t('publishing') : t('publishNow')}
+          </Button>
+        </div>
       </aside>
     </div>
   );
