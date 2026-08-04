@@ -13,10 +13,12 @@ from app.models import PlatformConfig, User
 from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     DEFAULT_CONFIGS,
+    MAX_GENERATION_DURATION_SECONDS,
     AgentConfig,
     FeatureFlags,
     PricingConfig,
     RoutingWeights,
+    ShortformConfig,
 )
 
 
@@ -185,6 +187,84 @@ def test_a_stored_value_that_no_longer_parses_falls_back_to_defaults(
 
     pricing = config_service.get_typed(db, "pricing", PricingConfig)
     assert pricing.tier_pricing == DEFAULT_CONFIGS["pricing"]["tier_pricing"]
+
+
+def test_the_shortform_catalogue_ships_a_vertical_and_a_landscape_spec(db: Session) -> None:
+    config = config_service.get_typed(db, "shortform", ShortformConfig)
+
+    assert config.default_profile == "douyin_vertical"
+    assert config.profiles["douyin_vertical"].aspect_ratio == "9:16"
+    assert config.profiles["douyin_landscape"].aspect_ratio == "16:9"
+
+
+def test_no_shortform_spec_asks_for_more_than_a_job_can_be_submitted_for(db: Session) -> None:
+    """A spec longer than the submission ceiling would be unreachable: every
+    job matching it would be refused at 422."""
+    config = config_service.get_typed(db, "shortform", ShortformConfig)
+
+    for key, profile in config.profiles.items():
+        assert profile.max_duration_seconds <= MAX_GENERATION_DURATION_SECONDS, key
+        assert profile.min_duration_seconds <= profile.max_duration_seconds, key
+
+
+def test_the_default_shortform_profile_must_exist(db: Session, admin: User) -> None:
+    """Otherwise every studio session would 422 on a spec nobody can select."""
+    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    value["default_profile"] = "tiktok_square"
+
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
+
+
+def test_a_shortform_spec_cannot_exceed_the_submission_ceiling(db: Session, admin: User) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    value["profiles"]["douyin_vertical"]["max_duration_seconds"] = 90
+
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
+
+
+def test_a_shortform_spec_with_an_inverted_duration_range_is_refused(
+    db: Session, admin: User
+) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    value["profiles"]["douyin_vertical"]["min_duration_seconds"] = 20
+    value["profiles"]["douyin_vertical"]["max_duration_seconds"] = 10
+
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
+
+
+def test_a_new_shortform_spec_takes_effect_without_a_restart(db: Session, admin: User) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    value["profiles"]["douyin_square"] = {
+        **value["profiles"]["douyin_vertical"],
+        "aspect_ratio": "1:1",
+        "width": 1080,
+        "height": 1080,
+    }
+    config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
+
+    profiles = config_service.get_typed(db, "shortform", ShortformConfig).profiles
+    assert profiles["douyin_square"].aspect_ratio == "1:1"
+    assert profiles["douyin_square"].max_title_length == 55
+
+
+def test_the_shortform_studio_flag_can_be_turned_off(db: Session, admin: User) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
+    value["shortform_studio"] = False
+    config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
+
+    assert config_service.is_enabled(db, "shortform_studio") is False
+
+
+def test_the_video_surcharge_must_cover_every_tier(db: Session, admin: User) -> None:
+    """A missing tier here would silently price a long video at the short price."""
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    del value["video_per_second_surcharge"]["cinematic"]
+
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
 
 
 def test_all_known_keys_expose_a_schema(db: Session) -> None:

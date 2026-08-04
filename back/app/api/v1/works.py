@@ -72,9 +72,14 @@ def list_works(
 
     has_more = len(results) > limit
     page = results[:limit]
+
+    # Search ranks a candidate pool in memory, so there is no row to resume from;
+    # handing back a cursor there would just replay the same page. Only the
+    # browse feed is cursor-pageable.
+    resumable = has_more and bool(page) and not q
     return Page(
         items=[_summary(session, r.work, r.version, viewer) for r in page],
-        next_cursor=page[-1].work.id if has_more and page else None,
+        next_cursor=page[-1].work.id if resumable else None,
         has_more=has_more,
     )
 
@@ -269,12 +274,15 @@ def _load_visible(session, work_id: str, viewer: User | None) -> tuple[Work, Wor
 
 
 def _summary(session, work: Work, version: WorkVersion, viewer: User | None) -> WorkSummary:  # type: ignore[no-untyped-def]
+    cover_size = media_urls.asset_size(session, version.cover_asset_id)
     return WorkSummary(
         id=work.id,
         title=version.title,
         visibility=Visibility(work.visibility),
         lifecycle_status=LifecycleStatus(work.lifecycle_status),
         cover_url=media_urls.asset_url(session, version.cover_asset_id),
+        cover_width=cover_size[0] if cover_size else None,
+        cover_height=cover_size[1] if cover_size else None,
         media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
         author=_author(session, work.owner_user_id),
         stats=WorkStats(

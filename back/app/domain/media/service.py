@@ -13,6 +13,7 @@ import datetime as dt
 import hashlib
 import io
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -159,6 +160,20 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
     if media_type == MediaType.IMAGE:
         record_fingerprint(session, asset=asset, payload=payload)
     return asset
+
+
+def object_keys_for(session: Session, *, asset_ids: Sequence[str]) -> list[str]:
+    """Resolves reference asset ids to storage keys for a provider request.
+
+    Order is preserved and missing ids are skipped rather than raising: by the
+    time the pipeline runs, ownership was already checked at submission, so a
+    gap here means the asset was deleted, not a request to reject.
+    """
+    if not asset_ids:
+        return []
+    rows = session.scalars(select(Asset).where(Asset.id.in_(asset_ids)))
+    by_id = {asset.id: asset.object_key for asset in rows}
+    return [by_id[asset_id] for asset_id in asset_ids if asset_id in by_id]
 
 
 def register_generated_asset(

@@ -13,6 +13,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import AgentName, Operation, QualityTier
 
+# The longest clip a generation request may ask for. Config that promises more
+# than this would be unreachable, so every duration setting is capped by it.
+MAX_GENERATION_DURATION_SECONDS = 30
+
 
 class ConfigSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -39,6 +43,16 @@ class PricingConfig(ConfigSection):
                 raise ValueError(f"{operation} 的档位价格必须随质量递增。")
             if any(price <= 0 for price in tiers.values()):
                 raise ValueError(f"{operation} 的定价必须为正数。")
+        return self
+
+    @model_validator(mode="after")
+    def _surcharge_covers_every_tier(self) -> PricingConfig:
+        """A missing tier here would price a long video at the short price."""
+        missing = {t.value for t in QualityTier} - set(self.video_per_second_surcharge)
+        if missing:
+            raise ValueError(f"缺少视频每秒加价档位: {sorted(missing)}")
+        if any(price < 0 for price in self.video_per_second_surcharge.values()):
+            raise ValueError("视频每秒加价不能为负。")
         return self
 
 
@@ -108,6 +122,50 @@ class RoyaltyConfig(ConfigSection):
         return self
 
 
+class ShortformProfile(ConfigSection):
+    """One short-video delivery spec.
+
+    The platform validates against these numbers rather than the destination
+    app's own rules, so a spec change is an operator edit instead of a deploy.
+    """
+
+    aspect_ratio: str = Field(default="9:16", pattern=r"^\d{1,2}:\d{1,2}$")
+    width: int = Field(default=1080, ge=240, le=7680)
+    height: int = Field(default=1920, ge=240, le=7680)
+    min_duration_seconds: int = Field(default=5, ge=1, le=MAX_GENERATION_DURATION_SECONDS)
+    # Capped by `GenerationParams.duration_seconds`, which refuses anything longer.
+    max_duration_seconds: int = Field(default=30, ge=1, le=MAX_GENERATION_DURATION_SECONDS)
+    max_title_length: int = Field(default=55, ge=1, le=200)
+    max_hashtags: int = Field(default=5, ge=0, le=30)
+    # Overlay reserved by the destination app's own UI, as a percentage of the
+    # frame. Text placed inside it is at risk of being covered.
+    safe_area_top_pct: int = Field(default=12, ge=0, le=100)
+    safe_area_bottom_pct: int = Field(default=22, ge=0, le=100)
+    safe_area_right_pct: int = Field(default=18, ge=0, le=100)
+    require_ai_disclosure: bool = True
+
+    @model_validator(mode="after")
+    def _durations_and_areas_are_coherent(self) -> ShortformProfile:
+        if self.min_duration_seconds > self.max_duration_seconds:
+            raise ValueError("最短时长不能大于最长时长。")
+        if self.safe_area_top_pct + self.safe_area_bottom_pct >= 100:
+            raise ValueError("上下安全区之和必须小于 100%。")
+        return self
+
+
+class ShortformConfig(ConfigSection):
+    profiles: dict[str, ShortformProfile]
+    default_profile: str = "douyin_vertical"
+
+    @model_validator(mode="after")
+    def _default_profile_exists(self) -> ShortformConfig:
+        if not self.profiles:
+            raise ValueError("至少需要一个短视频规格。")
+        if self.default_profile not in self.profiles:
+            raise ValueError(f"默认规格 {self.default_profile} 不在规格目录中。")
+        return self
+
+
 class FeatureFlags(ConfigSection):
     semantic_search: bool = True
     style_presets: bool = True
@@ -115,6 +173,7 @@ class FeatureFlags(ConfigSection):
     command_palette: bool = True
     video_generation: bool = True
     public_registration: bool = True
+    shortform_studio: bool = True
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
@@ -140,6 +199,7 @@ CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "royalty": RoyaltyConfig,
     "feature_flags": FeatureFlags,
     "moderation": ModerationConfig,
+    "shortform": ShortformConfig,
 }
 
 
@@ -217,11 +277,46 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "command_palette": True,
         "video_generation": True,
         "public_registration": True,
+        "shortform_studio": True,
         "rollout_percentages": {},
     },
     "moderation": {
         "blocked_keywords": [],
         "auto_review_threshold": 0.7,
         "require_human_review_for_video": True,
+    },
+    "shortform": {
+        "profiles": {
+            "douyin_vertical": {
+                "aspect_ratio": "9:16",
+                "width": 1080,
+                "height": 1920,
+                "min_duration_seconds": 5,
+                "max_duration_seconds": 30,
+                "max_title_length": 55,
+                "max_hashtags": 5,
+                "safe_area_top_pct": 12,
+                "safe_area_bottom_pct": 22,
+                "safe_area_right_pct": 18,
+                "require_ai_disclosure": True,
+            },
+            # Landscape keeps the same text limits; only the reserved overlay
+            # shrinks, because the interaction bar is far narrower than it is
+            # on a full-height vertical clip.
+            "douyin_landscape": {
+                "aspect_ratio": "16:9",
+                "width": 1920,
+                "height": 1080,
+                "min_duration_seconds": 5,
+                "max_duration_seconds": 30,
+                "max_title_length": 55,
+                "max_hashtags": 5,
+                "safe_area_top_pct": 10,
+                "safe_area_bottom_pct": 18,
+                "safe_area_right_pct": 8,
+                "require_ai_disclosure": True,
+            },
+        },
+        "default_profile": "douyin_vertical",
     },
 }

@@ -2020,6 +2020,915 @@
         }
       }
     },
+    "/v1/shortform/profiles": {
+      "get": {
+        "tags": [
+          "shortform"
+        ],
+        "summary": "List Profiles",
+        "description": "The spec catalogue the studio renders its selector and limits from.",
+        "operationId": "list_profiles_v1_shortform_profiles_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortformProfilesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shortform/compliance-check": {
+      "post": {
+        "tags": [
+          "shortform"
+        ],
+        "summary": "Compliance Check",
+        "description": "Checks one clip and its caption against a spec, rule by rule.",
+        "operationId": "compliance_check_v1_shortform_compliance_check_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComplianceCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplianceCheckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shortform/prompt/enhance": {
+      "post": {
+        "tags": [
+          "shortform"
+        ],
+        "summary": "Enhance Prompt",
+        "description": "把画面描述交给文案 Agent 润色，保留用户核心意图。",
+        "operationId": "enhance_prompt_v1_shortform_prompt_enhance_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptEnhanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptEnhanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/works/{work_id}/publications": {
+      "post": {
+        "tags": [
+          "shortform"
+        ],
+        "summary": "Create Publication",
+        "description": "Records an export intent and returns the material to post with.\n\nDirect publishing is not implemented; the intent exists so the history is\nalready there when it is.",
+        "operationId": "create_publication_v1_works__work_id__publications_post",
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Work Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationIntentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "shortform"
+        ],
+        "summary": "List Publications",
+        "operationId": "list_publications_v1_works__work_id__publications_get",
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Work Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PublicationIntentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Create Character",
+        "operationId": "create_character_v1_characters_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "List Characters",
+        "operationId": "list_characters_v1_characters_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CharacterResponse"
+                  },
+                  "title": "Response List Characters V1 Characters Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{character_id}": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Character",
+        "operationId": "get_character_v1_characters__character_id__get",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Update Character",
+        "operationId": "update_character_v1_characters__character_id__patch",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Delete Character",
+        "operationId": "delete_character_v1_characters__character_id__delete",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/series": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Create Series",
+        "operationId": "create_series_v1_series_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeriesCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "List Series",
+        "operationId": "list_series_v1_series_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SeriesResponse"
+                  },
+                  "title": "Response List Series V1 Series Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/series/{series_id}": {
+      "get": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Get Series",
+        "operationId": "get_series_v1_series__series_id__get",
+        "parameters": [
+          {
+            "name": "series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Series Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/series/{series_id}/characters": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Add Character To Series",
+        "operationId": "add_character_to_series_v1_series__series_id__characters_post",
+        "parameters": [
+          {
+            "name": "series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Series Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeriesAddCharacterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/series/{series_id}/characters/{character_id}": {
+      "delete": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Remove Character From Series",
+        "operationId": "remove_character_from_series_v1_series__series_id__characters__character_id__delete",
+        "parameters": [
+          {
+            "name": "series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Series Id"
+            }
+          },
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/gateway/status": {
       "get": {
         "tags": [
@@ -3467,6 +4376,124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_MyDataRequestView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/devices": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Register Device",
+        "description": "按 `push_token` upsert：重装 App 换新 token 会插新行，旧 token 静默失效——\n不主动清理旧行，靠 APNs 返回的 Unregistered 反馈去删（该反馈通道本地环境用不上）。",
+        "operationId": "register_device_v1_me_devices_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegister"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/devices/{device_id}": {
+      "delete": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Unregister Device",
+        "operationId": "unregister_device_v1_me_devices__device_id__delete",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -7898,6 +8925,177 @@
         ],
         "title": "BackupTriggerRequest"
       },
+      "CharacterCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "reference_asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Reference Asset Ids"
+          },
+          "voice_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CharacterCreateRequest"
+      },
+      "CharacterResponse": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "reference_asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Asset Ids"
+          },
+          "reference_asset_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Asset Urls"
+          },
+          "voice_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "updated_at",
+          "id",
+          "name"
+        ],
+        "title": "CharacterResponse"
+      },
+      "CharacterUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "reference_asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Asset Ids"
+          },
+          "voice_description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Description"
+          }
+        },
+        "type": "object",
+        "title": "CharacterUpdateRequest"
+      },
       "CheckoutRequest": {
         "properties": {
           "package_id": {
@@ -8021,6 +9219,119 @@
           "is_public"
         ],
         "title": "CollectionResponse"
+      },
+      "ComplianceCheckItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "warn",
+              "block"
+            ],
+            "title": "Level"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "level",
+          "message"
+        ],
+        "title": "ComplianceCheckItem"
+      },
+      "ComplianceCheckRequest": {
+        "properties": {
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Title",
+            "default": ""
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Hashtags"
+          }
+        },
+        "type": "object",
+        "title": "ComplianceCheckRequest"
+      },
+      "ComplianceCheckResponse": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/ShortformProfileResponse"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ComplianceCheckItem"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile",
+          "checks",
+          "passed"
+        ],
+        "title": "ComplianceCheckResponse"
       },
       "ConfigDiffEntry": {
         "properties": {
@@ -8450,6 +9761,65 @@
           "created_at"
         ],
         "title": "DataRequestView"
+      },
+      "DeviceRegister": {
+        "properties": {
+          "push_token": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 8,
+            "title": "Push Token"
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Platform",
+            "default": "ios"
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Locale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "push_token",
+          "locale"
+        ],
+        "title": "DeviceRegister"
+      },
+      "DeviceResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "locale": {
+            "type": "string",
+            "title": "Locale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "platform",
+          "locale"
+        ],
+        "title": "DeviceResponse"
+      },
+      "DistributionChannel": {
+        "type": "string",
+        "enum": [
+          "douyin",
+          "manual_download"
+        ],
+        "title": "DistributionChannel",
+        "description": "Where an export is headed.\n\n`MANUAL_DOWNLOAD` is the only channel that completes today; `DOUYIN` names\nthe destination so an intent recorded now stays meaningful once direct\npublishing exists."
       },
       "DraftCreateRequest": {
         "properties": {
@@ -8962,6 +10332,26 @@
               }
             ],
             "title": "Style Preset Id"
+          },
+          "shortform_profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortform Profile"
+          },
+          "character_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Character Ids"
           },
           "extra": {
             "additionalProperties": true,
@@ -10662,6 +12052,38 @@
         ],
         "title": "Page[ProviderStatView]"
       },
+      "Page_PublicationIntentResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PublicationIntentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[PublicationIntentResponse]"
+      },
       "Page_ReportCaseView_": {
         "properties": {
           "items": {
@@ -11002,6 +12424,39 @@
         "type": "object",
         "title": "ProfileUpdateRequest"
       },
+      "PromptEnhanceRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "PromptEnhanceRequest"
+      },
+      "PromptEnhanceResponse": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt",
+          "degraded"
+        ],
+        "title": "PromptEnhanceResponse"
+      },
       "ProvenanceResponse": {
         "properties": {
           "asset_id": {
@@ -11265,6 +12720,151 @@
           "display_name"
         ],
         "title": "PublicProfileResponse"
+      },
+      "PublicationCreateRequest": {
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/DistributionChannel",
+            "default": "manual_download"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "title": "Hashtags"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "PublicationCreateRequest"
+      },
+      "PublicationIntentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "work_id": {
+            "type": "string",
+            "title": "Work Id"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/DistributionChannel"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PublicationStatus"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "external_post_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Post Id"
+          },
+          "submitted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "work_id",
+          "channel",
+          "status",
+          "created_at"
+        ],
+        "title": "PublicationIntentResponse"
+      },
+      "PublicationStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "ready",
+          "exported",
+          "submitted",
+          "failed"
+        ],
+        "title": "PublicationStatus",
+        "description": "Lifecycle of one distribution intent.\n\nNothing reaches `SUBMITTED` yet: it belongs to the OAuth direct-publish path\nthat is deliberately left unimplemented, together with `FAILED`."
       },
       "PublishRequest": {
         "properties": {
@@ -11855,6 +13455,247 @@
         ],
         "title": "SeedRequest"
       },
+      "SeriesAddCharacterRequest": {
+        "properties": {
+          "character_id": {
+            "type": "string",
+            "title": "Character Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "character_id"
+        ],
+        "title": "SeriesAddCharacterRequest"
+      },
+      "SeriesCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "shortform_profile_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortform Profile Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "SeriesCreateRequest"
+      },
+      "SeriesDetailResponse": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "shortform_profile_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortform Profile Key"
+          },
+          "character_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Character Ids"
+          },
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterResponse"
+            },
+            "type": "array",
+            "title": "Characters"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesEpisodeSummary"
+            },
+            "type": "array",
+            "title": "Episodes"
+          },
+          "next_episode_number": {
+            "type": "integer",
+            "title": "Next Episode Number",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "updated_at",
+          "id",
+          "title"
+        ],
+        "title": "SeriesDetailResponse"
+      },
+      "SeriesEpisodeSummary": {
+        "properties": {
+          "work_id": {
+            "type": "string",
+            "title": "Work Id"
+          },
+          "episode_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "work_id",
+          "title"
+        ],
+        "title": "SeriesEpisodeSummary"
+      },
+      "SeriesResponse": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "shortform_profile_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortform Profile Key"
+          },
+          "character_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Character Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "updated_at",
+          "id",
+          "title"
+        ],
+        "title": "SeriesResponse"
+      },
       "ServiceHealth": {
         "properties": {
           "name": {
@@ -11888,6 +13729,96 @@
           "healthy"
         ],
         "title": "ServiceHealth"
+      },
+      "ShortformProfileResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "title": "Aspect Ratio"
+          },
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          },
+          "min_duration_seconds": {
+            "type": "integer",
+            "title": "Min Duration Seconds"
+          },
+          "max_duration_seconds": {
+            "type": "integer",
+            "title": "Max Duration Seconds"
+          },
+          "max_title_length": {
+            "type": "integer",
+            "title": "Max Title Length"
+          },
+          "max_hashtags": {
+            "type": "integer",
+            "title": "Max Hashtags"
+          },
+          "safe_area_top_pct": {
+            "type": "integer",
+            "title": "Safe Area Top Pct"
+          },
+          "safe_area_bottom_pct": {
+            "type": "integer",
+            "title": "Safe Area Bottom Pct"
+          },
+          "safe_area_right_pct": {
+            "type": "integer",
+            "title": "Safe Area Right Pct"
+          },
+          "require_ai_disclosure": {
+            "type": "boolean",
+            "title": "Require Ai Disclosure"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "aspect_ratio",
+          "width",
+          "height",
+          "min_duration_seconds",
+          "max_duration_seconds",
+          "max_title_length",
+          "max_hashtags",
+          "safe_area_top_pct",
+          "safe_area_bottom_pct",
+          "safe_area_right_pct",
+          "require_ai_disclosure"
+        ],
+        "title": "ShortformProfileResponse",
+        "description": "One delivery spec, flattened so the client can validate locally.\n\nThe same numbers drive the server-side checks, so a client that enforces\nthem is only saving a round trip, never defining the rule."
+      },
+      "ShortformProfilesResponse": {
+        "properties": {
+          "default_profile": {
+            "type": "string",
+            "title": "Default Profile"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/ShortformProfileResponse"
+            },
+            "type": "array",
+            "title": "Profiles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_profile",
+          "profiles"
+        ],
+        "title": "ShortformProfilesResponse"
       },
       "StorageUsageResponse": {
         "properties": {
@@ -12440,6 +14371,28 @@
             ],
             "title": "Cover Url"
           },
+          "cover_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Width"
+          },
+          "cover_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Height"
+          },
           "media_type": {
             "anyOf": [
               {
@@ -12623,6 +14576,28 @@
               }
             ],
             "title": "Cover Url"
+          },
+          "cover_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Width"
+          },
+          "cover_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Height"
           },
           "media_type": {
             "anyOf": [

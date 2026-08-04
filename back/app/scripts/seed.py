@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import io
 import logging
+import random
 from dataclasses import dataclass
 from typing import Any
 
 from PIL import Image, ImageDraw
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -51,6 +53,7 @@ from app.models import (
     Profile,
     ProviderAttempt,
     ProviderStat,
+    PublicationIntent,
     ReportCase,
     StylePreset,
     Tag,
@@ -65,6 +68,7 @@ from app.models.enums import (
     AssetRole,
     DataRequestStatus,
     DataRequestType,
+    DistributionChannel,
     JobEventType,
     JobStatus,
     LedgerEntryType,
@@ -77,6 +81,7 @@ from app.models.enums import (
     NotificationType,
     Operation,
     ProviderAttemptStatus,
+    PublicationStatus,
     QualityTier,
     Region,
     ReportReason,
@@ -92,6 +97,9 @@ from app.storage import s3
 logger = logging.getLogger(__name__)
 
 SEED_PASSWORD = "Zaolang2026"
+
+CARD_LONG_EDGE = 1280
+DEFAULT_ASPECT = "16:9"
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +189,52 @@ SEED_TAGS: tuple[tuple[str, str, str, str], ...] = (
     ("aerial", "航拍", "Aerial", "空撮"),
 )
 
+# The discover feed needs enough material for a masonry wall, so the corpus is
+# generated from a small combination table instead of being written out by hand:
+# 12 subjects × 8 moments gives 96 unique works, which together with the four
+# chain works above makes 100. Every field is derived from the index, so a
+# re-seed produces byte-identical rows.
+INSPIRATION_TOTAL_WORKS = 100
+INSPIRATION_GROUP_SIZE = 4
+
+# (中文题材, 英文提示词片段, 标签)
+INSPIRATION_SUBJECTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("潮汐", "tidal flats seen from above", ("ocean", "aerial")),
+    ("灯塔", "a lone lighthouse on basalt rocks", ("ocean", "cinematic")),
+    ("天台", "a rooftop above a sleeping city", ("night", "cinematic")),
+    ("巷口", "a narrow alley crowded with signage", ("neon", "night")),
+    ("侧脸", "a close portrait turned three quarters away", ("portrait",)),
+    ("雨幕", "rain sheeting across an empty crossing", ("night", "slow-motion")),
+    ("盐湖", "a salt lake cracked into hexagons", ("aerial", "monochrome")),
+    ("雪线", "the snow line halfway up a ridge", ("aerial", "cinematic")),
+    ("站台", "a suburban platform after the last train", ("night", "portrait")),
+    ("竹林", "wind moving through a bamboo grove", ("slow-motion", "cinematic")),
+    ("渔火", "fishing lamps scattered across black water", ("ocean", "night")),
+    ("老街", "a shuttered street of tiled shopfronts", ("monochrome", "cinematic")),
+)
+
+# (中文时刻, 英文提示词片段, 追加标签)
+INSPIRATION_MOMENTS: tuple[tuple[str, str, str | None], ...] = (
+    ("黎明", "before dawn, cold blue light", None),
+    ("正午", "high noon, hard shadows", None),
+    ("黄昏", "golden hour, long shadows", "cinematic"),
+    ("夜色", "deep night, only practical lights", "night"),
+    ("雾中", "thick fog flattening every plane", "monochrome"),
+    ("雨后", "after rain, wet reflections", "neon"),
+    ("逆光", "heavy backlight, rim only", "portrait"),
+    ("慢速", "extreme slow motion", "slow-motion"),
+)
+
+# (中文镜头, 英文提示词片段)
+INSPIRATION_LENSES: tuple[tuple[str, str], ...] = (
+    ("长焦压缩，保留胶片颗粒", "long lens, film grain"),
+    ("广角，边缘轻微畸变", "wide angle, slight distortion"),
+    ("微距，极浅景深", "macro, shallow depth of field"),
+    ("变形宽银幕，横向光晕", "anamorphic, horizontal flare"),
+)
+
+INSPIRATION_ASPECTS: tuple[str, ...] = ("21:9", "16:9", "9:16", "1:1")
+
 CREDIT_PACKAGES: tuple[dict[str, Any], ...] = (
     {
         "slug": "starter",
@@ -247,6 +301,7 @@ RESET_TABLES = (
     ProviderAttempt,
     GenerationJob,
     Draft,
+    PublicationIntent,
     LineageEdge,
     WorkVersion,
     Work,
@@ -277,6 +332,7 @@ def run(*, reset: bool = False) -> dict[str, int]:
         _seed_tags(session)
         _seed_packages(session)
         chain = _seed_creative_chain(session, users)
+        _seed_inspiration_feed(session, users)
         _seed_community(session, users, chain)
         _seed_credits(session, users, chain)
         _seed_moderation(session, users, chain)
@@ -286,7 +342,9 @@ def run(*, reset: bool = False) -> dict[str, int]:
 
         return {
             "users": len(users),
-            "works": len(chain),
+            # The corpus total, not what this run happened to insert: on a
+            # re-run both helpers short-circuit and would report zero.
+            "works": session.scalar(select(func.count()).select_from(Work)) or 0,
             "tags": len(SEED_TAGS),
             "packages": len(CREDIT_PACKAGES),
         }
@@ -375,7 +433,12 @@ def _seed_creative_chain(session: Session, users: dict[str, User]) -> list[Work]
     must still resolve, and no other fixture exercises it.
     """
     if session.scalar(select(Work).limit(1)) is not None:
-        return list(session.scalars(select(Work)))
+        # The four chain works are the oldest rows, and every caller downstream
+        # indexes into this list by position, so a re-run must hand back the
+        # same four in the same order rather than whatever the feed added later.
+        return list(
+            session.scalars(select(Work).order_by(Work.created_at.asc(), Work.id.asc()).limit(4))
+        )
 
     root = _publish(
         session,
@@ -447,6 +510,88 @@ def _seed_creative_chain(session: Session, users: dict[str, User]) -> list[Work]
     return [root, second, removed, deep]
 
 
+def _seed_inspiration_feed(session: Session, users: dict[str, User]) -> list[Work]:
+    """Fills the discover feed up to `INSPIRATION_TOTAL_WORKS`.
+
+    The works are grouped into small families rather than published flat: within
+    each group of four the second and third are real remixes of their parent and
+    the fourth branches off the root. That keeps `remix_count` honest — a card
+    claiming two remixes has two lineage edges behind it — and gives the lineage
+    graph more than one shape to render.
+    """
+    existing = session.scalar(select(func.count()).select_from(Work)) or 0
+    missing = INSPIRATION_TOTAL_WORKS - existing
+    if missing <= 0:
+        return []
+
+    creators = [users["linhai"], users["mizuki"], users["ava"]]
+    works: list[Work] = []
+    group_members: list[Work] = []
+
+    for index in range(missing):
+        group, slot = divmod(index, INSPIRATION_GROUP_SIZE)
+        if slot == 0:
+            group_members = []
+
+        subject = INSPIRATION_SUBJECTS[index % len(INSPIRATION_SUBJECTS)]
+        moment = INSPIRATION_MOMENTS[index // len(INSPIRATION_SUBJECTS) % len(INSPIRATION_MOMENTS)]
+        lens = INSPIRATION_LENSES[index % len(INSPIRATION_LENSES)]
+        subject_zh, subject_en, subject_tags = subject
+        moment_zh, moment_en, moment_tag = moment
+        lens_zh, lens_en = lens
+
+        tags = list(dict.fromkeys(subject_tags + ((moment_tag,) if moment_tag else ())))
+        # Slots 0 and 1 are parents inside their group, so they must stay
+        # remixable; only the two leaves are allowed to be view-only.
+        if slot in (0, 1):
+            remixable = True
+        elif slot == 2:
+            remixable = group % 3 != 0
+        else:
+            remixable = group % 5 != 0
+
+        parent: Work | None = None
+        if slot == 1:
+            parent = group_members[0]
+        elif slot == 2:
+            parent = group_members[1]
+        elif slot == 3:
+            parent = group_members[0]
+
+        work = _publish(
+            session,
+            owner=creators[index % len(creators)],
+            title=f"{subject_zh} · {moment_zh}",
+            description=f"{subject_zh}在{moment_zh}中的一次记录，{lens_zh}。",
+            visibility=(Visibility.PUBLIC_REMIXABLE if remixable else Visibility.PUBLIC_VIEW_ONLY),
+            tags=tags,
+            params={
+                "prompt": f"{subject_en}, {moment_en}, {lens_en}",
+                "negative_prompt": "text, watermark, extra limbs",
+                "seed": 20_260_000 + index,
+                "style_tags": tags,
+                "aspect_ratio": INSPIRATION_ASPECTS[index % len(INSPIRATION_ASPECTS)],
+            },
+            operation=Operation.TEXT_TO_IMAGE,
+            tier=(QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC)[index % 3],
+            parent=parent,
+        )
+
+        # Deterministic spread so `sort=popular` and `sort=recent` both order the
+        # feed differently instead of collapsing into the insertion order.
+        rng = random.Random(index)
+        work.like_count = rng.randint(3, 480)
+        work.view_count = work.like_count * rng.randint(9, 40)
+        work.published_at = utcnow() - dt.timedelta(hours=(missing - index) * 5)
+
+        group_members.append(work)
+        works.append(work)
+
+    session.flush()
+    logger.info("seeded %d inspiration works", len(works))
+    return works
+
+
 def _publish(
     session: Session,
     *,
@@ -466,7 +611,9 @@ def _publish(
     chain shape, including a tombstoned middle node that the normal flow would
     never create.
     """
-    asset = _prototype_asset(session, owner=owner, label=title)
+    asset = _prototype_asset(
+        session, owner=owner, label=title, aspect=str(params.get("aspect_ratio", DEFAULT_ASPECT))
+    )
     job = _completed_job(
         session, owner=owner, operation=operation, tier=tier, params=params, asset=asset
     )
@@ -550,10 +697,36 @@ def _publish(
     return work
 
 
-def _prototype_asset(session: Session, *, owner: User, label: str) -> Asset:
+def _card_size(aspect: str) -> tuple[int, int]:
+    """Pixel size for an `w:h` ratio, with the long edge fixed.
+
+    A placeholder whose pixels disagree with the aspect ratio the work declares
+    is worse than no placeholder: every client that reserves a box from the
+    asset's intrinsic size then reserves the wrong one.
+    """
+    try:
+        w_part, h_part = (int(part) for part in aspect.split(":", 1))
+    except ValueError:
+        w_part, h_part = 16, 9
+    if w_part <= 0 or h_part <= 0:
+        w_part, h_part = 16, 9
+
+    if w_part >= h_part:
+        return CARD_LONG_EDGE, round(CARD_LONG_EDGE * h_part / w_part)
+    return round(CARD_LONG_EDGE * w_part / h_part), CARD_LONG_EDGE
+
+
+def _prototype_asset(
+    session: Session, *, owner: User, label: str, aspect: str = DEFAULT_ASPECT
+) -> Asset:
     """Renders and stores a clearly-marked placeholder image."""
-    payload = _render_card(label)
-    object_key = f"seed/{owner.id}/{abs(hash(label)) & 0xFFFFFFFF:08x}.png"
+    width, height = _card_size(aspect)
+    payload = _render_card(label, width, height)
+    # A stable digest, not `hash()`: the built-in string hash is salted per
+    # process, so the object key would change on every run and the asset pack
+    # importer could never match `replaces_prototype` against it.
+    digest = hashlib.sha256(label.encode()).hexdigest()[:12]
+    object_key = f"seed/{owner.id}/{digest}.png"
     s3.put_object(object_key, payload, content_type="image/png")
 
     asset = Asset(
@@ -562,10 +735,10 @@ def _prototype_asset(session: Session, *, owner: User, label: str) -> Asset:
         media_type=MediaType.IMAGE,
         mime_type="image/png",
         size_bytes=len(payload),
-        checksum_sha256=__import__("hashlib").sha256(payload).hexdigest(),
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
         role=AssetRole.GENERATION_OUTPUT,
-        width=1280,
-        height=548,
+        width=width,
+        height=height,
         moderation_status=ModerationStatus.APPROVED,
         visibility=Visibility.PUBLIC_VIEW_ONLY,
         is_prototype=True,
@@ -575,9 +748,8 @@ def _prototype_asset(session: Session, *, owner: User, label: str) -> Asset:
     return asset
 
 
-def _render_card(label: str) -> bytes:
-    width, height = 1280, 548
-    seed = abs(hash(label))
+def _render_card(label: str, width: int, height: int) -> bytes:
+    seed = int.from_bytes(hashlib.sha256(label.encode()).digest()[:8], "big")
     top = ((seed >> 16) % 40 + 8, (seed >> 8) % 30 + 12, seed % 70 + 40)
     bottom = ((seed >> 4) % 70 + 30, (seed >> 12) % 50 + 24, (seed >> 20) % 110 + 90)
 
@@ -1038,6 +1210,23 @@ def _seed_ops_material(session: Session, users: dict[str, User], works: list[Wor
             description="还在调节镜头推进的速度。",
             params_json={"prompt": "slow push in on wet asphalt", "seed": 4242},
             latest_job_id=stuck.id,
+        )
+    )
+
+    # One short-video export so the distribution history on a work is not empty.
+    session.add(
+        PublicationIntent(
+            work_id=works[3].id,
+            user_id=ava.id,
+            channel=DistributionChannel.MANUAL_DOWNLOAD,
+            status=PublicationStatus.EXPORTED,
+            payload_json={
+                "title": "Night Tide · Neon",
+                "description": "第三代二创，霓虹夜潮。",
+                "hashtags": ["neon", "night", "aigc"],
+                "cover_asset_id": None,
+                "scheduled_at": None,
+            },
         )
     )
 

@@ -45,6 +45,10 @@ class WorkSummary(ApiModel):
     visibility: Visibility
     lifecycle_status: LifecycleStatus
     cover_url: str | None = None
+    # Intrinsic size of the cover, so a card can reserve the right box before
+    # the image loads. Null when the asset never recorded its dimensions.
+    cover_width: int | None = None
+    cover_height: int | None = None
     media_type: MediaType | None = None
     author: AuthorSummary
     stats: WorkStats

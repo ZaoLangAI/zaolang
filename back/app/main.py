@@ -18,13 +18,16 @@ from app.api.middleware import CorrelationMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import (
     admin,
     auth,
+    characters,
     community,
     credits,
+    devices,
     drafts,
     gateway,
     jobs,
     privacy,
     profiles,
+    shortform,
     uploads,
     works,
 )
@@ -42,11 +45,14 @@ def build_router() -> APIRouter:
     router.include_router(works.router)
     router.include_router(drafts.router)
     router.include_router(jobs.router)
+    router.include_router(shortform.router)
+    router.include_router(characters.router)
     router.include_router(gateway.router)
     router.include_router(uploads.router)
     router.include_router(credits.router)
     router.include_router(community.router)
     router.include_router(privacy.router)
+    router.include_router(devices.router)
     router.include_router(admin.router)
     return router
 

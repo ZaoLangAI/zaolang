@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domain.characters import service as characters_service
 from app.domain.credits import service as credits_service
 from app.domain.credits.pricing import Quote
 from app.domain.credits.pricing import quote as compute_quote
@@ -25,6 +26,7 @@ from app.domain.errors import (
     NotFound,
 )
 from app.domain.jobs import state_machine as sm
+from app.domain.shortform import service as shortform_service
 from app.models import GenerationJob, JobEvent
 from app.models.enums import JobEventType, JobStatus
 from app.platform_config import service as config_service
@@ -50,6 +52,8 @@ def quote_for(
         quality_tier=quality_tier,
         duration_seconds=duration_seconds,
         pricing=pricing.tier_pricing,
+        per_second_surcharge=pricing.video_per_second_surcharge,
+        base_seconds=pricing.video_base_seconds,
     )
 
 
@@ -86,6 +90,11 @@ def submit(
             ),
             replayed=True,
         )
+
+    # Before quoting: a spec mismatch, or an unowned character, must not cost
+    # the user a reservation.
+    characters_service.apply_character_refs(session, user_id=user_id, params=params)
+    shortform_service.assert_params_consistent(session, params)
 
     priced = quote_for(
         session,

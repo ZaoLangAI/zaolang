@@ -16,6 +16,7 @@ from app.models.enums import (
     Operation,
     QualityTier,
 )
+from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
 
 
 class GenerationParams(ApiModel):
@@ -23,16 +24,23 @@ class GenerationParams(ApiModel):
     negative_prompt: str | None = Field(default=None, max_length=1000)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     aspect_ratio: str = Field(default="16:9", pattern=r"^\d{1,2}:\d{1,2}$")
-    duration_seconds: int = Field(default=0, ge=0, le=30)
+    duration_seconds: int = Field(default=0, ge=0, le=MAX_GENERATION_DURATION_SECONDS)
     reference_asset_ids: list[str] = Field(default_factory=list, max_length=6)
     style_preset_id: str | None = None
+    # Names a `shortform.profiles` entry. Absent for ordinary generation, which
+    # is why every downstream check treats it as optional.
+    shortform_profile: str | None = Field(default=None, max_length=64)
+    # Cast picked from the character library. Their reference images and voice
+    # descriptions are merged into `reference_asset_ids` / `extra` in
+    # `characters.service.apply_character_refs` before the job is priced.
+    character_ids: list[str] = Field(default_factory=list, max_length=4)
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class QuoteRequest(ApiModel):
     operation: Operation
     quality_tier: QualityTier
-    duration_seconds: int = Field(default=0, ge=0, le=30)
+    duration_seconds: int = Field(default=0, ge=0, le=MAX_GENERATION_DURATION_SECONDS)
 
 
 class QuoteResponse(ApiModel):

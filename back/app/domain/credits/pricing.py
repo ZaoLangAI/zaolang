@@ -84,6 +84,8 @@ def quote(
     duration_seconds: int = 0,
     pricing: dict[str, dict[str, int]] | None = None,
     durations: dict[str, dict[str, int]] | None = None,
+    per_second_surcharge: dict[str, int] | None = None,
+    base_seconds: int | None = None,
 ) -> Quote:
     """Deterministic price for one job.
 
@@ -92,6 +94,8 @@ def quote(
     """
     table = pricing or DEFAULT_TIER_PRICING
     seconds_table = durations or DEFAULT_ESTIMATED_SECONDS
+    surcharge_table = per_second_surcharge or VIDEO_PER_SECOND_SURCHARGE
+    included_seconds = VIDEO_BASE_SECONDS if base_seconds is None else base_seconds
 
     tiers = table.get(operation)
     if tiers is None or quality_tier not in tiers:
@@ -101,15 +105,18 @@ def quote(
     breakdown = {"base": base}
     total = base
 
-    if operation in VIDEO_OPERATIONS and duration_seconds > VIDEO_BASE_SECONDS:
-        extra_seconds = duration_seconds - VIDEO_BASE_SECONDS
-        surcharge = extra_seconds * VIDEO_PER_SECOND_SURCHARGE[quality_tier]
+    billable_seconds = 0
+    if operation in VIDEO_OPERATIONS and duration_seconds > included_seconds:
+        billable_seconds = duration_seconds - included_seconds
+        rate = surcharge_table.get(quality_tier)
+        if rate is None:
+            raise ValueError(f"缺少每秒加价: {quality_tier}")
+        surcharge = billable_seconds * rate
         breakdown["duration_surcharge"] = surcharge
         total += surcharge
 
     estimated = seconds_table.get(operation, {}).get(quality_tier, 30)
-    if operation in VIDEO_OPERATIONS and duration_seconds > VIDEO_BASE_SECONDS:
-        estimated += (duration_seconds - VIDEO_BASE_SECONDS) * 6
+    estimated += billable_seconds * 6
 
     return Quote(credits=total, estimated_seconds=estimated, breakdown=breakdown)
 

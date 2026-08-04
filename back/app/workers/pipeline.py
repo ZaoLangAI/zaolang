@@ -24,6 +24,7 @@ from app.domain.credits.pricing import settlement_credits
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
+from app.domain.notifications import push as notifications
 from app.models import Draft, GenerationJob, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
@@ -31,6 +32,7 @@ from app.models.enums import (
     JobStatus,
     ModerationStage,
     ModerationStatus,
+    NotificationType,
     ProviderAttemptStatus,
 )
 from app.observability.context import set_job_id
@@ -158,6 +160,10 @@ def _execute(session: Session, job: GenerationJob) -> PipelineOutcome:
                 seed=params.get("seed"),
                 aspect_ratio=str(params.get("aspect_ratio") or "16:9"),
                 duration_seconds=int(params.get("duration_seconds") or 0),
+                reference_object_keys=media_service.object_keys_for(
+                    session, asset_ids=params.get("reference_asset_ids") or []
+                ),
+                extra=dict(params.get("extra") or {}),
             )
         )
 
@@ -341,6 +347,25 @@ def _emit(
         internal_code=internal_code,
         payload=payload,
     )
+    if status in (JobStatus.SUCCEEDED, JobStatus.FAILED):
+        # 只在终态发通知：进度事件太吵，用户只关心结果。
+        notifications.notify(
+            session,
+            user_id=job.user_id,
+            type=(
+                NotificationType.JOB_SUCCEEDED
+                if status == JobStatus.SUCCEEDED
+                else NotificationType.JOB_FAILED
+            ),
+            title_key=(
+                "notification.job_succeeded"
+                if status == JobStatus.SUCCEEDED
+                else "notification.job_failed"
+            ),
+            payload={"job_id": job.id},
+            target_type="generation_job",
+            target_id=job.id,
+        )
     # Persist first, then notify: a live subscriber and a reconnecting one must
     # see the same sequence.
     session.commit()

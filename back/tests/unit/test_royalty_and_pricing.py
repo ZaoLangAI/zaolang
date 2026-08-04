@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -48,6 +50,56 @@ def test_video_duration_adds_a_surcharge() -> None:
 def test_unpriced_combination_is_rejected() -> None:
     with pytest.raises(ValueError, match="未定价"):
         quote(operation="unknown_op", quality_tier=QualityTier.STANDARD)
+
+
+def test_the_configured_surcharge_is_what_gets_charged(db: Session, admin: User) -> None:
+    """The per-second surcharge lives in the config centre, so an operator
+    raising it must change the next quote rather than only the stored JSON."""
+    from app.domain.jobs import service as jobs_service
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import DEFAULT_CONFIGS
+
+    before = jobs_service.quote_for(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        duration_seconds=10,
+    )
+
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    value["video_per_second_surcharge"]["standard"] = 40
+    config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
+
+    after = jobs_service.quote_for(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        duration_seconds=10,
+    )
+
+    surcharge_seconds = 10 - DEFAULT_CONFIGS["pricing"]["video_base_seconds"]
+    assert before.breakdown["duration_surcharge"] == surcharge_seconds * 12
+    assert after.breakdown["duration_surcharge"] == surcharge_seconds * 40
+    assert after.credits - before.credits == surcharge_seconds * (40 - 12)
+
+
+def test_the_included_duration_comes_from_config_too(db: Session, admin: User) -> None:
+    from app.domain.jobs import service as jobs_service
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import DEFAULT_CONFIGS
+
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    value["video_base_seconds"] = 10
+    config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
+
+    priced = jobs_service.quote_for(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        duration_seconds=10,
+    )
+
+    assert "duration_surcharge" not in priced.breakdown
 
 
 def test_royalty_rate_decays_with_distance() -> None:

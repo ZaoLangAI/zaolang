@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.characters import service as characters_service
 from app.domain.credits.royalty import RoyaltyRule, distribute
 from app.domain.errors import (
     Conflict,
@@ -30,12 +31,12 @@ from app.domain.errors import (
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage
 from app.domain.media import service as media_service
+from app.domain.notifications import push as notifications
 from app.domain.search import service as search_service
 from app.models import (
     Asset,
     Draft,
     LineageEdge,
-    Notification,
     Tag,
     Work,
     WorkTag,
@@ -167,6 +168,17 @@ def publish(
     session.add(work)
     session.flush()
 
+    # Optional: the studio may have tagged this draft as an episode of a
+    # series so it inherits the same cast. A standalone draft carries neither
+    # key, and `assign_episode` is a no-op without a series_id.
+    characters_service.assign_episode(
+        session,
+        user_id=user_id,
+        work=work,
+        series_id=draft.params_json.get("series_id"),
+        episode_number=draft.params_json.get("episode_number"),
+    )
+
     version = WorkVersion(
         work_id=work.id,
         version_number=1,
@@ -271,6 +283,11 @@ def _reusable_params(draft: Draft, visibility: str) -> dict[str, Any]:
         return {}
     params = dict(draft.params_json)
     params.pop("reference_asset_ids", None)
+    # A remixer cannot use someone else's private character, so its id would
+    # only 404 the next time it was resolved.
+    params.pop("character_ids", None)
+    params.pop("series_id", None)
+    params.pop("episode_number", None)
     return params
 
 
@@ -319,6 +336,16 @@ def _pay_royalties(
         rule=rule,
         idempotency_key=f"royalty:{version.id}",
     )
+    for plan in plans:
+        notifications.notify(
+            session,
+            user_id=plan.beneficiary_user_id,
+            type=NotificationType.ROYALTY_RECEIVED,
+            title_key="notification.royalty_received",
+            payload={"amount": plan.amount, "work_version_id": version.id},
+            target_type="work_version",
+            target_id=version.id,
+        )
     return [
         {"beneficiary_user_id": p.beneficiary_user_id, "amount": p.amount, "level": p.level}
         for p in plans
@@ -332,14 +359,13 @@ def _notify_ancestors(
         author_id = str(edge.parent_author_snapshot_json.get("user_id", ""))
         if not author_id or author_id == actor_user_id:
             continue
-        session.add(
-            Notification(
-                user_id=author_id,
-                type=NotificationType.WORK_REMIXED,
-                title_key="notification.work_remixed",
-                payload_json={"work_id": work.id, "work_version_id": version.id},
-                target_type="work",
-                target_id=work.id,
-            )
+        notifications.notify(
+            session,
+            user_id=author_id,
+            type=NotificationType.WORK_REMIXED,
+            title_key="notification.work_remixed",
+            payload={"work_id": work.id, "work_version_id": version.id},
+            target_type="work",
+            target_id=work.id,
         )
     session.flush()

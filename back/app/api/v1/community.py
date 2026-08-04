@@ -16,6 +16,7 @@ from app.api.schemas.works import (
     StylePresetResponse,
 )
 from app.domain.errors import Conflict, Forbidden, NotFound
+from app.domain.notifications import push as notifications
 from app.models import (
     Collection,
     CollectionItem,
@@ -248,15 +249,14 @@ def follow(user_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
     )
     if existing is None:
         session.add(Follow(follower_user_id=user.id, followed_user_id=user_id))
-        session.add(
-            Notification(
-                user_id=user_id,
-                type=NotificationType.NEW_FOLLOWER,
-                title_key="notification.new_follower",
-                payload_json={"follower_user_id": user.id},
-                target_type="user",
-                target_id=user.id,
-            )
+        notifications.notify(
+            session,
+            user_id=user_id,
+            type=NotificationType.NEW_FOLLOWER,
+            title_key="notification.new_follower",
+            payload={"follower_user_id": user.id},
+            target_type="user",
+            target_id=user.id,
         )
         session.commit()
     return OkResponse()

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import time
+from typing import Any
 
 from PIL import Image, ImageDraw
 
@@ -41,6 +42,20 @@ def _dimensions(aspect_ratio: str, tier: str) -> tuple[int, int]:
     if w_ratio >= h_ratio:
         return base, max(64, base * h_ratio // w_ratio)
     return max(64, base * w_ratio // h_ratio), base
+
+
+def _reference_metadata(request: GenerationRequest) -> dict[str, Any]:
+    """Surfaces that character references/voice hints reached the provider.
+
+    Fakes cannot make the placeholder look or sound like the reference — that
+    needs a real provider — but recording the count here makes the pipeline
+    wiring observable in `ProviderAttempt` instead of silently dropping it.
+    """
+    voice_profiles = request.extra.get("character_voice_profiles")
+    return {
+        "reference_count": len(request.reference_object_keys),
+        "voice_profiles": voice_profiles if voice_profiles else None,
+    }
 
 
 def _render_placeholder(request: GenerationRequest) -> bytes:
@@ -101,7 +116,11 @@ class FakeOpenWorkflowProvider(GenerationProvider):
             cost_minor=self.unit_cost_minor,
             latency_ms=int((time.perf_counter() - started) * 1000) + self.base_latency_ms,
             external_task_id=f"open-{_seeded(request.job_id, 'task'):08x}",
-            metadata={"provider": self.name, "workflow": "comfy-sdxl-base@1.4.0"},
+            metadata={
+                "provider": self.name,
+                "workflow": "comfy-sdxl-base@1.4.0",
+                **_reference_metadata(request),
+            },
         )
 
 
@@ -140,7 +159,11 @@ class FakePaidApiProvider(GenerationProvider):
             cost_minor=self.unit_cost_minor * (2 if is_video else 1),
             latency_ms=int((time.perf_counter() - started) * 1000) + self.base_latency_ms,
             external_task_id=f"paid-{_seeded(request.job_id, 'task'):08x}",
-            metadata={"provider": self.name, "model": "paid-video-v3"},
+            metadata={
+                "provider": self.name,
+                "model": "paid-video-v3",
+                **_reference_metadata(request),
+            },
         )
 
 

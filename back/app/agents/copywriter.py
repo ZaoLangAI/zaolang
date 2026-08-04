@@ -52,3 +52,36 @@ def suggest(
     tags = outcome.data.get("tags")
     outcome.data["tags"] = [str(t)[:64] for t in tags][:6] if isinstance(tags, list) else []
     return outcome
+
+
+ENHANCE_SYSTEM_PROMPT = f"""你是造浪平台的视频生成提示词教练。
+优化用户输入的画面描述，使其更具体、更有画面感。
+规则：
+- 保留用户的核心意图与关键元素（主体、场景、动作），不要替换成完全不同的内容
+- 补充镜头、光线、氛围、节奏等具体细节
+- 不使用「震撼」「绝美」这类空洞形容词
+- 输出语言与用户输入保持一致
+
+{JSON_INSTRUCTION}
+格式：{{"prompt": string}}"""
+
+
+def enhance_prompt(
+    session: Session, *, prompt: str, max_length: int, user_id: str | None = None
+) -> AgentOutcome:
+    """Polishes a scene description while keeping the author's intent.
+
+    The fallback is the caller's own text rather than a static placeholder, so a
+    degraded model call never empties the field it was meant to improve.
+    """
+    outcome = run_agent(
+        session,
+        agent_name=AgentName.COPY,
+        system_prompt=ENHANCE_SYSTEM_PROMPT,
+        user_prompt=json.dumps({"prompt": prompt, "max_length": max_length}, ensure_ascii=False),
+        fallback={"prompt": prompt},
+        user_id=user_id,
+    )
+    enhanced = str(outcome.data.get("prompt") or "").strip() or prompt
+    outcome.data["prompt"] = enhanced[:max_length]
+    return outcome

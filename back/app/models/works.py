@@ -19,7 +19,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, id_column
-from app.models.enums import LicenseType, LifecycleStatus, Visibility
+from app.models.enums import (
+    DistributionChannel,
+    LicenseType,
+    LifecycleStatus,
+    PublicationStatus,
+    Visibility,
+)
 
 
 class Work(Base, TimestampMixin):
@@ -30,6 +36,13 @@ class Work(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     current_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Set at publish time from the draft's params. Episode-number uniqueness
+    # within a series is enforced in the service layer, not a DB constraint,
+    # to sidestep the SQLite/Postgres partial-index syntax split.
+    series_id: Mapped[str | None] = mapped_column(
+        ForeignKey("series.id", ondelete="SET NULL"), nullable=True
+    )
+    episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     visibility: Mapped[str] = mapped_column(
         String(24), default=Visibility.PUBLIC_VIEW_ONLY, nullable=False
     )
@@ -55,6 +68,7 @@ class Work(Base, TimestampMixin):
         Index("ix_works_owner_user_id", "owner_user_id"),
         Index("ix_works_visibility_lifecycle_status", "visibility", "lifecycle_status"),
         Index("ix_works_published_at", "published_at"),
+        Index("ix_works_series_id_episode_number", "series_id", "episode_number"),
     )
 
     @property
@@ -190,6 +204,35 @@ class Draft(Base, TimestampMixin):
     )
 
     __table_args__ = (Index("ix_drafts_user_id", "user_id"),)
+
+
+class PublicationIntent(Base, TimestampMixin):
+    """One attempt to take a published work off-platform.
+
+    Recorded even when the user only downloads the file, so the export history
+    of a work is answerable without depending on a distribution channel that
+    does not exist yet. `external_post_id` and `submitted_at` stay null until a
+    real direct-publish integration fills them in.
+    """
+
+    __tablename__ = "publication_intents"
+
+    id: Mapped[str] = id_column("pub")
+    work_id: Mapped[str] = mapped_column(ForeignKey("works.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    channel: Mapped[str] = mapped_column(
+        String(32), default=DistributionChannel.MANUAL_DOWNLOAD, nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(24), default=PublicationStatus.DRAFT, nullable=False)
+    # Caption, hashtags, cover and schedule as submitted by the creator.
+    payload_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    external_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    submitted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_publication_intents_work_id", "work_id"),
+        Index("ix_publication_intents_user_id_channel", "user_id", "channel"),
+    )
 
 
 class Like(Base, TimestampMixin):

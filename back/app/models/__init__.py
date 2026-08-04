@@ -5,6 +5,7 @@ single import, which is what Alembic autogenerate relies on.
 """
 
 from app.models.base import Base, TimestampMixin, new_id, utcnow
+from app.models.characters import Character, Series
 from app.models.credits import (
     CreditAccount,
     CreditLedgerEntry,
@@ -34,6 +35,7 @@ from app.models.platform import (
     AuditLog,
     BackupRecord,
     DataRequest,
+    Device,
     IdempotencyRecord,
     ModerationQueueItem,
     ModerationResult,
@@ -51,6 +53,7 @@ from app.models.works import (
     LicenseSnapshot,
     Like,
     LineageEdge,
+    PublicationIntent,
     StylePreset,
     Tag,
     Work,
@@ -68,6 +71,7 @@ __all__ = [
     "BackupRecord",
     "Base",
     "Bookmark",
+    "Character",
     "Collection",
     "CollectionItem",
     "ContentFingerprint",
@@ -75,6 +79,7 @@ __all__ = [
     "CreditLedgerEntry",
     "CreditPackage",
     "DataRequest",
+    "Device",
     "Draft",
     "Follow",
     "GenerationJob",
@@ -92,8 +97,10 @@ __all__ = [
     "ProvenanceManifest",
     "ProviderAttempt",
     "ProviderStat",
+    "PublicationIntent",
     "ReconciliationReport",
     "ReportCase",
+    "Series",
     "StylePreset",
     "Tag",
     "TimestampMixin",

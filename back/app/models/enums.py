@@ -232,6 +232,32 @@ class LedgerEntryType(StrEnum):
     ROYALTY_IN = "royalty_in"
 
 
+class DistributionChannel(StrEnum):
+    """Where an export is headed.
+
+    `MANUAL_DOWNLOAD` is the only channel that completes today; `DOUYIN` names
+    the destination so an intent recorded now stays meaningful once direct
+    publishing exists.
+    """
+
+    DOUYIN = "douyin"
+    MANUAL_DOWNLOAD = "manual_download"
+
+
+class PublicationStatus(StrEnum):
+    """Lifecycle of one distribution intent.
+
+    Nothing reaches `SUBMITTED` yet: it belongs to the OAuth direct-publish path
+    that is deliberately left unimplemented, together with `FAILED`.
+    """
+
+    DRAFT = "draft"
+    READY = "ready"
+    EXPORTED = "exported"
+    SUBMITTED = "submitted"
+    FAILED = "failed"
+
+
 class LicenseType(StrEnum):
     CC_BY_4_0 = "cc_by_4.0"
     CC_BY_SA_4_0 = "cc_by_sa_4.0"
