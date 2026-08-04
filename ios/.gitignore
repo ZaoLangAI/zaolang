@@ -1,0 +1,14 @@
+# XcodeGen 生成物：project.yml 是真源，pbxproj 不进仓
+*.xcodeproj/
+*.xcworkspace/
+
+# Xcode 用户态与构建产物
+xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.xcarchive
+
+# SwiftPM 本机构建缓存（ZaolangKit 用 `swift build` 自验时产生）
+Packages/ZaolangKit/.build/
+Packages/ZaolangKit/.swiftpm/

@@ -1,0 +1,67 @@
+name: Zaolang
+
+options:
+  bundleIdPrefix: ai.zaolang
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: zh-Hans
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  # 生产前把这里换成真实 Apple Development / Distribution 团队 ID，否则只能签本机模拟器/临时证书。
+  # DEVELOPMENT_TEAM: ""
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1" # 仅 iPhone，首版不做 iPad/横屏
+    ENABLE_PREVIEWS: YES
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+packages:
+  ZaolangKit:
+    path: Packages/ZaolangKit
+
+targets:
+  Zaolang:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: App/Sources
+      # 本机装的 XcodeGen 2.46.0 顶层 `resources:` 键不生效（不会写出 PBXResourcesBuildPhase，
+      # 已用最小工程复现，是这个版本的真实缺陷），改成 sources + buildPhase: resources 绕过。
+      - path: App/Resources/Assets.xcassets
+        buildPhase: resources
+      - path: App/Resources/Localizable.xcstrings
+        buildPhase: resources
+      - path: App/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: Zaolang
+        PRODUCT_BUNDLE_IDENTIFIER: ai.zaolang.app
+        INFOPLIST_FILE: App/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: App/Resources/Zaolang.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    dependencies:
+      - package: ZaolangKit
+
+schemes:
+  Zaolang:
+    build:
+      targets:
+        Zaolang: all
+    run:
+      config: Debug
+    archive:
+      config: Release
