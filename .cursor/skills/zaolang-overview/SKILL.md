@@ -1,6 +1,6 @@
 ---
 name: zaolang-overview
-description: 造浪（zaolang）仓库的总索引与路由表：说明 front/back/infra 的分工、19 个模块 skill 的边界，以及按修改意图该显式加载哪一个。Use when working anywhere in the zaolang repository, or when the user mentions 造浪 / zaolang, 作品与创作链 (works, lineage), 积分账本 (credits ledger), 生成任务 (generation jobs), 智能网关 (agent gateway), 后台运维台 (admin console), or asks where a feature lives in this codebase.
+description: 造浪（zaolang）仓库的总索引与路由表：说明 front/back/ios/infra 的分工、20 个模块 skill 的边界，以及按修改意图该显式加载哪一个。Use when working anywhere in the zaolang repository, or when the user mentions 造浪 / zaolang, 作品与创作链 (works, lineage), 积分账本 (credits ledger), 生成任务 (generation jobs), 智能网关 (agent gateway), 后台运维台 (admin console), iOS 客户端, or asks where a feature lives in this codebase.
 ---
 
 # 造浪（zaolang）总览
@@ -13,6 +13,7 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | --- | --- |
 | `back/` | FastAPI + Agno AgentOS，conda 环境 `zaolang`，Python 3.12 |
 | `front/` | Next.js 16 App Router + Tailwind v4，fnm 读 `front/.node-version`；C 端与后台同一工程、会话与 API 隔离 |
+| `ios/` | 原生 iOS 客户端，SwiftUI + Swift Concurrency，XcodeGen 工程，只读 M1 闭环，不含后台能力 |
 | `infra/` | docker-compose：PostgreSQL 17 (pgvector) `5433`、Redis `6380`、MinIO `9000` |
 | `docs/` | MkDocs 文档站源与运维手册 |
 | `assets-pack/` | 用户素材投放目录，`manifest.json` 定义导入契约 |
@@ -40,6 +41,7 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | 创作链 DAG 图谱、版本参数 diff | `zaolang-lineage-graph` |
 | 后台外壳、独立登录、RBAC 导航、表格与危险操作组件 | `zaolang-admin-console` |
 | 后台十个运维域的接口与页面 | `zaolang-admin-ops` |
+| iOS 客户端（SwiftUI 界面、ZaolangKit、XcodeGen、色板/文案生成脚本） | `zaolang-ios-client` |
 | GitHub Actions、Docker 镜像、release-please、文档站 | `zaolang-ci-release` |
 | 写测试、跑 E2E、无障碍与视觉 QA | `zaolang-testing-qa` |
 
