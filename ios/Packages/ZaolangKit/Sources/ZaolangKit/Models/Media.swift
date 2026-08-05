@@ -6,6 +6,7 @@ public enum UploadPurpose: String, Codable, Sendable, CaseIterable {
     case avatar
     case profileCover = "profile_cover"
     case consentEvidence = "consent_evidence"
+    case learnMedia = "learn_media"
 }
 
 /// `POST /v1/uploads/presign` 请求体。`checksumSHA256` 必须是上传前对文件全量内容算出的

@@ -26,6 +26,9 @@ settings:
 packages:
   ZaolangKit:
     path: Packages/ZaolangKit
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.1
 
 targets:
   Zaolang:
@@ -55,6 +58,7 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
     dependencies:
       - package: ZaolangKit
+      - package: MarkdownUI
 
 schemes:
   Zaolang:

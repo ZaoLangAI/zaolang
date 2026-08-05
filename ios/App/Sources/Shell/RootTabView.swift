@@ -113,8 +113,10 @@ struct RootTabView: View {
     @ViewBuilder
     private func learnDestination(_ route: LearnRoute) -> some View {
         switch route {
-        case .course(let index):
-            CourseView(courseIndex: index) { router.learnPath.append(LearnRoute.workDetail(workID: $0)) }
+        case .postDetail(let postID):
+            LearnPostDetailView(postID: postID) { router.learnPath.append(LearnRoute.profile(handle: $0)) }
+        case .publish:
+            LearnPublishView { router.learnPath.removeLast() }
         case .workDetail(let workID):
             WorkDetailView(
                 workID: workID,

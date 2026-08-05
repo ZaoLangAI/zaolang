@@ -1,9 +1,8 @@
 import SwiftUI
 import ZaolangKit
 
-/// 学习栈根屏，对应 `(site)/learn/page.tsx`：Hero + 三门课卡 + 创作者安全区块。
-/// 这屏在 `04-screens.md` 没有专门线框（该文档 15 屏聚焦发现/详情/图谱/主页那条主线），
-/// 结构与文案直接照抄 Web 页面源码，保真度比复述线框更高。
+/// 学习栈根屏，对应 `(site)/learn/page.tsx`：Hero + 用户发表的学习内容列表 + 创作者安全区块。
+/// 内容完全由已通过审核的 `LearnPost` 驱动，不再借用作品封面或本地硬编码课程。
 struct LearnView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(AppRouter.self) private var router
@@ -27,11 +26,12 @@ struct LearnView: View {
             }
             await viewModel?.load()
         }
+        .refreshable { await viewModel?.load() }
     }
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 0) {
-            RemoteImage(url: viewModel?.heroCover()?.coverURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0, contentMode: .fill)
+            RemoteImage(url: viewModel?.heroPost?.coverURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0, contentMode: .fill)
                 .zlCornerRadius(ZLRadius.md)
 
             VStack(alignment: .leading, spacing: 10) {
@@ -52,20 +52,38 @@ struct LearnView: View {
         }
     }
 
+    @ViewBuilder
     private var pathsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.t("learnPage.paths")).font(.headline)
-                Text(L10n.t("learnPage.pathsHint")).font(.caption).foregroundStyle(Color.zl.textMuted)
+                Text(L10n.t("learnPage.listTitle")).font(.headline)
+                Text(L10n.t("learnPage.listHint")).font(.caption).foregroundStyle(Color.zl.textMuted)
             }
 
-            ForEach(Array(CourseCatalog.courses.enumerated()), id: \.element.id) { position, course in
-                Button {
-                    path.append(LearnRoute.course(index: course.index))
-                } label: {
-                    CourseCardView(course: course, cover: viewModel?.courseCover(at: position))
+            switch viewModel?.postsState ?? .loading {
+            case .loading:
+                RoundedRectangle.zl(ZLRadius.md).fill(Color.zl.skeleton).zlSkeletonPulse().frame(height: 140)
+            case .empty:
+                EmptyStateView(
+                    title: L10n.t("learnPage.empty"),
+                    message: L10n.t("learnPage.emptyHint"),
+                    actionTitle: L10n.t("learnPage.startFirst")
+                ) {
+                    environment.requireAuth(actionLabel: L10n.t("createPage.modeLearnPublishTitle")) {
+                        path.append(LearnRoute.publish)
+                    }
                 }
-                .buttonStyle(.plain)
+            case .failed(let error):
+                ErrorStateView(error: error) { Task { await viewModel?.load() } }
+            case .loaded(let posts):
+                ForEach(posts) { post in
+                    Button {
+                        path.append(LearnRoute.postDetail(postID: post.id))
+                    } label: {
+                        LearnPostCardView(post: post)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }
@@ -86,9 +104,9 @@ struct LearnView: View {
                     .font(.footnote)
                     .foregroundStyle(Color.zl.textMuted)
 
-                if let example = viewModel?.exampleWork() {
+                if let example = viewModel?.heroPost {
                     Button(L10n.t("learnPage.viewExample")) {
-                        path.append(LearnRoute.workDetail(workID: example.id))
+                        path.append(LearnRoute.postDetail(postID: example.id))
                     }
                     .buttonStyle(.bordered)
                     .padding(.top, 4)
@@ -101,28 +119,19 @@ struct LearnView: View {
     }
 }
 
-private struct CourseCardView: View {
-    let course: CourseInfo
-    let cover: WorkSummary?
+/// 学习内容卡片：封面 + 等级 chip + 标题 + 简介 + 作者，替代旧的硬编码课程卡。
+private struct LearnPostCardView: View {
+    let post: LearnPostSummary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            RemoteImage(url: cover?.coverURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0, contentMode: .fill)
-                .overlay(alignment: .bottomTrailing) {
-                    Text(formattedDuration)
-                        .font(.system(size: 11, design: .monospaced))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.zl.surface.opacity(0.85))
-                        .zlCornerRadius(ZLRadius.sm)
-                        .padding(6)
-                }
+            RemoteImage(url: post.coverURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0, contentMode: .fill)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.t(course.levelKey)).font(.caption2.weight(.medium)).foregroundStyle(Color.zl.amber)
-                Text(L10n.t(course.titleKey)).font(.subheadline.weight(.semibold)).foregroundStyle(Color.zl.text)
-                Text(L10n.t(course.descKey)).font(.caption).foregroundStyle(Color.zl.textMuted).lineLimit(2)
-                Text("\(L10n.t("learnPage.lesson", ["index": course.index])) · \(L10n.t("learnPage.includesPractice"))")
+                Text(L10n.t(levelKey)).font(.caption2.weight(.medium)).foregroundStyle(Color.zl.amber)
+                Text(post.title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.zl.text)
+                Text(post.summary).font(.caption).foregroundStyle(Color.zl.textMuted).lineLimit(2)
+                Text(L10n.t("learnPage.byAuthor", ["name": post.author.displayName]))
                     .font(.caption2)
                     .foregroundStyle(Color.zl.textMuted)
             }
@@ -132,9 +141,11 @@ private struct CourseCardView: View {
         .zlCornerRadius(ZLRadius.md)
     }
 
-    private var formattedDuration: String {
-        let minutes = course.seconds / 60
-        let seconds = course.seconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+    private var levelKey: String {
+        switch post.level {
+        case .beginner: "learnPage.levelBeginner"
+        case .intermediate: "learnPage.levelIntermediate"
+        case .advanced: "learnPage.levelAdvanced"
+        }
     }
 }

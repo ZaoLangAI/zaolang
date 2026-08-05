@@ -12,7 +12,8 @@ enum DiscoverRoute: Hashable {
 /// 故意不复用——学习栈的"查看示例作品"链路（`LearnView` 安全区块）只在学习栈内部转，
 /// 不跨到发现 Tab，两个栈各自持有一份路由类型，互不牵连（没有明确列出的跳转就不切 Tab）。
 enum LearnRoute: Hashable {
-    case course(index: Int)
+    case postDetail(postID: String)
+    case publish
     case workDetail(workID: String)
     case lineage(workID: String)
     case profile(handle: String)

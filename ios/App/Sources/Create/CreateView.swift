@@ -68,6 +68,17 @@ struct CreateView: View {
                     router.selectTab(.discover)
                 }
             }
+            modeCard(
+                title: L10n.t("createPage.modeLearnPublishTitle"),
+                description: L10n.t("createPage.modeLearnPublishDesc"),
+                tag: L10n.t("createPage.modeLearnPublishTag"),
+                systemImage: "text.book.closed"
+            ) {
+                environment.requireAuth(actionLabel: L10n.t("createPage.modeLearnPublishTitle")) {
+                    router.selectTab(.learn)
+                    router.learnPath.append(LearnRoute.publish)
+                }
+            }
         }
     }
 

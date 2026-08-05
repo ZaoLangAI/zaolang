@@ -2623,6 +2623,75 @@
         }
       }
     },
+    "createPage.modeLearnPublishDesc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn your experience into a tutorial. Once it is approved, everyone can see it."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の経験をチュートリアルにまとめましょう。審査を通過すると誰でも見られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把你的创作经验写成教程，审核通过后展示给所有人。"
+          }
+        }
+      }
+    },
+    "createPage.modeLearnPublishTag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Community tutorial"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コミュニティチュートリアル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社区教程"
+          }
+        }
+      }
+    },
+    "createPage.modeLearnPublishTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publish a tutorial"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チュートリアルを投稿"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发表学习内容"
+          }
+        }
+      }
+    },
     "createPage.modeRemixDesc": {
       "extractionState": "manual",
       "localizations": {
@@ -3290,6 +3359,29 @@
         }
       }
     },
+    "discover.featuredCarousel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trending picks carousel"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注目の作品カルーセル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "热门推荐轮播"
+          }
+        }
+      }
+    },
     "discover.featuredLabel": {
       "extractionState": "manual",
       "localizations": {
@@ -3378,6 +3470,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "筛选"
+          }
+        }
+      }
+    },
+    "discover.goToSlide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to slide {index}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{index} 番目のスライドに移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳转到第 {index} 条"
           }
         }
       }
@@ -3497,6 +3612,29 @@
         }
       }
     },
+    "discover.nextFeatured": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next trending pick"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次の注目作品"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一条热门内容"
+          }
+        }
+      }
+    },
     "discover.noResults": {
       "extractionState": "manual",
       "localizations": {
@@ -3562,6 +3700,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "预览《{title}》"
+          }
+        }
+      }
+    },
+    "discover.previousFeatured": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous trending pick"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前の注目作品"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一条热门内容"
           }
         }
       }
@@ -4877,163 +5038,255 @@
         }
       }
     },
-    "learnPage.course1Desc": {
+    "learnPage.addHeading": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Do it once: pick a remixable work, change one sentence, publish your first version."
+            "value": "+ Heading"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "まず一度やってみる：二次創作可の作品を選び、一文だけ変えて公開します。"
+            "value": "+ 見出し"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "跟着做一遍：挑一个允许二创的作品，改一句描述，发布你的第一个版本。"
+            "value": "+ 小标题"
           }
         }
       }
     },
-    "learnPage.course1Title": {
+    "learnPage.addImage": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your first video remix in five minutes"
+            "value": "+ Image"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "5 分で最初の動画二次創作"
+            "value": "+ 画像"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "5 分钟完成第一次视频二创"
+            "value": "+ 图片"
           }
         }
       }
     },
-    "learnPage.course2Desc": {
+    "learnPage.addParagraph": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Subject, action, camera, light, sound — fill those five and the model stops guessing."
+            "value": "+ Paragraph"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "被写体・動き・カメラ・光・音の五つを書けば、モデルは迷いません。"
+            "value": "+ 段落"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "主体、动作、镜头、光线、声音——五个位置写清楚，模型就不会乱猜。"
+            "value": "+ 段落"
           }
         }
       }
     },
-    "learnPage.course2Title": {
+    "learnPage.blockMoveDown": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Writing prompts with a sense of camera"
+            "value": "Move down"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "カメラ感のあるプロンプトの書き方"
+            "value": "下へ移動"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "如何写出有镜头感的提示词"
+            "value": "下移"
           }
         }
       }
     },
-    "learnPage.course3Desc": {
+    "learnPage.blockMoveUp": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The licence decides who may continue; the credit decides who gets the credit."
+            "value": "Move up"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ライセンスは続けてよいかを、クレジットは誰の功績かを決めます。"
+            "value": "上へ移動"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "许可决定别人能不能继续创作，署名决定功劳算给谁。"
+            "value": "上移"
           }
         }
       }
     },
-    "learnPage.course3Title": {
+    "learnPage.blockRemove": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reading licences, credit and lineage"
+            "value": "Remove"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ライセンス・クレジット・創作チェーンを読む"
+            "value": "削除"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "读懂授权、署名与创作链"
+            "value": "删除"
           }
         }
       }
     },
-    "learnPage.duration": {
+    "learnPage.byAuthor": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "{minutes} min"
+            "value": "By {name}"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "{minutes} 分"
+            "value": "作者：{name}"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "{minutes} 分钟"
+            "value": "作者：{name}"
+          }
+        }
+      }
+    },
+    "learnPage.cancelEdit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel editing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集をキャンセル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消编辑"
+          }
+        }
+      }
+    },
+    "learnPage.editAction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑"
+          }
+        }
+      }
+    },
+    "learnPage.empty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No published tutorials yet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "審査を通過したチュートリアルはまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无通过审核的学习内容"
+          }
+        }
+      }
+    },
+    "learnPage.emptyHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Be the first creator to publish one."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初にチュートリアルを投稿したクリエイターになりましょう。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成为第一个发表教程的创作者。"
           }
         }
       }
@@ -5057,6 +5310,213 @@
           "stringUnit": {
             "state": "translated",
             "value": "ZAOLANG ACADEMY"
+          }
+        }
+      }
+    },
+    "learnPage.formBodyLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Body"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本文"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正文"
+          }
+        }
+      }
+    },
+    "learnPage.formCoverHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 works best, and should make the topic clear at a glance"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16:9 推奨。ひと目でテーマがわかる画像にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议 16:9，清晰展示教程主题"
+          }
+        }
+      }
+    },
+    "learnPage.formCoverLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cover image"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カバー画像"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面图"
+          }
+        }
+      }
+    },
+    "learnPage.formLevelLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Level"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "難易度"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "难度等级"
+          }
+        }
+      }
+    },
+    "learnPage.formSummaryLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summary"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "概要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "简介"
+          }
+        }
+      }
+    },
+    "learnPage.formSummaryPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One line on what this tutorial covers"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチュートリアルの内容を一文で"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一句话说清楚这篇教程讲什么"
+          }
+        }
+      }
+    },
+    "learnPage.formTitleLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题"
+          }
+        }
+      }
+    },
+    "learnPage.formTitlePlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give your tutorial a title"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チュートリアルのタイトルを入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给你的教程起个标题"
+          }
+        }
+      }
+    },
+    "learnPage.headingPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Heading"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見出し"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小标题"
           }
         }
       }
@@ -5107,48 +5567,25 @@
         }
       }
     },
-    "learnPage.includesPractice": {
+    "learnPage.levelAdvanced": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Includes hands-on practice"
+            "value": "Advanced"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "実習付き"
+            "value": "上級"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "包含交互练习"
-          }
-        }
-      }
-    },
-    "learnPage.lesson": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lesson {index}"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "レッスン {index}"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "课程 {index}"
+            "value": "高阶"
           }
         }
       }
@@ -5199,71 +5636,209 @@
         }
       }
     },
-    "learnPage.levelRequired": {
+    "learnPage.listHint": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Required"
+            "value": "Published by creators. Only what has passed review shows up here."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "必修"
+            "value": "クリエイターが投稿し、審査を通過したものだけが表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "必修"
+            "value": "创作者发表，审核通过后才会展示。"
           }
         }
       }
     },
-    "learnPage.paths": {
+    "learnPage.listTitle": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suggested path"
+            "value": "Tutorials published by the community"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "おすすめの学習パス"
+            "value": "コミュニティが投稿したチュートリアル"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "推荐学习路径"
+            "value": "社区发表的学习内容"
           }
         }
       }
     },
-    "learnPage.pathsHint": {
+    "learnPage.myPostsEmpty": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Three modules cover the whole platform flow."
+            "value": "Nothing published yet"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "3 つのモジュールでプラットフォームの流れを把握できます。"
+            "value": "まだ投稿がありません"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成 3 个模块即可掌握平台核心流程。"
+            "value": "还没有发表过内容"
+          }
+        }
+      }
+    },
+    "learnPage.myPostsEmptyHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill in the form above to publish your first tutorial."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上のフォームに入力して、最初のチュートリアルを投稿しましょう。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写上面的表单，发表你的第一篇教程。"
+          }
+        }
+      }
+    },
+    "learnPage.myPostsTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My posts"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイ投稿"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的发表"
+          }
+        }
+      }
+    },
+    "learnPage.paragraphPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write something…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに文章を…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写点什么…"
+          }
+        }
+      }
+    },
+    "learnPage.publishHeroSubtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share what you have learned. Once it passes review, it shows up on the Learn page."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "制作の経験を共有しましょう。審査を通過すると学習ページに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享你的创作经验，通过审核后会展示在学习页。"
+          }
+        }
+      }
+    },
+    "learnPage.publishHeroTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publish a tutorial"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チュートリアルを投稿"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发表学习内容"
+          }
+        }
+      }
+    },
+    "learnPage.rejectReasonLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejected: {reason}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "却下理由：{reason}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝理由：{reason}"
           }
         }
       }
@@ -5337,6 +5912,29 @@
         }
       }
     },
+    "learnPage.signInRequired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to publish a tutorial"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チュートリアルを投稿するにはログインが必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录后才能发表学习内容"
+          }
+        }
+      }
+    },
     "learnPage.startFirst": {
       "extractionState": "manual",
       "localizations": {
@@ -5360,6 +5958,190 @@
         }
       }
     },
+    "learnPage.statusApproved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approved"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已通过"
+          }
+        }
+      }
+    },
+    "learnPage.statusPending": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending review"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "審査中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待审核"
+          }
+        }
+      }
+    },
+    "learnPage.statusRejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "却下"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拒绝"
+          }
+        }
+      }
+    },
+    "learnPage.statusWithdrawn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Withdrawn"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り下げ済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已撤回"
+          }
+        }
+      }
+    },
+    "learnPage.submitNew": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publish"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交发表"
+          }
+        }
+      }
+    },
+    "learnPage.submitSuccess": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitted. Waiting for review."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投稿しました。審査をお待ちください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已提交，等待审核"
+          }
+        }
+      }
+    },
+    "learnPage.submitUpdate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save and resubmit for review"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存して再審査に出す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存并重新提交审核"
+          }
+        }
+      }
+    },
+    "learnPage.updateSuccess": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated. Back in review."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新しました。再審査に入ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更新，重新进入审核"
+          }
+        }
+      }
+    },
     "learnPage.viewExample": {
       "extractionState": "manual",
       "localizations": {
@@ -5379,6 +6161,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看示例"
+          }
+        }
+      }
+    },
+    "learnPage.withdrawAction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Withdraw"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り下げ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回"
+          }
+        }
+      }
+    },
+    "learnPage.withdrawConfirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Withdraw this post?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この投稿を取り下げますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确定要撤回这篇内容吗？"
           }
         }
       }
@@ -5872,19 +6700,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pick any node on the left to see how it differs from its parent version."
+            "value": "Pick any node above to see how it differs from its parent version."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "左のノードを選ぶと、親バージョンとの差分がここに表示されます。"
+            "value": "上のノードを選ぶと、親バージョンとの差分がここに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击左侧任意节点，这里会显示它与父版本的参数差异。"
+            "value": "点击上方任意节点，这里会显示它与父版本的参数差异。"
           }
         }
       }
@@ -6073,6 +6901,29 @@
         }
       }
     },
+    "nav.createWork": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a work"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品を制作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创作作品"
+          }
+        }
+      }
+    },
     "nav.discover": {
       "extractionState": "manual",
       "localizations": {
@@ -6115,6 +6966,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "学习"
+          }
+        }
+      }
+    },
+    "nav.learnPublish": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publish a tutorial"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チュートリアルを投稿"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发表学习内容"
           }
         }
       }

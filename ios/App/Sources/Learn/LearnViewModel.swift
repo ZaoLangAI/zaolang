@@ -1,36 +1,32 @@
 import Observation
 import ZaolangKit
 
-/// 拉 4 个真实社区作品做课程封面插图（`GET /v1/works?sort=popular&remixable=true&limit=4`），
-/// 对应 Web 端注释：设计不允许用占位图，课程配图必须是真实作品（`(site)/learn/page.tsx`）。
+/// 拉取已通过审核的用户发表学习内容（`GET /v1/learn/posts`，游客可读）。
+/// 不再借用 `listWorks` 的封面——学习页完全由 UGC 发表内容驱动。
 @MainActor
 @Observable
 final class LearnViewModel {
     private let apiClient: APIClient
-    private(set) var examples: [WorkSummary] = []
-    private(set) var loaded = false
+    private(set) var postsState: LoadableState<[LearnPostSummary]> = .loading
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
     }
 
+    var posts: [LearnPostSummary] { postsState.value ?? [] }
+
+    /// Hero 区展示最新通过审核的一条（后端按 `published_at DESC` 排序，第一条即最新）。
+    var heroPost: LearnPostSummary? { posts.first }
+
     func load() async {
-        guard !loaded else { return }
+        postsState = .loading
         do {
-            examples = try await apiClient.listWorks(.init(remixable: true, sort: .popular, limit: 4)).items
+            let page = try await apiClient.listLearnPosts(.init(limit: 12))
+            postsState = page.items.isEmpty ? .empty : .loaded(page.items)
+        } catch let error as ApiError {
+            postsState = .failed(error)
         } catch {
-            examples = [] // 插图拉不到就退回纯文字卡片，不影响课程内容本身可读
+            postsState = .failed(.unexpectedResponse(status: 0))
         }
-        loaded = true
     }
-
-    func heroCover() -> WorkSummary? { examples[safe: 3] ?? examples.first }
-
-    func courseCover(at position: Int) -> WorkSummary? { examples[safe: position] }
-
-    func exampleWork() -> WorkSummary? { examples.first }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
