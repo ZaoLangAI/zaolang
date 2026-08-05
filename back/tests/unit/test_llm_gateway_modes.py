@@ -32,11 +32,12 @@ def _explode(*_args, **_kwargs):  # type: ignore[no-untyped-def]
     raise APITimeoutError(request=None)  # type: ignore[arg-type]
 
 
-def test_stub_mode_never_calls_the_gateway(monkeypatch, force_mode) -> None:
+def test_stub_mode_never_calls_the_gateway(db: Session, monkeypatch, force_mode) -> None:
     force_mode("stub", api_key="")
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     result = llm_client.complete(
+        session=db,
         agent_name="safety",
         model="doubao-seed-2-1-pro",
         messages=[{"role": "user", "content": "海边的黄昏"}],
@@ -54,12 +55,17 @@ def test_stub_output_is_deterministic() -> None:
     assert first.data == second.data
 
 
-def test_auto_mode_degrades_to_the_stub_on_a_gateway_failure(monkeypatch, force_mode) -> None:
+def test_auto_mode_degrades_to_the_stub_on_a_gateway_failure(
+    db: Session, monkeypatch, force_mode
+) -> None:
     force_mode("auto")
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     result = llm_client.complete(
-        agent_name="planner", model="kimi-k3", messages=[{"role": "user", "content": "x"}]
+        session=db,
+        agent_name="planner",
+        model="kimi-k3",
+        messages=[{"role": "user", "content": "x"}],
     )
     assert result.degraded is True
     assert result.degrade_reason == "APITimeoutError"
@@ -67,7 +73,7 @@ def test_auto_mode_degrades_to_the_stub_on_a_gateway_failure(monkeypatch, force_
 
 
 def test_strict_mode_surfaces_the_failure_instead_of_faking_success(
-    monkeypatch, force_mode
+    db: Session, monkeypatch, force_mode
 ) -> None:
     """Silently returning stub content when the caller demanded the real gateway
     would hide an outage."""
@@ -76,7 +82,10 @@ def test_strict_mode_surfaces_the_failure_instead_of_faking_success(
 
     with pytest.raises(ProviderTemporaryFailure):
         llm_client.complete(
-            agent_name="planner", model="kimi-k3", messages=[{"role": "user", "content": "x"}]
+            session=db,
+            agent_name="planner",
+            model="kimi-k3",
+            messages=[{"role": "user", "content": "x"}],
         )
 
 

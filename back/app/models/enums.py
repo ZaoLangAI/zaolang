@@ -79,6 +79,8 @@ class AssetRole(StrEnum):
     AVATAR = "avatar"
     PROFILE_COVER = "profile_cover"
     CONSENT_EVIDENCE = "consent_evidence"
+    # 封面与正文插图共用这一个角色，两者靠是否被 cover_asset_id 引用区分。
+    LEARN_MEDIA = "learn_media"
 
 
 class ModerationStatus(StrEnum):
@@ -92,6 +94,7 @@ class ModerationStage(StrEnum):
     PRE_GENERATION = "pre_generation"
     POST_GENERATION = "post_generation"
     PRE_PUBLISH = "pre_publish"
+    SKILL_REVIEW = "skill_review"
 
 
 class ConsentType(StrEnum):
@@ -232,6 +235,14 @@ class LedgerEntryType(StrEnum):
     ROYALTY_IN = "royalty_in"
 
 
+class RedemptionCodeKind(StrEnum):
+    """`INVITE` is meant for one-to-one referral (small `max_uses`, often 1);
+    `PROMO` is an operator-run campaign code shared with many users at once."""
+
+    INVITE = "invite"
+    PROMO = "promo"
+
+
 class DistributionChannel(StrEnum):
     """Where an export is headed.
 
@@ -320,6 +331,45 @@ class AgentRunStatus(StrEnum):
     DEGRADED = "degraded"
 
 
+class LearnPostLevel(StrEnum):
+    BEGINNER = "beginner"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+
+
+class LearnPostStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+class CreationSkillCategory(StrEnum):
+    SCENE = "scene"
+    LENS = "lens"
+    STYLE = "style"
+    OTHER = "other"
+
+
+class CreationSkillVisibility(StrEnum):
+    """Owner's intent, independent of moderation state.
+
+    A `PENDING_REVIEW`/`REJECTED` skill can carry `PUBLIC` here (it is meant
+    for sharing) while still being invisible to anyone but its owner — public
+    listing always additionally filters on `status == PUBLISHED`.
+    """
+
+    PRIVATE = "private"
+    PUBLIC = "public"
+
+
+class CreationSkillStatus(StrEnum):
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    PUBLISHED = "published"
+    REJECTED = "rejected"
+
+
 class Region(StrEnum):
     CN = "CN"
     GLOBAL = "GLOBAL"
@@ -336,3 +386,17 @@ class ThemePreference(StrEnum):
     SYSTEM = "system"
     DARK = "dark"
     LIGHT = "light"
+
+
+class SystemLogSource(StrEnum):
+    """Where a `SystemLog` row came from, for the log centre's source filter."""
+
+    AUTH = "auth"
+    RATE_LIMIT = "rate_limit"
+    PERMISSION = "permission"
+
+
+class SystemLogLevel(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"

@@ -18,9 +18,10 @@ from app.api.schemas.common import OkResponse
 from app.config import get_settings
 from app.domain.audit import service as audit
 from app.domain.errors import AuthRequired, Forbidden
+from app.domain.system_log import service as system_log
 from app.models import User
 from app.models.base import utcnow
-from app.models.enums import ADMIN_ROLE_RANK
+from app.models.enums import ADMIN_ROLE_RANK, SystemLogSource
 from app.security.passwords import verify_password
 from app.security.tokens import issue_admin_token
 
@@ -31,16 +32,32 @@ router = APIRouter(tags=["admin:auth"])
 def login(
     payload: AdminLoginRequest, request: Request, response: Response, session: DbSession
 ) -> AdminSessionResponse:
-    rate_limit.enforce("auth_attempt", f"admin:{client_identity(request, None)}")
+    identity = f"admin:{client_identity(request, None)}"
+    rate_limit.enforce("auth_attempt", identity)
 
     user = session.scalar(select(User).where(User.email == str(payload.email)))
     if user is None or not verify_password(payload.password, user.password_hash):
+        system_log.emit(
+            source=SystemLogSource.AUTH,
+            event="admin_login.failed",
+            message=f"{identity} 后台登录失败：邮箱或密码不正确。",
+            dedup_key=identity,
+            request=request,
+        )
         raise AuthRequired("邮箱或密码不正确。")
     if not user.is_active:
         raise AuthRequired("账号不可用。")
 
     roles = [role for role in user.roles if role in ADMIN_ROLE_RANK]
     if not roles:
+        system_log.emit(
+            source=SystemLogSource.PERMISSION,
+            event="admin_login.forbidden",
+            message=f"{identity} 账号 {user.id} 无后台访问权限。",
+            dedup_key=identity,
+            user_id=user.id,
+            request=request,
+        )
         # Same wording as a bad password: the response must not reveal that the
         # account exists but lacks console access.
         raise Forbidden("没有后台访问权限。")

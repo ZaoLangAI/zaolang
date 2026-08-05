@@ -273,6 +273,37 @@ def tombstone(
     return work
 
 
+def hide(session: Session, *, work_id: str, reason: str, actor_user_id: str | None = None) -> Work:
+    """Removes a work from discovery while leaving it fully restorable.
+
+    Used both by the standalone `/works/{id}/hide` operator action and by a
+    moderation `REJECTED` verdict on a `work` — a reviewer's call is always a
+    judgement that can turn out wrong, so it must stay undoable via
+    `restore()`, unlike the operator-only, terminal `tombstone()` above.
+    """
+    work = session.get(Work, work_id)
+    if work is None:
+        raise NotFound("作品不存在。")
+
+    work.lifecycle_status = LifecycleStatus.HIDDEN
+    session.flush()
+    logger.info("work %s hidden by %s: %s", work_id, actor_user_id or "system", reason)
+    return work
+
+
+def restore(session: Session, *, work_id: str) -> Work:
+    """Undoes a hide. A tombstone is final and cannot be restored here."""
+    work = session.get(Work, work_id)
+    if work is None:
+        raise NotFound("作品不存在。")
+    if work.lifecycle_status == LifecycleStatus.TOMBSTONE:
+        raise Conflict("墓碑作品不可恢复。")
+
+    work.lifecycle_status = LifecycleStatus.ACTIVE
+    session.flush()
+    return work
+
+
 def _reusable_params(draft: Draft, visibility: str) -> dict[str, Any]:
     """Only a remixable work exposes its parameters.
 

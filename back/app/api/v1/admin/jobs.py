@@ -8,9 +8,11 @@ from fastapi import APIRouter, Query, Request
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
+from app.api.request_utils import as_utc
 from app.api.schemas.admin import (
     AdminJobDetail,
     AdminJobSummary,
+    AgentRunView,
     JobEventView,
     JobTerminateRequest,
     ProviderAttemptView,
@@ -48,6 +50,8 @@ def list_jobs(
     user_id: str | None = None,
     provider: str | None = None,
     stuck_only: bool = False,
+    created_after: dt.datetime | None = None,
+    created_before: dt.datetime | None = None,
     cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[AdminJobSummary]:
@@ -62,6 +66,10 @@ def list_jobs(
                 select(ProviderAttempt.job_id).where(ProviderAttempt.provider == provider)
             )
         )
+    if created_after:
+        stmt = stmt.where(GenerationJob.created_at >= as_utc(created_after))
+    if created_before:
+        stmt = stmt.where(GenerationJob.created_at <= as_utc(created_before))
     if stuck_only:
         cutoff = utcnow() - dt.timedelta(minutes=STUCK_AFTER_MINUTES)
         stmt = stmt.where(
@@ -129,18 +137,19 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
             for a in attempts
         ],
         agent_runs=[
-            {
-                "id": r.id,
-                "agent_name": r.agent_name,
-                "model": r.model,
-                "mode": r.mode,
-                "degraded": r.degraded,
-                "degrade_reason": r.degrade_reason,
-                "latency_ms": r.latency_ms,
-                "status": r.status,
-                "output": r.output_json,
-                "created_at": r.created_at,
-            }
+            AgentRunView(
+                id=r.id,
+                agent_name=r.agent_name,
+                model=r.model or "",
+                mode=r.mode,
+                degraded=r.degraded,
+                prompt_tokens=r.prompt_tokens,
+                completion_tokens=r.completion_tokens,
+                latency_ms=r.latency_ms,
+                status=r.status,
+                job_id=r.job_id,
+                created_at=r.created_at,
+            )
             for r in agent_runs
         ],
     )

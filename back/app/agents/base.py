@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.domain.agent_skills import service as agent_skills_service
 from app.llm import client as llm_client
 from app.models import AgentRun
 from app.models.base import utcnow
@@ -53,13 +54,19 @@ def run_agent(
     `fallback` is what the caller gets when the model produces nothing
     parseable. Callers must choose a fallback that is safe by default — for the
     safety agent that means "needs human review", never "approve".
+
+    `system_prompt` is each agent module's own hardcoded constant. It is used
+    verbatim only until an operator publishes an `AgentSkill` for this node;
+    from then on the published prompt wins, without a code change or deploy.
     """
     binding = resolve_binding(session, agent_name)
+    effective_prompt = agent_skills_service.get_active_prompt(session, agent_name, system_prompt)
     result = llm_client.complete(
+        session=session,
         agent_name=agent_name,
         model=binding.model,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": effective_prompt},
             {"role": "user", "content": user_prompt},
         ],
         max_tokens=binding.max_tokens,
@@ -93,6 +100,7 @@ def run_agent(
         prompt_tokens=result.response.prompt_tokens,
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
+        endpoint_id=result.endpoint_id,
         output_json=data,
         request_id=get_request_id() or None,
         created_at=utcnow(),

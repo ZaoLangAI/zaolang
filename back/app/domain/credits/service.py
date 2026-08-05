@@ -128,8 +128,15 @@ def _apply(
     return LedgerResult(entry=entry, available_balance=new_available, reserved_balance=new_reserved)
 
 
-def grant(session: Session, user_id: str, amount: int, *, idempotency_key: str) -> LedgerResult:
-    """Free credits, e.g. the signup gift. Intended for preview-tier work."""
+def grant(
+    session: Session,
+    user_id: str,
+    amount: int,
+    *,
+    idempotency_key: str,
+    metadata: dict[str, Any] | None = None,
+) -> LedgerResult:
+    """Free credits — the signup gift, a redemption code, an operator gift."""
     if amount <= 0:
         raise Conflict("赠送积分必须为正数。")
     account = get_or_create_account(session, user_id)
@@ -141,6 +148,7 @@ def grant(session: Session, user_id: str, amount: int, *, idempotency_key: str) 
         entry_type=LedgerEntryType.GRANT,
         amount=amount,
         idempotency_key=idempotency_key,
+        metadata=metadata,
     )
 
 

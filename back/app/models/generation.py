@@ -213,6 +213,10 @@ class AgentRun(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Which `llm_providers` config entry actually served this call, or the
+    # literal "legacy" when the failover pool was empty. Not a foreign key:
+    # endpoints are config entries, not rows, and can be renamed or removed.
+    endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     output_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

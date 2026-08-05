@@ -130,7 +130,9 @@ class UploadPresignRequest(ApiModel):
     mime_type: str = Field(min_length=3, max_length=128)
     size_bytes: int = Field(ge=1, le=512 * 1024 * 1024)
     checksum_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
-    purpose: str = Field(pattern=r"^(generation_reference|avatar|profile_cover|consent_evidence)$")
+    purpose: str = Field(
+        pattern=r"^(generation_reference|avatar|profile_cover|consent_evidence|learn_media)$"
+    )
 
 
 class UploadPresignResponse(ApiModel):
@@ -208,6 +210,15 @@ class CheckoutResponse(ApiModel):
     external_reference: str
     amount_minor: int
     currency: str
+
+
+class RedeemCodeRequest(ApiModel):
+    code: str = Field(min_length=1, max_length=32)
+
+
+class RedeemCodeResponse(ApiModel):
+    credits_granted: int
+    available_balance: int
 
 
 class NotificationResponse(ApiModel):

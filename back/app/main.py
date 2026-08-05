@@ -25,9 +25,11 @@ from app.api.v1 import (
     drafts,
     gateway,
     jobs,
+    learning,
     privacy,
     profiles,
     shortform,
+    skills,
     uploads,
     works,
 )
@@ -43,6 +45,8 @@ def build_router() -> APIRouter:
     router.include_router(auth.router)
     router.include_router(profiles.router)
     router.include_router(works.router)
+    router.include_router(learning.router)
+    router.include_router(skills.router)
     router.include_router(drafts.router)
     router.include_router(jobs.router)
     router.include_router(shortform.router)

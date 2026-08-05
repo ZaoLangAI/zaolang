@@ -18,8 +18,11 @@ from app.api.schemas.jobs import (
     CreditBalanceResponse,
     CreditPackageResponse,
     LedgerEntryResponse,
+    RedeemCodeRequest,
+    RedeemCodeResponse,
 )
 from app.config import get_settings
+from app.domain.credits import redemption
 from app.domain.credits import service as credits_service
 from app.domain.errors import Conflict, NotFound, ValidationFailed
 from app.models import CreditPackage, PaymentIntent, WebhookEvent
@@ -66,6 +69,17 @@ def packages(user: CurrentUser, session: DbSession) -> Page[CreditPackageRespons
         .order_by(CreditPackage.sort_order)
     )
     return Page(items=[CreditPackageResponse.model_validate(p) for p in rows])
+
+
+@router.post("/credits/redeem", response_model=RedeemCodeResponse)
+def redeem(payload: RedeemCodeRequest, user: CurrentUser, session: DbSession) -> RedeemCodeResponse:
+    """Cashes in an invite/promo code for its face-value credits."""
+    record = redemption.redeem(session, code=payload.code, user_id=user.id)
+    account = credits_service.get_or_create_account(session, user.id)
+    session.commit()
+    return RedeemCodeResponse(
+        credits_granted=record.credits, available_balance=account.available_balance
+    )
 
 
 @router.post("/credits/checkout", response_model=CheckoutResponse, status_code=201)

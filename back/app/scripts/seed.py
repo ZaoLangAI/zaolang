@@ -25,11 +25,14 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import session_scope
+from app.domain.agent_skills import service as agent_skills_service
 from app.domain.credits import service as credits_service
 from app.domain.lineage import service as lineage_service
 from app.domain.search import service as search_service
 from app.models import (
+    AgentNode,
     AgentRun,
+    AgentSkill,
     Announcement,
     Asset,
     Bookmark,
@@ -44,6 +47,7 @@ from app.models import (
     Follow,
     GenerationJob,
     JobEvent,
+    LearnPost,
     LicenseSnapshot,
     Like,
     LineageEdge,
@@ -71,6 +75,8 @@ from app.models.enums import (
     DistributionChannel,
     JobEventType,
     JobStatus,
+    LearnPostLevel,
+    LearnPostStatus,
     LedgerEntryType,
     LicenseType,
     LifecycleStatus,
@@ -282,6 +288,8 @@ CREDIT_PACKAGES: tuple[dict[str, Any], ...] = (
 # single statement (see `_reset`), but the list is kept in dependency order so a
 # reader can see the shape of the graph.
 RESET_TABLES = (
+    AgentSkill,
+    AgentNode,
     AgentRun,
     WorkEmbedding,
     ContentFingerprint,
@@ -292,6 +300,7 @@ RESET_TABLES = (
     Like,
     Follow,
     Notification,
+    LearnPost,
     ModerationQueueItem,
     ModerationResult,
     ReportCase,
@@ -329,11 +338,13 @@ def run(*, reset: bool = False) -> dict[str, int]:
             _reset(session)
 
         users = _seed_users(session)
+        agent_skills_service.ensure_default_nodes(session)
         _seed_tags(session)
         _seed_packages(session)
         chain = _seed_creative_chain(session, users)
         _seed_inspiration_feed(session, users)
         _seed_community(session, users, chain)
+        _seed_learning_posts(session, users)
         _seed_credits(session, users, chain)
         _seed_moderation(session, users, chain)
         _seed_presets(session, users, chain)
@@ -717,7 +728,12 @@ def _card_size(aspect: str) -> tuple[int, int]:
 
 
 def _prototype_asset(
-    session: Session, *, owner: User, label: str, aspect: str = DEFAULT_ASPECT
+    session: Session,
+    *,
+    owner: User,
+    label: str,
+    aspect: str = DEFAULT_ASPECT,
+    role: str = AssetRole.GENERATION_OUTPUT,
 ) -> Asset:
     """Renders and stores a clearly-marked placeholder image."""
     width, height = _card_size(aspect)
@@ -736,7 +752,7 @@ def _prototype_asset(
         mime_type="image/png",
         size_bytes=len(payload),
         checksum_sha256=hashlib.sha256(payload).hexdigest(),
-        role=AssetRole.GENERATION_OUTPUT,
+        role=role,
         width=width,
         height=height,
         moderation_status=ModerationStatus.APPROVED,
@@ -942,6 +958,101 @@ def _seed_community(session: Session, users: dict[str, User], works: list[Work])
         )
     )
     session.flush()
+
+
+def _seed_learning_posts(session: Session, users: dict[str, User]) -> None:
+    """给学习内容审核台准备真实数据：pending / approved / rejected 各至少一条。"""
+    if session.scalar(select(LearnPost).limit(1)) is not None:
+        return
+
+    linhai, mizuki, ava, reviewer = (
+        users["linhai"],
+        users["mizuki"],
+        users["ava"],
+        users["reviewer"],
+    )
+
+    approved_cover_1 = _prototype_asset(
+        session, owner=linhai, label="长焦压缩入门", aspect="16:9", role=AssetRole.LEARN_MEDIA
+    )
+    approved_cover_2 = _prototype_asset(
+        session, owner=mizuki, label="许可与归因入门", aspect="16:9", role=AssetRole.LEARN_MEDIA
+    )
+    rejected_cover = _prototype_asset(
+        session, owner=ava, label="免费素材来源清单", aspect="16:9", role=AssetRole.LEARN_MEDIA
+    )
+
+    posts = (
+        LearnPost(
+            author_user_id=linhai.id,
+            title="用长焦压缩拍出电影感海景",
+            summary="三步学会用长焦镜头把平淡的海面拍成有纵深的画面。",
+            level=LearnPostLevel.BEGINNER,
+            cover_asset_id=approved_cover_1.id,
+            body_markdown=(
+                "## 为什么长焦更有电影感\n\n"
+                "长焦压缩透视，让画面显得更有纵深与厚重感。\n\n"
+                "配合三分构图与稳定器，手机长焦也能拍出类似效果。"
+            ),
+            status=LearnPostStatus.APPROVED,
+            reviewed_by_user_id=reviewer.id,
+            reviewed_at=utcnow() - dt.timedelta(days=2),
+            published_at=utcnow() - dt.timedelta(days=2),
+        ),
+        LearnPost(
+            author_user_id=mizuki.id,
+            title="二创前必读：许可与归因入门",
+            summary="搞懂 CC 许可类型与署名要求，二创才不会踩坑。",
+            level=LearnPostLevel.INTERMEDIATE,
+            cover_asset_id=approved_cover_2.id,
+            body_markdown=(
+                "## 四种常见许可类型\n\n"
+                "CC BY 到保留所有权利，授权范围逐级收紧。\n\n"
+                "二创发布前，平台会把许可快照冻结在这条二创记录里。"
+            ),
+            status=LearnPostStatus.APPROVED,
+            reviewed_by_user_id=reviewer.id,
+            reviewed_at=utcnow() - dt.timedelta(days=1),
+            published_at=utcnow() - dt.timedelta(days=1),
+        ),
+        LearnPost(
+            author_user_id=ava.id,
+            title="构图与光比：新手到进阶的三个练习",
+            summary="从三分法到不对称构图，配合光比练习巩固手感。",
+            level=LearnPostLevel.INTERMEDIATE,
+            cover_asset_id=None,
+            body_markdown=("## 先练三分法\n\n把主体放在网格交点上，是最快建立画面平衡感的方法。"),
+            status=LearnPostStatus.PENDING,
+        ),
+        LearnPost(
+            author_user_id=linhai.id,
+            title="夜景降噪与后期思路",
+            summary="高感光度素材如何在后期里兼顾细节与噪点控制。",
+            level=LearnPostLevel.ADVANCED,
+            cover_asset_id=None,
+            body_markdown=(
+                "## 降噪的取舍\n\n"
+                "降噪越强细节损失越多，暗部局部降噪比全局降噪划算。\n\n"
+                "长曝光叠加也能在拍摄阶段降低后期的降噪压力。"
+            ),
+            status=LearnPostStatus.PENDING,
+        ),
+        LearnPost(
+            author_user_id=ava.id,
+            title="免费素材来源清单（未标注授权）",
+            summary="汇总了一批素材站链接，但未说明各自的授权条款。",
+            level=LearnPostLevel.BEGINNER,
+            cover_asset_id=rejected_cover.id,
+            body_markdown=("## 素材站清单\n\n列了几个素材站，但未核实每个站点的商用授权条款。"),
+            status=LearnPostStatus.REJECTED,
+            reject_reason="未标注素材来源的授权条款，存在侵权风险，请补充后重新提交。",
+            reviewed_by_user_id=reviewer.id,
+            reviewed_at=utcnow() - dt.timedelta(hours=6),
+        ),
+    )
+    session.add_all(posts)
+    session.flush()
+    logger.info("seeded %d learn posts", len(posts))
 
 
 def _seed_credits(session: Session, users: dict[str, User], works: list[Work]) -> None:

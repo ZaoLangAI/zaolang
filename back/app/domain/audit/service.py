@@ -14,6 +14,7 @@ from fastapi import Request
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
+from app.api.request_utils import client_ip
 from app.domain.errors import ReasonRequired
 from app.models import AuditLog, User
 from app.models.base import utcnow
@@ -66,7 +67,7 @@ def record(
         after_json=redact(after or {}),
         reason=(reason or "").strip() or None,
         request_id=get_request_id(),
-        ip_address=_client_ip(request),
+        ip_address=client_ip(request),
         user_agent=(request.headers.get("user-agent", "")[:255] if request else None),
         created_at=utcnow(),
     )
@@ -84,6 +85,7 @@ def search(
     target_id: str | None = None,
     since: dt.datetime | None = None,
     until: dt.datetime | None = None,
+    before: dt.datetime | None = None,
     cursor: str | None = None,
     limit: int = 50,
 ) -> list[AuditLog]:
@@ -102,15 +104,8 @@ def search(
         stmt = stmt.where(AuditLog.created_at >= since)
     if until:
         stmt = stmt.where(AuditLog.created_at <= until)
+    if before:
+        stmt = stmt.where(AuditLog.created_at < before)
     if cursor:
         stmt = stmt.where(AuditLog.id < cursor)
     return list(session.scalars(stmt.limit(limit)))
-
-
-def _client_ip(request: Request | None) -> str | None:
-    if request is None:
-        return None
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
-    return request.client.host if request.client else None

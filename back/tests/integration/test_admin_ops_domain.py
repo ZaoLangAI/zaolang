@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from app.domain.credits import service as credits_service
 from app.models import (
     AuditLog,
+    CreationSkill,
     CreditLedgerEntry,
     ModerationQueueItem,
     ModerationResult,
+    Notification,
     ReportCase,
     User,
     Work,
@@ -20,10 +22,12 @@ from app.models import (
 )
 from app.models.base import new_id, utcnow
 from app.models.enums import (
+    CreationSkillStatus,
     LedgerEntryType,
     LifecycleStatus,
     ModerationStage,
     ModerationStatus,
+    NotificationType,
     UserStatus,
     Visibility,
 )
@@ -56,6 +60,32 @@ def queue_item(db: Session, work: Work) -> ModerationQueueItem:
         stage=ModerationStage.PRE_PUBLISH,
         subject_type="work",
         subject_id=work.id,
+        status=ModerationStatus.NEEDS_REVIEW,
+        priority=5,
+    )
+    db.add(item)
+    db.commit()
+    return item
+
+
+@pytest.fixture
+def skill(db: Session, author: User) -> CreationSkill:
+    item = CreationSkill(
+        owner_user_id=author.id,
+        title="电影感夜景",
+        status=CreationSkillStatus.PENDING_REVIEW,
+    )
+    db.add(item)
+    db.commit()
+    return item
+
+
+@pytest.fixture
+def skill_queue_item(db: Session, skill: CreationSkill) -> ModerationQueueItem:
+    item = ModerationQueueItem(
+        stage=ModerationStage.PRE_PUBLISH,
+        subject_type="skill",
+        subject_id=skill.id,
         status=ModerationStatus.NEEDS_REVIEW,
         priority=5,
     )
@@ -119,10 +149,20 @@ def test_approving_leaves_the_work_visible(
     db.refresh(work)
     assert work.lifecycle_status == LifecycleStatus.ACTIVE
 
+    note = db.scalar(
+        select(Notification).where(
+            Notification.user_id == work.owner_user_id,
+            Notification.title_key == "notification.work_approved",
+        )
+    )
+    assert note is not None
+    assert note.type == NotificationType.MODERATION
 
-def test_rejecting_tombstones_the_work(
+
+def test_rejecting_hides_rather_than_tombstones_the_work(
     client: TestClient, db: Session, reviewer: User, work: Work, queue_item: ModerationQueueItem
 ) -> None:
+    """A reviewer's verdict must stay undoable, unlike an operator's tombstone."""
     response = client.post(
         f"/v1/admin/moderation/queue/{queue_item.id}/decide",
         json={
@@ -135,7 +175,112 @@ def test_rejecting_tombstones_the_work(
     assert response.status_code == 200, response.text
 
     db.refresh(work)
-    assert work.lifecycle_status == LifecycleStatus.TOMBSTONE
+    assert work.lifecycle_status == LifecycleStatus.HIDDEN
+
+    note = db.scalar(
+        select(Notification).where(
+            Notification.user_id == work.owner_user_id,
+            Notification.title_key == "notification.work_hidden",
+        )
+    )
+    assert note is not None
+    assert note.payload_json["reason"] == "涉嫌侵权，已下架。"
+
+
+def test_moderation_detail_exposes_work_and_history_and_supports_restore(
+    client: TestClient, db: Session, admin: User, work: Work, queue_item: ModerationQueueItem
+) -> None:
+    client.post(
+        f"/v1/admin/moderation/queue/{queue_item.id}/decide",
+        json={
+            "decision": ModerationStatus.REJECTED.value,
+            "reason_code": "copyright",
+            "public_message": "涉嫌侵权，已下架。",
+        },
+        headers=admin_header(admin),
+    )
+
+    body = client.get(
+        f"/v1/admin/moderation/queue/{queue_item.id}/detail", headers=admin_header(admin)
+    ).json()
+    assert body["work"]["id"] == work.id
+    assert body["work"]["lifecycle_status"] == LifecycleStatus.HIDDEN
+    assert body["work"]["title"] == "待审核作品"
+    assert [h["status"] for h in body["history"]] == [ModerationStatus.REJECTED.value]
+
+    response = client.post(
+        f"/v1/admin/works/{work.id}/restore",
+        json={"reason": "申诉成立", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(work)
+    assert work.lifecycle_status == LifecycleStatus.ACTIVE
+    assert db.scalar(
+        select(Notification).where(
+            Notification.user_id == work.owner_user_id,
+            Notification.title_key == "notification.work_restored",
+        )
+    )
+
+
+def test_rejecting_a_skill_notifies_its_owner(
+    client: TestClient,
+    db: Session,
+    reviewer: User,
+    skill: CreationSkill,
+    skill_queue_item: ModerationQueueItem,
+) -> None:
+    response = client.post(
+        f"/v1/admin/moderation/queue/{skill_queue_item.id}/decide",
+        json={
+            "decision": ModerationStatus.REJECTED.value,
+            "reason_code": "quality",
+            "public_message": "示例效果不达标。",
+        },
+        headers=admin_header(reviewer),
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(skill)
+    assert skill.status == CreationSkillStatus.REJECTED
+
+    note = db.scalar(
+        select(Notification).where(
+            Notification.user_id == skill.owner_user_id,
+            Notification.title_key == "notification.skill_rejected",
+        )
+    )
+    assert note is not None
+    assert note.payload_json["title"] == skill.title
+    assert note.payload_json["reason"] == "示例效果不达标。"
+
+
+def test_taking_down_a_published_skill_notifies_its_owner(
+    client: TestClient, db: Session, admin: User, skill: CreationSkill
+) -> None:
+    skill.status = CreationSkillStatus.PUBLISHED
+    db.commit()
+
+    response = client.post(
+        f"/v1/admin/skills/{skill.id}/takedown",
+        json={"reason": "涉嫌侵权", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(skill)
+    assert skill.status == CreationSkillStatus.REJECTED
+
+    note = db.scalar(
+        select(Notification).where(
+            Notification.user_id == skill.owner_user_id,
+            Notification.title_key == "notification.skill_takedown",
+        )
+    )
+    assert note is not None
+    assert note.payload_json["reason"] == "涉嫌侵权"
 
 
 def test_a_human_verdict_supersedes_rather_than_edits_the_agent_one(

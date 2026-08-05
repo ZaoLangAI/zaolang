@@ -36,6 +36,7 @@ PURPOSE_TO_ROLE: dict[str, AssetRole] = {
     "avatar": AssetRole.AVATAR,
     "profile_cover": AssetRole.PROFILE_COVER,
     "consent_evidence": AssetRole.CONSENT_EVIDENCE,
+    "learn_media": AssetRole.LEARN_MEDIA,
 }
 
 # Two images within this Hamming distance are treated as the same content.
@@ -72,8 +73,8 @@ def presign_upload(
         raise ValidationFailed(
             f"文件超过 {limit // (1024 * 1024)}MB 上限。", size_bytes=size_bytes, limit=limit
         )
-    if purpose in ("avatar", "profile_cover") and not mime_type.startswith("image/"):
-        raise ValidationFailed("头像与封面必须是图片。", mime_type=mime_type)
+    if purpose in ("avatar", "profile_cover", "learn_media") and not mime_type.startswith("image/"):
+        raise ValidationFailed("头像、封面与学习内容配图必须是图片。", mime_type=mime_type)
 
     # The key embeds the owner, so an object's directory alone proves who may
     # write to it.

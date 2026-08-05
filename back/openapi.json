@@ -1261,6 +1261,940 @@
         }
       }
     },
+    "/v1/learn/posts": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "List Posts",
+        "operationId": "list_posts_v1_learn_posts_get",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LearnPostLevel"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 24,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LearnPostSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Create Post",
+        "operationId": "create_post_v1_learn_posts_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearnPostCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnPostDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/learn/posts/mine": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "List Mine",
+        "operationId": "list_mine_v1_learn_posts_mine_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 24,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LearnPostSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/learn/posts/{post_id}": {
+      "get": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Get Post",
+        "operationId": "get_post_v1_learn_posts__post_id__get",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnPostDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Update Post",
+        "operationId": "update_post_v1_learn_posts__post_id__patch",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearnPostUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnPostDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/learn/posts/{post_id}/withdraw": {
+      "post": {
+        "tags": [
+          "learning"
+        ],
+        "summary": "Withdraw Post",
+        "operationId": "withdraw_post_v1_learn_posts__post_id__withdraw_post",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnPostDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/public": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List Public Skills",
+        "operationId": "list_public_skills_v1_skills_public_get",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CreationSkillCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 24,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CreationSkillSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List My Skills",
+        "operationId": "list_my_skills_v1_skills_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 60,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CreationSkillSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Create Skill",
+        "operationId": "create_skill_v1_skills_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreationSkillCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/{skill_id}": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Get Skill",
+        "operationId": "get_skill_v1_skills__skill_id__get",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Update Skill",
+        "operationId": "update_skill_v1_skills__skill_id__patch",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreationSkillUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/{skill_id}/publish": {
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Publish Skill",
+        "operationId": "publish_skill_v1_skills__skill_id__publish_post",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/{skill_id}/withdraw": {
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Withdraw Skill",
+        "operationId": "withdraw_skill_v1_skills__skill_id__withdraw_post",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/{skill_id}/apply": {
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Apply Skill",
+        "operationId": "apply_skill_v1_skills__skill_id__apply_post",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/drafts": {
       "post": {
         "tags": [
@@ -3360,6 +4294,66 @@
         }
       }
     },
+    "/v1/credits/redeem": {
+      "post": {
+        "tags": [
+          "credits"
+        ],
+        "summary": "Redeem",
+        "description": "Cashes in an invite/promo code for its face-value credits.",
+        "operationId": "redeem_v1_credits_redeem_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemCodeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemCodeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/credits/checkout": {
       "post": {
         "tags": [
@@ -5080,6 +6074,40 @@
             }
           },
           {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -5464,6 +6492,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_ModerationQueueView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/moderation/queue/{item_id}/detail": {
+      "get": {
+        "tags": [
+          "admin:content"
+        ],
+        "summary": "Moderation Detail",
+        "description": "The queue row plus its full verdict trail, so a reviewer can see what\nalready happened to this subject before deciding whether to reverse it.",
+        "operationId": "moderation_detail_v1_admin_moderation_queue__item_id__detail_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModerationSubjectDetailView"
                 }
               }
             }
@@ -5996,6 +7083,209 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_FingerprintDuplicateGroup_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/learn-posts": {
+      "get": {
+        "tags": [
+          "admin:learning"
+        ],
+        "summary": "List Learn Posts",
+        "operationId": "list_learn_posts_v1_admin_learn_posts_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LearnPostStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LearnPostAdminView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/learn-posts/{post_id}/approve": {
+      "post": {
+        "tags": [
+          "admin:learning"
+        ],
+        "summary": "Approve",
+        "operationId": "approve_v1_admin_learn_posts__post_id__approve_post",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnPostAdminView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/learn-posts/{post_id}/reject": {
+      "post": {
+        "tags": [
+          "admin:learning"
+        ],
+        "summary": "Reject",
+        "operationId": "reject_v1_admin_learn_posts__post_id__reject_post",
+        "parameters": [
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Post Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearnPostDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnPostAdminView"
                 }
               }
             }
@@ -6910,6 +8200,267 @@
         }
       }
     },
+    "/v1/admin/redemption-codes": {
+      "get": {
+        "tags": [
+          "admin:credits"
+        ],
+        "summary": "List Codes",
+        "operationId": "list_codes_v1_admin_redemption_codes_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RedemptionCodeKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RedemptionCodeView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:credits"
+        ],
+        "summary": "Create Code",
+        "operationId": "create_code_v1_admin_redemption_codes_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedemptionCodeCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionCodeView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/redemption-codes/{code_id}/deactivate": {
+      "post": {
+        "tags": [
+          "admin:credits"
+        ],
+        "summary": "Deactivate Code",
+        "description": "No way back once flipped — there is no `activate` endpoint — so this\ncarries the same reason + confirm gate as minting a code does.",
+        "operationId": "deactivate_code_v1_admin_redemption_codes__code_id__deactivate_post",
+        "parameters": [
+          {
+            "name": "code_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionCodeView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/redemption-codes/{code_id}/records": {
+      "get": {
+        "tags": [
+          "admin:credits"
+        ],
+        "summary": "List Records",
+        "operationId": "list_records_v1_admin_redemption_codes__code_id__records_get",
+        "parameters": [
+          {
+            "name": "code_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RedemptionRecordView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/config": {
       "get": {
         "tags": [
@@ -7422,6 +8973,40 @@
             }
           },
           {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -7580,6 +9165,806 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_AnnouncementView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/logs": {
+      "get": {
+        "tags": [
+          "admin:logs"
+        ],
+        "summary": "List Logs",
+        "operationId": "list_logs_v1_admin_logs_get",
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor User Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LogEntryView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/llm-providers": {
+      "get": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "List Llm Providers",
+        "operationId": "list_llm_providers_v1_admin_llm_providers_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderPoolView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/llm-providers/{endpoint_id}": {
+      "put": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "Upsert Llm Provider",
+        "description": "Creates or replaces one endpoint. `api_key=None` keeps the stored secret.",
+        "operationId": "upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderEndpointUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderPoolView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/llm-providers/{endpoint_id}/remove": {
+      "post": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "Remove Llm Provider",
+        "description": "Removing the endpoint another agent's traffic depends on is the kind of\nmistake that stops generations from completing, hence the confirmation.",
+        "operationId": "remove_llm_provider_v1_admin_llm_providers__endpoint_id__remove_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderPoolView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/llm-providers/settings/circuit-breaker": {
+      "put": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "Update Breaker Settings",
+        "operationId": "update_breaker_settings_v1_admin_llm_providers_settings_circuit_breaker_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmProviderBreakerSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderPoolView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-nodes": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Agent Nodes",
+        "operationId": "list_agent_nodes_v1_admin_agent_nodes_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AgentNodeView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-skills": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Agent Skills",
+        "operationId": "list_agent_skills_v1_admin_agent_skills_get",
+        "parameters": [
+          {
+            "name": "node_role",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Node Role"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AgentSkillView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Publish Agent Skill",
+        "description": "Publishes a new prompt version for one node and makes it active.\n\nA rejected or unparseable safety verdict is the direct, immediate result\nof what this prompt says, so publishing it is treated with the same\nconfirmation ceremony as any other dangerous admin action.",
+        "operationId": "publish_agent_skill_v1_admin_agent_skills_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSkillPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSkillView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-skills/{skill_id}/activate": {
+      "post": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Activate Agent Skill",
+        "description": "Rolls back to an earlier version by re-publishing its content.",
+        "operationId": "activate_agent_skill_v1_admin_agent_skills__skill_id__activate_post",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSkillView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/skills": {
+      "get": {
+        "tags": [
+          "admin:skill-library"
+        ],
+        "summary": "List Skills",
+        "operationId": "list_skills_v1_admin_skills_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/CreationSkillStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_CreationSkillAdminView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/skills/{skill_id}/takedown": {
+      "post": {
+        "tags": [
+          "admin:skill-library"
+        ],
+        "summary": "Takedown Skill",
+        "operationId": "takedown_skill_v1_admin_skills__skill_id__takedown_post",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TombstoneRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillAdminView"
                 }
               }
             }
@@ -8058,8 +10443,7 @@
           },
           "agent_runs": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/AgentRunView"
             },
             "type": "array",
             "title": "Agent Runs"
@@ -8327,6 +10711,52 @@
         ],
         "title": "AdminUserView"
       },
+      "AgentNodeView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "candidate_endpoint_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Candidate Endpoint Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "display_name",
+          "description",
+          "enabled",
+          "sort_order"
+        ],
+        "title": "AgentNodeView",
+        "description": "One pipeline stage plus which failover-pool endpoints could serve it.\n\n`candidate_endpoint_ids` is derived, not stored: it is whichever\n`llm_providers` endpoints currently carry this node's role (or\n`\"general\"`) as a scenario tag, so the node graph can show \"0 candidate\nendpoints\" as an actionable warning rather than a silent gap."
+      },
       "AgentRunView": {
         "properties": {
           "id": {
@@ -8425,6 +10855,115 @@
           "created_at"
         ],
         "title": "AgentRunView"
+      },
+      "AgentSkillPublishRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 4,
+            "title": "Reason"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          },
+          "node_role": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Node Role"
+          },
+          "prompt_template": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Prompt Template"
+          },
+          "tool_grants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tool Grants"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "node_role",
+          "prompt_template"
+        ],
+        "title": "AgentSkillPublishRequest"
+      },
+      "AgentSkillView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "node_role": {
+            "type": "string",
+            "title": "Node Role"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "prompt_template": {
+            "type": "string",
+            "title": "Prompt Template"
+          },
+          "tool_grants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tool Grants"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "node_role",
+          "version",
+          "prompt_template",
+          "is_active",
+          "created_at"
+        ],
+        "title": "AgentSkillView"
       },
       "AgentUsageSummary": {
         "properties": {
@@ -9534,6 +12073,340 @@
         ],
         "title": "CountResponse"
       },
+      "CreationSkillAdminView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "title": "Owner User Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CreationSkillCategory"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CreationSkillVisibility"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreationSkillStatus"
+          },
+          "usage_count": {
+            "type": "integer",
+            "title": "Usage Count"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "owner_user_id",
+          "title",
+          "description",
+          "category",
+          "visibility",
+          "status",
+          "usage_count",
+          "created_at"
+        ],
+        "title": "CreationSkillAdminView"
+      },
+      "CreationSkillCategory": {
+        "type": "string",
+        "enum": [
+          "scene",
+          "lens",
+          "style",
+          "other"
+        ],
+        "title": "CreationSkillCategory"
+      },
+      "CreationSkillCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "title": "Description",
+            "default": ""
+          },
+          "category": {
+            "$ref": "#/components/schemas/CreationSkillCategory",
+            "default": "other"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "CreationSkillCreateRequest"
+      },
+      "CreationSkillDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CreationSkillCategory"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "author": {
+            "$ref": "#/components/schemas/AuthorSummary"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CreationSkillVisibility"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreationSkillStatus"
+          },
+          "usage_count": {
+            "type": "integer",
+            "title": "Usage Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "category",
+          "author",
+          "visibility",
+          "status",
+          "usage_count",
+          "created_at"
+        ],
+        "title": "CreationSkillDetail"
+      },
+      "CreationSkillStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_review",
+          "published",
+          "rejected"
+        ],
+        "title": "CreationSkillStatus"
+      },
+      "CreationSkillSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CreationSkillCategory"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "author": {
+            "$ref": "#/components/schemas/AuthorSummary"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CreationSkillVisibility"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreationSkillStatus"
+          },
+          "usage_count": {
+            "type": "integer",
+            "title": "Usage Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "category",
+          "author",
+          "visibility",
+          "status",
+          "usage_count",
+          "created_at"
+        ],
+        "title": "CreationSkillSummary",
+        "description": "列表卡片投影，风格对齐 `learning.LearnPostSummary`。"
+      },
+      "CreationSkillUpdateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "title": "Description",
+            "default": ""
+          },
+          "category": {
+            "$ref": "#/components/schemas/CreationSkillCategory",
+            "default": "other"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "CreationSkillUpdateRequest"
+      },
+      "CreationSkillVisibility": {
+        "type": "string",
+        "enum": [
+          "private",
+          "public"
+        ],
+        "title": "CreationSkillVisibility",
+        "description": "Owner's intent, independent of moderation state.\n\nA `PENDING_REVIEW`/`REJECTED` skill can carry `PUBLIC` here (it is meant\nfor sharing) while still being invisible to anyone but its owner — public\nlisting always additionally filters on `status == PUBLISHED`."
+      },
       "CreditBalanceResponse": {
         "properties": {
           "available": {
@@ -9599,6 +12472,27 @@
           "region"
         ],
         "title": "CreditPackageResponse"
+      },
+      "DangerousAction": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 4,
+            "title": "Reason"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "DangerousAction",
+        "description": "Base for anything requiring a typed reason.\n\nThe reason is stored in the audit log, so an empty string is refused at the\nschema boundary rather than deep inside a service."
       },
       "DanglingReserveView": {
         "properties": {
@@ -10521,6 +13415,362 @@
         ],
         "title": "JobTerminateRequest"
       },
+      "LearnPostAdminView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "author_user_id": {
+            "type": "string",
+            "title": "Author User Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LearnPostStatus"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "body_markdown": {
+            "type": "string",
+            "title": "Body Markdown",
+            "default": ""
+          },
+          "asset_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Asset Urls"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "author_user_id",
+          "title",
+          "summary",
+          "level",
+          "status",
+          "created_at"
+        ],
+        "title": "LearnPostAdminView"
+      },
+      "LearnPostCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Summary"
+          },
+          "level": {
+            "$ref": "#/components/schemas/LearnPostLevel",
+            "default": "beginner"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "body_markdown": {
+            "type": "string",
+            "title": "Body Markdown",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "summary"
+        ],
+        "title": "LearnPostCreateRequest"
+      },
+      "LearnPostDecisionRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "LearnPostDecisionRequest",
+        "description": "`reason` 拒绝时必填，通过时忽略——校验放在 domain 层，见 `learning.service.reject`。"
+      },
+      "LearnPostDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "level": {
+            "$ref": "#/components/schemas/LearnPostLevel"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "author": {
+            "$ref": "#/components/schemas/AuthorSummary"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LearnPostStatus"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "body_markdown": {
+            "type": "string",
+            "title": "Body Markdown",
+            "default": ""
+          },
+          "asset_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Asset Urls"
+          },
+          "reject_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reject Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "level",
+          "author",
+          "status",
+          "created_at"
+        ],
+        "title": "LearnPostDetail",
+        "description": "详情比列表卡片多带 `cover_asset_id`：编辑表单回填封面时如果只拿得到\n`cover_url`，用户不重新选图提交就会把封面字段整份覆盖成空。\n\n`body_markdown` 里的图片用 `learn-asset:{id}` 这种不过期的引用而不是直出\nURL（对象存储的签名 URL 会过期，不能写进持久化的正文）；`asset_urls` 是\n服务端在这次响应里临时解析出的 `{资产 id: 当下有效的签名 URL}` 映射，只给\n渲染/编辑时替换显示用，不代表存储格式变了。"
+      },
+      "LearnPostLevel": {
+        "type": "string",
+        "enum": [
+          "beginner",
+          "intermediate",
+          "advanced"
+        ],
+        "title": "LearnPostLevel"
+      },
+      "LearnPostStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "withdrawn"
+        ],
+        "title": "LearnPostStatus"
+      },
+      "LearnPostSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "level": {
+            "$ref": "#/components/schemas/LearnPostLevel"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "author": {
+            "$ref": "#/components/schemas/AuthorSummary"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LearnPostStatus"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "level",
+          "author",
+          "status"
+        ],
+        "title": "LearnPostSummary",
+        "description": "列表卡片投影，风格对齐 `works.WorkSummary`。"
+      },
+      "LearnPostUpdateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Summary"
+          },
+          "level": {
+            "$ref": "#/components/schemas/LearnPostLevel",
+            "default": "beginner"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "body_markdown": {
+            "type": "string",
+            "title": "Body Markdown",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "summary"
+        ],
+        "title": "LearnPostUpdateRequest"
+      },
       "LedgerEntryResponse": {
         "properties": {
           "id": {
@@ -10870,6 +14120,226 @@
         "title": "LineageResponse",
         "description": "Both directions in one payload so the graph renders in a single fetch."
       },
+      "LlmProviderBreakerSettingsRequest": {
+        "properties": {
+          "circuit_breaker_failure_threshold": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Circuit Breaker Failure Threshold"
+          },
+          "circuit_breaker_cooldown_s": {
+            "type": "integer",
+            "maximum": 3600.0,
+            "minimum": 5.0,
+            "title": "Circuit Breaker Cooldown S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "circuit_breaker_failure_threshold",
+          "circuit_breaker_cooldown_s"
+        ],
+        "title": "LlmProviderBreakerSettingsRequest"
+      },
+      "LlmProviderEndpointUpsertRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "base_url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Base Url"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "scenario_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scenario Tags"
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "maximum": 256.0,
+            "minimum": 1.0,
+            "title": "Max Concurrency",
+            "default": 4
+          },
+          "priority": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Priority",
+            "default": 100
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "maximum": 120000.0,
+            "minimum": 1000.0,
+            "title": "Timeout Ms",
+            "default": 30000
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "base_url"
+        ],
+        "title": "LlmProviderEndpointUpsertRequest"
+      },
+      "LlmProviderEndpointView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "api_key_configured": {
+            "type": "boolean",
+            "title": "Api Key Configured"
+          },
+          "api_key_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Preview"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "scenario_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scenario Tags"
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "title": "Max Concurrency"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "title": "Timeout Ms"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "concurrency_in_use": {
+            "type": "integer",
+            "title": "Concurrency In Use",
+            "default": 0
+          },
+          "circuit_breaker_open": {
+            "type": "boolean",
+            "title": "Circuit Breaker Open",
+            "default": false
+          },
+          "recent_attempts": {
+            "type": "integer",
+            "title": "Recent Attempts",
+            "default": 0
+          },
+          "recent_success_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recent Success Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "base_url",
+          "api_key_configured",
+          "max_concurrency",
+          "priority",
+          "timeout_ms",
+          "enabled"
+        ],
+        "title": "LlmProviderEndpointView",
+        "description": "Read model for one failover-pool endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log."
+      },
+      "LlmProviderPoolView": {
+        "properties": {
+          "endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProviderEndpointView"
+            },
+            "type": "array",
+            "title": "Endpoints"
+          },
+          "circuit_breaker_failure_threshold": {
+            "type": "integer",
+            "title": "Circuit Breaker Failure Threshold"
+          },
+          "circuit_breaker_cooldown_s": {
+            "type": "integer",
+            "title": "Circuit Breaker Cooldown S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "circuit_breaker_failure_threshold",
+          "circuit_breaker_cooldown_s"
+        ],
+        "title": "LlmProviderPoolView"
+      },
       "Locale": {
         "type": "string",
         "enum": [
@@ -10878,6 +14348,117 @@
           "ja"
         ],
         "title": "Locale"
+      },
+      "LogEntryView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "event": {
+            "type": "string",
+            "title": "Event"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Address"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "occurrence_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurrence Count"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "level",
+          "event",
+          "message",
+          "occurred_at"
+        ],
+        "title": "LogEntryView",
+        "description": "One row in the unified log centre: an `AuditLog` row (privileged writes)\nor a `SystemLog` row (auth/rate-limit/permission signals), reshaped onto a\ncommon shape so the console can filter and scroll through both together."
       },
       "LoginRequest": {
         "properties": {
@@ -11030,6 +14611,73 @@
         ],
         "title": "ModerationDecisionRequest"
       },
+      "ModerationHistoryEntry": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          },
+          "decided_by": {
+            "type": "string",
+            "title": "Decided By"
+          },
+          "reviewer_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer User Id"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "public_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Public Message"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "stage",
+          "status",
+          "decided_by",
+          "created_at"
+        ],
+        "title": "ModerationHistoryEntry",
+        "description": "One row from the append-only verdict trail for a subject."
+      },
       "ModerationQueueView": {
         "properties": {
           "id": {
@@ -11126,6 +14774,141 @@
           "needs_review"
         ],
         "title": "ModerationStatus"
+      },
+      "ModerationSubjectDetailView": {
+        "properties": {
+          "queue_item": {
+            "$ref": "#/components/schemas/ModerationQueueView"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ModerationHistoryEntry"
+            },
+            "type": "array",
+            "title": "History"
+          },
+          "work": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModerationWorkDetailView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationSkillAdminView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "queue_item",
+          "history"
+        ],
+        "title": "ModerationSubjectDetailView",
+        "description": "Full context for one queue item: the current decision plus everything\nthat led to it, so a reviewer can judge a REJECTED/HIDDEN call without\ntrusting the summary row alone."
+      },
+      "ModerationWorkDetailView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "media_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Url"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "title": "Owner User Id"
+          },
+          "visibility": {
+            "type": "string",
+            "title": "Visibility"
+          },
+          "lifecycle_status": {
+            "type": "string",
+            "title": "Lifecycle Status"
+          },
+          "tombstone_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tombstone Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "owner_user_id",
+          "visibility",
+          "lifecycle_status",
+          "created_at"
+        ],
+        "title": "ModerationWorkDetailView"
       },
       "MyDataRequestView": {
         "properties": {
@@ -11348,6 +15131,38 @@
         ],
         "title": "Page[AdminUserView]"
       },
+      "Page_AgentNodeView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentNodeView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[AgentNodeView]"
+      },
       "Page_AgentRunView_": {
         "properties": {
           "items": {
@@ -11379,6 +15194,38 @@
           "items"
         ],
         "title": "Page[AgentRunView]"
+      },
+      "Page_AgentSkillView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSkillView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[AgentSkillView]"
       },
       "Page_AgentUsageSummary_": {
         "properties": {
@@ -11603,6 +15450,70 @@
           "items"
         ],
         "title": "Page[ConfigVersionView]"
+      },
+      "Page_CreationSkillAdminView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreationSkillAdminView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[CreationSkillAdminView]"
+      },
+      "Page_CreationSkillSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreationSkillSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[CreationSkillSummary]"
       },
       "Page_CreditPackageResponse_": {
         "properties": {
@@ -11860,6 +15771,70 @@
         ],
         "title": "Page[JobEventView]"
       },
+      "Page_LearnPostAdminView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LearnPostAdminView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[LearnPostAdminView]"
+      },
+      "Page_LearnPostSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LearnPostSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[LearnPostSummary]"
+      },
       "Page_LedgerEntryResponse_": {
         "properties": {
           "items": {
@@ -11923,6 +15898,38 @@
           "items"
         ],
         "title": "Page[LedgerEntryView]"
+      },
+      "Page_LogEntryView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LogEntryView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[LogEntryView]"
       },
       "Page_ModerationQueueView_": {
         "properties": {
@@ -12083,6 +16090,70 @@
           "items"
         ],
         "title": "Page[PublicationIntentResponse]"
+      },
+      "Page_RedemptionCodeView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RedemptionCodeView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[RedemptionCodeView]"
+      },
+      "Page_RedemptionRecordView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RedemptionRecordView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[RedemptionRecordView]"
       },
       "Page_ReportCaseView_": {
         "properties": {
@@ -13092,6 +17163,233 @@
         ],
         "title": "ReconciliationView"
       },
+      "RedeemCodeRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "RedeemCodeRequest"
+      },
+      "RedeemCodeResponse": {
+        "properties": {
+          "credits_granted": {
+            "type": "integer",
+            "title": "Credits Granted"
+          },
+          "available_balance": {
+            "type": "integer",
+            "title": "Available Balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credits_granted",
+          "available_balance"
+        ],
+        "title": "RedeemCodeResponse"
+      },
+      "RedemptionCodeCreateRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 4,
+            "title": "Reason"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RedemptionCodeKind",
+            "default": "promo"
+          },
+          "credits": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Credits"
+          },
+          "max_uses": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Uses",
+            "default": 1
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "credits"
+        ],
+        "title": "RedemptionCodeCreateRequest",
+        "description": "Confirmation + a written reason, like `AdjustCreditsRequest` — minting\na code is a direct promise of real credits."
+      },
+      "RedemptionCodeKind": {
+        "type": "string",
+        "enum": [
+          "invite",
+          "promo"
+        ],
+        "title": "RedemptionCodeKind",
+        "description": "`INVITE` is meant for one-to-one referral (small `max_uses`, often 1);\n`PROMO` is an operator-run campaign code shared with many users at once."
+      },
+      "RedemptionCodeView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RedemptionCodeKind"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "max_uses": {
+            "type": "integer",
+            "title": "Max Uses"
+          },
+          "used_count": {
+            "type": "integer",
+            "title": "Used Count"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "kind",
+          "credits",
+          "max_uses",
+          "used_count",
+          "is_active",
+          "created_at"
+        ],
+        "title": "RedemptionCodeView"
+      },
+      "RedemptionRecordView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "credits",
+          "created_at"
+        ],
+        "title": "RedemptionRecordView"
+      },
       "Region": {
         "type": "string",
         "enum": [
@@ -13139,6 +17437,18 @@
             "type": "boolean",
             "title": "Age Confirmed",
             "default": false
+          },
+          "invite_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite Code"
           }
         },
         "type": "object",
@@ -14173,7 +18483,7 @@
           },
           "purpose": {
             "type": "string",
-            "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence)$",
+            "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media)$",
             "title": "Purpose"
           }
         },

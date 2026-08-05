@@ -4,6 +4,7 @@ Everything is re-exported here so that `Base.metadata` is fully populated by a
 single import, which is what Alembic autogenerate relies on.
 """
 
+from app.models.agent_skills import AgentNode, AgentSkill
 from app.models.base import Base, TimestampMixin, new_id, utcnow
 from app.models.characters import Character, Series
 from app.models.credits import (
@@ -11,6 +12,8 @@ from app.models.credits import (
     CreditLedgerEntry,
     CreditPackage,
     PaymentIntent,
+    RedemptionCode,
+    RedemptionRecord,
     WebhookEvent,
 )
 from app.models.generation import (
@@ -23,6 +26,7 @@ from app.models.generation import (
     WorkflowVersion,
 )
 from app.models.identity import Follow, Profile, User
+from app.models.learning import LearnPost
 from app.models.media import (
     Asset,
     AssetConsent,
@@ -45,6 +49,8 @@ from app.models.platform import (
     ReportCase,
 )
 from app.models.search import EMBEDDING_DIM, WorkEmbedding
+from app.models.skill_library import CreationSkill
+from app.models.system_log import SystemLog
 from app.models.works import (
     Bookmark,
     Collection,
@@ -63,7 +69,9 @@ from app.models.works import (
 
 __all__ = [
     "EMBEDDING_DIM",
+    "AgentNode",
     "AgentRun",
+    "AgentSkill",
     "Announcement",
     "Asset",
     "AssetConsent",
@@ -75,6 +83,7 @@ __all__ = [
     "Collection",
     "CollectionItem",
     "ContentFingerprint",
+    "CreationSkill",
     "CreditAccount",
     "CreditLedgerEntry",
     "CreditPackage",
@@ -85,6 +94,7 @@ __all__ = [
     "GenerationJob",
     "IdempotencyRecord",
     "JobEvent",
+    "LearnPost",
     "LicenseSnapshot",
     "Like",
     "LineageEdge",
@@ -99,9 +109,12 @@ __all__ = [
     "ProviderStat",
     "PublicationIntent",
     "ReconciliationReport",
+    "RedemptionCode",
+    "RedemptionRecord",
     "ReportCase",
     "Series",
     "StylePreset",
+    "SystemLog",
     "Tag",
     "TimestampMixin",
     "UploadSession",

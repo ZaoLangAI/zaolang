@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
 
 from app.api.deps import DbSession
+from app.api.request_utils import as_utc
 from app.api.schemas.admin import (
     AnnouncementRequest,
     AnnouncementView,
@@ -191,6 +193,8 @@ def audit_logs(
     action: str | None = None,
     target_type: str | None = None,
     target_id: str | None = None,
+    created_after: dt.datetime | None = None,
+    created_before: dt.datetime | None = None,
     cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[AuditLogView]:
@@ -200,6 +204,8 @@ def audit_logs(
         action=action,
         target_type=target_type,
         target_id=target_id,
+        since=as_utc(created_after) if created_after else None,
+        until=as_utc(created_before) if created_before else None,
         cursor=cursor,
         limit=limit + 1,
     )

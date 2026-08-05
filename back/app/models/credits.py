@@ -27,6 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
+from app.models.enums import RedemptionCodeKind
 
 
 class CreditAccount(Base, TimestampMixin):
@@ -144,4 +145,53 @@ class WebhookEvent(Base):
 
     __table_args__ = (
         UniqueConstraint("provider", "external_event_id", name="uq_webhook_events_external"),
+    )
+
+
+class RedemptionCode(Base, TimestampMixin):
+    """An operator-minted code worth a fixed number of credits.
+
+    `max_uses` covers both shapes with one table: an invite code is `max_uses
+    == 1`, a broadcast promo code is `max_uses > 1`. Either way each user can
+    redeem it only once — enforced by `uq_redemption_records_code_user` on
+    the record below, not by anything here.
+    """
+
+    __tablename__ = "redemption_codes"
+
+    id: Mapped[str] = id_column("rdc")
+    code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    kind: Mapped[str] = mapped_column(String(16), default=RedemptionCodeKind.PROMO, nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_uses: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    used_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint("credits > 0", name="credits_positive"),
+        CheckConstraint("max_uses > 0", name="max_uses_positive"),
+    )
+
+
+class RedemptionRecord(Base):
+    """One successful redemption. Append-only, like the credit ledger it feeds."""
+
+    __tablename__ = "redemption_records"
+
+    id: Mapped[str] = id_column("rdr")
+    code_id: Mapped[str] = mapped_column(
+        ForeignKey("redemption_codes.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("code_id", "user_id", name="uq_redemption_records_code_user"),
+        Index("ix_redemption_records_user", "user_id"),
     )

@@ -21,6 +21,10 @@ class RegisterRequest(ApiModel):
     # The platform is 18+; registration cannot proceed without an explicit
     # confirmation, and the timestamp is what the compliance record relies on.
     age_confirmed: bool = False
+    # Optional invite/promo code, redeemed in the same transaction as account
+    # creation: a code the user explicitly typed but that turns out invalid
+    # aborts registration rather than silently granting nothing.
+    invite_code: str | None = Field(default=None, max_length=32)
 
     @field_validator("password")
     @classmethod

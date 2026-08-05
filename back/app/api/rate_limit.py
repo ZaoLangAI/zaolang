@@ -76,6 +76,20 @@ class RateLimiter:
 
         if int(count) > rule.limit:
             retry_after = rule.window_seconds
+            # Local import: `system_log` reuses `get_redis` from this module,
+            # so importing it at module scope would be circular.
+            from app.domain.system_log import service as system_log
+            from app.models.enums import SystemLogLevel, SystemLogSource
+
+            system_log.emit(
+                source=SystemLogSource.RATE_LIMIT,
+                event=f"rate_limited.{bucket}",
+                level=SystemLogLevel.WARNING,
+                message=f"{identity} 触发限流桶 {bucket}（{int(count)}/{rule.limit}）。",
+                dedup_key=f"{bucket}:{identity}",
+                window_seconds=rule.window_seconds,
+                details={"bucket": bucket, "identity": identity, "count": int(count)},
+            )
             raise RateLimited(
                 f"操作过于频繁，请在 {retry_after} 秒后重试。", retry_after_seconds=retry_after
             )

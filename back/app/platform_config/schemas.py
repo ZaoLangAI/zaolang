@@ -191,6 +191,36 @@ class ModerationConfig(ConfigSection):
     require_human_review_for_video: bool = True
 
 
+class LlmProviderEndpoint(ConfigSection):
+    """One OpenAI-compatible LLM gateway endpoint.
+
+    Distinct from `ProviderSetting` above: that section configures the
+    image/video *generation* providers scored by `app/agents/router.py`'s
+    explainable rules. This configures which HTTP endpoint an *agent* call
+    (safety/planner/quality/copy) goes out on, selected by the independent
+    failover pool in `app/llm/failover.py` — priority + live concurrency +
+    circuit-breaker state, no scoring formula.
+    """
+
+    name: str
+    base_url: str
+    # Accepted as plaintext on write; the admin API never echoes it back.
+    api_key: str = ""
+    models: list[str] = Field(default_factory=list)
+    scenario_tags: list[str] = Field(default_factory=lambda: ["general"])
+    max_concurrency: int = Field(default=4, ge=1, le=256)
+    # Lower tries first. Endpoints sharing a priority are tried in id order.
+    priority: int = Field(default=100, ge=1, le=1000)
+    timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
+    enabled: bool = True
+
+
+class LlmProviderConfig(ConfigSection):
+    endpoints: dict[str, LlmProviderEndpoint] = Field(default_factory=dict)
+    circuit_breaker_failure_threshold: int = Field(default=5, ge=1, le=100)
+    circuit_breaker_cooldown_s: int = Field(default=60, ge=5, le=3600)
+
+
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "pricing": PricingConfig,
     "routing_weights": RoutingWeights,
@@ -200,6 +230,7 @@ CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "feature_flags": FeatureFlags,
     "moderation": ModerationConfig,
     "shortform": ShortformConfig,
+    "llm_providers": LlmProviderConfig,
 }
 
 
@@ -318,5 +349,13 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
             },
         },
         "default_profile": "douyin_vertical",
+    },
+    # Empty by default: with no endpoints configured, `app/llm/client.py` falls
+    # back to the single legacy `settings.llm_base_url`/`llm_api_key` endpoint,
+    # so a fresh deploy with no seed data still works.
+    "llm_providers": {
+        "endpoints": {},
+        "circuit_breaker_failure_threshold": 5,
+        "circuit_breaker_cooldown_s": 60,
     },
 }

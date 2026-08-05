@@ -24,11 +24,13 @@ from app.api.schemas.auth import (
 )
 from app.api.schemas.common import OkResponse
 from app.config import get_settings
+from app.domain.credits import redemption
 from app.domain.credits import service as credits_service
 from app.domain.errors import AuthRequired, Conflict, ValidationFailed
+from app.domain.system_log import service as system_log
 from app.models import Profile, User
 from app.models.base import utcnow
-from app.models.enums import UserRole
+from app.models.enums import SystemLogSource, UserRole
 from app.platform_config import service as config_service
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.tokens import REFRESH_AUDIENCE, decode_token, issue_consumer_tokens
@@ -75,6 +77,9 @@ def register(
         credits_service.SIGNUP_GRANT_CREDITS,
         idempotency_key=f"signup:{user.id}",
     )
+    if payload.invite_code:
+        # Bad code aborts the whole registration — nothing is committed yet.
+        redemption.redeem(session, code=payload.invite_code, user_id=user.id)
     session.commit()
 
     return _issue_session(user, response)
@@ -84,12 +89,20 @@ def register(
 def login(
     payload: LoginRequest, request: Request, response: Response, session: DbSession
 ) -> TokenResponse:
-    rate_limit.enforce("auth_attempt", client_identity(request, None))
+    identity = client_identity(request, None)
+    rate_limit.enforce("auth_attempt", identity)
 
     user = session.scalar(select(User).where(User.email == str(payload.email)))
     # The same message for both branches so the endpoint cannot be used to
     # enumerate registered addresses.
     if user is None or not verify_password(payload.password, user.password_hash):
+        system_log.emit(
+            source=SystemLogSource.AUTH,
+            event="login.failed",
+            message=f"{identity} 登录失败：邮箱或密码不正确。",
+            dedup_key=identity,
+            request=request,
+        )
         raise AuthRequired("邮箱或密码不正确。")
     if not user.is_active:
         raise AuthRequired("账号不可用，请联系支持。")

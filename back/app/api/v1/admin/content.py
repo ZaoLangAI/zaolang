@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
+    CreationSkillAdminView,
     FingerprintDuplicateGroup,
     ModerationDecisionRequest,
+    ModerationHistoryEntry,
     ModerationQueueView,
+    ModerationSubjectDetailView,
+    ModerationWorkDetailView,
     ReportCaseView,
     ReportResolveRequest,
     TombstoneRequest,
@@ -26,13 +32,15 @@ from app.api.v1.admin.deps import (
 )
 from app.domain.audit import service as audit
 from app.domain.errors import NotFound
+from app.domain.notifications import push as notifications
 from app.domain.publishing import service as publishing
+from app.domain.skill_library import service as skill_library
 from app.models import (
     Asset,
     ContentFingerprint,
+    CreationSkill,
     ModerationQueueItem,
     ModerationResult,
-    Notification,
     ReportCase,
     Work,
     WorkVersion,
@@ -65,6 +73,64 @@ def moderation_queue(
     )
     stmt = stmt.where(ModerationQueueItem.status == (status or ModerationStatus.NEEDS_REVIEW))
     return Page(items=[_queue_view(session, item) for item in session.scalars(stmt)])
+
+
+@router.get("/moderation/queue/{item_id}/detail", response_model=ModerationSubjectDetailView)
+def moderation_detail(
+    item_id: str, session: DbSession, user: Viewer, _: AdminRead
+) -> ModerationSubjectDetailView:
+    """The queue row plus its full verdict trail, so a reviewer can see what
+    already happened to this subject before deciding whether to reverse it."""
+    item = _queue_item(session, item_id)
+    history_stmt = (
+        select(ModerationResult)
+        .where(
+            ModerationResult.subject_type == item.subject_type,
+            ModerationResult.subject_id == item.subject_id,
+        )
+        .order_by(ModerationResult.created_at.desc())
+    )
+    history = [
+        ModerationHistoryEntry(
+            id=row.id,
+            stage=row.stage,
+            status=ModerationStatus(row.status),
+            decided_by=row.decided_by,
+            reviewer_user_id=row.reviewer_user_id,
+            reason_code=row.reason_code,
+            public_message=row.public_message,
+            created_at=row.created_at,
+        )
+        for row in session.scalars(history_stmt)
+    ]
+
+    work_detail = None
+    skill_detail = None
+    if item.subject_type == "work":
+        work_detail = _work_detail_view(session, item.subject_id)
+    elif item.subject_type == "skill":
+        skill = session.get(CreationSkill, item.subject_id)
+        if skill is not None:
+            skill_detail = CreationSkillAdminView(
+                id=skill.id,
+                owner_user_id=skill.owner_user_id,
+                title=skill.title,
+                description=skill.description,
+                category=skill.category,
+                cover_url=media_urls.asset_url(session, skill.cover_asset_id),
+                visibility=skill.visibility,
+                status=skill.status,
+                usage_count=skill.usage_count,
+                reject_reason=skill.reject_reason,
+                created_at=skill.created_at,
+            )
+
+    return ModerationSubjectDetailView(
+        queue_item=_queue_view(session, item),
+        history=history,
+        work=work_detail,
+        skill=skill_detail,
+    )
 
 
 @router.post("/moderation/queue/{item_id}/claim", response_model=ModerationQueueView)
@@ -112,14 +178,10 @@ def decide(
     item.reason_code = payload.reason_code
     item.resolved_at = utcnow()
 
-    if payload.decision == ModerationStatus.REJECTED and item.subject_type == "work":
-        publishing.tombstone(
-            session,
-            work_id=item.subject_id,
-            reason=payload.reason_code or "moderation_rejected",
-            actor_user_id=user.id,
-        )
-        _notify_owner(session, item.subject_id, payload.public_message)
+    if item.subject_type == "work":
+        _apply_work_decision(session, item.subject_id, payload, reviewer_user_id=user.id)
+    elif item.subject_type == "skill":
+        _apply_skill_decision(session, item.subject_id, payload, reviewer_user_id=user.id)
 
     audit.record(
         session,
@@ -208,6 +270,14 @@ def tombstone_work(
 
     before = {"lifecycle_status": work.lifecycle_status, "visibility": work.visibility}
     publishing.tombstone(session, work_id=work_id, reason=payload.reason, actor_user_id=user.id)
+    _notify(
+        session,
+        user_id=work.owner_user_id,
+        title_key="notification.work_tombstoned",
+        payload={"reason": payload.reason},
+        target_type="work",
+        target_id=work_id,
+    )
     audit.record(
         session,
         actor=user,
@@ -239,7 +309,15 @@ def hide_work(
         raise NotFound("作品不存在。")
 
     before = {"lifecycle_status": work.lifecycle_status}
-    work.lifecycle_status = LifecycleStatus.HIDDEN
+    publishing.hide(session, work_id=work_id, reason=payload.reason, actor_user_id=user.id)
+    _notify(
+        session,
+        user_id=work.owner_user_id,
+        title_key="notification.work_hidden",
+        payload={"reason": payload.reason},
+        target_type="work",
+        target_id=work_id,
+    )
     audit.record(
         session,
         actor=user,
@@ -263,16 +341,24 @@ def restore_work(
     work = session.get(Work, work_id)
     if work is None:
         raise NotFound("作品不存在。")
-    if work.lifecycle_status == LifecycleStatus.TOMBSTONE:
-        raise NotFound("墓碑作品不可恢复。")
 
-    work.lifecycle_status = LifecycleStatus.ACTIVE
+    before = {"lifecycle_status": work.lifecycle_status}
+    publishing.restore(session, work_id=work_id)
+    _notify(
+        session,
+        user_id=work.owner_user_id,
+        title_key="notification.work_restored",
+        payload={},
+        target_type="work",
+        target_id=work_id,
+    )
     audit.record(
         session,
         actor=user,
         action="work.restore",
         target_type="work",
         target_id=work_id,
+        before=before,
         after={"lifecycle_status": LifecycleStatus.ACTIVE},
         request=request,
     )
@@ -340,6 +426,11 @@ def _queue_view(session, item: ModerationQueueItem) -> ModerationQueueView:  # t
             preview = media_urls.asset_url(session, version.cover_asset_id)
     elif item.subject_type == "asset":
         preview = media_urls.asset_url(session, item.subject_id)
+    elif item.subject_type == "skill":
+        skill = session.get(CreationSkill, item.subject_id)
+        if skill is not None:
+            title = skill.title
+            preview = media_urls.asset_url(session, skill.cover_asset_id)
 
     return ModerationQueueView(
         id=item.id,
@@ -356,17 +447,111 @@ def _queue_view(session, item: ModerationQueueItem) -> ModerationQueueView:  # t
     )
 
 
-def _notify_owner(session, work_id: str, message: str | None) -> None:  # type: ignore[no-untyped-def]
+def _work_detail_view(session, work_id: str) -> ModerationWorkDetailView | None:  # type: ignore[no-untyped-def]
+    work = session.get(Work, work_id)
+    if work is None:
+        return None
+    version = session.get(WorkVersion, work.current_version_id or "")
+    return ModerationWorkDetailView(
+        id=work.id,
+        title=version.title if version else work.id,
+        description=version.description if version else None,
+        prompt=version.reusable_params_json.get("prompt") if version else None,
+        cover_url=media_urls.asset_url(session, version.cover_asset_id) if version else None,
+        media_url=(
+            media_urls.asset_url(session, version.primary_output_asset_id) if version else None
+        ),
+        owner_user_id=work.owner_user_id,
+        visibility=work.visibility,
+        lifecycle_status=work.lifecycle_status,
+        tombstone_reason=work.tombstone_reason,
+        created_at=work.created_at,
+    )
+
+
+def _apply_work_decision(  # type: ignore[no-untyped-def]
+    session, work_id: str, payload: ModerationDecisionRequest, *, reviewer_user_id: str
+) -> None:
     work = session.get(Work, work_id)
     if work is None:
         return
-    session.add(
-        Notification(
+
+    if payload.decision == ModerationStatus.REJECTED:
+        # A rejection is a reviewer's judgement call, not an operator's final
+        # verdict — hide (reversible) rather than tombstone (permanent). An
+        # operator can still tombstone separately via `/works/{id}/tombstone`.
+        publishing.hide(
+            session,
+            work_id=work_id,
+            reason=payload.reason_code or "moderation_rejected",
+            actor_user_id=reviewer_user_id,
+        )
+        _notify(
+            session,
             user_id=work.owner_user_id,
-            type=NotificationType.MODERATION,
-            title_key="notification.moderation_rejected",
-            payload_json={"work_id": work_id, "message": message or ""},
+            title_key="notification.work_hidden",
+            payload={"reason": payload.public_message or payload.reason_code or ""},
             target_type="work",
             target_id=work_id,
         )
+    elif payload.decision == ModerationStatus.APPROVED:
+        _notify(
+            session,
+            user_id=work.owner_user_id,
+            title_key="notification.work_approved",
+            payload={},
+            target_type="work",
+            target_id=work_id,
+        )
+
+
+def _apply_skill_decision(  # type: ignore[no-untyped-def]
+    session, skill_id: str, payload: ModerationDecisionRequest, *, reviewer_user_id: str
+) -> None:
+    skill = session.get(CreationSkill, skill_id)
+    if skill is None:
+        return
+    if payload.decision == ModerationStatus.APPROVED:
+        skill_library.approve(session, skill=skill, reviewer_user_id=reviewer_user_id)
+        _notify(
+            session,
+            user_id=skill.owner_user_id,
+            title_key="notification.skill_approved",
+            payload={"title": skill.title},
+            target_type="skill",
+            target_id=skill.id,
+        )
+    elif payload.decision == ModerationStatus.REJECTED:
+        reason = payload.public_message or payload.note or payload.reason_code or "内容未通过审核。"
+        skill_library.reject(session, skill=skill, reviewer_user_id=reviewer_user_id, reason=reason)
+        _notify(
+            session,
+            user_id=skill.owner_user_id,
+            title_key="notification.skill_rejected",
+            payload={"title": skill.title, "reason": reason},
+            target_type="skill",
+            target_id=skill.id,
+        )
+
+
+def _notify(  # type: ignore[no-untyped-def]
+    session,
+    *,
+    user_id: str,
+    title_key: str,
+    payload: dict[str, Any],
+    target_type: str,
+    target_id: str,
+) -> None:
+    """Thin wrapper keeping every moderation notification on `MODERATION` and
+    carrying only interpolation values — the client resolves `title_key` to
+    localized text itself, so one write serves all three UI languages."""
+    notifications.notify(
+        session,
+        user_id=user_id,
+        type=NotificationType.MODERATION,
+        title_key=title_key,
+        payload=payload,
+        target_type=target_type,
+        target_id=target_id,
     )
