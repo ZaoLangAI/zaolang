@@ -19,11 +19,14 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
+    "@mdxeditor/editor": "^4.2.0",
     "animejs": "^4.5.0",
     "next": "16.2.12",
     "next-intl": "^4.13.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

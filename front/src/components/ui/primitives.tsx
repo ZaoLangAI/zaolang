@@ -21,7 +21,7 @@ export function Card({
   );
 }
 
-type BadgeTone = 'neutral' | 'primary' | 'amber' | 'success' | 'danger';
+export type BadgeTone = 'neutral' | 'primary' | 'amber' | 'success' | 'danger';
 
 const badgeTones: Record<BadgeTone, string> = {
   neutral: 'bg-surface-soft text-muted border-border',

@@ -3,10 +3,11 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
+import { useSession } from '@/components/auth/session-provider';
 import { SourceMaterialRail } from '@/components/studio/source-material-rail';
 import { OptionGroup } from '@/components/studio/option-group';
 import { Button } from '@/components/ui/button';
-import { TextArea } from '@/components/ui/field';
+import { Select, TextArea } from '@/components/ui/field';
 import { IconClock, IconGear, IconSparkle, IconVolume, IconVolumeOff } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
@@ -14,12 +15,24 @@ import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import type { ReusableParams, WorkDetail } from '@/lib/api/types';
+import { api } from '@/lib/api/client';
+import type {
+  CreationSkillDetail,
+  CreationSkillSummary,
+  Page,
+  ReusableParams,
+  StylePreset,
+  WorkDetail,
+} from '@/lib/api/types';
 import { formatCount, formatDuration } from '@/lib/format';
 import { DEFAULT_DEVICE_ID } from '@/lib/devices';
 import type { Asset } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useMinWidth } from '@/lib/use-media-query';
+import { useResource } from '@/lib/use-resource';
+
+/** Params this form already has a control for; anything else rides along as `extra`. */
+const KNOWN_PRESET_KEYS = new Set(['prompt', 'prompt_suffix', 'aspect_ratio']);
 
 type Tier = 'preview' | 'standard' | 'cinematic';
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video' | 'text_to_image';
@@ -79,6 +92,65 @@ export function GenerationStudio({
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [uploads, setUploads] = useState<Asset[]>([]);
   const [paramsRequested, setParamsRequested] = useState(false);
+  const [presetId, setPresetId] = useState('');
+  const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
+  const [skillId, setSkillId] = useState('');
+
+  const { status: sessionStatus } = useSession();
+  const publicPresets = useResource<Page<StylePreset>>('/v1/style-presets');
+  const minePresets = useResource<Page<StylePreset>>(
+    sessionStatus === 'authenticated' ? '/v1/style-presets?mine=true' : null,
+  );
+  const presets = useMemo(() => {
+    const byId = new Map<string, StylePreset>();
+    for (const preset of publicPresets.data?.items ?? []) byId.set(preset.id, preset);
+    for (const preset of minePresets.data?.items ?? []) byId.set(preset.id, preset);
+    return [...byId.values()];
+  }, [publicPresets.data, minePresets.data]);
+
+  const publicSkills = useResource<Page<CreationSkillSummary>>('/v1/skills/public');
+  const mineSkills = useResource<Page<CreationSkillSummary>>(
+    sessionStatus === 'authenticated' ? '/v1/skills' : null,
+  );
+  const skills = useMemo(() => {
+    const byId = new Map<string, CreationSkillSummary>();
+    for (const skill of publicSkills.data?.items ?? []) byId.set(skill.id, skill);
+    for (const skill of mineSkills.data?.items ?? []) byId.set(skill.id, skill);
+    return [...byId.values()];
+  }, [publicSkills.data, mineSkills.data]);
+
+  /** Shared by presets and skills: both apply the same `prompt`/`aspect_ratio`/extras shape. */
+  const applyParams = (params: Record<string, unknown>) => {
+    const aspectRatio = params.aspect_ratio;
+    if (typeof aspectRatio === 'string' && (ASPECTS as readonly string[]).includes(aspectRatio)) {
+      setAspect(aspectRatio);
+    }
+    const promptSuffix = params.prompt_suffix;
+    if (typeof params.prompt === 'string' && params.prompt.trim()) {
+      setPrompt(params.prompt);
+    } else if (typeof promptSuffix === 'string' && promptSuffix.trim()) {
+      setPrompt((current) => (current.trim() ? `${current}, ${promptSuffix}` : promptSuffix));
+    }
+    const extra = Object.fromEntries(
+      Object.entries(params).filter(([key]) => !KNOWN_PRESET_KEYS.has(key)),
+    );
+    if (Object.keys(extra).length > 0) setPresetExtra((current) => ({ ...current, ...extra }));
+  };
+
+  const applyPreset = (preset: StylePreset) => {
+    applyParams(preset.params);
+    // Best-effort usage counter; a preset is still fully applied locally if this fails.
+    void api.post(`/v1/style-presets/${preset.id}/apply`).catch(() => undefined);
+  };
+
+  const applySkill = (skill: CreationSkillSummary) => {
+    // Unlike a preset, a skill's params never travel in the list payload —
+    // `/apply` both records usage and is the only place that returns them.
+    void api
+      .post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`)
+      .then((detail) => applyParams(detail.params ?? {}))
+      .catch(() => undefined);
+  };
 
   const operation: Operation =
     initialOperation === 'text_to_video' && (source || uploads.length > 0)
@@ -116,7 +188,7 @@ export function GenerationStudio({
       prompt: prompt.trim(),
       aspectRatio: aspect,
       referenceAssetIds: uploads.map((asset) => asset.id),
-      extra: { sound },
+      extra: { sound, ...presetExtra },
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -131,6 +203,46 @@ export function GenerationStudio({
   // bound to a single piece of state either way.
   const paramsPanel = (
     <>
+      {presets.length > 0 ? (
+        <Select
+          label={t('stylePreset')}
+          hint={t('stylePresetHint')}
+          value={presetId}
+          onChange={(event) => {
+            const value = event.target.value;
+            const preset = presets.find((item) => item.id === value);
+            if (preset) applyPreset(preset);
+            // Transient: applying is a one-shot merge, not a persistent choice
+            // the form keeps tracking, so the control resets to let the same
+            // preset be reapplied after further edits.
+            setPresetId('');
+          }}
+          options={[
+            { value: '', label: t('stylePresetNone') },
+            ...presets.map((preset) => ({ value: preset.id, label: preset.name })),
+          ]}
+        />
+      ) : null}
+
+      {skills.length > 0 ? (
+        <Select
+          label={t('skillPreset')}
+          hint={t('skillPresetHint')}
+          value={skillId}
+          onChange={(event) => {
+            const value = event.target.value;
+            const skill = skills.find((item) => item.id === value);
+            if (skill) applySkill(skill);
+            // Transient, same reasoning as the style preset select above.
+            setSkillId('');
+          }}
+          options={[
+            { value: '', label: t('skillPresetNone') },
+            ...skills.map((skill) => ({ value: skill.id, label: skill.title })),
+          ]}
+        />
+      ) : null}
+
       <div>
         <TextArea
           label={t('promptLabel')}

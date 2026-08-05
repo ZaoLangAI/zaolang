@@ -7,7 +7,7 @@ import { PageHeading, StatRow, StatTile } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { Draft, Me, Page, WorkSummary } from '@/lib/api/types';
+import type { Collection, CreationSkillSummary, Draft, Me, Page, WorkSummary } from '@/lib/api/types';
 import { formatCount } from '@/lib/format';
 
 export async function generateMetadata() {
@@ -27,7 +27,7 @@ export default async function CollectionPage({
   const me = await serverFetchOrNull<Me>('/v1/auth/me', { authenticated: true });
   if (!me?.profile) return <SignInPrompt />;
 
-  const [works, drafts, bookmarks] = await Promise.all([
+  const [works, drafts, bookmarks, collections, skills] = await Promise.all([
     serverFetchOrNull<Page<WorkSummary>>(`/v1/profiles/${me.profile.handle}/works`, {
       authenticated: true,
       query: { limit: 60 },
@@ -37,6 +37,8 @@ export default async function CollectionPage({
       authenticated: true,
       query: { limit: 60 },
     }),
+    serverFetchOrNull<Page<Collection>>('/v1/collections', { authenticated: true }),
+    serverFetchOrNull<Page<CreationSkillSummary>>('/v1/skills', { authenticated: true }),
   ]);
 
   const allWorks = works?.items ?? [];
@@ -72,6 +74,8 @@ export default async function CollectionPage({
         privateWorks={isPrivate}
         drafts={drafts?.items ?? []}
         bookmarks={bookmarks?.items ?? []}
+        collections={collections?.items ?? []}
+        skills={skills?.items ?? []}
       />
     </div>
   );

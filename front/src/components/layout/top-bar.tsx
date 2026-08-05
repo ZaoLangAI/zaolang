@@ -1,40 +1,30 @@
 'use client';
 
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { Brand } from '@/components/layout/brand';
+import { CreateMenu } from '@/components/layout/create-menu';
 import { PreferenceMenu } from '@/components/layout/preference-menu';
 import { SearchBox } from '@/components/layout/search-box';
 import { Button } from '@/components/ui/button';
-import {
-  IconBell,
-  IconChevronDown,
-  IconClose,
-  IconMenu,
-  IconPlus,
-  IconSparkle,
-  IconUser,
-} from '@/components/ui/icons';
-import { Link, usePathname, useRouter } from '@/i18n/navigation';
-import type { Locale } from '@/i18n/routing';
+import { IconBell, IconChevronDown, IconClose, IconMenu, IconUser } from '@/components/ui/icons';
+import { Link, usePathname } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { cn } from '@/lib/cn';
-import { formatCount } from '@/lib/format';
 
 const NAV = [
   { key: 'discover', href: '/discover' },
   { key: 'create', href: '/create' },
   { key: 'learn', href: '/learn' },
+  { key: 'skills', href: '/skills' },
   { key: 'collection', href: '/collection' },
 ] as const;
 
 export function TopBar() {
   const t = useTranslations();
-  const locale = useLocale() as Locale;
   const pathname = usePathname();
-  const router = useRouter();
   const { user, status, openLogin, signOut } = useSession();
 
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -107,28 +97,7 @@ export function TopBar() {
             <PreferenceMenu />
           </div>
 
-          {status === 'authenticated' && user ? (
-            <Link
-              href="/billing"
-              className="hidden h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius-sm)] border border-amber/35 bg-amber/12 px-2.5 text-xs font-semibold text-amber sm:inline-flex"
-            >
-              <IconSparkle className="size-4 shrink-0" />
-              <span className="tabular">
-                {t('credits.amount', { count: formatCount(user.available_credits, locale) })}
-              </span>
-            </Link>
-          ) : null}
-
-          <Button
-            size="sm"
-            className="shrink-0"
-            icon={<IconPlus className="size-4" />}
-            onClick={() => router.push('/create')}
-          >
-            {/* Hidden, not removed: below `sm` this is an icon-only button, and
-                `display: none` would leave it with no accessible name at all. */}
-            <span className="sr-only whitespace-nowrap sm:not-sr-only">{t('actions.create')}</span>
-          </Button>
+          <CreateMenu />
 
           {status === 'authenticated' ? (
             <Link

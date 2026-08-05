@@ -1,10 +1,11 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 
+import { LlmProvidersPanel } from '@/components/admin/providers/llm-providers-panel';
 import { RoutingWeightsPanel } from '@/components/admin/providers/routing-weights-panel';
 import { Badge, PageHeading } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { adminFetch, adminFetchOrNull } from '@/lib/api/admin-server';
-import type { ConfigValue, Page, ProviderStat } from '@/lib/api/admin-types';
+import type { ConfigValue, LlmProviderPool, Page, ProviderStat } from '@/lib/api/admin-types';
 import { formatNumber } from '@/lib/format';
 
 export async function generateMetadata() {
@@ -16,17 +17,19 @@ export default async function AdminProvidersPage() {
   const t = await getTranslations('adminProviders');
   const locale = (await getLocale()) as Locale;
 
-  const [stats, routing] = await Promise.all([
+  const [stats, routing, llmPool] = await Promise.all([
     adminFetch<Page<ProviderStat>>('/v1/admin/providers/stats'),
     // Weights are operator-only, so a reviewer sees the statistics without the
     // editor rather than an error page.
     adminFetchOrNull<ConfigValue>('/v1/admin/config/routing_weights'),
+    adminFetchOrNull<LlmProviderPool>('/v1/admin/llm-providers'),
   ]);
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title={t('title')} description={t('subtitle')} />
 
+      <h2 className="text-sm font-semibold text-muted">{t('sectionGeneration')}</h2>
       <div className="overflow-x-auto rounded-[var(--radius-md)] border border-border">
         <table className="w-full text-left text-sm">
           <caption className="sr-only">{t('title')}</caption>
@@ -79,7 +82,14 @@ export default async function AdminProvidersPage() {
         </table>
       </div>
 
-      {routing ? <RoutingWeightsPanel initial={routing} /> : null}
+      {llmPool ? <LlmProvidersPanel initial={llmPool} /> : null}
+
+      {routing ? (
+        <>
+          <h2 className="text-sm font-semibold text-muted">{t('sectionRouting')}</h2>
+          <RoutingWeightsPanel initial={routing} />
+        </>
+      ) : null}
     </div>
   );
 }

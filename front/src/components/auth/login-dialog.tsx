@@ -24,6 +24,7 @@ export function LoginDialog() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [handle, setHandle] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export function LoginDialog() {
           region: defaultRegion,
           locale,
           age_confirmed: ageConfirmed,
+          invite_code: inviteCode.trim() || undefined,
         });
       }
     } catch (caught) {
@@ -115,6 +117,14 @@ export function LoginDialog() {
               value={handle}
               error={fieldErrors.handle}
               onChange={(event) => setHandle(event.target.value)}
+            />
+            <TextInput
+              label={t('inviteCode')}
+              name="invite_code"
+              autoComplete="off"
+              value={inviteCode}
+              error={fieldErrors.invite_code}
+              onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
             />
             <label className="flex items-start gap-2 text-xs text-muted">
               <input

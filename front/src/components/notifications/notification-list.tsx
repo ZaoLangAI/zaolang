@@ -36,6 +36,7 @@ const GROUPS = {
 
 export function NotificationList({ initial }: { initial: Notification[] }) {
   const t = useTranslations('notificationsPage');
+  const tBody = useTranslations('notificationBody');
   const locale = useLocale() as Locale;
   const { notify } = useToast();
 
@@ -131,7 +132,7 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
                       />
                     ) : null}
                   </p>
-                  <p className="mt-1 text-sm">{notificationText(item)}</p>
+                  <p className="mt-1 text-sm">{notificationText(item, tBody)}</p>
                   <p className="mt-1 text-xs text-muted">
                     {formatRelative(item.created_at, locale)}
                   </p>
@@ -155,13 +156,57 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
   );
 }
 
+/** Moderation outcomes carry only interpolation values (title/reason), keyed
+ * by `title_key`, so one write reads correctly in whichever of the three UI
+ * languages the reader has selected — never frozen in the actor's language. */
+const MODERATION_BODY: Record<
+  string,
+  (payload: Record<string, unknown>) => { key: string; params?: Record<string, string> }
+> = {
+  'notification.work_approved': () => ({ key: 'workApproved' }),
+  'notification.work_hidden': (p) =>
+    p.reason
+      ? { key: 'workHiddenReason', params: { reason: String(p.reason) } }
+      : { key: 'workHidden' },
+  'notification.work_restored': () => ({ key: 'workRestored' }),
+  'notification.work_tombstoned': (p) => ({
+    key: 'workTombstoned',
+    params: { reason: String(p.reason ?? '') },
+  }),
+  'notification.skill_approved': (p) => ({
+    key: 'skillApproved',
+    params: { title: String(p.title ?? '') },
+  }),
+  'notification.skill_rejected': (p) => ({
+    key: 'skillRejected',
+    params: { title: String(p.title ?? ''), reason: String(p.reason ?? '') },
+  }),
+  'notification.skill_takedown': (p) => ({
+    key: 'skillTakedown',
+    params: { title: String(p.title ?? ''), reason: String(p.reason ?? '') },
+  }),
+  'notification.learn_post_approved': (p) => ({
+    key: 'learnPostApproved',
+    params: { title: String(p.title ?? '') },
+  }),
+  'notification.learn_post_rejected': (p) => ({
+    key: 'learnPostRejected',
+    params: { title: String(p.title ?? ''), reason: String(p.reason ?? '') },
+  }),
+};
+
 /**
- * Notification bodies are stored as a key plus a payload rather than as
- * rendered text, so an existing notification is read in whatever language the
- * user has selected today.
+ * Older notification types (remix, follow, royalty…) were written with the
+ * body pre-rendered into the payload, so those fall back to reading it back
+ * out rather than resolving `title_key`.
  */
-function notificationText(item: Notification): string {
+function notificationText(item: Notification, tBody: ReturnType<typeof useTranslations>): string {
   const payload = item.payload ?? {};
+  const moderation = MODERATION_BODY[item.title_key];
+  if (moderation) {
+    const { key, params } = moderation(payload);
+    return tBody(key, params);
+  }
   const parts = ['title', 'work_title', 'actor_name', 'message']
     .map((field) => payload[field])
     .filter((value): value is string => typeof value === 'string');
@@ -173,5 +218,6 @@ function targetHref(item: Notification): string | null {
   if (item.target_type === 'work') return `/work/${item.target_id}`;
   if (item.target_type === 'generation_job') return `/jobs/${item.target_id}`;
   if (item.target_type === 'user') return `/profile/${item.target_id}`;
+  if (item.target_type === 'learn_post') return `/learn/${item.target_id}`;
   return null;
 }

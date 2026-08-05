@@ -13,7 +13,7 @@ export type Asset = components['schemas']['AssetResponse'];
  */
 export async function uploadFile(
   file: File,
-  purpose: 'generation_reference' | 'avatar' | 'profile_cover' | 'consent_evidence',
+  purpose: 'generation_reference' | 'avatar' | 'profile_cover' | 'consent_evidence' | 'learn_media',
 ): Promise<Asset> {
   const checksum = await sha256Hex(await file.arrayBuffer());
 

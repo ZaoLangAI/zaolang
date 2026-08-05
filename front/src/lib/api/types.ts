@@ -14,6 +14,13 @@ export type Profile = S['ProfileResponse'];
 export type PublicProfile = S['PublicProfileResponse'];
 export type AuthorSummary = S['AuthorSummary'];
 
+export type LearnPostSummary = S['LearnPostSummary'];
+export type LearnPostDetail = S['LearnPostDetail'];
+export type LearnPostLevel = S['LearnPostLevel'];
+export type LearnPostStatus = S['LearnPostStatus'];
+/** 别名到最完整的形态，与后端 `LearnPost` 模型对齐；调用点按需选用 Summary/Detail 即可。 */
+export type LearnPost = LearnPostDetail;
+
 export type WorkSummary = S['WorkSummary'];
 export type WorkDetail = S['WorkDetail'];
 export type WorkVersionSummary = S['WorkVersionSummary'];
@@ -48,7 +55,14 @@ export type Notification = S['NotificationResponse'];
 export type LedgerEntry = S['LedgerEntryResponse'];
 export type CreditPackage = S['CreditPackageResponse'];
 export type StylePreset = S['StylePresetResponse'];
+export type CreationSkillSummary = S['CreationSkillSummary'];
+export type CreationSkillDetail = S['CreationSkillDetail'];
+export type CreationSkillCategory = S['CreationSkillCategory'];
+export type CreationSkillStatus = S['CreationSkillStatus'];
+export type CreationSkillVisibility = S['CreationSkillVisibility'];
 export type Tag = S['TagResponse'];
+export type RedeemCodeRequest = S['RedeemCodeRequest'];
+export type RedeemCodeResponse = S['RedeemCodeResponse'];
 export type GatewayStatus = S['GatewayStatusResponse'];
 export type CountResponseLike = S['CountResponse'];
 

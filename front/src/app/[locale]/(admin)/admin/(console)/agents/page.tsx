@@ -1,10 +1,11 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import { AgentRunsTable } from '@/components/admin/agents/agent-runs-table';
+import { AgentSkillsPanel } from '@/components/admin/agents/agent-skills-panel';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { adminFetch } from '@/lib/api/admin-server';
-import type { AgentUsage, Page } from '@/lib/api/admin-types';
+import type { AgentNode, AgentUsage, Page } from '@/lib/api/admin-types';
 import { formatNumber } from '@/lib/format';
 
 export async function generateMetadata() {
@@ -16,9 +17,10 @@ export default async function AdminAgentsPage() {
   const t = await getTranslations('adminAgents');
   const locale = (await getLocale()) as Locale;
 
-  const usage = await adminFetch<Page<AgentUsage>>('/v1/admin/agent-runs/usage', {
-    query: { hours: 24 },
-  });
+  const [usage, nodes] = await Promise.all([
+    adminFetch<Page<AgentUsage>>('/v1/admin/agent-runs/usage', { query: { hours: 24 } }),
+    adminFetch<Page<AgentNode>>('/v1/admin/agent-nodes'),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -49,6 +51,8 @@ export default async function AdminAgentsPage() {
           ))}
         </ul>
       </section>
+
+      <AgentSkillsPanel initial={nodes.items} />
 
       <AgentRunsTable />
     </div>

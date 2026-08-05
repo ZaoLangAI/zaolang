@@ -365,6 +365,180 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/learn/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Posts */
+        get: operations["list_posts_v1_learn_posts_get"];
+        put?: never;
+        /** Create Post */
+        post: operations["create_post_v1_learn_posts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/learn/posts/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mine */
+        get: operations["list_mine_v1_learn_posts_mine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/learn/posts/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Post */
+        get: operations["get_post_v1_learn_posts__post_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Post */
+        patch: operations["update_post_v1_learn_posts__post_id__patch"];
+        trace?: never;
+    };
+    "/v1/learn/posts/{post_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw Post */
+        post: operations["withdraw_post_v1_learn_posts__post_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/skills/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Public Skills */
+        get: operations["list_public_skills_v1_skills_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Skills */
+        get: operations["list_my_skills_v1_skills_get"];
+        put?: never;
+        /** Create Skill */
+        post: operations["create_skill_v1_skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill */
+        get: operations["get_skill_v1_skills__skill_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Skill */
+        patch: operations["update_skill_v1_skills__skill_id__patch"];
+        trace?: never;
+    };
+    "/v1/skills/{skill_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Skill */
+        post: operations["publish_skill_v1_skills__skill_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/skills/{skill_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw Skill */
+        post: operations["withdraw_skill_v1_skills__skill_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/skills/{skill_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Skill */
+        post: operations["apply_skill_v1_skills__skill_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/drafts": {
         parameters: {
             query?: never;
@@ -896,6 +1070,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/credits/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redeem
+         * @description Cashes in an invite/promo code for its face-value credits.
+         */
+        post: operations["redeem_v1_credits_redeem_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/credits/checkout": {
         parameters: {
             query?: never;
@@ -1135,6 +1329,44 @@ export interface paths {
         /** Create Data Request */
         post: operations["create_data_request_v1_me_data_requests_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Device
+         * @description 按 `push_token` upsert：重装 App 换新 token 会插新行，旧 token 静默失效——
+         *     不主动清理旧行，靠 APNs 返回的 Unregistered 反馈去删（该反馈通道本地环境用不上）。
+         */
+        post: operations["register_device_v1_me_devices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unregister Device */
+        delete: operations["unregister_device_v1_me_devices__device_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1427,6 +1659,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/moderation/queue/{item_id}/detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Moderation Detail
+         * @description The queue row plus its full verdict trail, so a reviewer can see what
+         *     already happened to this subject before deciding whether to reverse it.
+         */
+        get: operations["moderation_detail_v1_admin_moderation_queue__item_id__detail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/moderation/queue/{item_id}/claim": {
         parameters: {
             query?: never;
@@ -1582,6 +1835,57 @@ export interface paths {
         get: operations["duplicates_v1_admin_fingerprints_duplicates_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/learn-posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Learn Posts */
+        get: operations["list_learn_posts_v1_admin_learn_posts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/learn-posts/{post_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_v1_admin_learn_posts__post_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/learn-posts/{post_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject */
+        post: operations["reject_v1_admin_learn_posts__post_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1819,6 +2123,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/redemption-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Codes */
+        get: operations["list_codes_v1_admin_redemption_codes_get"];
+        put?: never;
+        /** Create Code */
+        post: operations["create_code_v1_admin_redemption_codes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/redemption-codes/{code_id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivate Code
+         * @description No way back once flipped — there is no `activate` endpoint — so this
+         *     carries the same reason + confirm gate as minting a code does.
+         */
+        post: operations["deactivate_code_v1_admin_redemption_codes__code_id__deactivate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/redemption-codes/{code_id}/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Records */
+        get: operations["list_records_v1_admin_redemption_codes__code_id__records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/config": {
         parameters: {
             query?: never;
@@ -1969,6 +2329,194 @@ export interface paths {
          * @description Publishes a notice, optionally fanning it out as in-app notifications.
          */
         post: operations["create_announcement_v1_admin_announcements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Logs */
+        get: operations["list_logs_v1_admin_logs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/llm-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Llm Providers */
+        get: operations["list_llm_providers_v1_admin_llm_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/llm-providers/{endpoint_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Llm Provider
+         * @description Creates or replaces one endpoint. `api_key=None` keeps the stored secret.
+         */
+        put: operations["upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/llm-providers/{endpoint_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Llm Provider
+         * @description Removing the endpoint another agent's traffic depends on is the kind of
+         *     mistake that stops generations from completing, hence the confirmation.
+         */
+        post: operations["remove_llm_provider_v1_admin_llm_providers__endpoint_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/llm-providers/settings/circuit-breaker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Breaker Settings */
+        put: operations["update_breaker_settings_v1_admin_llm_providers_settings_circuit_breaker_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Nodes */
+        get: operations["list_agent_nodes_v1_admin_agent_nodes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Skills */
+        get: operations["list_agent_skills_v1_admin_agent_skills_get"];
+        put?: never;
+        /**
+         * Publish Agent Skill
+         * @description Publishes a new prompt version for one node and makes it active.
+         *
+         *     A rejected or unparseable safety verdict is the direct, immediate result
+         *     of what this prompt says, so publishing it is treated with the same
+         *     confirmation ceremony as any other dangerous admin action.
+         */
+        post: operations["publish_agent_skill_v1_admin_agent_skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-skills/{skill_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Agent Skill
+         * @description Rolls back to an earlier version by re-publishing its content.
+         */
+        post: operations["activate_agent_skill_v1_admin_agent_skills__skill_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Skills */
+        get: operations["list_skills_v1_admin_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/skills/{skill_id}/takedown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Takedown Skill */
+        post: operations["takedown_skill_v1_admin_skills__skill_id__takedown_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2158,9 +2706,7 @@ export interface components {
             /** Attempts */
             attempts?: components["schemas"]["ProviderAttemptView"][];
             /** Agent Runs */
-            agent_runs?: {
-                [key: string]: unknown;
-            }[];
+            agent_runs?: components["schemas"]["AgentRunView"][];
         };
         /** AdminJobSummary */
         AdminJobSummary: {
@@ -2265,6 +2811,31 @@ export interface components {
             /** Last Login At */
             last_login_at?: string | null;
         };
+        /**
+         * AgentNodeView
+         * @description One pipeline stage plus which failover-pool endpoints could serve it.
+         *
+         *     `candidate_endpoint_ids` is derived, not stored: it is whichever
+         *     `llm_providers` endpoints currently carry this node's role (or
+         *     `"general"`) as a scenario tag, so the node graph can show "0 candidate
+         *     endpoints" as an actionable warning rather than a silent gap.
+         */
+        AgentNodeView: {
+            /** Id */
+            id: string;
+            /** Role */
+            role: string;
+            /** Display Name */
+            display_name: string;
+            /** Description */
+            description: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Sort Order */
+            sort_order: number;
+            /** Candidate Endpoint Ids */
+            candidate_endpoint_ids?: string[];
+        };
         /** AgentRunView */
         AgentRunView: {
             /** Id */
@@ -2289,6 +2860,46 @@ export interface components {
             error_message?: string | null;
             /** Job Id */
             job_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentSkillPublishRequest */
+        AgentSkillPublishRequest: {
+            /** Reason */
+            reason: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Node Role */
+            node_role: string;
+            /** Prompt Template */
+            prompt_template: string;
+            /** Tool Grants */
+            tool_grants?: string[];
+        };
+        /** AgentSkillView */
+        AgentSkillView: {
+            /** Id */
+            id: string;
+            /** Node Role */
+            node_role: string;
+            /** Version */
+            version: number;
+            /** Prompt Template */
+            prompt_template: string;
+            /** Tool Grants */
+            tool_grants?: string[];
+            /** Is Active */
+            is_active: boolean;
+            /** Created By User Id */
+            created_by_user_id?: string | null;
+            /** Reason */
+            reason?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -2691,6 +3302,142 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** CreationSkillAdminView */
+        CreationSkillAdminView: {
+            /** Id */
+            id: string;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            category: components["schemas"]["CreationSkillCategory"];
+            /** Cover Url */
+            cover_url?: string | null;
+            visibility: components["schemas"]["CreationSkillVisibility"];
+            status: components["schemas"]["CreationSkillStatus"];
+            /** Usage Count */
+            usage_count: number;
+            /** Reject Reason */
+            reject_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * CreationSkillCategory
+         * @enum {string}
+         */
+        CreationSkillCategory: "scene" | "lens" | "style" | "other";
+        /** CreationSkillCreateRequest */
+        CreationSkillCreateRequest: {
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** @default other */
+            category: components["schemas"]["CreationSkillCategory"];
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+        };
+        /** CreationSkillDetail */
+        CreationSkillDetail: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            category: components["schemas"]["CreationSkillCategory"];
+            /** Cover Url */
+            cover_url?: string | null;
+            author: components["schemas"]["AuthorSummary"];
+            visibility: components["schemas"]["CreationSkillVisibility"];
+            status: components["schemas"]["CreationSkillStatus"];
+            /** Usage Count */
+            usage_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Reject Reason */
+            reject_reason?: string | null;
+        };
+        /**
+         * CreationSkillStatus
+         * @enum {string}
+         */
+        CreationSkillStatus: "draft" | "pending_review" | "published" | "rejected";
+        /**
+         * CreationSkillSummary
+         * @description 列表卡片投影，风格对齐 `learning.LearnPostSummary`。
+         */
+        CreationSkillSummary: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            category: components["schemas"]["CreationSkillCategory"];
+            /** Cover Url */
+            cover_url?: string | null;
+            author: components["schemas"]["AuthorSummary"];
+            visibility: components["schemas"]["CreationSkillVisibility"];
+            status: components["schemas"]["CreationSkillStatus"];
+            /** Usage Count */
+            usage_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CreationSkillUpdateRequest */
+        CreationSkillUpdateRequest: {
+            /** Title */
+            title: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** @default other */
+            category: components["schemas"]["CreationSkillCategory"];
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+        };
+        /**
+         * CreationSkillVisibility
+         * @description Owner's intent, independent of moderation state.
+         *
+         *     A `PENDING_REVIEW`/`REJECTED` skill can carry `PUBLIC` here (it is meant
+         *     for sharing) while still being invisible to anyone but its owner — public
+         *     listing always additionally filters on `status == PUBLISHED`.
+         * @enum {string}
+         */
+        CreationSkillVisibility: "private" | "public";
         /** CreditBalanceResponse */
         CreditBalanceResponse: {
             /** Available */
@@ -2719,6 +3466,22 @@ export interface components {
             currency: string;
             /** Region */
             region: string;
+        };
+        /**
+         * DangerousAction
+         * @description Base for anything requiring a typed reason.
+         *
+         *     The reason is stored in the audit log, so an empty string is refused at the
+         *     schema boundary rather than deep inside a service.
+         */
+        DangerousAction: {
+            /** Reason */
+            reason: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** DanglingReserveView */
         DanglingReserveView: {
@@ -2788,6 +3551,27 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** DeviceRegister */
+        DeviceRegister: {
+            /** Push Token */
+            push_token: string;
+            /**
+             * Platform
+             * @default ios
+             */
+            platform: string;
+            /** Locale */
+            locale: string;
+        };
+        /** DeviceResponse */
+        DeviceResponse: {
+            /** Id */
+            id: string;
+            /** Platform */
+            platform: string;
+            /** Locale */
+            locale: string;
         };
         /**
          * DistributionChannel
@@ -3046,6 +3830,150 @@ export interface components {
              */
             release_credits: boolean;
         };
+        /** LearnPostAdminView */
+        LearnPostAdminView: {
+            /** Id */
+            id: string;
+            /** Author User Id */
+            author_user_id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Level */
+            level: string;
+            status: components["schemas"]["LearnPostStatus"];
+            /** Cover Url */
+            cover_url?: string | null;
+            /**
+             * Body Markdown
+             * @default
+             */
+            body_markdown: string;
+            /** Asset Urls */
+            asset_urls?: {
+                [key: string]: string;
+            };
+            /** Reject Reason */
+            reject_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** LearnPostCreateRequest */
+        LearnPostCreateRequest: {
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** @default beginner */
+            level: components["schemas"]["LearnPostLevel"];
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /**
+             * Body Markdown
+             * @default
+             */
+            body_markdown: string;
+        };
+        /**
+         * LearnPostDecisionRequest
+         * @description `reason` 拒绝时必填，通过时忽略——校验放在 domain 层，见 `learning.service.reject`。
+         */
+        LearnPostDecisionRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * LearnPostDetail
+         * @description 详情比列表卡片多带 `cover_asset_id`：编辑表单回填封面时如果只拿得到
+         *     `cover_url`，用户不重新选图提交就会把封面字段整份覆盖成空。
+         *
+         *     `body_markdown` 里的图片用 `learn-asset:{id}` 这种不过期的引用而不是直出
+         *     URL（对象存储的签名 URL 会过期，不能写进持久化的正文）；`asset_urls` 是
+         *     服务端在这次响应里临时解析出的 `{资产 id: 当下有效的签名 URL}` 映射，只给
+         *     渲染/编辑时替换显示用，不代表存储格式变了。
+         */
+        LearnPostDetail: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            level: components["schemas"]["LearnPostLevel"];
+            /** Cover Url */
+            cover_url?: string | null;
+            author: components["schemas"]["AuthorSummary"];
+            status: components["schemas"]["LearnPostStatus"];
+            /** Published At */
+            published_at?: string | null;
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /**
+             * Body Markdown
+             * @default
+             */
+            body_markdown: string;
+            /** Asset Urls */
+            asset_urls?: {
+                [key: string]: string;
+            };
+            /** Reject Reason */
+            reject_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * LearnPostLevel
+         * @enum {string}
+         */
+        LearnPostLevel: "beginner" | "intermediate" | "advanced";
+        /**
+         * LearnPostStatus
+         * @enum {string}
+         */
+        LearnPostStatus: "pending" | "approved" | "rejected" | "withdrawn";
+        /**
+         * LearnPostSummary
+         * @description 列表卡片投影，风格对齐 `works.WorkSummary`。
+         */
+        LearnPostSummary: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            level: components["schemas"]["LearnPostLevel"];
+            /** Cover Url */
+            cover_url?: string | null;
+            author: components["schemas"]["AuthorSummary"];
+            status: components["schemas"]["LearnPostStatus"];
+            /** Published At */
+            published_at?: string | null;
+        };
+        /** LearnPostUpdateRequest */
+        LearnPostUpdateRequest: {
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** @default beginner */
+            level: components["schemas"]["LearnPostLevel"];
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /**
+             * Body Markdown
+             * @default
+             */
+            body_markdown: string;
+        };
         /** LedgerEntryResponse */
         LedgerEntryResponse: {
             /** Id */
@@ -3185,11 +4113,147 @@ export interface components {
              */
             truncated: boolean;
         };
+        /** LlmProviderBreakerSettingsRequest */
+        LlmProviderBreakerSettingsRequest: {
+            /** Circuit Breaker Failure Threshold */
+            circuit_breaker_failure_threshold: number;
+            /** Circuit Breaker Cooldown S */
+            circuit_breaker_cooldown_s: number;
+        };
+        /** LlmProviderEndpointUpsertRequest */
+        LlmProviderEndpointUpsertRequest: {
+            /** Name */
+            name: string;
+            /** Base Url */
+            base_url: string;
+            /** Api Key */
+            api_key?: string | null;
+            /** Models */
+            models?: string[];
+            /** Scenario Tags */
+            scenario_tags?: string[];
+            /**
+             * Max Concurrency
+             * @default 4
+             */
+            max_concurrency: number;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Timeout Ms
+             * @default 30000
+             */
+            timeout_ms: number;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+        };
+        /**
+         * LlmProviderEndpointView
+         * @description Read model for one failover-pool endpoint.
+         *
+         *     `api_key` itself never appears here — only whether one is set and a
+         *     truncated preview — so a GET response is always safe to render or log.
+         */
+        LlmProviderEndpointView: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Base Url */
+            base_url: string;
+            /** Api Key Configured */
+            api_key_configured: boolean;
+            /** Api Key Preview */
+            api_key_preview?: string | null;
+            /** Models */
+            models?: string[];
+            /** Scenario Tags */
+            scenario_tags?: string[];
+            /** Max Concurrency */
+            max_concurrency: number;
+            /** Priority */
+            priority: number;
+            /** Timeout Ms */
+            timeout_ms: number;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Concurrency In Use
+             * @default 0
+             */
+            concurrency_in_use: number;
+            /**
+             * Circuit Breaker Open
+             * @default false
+             */
+            circuit_breaker_open: boolean;
+            /**
+             * Recent Attempts
+             * @default 0
+             */
+            recent_attempts: number;
+            /** Recent Success Rate */
+            recent_success_rate?: number | null;
+        };
+        /** LlmProviderPoolView */
+        LlmProviderPoolView: {
+            /** Endpoints */
+            endpoints?: components["schemas"]["LlmProviderEndpointView"][];
+            /** Circuit Breaker Failure Threshold */
+            circuit_breaker_failure_threshold: number;
+            /** Circuit Breaker Cooldown S */
+            circuit_breaker_cooldown_s: number;
+        };
         /**
          * Locale
          * @enum {string}
          */
         Locale: "zh-CN" | "en" | "ja";
+        /**
+         * LogEntryView
+         * @description One row in the unified log centre: an `AuditLog` row (privileged writes)
+         *     or a `SystemLog` row (auth/rate-limit/permission signals), reshaped onto a
+         *     common shape so the console can filter and scroll through both together.
+         */
+        LogEntryView: {
+            /** Id */
+            id: string;
+            /** Source */
+            source: string;
+            /** Level */
+            level: string;
+            /** Event */
+            event: string;
+            /** Message */
+            message: string;
+            /** Actor User Id */
+            actor_user_id?: string | null;
+            /** Target */
+            target?: string | null;
+            /** Ip Address */
+            ip_address?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+            /** Occurrence Count */
+            occurrence_count?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -3249,6 +4313,30 @@ export interface components {
             /** Public Message */
             public_message?: string | null;
         };
+        /**
+         * ModerationHistoryEntry
+         * @description One row from the append-only verdict trail for a subject.
+         */
+        ModerationHistoryEntry: {
+            /** Id */
+            id: string;
+            /** Stage */
+            stage: string;
+            status: components["schemas"]["ModerationStatus"];
+            /** Decided By */
+            decided_by: string;
+            /** Reviewer User Id */
+            reviewer_user_id?: string | null;
+            /** Reason Code */
+            reason_code?: string | null;
+            /** Public Message */
+            public_message?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** ModerationQueueView */
         ModerationQueueView: {
             /** Id */
@@ -3281,6 +4369,47 @@ export interface components {
          * @enum {string}
          */
         ModerationStatus: "pending" | "approved" | "rejected" | "needs_review";
+        /**
+         * ModerationSubjectDetailView
+         * @description Full context for one queue item: the current decision plus everything
+         *     that led to it, so a reviewer can judge a REJECTED/HIDDEN call without
+         *     trusting the summary row alone.
+         */
+        ModerationSubjectDetailView: {
+            queue_item: components["schemas"]["ModerationQueueView"];
+            /** History */
+            history: components["schemas"]["ModerationHistoryEntry"][];
+            work?: components["schemas"]["ModerationWorkDetailView"] | null;
+            skill?: components["schemas"]["CreationSkillAdminView"] | null;
+        };
+        /** ModerationWorkDetailView */
+        ModerationWorkDetailView: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Prompt */
+            prompt?: string | null;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Media Url */
+            media_url?: string | null;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Visibility */
+            visibility: string;
+            /** Lifecycle Status */
+            lifecycle_status: string;
+            /** Tombstone Reason */
+            tombstone_reason?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** MyDataRequestView */
         MyDataRequestView: {
             /** Id */
@@ -3367,10 +4496,34 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[AgentNodeView] */
+        Page_AgentNodeView_: {
+            /** Items */
+            items: components["schemas"]["AgentNodeView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[AgentRunView] */
         Page_AgentRunView_: {
             /** Items */
             items: components["schemas"]["AgentRunView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[AgentSkillView] */
+        Page_AgentSkillView_: {
+            /** Items */
+            items: components["schemas"]["AgentSkillView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -3455,6 +4608,30 @@ export interface components {
         Page_ConfigVersionView_: {
             /** Items */
             items: components["schemas"]["ConfigVersionView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[CreationSkillAdminView] */
+        Page_CreationSkillAdminView_: {
+            /** Items */
+            items: components["schemas"]["CreationSkillAdminView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[CreationSkillSummary] */
+        Page_CreationSkillSummary_: {
+            /** Items */
+            items: components["schemas"]["CreationSkillSummary"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -3559,6 +4736,30 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[LearnPostAdminView] */
+        Page_LearnPostAdminView_: {
+            /** Items */
+            items: components["schemas"]["LearnPostAdminView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[LearnPostSummary] */
+        Page_LearnPostSummary_: {
+            /** Items */
+            items: components["schemas"]["LearnPostSummary"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[LedgerEntryResponse] */
         Page_LedgerEntryResponse_: {
             /** Items */
@@ -3575,6 +4776,18 @@ export interface components {
         Page_LedgerEntryView_: {
             /** Items */
             items: components["schemas"]["LedgerEntryView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[LogEntryView] */
+        Page_LogEntryView_: {
+            /** Items */
+            items: components["schemas"]["LogEntryView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -3635,6 +4848,30 @@ export interface components {
         Page_PublicationIntentResponse_: {
             /** Items */
             items: components["schemas"]["PublicationIntentResponse"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[RedemptionCodeView] */
+        Page_RedemptionCodeView_: {
+            /** Items */
+            items: components["schemas"]["RedemptionCodeView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[RedemptionRecordView] */
+        Page_RedemptionRecordView_: {
+            /** Items */
+            items: components["schemas"]["RedemptionRecordView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -4017,6 +5254,95 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** RedeemCodeRequest */
+        RedeemCodeRequest: {
+            /** Code */
+            code: string;
+        };
+        /** RedeemCodeResponse */
+        RedeemCodeResponse: {
+            /** Credits Granted */
+            credits_granted: number;
+            /** Available Balance */
+            available_balance: number;
+        };
+        /**
+         * RedemptionCodeCreateRequest
+         * @description Confirmation + a written reason, like `AdjustCreditsRequest` — minting
+         *     a code is a direct promise of real credits.
+         */
+        RedemptionCodeCreateRequest: {
+            /** Reason */
+            reason: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** @default promo */
+            kind: components["schemas"]["RedemptionCodeKind"];
+            /** Credits */
+            credits: number;
+            /**
+             * Max Uses
+             * @default 1
+             */
+            max_uses: number;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Code */
+            code?: string | null;
+        };
+        /**
+         * RedemptionCodeKind
+         * @description `INVITE` is meant for one-to-one referral (small `max_uses`, often 1);
+         *     `PROMO` is an operator-run campaign code shared with many users at once.
+         * @enum {string}
+         */
+        RedemptionCodeKind: "invite" | "promo";
+        /** RedemptionCodeView */
+        RedemptionCodeView: {
+            /** Id */
+            id: string;
+            /** Code */
+            code: string;
+            kind: components["schemas"]["RedemptionCodeKind"];
+            /** Credits */
+            credits: number;
+            /** Max Uses */
+            max_uses: number;
+            /** Used Count */
+            used_count: number;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Note */
+            note?: string | null;
+            /** Created By User Id */
+            created_by_user_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** RedemptionRecordView */
+        RedemptionRecordView: {
+            /** Id */
+            id: string;
+            /** User Id */
+            user_id: string;
+            /** Credits */
+            credits: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * Region
          * @enum {string}
@@ -4044,6 +5370,8 @@ export interface components {
              * @default false
              */
             age_confirmed: boolean;
+            /** Invite Code */
+            invite_code?: string | null;
         };
         /** ReportCaseView */
         ReportCaseView: {
@@ -5384,6 +6712,486 @@ export interface operations {
             };
         };
     };
+    list_posts_v1_learn_posts_get: {
+        parameters: {
+            query?: {
+                level?: components["schemas"]["LearnPostLevel"] | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LearnPostSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_post_v1_learn_posts_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearnPostCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnPostDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mine_v1_learn_posts_mine_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LearnPostSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_post_v1_learn_posts__post_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnPostDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_post_v1_learn_posts__post_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearnPostUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnPostDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_post_v1_learn_posts__post_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnPostDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_skills_v1_skills_public_get: {
+        parameters: {
+            query?: {
+                category?: components["schemas"]["CreationSkillCategory"] | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CreationSkillSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_skills_v1_skills_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CreationSkillSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_skill_v1_skills_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreationSkillCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_v1_skills__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_skill_v1_skills__skill_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreationSkillUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_skill_v1_skills__skill_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_skill_v1_skills__skill_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_skill_v1_skills__skill_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_drafts_v1_drafts_get: {
         parameters: {
             query?: never;
@@ -6553,6 +8361,41 @@ export interface operations {
             };
         };
     };
+    redeem_v1_credits_redeem_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedeemCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedeemCodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     checkout_v1_credits_checkout_post: {
         parameters: {
             query?: never;
@@ -7123,6 +8966,74 @@ export interface operations {
             };
         };
     };
+    register_device_v1_me_devices_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceRegister"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unregister_device_v1_me_devices__device_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_v1_admin_auth_login_post: {
         parameters: {
             query?: never;
@@ -7412,6 +9323,8 @@ export interface operations {
                 user_id?: string | null;
                 provider?: string | null;
                 stuck_only?: boolean;
+                created_after?: string | null;
+                created_before?: string | null;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -7602,6 +9515,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_ModerationQueueView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moderation_detail_v1_admin_moderation_queue__item_id__detail_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModerationSubjectDetailView"];
                 };
             };
             /** @description Validation Error */
@@ -7883,6 +9829,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_FingerprintDuplicateGroup_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_learn_posts_v1_admin_learn_posts_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["LearnPostStatus"] | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LearnPostAdminView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_v1_admin_learn_posts__post_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnPostAdminView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_v1_admin_learn_posts__post_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearnPostDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearnPostAdminView"];
                 };
             };
             /** @description Validation Error */
@@ -8320,6 +10370,145 @@ export interface operations {
             };
         };
     };
+    list_codes_v1_admin_redemption_codes_get: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["RedemptionCodeKind"] | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_RedemptionCodeView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_code_v1_admin_redemption_codes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RedemptionCodeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionCodeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deactivate_code_v1_admin_redemption_codes__code_id__deactivate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                code_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RedemptionCodeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_records_v1_admin_redemption_codes__code_id__records_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                code_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_RedemptionRecordView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_config_v1_admin_config_get: {
         parameters: {
             query?: never;
@@ -8567,6 +10756,8 @@ export interface operations {
                 action?: string | null;
                 target_type?: string | null;
                 target_id?: string | null;
+                created_after?: string | null;
+                created_before?: string | null;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -8651,6 +10842,393 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnnouncementView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_logs_v1_admin_logs_get: {
+        parameters: {
+            query?: {
+                source?: string | null;
+                level?: string | null;
+                actor_user_id?: string | null;
+                q?: string | null;
+                created_after?: string | null;
+                created_before?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LogEntryView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_llm_providers_v1_admin_llm_providers_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderPoolView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmProviderEndpointUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderPoolView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_llm_provider_v1_admin_llm_providers__endpoint_id__remove_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderPoolView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_breaker_settings_v1_admin_llm_providers_settings_circuit_breaker_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmProviderBreakerSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderPoolView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_nodes_v1_admin_agent_nodes_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AgentNodeView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_skills_v1_admin_agent_skills_get: {
+        parameters: {
+            query: {
+                node_role: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AgentSkillView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_agent_skill_v1_admin_agent_skills_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentSkillPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSkillView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_agent_skill_v1_admin_agent_skills__skill_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSkillView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_skills_v1_admin_skills_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["CreationSkillStatus"] | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_CreationSkillAdminView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    takedown_skill_v1_admin_skills__skill_id__takedown_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TombstoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillAdminView"];
                 };
             };
             /** @description Validation Error */

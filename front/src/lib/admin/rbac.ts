@@ -35,6 +35,8 @@ export interface NavItem {
     | 'agents'
     | 'moderation'
     | 'reports'
+    | 'learnPosts'
+    | 'skillLibrary'
     | 'users'
     | 'credits'
     | 'config'
@@ -69,6 +71,18 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: 'moderation',
       },
       { href: '/admin/reports', labelKey: 'navReports', requires: 'reviewer', icon: 'reports' },
+      {
+        href: '/admin/learn-posts',
+        labelKey: 'navLearnPosts',
+        requires: 'reviewer',
+        icon: 'learnPosts',
+      },
+      {
+        href: '/admin/skill-library',
+        labelKey: 'navSkillLibrary',
+        requires: 'reviewer',
+        icon: 'skillLibrary',
+      },
       { href: '/admin/users', labelKey: 'navUsers', requires: 'reviewer', icon: 'users' },
       { href: '/admin/credits', labelKey: 'navCredits', requires: 'viewer', icon: 'credits' },
     ],

@@ -2,6 +2,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 
 import { DanglingReserves } from '@/components/admin/credits/dangling-reserves';
 import { LedgerConsole } from '@/components/admin/credits/ledger-console';
+import { RedemptionCodesPanel } from '@/components/admin/credits/redemption-codes-panel';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { adminFetch } from '@/lib/api/admin-server';
@@ -54,6 +55,7 @@ export default async function AdminCreditsPage() {
       </section>
 
       <DanglingReserves />
+      <RedemptionCodesPanel />
       <LedgerConsole />
     </div>
   );

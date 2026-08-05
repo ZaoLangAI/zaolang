@@ -7,8 +7,10 @@ import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { DataTable, type Column } from '@/components/admin/data-table';
 import { DetailDrawer, DetailList } from '@/components/admin/detail-drawer';
+import { DurationBars, type DurationSegment } from '@/components/admin/duration-bars';
 import { FilterBar, Pager } from '@/components/admin/filter-bar';
 import { RoutingReplayTable } from '@/components/admin/jobs/routing-replay-table';
+import { WorkflowSteps } from '@/components/admin/jobs/workflow-steps';
 import { Timeline, type TimelineEntry } from '@/components/admin/timeline';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/primitives';
@@ -17,7 +19,7 @@ import type { Locale } from '@/i18n/routing';
 import { atLeast } from '@/lib/admin/rbac';
 import { useAdminList } from '@/lib/admin/use-admin-list';
 import { adminApi } from '@/lib/api/admin-client';
-import type { AdminJob, AdminJobDetail } from '@/lib/api/admin-types';
+import type { AdminJob, AdminJobDetail, WorkflowShape } from '@/lib/api/admin-types';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
@@ -41,6 +43,9 @@ export function JobsConsole() {
   const { role } = useAdminSession();
 
   const list = useAdminList<AdminJob>('/v1/admin/jobs');
+  // Declared once, not per job: the pipeline shape is a static description,
+  // so every drawer open reuses the same fetch instead of repeating it.
+  const workflow = useResource<WorkflowShape>('/v1/admin/workflow');
   const [openId, setOpenId] = useState<string | null>(null);
   const [danger, setDanger] = useState<'terminate' | null>(null);
 
@@ -112,6 +117,33 @@ export function JobsConsole() {
   const detail = useResource<AdminJobDetail>(openId ? `/v1/admin/jobs/${openId}` : null);
   const job = detail.data;
   const attempts = job?.attempts ?? [];
+  const agentRuns = job?.agent_runs ?? [];
+  const events = job?.events ?? [];
+
+  // Each segment is the gap between two consecutive events, labelled by the
+  // stage that just finished — "how long safety took before planning started".
+  const durationSegments: DurationSegment[] = [];
+  for (let index = 0; index < events.length - 1; index += 1) {
+    const event = events[index];
+    const next = events[index + 1];
+    if (!event || !next) continue;
+    const ms = Math.max(
+      new Date(next.created_at).getTime() - new Date(event.created_at).getTime(),
+      0,
+    );
+    const tone: DurationSegment['tone'] =
+      next.status === 'failed' || next.status === 'expired'
+        ? 'danger'
+        : next.status === 'succeeded'
+          ? 'success'
+          : 'primary';
+    durationSegments.push({
+      key: `${event.sequence}-${next.sequence}`,
+      label: event.event_type,
+      ms,
+      tone,
+    });
+  }
 
   const timeline: TimelineEntry[] = (job?.events ?? []).map((event) => ({
     id: String(event.sequence),
@@ -149,6 +181,8 @@ export function JobsConsole() {
             options: STATUSES.map((value) => ({ value, label: tJob(value) })),
           },
           { id: 'user_id', label: t('filterUser'), kind: 'text', placeholder: 'usr_…' },
+          { id: 'provider', label: t('colProvider'), kind: 'text', placeholder: 'fake_open_workflow' },
+          { id: 'created', label: t('filterCreated'), kind: 'daterange' },
           {
             id: 'stuck_only',
             label: tAdmin('filters'),
@@ -226,6 +260,24 @@ export function JobsConsole() {
               ]}
             />
 
+            {workflow.data ? (
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">{t('pipeline')}</h3>
+                <WorkflowSteps
+                  steps={workflow.data.steps}
+                  events={job.events}
+                  jobStatus={job.status}
+                />
+              </section>
+            ) : null}
+
+            {durationSegments.length > 0 ? (
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">{t('durationBreakdown')}</h3>
+                <DurationBars segments={durationSegments} />
+              </section>
+            ) : null}
+
             <section>
               <h3 className="mb-3 text-sm font-semibold">{tAdmin('timeline')}</h3>
               <Timeline entries={timeline} />
@@ -253,7 +305,39 @@ export function JobsConsole() {
                       </span>
                       <span className="tabular text-muted">
                         {attempt.status} · {formatNumber(attempt.latency_ms ?? 0, locale)}ms
+                        {attempt.cost_credits != null
+                          ? ` · ${formatNumber(attempt.cost_credits, locale)} ${t('colCredits')}`
+                          : ''}
                         {attempt.error_code ? ` · ${attempt.error_code}` : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+
+            {agentRuns.length > 0 ? (
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">{t('agentRuns')}</h3>
+                <ol className="flex flex-col gap-2 text-xs">
+                  {agentRuns.map((run) => (
+                    <li
+                      key={run.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2"
+                    >
+                      <span className="font-mono">
+                        {run.agent_name}
+                        {run.model ? ` · ${run.model}` : ''}
+                        {run.degraded ? (
+                          <Badge tone="amber" className="ml-2">
+                            {t('degraded')}
+                          </Badge>
+                        ) : null}
+                      </span>
+                      <span className="tabular text-muted">
+                        {t('promptTokens')} {formatNumber(run.prompt_tokens ?? 0, locale)} ·{' '}
+                        {t('completionTokens')} {formatNumber(run.completion_tokens ?? 0, locale)} ·{' '}
+                        {formatNumber(run.latency_ms ?? 0, locale)}ms
                       </span>
                     </li>
                   ))}

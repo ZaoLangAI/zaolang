@@ -90,9 +90,9 @@ test.describe('operations screens', () => {
     await expect(page.getByRole('textbox').first()).not.toBeEmpty();
   });
 
-  test('the audit log renders its table', async ({ page }) => {
+  test('the log centre renders its table', async ({ page }) => {
     await page.goto('/zh-CN/admin/audit', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: '审计日志', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '日志中心', level: 1 })).toBeVisible();
     await expect(page.getByRole('table').first()).toBeVisible();
   });
 

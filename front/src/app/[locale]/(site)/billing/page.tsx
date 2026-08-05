@@ -3,6 +3,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { CreditPackages } from '@/components/billing/credit-packages';
 import { LedgerTable } from '@/components/billing/ledger-table';
+import { RedeemCodeForm } from '@/components/billing/redeem-code-form';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { serverFetchOrNull } from '@/lib/api/server';
@@ -42,6 +43,7 @@ export default async function BillingPage() {
       </div>
       <p className="-mt-4 text-xs text-muted">{t('reservedHint')}</p>
 
+      <RedeemCodeForm />
       <CreditPackages packages={packages?.items ?? []} region={me.region as Region} />
       <LedgerTable entries={ledger?.items ?? []} />
     </div>

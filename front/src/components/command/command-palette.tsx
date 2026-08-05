@@ -126,6 +126,8 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'create', label: tNav('create'), path: '/create' },
       { id: 'create-short', label: tShortform('title'), path: '/create/short' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
+      { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
+      { id: 'skills', label: tNav('skills'), path: '/skills' },
       { id: 'collection', label: tNav('collection'), path: '/collection' },
       { id: 'profile', label: tNav('profile'), path: '/profile' },
       { id: 'billing', label: tNav('billing'), path: '/billing' },
@@ -140,7 +142,9 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
         // dialog beats landing the user on an empty page.
         if (
           status !== 'authenticated' &&
-          ['collection', 'profile', 'billing', 'notifications', 'settings'].includes(id)
+          ['learn-publish', 'collection', 'profile', 'billing', 'notifications', 'settings'].includes(
+            id,
+          )
         ) {
           close();
           openLogin();

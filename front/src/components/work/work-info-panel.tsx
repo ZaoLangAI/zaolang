@@ -4,13 +4,17 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
+import { AddToCollectionDialog } from '@/components/work/add-to-collection-dialog';
 import { Avatar } from '@/components/work/avatar';
 import { LineageStrip } from '@/components/work/lineage-strip';
+import { ReportDialog } from '@/components/work/report-dialog';
 import { ReusableParamsList } from '@/components/work/reusable-params';
 import { Button } from '@/components/ui/button';
 import {
+  IconAlert,
   IconBookmark,
   IconBookmarkFilled,
+  IconGrid,
   IconHeart,
   IconRemix,
   IconSparkle,
@@ -57,6 +61,8 @@ export function WorkInfoPanel({
   const [liked, setLiked] = useState(work.viewer_liked);
   const [likes, setLikes] = useState(work.stats.like_count);
   const [bookmarked, setBookmarked] = useState(work.viewer_bookmarked);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
 
   const toggleLike = () =>
     requireAuth({
@@ -93,6 +99,12 @@ export function WorkInfoPanel({
         }
       },
     });
+
+  const openReport = () =>
+    requireAuth({ label: t('report'), run: () => setReportOpen(true) });
+
+  const openAddToCollection = () =>
+    requireAuth({ label: tPage('addToCollection'), run: () => setCollectionOpen(true) });
 
   const startRemix = () => {
     if (!work.can_remix) {
@@ -195,6 +207,13 @@ export function WorkInfoPanel({
         >
           {bookmarked ? t('bookmarked') : t('bookmark')}
         </Button>
+        <Button
+          size="lg"
+          variant="secondary"
+          icon={<IconGrid className="size-5" />}
+          onClick={openAddToCollection}
+          aria-label={tPage('addToCollection')}
+        />
       </div>
 
       {compact ? null : (
@@ -209,12 +228,28 @@ export function WorkInfoPanel({
           >
             {liked ? t('liked') : t('like')}
           </Button>
-          <p className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<IconAlert className="size-4" />}
+            onClick={openReport}
+            className="ml-auto"
+          >
+            {t('report')}
+          </Button>
+          <p className="flex items-center gap-1.5 text-xs text-muted">
             <IconSparkle className="size-3.5 text-amber" />
             {t('aiGenerated')}
           </p>
         </div>
       )}
+
+      <ReportDialog workId={work.id} open={reportOpen} onClose={() => setReportOpen(false)} />
+      <AddToCollectionDialog
+        workId={work.id}
+        open={collectionOpen}
+        onClose={() => setCollectionOpen(false)}
+      />
     </div>
   );
 }

@@ -25,6 +25,9 @@ export function RoutingReplayTable({
     return <p className="text-xs text-muted">{tAdmin('timelineEmpty')}</p>;
   }
 
+  const maxScore = Math.max(...candidates.map((c) => Number(c.total_score ?? 0)), 0.001);
+  const maxCost = Math.max(...candidates.map((c) => Number(c.effective_cost ?? 0)), 1);
+
   return (
     <div className="overflow-x-auto rounded-[var(--radius-sm)] border border-border">
       <table className="w-full text-left text-xs">
@@ -36,10 +39,10 @@ export function RoutingReplayTable({
             <th scope="col" className="px-3 py-2 font-medium">
               {t('eligible')}
             </th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">
+            <th scope="col" className="px-3 py-2 font-medium">
               {t('totalScore')}
             </th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">
+            <th scope="col" className="px-3 py-2 font-medium">
               {t('effectiveCost')}
             </th>
           </tr>
@@ -49,12 +52,15 @@ export function RoutingReplayTable({
             const provider = String(candidate.provider ?? `#${index}`);
             const eligible = Boolean(candidate.eligible);
             const reason = candidate.filter_reason ? String(candidate.filter_reason) : null;
+            const score = Number(candidate.total_score ?? 0);
+            const cost = Number(candidate.effective_cost ?? 0);
+            const isChosen = provider === chosen;
 
             return (
-              <tr key={provider} className={cn(provider === chosen && 'bg-success/8')}>
+              <tr key={provider} className={cn(isChosen && 'bg-success/8')}>
                 <th scope="row" className="px-3 py-2 text-left font-mono font-normal">
                   {provider}
-                  {provider === chosen ? (
+                  {isChosen ? (
                     <Badge tone="success" className="ml-2">
                       {t('colProvider')}
                     </Badge>
@@ -70,17 +76,51 @@ export function RoutingReplayTable({
                     </span>
                   )}
                 </td>
-                <td className="tabular px-3 py-2 text-right">
-                  {Number(candidate.total_score ?? 0).toFixed(3)}
+                <td className="px-3 py-2">
+                  <ScoreBar
+                    value={score}
+                    max={maxScore}
+                    tone={isChosen ? 'success' : eligible ? 'primary' : 'neutral'}
+                    display={score.toFixed(3)}
+                  />
                 </td>
-                <td className="tabular px-3 py-2 text-right text-muted">
-                  {Number(candidate.effective_cost ?? 0)}
+                <td className="px-3 py-2">
+                  <ScoreBar value={cost} max={maxCost} tone="neutral" display={String(cost)} />
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** Inline bar so relative magnitude is visible without cross-referencing rows. */
+function ScoreBar({
+  value,
+  max,
+  tone,
+  display,
+}: {
+  value: number;
+  max: number;
+  tone: 'success' | 'primary' | 'neutral';
+  display: string;
+}) {
+  const width = Math.min(Math.max((value / max) * 100, value > 0 ? 3 : 0), 100);
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-soft">
+        <div
+          className={cn(
+            'h-full rounded-full',
+            tone === 'success' ? 'bg-success' : tone === 'primary' ? 'bg-primary' : 'bg-muted/60',
+          )}
+          style={{ width: `${width}%` }}
+        />
+      </div>
+      <span className="tabular text-muted">{display}</span>
     </div>
   );
 }

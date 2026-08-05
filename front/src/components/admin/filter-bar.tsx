@@ -9,9 +9,14 @@ import { cn } from '@/lib/cn';
 export interface FilterDef {
   id: string;
   label: string;
-  kind: 'text' | 'select';
+  kind: 'text' | 'select' | 'daterange';
   options?: Array<{ value: string; label: string }>;
   placeholder?: string;
+}
+
+/** `daterange` filters split into two underlying filter keys: `${id}_after` / `${id}_before`. */
+function dateRangeKeys(id: string): { after: string; before: string } {
+  return { after: `${id}_after`, before: `${id}_before` };
 }
 
 /**
@@ -39,39 +44,65 @@ export function FilterBar({
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-3">
-      {filters.map((filter) => (
-        <label key={filter.id} className="flex flex-col gap-1 text-xs text-muted">
-          {filter.label}
-          {filter.kind === 'select' ? (
-            <select
-              value={values[filter.id] ?? ''}
-              onChange={(event) => onChange(filter.id, event.target.value)}
-              className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2.5 text-sm text-text"
-            >
-              <option value="">{t('filters')}</option>
-              {filter.options?.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="relative">
-              <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
-              <input
-                type="search"
+      {filters.map((filter) => {
+        if (filter.kind === 'daterange') {
+          const { after, before } = dateRangeKeys(filter.id);
+          return (
+            <label key={filter.id} className="flex flex-col gap-1 text-xs text-muted">
+              {filter.label}
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="datetime-local"
+                  value={values[after] ?? ''}
+                  onChange={(event) => onChange(after, event.target.value)}
+                  className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2 text-xs text-text"
+                />
+                <span aria-hidden="true">–</span>
+                <input
+                  type="datetime-local"
+                  value={values[before] ?? ''}
+                  onChange={(event) => onChange(before, event.target.value)}
+                  className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2 text-xs text-text"
+                />
+              </span>
+            </label>
+          );
+        }
+
+        return (
+          <label key={filter.id} className="flex flex-col gap-1 text-xs text-muted">
+            {filter.label}
+            {filter.kind === 'select' ? (
+              <select
                 value={values[filter.id] ?? ''}
-                placeholder={filter.placeholder ?? t('search')}
                 onChange={(event) => onChange(filter.id, event.target.value)}
-                className={cn(
-                  'h-9 w-48 rounded-[var(--radius-sm)] border border-border bg-surface-soft pl-8 pr-2.5 text-sm text-text',
-                  'placeholder:text-muted/70',
-                )}
-              />
-            </span>
-          )}
-        </label>
-      ))}
+                className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2.5 text-sm text-text"
+              >
+                <option value="">{t('filters')}</option>
+                {filter.options?.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="relative">
+                <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
+                <input
+                  type="search"
+                  value={values[filter.id] ?? ''}
+                  placeholder={filter.placeholder ?? t('search')}
+                  onChange={(event) => onChange(filter.id, event.target.value)}
+                  className={cn(
+                    'h-9 w-48 rounded-[var(--radius-sm)] border border-border bg-surface-soft pl-8 pr-2.5 text-sm text-text',
+                    'placeholder:text-muted/70',
+                  )}
+                />
+              </span>
+            )}
+          </label>
+        );
+      })}
 
       {dirty ? (
         <Button size="sm" variant="ghost" onClick={onReset}>
