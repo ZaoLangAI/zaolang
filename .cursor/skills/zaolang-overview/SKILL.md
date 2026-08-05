@@ -29,18 +29,18 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | 加接口、改错误码、幂等、限流、鉴权 | `zaolang-api-contract` |
 | 档位定价、路由权重、Feature Flag、智能体模型绑定 | `zaolang-platform-config` |
 | 可见性、二创授权、许可快照、创作链边与墓碑 | `zaolang-domain-licensing-lineage` |
-| 积分预扣与结算、回流分成、对账、支付 webhook | `zaolang-credits-billing` |
+| 积分预扣与结算、回流分成、对账、支付 webhook、兑换码 | `zaolang-credits-billing` |
 | 任务提交、状态机、SSE、Celery 队列、取消与重试 | `zaolang-generation-jobs` |
 | Safety/Planner/Quality/Copy Agent、Router 评分、LLM 网关与响应规范化 | `zaolang-agent-gateway` |
 | 上传预签名、私密对象下载、pHash 指纹、AI 溯源清单 | `zaolang-media-assets` |
 | 检索、标签、pgvector 相似作品、风格预设 | `zaolang-discovery-search` |
-| 审计日志、数据导出与删除、备份与生命周期 | `zaolang-compliance-audit` |
+| 审计日志、SystemLog 安全信号、数据导出与删除、备份与生命周期 | `zaolang-compliance-audit` |
 | C 端页面、共享组件、登录弹窗与动作恢复、命令面板 | `zaolang-frontend-ui` |
 | 颜色令牌、深浅主题、SSR 无闪烁 | `zaolang-theming` |
 | 三语文案、locale 与 region、货币日期格式 | `zaolang-i18n-region` |
 | 创作链 DAG 图谱、版本参数 diff | `zaolang-lineage-graph` |
 | 后台外壳、独立登录、RBAC 导航、表格与危险操作组件 | `zaolang-admin-console` |
-| 后台十个运维域的接口与页面 | `zaolang-admin-ops` |
+| 后台运维域的接口与页面（含技能库、兑换码、日志中心） | `zaolang-admin-ops` |
 | iOS 客户端（SwiftUI 界面、ZaolangKit、XcodeGen、色板/文案生成脚本） | `zaolang-ios-client` |
 | GitHub Actions、Docker 镜像、release-please、文档站 | `zaolang-ci-release` |
 | 写测试、跑 E2E、无障碍与视觉 QA | `zaolang-testing-qa` |

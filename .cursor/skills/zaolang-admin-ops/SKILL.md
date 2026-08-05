@@ -1,10 +1,10 @@
 ---
 name: zaolang-admin-ops
-description: 造浪后台十个运维域的接口与页面：系统健康、任务运维、供应商与路由、智能体运维、内容审核与举报、用户与权限、积分与对账、配置中心、数据运维、审计与公告。Use when adding or changing a back-office operations screen or endpoint — health probes, job replay/terminate, provider stats, agent runs, moderation queue, reports, user suspension, credit adjustment, reconciliation, backups, storage lifecycle, audit search, or announcements.
+description: 造浪后台运维域的接口与页面：系统健康、任务运维、LLM/生成供应商与路由、智能体运维（AgentSkill）、内容审核与举报、技能库、用户与权限、积分与兑换码、配置中心、数据运维、日志中心与公告。
 disable-model-invocation: true
 ---
 
-# 后台十个运维域
+# 后台运维域
 
 安全边界、RBAC、外壳与组件族见 `zaolang-admin-console`。本 skill 讲每个域**做什么、数据从哪来、不能怎么改**。
 
@@ -13,15 +13,16 @@ disable-model-invocation: true
 | 域 | 后端 | 前端 |
 | --- | --- | --- |
 | 系统健康 | `admin/observability.py: /health` | `components/admin/health/health-cards.tsx` |
-| 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events` | `admin/jobs/jobs-console.tsx` |
-| 供应商与路由 | `observability.py`: `/providers/stats`、`/jobs/{id}/routing` | `admin/jobs/routing-replay-table.tsx`、`admin/providers/routing-weights-panel.tsx` |
-| 智能体运维 | `observability.py`: `/agent-runs`、`/agent-runs/usage`、`/workflow` | `admin/agents/agent-runs-table.tsx` |
-| 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`)、`/reports`、`/works/{id}/tombstone|hide|restore`、`/fingerprints/duplicates` | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
+| 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`） | `admin/jobs/jobs-console.tsx`（含 `stepper` / `duration-bars` / 路由候选条形对比） |
+| 供应商与路由 | `admin/llm_providers.py`: LLM 网关端点目录（可编辑）；`observability.py`: 生成供应商 `/providers/stats`、`/jobs/{id}/routing` | `admin/providers/llm-providers-console.tsx`（LLM 目录）、`routing-replay-table.tsx`、`routing-weights-panel.tsx`（生成统计 + 路由权重） |
+| 智能体运维 | `admin/agent_skills.py`: 节点与 Prompt 版本；`observability.py`: `/agent-runs`、`/agent-runs/usage`、`/workflow` | `admin/agents/agent-node-graph.tsx`、`agent-skill-editor.tsx`、`agent-runs-table.tsx` |
+| 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`/`detail`/`history`)、`/reports`、`/works/{id}/tombstone|hide|restore` | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
+| 技能库运维 | `admin/skill_library.py`: 全局技能列表/下架/精选 | `admin/skill-library/skill-library-console.tsx` |
 | 用户与权限 | `admin/users.py`: `/users`、`/suspend`、`/unsuspend`、`/roles`、`/data-requests` | `admin/users/*` |
-| 积分运维 | `admin/ledger.py`: `/credits/ledger`、`/credits/reconciliation`、`/credits/dangling`、`/users/{id}/credits/adjust` | `admin/credits/*` |
+| 积分运维 | `admin/ledger.py` + `admin/redemption.py`: 账本/对账/调账/兑换码 CRUD | `admin/credits/*`（含 `redemption-codes-panel.tsx`） |
 | 配置运维 | `admin/config.py`（见 `zaolang-platform-config`） | `admin/config/*` |
 | 数据运维 | `admin/data.py`: `/storage/usage`、`/storage/lifecycle`、`/backups`、`/seed` | `admin/data/*` |
-| 审计与公告 | `admin/config.py`: `/audit-logs`、`/announcements` | `admin/audit/audit-console.tsx`、`admin/announcements/*` |
+| 日志中心 | `admin/logs.py`: `/logs`（审计 + SystemLog 聚合）；`admin/config.py`: `/audit-logs`（向后兼容） | `admin/audit/log-center-console.tsx`、`admin/announcements/*` |
 
 ## 不可破坏的不变量
 
@@ -30,8 +31,8 @@ disable-model-invocation: true
 3. **卡死重放不制造第二次扣费**：`requeue` 复用原任务与原预扣，不新建 job、不重新 reserve。
 4. **全链路回放是只读的**：`JobEvent` + `ProviderAttempt` + 路由候选决策，展示即可，不允许「顺手改一下」。
 5. **`ProviderStat` 是累计计数器**，新建行必须显式初始化为 0（`attempts` / `successes` / `total_latency_ms` / `total_cost_minor`）——依赖列默认值会在 flush 前拿到 `None` 并在 `+=` 时炸。
-6. **审核决定要留人工痕迹**：`claim` 再 `decide`，决定人、时间、理由都记。自动审核结果与人工确认是两条不同记录，不要相互覆盖。
-7. **墓碑/隐藏/恢复三态语义固定**：隐藏可恢复，墓碑是终态（见 `zaolang-domain-licensing-lineage`）。
+6. **审核决定要留人工痕迹**：`claim` 再 `decide`，决定人、时间、理由都记。**拒绝 = hide（可撤销），tombstone 是单独的高危终态操作**，不要混为一谈。
+7. **墓碑/隐藏/恢复三态语义固定**：隐藏可 `restore`，墓碑是终态（见 `zaolang-domain-licensing-lineage`）。
 8. **人工调账只追加**，强制理由 + 二次确认 + 审计（见 `zaolang-credits-billing`）。
 9. **对账与悬挂预扣是两个不同指标**，数字不一致是设计使然，不要「对齐」。
 10. **seed / reset 在生产环境必须拒绝**，有专门用例守着。备份恢复要留 `BackupRecord`。

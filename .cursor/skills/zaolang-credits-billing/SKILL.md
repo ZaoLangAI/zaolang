@@ -18,7 +18,8 @@ disable-model-invocation: true
 | `back/app/domain/credits/pricing.py` | `quote()` 报价、`settlement_credits()` 实耗折算 |
 | `back/app/domain/credits/royalty.py` | `plan_royalties` / `distribute` 回流分成 |
 | `back/app/domain/credits/reconciliation.py` | `derive_totals` / `find_mismatches` / `find_dangling_reservations` / `build_report` |
-| `back/app/api/v1/credits.py` | 余额、账单、套餐、Mock 支付与 webhook |
+| `back/app/domain/credits/redemption.py` | 兑换码生成/核销（invite/coupon），内部走 `grant` |
+| `back/app/api/v1/credits.py` | 余额、账单、套餐、Mock 支付与 webhook、`POST /redeem` |
 | `back/app/api/v1/admin/ledger.py` | 后台账本检索、对账报表、悬挂预扣、人工调账 |
 | `back/tests/unit/test_credits_invariants.py` / `test_credits_properties.py` / `back/tests/concurrency/test_credit_races.py` | 例子、属性、竞态三层测试 |
 

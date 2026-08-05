@@ -1,6 +1,6 @@
 ---
 name: zaolang-platform-config
-description: 造浪的运行时配置中心与 Feature Flag：七个配置段（pricing / routing_weights / providers / agents / royalty / feature_flags / moderation）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing or routing weights, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
+description: 造浪的运行时配置中心与 Feature Flag：八个配置段（pricing / routing_weights / providers / agents / royalty / feature_flags / moderation / llm_providers）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing or routing weights, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
 disable-model-invocation: true
 ---
 
@@ -20,8 +20,9 @@ disable-model-invocation: true
 | `front/src/components/admin/config/config-console.tsx` | 编辑器 + 版本历史 + JSON diff |
 | `front/src/components/admin/config/feature-flags-panel.tsx` | Flag 灰度开关 |
 | `front/src/components/admin/providers/routing-weights-panel.tsx` | 路由权重面板 |
+| `front/src/components/admin/providers/llm-providers-console.tsx` | LLM 网关端点目录 |
 
-七个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`。
+八个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`llm_providers`。
 
 ## 不可破坏的不变量
 
@@ -53,4 +54,4 @@ disable-model-invocation: true
 cd back && conda run -n zaolang pytest tests/unit/test_platform_config.py tests/integration/test_admin_ops_platform.py -v
 ```
 
-改完在后台 `/admin/config` 实操一遍：编辑 → 看 diff → 回滚 → 看 `/admin/audit` 里两条记录都带理由。
+改完在后台 `/admin/config` 实操一遍：编辑 → 看 diff → 回滚 → 看 `/admin/audit`（日志中心）里两条记录都带理由。

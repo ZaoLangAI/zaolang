@@ -18,7 +18,7 @@ disable-model-invocation: true
 | --- | --- |
 | `back/app/api/v1/admin/deps.py` | `Viewer` / `Reviewer` / `Operator` / `Admin` 四个等级别名；`AdminRead` / `AdminWrite` / `AdminDangerous` 限流；`require_confirmation` |
 | `back/app/api/v1/admin/auth.py` | `/admin/login`、会话查询、登出；签发 audience 为 `admin` 的 token，存 `zl_admin_session` cookie |
-| `back/app/api/v1/admin/*.py` | `config` / `content` / `data` / `jobs` / `ledger` / `observability` / `users` |
+| `back/app/api/v1/admin/*.py` | `config` / `content` / `data` / `jobs` / `ledger` / `logs` / `observability` / `users` / `llm_providers` / `agent_skills` / `skill_library` / `redemption` / `learning` |
 | `back/app/domain/audit/service.py` | 写操作留痕 |
 | `back/tests/integration/test_admin_security.py` | 37 个越权与高危操作用例，改权限前先读它 |
 
@@ -30,7 +30,7 @@ disable-model-invocation: true
 | `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | 控制台外壳 |
 | `front/src/components/admin/admin-session-provider.tsx` | 后台会话上下文 |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
-| `front/src/components/admin/` | `data-table` / `filter-bar` / `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` |
+| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agent-node-graph` / `agent-skill-editor` / `llm-providers-console` / `log-center-console` |
 | `front/src/lib/api/admin-client.ts`、`admin-server.ts`、`use-admin-list.ts` | 后台专用客户端与列表 hook |
 
 ## 不可破坏的不变量
@@ -65,5 +65,5 @@ disable-model-invocation: true
 
 ```bash
 cd back && conda run -n zaolang pytest tests/integration/test_admin_security.py -v
-make test-e2e     # e2e/flows/admin.spec.ts 覆盖登录边界、九个运维页与 RBAC 导航
+make test-e2e     # e2e/flows/admin.spec.ts 覆盖登录边界、十个以上运维页与 RBAC 导航
 ```

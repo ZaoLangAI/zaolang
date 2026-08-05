@@ -14,13 +14,15 @@ disable-model-invocation: true
 
 | 文件 | 内容 |
 | --- | --- |
-| `back/app/agents/safety.py` / `planner.py` / `quality.py` / `copywriter.py` | 四个 Agent |
+| `back/app/agents/safety.py` / `planner.py` / `quality.py` / `copywriter.py` | 四个 Agent（模块内常量作 fallback） |
+| `back/app/domain/agent_skills/service.py` | `AgentNode` / `AgentSkill` 版本化 Prompt，`get_active_prompt(node_role)` |
 | `back/app/agents/router.py` | 纯规则路由：`ProviderCapability` / `Candidate` / `RoutingDecision` / `route()` |
 | `back/app/agents/tools.py` | **受控工具白名单**，Agent 唯一能碰领域服务的入口 |
 | `back/app/agents/base.py` / `agent_os.py` | Agent 基类与 AgentOS 挂载（产品 FastAPI 作为 `base_app`） |
 | `back/app/teams/generation_gateway.py`、`back/app/workflows/generation.py` | Team 与 Workflow 编排 |
 | `back/app/providers/base.py` / `fake.py` | `fake_open_workflow` 与 `fake_paid_api` 两条路线 |
 | `back/app/llm/client.py` | `complete()` / `probe()`，三档模式与降级 |
+| `back/app/llm/failover.py` | LLM 网关独立 failover 池：并发占用、熔断、按场景标签 + 优先级选端点 |
 | `back/app/llm/normalize.py` | `strip_thinking` / `extract_json` / `normalize_completion` |
 | `back/app/llm/capabilities.py` | 按错误反馈学习模型能力（温度、JSON 模式等） |
 | `back/app/llm/stub.py` | 确定性 stub，测试与 CI 用 |
@@ -36,8 +38,11 @@ disable-model-invocation: true
 7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级。后台智能体运维完全建立在这张表上。
 8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
 9. **密钥只从环境变量读**，不进日志、不进 prompt、不回显。
+10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频生成的 `router.py` 评分路由并行，不要混用同一套候选选择逻辑。
 
-## 模型绑定（默认值，可在配置中心热切换）
+## Prompt 与模型绑定
+
+各 Agent 的 `SYSTEM_PROMPT` 已迁移为版本化 `AgentSkill`（后台可编辑/发布/回滚），`run_agent` 经 `get_active_prompt(node_role)` 读取，空库回退模块内硬编码默认值。模型绑定默认值如下（可在配置中心 `agents` 段热切换）：
 
 | Agent | 默认模型 | 为什么 |
 | --- | --- | --- |
