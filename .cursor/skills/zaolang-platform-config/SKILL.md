@@ -1,6 +1,6 @@
 ---
 name: zaolang-platform-config
-description: 造浪的运行时配置中心与 Feature Flag：八个配置段（pricing / routing_weights / providers / agents / royalty / feature_flags / moderation / llm_providers）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing or routing weights, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
+description: 造浪的运行时配置中心与 Feature Flag：十个配置段（pricing / routing_weights / providers / agents / royalty / feature_flags / moderation / shortform / llm_providers / llm_reliability）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing or routing weights, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
 disable-model-invocation: true
 ---
 
@@ -20,9 +20,11 @@ disable-model-invocation: true
 | `front/src/components/admin/config/config-console.tsx` | 编辑器 + 版本历史 + JSON diff |
 | `front/src/components/admin/config/feature-flags-panel.tsx` | Flag 灰度开关 |
 | `front/src/components/admin/providers/routing-weights-panel.tsx` | 路由权重面板 |
-| `front/src/components/admin/providers/llm-providers-console.tsx` | LLM 网关端点目录 |
+| `front/src/components/admin/providers/llm-providers-panel.tsx` | 模型提供方目录：扁平主备列表 + 端点级主/备，支持增删改 |
 
-八个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`llm_providers`。
+十个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`shortform`、`llm_providers`、`llm_reliability`。
+
+`llm_providers` 里每个端点用 `kind` 二选一：`general`（纯文字 + 图片理解，四个 Agent 角色共用同一个池）或 `media`（图片/视频/音频生成；`capabilities` 只声明能力 tag 与模型名）。主/备角色在端点的 `role`/`backup_order` 上，同 `kind` 内仅一个 primary。熔断阈值/冷却时间/`max_retries` 不属于「哪些端点存在」这个目录本身，拆成独立的 `llm_reliability` 段，在配置中心走通用 JSON 编辑，不在 `llm-providers-panel.tsx` 里重复实现专属表单。
 
 ## 不可破坏的不变量
 

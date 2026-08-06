@@ -20,9 +20,11 @@ disable-model-invocation: true
 | `back/app/agents/tools.py` | **受控工具白名单**，Agent 唯一能碰领域服务的入口 |
 | `back/app/agents/base.py` / `agent_os.py` | Agent 基类与 AgentOS 挂载（产品 FastAPI 作为 `base_app`） |
 | `back/app/teams/generation_gateway.py`、`back/app/workflows/generation.py` | Team 与 Workflow 编排 |
-| `back/app/providers/base.py` / `fake.py` | `fake_open_workflow` 与 `fake_paid_api` 两条路线 |
+| `back/app/providers/base.py` / `fake.py` | `ProviderCapability`（含 `provider_factory`）、`fake_open_workflow` 与 `fake_paid_api` 两条路线 |
+| `back/app/providers/media_endpoints.py` | `dynamic_capabilities(session)`：把数据库里 `kind="media"` 的启用端点按能力展开成 `ProviderCapability`，供 `router.build_catalog` 合并 |
+| `back/app/providers/aihubmix_media.py` | `AiHubMixMediaProvider`：图片/语音同步调用 + 视频建任务/轮询/下载 |
 | `back/app/llm/client.py` | `complete()` / `probe()`，三档模式与降级 |
-| `back/app/llm/failover.py` | LLM 网关独立 failover 池：并发占用、熔断、按场景标签 + 优先级选端点 |
+| `back/app/llm/failover.py` | LLM 网关独立 failover 池：并发占用、熔断、按主/备角色 + 优先级选端点（单一通用池，四个 Agent 角色共用，不再分场景） |
 | `back/app/llm/normalize.py` | `strip_thinking` / `extract_json` / `normalize_completion` |
 | `back/app/llm/capabilities.py` | 按错误反馈学习模型能力（温度、JSON 模式等） |
 | `back/app/llm/stub.py` | 确定性 stub，测试与 CI 用 |
@@ -38,7 +40,8 @@ disable-model-invocation: true
 7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级。后台智能体运维完全建立在这张表上。
 8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
 9. **密钥只从环境变量读**，不进日志、不进 prompt、不回显。
-10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频生成的 `router.py` 评分路由并行，不要混用同一套候选选择逻辑。
+10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频/音频生成的 `router.py` 评分路由并行，不要混用同一套候选选择逻辑——两者共享同一个配置段 `llm_providers`（按 `kind` 区分 `general`/`media`），但端点一旦落到 `kind="media"`，就只服务 `router.py` 的打分目录，绝不会被 failover 池选中，反之亦然。
+11. **媒体端点的主/备角色只是展示与审计元数据**：端点级 `role`/`backup_order` 不参与 `router.py` 的打分，胜出者始终由 quality/latency/cost/reliability 权重决定；只有 `kind="general"` 的 LLM 端点，端点级主/备才是 failover 硬路由依据。`capabilities` 仅声明能力 tag 与模型名。
 
 ## Prompt 与模型绑定
 
@@ -58,7 +61,8 @@ disable-model-invocation: true
 
 - **加一个 Agent**：继承 `base.py` 的基类 → 在配置中心 `agents` 段加模型绑定字段 → 只经 `tools.py` 调领域服务 → 补 stub 分支，否则测试无法确定性运行。
 - **给 Agent 加工具**：只加进 `tools.py`，函数签名保持窄（明确的参数、明确的返回），不要暴露 session。
-- **加一个供应商**：实现 `providers/base.py` 的协议 → 在 `router.py` 的 `ProviderCapability` 登记能力与先验 → 在配置中心 `providers` 段加开关与限额 → 补 `ProviderStat` 统计。
+- **加一个内置（假）供应商**：实现 `providers/base.py` 的协议 → 在 `router.py` 的 `PROVIDER_CATALOG` 登记能力、先验与 `provider_factory` → 在配置中心 `providers` 段加开关与限额 → 补 `ProviderStat` 统计。
+- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/providers` 新增一个 `kind="media"` 端点，勾选它支持的能力（文生图/图生图/文/图/视频生视频/音频生成）；`router.build_catalog(session)` 会在下一次路由时自动把它按能力展开进目录参与打分。只有当目标供应商的 HTTP 契约与 `aihubmix_media.py` 不同时才需要新写一个 `GenerationProvider` 实现。
 - **改评分公式**：先对照现有 `router` 实现与单测；改了必须同步后台回放页的解释文案与单元测试。
 
 ## 验证

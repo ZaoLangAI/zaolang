@@ -1,6 +1,6 @@
 ---
 name: zaolang-generation-jobs
-description: 造浪的生成任务与队列：任务状态机与合法迁移表、JobEvent 追加写与 SSE 断线重连、五个 Celery 队列与 pipeline、取消失败重试与积分释放。Use when changing job submission, job status transitions, JobEvent streaming, SSE resumption, Celery tasks or queues, cancellation, retries, or job settlement.
+description: 造浪的生成任务与队列：任务状态机与合法迁移表、JobEvent 追加写与 SSE 断线重连、六个 Celery 队列与 pipeline、取消失败重试与积分释放。Use when changing job submission, job status transitions, JobEvent streaming, SSE resumption, Celery tasks or queues, cancellation, retries, or job settlement.
 disable-model-invocation: true
 ---
 
@@ -17,14 +17,14 @@ disable-model-invocation: true
 | `back/app/domain/jobs/state_machine.py` | `transition` / `request_cancel` / `append_event` / `events_since` |
 | `back/app/domain/jobs/service.py` | `quote_for` / `submit` / `settle_success` / `settle_release` / `get_owned_job` / `progress_for` |
 | `back/app/models/enums.py` | `JobStatus`、`JOB_TRANSITIONS`、`TERMINAL_JOB_STATUSES`、`CANCELLABLE_JOB_STATUSES`、`JobEventType` |
-| `back/app/workers/celery_app.py` | 五个队列的注册与路由 |
+| `back/app/workers/celery_app.py` | 六个队列的注册与路由 |
 | `back/app/workers/pipeline.py` | 安全 → 规划 → 路由 → 供应商 → 质检的实际编排 |
 | `back/app/workers/tasks.py` | Celery 任务入口与重试策略 |
 | `back/app/realtime/publisher.py` | Redis pubsub 实时推送 |
 | `back/app/api/v1/jobs.py` | 提交、查询、取消、SSE `/v1/generation-jobs/{id}/events` |
 | `front/src/lib/use-job-stream.ts`、`front/src/components/job/job-progress.tsx` | 前端消费 SSE |
 
-五个队列：`moderation_short`、`image_generation`、`video_generation_long`、`quality_check`、`webhook_reconcile`。
+六个队列：`moderation_short`、`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`。`Operation.IMAGE_TO_IMAGE` 复用 `image_generation` 队列，`Operation.AUDIO_GENERATION` 走独立的 `audio_generation` 队列（同步调用，不走视频那种建任务+轮询）。
 
 ## 不可破坏的不变量
 
