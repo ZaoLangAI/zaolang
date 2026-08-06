@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   IconAlert,
   IconBell,
+  IconChart,
   IconGear,
   IconGrid,
   IconImage,
@@ -31,6 +32,7 @@ const ICONS: Record<NavItem['icon'], React.ComponentType<{ className?: string }>
   providers: IconGrid,
   routing: IconSparkle,
   agents: IconSparkle,
+  statistics: IconChart,
   moderation: IconShield,
   reports: IconAlert,
   learnPosts: IconImage,

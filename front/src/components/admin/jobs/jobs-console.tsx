@@ -183,7 +183,12 @@ export function JobsConsole() {
             options: STATUSES.map((value) => ({ value, label: tJob(value) })),
           },
           { id: 'user_id', label: t('filterUser'), kind: 'text', placeholder: 'usr_…' },
-          { id: 'provider', label: t('colProvider'), kind: 'text', placeholder: 'fake_open_workflow' },
+          {
+            id: 'provider',
+            label: t('colProvider'),
+            kind: 'text',
+            placeholder: 'fake_open_workflow',
+          },
           { id: 'created', label: t('filterCreated'), kind: 'daterange' },
           {
             id: 'stuck_only',
@@ -290,6 +295,7 @@ export function JobsConsole() {
               <RoutingReplayTable
                 candidates={job.routing_trace ?? []}
                 chosen={job.provider ?? null}
+                reason={job.routing_reason ?? null}
               />
             </section>
 

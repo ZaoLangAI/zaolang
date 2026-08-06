@@ -34,6 +34,7 @@ export interface NavItem {
     | 'providers'
     | 'routing'
     | 'agents'
+    | 'statistics'
     | 'moderation'
     | 'reports'
     | 'learnPosts'
@@ -61,6 +62,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/models', labelKey: 'navProviders', requires: 'viewer', icon: 'providers' },
       { href: '/admin/routing', labelKey: 'navRouting', requires: 'viewer', icon: 'routing' },
       { href: '/admin/agents', labelKey: 'navAgents', requires: 'viewer', icon: 'agents' },
+      {
+        href: '/admin/statistics',
+        labelKey: 'navStatistics',
+        requires: 'viewer',
+        icon: 'statistics',
+      },
     ],
   },
   {

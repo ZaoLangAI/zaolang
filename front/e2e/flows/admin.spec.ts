@@ -119,6 +119,36 @@ test.describe('operations screens', () => {
     await expect(page.getByText('copy').first()).toBeVisible();
   });
 
+  test('the statistics console aggregates provider, agent, job and credit metrics', async ({
+    page,
+  }) => {
+    await page.goto('/zh-CN/admin/statistics', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '数据统计', level: 1 })).toBeVisible();
+
+    // Provider stats table: populated from the seeded finished job's attempts.
+    await expect(page.getByText('fake_open_workflow').first()).toBeVisible();
+
+    // Agent usage grid: the seeded intent_router run, same source this feature's
+    // routing decisions now come from.
+    await expect(page.getByText('intent_router').first()).toBeVisible();
+
+    // Job throughput and credit reconciliation sections both render, even though
+    // the seeded jobs are older than the 24h window and legitimately count as zero.
+    await expect(page.getByRole('heading', { name: '任务吞吐' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '积分对账' })).toBeVisible();
+  });
+
+  test('the routing console shows the workflow editor without a weights panel', async ({
+    page,
+  }) => {
+    await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '工作流编排', level: 1 })).toBeVisible();
+    // The operation switcher is the workflow editor's own tablist; the old
+    // "workflow / providers & weights" console tabs are gone entirely.
+    await expect(page.getByRole('tab', { name: '供应商与权重' })).toHaveCount(0);
+    await expect(page.getByText('路由权重')).toHaveCount(0);
+  });
+
   test('the models console renders primary/backup lists', async ({ page }) => {
     await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '模型管理', level: 1 })).toBeVisible();

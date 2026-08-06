@@ -325,6 +325,12 @@ export const IconBranch = (p: IconProps) => (
   </Icon>
 );
 
+export const IconChart = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20V10M10 20V4M16 20v-7M20 20H4" />
+  </Icon>
+);
+
 /** The brand wordmark's wave glyph. */
 export const IconWave = (p: IconProps) => (
   <Icon {...p} strokeWidth="2">

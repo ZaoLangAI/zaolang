@@ -1555,6 +1555,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/jobs/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Stats
+         * @description Throughput for the statistics hub: status/operation mix and how long a
+         *     succeeded job actually takes, over a rolling window.
+         *
+         *     Declared before `/jobs/{job_id}` so FastAPI's path matching does not treat
+         *     `stats` as a job id.
+         */
+        get: operations["job_stats_v1_admin_jobs_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/jobs/{job_id}": {
         parameters: {
             query?: never;
@@ -2795,6 +2819,8 @@ export interface components {
             quality_tier: string;
             /** Provider */
             provider?: string | null;
+            /** Routing Reason */
+            routing_reason?: string | null;
             /** Quoted Credits */
             quoted_credits: number;
             /** Actual Credits */
@@ -2841,6 +2867,8 @@ export interface components {
             quality_tier: string;
             /** Provider */
             provider?: string | null;
+            /** Routing Reason */
+            routing_reason?: string | null;
             /** Quoted Credits */
             quoted_credits: number;
             /** Actual Credits */
@@ -3931,6 +3959,34 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * JobStatsView
+         * @description Aggregate job throughput for the statistics hub — not one job's detail.
+         */
+        JobStatsView: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Window Hours */
+            window_hours: number;
+            /** By Status */
+            by_status?: {
+                [key: string]: number;
+            };
+            /** By Operation */
+            by_operation?: {
+                [key: string]: number;
+            };
+            /**
+             * Total Jobs
+             * @default 0
+             */
+            total_jobs: number;
+            /** Avg Completion Ms */
+            avg_completion_ms?: number | null;
         };
         /**
          * JobStatus
@@ -5692,11 +5748,6 @@ export interface components {
             provider_kind: string;
             /** Model Or Workflow */
             model_or_workflow: string;
-            /**
-             * Score
-             * @default 0
-             */
-            score: number;
             /**
              * Reason
              * @default
@@ -9667,6 +9718,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_AdminJobSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    job_stats_v1_admin_jobs_stats_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobStatsView"];
                 };
             };
             /** @description Validation Error */

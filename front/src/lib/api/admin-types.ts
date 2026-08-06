@@ -17,6 +17,7 @@ export type AgentRun = S['AgentRunView'];
 export type AgentUsage = S['AgentUsageSummary'];
 export type AdminJob = S['AdminJobSummary'];
 export type AdminJobDetail = S['AdminJobDetail'];
+export type JobStats = S['JobStatsView'];
 export type ProviderAttempt = S['ProviderAttemptView'];
 export type ModerationItem = S['ModerationQueueView'];
 export type ModerationHistoryEntry = S['ModerationHistoryEntry'];
