@@ -1,6 +1,6 @@
 ---
 name: zaolang-platform-config
-description: 造浪的运行时配置中心与 Feature Flag：十个配置段（pricing / routing_weights / providers / agents / royalty / feature_flags / moderation / shortform / llm_providers / llm_reliability）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing or routing weights, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
+description: 造浪的运行时配置中心与 Feature Flag：九个配置段（pricing / providers / agents / royalty / feature_flags / moderation / shortform / llm_providers / llm_reliability）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## 职责
 
-凡是「上线后可能要调」的数值都不写死在代码里：档位定价、路由评分权重、供应商开关与限额、各智能体的模型绑定、回流分成规则、审核阈值、Feature Flag。全部存 `PlatformConfig`，后台可热改、可看 diff、可回滚，每次变更进 `AuditLog`。
+凡是「上线后可能要调」的数值都不写死在代码里：档位定价、供应商开关与限额、各智能体的模型绑定、回流分成规则、审核阈值、Feature Flag。全部存 `PlatformConfig`，后台可热改、可看 diff、可回滚，每次变更进 `AuditLog`。路由**选谁**已经不是配置值——它是 `intent_router` 每次的 LLM 判断（见 `zaolang-agent-gateway`），这里只管供应商目录本身的开关与限额。
 
 ## 关键路径
 
@@ -19,10 +19,9 @@ disable-model-invocation: true
 | `back/app/api/v1/admin/config.py` | 读接口 viewer 级、写接口与 rollback **admin 级** |
 | `front/src/components/admin/config/config-console.tsx` | 编辑器 + 版本历史 + JSON diff |
 | `front/src/components/admin/config/feature-flags-panel.tsx` | Flag 灰度开关 |
-| `front/src/components/admin/models/routing-weights-panel.tsx` | 路由权重面板 |
 | `front/src/components/admin/models/llm-providers-panel.tsx` | 模型管理：扁平主备列表 + 端点级主/备，支持增删改 |
 
-十个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`shortform`、`llm_providers`、`llm_reliability`。
+九个 key：`pricing`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`shortform`、`llm_providers`、`llm_reliability`。（曾经的第十个 key `routing_weights` 已随加权路由公式一起移除，见 `zaolang-agent-gateway` 不变量 #1。）
 
 `llm_providers` 里每个端点用 `kind` 二选一：`general`（纯文字 + 图片理解，四个 Agent 角色共用同一个池）或 `media`（图片/视频/音频生成；`capabilities` 只声明能力 tag 与模型名）。主/备角色在端点的 `role`/`backup_order` 上，同 `kind` 内仅一个 primary。熔断阈值/冷却时间/`max_retries` 不属于「哪些端点存在」这个目录本身，拆成独立的 `llm_reliability` 段，在配置中心走通用 JSON 编辑，不在 `llm-providers-panel.tsx` 里重复实现专属表单。
 
@@ -34,7 +33,7 @@ disable-model-invocation: true
 4. **密钥类字段永不回显**：接口与界面只返回掩码与连通性状态。新增敏感字段时同步 schema 的脱敏逻辑。
 5. **缓存失效不能靠 TTL 兜底**：`set_value` 与 `rollback` 都要 `invalidate(key)`。Redis 不可用时 service 退化为直读数据库（探测包在 `begin_nested` 里，不污染事务）。
 6. **默认值必须能让空库正常工作**：`DEFAULT_CONFIGS` 是 `get_typed` 在数据库无该 key 时的回退，测试与全新部署都依赖它。
-7. **路由权重四项 `quality/latency/cost/reliability` 的语义与顺序由网关实现固定**，只能调数值，不能改评分公式（改公式见 `zaolang-agent-gateway`）。
+7. **不要再加回路由评分权重类的配置段**。供应商之间选谁由 `intent_router` 的 LLM 判断决定（`zaolang-agent-gateway` 不变量 #1），不是可调数值；这里只负责供应商目录本身「存不存在、开不开、限额多少」这类硬性开关。
 
 ## 改造切入点
 
@@ -43,7 +42,7 @@ disable-model-invocation: true
 1. 在 `schemas.py` 对应 `ConfigSection` 加字段（**带默认值**，否则存量版本反序列化会炸）。
 2. 同步 `DEFAULT_CONFIGS` 里的同名段。
 3. 调用处改成读新字段，不要留 `getattr(cfg, "x", fallback)` 这种绕过类型的写法。
-4. 前端 `config-console.tsx` 靠 JSON 编辑器自动支持，无需改代码；有专用面板的（定价、权重、Flag）要同步面板。
+4. 前端 `config-console.tsx` 靠 JSON 编辑器自动支持，无需改代码；有专用面板的（定价、Flag）要同步面板。
 5. 写单元测试进 `back/tests/unit/test_platform_config.py`。
 
 **加一个新配置段**：`CONFIG_SCHEMAS` 与 `DEFAULT_CONFIGS` 各加一项即可，`all_keys()` 自动带出，后台列表自动出现。
