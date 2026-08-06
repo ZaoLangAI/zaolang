@@ -319,6 +319,37 @@ def test_agent_usage_is_summarised_per_agent(
         assert item["runs"] >= item["degraded_runs"]
 
 
+def test_job_stats_reports_status_and_operation_mix(
+    client: TestClient, admin: User, finished_job: GenerationJob
+) -> None:
+    body = client.get("/v1/admin/jobs/stats", headers=admin_header(admin)).json()
+    assert body["total_jobs"] >= 1
+    assert body["by_status"].get(JobStatus.SUCCEEDED.value, 0) >= 1
+    assert body["by_operation"].get(finished_job.operation, 0) >= 1
+    assert body["avg_completion_ms"] is not None
+
+
+def test_job_stats_window_excludes_jobs_outside_it(
+    client: TestClient, db: Session, admin: User, finished_job: GenerationJob
+) -> None:
+    from app.models.base import utcnow
+    import datetime as dt
+
+    finished_job.created_at = utcnow() - dt.timedelta(hours=48)
+    db.flush()
+    db.commit()
+
+    body = client.get(
+        "/v1/admin/jobs/stats", params={"hours": 24}, headers=admin_header(admin)
+    ).json()
+    assert body["total_jobs"] == 0
+
+
 def test_runtime_operations_are_closed_to_anonymous_callers(client: TestClient) -> None:
-    for path in ("/v1/admin/health", "/v1/admin/jobs", "/v1/admin/providers/stats"):
+    for path in (
+        "/v1/admin/health",
+        "/v1/admin/jobs",
+        "/v1/admin/jobs/stats",
+        "/v1/admin/providers/stats",
+    ):
         assert client.get(path).status_code == 401, path

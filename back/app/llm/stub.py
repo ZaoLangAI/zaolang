@@ -55,6 +55,8 @@ def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
         return _quality(prompt)
     if agent_name == AgentName.COPY:
         return _copy(prompt)
+    if agent_name == AgentName.INTENT_ROUTER:
+        return _intent_router(prompt)
     return {"result": "ok"}
 
 
@@ -108,6 +110,40 @@ def _quality(prompt: str) -> dict[str, Any]:
         },
         "should_retry": failed,
         "notes": "输出与描述不匹配" if failed else "符合预期",
+    }
+
+
+def _intent_router(prompt: str) -> dict[str, Any]:
+    """Backs both `intent_router.classify` and `.select_provider` calls.
+
+    The two are told apart by shape, not by a separate agent name: only
+    `select_provider`'s payload carries a `candidates` list.
+    """
+    try:
+        payload = json.loads(prompt)
+    except (TypeError, ValueError):
+        payload = {}
+
+    candidates = payload.get("candidates")
+    if isinstance(candidates, list) and candidates:
+        # Cheapest effective cost wins, tie-broken by name — deterministic
+        # and independent of dict/set ordering so routing tests stay stable
+        # without a real model in the loop.
+        winner = min(
+            candidates,
+            key=lambda c: (c.get("effective_cost", 0), str(c.get("provider", ""))),
+        )
+        return {
+            "selected_provider": winner.get("provider"),
+            "rationale": "stub_lowest_effective_cost",
+        }
+
+    requested_tier = payload.get("requested_tier")
+    return {
+        "complexity": "moderate",
+        "suggested_quality_tier": requested_tier or "standard",
+        "cost_bias": 0.0,
+        "rationale": "stub_no_downgrade",
     }
 
 

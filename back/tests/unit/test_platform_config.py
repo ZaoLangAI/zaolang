@@ -17,7 +17,6 @@ from app.platform_config.schemas import (
     AgentConfig,
     FeatureFlags,
     PricingConfig,
-    RoutingWeights,
     ShortformConfig,
 )
 
@@ -27,14 +26,13 @@ def test_an_unset_key_falls_back_to_the_built_in_default(db: Session) -> None:
 
 
 def test_writing_a_value_creates_version_one(db: Session, admin: User) -> None:
-    value = copy.deepcopy(DEFAULT_CONFIGS["routing_weights"])
-    value["quality"] = 0.5
-    value["cost"] = 0.15
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    value["video_base_seconds"] = 6
 
-    row = config_service.set_value(db, "routing_weights", value, actor_user_id=admin.id)
+    row = config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
     assert row.version == 1
     assert row.is_active is True
-    assert config_service.get_typed(db, "routing_weights", RoutingWeights).quality == 0.5
+    assert config_service.get_typed(db, "pricing", PricingConfig).video_base_seconds == 6
 
 
 def test_a_second_write_deactivates_the_previous_version(db: Session, admin: User) -> None:
@@ -79,17 +77,6 @@ def test_rollback_moves_forward_to_a_copy_of_the_old_value(db: Session, admin: U
 def test_rollback_to_an_unknown_version_is_refused(db: Session, admin: User) -> None:
     with pytest.raises(NotFound):
         config_service.rollback(db, "royalty", 99, actor_user_id=admin.id)
-
-
-def test_routing_weights_must_sum_to_one(db: Session, admin: User) -> None:
-    """Scores from differently-weighted candidates would not be comparable."""
-    with pytest.raises(ValidationFailed):
-        config_service.set_value(
-            db,
-            "routing_weights",
-            {"quality": 0.9, "latency": 0.9, "cost": 0.1, "reliability": 0.1},
-            actor_user_id=admin.id,
-        )
 
 
 def test_tier_pricing_must_increase_with_quality(db: Session, admin: User) -> None:

@@ -2,22 +2,37 @@
 
 from __future__ import annotations
 
+import copy
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Announcement, AuditLog, Notification, User
 from app.platform_config import service as config_service
-from app.platform_config.schemas import AgentConfig, FeatureFlags, RoutingWeights
+from app.platform_config.schemas import AgentConfig, DEFAULT_CONFIGS, FeatureFlags, PricingConfig
 from tests.conftest import admin_header
 
-BALANCED = {"quality": 0.4, "latency": 0.2, "cost": 0.25, "reliability": 0.15}
-QUALITY_FIRST = {"quality": 0.7, "latency": 0.1, "cost": 0.1, "reliability": 0.1}
+# `pricing` stands in for "some editable config key" across these CRUD/
+# versioning/diff/rollback tests — any key would do, this one just happens to
+# have a simple scalar (`video_base_seconds`) plus a nested dict
+# (`video_per_second_surcharge`) to exercise dotted-path diffs with.
+BASE_PRICING = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+
+PRICING_A = copy.deepcopy(BASE_PRICING)
+PRICING_A["video_base_seconds"] = 6
+
+PRICING_B = copy.deepcopy(BASE_PRICING)
+PRICING_B["video_base_seconds"] = 10
+PRICING_B["video_per_second_surcharge"] = {
+    **BASE_PRICING["video_per_second_surcharge"],
+    "preview": 8,
+}
 
 
-def _put_weights(client: TestClient, admin: User, value: dict, note: str = "调整权重"):
+def _put_pricing(client: TestClient, admin: User, value: dict, note: str = "调整定价"):
     return client.put(
-        "/v1/admin/config/routing_weights",
+        "/v1/admin/config/pricing",
         json={"value": value, "note": note},
         headers=admin_header(admin),
     )
@@ -46,15 +61,15 @@ def test_every_known_key_is_listed(client: TestClient, admin: User) -> None:
 
 
 def test_an_unset_key_reports_its_built_in_default(client: TestClient, admin: User) -> None:
-    body = client.get("/v1/admin/config/routing_weights", headers=admin_header(admin)).json()
+    body = client.get("/v1/admin/config/pricing", headers=admin_header(admin)).json()
     assert body["version"] == 0
-    assert body["value"]["quality"] == RoutingWeights().quality
+    assert body["value"]["video_base_seconds"] == DEFAULT_CONFIGS["pricing"]["video_base_seconds"]
 
 
 def test_the_response_names_the_editable_fields(client: TestClient, admin: User) -> None:
     """The console renders its form from this list instead of hard-coding one."""
-    body = client.get("/v1/admin/config/routing_weights", headers=admin_header(admin)).json()
-    assert set(body["schema_fields"]) == set(RoutingWeights.model_fields)
+    body = client.get("/v1/admin/config/pricing", headers=admin_header(admin)).json()
+    assert set(body["schema_fields"]) == set(PricingConfig.model_fields)
 
 
 def test_an_unknown_key_is_a_clean_404(client: TestClient, admin: User) -> None:
@@ -67,7 +82,7 @@ def test_a_reviewer_can_read_configuration(client: TestClient, reviewer: User) -
 
 
 def test_a_reviewer_cannot_edit_configuration(client: TestClient, reviewer: User) -> None:
-    assert _put_weights(client, reviewer, QUALITY_FIRST).status_code == 403
+    assert _put_pricing(client, reviewer, PRICING_A).status_code == 403
 
 
 # --- editing --------------------------------------------------------------
@@ -76,8 +91,8 @@ def test_a_reviewer_cannot_edit_configuration(client: TestClient, reviewer: User
 def test_a_valid_change_takes_effect_immediately(
     client: TestClient, db: Session, admin: User
 ) -> None:
-    assert _put_weights(client, admin, QUALITY_FIRST).status_code == 200
-    assert config_service.get_typed(db, "routing_weights", RoutingWeights).quality == 0.7
+    assert _put_pricing(client, admin, PRICING_A).status_code == 200
+    assert config_service.get_typed(db, "pricing", PricingConfig).video_base_seconds == 6
 
 
 def test_an_invalid_change_is_rejected_at_edit_time(
@@ -85,102 +100,106 @@ def test_an_invalid_change_is_rejected_at_edit_time(
 ) -> None:
     """Catching it here means no worker ever has to defend against a malformed
     value."""
-    response = _put_weights(
-        client, admin, {"quality": 0.9, "latency": 0.9, "cost": 0.9, "reliability": 0.9}
-    )
+    invalid = copy.deepcopy(BASE_PRICING)
+    invalid["tier_pricing"]["text_to_image"] = {"preview": 40, "standard": 12, "cinematic": 4}
+    response = _put_pricing(client, admin, invalid)
     assert response.status_code == 422
-    assert config_service.get_typed(db, "routing_weights", RoutingWeights).quality == 0.4
+    assert (
+        config_service.get_typed(db, "pricing", PricingConfig).video_base_seconds
+        == BASE_PRICING["video_base_seconds"]
+    )
 
 
 def test_an_unknown_field_is_rejected_rather_than_silently_dropped(
     client: TestClient, admin: User
 ) -> None:
     """A typo that is quietly ignored looks like a change that did nothing."""
-    response = _put_weights(client, admin, {**BALANCED, "qulaity": 0.4})
+    response = _put_pricing(client, admin, {**PRICING_A, "vidoe_base_seconds": 6})
     assert response.status_code == 422
 
 
 def test_a_rejected_change_leaves_no_version_behind(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, {"quality": 2.0, "latency": 0, "cost": 0, "reliability": 0})
-    body = client.get(
-        "/v1/admin/config/routing_weights/history", headers=admin_header(admin)
-    ).json()
+    invalid = copy.deepcopy(BASE_PRICING)
+    del invalid["video_per_second_surcharge"]["cinematic"]
+    _put_pricing(client, admin, invalid)
+    body = client.get("/v1/admin/config/pricing/history", headers=admin_header(admin)).json()
     assert body["items"] == []
 
 
 def test_a_change_is_audited_with_before_and_after(
     client: TestClient, db: Session, admin: User
 ) -> None:
-    _put_weights(client, admin, QUALITY_FIRST, note="提高质量权重")
+    _put_pricing(client, admin, PRICING_B, note="调整时长基准")
 
     entry = db.scalar(
         select(AuditLog).where(
-            AuditLog.action == "config.update", AuditLog.target_id == "routing_weights"
+            AuditLog.action == "config.update", AuditLog.target_id == "pricing"
         )
     )
     assert entry is not None
-    assert entry.reason == "提高质量权重"
-    assert entry.after_json["quality"] == 0.7
+    assert entry.reason == "调整时长基准"
+    assert entry.after_json["video_base_seconds"] == 10
 
 
 # --- versioning, diff and rollback ---------------------------------------
 
 
 def test_the_first_write_creates_version_one(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
-    body = client.get(
-        "/v1/admin/config/routing_weights/history", headers=admin_header(admin)
-    ).json()
+    _put_pricing(client, admin, PRICING_A)
+    body = client.get("/v1/admin/config/pricing/history", headers=admin_header(admin)).json()
     assert [v["version"] for v in body["items"]] == [1]
 
 
 def test_each_write_adds_a_version_and_only_one_stays_active(
     client: TestClient, admin: User
 ) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
-    _put_weights(client, admin, BALANCED)
+    _put_pricing(client, admin, PRICING_A)
+    _put_pricing(client, admin, PRICING_B)
 
     items = client.get(
-        "/v1/admin/config/routing_weights/history", headers=admin_header(admin)
+        "/v1/admin/config/pricing/history", headers=admin_header(admin)
     ).json()["items"]
     assert [v["version"] for v in items] == [2, 1]
     assert [v["version"] for v in items if v["is_active"]] == [2]
 
 
 def test_the_diff_shows_only_what_changed(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
-    _put_weights(client, admin, {**QUALITY_FIRST, "quality": 0.6, "cost": 0.2})
+    _put_pricing(client, admin, PRICING_A)
+    _put_pricing(client, admin, PRICING_B)
 
     body = client.get(
-        "/v1/admin/config/routing_weights/diff",
+        "/v1/admin/config/pricing/diff",
         params={"from_version": 1, "to_version": 2},
         headers=admin_header(admin),
     ).json()
-    assert {entry["path"] for entry in body["entries"]} == {"quality", "cost"}
+    assert {entry["path"] for entry in body["entries"]} == {
+        "video_base_seconds",
+        "video_per_second_surcharge.preview",
+    }
 
 
 def test_the_diff_carries_both_sides(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
-    _put_weights(client, admin, BALANCED)
+    _put_pricing(client, admin, PRICING_A)
+    _put_pricing(client, admin, PRICING_B)
 
     body = client.get(
-        "/v1/admin/config/routing_weights/diff",
+        "/v1/admin/config/pricing/diff",
         params={"from_version": 1, "to_version": 2},
         headers=admin_header(admin),
     ).json()
-    quality = next(e for e in body["entries"] if e["path"] == "quality")
-    assert (quality["before"], quality["after"]) == (0.7, 0.4)
+    seconds = next(e for e in body["entries"] if e["path"] == "video_base_seconds")
+    assert (seconds["before"], seconds["after"]) == (6, 10)
 
 
 def test_version_zero_diffs_against_the_built_in_default(client: TestClient, admin: User) -> None:
     """The first edit still needs a readable "what did I change" view."""
-    _put_weights(client, admin, QUALITY_FIRST)
+    _put_pricing(client, admin, PRICING_A)
     body = client.get(
-        "/v1/admin/config/routing_weights/diff",
+        "/v1/admin/config/pricing/diff",
         params={"from_version": 0, "to_version": 1},
         headers=admin_header(admin),
     ).json()
-    assert {e["path"] for e in body["entries"]} == {"quality", "latency", "cost", "reliability"}
+    assert {e["path"] for e in body["entries"]} == {"video_base_seconds"}
 
 
 def test_a_nested_change_reads_as_one_dotted_path(
@@ -213,16 +232,16 @@ def test_a_nested_change_reads_as_one_dotted_path(
 
 
 def test_rollback_restores_the_earlier_value(client: TestClient, db: Session, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
-    _put_weights(client, admin, BALANCED)
+    _put_pricing(client, admin, PRICING_A)
+    _put_pricing(client, admin, PRICING_B)
 
     response = client.post(
-        "/v1/admin/config/routing_weights/rollback",
-        json={"target_version": 1, "reason": "新权重导致成本失控", "confirm": True},
+        "/v1/admin/config/pricing/rollback",
+        json={"target_version": 1, "reason": "新定价导致成本失控", "confirm": True},
         headers=admin_header(admin),
     )
     assert response.status_code == 200, response.text
-    assert config_service.get_typed(db, "routing_weights", RoutingWeights).quality == 0.7
+    assert config_service.get_typed(db, "pricing", PricingConfig).video_base_seconds == 6
 
 
 def test_rollback_moves_forward_rather_than_deleting_history(
@@ -230,24 +249,22 @@ def test_rollback_moves_forward_rather_than_deleting_history(
 ) -> None:
     """Rewriting history would destroy the record of what was live during an
     incident."""
-    _put_weights(client, admin, QUALITY_FIRST)
-    _put_weights(client, admin, BALANCED)
+    _put_pricing(client, admin, PRICING_A)
+    _put_pricing(client, admin, PRICING_B)
     client.post(
-        "/v1/admin/config/routing_weights/rollback",
+        "/v1/admin/config/pricing/rollback",
         json={"target_version": 1, "reason": "回滚验证", "confirm": True},
         headers=admin_header(admin),
     )
 
-    body = client.get(
-        "/v1/admin/config/routing_weights/history", headers=admin_header(admin)
-    ).json()
+    body = client.get("/v1/admin/config/pricing/history", headers=admin_header(admin)).json()
     assert [v["version"] for v in body["items"]] == [3, 2, 1]
 
 
 def test_rollback_requires_confirmation(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
+    _put_pricing(client, admin, PRICING_A)
     response = client.post(
-        "/v1/admin/config/routing_weights/rollback",
+        "/v1/admin/config/pricing/rollback",
         json={"target_version": 1, "reason": "回滚验证", "confirm": False},
         headers=admin_header(admin),
     )
@@ -255,9 +272,9 @@ def test_rollback_requires_confirmation(client: TestClient, admin: User) -> None
 
 
 def test_rollback_requires_a_reason(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
+    _put_pricing(client, admin, PRICING_A)
     response = client.post(
-        "/v1/admin/config/routing_weights/rollback",
+        "/v1/admin/config/pricing/rollback",
         json={"target_version": 1, "confirm": True},
         headers=admin_header(admin),
     )
@@ -268,7 +285,7 @@ def test_rolling_back_to_a_version_that_never_existed_is_refused(
     client: TestClient, admin: User
 ) -> None:
     response = client.post(
-        "/v1/admin/config/routing_weights/rollback",
+        "/v1/admin/config/pricing/rollback",
         json={"target_version": 99, "reason": "不存在的版本", "confirm": True},
         headers=admin_header(admin),
     )
@@ -276,10 +293,10 @@ def test_rolling_back_to_a_version_that_never_existed_is_refused(
 
 
 def test_rollback_is_audited(client: TestClient, db: Session, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
-    _put_weights(client, admin, BALANCED)
+    _put_pricing(client, admin, PRICING_A)
+    _put_pricing(client, admin, PRICING_B)
     client.post(
-        "/v1/admin/config/routing_weights/rollback",
+        "/v1/admin/config/pricing/rollback",
         json={"target_version": 1, "reason": "成本失控", "confirm": True},
         headers=admin_header(admin),
     )
@@ -483,7 +500,7 @@ def test_a_reviewer_cannot_publish_an_announcement(client: TestClient, reviewer:
 
 
 def test_the_audit_trail_can_be_filtered_by_action(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
+    _put_pricing(client, admin, PRICING_A)
     client.post("/v1/admin/announcements", json=_announcement(), headers=admin_header(admin))
 
     body = client.get(
@@ -494,18 +511,18 @@ def test_the_audit_trail_can_be_filtered_by_action(client: TestClient, admin: Us
 
 
 def test_the_audit_trail_can_be_filtered_by_target(client: TestClient, admin: User) -> None:
-    _put_weights(client, admin, QUALITY_FIRST)
+    _put_pricing(client, admin, PRICING_A)
     body = client.get(
         "/v1/admin/audit-logs",
-        params={"target_type": "platform_config", "target_id": "routing_weights"},
+        params={"target_type": "platform_config", "target_id": "pricing"},
         headers=admin_header(admin),
     ).json()
     assert body["items"]
 
 
 def test_the_audit_trail_pages_with_a_cursor(client: TestClient, admin: User) -> None:
-    for weights in (QUALITY_FIRST, BALANCED, QUALITY_FIRST):
-        _put_weights(client, admin, weights)
+    for pricing_value in (PRICING_A, PRICING_B, PRICING_A):
+        _put_pricing(client, admin, pricing_value)
 
     first = client.get(
         "/v1/admin/audit-logs", params={"limit": 2}, headers=admin_header(admin)

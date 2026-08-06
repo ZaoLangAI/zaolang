@@ -6185,6 +6185,68 @@
         }
       }
     },
+    "/v1/admin/jobs/stats": {
+      "get": {
+        "tags": [
+          "admin:jobs"
+        ],
+        "summary": "Job Stats",
+        "description": "Throughput for the statistics hub: status/operation mix and how long a\nsucceeded job actually takes, over a rolling window.\n\nDeclared before `/jobs/{job_id}` so FastAPI's path matching does not treat\n`stats` as a job id.",
+        "operationId": "job_stats_v1_admin_jobs_stats_get",
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 720,
+              "minimum": 1,
+              "default": 24,
+              "title": "Hours"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatsView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/jobs/{job_id}": {
       "get": {
         "tags": [
@@ -10751,6 +10813,17 @@
             ],
             "title": "Provider"
           },
+          "routing_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Reason"
+          },
           "quoted_credits": {
             "type": "integer",
             "title": "Quoted Credits"
@@ -10878,6 +10951,17 @@
               }
             ],
             "title": "Provider"
+          },
+          "routing_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Reason"
           },
           "quoted_credits": {
             "type": "integer",
@@ -13772,6 +13856,56 @@
           "created_at"
         ],
         "title": "JobEventView"
+      },
+      "JobStatsView": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "window_hours": {
+            "type": "integer",
+            "title": "Window Hours"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "by_operation": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Operation"
+          },
+          "total_jobs": {
+            "type": "integer",
+            "title": "Total Jobs",
+            "default": 0
+          },
+          "avg_completion_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Completion Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "window_hours"
+        ],
+        "title": "JobStatsView",
+        "description": "Aggregate job throughput for the statistics hub — not one job's detail."
       },
       "JobStatus": {
         "type": "string",
@@ -18287,11 +18421,6 @@
           "model_or_workflow": {
             "type": "string",
             "title": "Model Or Workflow"
-          },
-          "score": {
-            "type": "number",
-            "title": "Score",
-            "default": 0.0
           },
           "reason": {
             "type": "string",

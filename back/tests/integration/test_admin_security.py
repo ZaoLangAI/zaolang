@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import ADMIN_COOKIE_NAME
 from app.models import AuditLog, User
 from app.models.enums import UserRole, UserStatus
+from app.platform_config.schemas import DEFAULT_CONFIGS
 from app.security.tokens import issue_admin_token, issue_consumer_tokens
 from tests.conftest import admin_header, auth_header, make_user
 
@@ -182,11 +183,8 @@ def test_an_operator_cannot_change_platform_configuration(
     client: TestClient, operator: User
 ) -> None:
     response = client.put(
-        "/v1/admin/config/routing_weights",
-        json={
-            "value": {"quality": 0.4, "latency": 0.2, "cost": 0.25, "reliability": 0.15},
-            "reason": "调整",
-        },
+        "/v1/admin/config/pricing",
+        json={"value": {"video_base_seconds": 6}, "reason": "调整"},
         headers=admin_header(operator),
     )
     assert response.status_code == 403
@@ -203,12 +201,10 @@ def test_an_operator_cannot_grant_roles(client: TestClient, operator: User, auth
 
 
 def test_an_admin_can_change_platform_configuration(client: TestClient, admin: User) -> None:
+    value = {**DEFAULT_CONFIGS["pricing"], "video_base_seconds": 6}
     response = client.put(
-        "/v1/admin/config/routing_weights",
-        json={
-            "value": {"quality": 0.5, "latency": 0.2, "cost": 0.2, "reliability": 0.1},
-            "reason": "提高质量权重",
-        },
+        "/v1/admin/config/pricing",
+        json={"value": value, "reason": "调整定价"},
         headers=admin_header(admin),
     )
     assert response.status_code == 200

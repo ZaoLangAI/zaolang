@@ -1,28 +1,41 @@
 """Provider routing.
 
-Deliberately rule-based, not a model. The first version must be explainable:
-every candidate is scored by a fixed formula and every rejection records why,
-so an operator can replay any decision after the fact.
+Hard eligibility — capability, tier support, enabled state, latency budget —
+is a plain code filter: a provider that physically cannot serve this
+operation or tier must never be picked, no matter who decides. Choosing the
+winner among the *eligible* candidates is delegated to the `intent_router`
+LLM agent (`app.agents.intent_router.select_provider`): it is handed every
+eligible candidate's declared capability plus its observed success
+rate/latency/cost, and returns which one to use and why.
+
+There is no fallback formula. If the agent is unavailable, degraded, or
+names a provider outside the eligible set, `route()` reports no selection —
+exactly as if there had been no eligible provider at all — and the caller
+fails the job with credits released rather than silently reverting to a
+rule of thumb.
 
 Order of evaluation, applied identically for every job:
 
-1. capability filter — can this provider perform the operation and tier at all
-2. availability filter — enabled, within its daily limit
-3. score          — weighted quality / latency / cost / reliability
-4. tie-break      — lower effective cost, then stable provider name
+1. capability filter  — can this provider perform the operation and tier at all
+2. availability filter — enabled, within budget, not already tried and
+   failed earlier in this same job
+3. LLM selection       — the agent picks one eligible candidate and explains why
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents import intent_router
 from app.models import ProviderStat
 from app.models.enums import Operation, ProviderKind, QualityTier
 from app.platform_config import service as config_service
-from app.platform_config.schemas import ProviderConfig, RoutingWeights
+from app.platform_config.schemas import ProviderConfig
 from app.providers import fake
 from app.providers.base import ProviderCapability
 from app.providers.media_endpoints import dynamic_capabilities
@@ -78,14 +91,18 @@ def build_catalog(session: Session) -> dict[str, ProviderCapability]:
 
 @dataclass
 class Candidate:
+    """One row of the router's decision trace.
+
+    Purely informational once past the eligibility filter — these fields
+    describe a candidate to the LLM and to the ops replay console, they no
+    longer feed a scoring formula.
+    """
+
     provider: str
     eligible: bool = True
     filter_reason: str | None = None
-    quality_score: float = 0.0
-    latency_score: float = 0.0
-    cost_score: float = 0.0
-    reliability_score: float = 0.0
-    total_score: float = 0.0
+    success_rate: float = 0.0
+    avg_latency_ms: int = 0
     effective_cost: int = 0
 
     def to_trace(self) -> dict[str, object]:
@@ -118,11 +135,14 @@ def route(
     operation: str,
     quality_tier: str,
     max_latency_ms: int | None = None,
+    exclude_providers: Iterable[str] | None = None,
+    job_id: str | None = None,
+    user_id: str | None = None,
 ) -> RoutingDecision:
-    weights = config_service.get_typed(session, "routing_weights", RoutingWeights)
     provider_config = config_service.get_typed(session, "providers", ProviderConfig)
     catalog = build_catalog(session)
     stats = _load_stats(session, operation, quality_tier)
+    excluded = set(exclude_providers or ())
 
     candidates: list[Candidate] = []
     for name, capability in sorted(catalog.items()):
@@ -154,27 +174,24 @@ def route(
             candidate.filter_reason = "latency_budget_exceeded"
             candidates.append(candidate)
             continue
+        if name in excluded:
+            candidate.eligible = False
+            candidate.filter_reason = "previously_failed_this_job"
+            candidates.append(candidate)
+            continue
 
         retry_amplification = setting.retry_amplification if setting is not None else 1.2
         stat = stats.get(name)
         success_rate = _success_rate(stat, provider_config)
         # Failures are not free: a provider that fails a third of the time
-        # really costs about 1.5 attempts per success.
+        # really costs about 1.5 attempts per success. Still shown to the
+        # LLM (and the replay console) even though nothing here ranks by it
+        # any more.
         candidate.effective_cost = int(
             capability.unit_cost_minor * retry_amplification / max(success_rate, 0.05)
         )
-
-        candidate.quality_score = capability.quality_prior
-        candidate.latency_score = _latency_score(stat, capability)
-        candidate.cost_score = _cost_score(candidate.effective_cost)
-        candidate.reliability_score = success_rate
-        candidate.total_score = round(
-            weights.quality * candidate.quality_score
-            + weights.latency * candidate.latency_score
-            + weights.cost * candidate.cost_score
-            + weights.reliability * candidate.reliability_score,
-            6,
-        )
+        candidate.success_rate = round(success_rate, 4)
+        candidate.avg_latency_ms = _avg_latency_ms(stat, capability)
         candidates.append(candidate)
 
     eligible = [c for c in candidates if c.eligible]
@@ -187,16 +204,42 @@ def route(
             catalog=catalog,
         )
 
-    # Deterministic ordering: score, then cheaper, then name. Two identical
-    # requests must always route the same way.
-    eligible.sort(key=lambda c: (-c.total_score, c.effective_cost, c.provider))
-    winner = eligible[0]
-    return RoutingDecision(
-        selected=winner,
-        candidates=candidates,
-        reason=f"highest_score:{winner.total_score:.4f}",
-        catalog=catalog,
+    # Deterministic ordering for the trace and for what the LLM is shown —
+    # independent of which one it ends up picking.
+    eligible.sort(key=lambda c: c.provider)
+
+    outcome = intent_router.select_provider(
+        session,
+        operation=operation,
+        quality_tier=quality_tier,
+        candidates=[_candidate_payload(c, catalog[c.provider]) for c in eligible],
+        job_id=job_id,
+        user_id=user_id,
     )
+    selected_name = outcome.data.get("selected_provider")
+    winner = next((c for c in eligible if c.provider == selected_name), None)
+    if outcome.degraded or winner is None:
+        return RoutingDecision(
+            selected=None,
+            candidates=candidates,
+            reason="llm_selection_unavailable",
+            catalog=catalog,
+        )
+
+    rationale = outcome.data.get("rationale")
+    reason = f"llm_selected:{rationale}" if isinstance(rationale, str) and rationale else "llm_selected"
+    return RoutingDecision(selected=winner, candidates=candidates, reason=reason, catalog=catalog)
+
+
+def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> dict[str, Any]:
+    return {
+        "provider": candidate.provider,
+        "kind": capability.kind.value,
+        "quality_prior": capability.quality_prior,
+        "success_rate": candidate.success_rate,
+        "avg_latency_ms": candidate.avg_latency_ms,
+        "effective_cost": candidate.effective_cost,
+    }
 
 
 def _load_stats(session: Session, operation: str, quality_tier: str) -> dict[str, ProviderStat]:
@@ -211,27 +254,18 @@ def _load_stats(session: Session, operation: str, quality_tier: str) -> dict[str
 def _success_rate(stat: ProviderStat | None, config: ProviderConfig) -> float:
     """Falls back to a conservative prior until there is enough evidence.
 
-    Without this, a provider with a single lucky success would outrank one with
-    hundreds of reliable runs.
+    Without this, a provider with a single lucky success would look as
+    trustworthy as one with hundreds of reliable runs.
     """
     if stat is None or stat.attempts < config.minimum_samples_for_stats:
         return config.conservative_prior_success_rate
     return max(0.01, min(1.0, stat.successes / stat.attempts))
 
 
-def _latency_score(stat: ProviderStat | None, capability: ProviderCapability) -> float:
-    observed = (
-        stat.total_latency_ms / stat.attempts
-        if stat is not None and stat.attempts > 0
-        else capability.typical_latency_ms
-    )
-    # 5s scores ~1.0, 60s scores ~0.08; a smooth curve avoids cliff effects at
-    # any particular threshold.
-    return round(min(1.0, 5_000 / max(observed, 1_000)), 6)
-
-
-def _cost_score(effective_cost: int) -> float:
-    return round(min(1.0, 5 / max(effective_cost, 1)), 6)
+def _avg_latency_ms(stat: ProviderStat | None, capability: ProviderCapability) -> int:
+    if stat is not None and stat.attempts > 0:
+        return int(stat.total_latency_ms / stat.attempts)
+    return capability.typical_latency_ms
 
 
 def record_attempt_outcome(

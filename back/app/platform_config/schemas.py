@@ -56,22 +56,6 @@ class PricingConfig(ConfigSection):
         return self
 
 
-class RoutingWeights(ConfigSection):
-    """Router scoring weights. Must sum to 1 so scores stay comparable."""
-
-    quality: float = Field(default=0.4, ge=0, le=1)
-    latency: float = Field(default=0.2, ge=0, le=1)
-    cost: float = Field(default=0.25, ge=0, le=1)
-    reliability: float = Field(default=0.15, ge=0, le=1)
-
-    @model_validator(mode="after")
-    def _weights_sum_to_one(self) -> RoutingWeights:
-        total = self.quality + self.latency + self.cost + self.reliability
-        if abs(total - 1.0) > 1e-6:
-            raise ValueError(f"路由权重之和必须为 1，当前为 {total:.4f}。")
-        return self
-
-
 class ProviderSetting(ConfigSection):
     enabled: bool = True
     daily_job_limit: int = Field(default=0, ge=0)
@@ -301,7 +285,6 @@ class LlmReliabilityConfig(ConfigSection):
 
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "pricing": PricingConfig,
-    "routing_weights": RoutingWeights,
     "providers": ProviderConfig,
     "agents": AgentConfig,
     "royalty": RoyaltyConfig,
@@ -326,7 +309,6 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "video_base_seconds": 4,
         "video_per_second_surcharge": {"preview": 4, "standard": 12, "cinematic": 30},
     },
-    "routing_weights": {"quality": 0.4, "latency": 0.2, "cost": 0.25, "reliability": 0.15},
     "providers": {
         "providers": {
             "fake_open_workflow": {

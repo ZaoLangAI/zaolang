@@ -14,6 +14,7 @@ from app.api.schemas.admin import (
     AdminJobSummary,
     AgentRunView,
     JobEventView,
+    JobStatsView,
     JobTerminateRequest,
     ProviderAttemptView,
 )
@@ -86,6 +87,48 @@ def list_jobs(
         items=[_summary(session, job) for job in page],
         next_cursor=page[-1].id if has_more and page else None,
         has_more=has_more,
+    )
+
+
+@router.get("/jobs/stats", response_model=JobStatsView)
+def job_stats(
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    hours: int = Query(default=24, ge=1, le=720),
+) -> JobStatsView:
+    """Throughput for the statistics hub: status/operation mix and how long a
+    succeeded job actually takes, over a rolling window.
+
+    Declared before `/jobs/{job_id}` so FastAPI's path matching does not treat
+    `stats` as a job id.
+    """
+    cutoff = utcnow() - dt.timedelta(hours=hours)
+    rows = session.execute(
+        select(
+            GenerationJob.status,
+            GenerationJob.operation,
+            GenerationJob.created_at,
+            GenerationJob.finished_at,
+        ).where(GenerationJob.created_at >= cutoff)
+    ).all()
+
+    by_status: dict[str, int] = {}
+    by_operation: dict[str, int] = {}
+    completion_ms: list[float] = []
+    for status, operation, created_at, finished_at in rows:
+        by_status[status] = by_status.get(status, 0) + 1
+        by_operation[operation] = by_operation.get(operation, 0) + 1
+        if status == JobStatus.SUCCEEDED.value and finished_at is not None and created_at is not None:
+            completion_ms.append((as_utc(finished_at) - as_utc(created_at)).total_seconds() * 1000)
+
+    return JobStatsView(
+        generated_at=utcnow(),
+        window_hours=hours,
+        by_status=by_status,
+        by_operation=by_operation,
+        total_jobs=len(rows),
+        avg_completion_ms=(sum(completion_ms) / len(completion_ms)) if completion_ms else None,
     )
 
 
@@ -303,6 +346,7 @@ def _summary(session, job: GenerationJob) -> AdminJobSummary:  # type: ignore[no
         operation=job.operation,
         quality_tier=job.quality_tier,
         provider=job.selected_route_summary_json.get("provider"),
+        routing_reason=job.selected_route_summary_json.get("reason"),
         quoted_credits=job.quoted_credits,
         actual_credits=job.actual_credits,
         attempt_count=attempt_count,

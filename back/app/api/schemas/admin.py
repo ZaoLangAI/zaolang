@@ -75,12 +75,24 @@ class AdminJobSummary(ApiModel):
     operation: str
     quality_tier: str
     provider: str | None = None
+    routing_reason: str | None = None
     quoted_credits: int
     actual_credits: int | None = None
     attempt_count: int = 0
     failure_code: str | None = None
     created_at: dt.datetime
     finished_at: dt.datetime | None = None
+
+
+class JobStatsView(ApiModel):
+    """Aggregate job throughput for the statistics hub — not one job's detail."""
+
+    generated_at: dt.datetime
+    window_hours: int
+    by_status: dict[str, int] = Field(default_factory=dict)
+    by_operation: dict[str, int] = Field(default_factory=dict)
+    total_jobs: int = 0
+    avg_completion_ms: float | None = None
 
 
 class ProviderAttemptView(ApiModel):

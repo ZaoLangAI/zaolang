@@ -1,4 +1,4 @@
-"""Agent gateway: tool whitelist, rule-based routing and workflow shape."""
+"""Agent gateway: tool whitelist, LLM-selected routing and workflow shape."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def test_routing_is_deterministic_for_identical_requests(db: Session) -> None:
     second = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     assert first.selected is not None
     assert first.selected.provider == second.selected.provider
-    assert first.selected.total_score == second.selected.total_score
+    assert first.reason == second.reason
 
 
 def test_every_candidate_records_why_it_was_rejected(db: Session) -> None:
@@ -112,7 +112,7 @@ def test_a_route_that_cannot_do_the_operation_is_filtered_not_scored(db: Session
     open_workflow = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
     assert open_workflow.eligible is False
     assert open_workflow.filter_reason == "operation_not_supported"
-    assert open_workflow.total_score == 0.0
+    assert open_workflow.effective_cost == 0
 
 
 def test_disabling_a_provider_takes_effect_without_a_restart(db: Session, admin: User) -> None:
@@ -185,7 +185,7 @@ def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> 
     from app.platform_config.schemas import ProviderConfig
 
     prior = config_service.get_typed(db, "providers", ProviderConfig)
-    assert scored.reliability_score == prior.conservative_prior_success_rate
+    assert scored.success_rate == prior.conservative_prior_success_rate
 
 
 def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
@@ -211,40 +211,39 @@ def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
     assert flaky.effective_cost > catalogue_cost
 
 
-def test_routing_weights_change_the_winner(db: Session, admin: User) -> None:
-    """Cost-dominated weights must pick the cheap route; quality-dominated ones
-    the expensive one. If both give the same answer the weights are inert."""
-    config_service.set_value(
-        db,
-        "routing_weights",
-        {"quality": 0.05, "latency": 0.05, "cost": 0.85, "reliability": 0.05},
-        actor_user_id=admin.id,
-        note="test",
-    )
-    cheap = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
-
-    config_service.set_value(
-        db,
-        "routing_weights",
-        {"quality": 0.9, "latency": 0.05, "cost": 0.0, "reliability": 0.05},
-        actor_user_id=admin.id,
-        note="test",
-    )
-    premium = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
-
-    assert cheap.selected is not None and premium.selected is not None
-    assert cheap.selected.provider == "fake_open_workflow"
-    assert premium.selected.provider == "fake_paid_api"
+def test_llm_picks_the_lowest_effective_cost_among_eligible_candidates(db: Session) -> None:
+    """Deterministic stub selection: cheapest-effective-cost eligible route
+    wins, and the reason trail says an LLM made the call."""
+    decision = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    assert decision.selected is not None
+    eligible = [c for c in decision.candidates if c.eligible]
+    cheapest = min(eligible, key=lambda c: (c.effective_cost, c.provider))
+    assert decision.selected.provider == cheapest.provider
+    assert decision.reason.startswith("llm_selected")
 
 
-def test_the_router_never_calls_a_model() -> None:
-    """The first version must stay explainable; a model in the routing path
-    would make every decision unreviewable."""
-    import inspect
+def test_llm_selection_unavailable_yields_no_route_not_a_formula_fallback(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No fallback formula: an unavailable/invalid model response must fail
+    the routing decision exactly like having no eligible provider at all."""
+    from app.agents import intent_router as intent_router_agent
+    from app.agents.base import AgentOutcome
 
-    source = inspect.getsource(router)
-    assert "run_agent" not in source
-    assert "llm" not in source.lower().replace("llm_", "")
+    def _degraded(*args, **kwargs):  # type: ignore[no-untyped-def]
+        return AgentOutcome(
+            data={"selected_provider": None, "rationale": "forced_degraded"},
+            raw_text="",
+            degraded=True,
+            model="stub:test",
+            agent_run_id="agent-run-test",
+        )
+
+    monkeypatch.setattr(intent_router_agent, "select_provider", _degraded)
+
+    decision = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    assert decision.selected is None
+    assert decision.reason == "llm_selection_unavailable"
 
 
 def test_the_default_graph_uses_only_registered_node_types() -> None:

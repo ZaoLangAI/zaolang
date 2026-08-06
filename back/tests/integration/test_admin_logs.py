@@ -29,7 +29,7 @@ def test_unified_logs_include_audit_and_system_rows(
         actor=admin,
         action="config.update",
         target_type="platform_config",
-        target_id="routing_weights",
+        target_id="pricing",
         after={"version": 2},
     )
     db.commit()

@@ -91,7 +91,6 @@ class RouteSummary(ApiModel):
     provider: str
     provider_kind: str
     model_or_workflow: str
-    score: float = 0.0
     reason: str = ""
 
 
@@ -101,11 +100,8 @@ class RoutingCandidate(ApiModel):
     provider: str
     eligible: bool
     filter_reason: str | None = None
-    quality_score: float = 0.0
-    latency_score: float = 0.0
-    cost_score: float = 0.0
-    reliability_score: float = 0.0
-    total_score: float = 0.0
+    success_rate: float = 0.0
+    avg_latency_ms: int = 0
     effective_cost: int = 0
 
 

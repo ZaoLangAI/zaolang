@@ -218,6 +218,21 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
 
     _emit(ctx, JobEventType.ROUTING, JobStatus.QUEUED, "正在选择生成路线", 24)
 
+    # A retry that got here because the *provider* actually failed (not a
+    # quality-check rejection, which is not evidence the provider itself is
+    # bad) must not be handed straight back to the LLM as if nothing
+    # happened — it would very plausibly pick the same one again. A
+    # quality-check retry keeps the provider eligible: nothing about it
+    # failed.
+    tried_providers: set[str] = ctx.state.setdefault("tried_providers", set())
+    prior_decision = ctx.state.get("decision")
+    if (
+        prior_decision is not None
+        and prior_decision.selected is not None
+        and ctx.state.get("failure_code") not in (None, "QUALITY_REJECTED")
+    ):
+        tried_providers.add(prior_decision.selected.provider)
+
     hint = ctx.state.get("intent_hint") or {}
     tier = _effective_tier(ctx.job.quality_tier, hint)
     decision = router.route(
@@ -225,6 +240,9 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         operation=ctx.job.operation,
         quality_tier=tier,
         max_latency_ms=config.max_latency_ms,
+        exclude_providers=tried_providers,
+        job_id=ctx.agent_job_id,
+        user_id=ctx.job.user_id,
     )
     ctx.job.routing_trace_json = decision.trace()
     ctx.session.flush()
@@ -240,7 +258,6 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         "provider": capability.name,
         "provider_kind": capability.kind.value,
         "model_or_workflow": capability.model_or_workflow,
-        "score": decision.selected.total_score,
         "reason": decision.reason,
     }
     ctx.session.flush()
