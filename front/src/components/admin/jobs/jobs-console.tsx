@@ -43,9 +43,6 @@ export function JobsConsole() {
   const { role } = useAdminSession();
 
   const list = useAdminList<AdminJob>('/v1/admin/jobs');
-  // Declared once, not per job: the pipeline shape is a static description,
-  // so every drawer open reuses the same fetch instead of repeating it.
-  const workflow = useResource<WorkflowShape>('/v1/admin/workflow');
   const [openId, setOpenId] = useState<string | null>(null);
   const [danger, setDanger] = useState<'terminate' | null>(null);
 
@@ -116,6 +113,11 @@ export function JobsConsole() {
 
   const detail = useResource<AdminJobDetail>(openId ? `/v1/admin/jobs/${openId}` : null);
   const job = detail.data;
+  // The pipeline shape depends on the job's operation (each operation has its
+  // own configurable workflow template), so it's re-fetched per selected job.
+  const workflow = useResource<WorkflowShape>(
+    job ? `/v1/admin/workflow?operation=${job.operation}` : null,
+  );
   const attempts = job?.attempts ?? [];
   const agentRuns = job?.agent_runs ?? [];
   const events = job?.events ?? [];

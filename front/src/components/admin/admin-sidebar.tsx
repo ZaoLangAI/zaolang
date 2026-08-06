@@ -29,6 +29,7 @@ const ICONS: Record<NavItem['icon'], React.ComponentType<{ className?: string }>
   health: IconMonitor,
   jobs: IconSparkle,
   providers: IconGrid,
+  routing: IconSparkle,
   agents: IconSparkle,
   moderation: IconShield,
   reports: IconAlert,

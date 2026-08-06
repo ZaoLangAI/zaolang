@@ -8,7 +8,14 @@ import { SourceMaterialRail } from '@/components/studio/source-material-rail';
 import { OptionGroup } from '@/components/studio/option-group';
 import { Button } from '@/components/ui/button';
 import { Select, TextArea } from '@/components/ui/field';
-import { IconClock, IconGear, IconSparkle, IconVolume, IconVolumeOff } from '@/components/ui/icons';
+import {
+  IconClock,
+  IconGear,
+  IconMic,
+  IconSparkle,
+  IconVolume,
+  IconVolumeOff,
+} from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { DevicePreview } from '@/components/media/device-preview';
@@ -35,10 +42,19 @@ import { useResource } from '@/lib/use-resource';
 const KNOWN_PRESET_KEYS = new Set(['prompt', 'prompt_suffix', 'aspect_ratio']);
 
 type Tier = 'preview' | 'standard' | 'cinematic';
-type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video' | 'text_to_image';
+type Operation =
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'video_to_video'
+  | 'text_to_image'
+  | 'image_to_image'
+  | 'audio_generation';
 
 const ASPECTS = ['16:9', '9:16', '1:1'] as const;
 const DURATIONS = [8, 12, 20] as const;
+// Fixed roster, mirrored by `AUDIO_VOICES` in `app/api/schemas/jobs.py` — these
+// are the provider's own voice ids, so they travel through untranslated.
+const AUDIO_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as const;
 const PORTRAIT_ASPECT = '9:16';
 const PROMPT_MAX_LENGTH = 600;
 
@@ -88,6 +104,7 @@ export function GenerationStudio({
   const [aspect, setAspect] = useState<string>('16:9');
   const [duration, setDuration] = useState<number>(8);
   const [sound, setSound] = useState(true);
+  const [voice, setVoice] = useState<string>(AUDIO_VOICES[0]);
   const [tier, setTier] = useState<Tier>('standard');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [uploads, setUploads] = useState<Asset[]>([]);
@@ -95,6 +112,11 @@ export function GenerationStudio({
   const [presetId, setPresetId] = useState('');
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
   const [skillId, setSkillId] = useState('');
+  // Distinct from `skillId` above (which resets after each pick so the same
+  // skill can be reapplied): this is what actually travels to the job, and
+  // persists until prompt/params are edited enough that reapplying makes
+  // sense, or another skill is chosen.
+  const [appliedSkillId, setAppliedSkillId] = useState<string | null>(null);
 
   const { status: sessionStatus } = useSession();
   const publicPresets = useResource<Page<StylePreset>>('/v1/style-presets');
@@ -148,7 +170,10 @@ export function GenerationStudio({
     // `/apply` both records usage and is the only place that returns them.
     void api
       .post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`)
-      .then((detail) => applyParams(detail.params ?? {}))
+      .then((detail) => {
+        applyParams(detail.params ?? {});
+        setAppliedSkillId(skill.id);
+      })
       .catch(() => undefined);
   };
 
@@ -157,8 +182,18 @@ export function GenerationStudio({
       ? 'image_to_video'
       : initialOperation;
 
+  // Neither operation is a video: no duration, no ambient-sound toggle, and
+  // (for audio) no aspect ratio — the studio only asks for what the job
+  // actually prices and validates on the backend.
+  const isAudio = operation === 'audio_generation';
+  const isImageEdit = operation === 'image_to_image';
+  const showAspect = !isAudio;
+  const showDuration = !isAudio && !isImageEdit;
+  const showSound = !isAudio && !isImageEdit;
+  const effectiveDuration = showDuration ? duration : 0;
+
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
-    { operation, qualityTier: tier, durationSeconds: duration },
+    { operation, qualityTier: tier, durationSeconds: effectiveDuration },
     { label: t('submit') },
   );
 
@@ -184,11 +219,12 @@ export function GenerationStudio({
     submit({
       operation,
       qualityTier: tier,
-      durationSeconds: duration,
+      durationSeconds: effectiveDuration,
       prompt: prompt.trim(),
       aspectRatio: aspect,
       referenceAssetIds: uploads.map((asset) => asset.id),
-      extra: { sound, ...presetExtra },
+      extra: isAudio ? { voice, ...presetExtra } : { sound, ...presetExtra },
+      skillId: appliedSkillId ?? undefined,
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -256,33 +292,54 @@ export function GenerationStudio({
         </p>
       </div>
 
-      <OptionGroup
-        label={t('aspect')}
-        value={aspect}
-        onChange={setAspect}
-        options={ASPECTS.map((value) => ({ value, label: value }))}
-      />
+      {isImageEdit ? <p className="text-xs text-muted">{t('referenceRequiredHint')}</p> : null}
 
-      <OptionGroup
-        label={t('duration')}
-        value={duration}
-        onChange={setDuration}
-        options={DURATIONS.map((value) => ({
-          value,
-          label: t('durationSeconds', { count: value }),
-        }))}
-      />
+      {showAspect ? (
+        <OptionGroup
+          label={t('aspect')}
+          value={aspect}
+          onChange={setAspect}
+          options={ASPECTS.map((value) => ({ value, label: value }))}
+        />
+      ) : null}
 
-      <OptionGroup
-        label={t('sound')}
-        value={sound ? 'on' : 'off'}
-        onChange={(value) => setSound(value === 'on')}
-        columns={2}
-        options={[
-          { value: 'off', label: t('soundOff'), icon: <IconVolumeOff className="size-4" /> },
-          { value: 'on', label: t('soundAmbient'), icon: <IconVolume className="size-4" /> },
-        ]}
-      />
+      {showDuration ? (
+        <OptionGroup
+          label={t('duration')}
+          value={duration}
+          onChange={setDuration}
+          options={DURATIONS.map((value) => ({
+            value,
+            label: t('durationSeconds', { count: value }),
+          }))}
+        />
+      ) : null}
+
+      {showSound ? (
+        <OptionGroup
+          label={t('sound')}
+          value={sound ? 'on' : 'off'}
+          onChange={(value) => setSound(value === 'on')}
+          columns={2}
+          options={[
+            { value: 'off', label: t('soundOff'), icon: <IconVolumeOff className="size-4" /> },
+            { value: 'on', label: t('soundAmbient'), icon: <IconVolume className="size-4" /> },
+          ]}
+        />
+      ) : null}
+
+      {isAudio ? (
+        <Select
+          label={t('voice')}
+          hint={t('voiceHint')}
+          value={voice}
+          onChange={(event) => setVoice(event.target.value)}
+          options={AUDIO_VOICES.map((value) => ({
+            value,
+            label: value.charAt(0).toUpperCase() + value.slice(1),
+          }))}
+        />
+      ) : null}
 
       <OptionGroup
         label={t('quality')}
@@ -347,7 +404,14 @@ export function GenerationStudio({
       </div>
 
       <div className="order-1 flex min-w-0 flex-col gap-4 lg:order-none">
-        {aspect === PORTRAIT_ASPECT ? (
+        {isAudio ? (
+          // No frame to preview here — audio has no picture, so the slot that
+          // would show one becomes a plain hint instead of an empty poster.
+          <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-[var(--radius-md)] border border-border bg-surface-soft text-muted">
+            <IconMic className="size-8" />
+            <p className="text-xs">{t('audioPreviewHint')}</p>
+          </div>
+        ) : aspect === PORTRAIT_ASPECT ? (
           // A vertical framing is the one the author cannot judge from a
           // 16:9 box, so that is where the phone frame earns its place.
           <DevicePreview

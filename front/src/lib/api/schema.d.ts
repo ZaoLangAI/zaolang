@@ -1509,8 +1509,8 @@ export interface paths {
         };
         /**
          * Workflow Shape
-         * @description The declared pipeline, used to render a timeline even for a job that
-         *     failed before emitting its later steps.
+         * @description The declared pipeline for one operation, used to render a timeline
+         *     even for a job that failed before emitting its later steps.
          */
         get: operations["workflow_shape_v1_admin_workflow_get"];
         put?: never;
@@ -2380,6 +2380,12 @@ export interface paths {
         /**
          * Upsert Llm Provider
          * @description Creates or replaces one endpoint. `api_key=None` keeps the stored secret.
+         *
+         *     Demotion happens automatically rather than being rejected, because each
+         *     `kind` has exactly one primary node by definition: saving with
+         *     `role="primary"` demotes whichever other endpoint of the same `kind`
+         *     currently holds it. The demotion is recorded on the same audit entry so
+         *     it stays traceable.
          */
         put: operations["upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put"];
         post?: never;
@@ -2404,23 +2410,6 @@ export interface paths {
          *     mistake that stops generations from completing, hence the confirmation.
          */
         post: operations["remove_llm_provider_v1_admin_llm_providers__endpoint_id__remove_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/llm-providers/settings/circuit-breaker": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Update Breaker Settings */
-        put: operations["update_breaker_settings_v1_admin_llm_providers_settings_circuit_breaker_put"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2517,6 +2506,137 @@ export interface paths {
         put?: never;
         /** Takedown Skill */
         post: operations["takedown_skill_v1_admin_skills__skill_id__takedown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/node-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Node Types
+         * @description The whitelist an operator drags nodes from — there is no way to add a
+         *     type from the console; every entry here shipped in a code review.
+         */
+        get: operations["list_node_types_v1_admin_workflow_templates_node_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Workflow Graph
+         * @description Structural pre-check so the editor can flag a broken graph before an
+         *     operator spends a confirmation dialog on it.
+         */
+        post: operations["validate_workflow_graph_v1_admin_workflow_templates_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/{operation}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Active Template */
+        get: operations["get_active_template_v1_admin_workflow_templates__operation__get"];
+        /**
+         * Publish Workflow Template
+         * @description Publishes a new version of one operation's graph and makes it active.
+         *
+         *     A published graph decides the real execution path of every job submitted
+         *     from now on, so it carries the same confirmation ceremony as any other
+         *     dangerous admin action.
+         */
+        put: operations["publish_workflow_template_v1_admin_workflow_templates__operation__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/{operation}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Template Versions */
+        get: operations["list_template_versions_v1_admin_workflow_templates__operation__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/{operation}/activate/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate Workflow Template
+         * @description Rolls back by re-publishing an earlier version's graph as a new one.
+         */
+        post: operations["activate_workflow_template_v1_admin_workflow_templates__operation__activate__template_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/{operation}/dry-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dry Run Workflow Template
+         * @description Simulates a job through the operation's *active* published graph.
+         *
+         *     Never creates a `GenerationJob` row, reserves credits, or hits a paid
+         *     provider — see `WorkflowContext.dry_run` and every node executor's own
+         *     `if ctx.dry_run` branch for the specifics. The four agent nodes
+         *     (safety/planning/intent_router/quality) still call the real LLM gateway
+         *     on purpose: that is the one thing worth spending a little real cost on to
+         *     actually validate a prompt change before publishing it.
+         */
+        post: operations["dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2816,9 +2936,9 @@ export interface components {
          * @description One pipeline stage plus which failover-pool endpoints could serve it.
          *
          *     `candidate_endpoint_ids` is derived, not stored: it is whichever
-         *     `llm_providers` endpoints currently carry this node's role (or
-         *     `"general"`) as a scenario tag, so the node graph can show "0 candidate
-         *     endpoints" as an actionable warning rather than a silent gap.
+         *     `llm_providers` endpoints are enabled `kind="general"` endpoints — every
+         *     agent role shares that one pool now — so the node graph can show "0
+         *     candidate endpoints" as an actionable warning rather than a silent gap.
          */
         AgentNodeView: {
             /** Id */
@@ -3757,6 +3877,8 @@ export interface components {
             shortform_profile?: string | null;
             /** Character Ids */
             character_ids?: string[];
+            /** Skill Id */
+            skill_id?: string | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -4113,12 +4235,23 @@ export interface components {
              */
             truncated: boolean;
         };
-        /** LlmProviderBreakerSettingsRequest */
-        LlmProviderBreakerSettingsRequest: {
-            /** Circuit Breaker Failure Threshold */
-            circuit_breaker_failure_threshold: number;
-            /** Circuit Breaker Cooldown S */
-            circuit_breaker_cooldown_s: number;
+        /**
+         * LlmProviderCategoryView
+         * @description Legacy category projection; the console now renders a flat endpoint
+         *     list from `LlmProviderPoolView.endpoints`. Kept so older clients do not
+         *     break on an unexpected schema change.
+         */
+        LlmProviderCategoryView: {
+            /** Category */
+            category: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "general" | "media";
+            primary?: components["schemas"]["LlmProviderEndpointView"] | null;
+            /** Backups */
+            backups?: components["schemas"]["LlmProviderEndpointView"][];
         };
         /** LlmProviderEndpointUpsertRequest */
         LlmProviderEndpointUpsertRequest: {
@@ -4128,20 +4261,34 @@ export interface components {
             base_url: string;
             /** Api Key */
             api_key?: string | null;
+            /**
+             * Kind
+             * @default general
+             * @enum {string}
+             */
+            kind: "general" | "media";
             /** Models */
             models?: string[];
-            /** Scenario Tags */
-            scenario_tags?: string[];
+            /**
+             * Role
+             * @default backup
+             * @enum {string}
+             */
+            role: "primary" | "backup";
+            /**
+             * Backup Order
+             * @default 100
+             */
+            backup_order: number;
+            /** Capabilities */
+            capabilities?: {
+                [key: string]: components["schemas"]["MediaCapabilityView"];
+            };
             /**
              * Max Concurrency
              * @default 4
              */
             max_concurrency: number;
-            /**
-             * Priority
-             * @default 100
-             */
-            priority: number;
             /**
              * Timeout Ms
              * @default 30000
@@ -4155,10 +4302,14 @@ export interface components {
         };
         /**
          * LlmProviderEndpointView
-         * @description Read model for one failover-pool endpoint.
+         * @description Read model for one model-provider endpoint.
          *
          *     `api_key` itself never appears here — only whether one is set and a
          *     truncated preview — so a GET response is always safe to render or log.
+         *
+         *     `role`/`backup_order` are endpoint-level for both `general` and `media`.
+         *     For media, `capabilities` only declares which tags the credential serves
+         *     and which model id each tag uses.
          */
         LlmProviderEndpointView: {
             /** Id */
@@ -4171,14 +4322,27 @@ export interface components {
             api_key_configured: boolean;
             /** Api Key Preview */
             api_key_preview?: string | null;
+            /**
+             * Kind
+             * @default general
+             * @enum {string}
+             */
+            kind: "general" | "media";
             /** Models */
             models?: string[];
-            /** Scenario Tags */
-            scenario_tags?: string[];
+            /** Capabilities */
+            capabilities?: {
+                [key: string]: components["schemas"]["MediaCapabilityView"];
+            };
             /** Max Concurrency */
             max_concurrency: number;
-            /** Priority */
-            priority: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "primary" | "backup";
+            /** Backup Order */
+            backup_order: number;
             /** Timeout Ms */
             timeout_ms: number;
             /** Enabled */
@@ -4205,10 +4369,10 @@ export interface components {
         LlmProviderPoolView: {
             /** Endpoints */
             endpoints?: components["schemas"]["LlmProviderEndpointView"][];
-            /** Circuit Breaker Failure Threshold */
-            circuit_breaker_failure_threshold: number;
-            /** Circuit Breaker Cooldown S */
-            circuit_breaker_cooldown_s: number;
+            /** Categories */
+            categories?: components["schemas"]["LlmProviderCategoryView"][];
+            /** Demoted Endpoint Ids */
+            demoted_endpoint_ids?: string[];
         };
         /**
          * Locale
@@ -4293,6 +4457,23 @@ export interface components {
              * @default 0
              */
             reserved_credits: number;
+        };
+        /**
+         * MediaCapabilityView
+         * @description One media capability (e.g. `text_to_image`) an endpoint serves.
+         *
+         *     Used both to read and to write: it carries no secret, so the same shape
+         *     works for the upsert request and the response. Primary/backup role lives
+         *     on the parent endpoint, not here.
+         */
+        MediaCapabilityView: {
+            /** Model */
+            model: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /**
          * MediaType
@@ -4428,6 +4609,34 @@ export interface components {
             /** Download Url */
             download_url?: string | null;
         };
+        /**
+         * NodeTypeView
+         * @description One entry in the admin-facing node palette.
+         *
+         *     `config_schema` is the node type's Pydantic config model rendered as a
+         *     JSON Schema, so the editor can generate its property-panel form without a
+         *     hand-maintained mirror of `app.workflows.configs`.
+         */
+        NodeTypeView: {
+            /** Type */
+            type: string;
+            /** Category */
+            category: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Output Ports */
+            output_ports: string[];
+            /** Is Agent */
+            is_agent: boolean;
+            /** Agent Role */
+            agent_role?: string | null;
+            /** Config Schema */
+            config_schema: {
+                [key: string]: unknown;
+            };
+        };
         /** NotificationResponse */
         NotificationResponse: {
             /** Id */
@@ -4471,7 +4680,7 @@ export interface components {
          * Operation
          * @enum {string}
          */
-        Operation: "text_to_image" | "text_to_video" | "image_to_video" | "video_to_video";
+        Operation: "text_to_image" | "image_to_image" | "text_to_video" | "image_to_video" | "video_to_video" | "audio_generation";
         /** Page[AdminJobSummary] */
         Page_AdminJobSummary_: {
             /** Items */
@@ -4820,6 +5029,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[NodeTypeView] */
+        Page_NodeTypeView_: {
+            /** Items */
+            items: components["schemas"]["NodeTypeView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[NotificationResponse] */
         Page_NotificationResponse_: {
             /** Items */
@@ -4920,6 +5141,18 @@ export interface components {
         Page_WorkSummary_: {
             /** Items */
             items: components["schemas"]["WorkSummary"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[WorkflowTemplateView] */
+        Page_WorkflowTemplateView_: {
+            /** Items */
+            items: components["schemas"]["WorkflowTemplateView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -5983,6 +6216,95 @@ export interface components {
              * @default true
              */
             ai_generated: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** WorkflowDryRunRequest */
+        WorkflowDryRunRequest: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Quality Tier
+             * @default standard
+             */
+            quality_tier: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorkflowDryRunResult */
+        WorkflowDryRunResult: {
+            status: components["schemas"]["JobStatus"];
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Asset Id */
+            asset_id?: string | null;
+            /** Trace */
+            trace?: components["schemas"]["WorkflowDryRunStepView"][];
+        };
+        /** WorkflowDryRunStepView */
+        WorkflowDryRunStepView: {
+            /** Node Id */
+            node_id: string;
+            /** Node Type */
+            node_type: string;
+            /** Port */
+            port: string;
+            /** Agent Run Id */
+            agent_run_id?: string | null;
+        };
+        /** WorkflowTemplatePublishRequest */
+        WorkflowTemplatePublishRequest: {
+            /** Reason */
+            reason: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Name */
+            name: string;
+            /** Graph */
+            graph: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorkflowTemplateValidateRequest */
+        WorkflowTemplateValidateRequest: {
+            /** Graph */
+            graph: {
+                [key: string]: unknown;
+            };
+        };
+        /** WorkflowTemplateValidateResponse */
+        WorkflowTemplateValidateResponse: {
+            /** Errors */
+            errors?: string[];
+        };
+        /** WorkflowTemplateView */
+        WorkflowTemplateView: {
+            /** Id */
+            id: string;
+            /** Operation */
+            operation: string;
+            /** Version */
+            version: number;
+            /** Name */
+            name: string;
+            /** Graph */
+            graph: {
+                [key: string]: unknown;
+            };
+            /** Is Active */
+            is_active: boolean;
+            /** Created By User Id */
+            created_by_user_id?: string | null;
+            /** Reason */
+            reason?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -9252,7 +9574,9 @@ export interface operations {
     };
     workflow_shape_v1_admin_workflow_get: {
         parameters: {
-            query?: never;
+            query: {
+                operation: string;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -11000,41 +11324,6 @@ export interface operations {
             };
         };
     };
-    update_breaker_settings_v1_admin_llm_providers_settings_circuit_breaker_put: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LlmProviderBreakerSettingsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LlmProviderPoolView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_agent_nodes_v1_admin_agent_nodes_get: {
         parameters: {
             query?: never;
@@ -11229,6 +11518,250 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreationSkillAdminView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_node_types_v1_admin_workflow_templates_node_types_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_NodeTypeView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    validate_workflow_graph_v1_admin_workflow_templates_validate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplateValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateValidateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_template_v1_admin_workflow_templates__operation__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                operation: components["schemas"]["Operation"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_workflow_template_v1_admin_workflow_templates__operation__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                operation: components["schemas"]["Operation"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowTemplatePublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_template_versions_v1_admin_workflow_templates__operation__versions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                operation: components["schemas"]["Operation"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_WorkflowTemplateView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_workflow_template_v1_admin_workflow_templates__operation__activate__template_id__post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                operation: components["schemas"]["Operation"];
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                operation: components["schemas"]["Operation"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowDryRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowDryRunResult"];
                 };
             };
             /** @description Validation Error */

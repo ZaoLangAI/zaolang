@@ -22,9 +22,10 @@ import { formatDateTime } from '@/lib/format';
  * pipeline stages.
  *
  * Distinct from `LlmProvidersPanel`: that maintains *which endpoints exist*,
- * this maintains *which prompt each node currently runs* and which of those
- * endpoints (by `scenario_tags`) could actually serve it. Publishing here
- * writes through `agent_skills.service.publish`, which is append-only and
+ * this maintains *which prompt each node currently runs* — every enabled
+ * `kind="general"` endpoint is a candidate for every node, since all agent
+ * roles now share one pool. Publishing here writes through
+ * `agent_skills.service.publish`, which is append-only and
  * activates the new row atomically — so "rollback" is just re-activating an
  * older row, never an edit-in-place.
  */
@@ -96,7 +97,7 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
   );
 }
 
-function AgentSkillEditorDialog({
+export function AgentSkillEditorDialog({
   node,
   editable,
   onClose,

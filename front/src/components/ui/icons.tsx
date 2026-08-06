@@ -277,6 +277,24 @@ export const IconUpload = (p: IconProps) => (
   </Icon>
 );
 
+/** A photo with a retouching wand: image-to-image editing. */
+export const IconWand = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="12" height="12" rx="2.5" />
+    <circle cx="8" cy="9" r="1.4" />
+    <path d="m4.5 14.5 3-3 2 2 1.5-1.5" />
+    <path d="M18 14v5M15.5 16.5h5M17 8l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
+  </Icon>
+);
+
+/** A microphone: audio/voice generation. */
+export const IconMic = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M6 11a6 6 0 0 0 12 0M12 17v3.5M9.5 20.5h5" />
+  </Icon>
+);
+
 export const IconClock = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="8.5" />

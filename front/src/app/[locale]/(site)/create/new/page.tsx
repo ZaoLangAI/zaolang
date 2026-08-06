@@ -5,8 +5,22 @@ import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { WorkDetail } from '@/lib/api/types';
 
-const MODES = ['text_to_video', 'image_to_video'] as const;
+const MODES = ['text_to_video', 'image_to_video', 'image_to_image', 'audio_generation'] as const;
 type Mode = (typeof MODES)[number];
+
+const TITLE_KEYS: Record<Mode, string> = {
+  text_to_video: 'modeTextToVideoTitle',
+  image_to_video: 'modeImageToVideoTitle',
+  image_to_image: 'modeImageToImageTitle',
+  audio_generation: 'modeAudioGenerationTitle',
+};
+
+const DESCRIPTION_KEYS: Record<Mode, string> = {
+  text_to_video: 'modeTextToVideoDesc',
+  image_to_video: 'modeImageToVideoDesc',
+  image_to_image: 'modeImageToImageDesc',
+  audio_generation: 'modeAudioGenerationDesc',
+};
 
 const PROMPT_MAX_LENGTH = 600;
 
@@ -24,10 +38,8 @@ export default async function NewCreationPage({
   const t = await getTranslations('createPage');
 
   const operation: Mode = MODES.includes(mode as Mode) ? (mode as Mode) : 'text_to_video';
-  const title =
-    operation === 'image_to_video' ? t('modeImageToVideoTitle') : t('modeTextToVideoTitle');
-  const description =
-    operation === 'image_to_video' ? t('modeImageToVideoDesc') : t('modeTextToVideoDesc');
+  const title = t(TITLE_KEYS[operation]);
+  const description = t(DESCRIPTION_KEYS[operation]);
 
   // `ref` is inspiration, not a remix source: it seeds the prompt and shows the
   // work the idea came from, but it never becomes `source_work_id`. Remixing

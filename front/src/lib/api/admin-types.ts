@@ -40,9 +40,11 @@ export type AuditLog = S['AuditLogView'];
 export type LogEntry = S['LogEntryView'];
 export type Announcement = S['AnnouncementView'];
 export type LlmProviderEndpoint = S['LlmProviderEndpointView'];
+export type LlmProviderCategory = S['LlmProviderCategoryView'];
 export type LlmProviderPool = S['LlmProviderPoolView'];
 export type LlmProviderUpsertRequest = S['LlmProviderEndpointUpsertRequest'];
-export type LlmProviderBreakerSettings = S['LlmProviderBreakerSettingsRequest'];
+export type MediaCapability = S['MediaCapabilityView'];
+export type LlmProviderKind = LlmProviderEndpoint['kind'];
 export type AgentNode = S['AgentNodeView'];
 export type AgentSkill = S['AgentSkillView'];
 export type CreationSkillAdminView = S['CreationSkillAdminView'];
@@ -59,14 +61,50 @@ export type Page<T> = { items: T[]; next_cursor?: string | null; has_more?: bool
 export interface WorkflowStep {
   key: string;
   label: string;
+  node_type: string;
   event_type: string;
-  progress: number;
-  agent?: string | null;
-  terminal_on_failure?: boolean;
+  is_agent: boolean;
+  agent_role?: string | null;
 }
 
 export interface WorkflowShape {
+  operation: string;
   name: string;
+  version: number | null;
   description: string;
   steps: WorkflowStep[];
+}
+
+// The configurable node-graph editor (`/admin/routing` → 工作流编排 tab).
+export type NodeTypeView = S['NodeTypeView'];
+export type WorkflowTemplateView = S['WorkflowTemplateView'];
+export type WorkflowTemplatePublishRequest = S['WorkflowTemplatePublishRequest'];
+export type WorkflowTemplateValidateResponse = S['WorkflowTemplateValidateResponse'];
+export type WorkflowDryRunRequest = S['WorkflowDryRunRequest'];
+export type WorkflowDryRunResult = S['WorkflowDryRunResult'];
+export type WorkflowDryRunStepView = S['WorkflowDryRunStepView'];
+
+/** One node in `WorkflowTemplateView.graph` — the backend keeps this as an
+ * untyped `dict` (`app.workflows.graph.WorkflowGraph.to_dict`), so the shape
+ * is mirrored here by hand rather than generated. */
+export interface WorkflowGraphNode {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+  position: { x: number; y: number };
+}
+
+export type WorkflowEdgeKind = 'sequential' | 'parallel' | 'retry';
+
+export interface WorkflowGraphEdge {
+  id: string;
+  from: string;
+  from_port: string;
+  to: string;
+  kind: WorkflowEdgeKind;
+}
+
+export interface WorkflowGraphJson {
+  nodes: WorkflowGraphNode[];
+  edges: WorkflowGraphEdge[];
 }

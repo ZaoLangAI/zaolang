@@ -3,11 +3,25 @@
 import { useTranslations } from 'next-intl';
 
 import { useSession } from '@/components/auth/session-provider';
-import { IconArrowRight, IconImage, IconPhone, IconRemix, IconVideo } from '@/components/ui/icons';
+import {
+  IconArrowRight,
+  IconImage,
+  IconMic,
+  IconPhone,
+  IconRemix,
+  IconVideo,
+  IconWand,
+} from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
 
-type ModeId = 'text_to_video' | 'image_to_video' | 'shortform' | 'remix';
+type ModeId =
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'image_to_image'
+  | 'audio_generation'
+  | 'shortform'
+  | 'remix';
 
 const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: string }> = [
   {
@@ -21,6 +35,18 @@ const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: stri
     icon: <IconImage className="size-5" />,
     href: '/create/new?mode=image_to_video',
     tone: 'bg-amber/15 text-amber',
+  },
+  {
+    id: 'image_to_image',
+    icon: <IconWand className="size-5" />,
+    href: '/create/new?mode=image_to_image',
+    tone: 'bg-amber/15 text-amber',
+  },
+  {
+    id: 'audio_generation',
+    icon: <IconMic className="size-5" />,
+    href: '/create/new?mode=audio_generation',
+    tone: 'bg-primary/15 text-primary',
   },
   {
     id: 'shortform',
@@ -59,6 +85,16 @@ export function CreateModeCards({ className }: { className?: string }) {
       desc: t('modeImageToVideoDesc'),
       tag: t('modeImageToVideoTag'),
     },
+    image_to_image: {
+      title: t('modeImageToImageTitle'),
+      desc: t('modeImageToImageDesc'),
+      tag: t('modeImageToImageTag'),
+    },
+    audio_generation: {
+      title: t('modeAudioGenerationTitle'),
+      desc: t('modeAudioGenerationDesc'),
+      tag: t('modeAudioGenerationTag'),
+    },
     shortform: {
       title: t('modeShortformTitle'),
       desc: t('modeShortformDesc'),
@@ -68,7 +104,7 @@ export function CreateModeCards({ className }: { className?: string }) {
   };
 
   return (
-    <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
+    <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3', className)}>
       {MODES.map((mode) => {
         const label = labels[mode.id];
         return (

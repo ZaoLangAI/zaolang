@@ -22,7 +22,7 @@ const KEYS = ['quality', 'latency', 'cost', 'reliability'] as const;
  * rollback-able like any other configuration — the router reads the same key.
  */
 export function RoutingWeightsPanel({ initial }: { initial: ConfigValue }) {
-  const t = useTranslations('adminProviders');
+  const t = useTranslations('adminRouting');
   const tConfig = useTranslations('adminConfig');
   const tAdmin = useTranslations('admin');
   const { notify } = useToast();
