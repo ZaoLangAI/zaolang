@@ -23,23 +23,14 @@ from app.models import ProviderStat
 from app.models.enums import Operation, ProviderKind, QualityTier
 from app.platform_config import service as config_service
 from app.platform_config.schemas import ProviderConfig, RoutingWeights
+from app.providers import fake
+from app.providers.base import ProviderCapability
+from app.providers.media_endpoints import dynamic_capabilities
 
-
-@dataclass(frozen=True, slots=True)
-class ProviderCapability:
-    name: str
-    kind: ProviderKind
-    operations: frozenset[str]
-    tiers: frozenset[str]
-    # 0-1 baseline used before enough real samples exist.
-    quality_prior: float
-    typical_latency_ms: int
-    unit_cost_minor: int
-    model_or_workflow: str
-
-
-# The two routes the product ships with. Real providers slot in here without
-# any change to the scoring code.
+# The two routes the product ships with, always present regardless of what an
+# operator has configured. Real (database-configured) media routes are
+# layered on top at request time by `build_catalog` — see its docstring for
+# why that composition happens outside this module.
 PROVIDER_CATALOG: dict[str, ProviderCapability] = {
     "fake_open_workflow": ProviderCapability(
         name="fake_open_workflow",
@@ -52,6 +43,7 @@ PROVIDER_CATALOG: dict[str, ProviderCapability] = {
         typical_latency_ms=9_000,
         unit_cost_minor=2,
         model_or_workflow="comfy-sdxl-base@1.4.0",
+        provider_factory=lambda: fake.get_provider("fake_open_workflow"),
     ),
     "fake_paid_api": ProviderCapability(
         name="fake_paid_api",
@@ -69,8 +61,19 @@ PROVIDER_CATALOG: dict[str, ProviderCapability] = {
         typical_latency_ms=22_000,
         unit_cost_minor=18,
         model_or_workflow="paid-video-v3",
+        provider_factory=lambda: fake.get_provider("fake_paid_api"),
     ),
 }
+
+
+def build_catalog(session: Session) -> dict[str, ProviderCapability]:
+    """The static fakes plus every enabled database-configured media route.
+
+    Built fresh per call — like every other config-driven lookup in this
+    codebase — so an operator adding an endpoint at `/admin/providers` takes
+    effect on the very next job, not after a restart.
+    """
+    return {**PROVIDER_CATALOG, **dynamic_capabilities(session)}
 
 
 @dataclass
@@ -94,10 +97,16 @@ class RoutingDecision:
     selected: Candidate | None
     candidates: list[Candidate] = field(default_factory=list)
     reason: str = ""
+    catalog: dict[str, ProviderCapability] = field(default_factory=dict)
 
     @property
     def capability(self) -> ProviderCapability | None:
-        return PROVIDER_CATALOG[self.selected.provider] if self.selected else None
+        return self.catalog.get(self.selected.provider) if self.selected else None
+
+    @property
+    def provider(self):  # type: ignore[no-untyped-def]
+        capability = self.capability
+        return capability.provider_factory() if capability else None
 
     def trace(self) -> list[dict[str, object]]:
         return [c.to_trace() for c in self.candidates]
@@ -112,10 +121,11 @@ def route(
 ) -> RoutingDecision:
     weights = config_service.get_typed(session, "routing_weights", RoutingWeights)
     provider_config = config_service.get_typed(session, "providers", ProviderConfig)
+    catalog = build_catalog(session)
     stats = _load_stats(session, operation, quality_tier)
 
     candidates: list[Candidate] = []
-    for name, capability in sorted(PROVIDER_CATALOG.items()):
+    for name, capability in sorted(catalog.items()):
         candidate = Candidate(provider=name)
 
         if operation not in capability.operations:
@@ -129,8 +139,12 @@ def route(
             candidates.append(candidate)
             continue
 
+        # `providers` config only ever describes the two built-in fakes; a
+        # database-configured media route's on/off switch is its own
+        # `enabled` flag, already applied by `build_catalog` before this
+        # loop ever sees it.
         setting = provider_config.providers.get(name)
-        if setting is None or not setting.enabled:
+        if name in PROVIDER_CATALOG and (setting is None or not setting.enabled):
             candidate.eligible = False
             candidate.filter_reason = "provider_disabled"
             candidates.append(candidate)
@@ -141,12 +155,13 @@ def route(
             candidates.append(candidate)
             continue
 
+        retry_amplification = setting.retry_amplification if setting is not None else 1.2
         stat = stats.get(name)
         success_rate = _success_rate(stat, provider_config)
         # Failures are not free: a provider that fails a third of the time
         # really costs about 1.5 attempts per success.
         candidate.effective_cost = int(
-            capability.unit_cost_minor * setting.retry_amplification / max(success_rate, 0.05)
+            capability.unit_cost_minor * retry_amplification / max(success_rate, 0.05)
         )
 
         candidate.quality_score = capability.quality_prior
@@ -169,6 +184,7 @@ def route(
             selected=None,
             candidates=candidates,
             reason=f"no_eligible_provider:{','.join(sorted(r for r in reasons if r))}",
+            catalog=catalog,
         )
 
     # Deterministic ordering: score, then cheaper, then name. Two identical
@@ -179,6 +195,7 @@ def route(
         selected=winner,
         candidates=candidates,
         reason=f"highest_score:{winner.total_score:.4f}",
+        catalog=catalog,
     )
 
 

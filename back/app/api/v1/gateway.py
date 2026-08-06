@@ -75,7 +75,7 @@ def gateway_status(session: DbSession) -> GatewayStatusResponse:
         available_routes=len(enabled),
         savings_percent=_savings_percent(session),
         status=status,
-        mode=get_settings().effective_llm_mode,
+        mode=get_settings().llm_mode,
         degraded_runs_24h=int(degraded_runs),
     )
 

@@ -1,4 +1,4 @@
-"""LLM gateway failover pool: readable CRUD over the versioned `llm_providers`
+"""Model provider directory: readable CRUD over the versioned `llm_providers`
 config section, with runtime status merged in and secrets never echoed back.
 
 Deliberately not the generic `/admin/config/{key}` editor: that endpoint
@@ -7,6 +7,11 @@ endpoint is currently overloaded or breaker-tripped. This router adds that
 readability on top while still writing through `config_service.set_value`,
 so versioning, rollback and audit logging stay exactly as they are for every
 other config section.
+
+The console renders a flat primary/backup list from `endpoints`. Reliability
+knobs (circuit breaker, retries) live in the `llm_reliability` config-centre
+section instead of here — see
+`app/platform_config/schemas.py:LlmReliabilityConfig`.
 """
 
 from __future__ import annotations
@@ -16,10 +21,10 @@ from fastapi import APIRouter, Request
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
     DangerousAction,
-    LlmProviderBreakerSettingsRequest,
     LlmProviderEndpointUpsertRequest,
     LlmProviderEndpointView,
     LlmProviderPoolView,
+    MediaCapabilityView,
 )
 from app.api.v1.admin.deps import (
     Admin,
@@ -33,7 +38,11 @@ from app.domain.audit import service as audit
 from app.domain.errors import NotFound
 from app.llm import failover
 from app.platform_config import service as config_service
-from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
+from app.platform_config.schemas import (
+    LlmProviderConfig,
+    LlmProviderEndpoint,
+    MediaCapability,
+)
 
 router = APIRouter(tags=["admin:llm-providers"])
 
@@ -55,19 +64,40 @@ def upsert_llm_provider(
     user: Admin,
     _: AdminWrite,
 ) -> LlmProviderPoolView:
-    """Creates or replaces one endpoint. `api_key=None` keeps the stored secret."""
+    """Creates or replaces one endpoint. `api_key=None` keeps the stored secret.
+
+    Demotion happens automatically rather than being rejected, because each
+    `kind` has exactly one primary node by definition: saving with
+    `role="primary"` demotes whichever other endpoint of the same `kind`
+    currently holds it. The demotion is recorded on the same audit entry so
+    it stays traceable.
+    """
     config = config_service.get_typed(session, CONFIG_KEY, LlmProviderConfig)
     existing = config.endpoints.get(endpoint_id)
     api_key = existing.api_key if payload.api_key is None and existing else (payload.api_key or "")
+
+    demoted_ids: list[str] = []
+    if payload.role == "primary":
+        for other_id, other in config.endpoints.items():
+            if other_id != endpoint_id and other.kind == payload.kind and other.role == "primary":
+                other.role = "backup"
+                demoted_ids.append(other_id)
 
     config.endpoints[endpoint_id] = LlmProviderEndpoint(
         name=payload.name,
         base_url=payload.base_url,
         api_key=api_key,
-        models=payload.models,
-        scenario_tags=payload.scenario_tags or ["general"],
+        kind=payload.kind,
+        models=payload.models if payload.kind == "general" else [],
+        role=payload.role,
+        backup_order=payload.backup_order,
+        capabilities={
+            tag: MediaCapability(model=cap.model, enabled=cap.enabled)
+            for tag, cap in payload.capabilities.items()
+        }
+        if payload.kind == "media"
+        else {},
         max_concurrency=payload.max_concurrency,
-        priority=payload.priority,
         timeout_ms=payload.timeout_ms,
         enabled=payload.enabled,
     )
@@ -78,11 +108,20 @@ def upsert_llm_provider(
         action="llm_provider.upsert",
         target_type="llm_provider_endpoint",
         target_id=endpoint_id,
-        after={"name": payload.name, "base_url": payload.base_url, "enabled": payload.enabled},
+        after={
+            "name": payload.name,
+            "base_url": payload.base_url,
+            "enabled": payload.enabled,
+            "kind": payload.kind,
+            "role": payload.role,
+            "capabilities": sorted(payload.capabilities) if payload.kind == "media" else [],
+            "demoted_endpoint_ids": demoted_ids,
+        },
         request=request,
     )
     session.commit()
-    return _pool_view(LlmProviderConfig.model_validate(row.value_json))
+    updated = LlmProviderConfig.model_validate(row.value_json)
+    return _pool_view(updated, demoted_endpoint_ids=demoted_ids)
 
 
 @router.post("/llm-providers/{endpoint_id}/remove", response_model=LlmProviderPoolView)
@@ -108,33 +147,8 @@ def remove_llm_provider(
         action="llm_provider.remove",
         target_type="llm_provider_endpoint",
         target_id=endpoint_id,
-        before={"name": removed.name, "base_url": removed.base_url},
+        before={"name": removed.name, "base_url": removed.base_url, "kind": removed.kind},
         reason=payload.reason,
-        request=request,
-    )
-    session.commit()
-    return _pool_view(LlmProviderConfig.model_validate(row.value_json))
-
-
-@router.put("/llm-providers/settings/circuit-breaker", response_model=LlmProviderPoolView)
-def update_breaker_settings(
-    payload: LlmProviderBreakerSettingsRequest,
-    request: Request,
-    session: DbSession,
-    user: Admin,
-    _: AdminWrite,
-) -> LlmProviderPoolView:
-    config = config_service.get_typed(session, CONFIG_KEY, LlmProviderConfig)
-    config.circuit_breaker_failure_threshold = payload.circuit_breaker_failure_threshold
-    config.circuit_breaker_cooldown_s = payload.circuit_breaker_cooldown_s
-    row = _save(session, config, user_id=user.id, note="更新熔断阈值")
-    audit.record(
-        session,
-        actor=user,
-        action="llm_provider.breaker_settings",
-        target_type="platform_config",
-        target_id=CONFIG_KEY,
-        after=payload.model_dump(),
         request=request,
     )
     session.commit()
@@ -147,15 +161,17 @@ def _save(session, config: LlmProviderConfig, *, user_id: str, note: str):  # ty
     )
 
 
-def _pool_view(config: LlmProviderConfig) -> LlmProviderPoolView:
+def _pool_view(
+    config: LlmProviderConfig, *, demoted_endpoint_ids: list[str] | None = None
+) -> LlmProviderPoolView:
     endpoints = [
         _endpoint_view(endpoint_id, endpoint) for endpoint_id, endpoint in config.endpoints.items()
     ]
-    endpoints.sort(key=lambda item: (item.priority, item.id))
+    endpoints.sort(key=lambda item: (item.role != "primary", item.backup_order, item.id))
     return LlmProviderPoolView(
         endpoints=endpoints,
-        circuit_breaker_failure_threshold=config.circuit_breaker_failure_threshold,
-        circuit_breaker_cooldown_s=config.circuit_breaker_cooldown_s,
+        categories=[],
+        demoted_endpoint_ids=demoted_endpoint_ids or [],
     )
 
 
@@ -167,10 +183,15 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         base_url=endpoint.base_url,
         api_key_configured=bool(endpoint.api_key),
         api_key_preview=_mask(endpoint.api_key),
+        kind=endpoint.kind,
         models=endpoint.models,
-        scenario_tags=endpoint.scenario_tags,
+        capabilities={
+            tag: MediaCapabilityView(model=cap.model, enabled=cap.enabled)
+            for tag, cap in endpoint.capabilities.items()
+        },
         max_concurrency=endpoint.max_concurrency,
-        priority=endpoint.priority,
+        role=endpoint.role,
+        backup_order=endpoint.backup_order,
         timeout_ms=endpoint.timeout_ms,
         enabled=endpoint.enabled,
         concurrency_in_use=status.concurrency_in_use,

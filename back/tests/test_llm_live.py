@@ -9,17 +9,27 @@ from __future__ import annotations
 import os
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.llm import client
 from app.llm.normalize import normalize_completion
+from app.platform_config import service as config_service
 
 pytestmark = pytest.mark.live
 
 MODELS = ["doubao-seed-2-1-pro", "kimi-k3", "ling-3.0-flash-free"]
 
+LIVE_ENDPOINT_ID = "live-test-endpoint"
+
 
 @pytest.fixture(autouse=True)
-def _require_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+    """Bootstraps a DB-backed endpoint from `.env` for the duration of the test.
+
+    Endpoints only ever come from the database now; `LLM_BASE_URL`/
+    `LLM_API_KEY` are read here purely so this manual suite can still be
+    pointed at a real gateway without an `/admin/providers` round trip.
+    """
     key = os.getenv("LLM_API_KEY", "")
     if not key:
         pytest.skip("LLM_API_KEY 未配置，跳过真实网关测试")
@@ -29,18 +39,44 @@ def _require_key(monkeypatch: pytest.MonkeyPatch) -> None:
     get_settings.cache_clear()
     client.reset_client_cache()
 
+    config_service.set_value(
+        db,
+        "llm_providers",
+        {
+            "endpoints": {
+                LIVE_ENDPOINT_ID: {
+                    "name": "真实网关连通性测试端点",
+                    "base_url": os.getenv("LLM_BASE_URL", "https://aihubmix.com/v1"),
+                    "api_key": key,
+                    "kind": "general",
+                    "role": "primary",
+                }
+            }
+        },
+        actor_user_id=None,
+        note="live test bootstrap",
+    )
 
-def test_gateway_is_reachable() -> None:
-    result = client.probe()
+
+def _current_endpoint(db: Session):  # type: ignore[no-untyped-def]
+    from app.platform_config.schemas import LlmProviderConfig
+
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+    return config.endpoints[LIVE_ENDPOINT_ID]
+
+
+def test_gateway_is_reachable(db: Session) -> None:
+    result = client.probe(db)
 
     assert result["reachable"] is True
     assert result["model_count"] > 0
 
 
 @pytest.mark.parametrize("model", MODELS)
-def test_each_model_returns_parseable_json(model: str) -> None:
+def test_each_model_returns_parseable_json(db: Session, model: str) -> None:
     """Whatever the model's output habits, normalisation must yield a dict."""
     result = client.complete(
+        session=db,
         agent_name="safety",
         model=model,
         messages=[
@@ -63,9 +99,10 @@ def test_each_model_returns_parseable_json(model: str) -> None:
     assert result.response.data.get("decision") in {"approve", "reject"}
 
 
-def test_thinking_output_is_stripped() -> None:
+def test_thinking_output_is_stripped(db: Session) -> None:
     """A model asked to think out loud must still yield clean text."""
     result = client.complete(
+        session=db,
         agent_name="copy",
         model="kimi-k3",
         messages=[
@@ -81,10 +118,11 @@ def test_thinking_output_is_stripped() -> None:
     assert result.response.data is not None
 
 
-def test_reasoning_model_with_a_tiny_budget_still_produces_output() -> None:
+def test_reasoning_model_with_a_tiny_budget_still_produces_output(db: Session) -> None:
     """The client raises the ceiling for reasoning models rather than
     returning the empty content the gateway would otherwise give back."""
     result = client.complete(
+        session=db,
         agent_name="copy",
         model="ling-3.0-flash-free",
         messages=[
@@ -99,13 +137,13 @@ def test_reasoning_model_with_a_tiny_budget_still_produces_output() -> None:
     assert result.response.text != ""
 
 
-def test_recorded_shapes_match_the_live_contract() -> None:
+def test_recorded_shapes_match_the_live_contract(db: Session) -> None:
     """Guards the fixtures used by the offline tests.
 
     If the gateway ever stops returning `reasoning_details`, this fails here
     rather than silently invalidating the unit tests.
     """
-    raw = client.get_client().chat.completions.create(
+    raw = client.client_for_endpoint(_current_endpoint(db)).chat.completions.create(
         model="ling-3.0-flash-free",
         messages=[{"role": "user", "content": "用一句话解释潮汐。"}],
         max_tokens=16,

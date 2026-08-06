@@ -5900,9 +5900,18 @@
           "admin:observability"
         ],
         "summary": "Workflow Shape",
-        "description": "The declared pipeline, used to render a timeline even for a job that\nfailed before emitting its later steps.",
+        "description": "The declared pipeline for one operation, used to render a timeline\neven for a job that failed before emitting its later steps.",
         "operationId": "workflow_shape_v1_admin_workflow_get",
         "parameters": [
+          {
+            "name": "operation",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation"
+            }
+          },
           {
             "name": "authorization",
             "in": "header",
@@ -9412,7 +9421,7 @@
           "admin:llm-providers"
         ],
         "summary": "Upsert Llm Provider",
-        "description": "Creates or replaces one endpoint. `api_key=None` keeps the stored secret.",
+        "description": "Creates or replaces one endpoint. `api_key=None` keeps the stored secret.\n\nDemotion happens automatically rather than being rejected, because each\n`kind` has exactly one primary node by definition: saving with\n`role=\"primary\"` demotes whichever other endpoint of the same `kind`\ncurrently holds it. The demotion is recorded on the same audit entry so\nit stays traceable.",
         "operationId": "upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put",
         "parameters": [
           {
@@ -9516,65 +9525,6 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/DangerousAction"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LlmProviderPoolView"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/admin/llm-providers/settings/circuit-breaker": {
-      "put": {
-        "tags": [
-          "admin:llm-providers"
-        ],
-        "summary": "Update Breaker Settings",
-        "operationId": "update_breaker_settings_v1_admin_llm_providers_settings_circuit_breaker_put",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LlmProviderBreakerSettingsRequest"
               }
             }
           }
@@ -9965,6 +9915,441 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreationSkillAdminView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/node-types": {
+      "get": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "List Node Types",
+        "description": "The whitelist an operator drags nodes from — there is no way to add a\ntype from the console; every entry here shipped in a code review.",
+        "operationId": "list_node_types_v1_admin_workflow_templates_node_types_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_NodeTypeView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/validate": {
+      "post": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "Validate Workflow Graph",
+        "description": "Structural pre-check so the editor can flag a broken graph before an\noperator spends a confirmation dialog on it.",
+        "operationId": "validate_workflow_graph_v1_admin_workflow_templates_validate_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTemplateValidateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateValidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/{operation}": {
+      "get": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "Get Active Template",
+        "operationId": "get_active_template_v1_admin_workflow_templates__operation__get",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "Publish Workflow Template",
+        "description": "Publishes a new version of one operation's graph and makes it active.\n\nA published graph decides the real execution path of every job submitted\nfrom now on, so it carries the same confirmation ceremony as any other\ndangerous admin action.",
+        "operationId": "publish_workflow_template_v1_admin_workflow_templates__operation__put",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTemplatePublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/{operation}/versions": {
+      "get": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "List Template Versions",
+        "operationId": "list_template_versions_v1_admin_workflow_templates__operation__versions_get",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WorkflowTemplateView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/{operation}/activate/{template_id}": {
+      "post": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "Activate Workflow Template",
+        "description": "Rolls back by re-publishing an earlier version's graph as a new one.",
+        "operationId": "activate_workflow_template_v1_admin_workflow_templates__operation__activate__template_id__post",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTemplateView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/{operation}/dry-run": {
+      "post": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "Dry Run Workflow Template",
+        "description": "Simulates a job through the operation's *active* published graph.\n\nNever creates a `GenerationJob` row, reserves credits, or hits a paid\nprovider — see `WorkflowContext.dry_run` and every node executor's own\n`if ctx.dry_run` branch for the specifics. The four agent nodes\n(safety/planning/intent_router/quality) still call the real LLM gateway\non purpose: that is the one thing worth spending a little real cost on to\nactually validate a prompt change before publishing it.",
+        "operationId": "dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDryRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDryRunResult"
                 }
               }
             }
@@ -10755,7 +11140,7 @@
           "sort_order"
         ],
         "title": "AgentNodeView",
-        "description": "One pipeline stage plus which failover-pool endpoints could serve it.\n\n`candidate_endpoint_ids` is derived, not stored: it is whichever\n`llm_providers` endpoints currently carry this node's role (or\n`\"general\"`) as a scenario tag, so the node graph can show \"0 candidate\nendpoints\" as an actionable warning rather than a silent gap."
+        "description": "One pipeline stage plus which failover-pool endpoints could serve it.\n\n`candidate_endpoint_ids` is derived, not stored: it is whichever\n`llm_providers` endpoints are enabled `kind=\"general\"` endpoints — every\nagent role shares that one pool now — so the node graph can show \"0\ncandidate endpoints\" as an actionable warning rather than a silent gap."
       },
       "AgentRunView": {
         "properties": {
@@ -13247,6 +13632,18 @@
             "maxItems": 4,
             "title": "Character Ids"
           },
+          "skill_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skill Id"
+          },
           "extra": {
             "additionalProperties": true,
             "type": "object",
@@ -14120,27 +14517,45 @@
         "title": "LineageResponse",
         "description": "Both directions in one payload so the graph renders in a single fetch."
       },
-      "LlmProviderBreakerSettingsRequest": {
+      "LlmProviderCategoryView": {
         "properties": {
-          "circuit_breaker_failure_threshold": {
-            "type": "integer",
-            "maximum": 100.0,
-            "minimum": 1.0,
-            "title": "Circuit Breaker Failure Threshold"
+          "category": {
+            "type": "string",
+            "title": "Category"
           },
-          "circuit_breaker_cooldown_s": {
-            "type": "integer",
-            "maximum": 3600.0,
-            "minimum": 5.0,
-            "title": "Circuit Breaker Cooldown S"
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "media"
+            ],
+            "title": "Kind"
+          },
+          "primary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmProviderEndpointView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backups": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProviderEndpointView"
+            },
+            "type": "array",
+            "title": "Backups"
           }
         },
         "type": "object",
         "required": [
-          "circuit_breaker_failure_threshold",
-          "circuit_breaker_cooldown_s"
+          "category",
+          "kind"
         ],
-        "title": "LlmProviderBreakerSettingsRequest"
+        "title": "LlmProviderCategoryView",
+        "description": "Legacy category projection; the console now renders a flat endpoint\nlist from `LlmProviderPoolView.endpoints`. Kept so older clients do not\nbreak on an unexpected schema change."
       },
       "LlmProviderEndpointUpsertRequest": {
         "properties": {
@@ -14167,6 +14582,15 @@
             ],
             "title": "Api Key"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "media"
+            ],
+            "title": "Kind",
+            "default": "general"
+          },
           "models": {
             "items": {
               "type": "string"
@@ -14174,12 +14598,28 @@
             "type": "array",
             "title": "Models"
           },
-          "scenario_tags": {
-            "items": {
-              "type": "string"
+          "role": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "backup"
+            ],
+            "title": "Role",
+            "default": "backup"
+          },
+          "backup_order": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Backup Order",
+            "default": 100
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaCapabilityView"
             },
-            "type": "array",
-            "title": "Scenario Tags"
+            "type": "object",
+            "title": "Capabilities"
           },
           "max_concurrency": {
             "type": "integer",
@@ -14187,13 +14627,6 @@
             "minimum": 1.0,
             "title": "Max Concurrency",
             "default": 4
-          },
-          "priority": {
-            "type": "integer",
-            "maximum": 1000.0,
-            "minimum": 1.0,
-            "title": "Priority",
-            "default": 100
           },
           "timeout_ms": {
             "type": "integer",
@@ -14244,6 +14677,15 @@
             ],
             "title": "Api Key Preview"
           },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "media"
+            ],
+            "title": "Kind",
+            "default": "general"
+          },
           "models": {
             "items": {
               "type": "string"
@@ -14251,20 +14693,28 @@
             "type": "array",
             "title": "Models"
           },
-          "scenario_tags": {
-            "items": {
-              "type": "string"
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaCapabilityView"
             },
-            "type": "array",
-            "title": "Scenario Tags"
+            "type": "object",
+            "title": "Capabilities"
           },
           "max_concurrency": {
             "type": "integer",
             "title": "Max Concurrency"
           },
-          "priority": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "backup"
+            ],
+            "title": "Role"
+          },
+          "backup_order": {
             "type": "integer",
-            "title": "Priority"
+            "title": "Backup Order"
           },
           "timeout_ms": {
             "type": "integer",
@@ -14308,12 +14758,13 @@
           "base_url",
           "api_key_configured",
           "max_concurrency",
-          "priority",
+          "role",
+          "backup_order",
           "timeout_ms",
           "enabled"
         ],
         "title": "LlmProviderEndpointView",
-        "description": "Read model for one failover-pool endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log."
+        "description": "Read model for one model-provider endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log.\n\n`role`/`backup_order` are endpoint-level for both `general` and `media`.\nFor media, `capabilities` only declares which tags the credential serves\nand which model id each tag uses."
       },
       "LlmProviderPoolView": {
         "properties": {
@@ -14324,20 +14775,22 @@
             "type": "array",
             "title": "Endpoints"
           },
-          "circuit_breaker_failure_threshold": {
-            "type": "integer",
-            "title": "Circuit Breaker Failure Threshold"
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProviderCategoryView"
+            },
+            "type": "array",
+            "title": "Categories"
           },
-          "circuit_breaker_cooldown_s": {
-            "type": "integer",
-            "title": "Circuit Breaker Cooldown S"
+          "demoted_endpoint_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Demoted Endpoint Ids"
           }
         },
         "type": "object",
-        "required": [
-          "circuit_breaker_failure_threshold",
-          "circuit_breaker_cooldown_s"
-        ],
         "title": "LlmProviderPoolView"
       },
       "Locale": {
@@ -14547,6 +15000,27 @@
           "age_gate_confirmed"
         ],
         "title": "MeResponse"
+      },
+      "MediaCapabilityView": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "MediaCapabilityView",
+        "description": "One media capability (e.g. `text_to_image`) an endpoint serves.\n\nUsed both to read and to write: it carries no secret, so the same shape\nworks for the upsert request and the response. Primary/backup role lives\non the parent endpoint, not here."
       },
       "MediaType": {
         "type": "string",
@@ -14971,6 +15445,65 @@
         ],
         "title": "MyDataRequestView"
       },
+      "NodeTypeView": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "output_ports": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Ports"
+          },
+          "is_agent": {
+            "type": "boolean",
+            "title": "Is Agent"
+          },
+          "agent_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Role"
+          },
+          "config_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config Schema"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "category",
+          "label",
+          "description",
+          "output_ports",
+          "is_agent",
+          "config_schema"
+        ],
+        "title": "NodeTypeView",
+        "description": "One entry in the admin-facing node palette.\n\n`config_schema` is the node type's Pydantic config model rendered as a\nJSON Schema, so the editor can generate its property-panel form without a\nhand-maintained mirror of `app.workflows.configs`."
+      },
       "NotificationResponse": {
         "properties": {
           "id": {
@@ -15061,9 +15594,11 @@
         "type": "string",
         "enum": [
           "text_to_image",
+          "image_to_image",
           "text_to_video",
           "image_to_video",
-          "video_to_video"
+          "video_to_video",
+          "audio_generation"
         ],
         "title": "Operation"
       },
@@ -15995,6 +16530,38 @@
         ],
         "title": "Page[MyDataRequestView]"
       },
+      "Page_NodeTypeView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NodeTypeView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[NodeTypeView]"
+      },
       "Page_NotificationResponse_": {
         "properties": {
           "items": {
@@ -16282,6 +16849,38 @@
           "items"
         ],
         "title": "Page[WorkSummary]"
+      },
+      "Page_WorkflowTemplateView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowTemplateView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[WorkflowTemplateView]"
       },
       "PreferencesRequest": {
         "properties": {
@@ -19038,6 +19637,233 @@
           "created_at"
         ],
         "title": "WorkVersionSummary"
+      },
+      "WorkflowDryRunRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "quality_tier": {
+            "type": "string",
+            "title": "Quality Tier",
+            "default": "standard"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "WorkflowDryRunRequest"
+      },
+      "WorkflowDryRunResult": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "trace": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowDryRunStepView"
+            },
+            "type": "array",
+            "title": "Trace"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "WorkflowDryRunResult"
+      },
+      "WorkflowDryRunStepView": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "node_type": {
+            "type": "string",
+            "title": "Node Type"
+          },
+          "port": {
+            "type": "string",
+            "title": "Port"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "node_type",
+          "port"
+        ],
+        "title": "WorkflowDryRunStepView"
+      },
+      "WorkflowTemplatePublishRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 4,
+            "title": "Reason"
+          },
+          "confirm": {
+            "type": "boolean",
+            "title": "Confirm",
+            "default": false
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "graph": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Graph"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "name",
+          "graph"
+        ],
+        "title": "WorkflowTemplatePublishRequest"
+      },
+      "WorkflowTemplateValidateRequest": {
+        "properties": {
+          "graph": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Graph"
+          }
+        },
+        "type": "object",
+        "required": [
+          "graph"
+        ],
+        "title": "WorkflowTemplateValidateRequest"
+      },
+      "WorkflowTemplateValidateResponse": {
+        "properties": {
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowTemplateValidateResponse"
+      },
+      "WorkflowTemplateView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "graph": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Graph"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "operation",
+          "version",
+          "name",
+          "graph",
+          "is_active",
+          "created_at"
+        ],
+        "title": "WorkflowTemplateView"
       }
     }
   }

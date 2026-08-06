@@ -23,7 +23,7 @@ from app.llm import capabilities, failover
 from app.llm.normalize import NormalizedResponse, normalize_completion
 from app.llm.stub import stub_completion
 from app.platform_config import service as config_service
-from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
+from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint, LlmReliabilityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 # a request that would fit in 512 visible tokens still needs far more headroom.
 REASONING_TOKEN_FLOOR = 2048
 
-# Used for the legacy single-endpoint path (no `llm_providers` configured yet)
-# and as the id recorded on `AgentRun` in that case.
-LEGACY_ENDPOINT_ID = "legacy"
+# Recorded on `AgentRun` / returned to callers when nothing in `llm_providers`
+# matched — there is no per-endpoint id to report in that case.
+NO_ENDPOINT_ID = "none"
 
 
 @dataclass(slots=True)
@@ -43,23 +43,7 @@ class LlmCallResult:
     degraded: bool
     degrade_reason: str | None
     latency_ms: int
-    endpoint_id: str = LEGACY_ENDPOINT_ID
-
-
-@lru_cache
-def get_client() -> OpenAI:
-    """The legacy single endpoint, from environment settings.
-
-    Kept as the fallback so a deploy with an empty `llm_providers` config (the
-    default) still works without any seed data.
-    """
-    settings = get_settings()
-    return OpenAI(
-        api_key=settings.llm_api_key or "not-configured",
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout_seconds,
-        max_retries=0,  # Retries are handled here so each attempt is recorded.
-    )
+    endpoint_id: str = NO_ENDPOINT_ID
 
 
 @lru_cache(maxsize=64)
@@ -68,16 +52,21 @@ def _get_client_for_endpoint(base_url: str, api_key: str, timeout_ms: int) -> Op
         api_key=api_key or "not-configured",
         base_url=base_url,
         timeout=timeout_ms / 1000,
-        max_retries=0,
+        max_retries=0,  # Retries are handled here so each attempt is recorded.
     )
 
 
-def _client_for(endpoint: LlmProviderEndpoint) -> OpenAI:
+def client_for_endpoint(endpoint: LlmProviderEndpoint) -> OpenAI:
+    """The OpenAI SDK client for one `llm_providers` endpoint.
+
+    Public (not `_`-prefixed) because `app/teams/generation_gateway.py` and
+    the live connectivity tests build clients for a specific endpoint too,
+    and must share this cache rather than constructing their own.
+    """
     return _get_client_for_endpoint(endpoint.base_url, endpoint.api_key, endpoint.timeout_ms)
 
 
 def reset_client_cache() -> None:
-    get_client.cache_clear()
     _get_client_for_endpoint.cache_clear()
 
 
@@ -94,12 +83,13 @@ def complete(
 ) -> LlmCallResult:
     """Runs one agent inference and normalises whatever comes back.
 
-    `agent_name` doubles as the failover pool's scenario tag: an endpoint
-    configured with `scenario_tags: ["planner"]` is only offered planner
-    calls, while `"general"` endpoints take any agent's traffic.
+    Every agent role (safety/planner/quality/copy) shares the same
+    `kind="general"` endpoint pool now — there is no per-agent scenario tag.
+    `agent_name` is kept only because `stub_completion` uses it to vary its
+    deterministic output.
     """
     settings = get_settings()
-    mode = settings.effective_llm_mode
+    mode = settings.llm_mode
     started = time.perf_counter()
 
     if mode == "stub":
@@ -114,7 +104,8 @@ def complete(
 
     budget = max(max_tokens, REASONING_TOKEN_FLOOR) if reasoning_model else max_tokens
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
-    endpoints = failover.eligible_candidates(provider_config, agent_name)
+    reliability = config_service.get_typed(session, "llm_reliability", LlmReliabilityConfig)
+    endpoints = failover.eligible_candidates(provider_config)
 
     last_error: Exception | None = None
     tried_endpoint = False
@@ -123,8 +114,8 @@ def complete(
         tried_endpoint = True
         with failover.lease(endpoint_id):
             response, budget, error = _attempt_endpoint(
-                client=_client_for(endpoint),
-                settings=settings,
+                client=client_for_endpoint(endpoint),
+                max_retries=reliability.max_retries,
                 model=model,
                 messages=messages,
                 budget=budget,
@@ -134,8 +125,8 @@ def complete(
         failover.record_outcome(
             endpoint_id,
             success=response is not None,
-            failure_threshold=provider_config.circuit_breaker_failure_threshold,
-            cooldown_s=provider_config.circuit_breaker_cooldown_s,
+            failure_threshold=reliability.circuit_breaker_failure_threshold,
+            cooldown_s=reliability.circuit_breaker_cooldown_s,
         )
         if response is not None:
             return LlmCallResult(
@@ -149,28 +140,23 @@ def complete(
         last_error = error
 
     if not tried_endpoint:
-        # No `llm_providers` configured (the default), or every configured
-        # endpoint was unavailable (breaker open / at capacity): fall back to
-        # the single legacy endpoint so a fresh deploy still works.
-        response, _budget, error = _attempt_endpoint(
-            client=get_client(),
-            settings=settings,
-            model=model,
-            messages=messages,
-            budget=budget,
-            temperature=temperature,
-            expect_json=expect_json,
+        # Nothing in `llm_providers` is available (empty pool, or every
+        # candidate is breaker-open/at capacity). There is no env-level
+        # endpoint to fall back to any more — an operator has to configure one
+        # at `/admin/providers`.
+        reason = "no_endpoint_configured"
+        if mode == "openai_compatible":
+            from app.domain.errors import ProviderTemporaryFailure
+
+            raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
+        response = stub_completion(agent_name=agent_name, messages=messages, model=model)
+        return LlmCallResult(
+            response=response,
+            mode="auto",
+            degraded=True,
+            degrade_reason=reason,
+            latency_ms=int((time.perf_counter() - started) * 1000),
         )
-        if response is not None:
-            return LlmCallResult(
-                response=response,
-                mode="openai_compatible",
-                degraded=False,
-                degrade_reason=None,
-                latency_ms=int((time.perf_counter() - started) * 1000),
-                endpoint_id=LEGACY_ENDPOINT_ID,
-            )
-        last_error = error
 
     reason = type(last_error).__name__ if last_error else "unknown_error"
     if mode == "openai_compatible":
@@ -193,7 +179,7 @@ def complete(
 def _attempt_endpoint(
     *,
     client: OpenAI,
-    settings: Any,
+    max_retries: int,
     model: str,
     messages: list[dict[str, str]],
     budget: int,
@@ -204,7 +190,7 @@ def _attempt_endpoint(
     the next failover candidate without repeating this logic."""
     # Two extra slots beyond the configured retries so that discovering a
     # parameter incompatibility does not consume a real retry.
-    attempts = settings.llm_max_retries + 3
+    attempts = max_retries + 3
     last_error: Exception | None = None
 
     for attempt in range(attempts):
@@ -278,16 +264,26 @@ def _call_gateway(
     return client.chat.completions.create(**kwargs)
 
 
-def probe() -> dict[str, Any]:
-    """Connectivity check for the ops console health panel."""
+def probe(session: Session) -> dict[str, Any]:
+    """Connectivity check for the ops console health panel.
+
+    Picks the "general" primary endpoint if one exists, otherwise any enabled
+    endpoint — there is no env-level endpoint to fall back to any more.
+    """
     settings = get_settings()
-    mode = settings.effective_llm_mode
+    mode = settings.llm_mode
     if mode == "stub":
         return {"mode": mode, "reachable": False, "detail": "stub 模式未连接网关"}
 
+    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    candidates = failover.general_candidates(provider_config)
+    if not candidates:
+        return {"mode": mode, "reachable": False, "detail": "未配置任何网关端点"}
+    _endpoint_id, endpoint = candidates[0]
+
     started = time.perf_counter()
     try:
-        models = get_client().models.list()
+        models = client_for_endpoint(endpoint).models.list()
         count = len(getattr(models, "data", []) or [])
         return {
             "mode": mode,

@@ -120,6 +120,9 @@ AGENT_TOOL_GRANTS: dict[str, frozenset[str]] = {
     ),
     "quality": frozenset(),
     "copy": frozenset({"suggest_tags"}),
+    # A cost/complexity judgement call, same reasoning as `safety`: it must
+    # not depend on anything a prompt could steer it into fetching.
+    "intent_router": frozenset(),
 }
 
 

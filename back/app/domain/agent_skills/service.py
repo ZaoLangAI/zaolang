@@ -45,6 +45,12 @@ DEFAULT_NODES: list[dict[str, Any]] = [
         "description": "生成标题与文案",
         "sort_order": 3,
     },
+    {
+        "role": "intent_router",
+        "display_name": "意图理解路由",
+        "description": "判断需求复杂度，建议更省成本的生成档位（只能降级，不参与计费）",
+        "sort_order": 4,
+    },
 ]
 
 

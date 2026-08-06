@@ -113,9 +113,11 @@ class ConsentStatus(StrEnum):
 
 class Operation(StrEnum):
     TEXT_TO_IMAGE = "text_to_image"
+    IMAGE_TO_IMAGE = "image_to_image"
     TEXT_TO_VIDEO = "text_to_video"
     IMAGE_TO_VIDEO = "image_to_video"
     VIDEO_TO_VIDEO = "video_to_video"
+    AUDIO_GENERATION = "audio_generation"
 
 
 class QualityTier(StrEnum):
@@ -192,6 +194,7 @@ class JobEventType(StrEnum):
     QUEUED = "queued"
     PLANNING = "planning"
     SAFETY = "safety"
+    INTENT_ROUTING = "intent_routing"
     ROUTING = "routing"
     GENERATING = "generating"
     AUDIO = "audio"
@@ -323,6 +326,7 @@ class AgentName(StrEnum):
     PLANNER = "planner"
     QUALITY = "quality"
     COPY = "copy"
+    INTENT_ROUTER = "intent_router"
 
 
 class AgentRunStatus(StrEnum):

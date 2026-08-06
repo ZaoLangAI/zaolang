@@ -19,6 +19,7 @@ from app.models.credits import (
 from app.models.generation import (
     AgentRun,
     GenerationJob,
+    GenerationWorkflowTemplate,
     JobEvent,
     ProviderAttempt,
     ProviderStat,
@@ -92,6 +93,7 @@ __all__ = [
     "Draft",
     "Follow",
     "GenerationJob",
+    "GenerationWorkflowTemplate",
     "IdempotencyRecord",
     "JobEvent",
     "LearnPost",

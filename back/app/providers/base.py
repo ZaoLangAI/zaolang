@@ -7,8 +7,11 @@ implement, so swapping one in requires no change to the worker or the router.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+from app.models.enums import ProviderKind
 
 
 @dataclass(slots=True)
@@ -57,3 +60,26 @@ class GenerationProvider(ABC):
         """Best-effort cancellation. Returning False is acceptable: the job may
         still complete and bill us, and settlement follows the real outcome."""
         return False
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCapability:
+    """One routable capability: what `app/agents/router.py` scores and picks
+    between. Lives here rather than in `router.py` so provider-directory
+    modules (e.g. one building capabilities from a database endpoint) can
+    construct these without importing the router — the router imports this
+    module, never the reverse."""
+
+    name: str
+    kind: ProviderKind
+    operations: frozenset[str]
+    tiers: frozenset[str]
+    # 0-1 baseline used before enough real samples exist.
+    quality_prior: float
+    typical_latency_ms: int
+    unit_cost_minor: int
+    model_or_workflow: str
+    # Deferred so building the catalog never constructs a provider (and
+    # therefore never opens a client/connection) for a route that ends up
+    # not winning.
+    provider_factory: Callable[[], GenerationProvider]

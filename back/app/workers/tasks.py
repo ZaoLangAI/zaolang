@@ -43,6 +43,11 @@ def run_video_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-d
     return run_generation(self, job_id)
 
 
+@celery_app.task(name="app.workers.tasks.run_audio_generation", bind=True, max_retries=2)
+def run_audio_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-def]
+    return run_generation(self, job_id)
+
+
 @celery_app.task(name="app.workers.tasks.run_moderation")
 def run_moderation(subject_type: str, subject_id: str) -> str:
     from app.agents import safety
@@ -139,7 +144,12 @@ def dispatch_generation(job: GenerationJob) -> None:
     from app.models.enums import Operation
 
     video_ops = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
-    task = run_video_generation if job.operation in video_ops else run_generation
+    if job.operation in video_ops:
+        task = run_video_generation
+    elif job.operation == Operation.AUDIO_GENERATION:
+        task = run_audio_generation
+    else:
+        task = run_generation
     task.delay(job.id)
 
 
@@ -148,6 +158,7 @@ __all__ = [
     "expire_stale_jobs",
     "reconcile_credits",
     "reconcile_webhooks",
+    "run_audio_generation",
     "run_generation",
     "run_moderation",
     "run_quality_check",

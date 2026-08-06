@@ -116,8 +116,12 @@ def test_a_failing_probe_does_not_break_the_rest_of_the_report(
 def test_the_declared_workflow_is_available_for_the_timeline(
     client: TestClient, admin: User
 ) -> None:
-    body = client.get("/v1/admin/workflow", headers=admin_header(admin)).json()
-    assert next(s["key"] for s in body["steps"]) == "safety"
+    body = client.get(
+        "/v1/admin/workflow",
+        params={"operation": "text_to_image"},
+        headers=admin_header(admin),
+    ).json()
+    assert body["steps"][0]["node_type"] == "safety_check"
 
 
 # --- job forensics --------------------------------------------------------

@@ -15,6 +15,7 @@ import datetime as dt
 import hashlib
 import io
 import logging
+import os
 import random
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,7 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.credits import service as credits_service
 from app.domain.lineage import service as lineage_service
 from app.domain.search import service as search_service
+from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import (
     AgentNode,
     AgentRun,
@@ -46,6 +48,7 @@ from app.models import (
     Draft,
     Follow,
     GenerationJob,
+    GenerationWorkflowTemplate,
     JobEvent,
     LearnPost,
     LicenseSnapshot,
@@ -97,6 +100,8 @@ from app.models.enums import (
     UserStatus,
     Visibility,
 )
+from app.platform_config import service as config_service
+from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 from app.security.passwords import hash_password
 from app.storage import s3
 
@@ -309,6 +314,7 @@ RESET_TABLES = (
     JobEvent,
     ProviderAttempt,
     GenerationJob,
+    GenerationWorkflowTemplate,
     Draft,
     PublicationIntent,
     LineageEdge,
@@ -339,6 +345,8 @@ def run(*, reset: bool = False) -> dict[str, int]:
 
         users = _seed_users(session)
         agent_skills_service.ensure_default_nodes(session)
+        workflow_templates_service.ensure_default_templates(session)
+        _seed_llm_providers(session)
         _seed_tags(session)
         _seed_packages(session)
         chain = _seed_creative_chain(session, users)
@@ -408,6 +416,46 @@ def _seed_users(session: Session) -> dict[str, User]:
 
     session.flush()
     return users
+
+
+def _seed_llm_providers(session: Session) -> None:
+    """Bootstraps one general-purpose gateway endpoint from `.env`, if present.
+
+    The gateway reads endpoints from the database only now (see
+    `zaolang-agent-gateway`); `.env`'s `LLM_BASE_URL`/`LLM_API_KEY` are read
+    here, once, purely to save a local developer from having to open
+    `/admin/providers` before anything can call out to a real model. Without
+    them the pool stays empty and every call degrades to the stub until an
+    operator configures an endpoint by hand.
+    """
+    config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    if config.endpoints:
+        return
+
+    base_url = os.environ.get("LLM_BASE_URL", "").strip()
+    api_key = os.environ.get("LLM_API_KEY", "").strip()
+    if not base_url or not api_key:
+        logger.info(
+            "未在环境变量中找到 LLM_BASE_URL/LLM_API_KEY，跳过网关端点引导；"
+            "请到后台「/admin/providers」手动配置。"
+        )
+        return
+
+    config.endpoints["seed-general"] = LlmProviderEndpoint(
+        name="种子默认网关",
+        base_url=base_url,
+        api_key=api_key,
+        kind="general",
+        role="primary",
+    )
+    config_service.set_value(
+        session,
+        "llm_providers",
+        config.model_dump(mode="json"),
+        actor_user_id=None,
+        note="seed: 从环境变量引导默认网关端点",
+    )
+    logger.info("已从环境变量引导默认 LLM 网关端点 seed-general。")
 
 
 def _seed_tags(session: Session) -> None:

@@ -20,6 +20,7 @@ QUEUE_NAMES = (
     "moderation_short",
     "image_generation",
     "video_generation_long",
+    "audio_generation",
     "quality_check",
     "webhook_reconcile",
 )
@@ -44,6 +45,7 @@ celery_app.conf.update(
         "app.workers.tasks.run_moderation": {"queue": "moderation_short"},
         "app.workers.tasks.run_generation": {"queue": "image_generation"},
         "app.workers.tasks.run_video_generation": {"queue": "video_generation_long"},
+        "app.workers.tasks.run_audio_generation": {"queue": "audio_generation"},
         "app.workers.tasks.run_quality_check": {"queue": "quality_check"},
         "app.workers.tasks.reconcile_webhooks": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_jobs": {"queue": "webhook_reconcile"},

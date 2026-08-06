@@ -413,11 +413,27 @@ class ConfigDiffResponse(ApiModel):
     entries: list[ConfigDiffEntry]
 
 
+class MediaCapabilityView(ApiModel):
+    """One media capability (e.g. `text_to_image`) an endpoint serves.
+
+    Used both to read and to write: it carries no secret, so the same shape
+    works for the upsert request and the response. Primary/backup role lives
+    on the parent endpoint, not here.
+    """
+
+    model: str = Field(min_length=1, max_length=200)
+    enabled: bool = True
+
+
 class LlmProviderEndpointView(ApiModel):
-    """Read model for one failover-pool endpoint.
+    """Read model for one model-provider endpoint.
 
     `api_key` itself never appears here — only whether one is set and a
     truncated preview — so a GET response is always safe to render or log.
+
+    `role`/`backup_order` are endpoint-level for both `general` and `media`.
+    For media, `capabilities` only declares which tags the credential serves
+    and which model id each tag uses.
     """
 
     id: str
@@ -425,10 +441,12 @@ class LlmProviderEndpointView(ApiModel):
     base_url: str
     api_key_configured: bool
     api_key_preview: str | None = None
+    kind: Literal["general", "media"] = "general"
     models: list[str] = Field(default_factory=list)
-    scenario_tags: list[str] = Field(default_factory=list)
+    capabilities: dict[str, MediaCapabilityView] = Field(default_factory=dict)
     max_concurrency: int
-    priority: int
+    role: Literal["primary", "backup"]
+    backup_order: int
     timeout_ms: int
     enabled: bool
     concurrency_in_use: int = 0
@@ -437,10 +455,23 @@ class LlmProviderEndpointView(ApiModel):
     recent_success_rate: float | None = None
 
 
+class LlmProviderCategoryView(ApiModel):
+    """Legacy category projection; the console now renders a flat endpoint
+    list from `LlmProviderPoolView.endpoints`. Kept so older clients do not
+    break on an unexpected schema change."""
+
+    category: str
+    kind: Literal["general", "media"]
+    primary: LlmProviderEndpointView | None = None
+    backups: list[LlmProviderEndpointView] = Field(default_factory=list)
+
+
 class LlmProviderPoolView(ApiModel):
     endpoints: list[LlmProviderEndpointView] = Field(default_factory=list)
-    circuit_breaker_failure_threshold: int
-    circuit_breaker_cooldown_s: int
+    categories: list[LlmProviderCategoryView] = Field(default_factory=list)
+    # Endpoint ids demoted from primary to backup by the most recent upsert,
+    # surfaced once so the console can show a non-silent toast for it.
+    demoted_endpoint_ids: list[str] = Field(default_factory=list)
 
 
 class LlmProviderEndpointUpsertRequest(ApiModel):
@@ -448,26 +479,25 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     base_url: str = Field(min_length=1, max_length=500)
     # None keeps the stored key unchanged; "" clears it; anything else replaces it.
     api_key: str | None = None
+    kind: Literal["general", "media"] = "general"
+    # `kind="general"` only.
     models: list[str] = Field(default_factory=list)
-    scenario_tags: list[str] = Field(default_factory=lambda: ["general"])
+    role: Literal["primary", "backup"] = "backup"
+    backup_order: int = Field(default=100, ge=1, le=1000)
+    # `kind="media"` only, keyed by a `MEDIA_CAPABILITIES` tag.
+    capabilities: dict[str, MediaCapabilityView] = Field(default_factory=dict)
     max_concurrency: int = Field(default=4, ge=1, le=256)
-    priority: int = Field(default=100, ge=1, le=1000)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
-
-
-class LlmProviderBreakerSettingsRequest(ApiModel):
-    circuit_breaker_failure_threshold: int = Field(ge=1, le=100)
-    circuit_breaker_cooldown_s: int = Field(ge=5, le=3600)
 
 
 class AgentNodeView(ApiModel):
     """One pipeline stage plus which failover-pool endpoints could serve it.
 
     `candidate_endpoint_ids` is derived, not stored: it is whichever
-    `llm_providers` endpoints currently carry this node's role (or
-    `"general"`) as a scenario tag, so the node graph can show "0 candidate
-    endpoints" as an actionable warning rather than a silent gap.
+    `llm_providers` endpoints are enabled `kind="general"` endpoints — every
+    agent role shares that one pool now — so the node graph can show "0
+    candidate endpoints" as an actionable warning rather than a silent gap.
     """
 
     id: str
@@ -602,3 +632,66 @@ class DataRequestDecisionRequest(DangerousAction):
 
 class SeedRequest(DangerousAction):
     reset: bool = False
+
+
+class NodeTypeView(ApiModel):
+    """One entry in the admin-facing node palette.
+
+    `config_schema` is the node type's Pydantic config model rendered as a
+    JSON Schema, so the editor can generate its property-panel form without a
+    hand-maintained mirror of `app.workflows.configs`.
+    """
+
+    type: str
+    category: str
+    label: str
+    description: str
+    output_ports: list[str]
+    is_agent: bool
+    agent_role: str | None = None
+    config_schema: dict[str, Any]
+
+
+class WorkflowTemplateView(ApiModel):
+    id: str
+    operation: str
+    version: int
+    name: str
+    graph: dict[str, Any]
+    is_active: bool
+    created_by_user_id: str | None = None
+    reason: str | None = None
+    created_at: dt.datetime
+
+
+class WorkflowTemplatePublishRequest(DangerousAction):
+    name: str = Field(min_length=1, max_length=120)
+    graph: dict[str, Any]
+
+
+class WorkflowTemplateValidateRequest(ApiModel):
+    graph: dict[str, Any]
+
+
+class WorkflowTemplateValidateResponse(ApiModel):
+    errors: list[str] = Field(default_factory=list)
+
+
+class WorkflowDryRunRequest(ApiModel):
+    prompt: str = Field(min_length=1, max_length=2000)
+    quality_tier: str = "standard"
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDryRunStepView(ApiModel):
+    node_id: str
+    node_type: str
+    port: str
+    agent_run_id: str | None = None
+
+
+class WorkflowDryRunResult(ApiModel):
+    status: JobStatus
+    failure_code: str | None = None
+    asset_id: str | None = None
+    trace: list[WorkflowDryRunStepView] = Field(default_factory=list)

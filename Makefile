@@ -92,7 +92,7 @@ dev-api: ## 启动 FastAPI（含 AgentOS）
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（订阅全部队列）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile \
+		-Q moderation_short,image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile \
 		--loglevel=info
 
 .PHONY: dev-web

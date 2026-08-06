@@ -27,6 +27,7 @@ from app.domain.errors import (
 )
 from app.domain.jobs import state_machine as sm
 from app.domain.shortform import service as shortform_service
+from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, JobEvent
 from app.models.enums import JobEventType, JobStatus
 from app.platform_config import service as config_service
@@ -117,6 +118,13 @@ def submit(
             available=account.available_balance,
         )
 
+    # Pinned now, not resolved lazily at run time: a template published while
+    # this job sits in the queue must not change what it runs. Left `None`
+    # when nothing has ever been published for the operation yet (fresh
+    # deploy before `make seed`) — `pipeline._resolve_graph` falls back to
+    # the code-level default graph for those.
+    active_template = workflow_templates_service.get_active(session, operation)
+
     job = GenerationJob(
         user_id=user_id,
         draft_id=draft_id,
@@ -130,6 +138,7 @@ def submit(
         max_credits=max_credits,
         idempotency_key=idempotency_key,
         estimated_seconds=priced.estimated_seconds,
+        workflow_template_id=active_template.id if active_template else None,
     )
     session.add(job)
     try:

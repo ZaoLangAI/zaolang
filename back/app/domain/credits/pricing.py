@@ -17,6 +17,13 @@ DEFAULT_TIER_PRICING: dict[str, dict[str, int]] = {
         QualityTier.STANDARD: 12,
         QualityTier.CINEMATIC: 40,
     },
+    # Priced level with text-to-image: editing a reference image costs the
+    # provider about as much as generating one from scratch.
+    Operation.IMAGE_TO_IMAGE: {
+        QualityTier.PREVIEW: 4,
+        QualityTier.STANDARD: 12,
+        QualityTier.CINEMATIC: 40,
+    },
     Operation.TEXT_TO_VIDEO: {
         QualityTier.PREVIEW: 30,
         QualityTier.STANDARD: 90,
@@ -32,6 +39,13 @@ DEFAULT_TIER_PRICING: dict[str, dict[str, int]] = {
         QualityTier.STANDARD: 100,
         QualityTier.CINEMATIC: 280,
     },
+    # Much cheaper than any image/video operation: a TTS call is a single
+    # short synchronous request with no per-second video surcharge.
+    Operation.AUDIO_GENERATION: {
+        QualityTier.PREVIEW: 2,
+        QualityTier.STANDARD: 6,
+        QualityTier.CINEMATIC: 15,
+    },
 }
 
 DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
@@ -39,6 +53,11 @@ DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
         QualityTier.PREVIEW: 8,
         QualityTier.STANDARD: 20,
         QualityTier.CINEMATIC: 45,
+    },
+    Operation.IMAGE_TO_IMAGE: {
+        QualityTier.PREVIEW: 10,
+        QualityTier.STANDARD: 25,
+        QualityTier.CINEMATIC: 50,
     },
     Operation.TEXT_TO_VIDEO: {
         QualityTier.PREVIEW: 45,
@@ -54,6 +73,11 @@ DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
         QualityTier.PREVIEW: 50,
         QualityTier.STANDARD: 130,
         QualityTier.CINEMATIC: 320,
+    },
+    Operation.AUDIO_GENERATION: {
+        QualityTier.PREVIEW: 5,
+        QualityTier.STANDARD: 12,
+        QualityTier.CINEMATIC: 25,
     },
 }
 

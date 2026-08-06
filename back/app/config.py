@@ -46,11 +46,10 @@ class Settings(BaseSettings):
     upload_url_ttl_seconds: int = 60 * 10
     download_url_ttl_seconds: int = 60 * 15
 
+    # Operator/test intent only. Endpoint URLs, keys, timeouts and retry
+    # counts all live in the `llm_providers` platform config now — see
+    # `app/llm/client.py` and `zaolang-agent-gateway`.
     llm_mode: LlmMode = "auto"
-    llm_base_url: str = "https://aihubmix.com/v1"
-    llm_api_key: str = ""
-    llm_timeout_seconds: float = 60.0
-    llm_max_retries: int = 1
 
     # The Agno console is an operator tool that exposes model bindings and lets
     # a human drive agents interactively, so it stays off unless asked for.
@@ -84,17 +83,6 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
-
-    @property
-    def effective_llm_mode(self) -> LlmMode:
-        """`auto` degrades to stub when no key is configured.
-
-        Tests and CI set LLM_MODE=stub explicitly; this only covers a developer
-        who has not filled in a key yet.
-        """
-        if self.llm_mode == "auto" and not self.llm_api_key:
-            return "stub"
-        return self.llm_mode
 
 
 @lru_cache

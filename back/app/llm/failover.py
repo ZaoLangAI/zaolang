@@ -34,30 +34,35 @@ _CONCURRENCY_LEASE_TTL_SECONDS = 120
 _STATS_WINDOW_SECONDS = 3600
 
 
-def candidates_for(
-    config: LlmProviderConfig, scenario_tag: str
-) -> list[tuple[str, LlmProviderEndpoint]]:
-    """Enabled endpoints serving this scenario, tried lowest-priority-number first."""
+def general_candidates(config: LlmProviderConfig) -> list[tuple[str, LlmProviderEndpoint]]:
+    """Enabled `kind="general"` endpoints: the primary first, then backups in
+    `backup_order`.
+
+    Every agent role (safety/planner/quality/copy) draws from this single
+    shared pool — there is no per-role scenario tag any more.
+    """
     matches = [
         (endpoint_id, endpoint)
         for endpoint_id, endpoint in config.endpoints.items()
-        if endpoint.enabled
-        and (scenario_tag in endpoint.scenario_tags or "general" in endpoint.scenario_tags)
+        if endpoint.enabled and endpoint.kind == "general"
     ]
-    matches.sort(key=lambda pair: (pair[1].priority, pair[0]))
+    matches.sort(key=lambda pair: _role_sort_key(pair[1], pair[0]))
     return matches
 
 
-def eligible_candidates(
-    config: LlmProviderConfig, scenario_tag: str
-) -> list[tuple[str, LlmProviderEndpoint]]:
+def _role_sort_key(endpoint: LlmProviderEndpoint, endpoint_id: str) -> tuple[int, int, str]:
+    is_backup = endpoint.role == "backup"
+    return (int(is_backup), endpoint.backup_order if is_backup else 0, endpoint_id)
+
+
+def eligible_candidates(config: LlmProviderConfig) -> list[tuple[str, LlmProviderEndpoint]]:
     """Candidates with a free concurrency slot and a closed circuit breaker.
 
     `client.complete()` walks this list in order, trying the next endpoint on
     failure — the list is the fallback order, not just the top pick.
     """
     client = get_redis()
-    ordered = candidates_for(config, scenario_tag)
+    ordered = general_candidates(config)
     return [
         (endpoint_id, endpoint)
         for endpoint_id, endpoint in ordered

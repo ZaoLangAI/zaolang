@@ -9,7 +9,10 @@ from app.agents import router, tools
 from app.models import ProviderStat, User
 from app.models.enums import AgentName, Operation, QualityTier
 from app.platform_config import service as config_service
-from app.workflows import GENERATION_STEPS, describe_workflow
+from app.workflows import describe_workflow, registry
+from app.workflows.defaults import default_graph
+from app.workflows.graph import WorkflowGraph
+from app.workflows.graph import validate as validate_graph
 
 
 def test_the_safety_agent_gets_no_tools_at_all(db: Session) -> None:
@@ -244,33 +247,49 @@ def test_the_router_never_calls_a_model() -> None:
     assert "llm" not in source.lower().replace("llm_", "")
 
 
-def test_the_declared_workflow_matches_what_the_pipeline_emits() -> None:
-    """A step added to the pipeline but not declared here would be missing from
-    every ops replay."""
-    import inspect
-
-    from app.workers import pipeline
-
-    source = inspect.getsource(pipeline)
-    for step in GENERATION_STEPS:
-        assert f"JobEventType.{step.event_type.name}" in source, f"流水线没有发出 {step.key}"
+def test_the_default_graph_uses_only_registered_node_types() -> None:
+    """A node type in the seed graph that engineering forgot to register
+    would otherwise only surface as a runtime crash on the first real job."""
+    graph = default_graph()
+    types = {n["type"] for n in graph["nodes"]}
+    assert types <= set(registry.NODE_TYPES)
 
 
-def test_workflow_progress_only_moves_forward() -> None:
-    progress = [step.progress for step in GENERATION_STEPS]
-    assert progress == sorted(progress)
-    assert progress[-1] == 100
+def test_the_default_graph_passes_structural_validation() -> None:
+    """The graph every `Operation` is seeded with must itself satisfy the
+    same publish-time checks an admin's custom graph is held to."""
+    graph = WorkflowGraph.from_dict(default_graph())
+    assert validate_graph(graph, registry_types=set(registry.NODE_TYPES)) == []
 
 
-def test_the_workflow_description_is_serialisable() -> None:
+def test_the_workflow_description_is_serialisable(db: Session) -> None:
+    """Falls back to the code-level default graph when no template has been
+    published yet for the operation — no seed data required."""
     import json
 
-    payload = describe_workflow()
+    payload = describe_workflow(db, Operation.TEXT_TO_IMAGE.value)
     assert json.loads(json.dumps(payload))["steps"]
 
 
-def test_every_agent_step_names_a_real_agent() -> None:
+def test_the_declared_shape_follows_the_happy_path_in_order(db: Session) -> None:
+    """A step added to the default graph but not wired into the happy path
+    (or a broken port name) would silently vanish from every ops replay."""
+    payload = describe_workflow(db, Operation.TEXT_TO_IMAGE.value)
+    node_types = [step["node_type"] for step in payload["steps"]]
+    assert node_types == [
+        "safety_check",
+        "planning",
+        "intent_router",
+        "route_score",
+        "provider_generate",
+        "quality_check",
+        "settle_success",
+    ]
+
+
+def test_every_agent_node_type_names_a_real_agent(db: Session) -> None:
     names = {a.value for a in AgentName}
-    for step in GENERATION_STEPS:
-        if step.agent is not None:
-            assert step.agent in names
+    payload = describe_workflow(db, Operation.TEXT_TO_IMAGE.value)
+    for step in payload["steps"]:
+        if step["is_agent"]:
+            assert step["agent_role"] in names

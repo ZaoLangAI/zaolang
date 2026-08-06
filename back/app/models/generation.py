@@ -57,6 +57,40 @@ class WorkflowVersion(Base, TimestampMixin):
     )
 
 
+class GenerationWorkflowTemplate(Base, TimestampMixin):
+    """One versioned, admin-configurable generation graph for one `Operation`.
+
+    Append-only like `AgentSkill`: publishing never edits a row in place, it
+    appends a new version and flips `is_active`, so a job that already pinned
+    an earlier version via `GenerationJob.workflow_template_id` keeps
+    executing exactly the graph it started with, even if an operator
+    publishes a new one while it is running.
+    """
+
+    __tablename__ = "generation_workflow_templates"
+
+    id: Mapped[str] = id_column("gwt")
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    # {"nodes": [{"id","type","config","position"}],
+    #  "edges": [{"id","from","from_port","to","kind"}]}
+    graph_json: Mapped[dict[str, Any]] = mapped_column(nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "operation", "version", name="uq_generation_workflow_templates_op_version"
+        ),
+        Index("ix_generation_workflow_templates_operation_active", "operation", "is_active"),
+    )
+
+
 class GenerationJob(Base, TimestampMixin):
     __tablename__ = "generation_jobs"
 
@@ -81,6 +115,13 @@ class GenerationJob(Base, TimestampMixin):
     max_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    # The active `GenerationWorkflowTemplate` at submission time, pinned so a
+    # later publish cannot change the behaviour of a job already in flight.
+    # Nullable so rows created before this column existed keep resolving via
+    # `WorkflowRunner`'s operation-based fallback lookup.
+    workflow_template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("generation_workflow_templates.id", ondelete="SET NULL"), nullable=True
+    )
     selected_route_summary_json: Mapped[dict[str, Any]] = mapped_column(
         default=dict, nullable=False
     )

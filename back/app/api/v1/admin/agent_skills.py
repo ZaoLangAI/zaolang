@@ -112,8 +112,7 @@ def _node_view(node, provider_config: LlmProviderConfig) -> AgentNodeView:  # ty
     candidates = [
         endpoint_id
         for endpoint_id, endpoint in provider_config.endpoints.items()
-        if endpoint.enabled
-        and (node.role in endpoint.scenario_tags or "general" in endpoint.scenario_tags)
+        if endpoint.enabled and endpoint.kind == "general"
     ]
     return AgentNodeView(
         id=node.id,

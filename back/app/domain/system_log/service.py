@@ -130,9 +130,7 @@ def search(
         stmt = stmt.where(SystemLog.level == level)
     if q:
         needle = f"%{q}%"
-        stmt = stmt.where(
-            SystemLog.event.ilike(needle) | SystemLog.message.ilike(needle)
-        )
+        stmt = stmt.where(SystemLog.event.ilike(needle) | SystemLog.message.ilike(needle))
     if since:
         stmt = stmt.where(SystemLog.updated_at >= since)
     if until:

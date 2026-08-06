@@ -87,12 +87,15 @@ def committed_db(engine: Engine) -> Iterator[Session]:
 
 @pytest.fixture(autouse=True)
 def _clear_redis_state() -> Iterator[None]:
-    """Drops cached config and rate-limit counters between tests.
+    """Drops cached config, rate-limit counters and LLM failover state between
+    tests.
 
-    Both live in Redis rather than Postgres, so rolling back the transaction
-    does not undo them. Without this, a test that disables a provider leaks
-    that setting into the next one, and a run of login tests exhausts the
-    shared `auth_attempt` budget partway through the file.
+    All three live in Redis rather than Postgres, so rolling back the
+    transaction does not undo them. Without this, a test that disables a
+    provider leaks that setting into the next one, a run of login tests
+    exhausts the shared `auth_attempt` budget partway through the file, and a
+    test that trips the LLM circuit breaker on a given endpoint id leaves it
+    open (with a real TTL) for whichever test reuses that id next.
     """
     from app.api.rate_limit import RULES, get_redis
     from app.platform_config import service as config_service
@@ -104,6 +107,8 @@ def _clear_redis_state() -> Iterator[None]:
         for bucket in RULES:
             for key in client.scan_iter(match=f"rl:{bucket}:*", count=500):
                 client.delete(key)
+        for key in client.scan_iter(match="llmfo:*", count=500):
+            client.delete(key)
 
     flush()
     yield

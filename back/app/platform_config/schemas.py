@@ -7,7 +7,7 @@ against a malformed value.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -191,34 +191,112 @@ class ModerationConfig(ConfigSection):
     require_human_review_for_video: bool = True
 
 
-class LlmProviderEndpoint(ConfigSection):
-    """One OpenAI-compatible LLM gateway endpoint.
+# The six media generation capabilities a provider endpoint may declare,
+# alongside the one general (text + vision) pool. Equal to every `Operation`
+# value: each media generation job maps 1:1 onto one capability tag.
+MEDIA_CAPABILITIES: list[str] = [op.value for op in Operation]
 
-    Distinct from `ProviderSetting` above: that section configures the
-    image/video *generation* providers scored by `app/agents/router.py`'s
-    explainable rules. This configures which HTTP endpoint an *agent* call
-    (safety/planner/quality/copy) goes out on, selected by the independent
-    failover pool in `app/llm/failover.py` — priority + live concurrency +
-    circuit-breaker state, no scoring formula.
+
+class MediaCapability(ConfigSection):
+    """One capability a `kind="media"` endpoint can serve.
+
+    A single endpoint (one base_url/api_key credential) may hold several of
+    these at once — e.g. the same AiHubMix key doing both `text_to_image` and
+    `audio_generation` — each with its own model id. Primary/backup role lives
+    on the parent endpoint, not per capability.
+    """
+
+    model: str
+    enabled: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _strip_legacy_role_fields(cls, data: Any) -> Any:
+        """Drops per-capability role/backup_order written before endpoint-level
+        primary/backup. Without this, `extra="forbid"` would reject any stored
+        endpoint that still carries those keys.
+        """
+        if not isinstance(data, dict):
+            return data
+        migrated = dict(data)
+        migrated.pop("role", None)
+        migrated.pop("backup_order", None)
+        return migrated
+
+
+class LlmProviderEndpoint(ConfigSection):
+    """One OpenAI/AiHubMix-compatible model provider endpoint.
+
+    `kind="general"` is a text + vision LLM endpoint: every agent call
+    (safety/planner/quality/copy) draws from this single shared pool via the
+    failover logic in `app/llm/failover.py` — explicit primary/backup role +
+    live concurrency + circuit-breaker state, no scoring formula.
+
+    `kind="media"` is a media generation endpoint (image/video/audio). It is
+    scored instead by `app/agents/router.py`'s explainable rules alongside
+    the built-in fake providers; endpoint-level `role`/`backup_order` are
+    display/audit metadata for the admin console, not a dispatch override.
     """
 
     name: str
     base_url: str
     # Accepted as plaintext on write; the admin API never echoes it back.
     api_key: str = ""
+    kind: Literal["general", "media"] = "general"
+    # `kind="general"` only.
     models: list[str] = Field(default_factory=list)
-    scenario_tags: list[str] = Field(default_factory=lambda: ["general"])
+    # Exactly one endpoint should hold "primary" among endpoints of the same
+    # `kind`; the admin API enforces that by demoting the previous primary on
+    # write.
+    role: Literal["primary", "backup"] = "backup"
+    # Only meaningful when role == "backup": lower tries first among backups.
+    backup_order: int = Field(default=100, ge=1, le=1000)
+    # `kind="media"` only: keyed by a `MEDIA_CAPABILITIES` tag.
+    capabilities: dict[str, MediaCapability] = Field(default_factory=dict)
     max_concurrency: int = Field(default=4, ge=1, le=256)
-    # Lower tries first. Endpoints sharing a priority are tried in id order.
-    priority: int = Field(default=100, ge=1, le=1000)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_fields(cls, data: Any) -> Any:
+        """Reads pre-migration rows saved before `role`/`kind` existed.
+
+        `priority == 1` becomes the primary; anything else becomes a backup
+        ordered by its old priority value. `scenario_tags` (the old Agent-role
+        categorisation) is simply dropped — every endpoint that had one is a
+        `kind="general"` endpoint, which is already the default. Without
+        this, `extra="forbid"` would make `get_typed` raise on any endpoint
+        saved before this migration.
+        """
+        if not isinstance(data, dict):
+            return data
+        migrated = dict(data)
+        migrated.pop("scenario_tags", None)
+        if "priority" in migrated:
+            legacy_priority = migrated.pop("priority")
+            migrated.setdefault("role", "primary" if legacy_priority <= 1 else "backup")
+            migrated.setdefault("backup_order", max(1, min(1000, legacy_priority)))
+        return migrated
 
 
 class LlmProviderConfig(ConfigSection):
     endpoints: dict[str, LlmProviderEndpoint] = Field(default_factory=dict)
+
+
+class LlmReliabilityConfig(ConfigSection):
+    """Gateway-wide reliability knobs.
+
+    Split out of `LlmProviderConfig` because these are generic ops parameters
+    (not part of the "which endpoints exist" directory), so they belong in
+    the generic config centre instead of a bespoke form on `/admin/providers`.
+    """
+
     circuit_breaker_failure_threshold: int = Field(default=5, ge=1, le=100)
     circuit_breaker_cooldown_s: int = Field(default=60, ge=5, le=3600)
+    # Replaces the old env-level `LLM_MAX_RETRIES`: a runtime-tunable knob now
+    # that every endpoint lives in the config centre instead of `.env`.
+    max_retries: int = Field(default=1, ge=0, le=10)
 
 
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
@@ -231,6 +309,7 @@ CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "moderation": ModerationConfig,
     "shortform": ShortformConfig,
     "llm_providers": LlmProviderConfig,
+    "llm_reliability": LlmReliabilityConfig,
 }
 
 
@@ -238,9 +317,11 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
     "pricing": {
         "tier_pricing": {
             Operation.TEXT_TO_IMAGE.value: {"preview": 4, "standard": 12, "cinematic": 40},
+            Operation.IMAGE_TO_IMAGE.value: {"preview": 4, "standard": 12, "cinematic": 40},
             Operation.TEXT_TO_VIDEO.value: {"preview": 30, "standard": 90, "cinematic": 260},
             Operation.IMAGE_TO_VIDEO.value: {"preview": 26, "standard": 80, "cinematic": 240},
             Operation.VIDEO_TO_VIDEO.value: {"preview": 34, "standard": 100, "cinematic": 280},
+            Operation.AUDIO_GENERATION.value: {"preview": 2, "standard": 6, "cinematic": 15},
         },
         "video_base_seconds": 4,
         "video_per_second_surcharge": {"preview": 4, "standard": 12, "cinematic": 30},
@@ -290,6 +371,14 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
                 "max_tokens": 4096,
                 "temperature": 0.7,
                 "reasoning_model": True,
+            },
+            # Cheap and fast on purpose: this agent's whole job is picking a
+            # lower-cost route, so it must not itself be an expensive call.
+            AgentName.INTENT_ROUTER.value: {
+                "model": "ling-3.0-flash-free",
+                "max_tokens": 512,
+                "temperature": 0.0,
+                "reasoning_model": False,
             },
         }
     },
@@ -350,12 +439,17 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         },
         "default_profile": "douyin_vertical",
     },
-    # Empty by default: with no endpoints configured, `app/llm/client.py` falls
-    # back to the single legacy `settings.llm_base_url`/`llm_api_key` endpoint,
-    # so a fresh deploy with no seed data still works.
+    # Empty by default: with no endpoints configured, `app/llm/client.py` has
+    # nothing to call and degrades every request straight to the stub (or
+    # errors in `openai_compatible` mode) until an operator adds an endpoint
+    # at `/admin/providers`. `make seed` bootstraps one from `.env` for local
+    # development; see `app/scripts/seed.py`.
     "llm_providers": {
         "endpoints": {},
+    },
+    "llm_reliability": {
         "circuit_breaker_failure_threshold": 5,
         "circuit_breaker_cooldown_s": 60,
+        "max_retries": 1,
     },
 }

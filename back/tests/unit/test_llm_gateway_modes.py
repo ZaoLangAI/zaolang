@@ -14,16 +14,43 @@ from app.llm import client as llm_client
 from app.llm.stub import stub_completion
 from app.models import AgentRun, User
 from app.models.enums import AgentRunStatus
+from app.platform_config import service as config_service
 
 
 @pytest.fixture
 def force_mode(monkeypatch):  # type: ignore[no-untyped-def]
-    """Overrides the effective mode without touching the cached settings object."""
+    """Overrides the mode without touching the cached settings object."""
 
-    def _apply(mode: str, api_key: str = "test-key") -> None:
+    def _apply(mode: str) -> None:
         settings = get_settings()
         monkeypatch.setattr(settings, "llm_mode", mode, raising=False)
-        monkeypatch.setattr(settings, "llm_api_key", api_key, raising=False)
+
+    return _apply
+
+
+@pytest.fixture
+def seed_endpoint(db: Session):  # type: ignore[no-untyped-def]
+    """Writes one enabled "general" primary endpoint so `complete()` has
+    something to try instead of immediately reporting an empty pool."""
+
+    def _apply() -> None:
+        config_service.set_value(
+            db,
+            "llm_providers",
+            {
+                "endpoints": {
+                    "test-endpoint": {
+                        "name": "测试端点",
+                        "base_url": "https://example.invalid/v1",
+                        "api_key": "test-key",
+                        "kind": "general",
+                        "role": "primary",
+                    }
+                }
+            },
+            actor_user_id=None,
+            note="test bootstrap",
+        )
 
     return _apply
 
@@ -33,7 +60,7 @@ def _explode(*_args, **_kwargs):  # type: ignore[no-untyped-def]
 
 
 def test_stub_mode_never_calls_the_gateway(db: Session, monkeypatch, force_mode) -> None:
-    force_mode("stub", api_key="")
+    force_mode("stub")
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     result = llm_client.complete(
@@ -56,9 +83,10 @@ def test_stub_output_is_deterministic() -> None:
 
 
 def test_auto_mode_degrades_to_the_stub_on_a_gateway_failure(
-    db: Session, monkeypatch, force_mode
+    db: Session, monkeypatch, force_mode, seed_endpoint
 ) -> None:
     force_mode("auto")
+    seed_endpoint()
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     result = llm_client.complete(
@@ -73,11 +101,12 @@ def test_auto_mode_degrades_to_the_stub_on_a_gateway_failure(
 
 
 def test_strict_mode_surfaces_the_failure_instead_of_faking_success(
-    db: Session, monkeypatch, force_mode
+    db: Session, monkeypatch, force_mode, seed_endpoint
 ) -> None:
     """Silently returning stub content when the caller demanded the real gateway
     would hide an outage."""
     force_mode("openai_compatible")
+    seed_endpoint()
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     with pytest.raises(ProviderTemporaryFailure):
@@ -89,9 +118,31 @@ def test_strict_mode_surfaces_the_failure_instead_of_faking_success(
         )
 
 
-def test_auto_mode_without_a_key_resolves_to_stub(force_mode) -> None:
-    force_mode("auto", api_key="")
-    assert get_settings().effective_llm_mode == "stub"
+def test_auto_mode_degrades_to_stub_when_no_endpoint_is_configured(db: Session, force_mode) -> None:
+    """The empty `llm_providers` pool used to fall back to a `.env`-configured
+    legacy endpoint; now it degrades immediately instead."""
+    force_mode("auto")
+
+    result = llm_client.complete(
+        session=db,
+        agent_name="planner",
+        model="kimi-k3",
+        messages=[{"role": "user", "content": "x"}],
+    )
+    assert result.degraded is True
+    assert result.degrade_reason == "no_endpoint_configured"
+
+
+def test_strict_mode_errors_when_no_endpoint_is_configured(db: Session, force_mode) -> None:
+    force_mode("openai_compatible")
+
+    with pytest.raises(ProviderTemporaryFailure):
+        llm_client.complete(
+            session=db,
+            agent_name="planner",
+            model="kimi-k3",
+            messages=[{"role": "user", "content": "x"}],
+        )
 
 
 def test_every_agent_call_is_recorded(db: Session, author: User) -> None:
@@ -154,9 +205,10 @@ def test_an_unparseable_response_falls_back_without_losing_the_record(
 
 
 def test_degraded_runs_are_queryable_for_the_ops_console(
-    db: Session, author: User, monkeypatch, force_mode
+    db: Session, author: User, monkeypatch, force_mode, seed_endpoint
 ) -> None:
     force_mode("auto")
+    seed_endpoint()
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     agents_base.run_agent(

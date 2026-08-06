@@ -47,6 +47,15 @@ def test_video_duration_adds_a_surcharge() -> None:
     assert long.estimated_seconds > short.estimated_seconds
 
 
+def test_image_to_image_and_audio_generation_are_priced_without_a_duration_surcharge() -> None:
+    """Neither operation is in `VIDEO_OPERATIONS`, so a caller passing a
+    (meaningless) `duration_seconds` must not be charged a video surcharge."""
+    for operation in (Operation.IMAGE_TO_IMAGE, Operation.AUDIO_GENERATION):
+        priced = quote(operation=operation, quality_tier=QualityTier.STANDARD, duration_seconds=30)
+        assert "duration_surcharge" not in priced.breakdown
+        assert priced.credits == priced.breakdown["base"]
+
+
 def test_unpriced_combination_is_rejected() -> None:
     with pytest.raises(ValueError, match="未定价"):
         quote(operation="unknown_op", quality_tier=QualityTier.STANDARD)

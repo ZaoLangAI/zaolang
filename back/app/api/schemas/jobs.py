@@ -18,6 +18,12 @@ from app.models.enums import (
 )
 from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
 
+# Fixed voice roster for `audio_generation`, mirrored by the creative studio's
+# voice picker and passed through verbatim to the AiHubMix `/v1/audio/speech`
+# call. Not config-centre material: changing the provider's own voice ids
+# means a code change either way, so a constant is honest about that.
+AUDIO_VOICES: frozenset[str] = frozenset({"alloy", "echo", "fable", "onyx", "nova", "shimmer"})
+
 
 class GenerationParams(ApiModel):
     prompt: str = Field(min_length=1, max_length=2000)
@@ -34,6 +40,10 @@ class GenerationParams(ApiModel):
     # descriptions are merged into `reference_asset_ids` / `extra` in
     # `characters.service.apply_character_refs` before the job is priced.
     character_ids: list[str] = Field(default_factory=list, max_length=4)
+    # Which `CreationSkill` (if any) the client applied to this request. Not
+    # trusted blindly: the `skill_context` workflow node re-fetches and
+    # re-merges the skill's own params server-side before generation runs.
+    skill_id: str | None = Field(default=None, max_length=40)
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -68,6 +78,12 @@ class GenerationJobCreateRequest(ApiModel):
             raise ValueError("视频生成必须指定时长。")
         if self.operation == Operation.IMAGE_TO_VIDEO and not self.params.reference_asset_ids:
             raise ValueError("图生视频必须提供参考图。")
+        if self.operation == Operation.IMAGE_TO_IMAGE and not self.params.reference_asset_ids:
+            raise ValueError("图生图必须提供参考图。")
+        if self.operation == Operation.AUDIO_GENERATION:
+            voice = self.params.extra.get("voice")
+            if voice not in AUDIO_VOICES:
+                raise ValueError(f"音频生成必须指定音色，可选: {sorted(AUDIO_VOICES)}。")
         return self
 
 

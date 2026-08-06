@@ -326,6 +326,139 @@ def test_seeding_is_refused_in_production(
     assert response.status_code in (403, 409, 422)
 
 
+# --- workflow templates ----------------------------------------------------
+
+
+def _sample_graph() -> dict:
+    from app.workflows.defaults import default_graph
+
+    return default_graph()
+
+
+def test_a_viewer_can_list_node_types(client: TestClient, viewer: User) -> None:
+    response = client.get("/v1/admin/workflow-templates/node-types", headers=admin_header(viewer))
+    assert response.status_code == 200
+    types = {item["type"] for item in response.json()["items"]}
+    assert "safety_check" in types and "settle_success" in types
+
+
+def test_an_operator_cannot_publish_a_workflow_template(client: TestClient, operator: User) -> None:
+    """Wiring the real execution path of every future job is an admin
+    decision, not an operator one."""
+    response = client.put(
+        "/v1/admin/workflow-templates/text_to_image",
+        json={"name": "测试模板", "graph": _sample_graph(), "reason": "测试", "confirm": True},
+        headers=admin_header(operator),
+    )
+    assert response.status_code == 403
+
+
+def test_publishing_a_workflow_template_without_confirmation_is_refused(
+    client: TestClient, admin: User
+) -> None:
+    response = client.put(
+        "/v1/admin/workflow-templates/text_to_image",
+        json={"name": "测试模板", "graph": _sample_graph(), "reason": "测试", "confirm": False},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_publishing_a_broken_graph_is_refused(client: TestClient, admin: User) -> None:
+    """The structural validator (`app.workflows.graph.validate`) is enforced
+    server-side, not just by the editor's own client-side check."""
+    broken_graph = {
+        "nodes": [{"id": "a", "type": "safety_check", "config": {}}],
+        "edges": [],
+    }
+    response = client.put(
+        "/v1/admin/workflow-templates/text_to_image",
+        json={"name": "坏图", "graph": broken_graph, "reason": "测试", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_a_confirmed_publish_becomes_active_and_is_audited(
+    client: TestClient, db: Session, admin: User
+) -> None:
+    response = client.put(
+        "/v1/admin/workflow-templates/text_to_image",
+        json={
+            "name": "v2 测试模板",
+            "graph": _sample_graph(),
+            "reason": "回归测试",
+            "confirm": True,
+        },
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["is_active"] is True
+
+    active = client.get(
+        "/v1/admin/workflow-templates/text_to_image", headers=admin_header(admin)
+    ).json()
+    assert active["id"] == body["id"]
+
+    entry = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "workflow_template.publish", AuditLog.target_id == body["id"]
+        )
+    )
+    assert entry is not None
+    assert entry.reason == "回归测试"
+
+
+def test_rolling_back_to_an_earlier_version_republishes_its_graph(
+    client: TestClient, admin: User
+) -> None:
+    first = client.put(
+        "/v1/admin/workflow-templates/text_to_video",
+        json={"name": "v1", "graph": _sample_graph(), "reason": "首次发布", "confirm": True},
+        headers=admin_header(admin),
+    ).json()
+    client.put(
+        "/v1/admin/workflow-templates/text_to_video",
+        json={"name": "v2", "graph": _sample_graph(), "reason": "第二次发布", "confirm": True},
+        headers=admin_header(admin),
+    )
+
+    rollback = client.post(
+        f"/v1/admin/workflow-templates/text_to_video/activate/{first['id']}",
+        json={"reason": "回滚一次误发布", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert rollback.status_code == 200, rollback.text
+    body = rollback.json()
+    assert body["name"] == "v1"
+    assert body["version"] == 3
+    assert body["is_active"] is True
+
+
+def test_an_operator_can_dry_run_a_workflow_template(client: TestClient, operator: User) -> None:
+    """A sandbox execution is not dangerous, so the operator rank suffices."""
+    response = client.post(
+        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        json={"prompt": "雨后的东京街头"},
+        headers=admin_header(operator),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] in ("succeeded", "failed")
+    assert body["trace"]
+    assert body["trace"][0]["node_type"] == "safety_check"
+
+
+def test_a_viewer_cannot_dry_run_a_workflow_template(client: TestClient, viewer: User) -> None:
+    response = client.post(
+        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        json={"prompt": "雨后的东京街头"},
+        headers=admin_header(viewer),
+    )
+    assert response.status_code == 403
+
+
 # --- audit coverage -------------------------------------------------------
 
 

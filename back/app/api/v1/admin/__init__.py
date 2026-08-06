@@ -25,6 +25,7 @@ from app.api.v1.admin import (
     redemption,
     skill_library,
     users,
+    workflow_templates,
 )
 
 router = APIRouter(prefix="/admin")
@@ -41,6 +42,7 @@ router.include_router(logs.router)
 router.include_router(llm_providers.router)
 router.include_router(agent_skills.router)
 router.include_router(skill_library.router)
+router.include_router(workflow_templates.router)
 router.include_router(data.router)
 
 __all__ = ["router"]
