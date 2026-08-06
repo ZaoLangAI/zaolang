@@ -14,7 +14,7 @@ disable-model-invocation: true
 | --- | --- | --- |
 | 系统健康 | `admin/observability.py: /health` | `components/admin/health/health-cards.tsx` |
 | 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`） | `admin/jobs/jobs-console.tsx`（含 `stepper` / `duration-bars` / 路由候选条形对比） |
-| 供应商与路由 | `admin/llm_providers.py`: 模型提供方目录（端点级主/备；`media` 的 `capabilities` 仅 model+enabled，可编辑）；`observability.py`: 生成供应商 `/providers/stats`、`/jobs/{id}/routing` | `admin/providers/llm-providers-panel.tsx`（扁平主备列表）、`routing-replay-table.tsx`、`routing-weights-panel.tsx`（生成统计 + 路由权重） |
+| 供应商与路由 | `admin/llm_providers.py`: 模型管理目录（端点级主/备；`media` 的 `capabilities` 仅 model+enabled，可编辑）；`observability.py`: 生成供应商 `/providers/stats`、`/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（扁平主备列表）、`routing-replay-table.tsx`、`routing-weights-panel.tsx`（生成统计 + 路由权重） |
 | 智能体运维 | `admin/agent_skills.py`: 节点与 Prompt 版本；`observability.py`: `/agent-runs`、`/agent-runs/usage`、`/workflow` | `admin/agents/agent-node-graph.tsx`、`agent-skill-editor.tsx`、`agent-runs-table.tsx` |
 | 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`/`detail`/`history`)、`/reports`、`/works/{id}/tombstone|hide|restore` | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
 | 技能库运维 | `admin/skill_library.py`: 全局技能列表/下架/精选 | `admin/skill-library/skill-library-console.tsx` |

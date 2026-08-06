@@ -19,8 +19,8 @@ disable-model-invocation: true
 | `back/app/api/v1/admin/config.py` | 读接口 viewer 级、写接口与 rollback **admin 级** |
 | `front/src/components/admin/config/config-console.tsx` | 编辑器 + 版本历史 + JSON diff |
 | `front/src/components/admin/config/feature-flags-panel.tsx` | Flag 灰度开关 |
-| `front/src/components/admin/providers/routing-weights-panel.tsx` | 路由权重面板 |
-| `front/src/components/admin/providers/llm-providers-panel.tsx` | 模型提供方目录：扁平主备列表 + 端点级主/备，支持增删改 |
+| `front/src/components/admin/models/routing-weights-panel.tsx` | 路由权重面板 |
+| `front/src/components/admin/models/llm-providers-panel.tsx` | 模型管理：扁平主备列表 + 端点级主/备，支持增删改 |
 
 十个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`shortform`、`llm_providers`、`llm_reliability`。
 

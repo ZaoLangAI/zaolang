@@ -289,7 +289,7 @@ class LlmReliabilityConfig(ConfigSection):
 
     Split out of `LlmProviderConfig` because these are generic ops parameters
     (not part of the "which endpoints exist" directory), so they belong in
-    the generic config centre instead of a bespoke form on `/admin/providers`.
+    the generic config centre instead of a bespoke form on `/admin/models`.
     """
 
     circuit_breaker_failure_threshold: int = Field(default=5, ge=1, le=100)
@@ -442,7 +442,7 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
     # Empty by default: with no endpoints configured, `app/llm/client.py` has
     # nothing to call and degrades every request straight to the stub (or
     # errors in `openai_compatible` mode) until an operator adds an endpoint
-    # at `/admin/providers`. `make seed` bootstraps one from `.env` for local
+    # at `/admin/models`. `make seed` bootstraps one from `.env` for local
     # development; see `app/scripts/seed.py`.
     "llm_providers": {
         "endpoints": {},

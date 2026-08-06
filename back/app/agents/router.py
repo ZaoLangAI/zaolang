@@ -70,7 +70,7 @@ def build_catalog(session: Session) -> dict[str, ProviderCapability]:
     """The static fakes plus every enabled database-configured media route.
 
     Built fresh per call — like every other config-driven lookup in this
-    codebase — so an operator adding an endpoint at `/admin/providers` takes
+    codebase — so an operator adding an endpoint at `/admin/models` takes
     effect on the very next job, not after a restart.
     """
     return {**PROVIDER_CATALOG, **dynamic_capabilities(session)}

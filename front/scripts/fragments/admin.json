@@ -19,7 +19,7 @@
       "groupPlatform": "平台与合规",
       "navHealth": "系统健康",
       "navJobs": "任务运维",
-      "navProviders": "供应商与路由",
+      "navProviders": "模型管理",
       "navAgents": "智能体运维",
       "navModeration": "内容审核",
       "navReports": "举报与申诉",
@@ -108,8 +108,8 @@
       "attempts": "供应商尝试"
     },
     "adminProviders": {
-      "title": "供应商与路由",
-      "subtitle": "成功率、延迟与有效成本统计，以及开关与权重。",
+      "title": "模型管理",
+      "subtitle": "管理通用模型与媒体模型的主用/备用端点；媒体端点可勾选多项生成能力并填写对应模型名。",
       "colProvider": "供应商",
       "colAttempts": "尝试数",
       "colSuccess": "成功率",
@@ -300,7 +300,7 @@
       "groupPlatform": "Platform and compliance",
       "navHealth": "System health",
       "navJobs": "Jobs",
-      "navProviders": "Providers and routing",
+      "navProviders": "Models",
       "navAgents": "Agents",
       "navModeration": "Moderation",
       "navReports": "Reports and appeals",
@@ -389,8 +389,8 @@
       "attempts": "Provider attempts"
     },
     "adminProviders": {
-      "title": "Providers and routing",
-      "subtitle": "Success rate, latency and effective cost, plus switches and weights.",
+      "title": "Model management",
+      "subtitle": "Manage primary and backup endpoints for general and media models; media endpoints can enable multiple generation capabilities with their model names.",
       "colProvider": "Provider",
       "colAttempts": "Attempts",
       "colSuccess": "Success rate",

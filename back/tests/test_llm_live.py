@@ -28,7 +28,7 @@ def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
 
     Endpoints only ever come from the database now; `LLM_BASE_URL`/
     `LLM_API_KEY` are read here purely so this manual suite can still be
-    pointed at a real gateway without an `/admin/providers` round trip.
+    pointed at a real gateway without an `/admin/models` round trip.
     """
     key = os.getenv("LLM_API_KEY", "")
     if not key:

@@ -114,15 +114,15 @@ function splitList(value: string): string[] {
 }
 
 /**
- * The model-provider directory's console: a flat primary/backup list of
- * endpoints (general and media), plus one shared editor dialog.
+ * Model management console: a flat primary/backup list of endpoints
+ * (general and media), plus one shared editor dialog.
  *
  * Writes go through `PUT /admin/llm-providers/{id}`, which itself writes
  * through the versioned config centre — so every save here is still
  * audited and rollback-able like any other platform config change.
  * Circuit-breaker/retry knobs live in the config centre's `llm_reliability`
  * entry instead of this panel — they are ops parameters, not part of the
- * provider directory.
+ * model directory.
  */
 export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   const t = useTranslations('adminProviders');
@@ -306,8 +306,9 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
         }
       >
         {editing ? (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <TextInput
+              layout="inline"
               label={t('endpointId')}
               hint={t('endpointIdHint')}
               value={editing.id}
@@ -318,6 +319,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               }
             />
             <TextInput
+              layout="inline"
               label={t('endpointName')}
               value={editing.name}
               onChange={(event) =>
@@ -325,6 +327,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               }
             />
             <TextInput
+              layout="inline"
               label={t('baseUrl')}
               hint={editing.kind === 'media' ? t('baseUrlMediaHint') : undefined}
               value={editing.base_url}
@@ -333,6 +336,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               }
             />
             <TextInput
+              layout="inline"
               label={t('apiKey')}
               type="password"
               placeholder={t('apiKeyPlaceholder')}
@@ -343,6 +347,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               }
             />
             <Select
+              layout="inline"
               label={t('modelType')}
               value={editing.kind}
               options={[
@@ -364,6 +369,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
 
             {editing.kind === 'general' ? (
               <TextInput
+                layout="inline"
                 label={t('endpointModels')}
                 hint={t('endpointModelsHint')}
                 value={editing.models}
@@ -386,38 +392,39 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               />
             )}
 
+            <Select
+              layout="inline"
+              label={t('nodeRole')}
+              value={editing.role}
+              hint={editing.role === 'primary' ? t('setPrimaryHint') : undefined}
+              options={[
+                { value: 'primary', label: t('rolePrimary') },
+                { value: 'backup', label: t('roleBackup') },
+              ]}
+              onChange={(event) =>
+                setEditing(
+                  (current) =>
+                    current && { ...current, role: event.target.value as 'primary' | 'backup' },
+                )
+              }
+            />
+            <TextInput
+              layout="inline"
+              label={t('backupOrder')}
+              hint={t('backupOrderHint')}
+              type="number"
+              min="1"
+              disabled={editing.role === 'primary'}
+              value={editing.backup_order}
+              onChange={(event) =>
+                setEditing(
+                  (current) => current && { ...current, backup_order: event.target.value },
+                )
+              }
+            />
             <div className="grid gap-3 sm:grid-cols-2">
-              <Select
-                label={t('nodeRole')}
-                value={editing.role}
-                hint={editing.role === 'primary' ? t('setPrimaryHint') : undefined}
-                options={[
-                  { value: 'primary', label: t('rolePrimary') },
-                  { value: 'backup', label: t('roleBackup') },
-                ]}
-                onChange={(event) =>
-                  setEditing(
-                    (current) =>
-                      current && { ...current, role: event.target.value as 'primary' | 'backup' },
-                  )
-                }
-              />
               <TextInput
-                label={t('backupOrder')}
-                type="number"
-                min="1"
-                disabled={editing.role === 'primary'}
-                value={editing.backup_order}
-                onChange={(event) =>
-                  setEditing(
-                    (current) => current && { ...current, backup_order: event.target.value },
-                  )
-                }
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextInput
+                layout="inline"
                 label={t('maxConcurrency')}
                 type="number"
                 min="1"
@@ -429,6 +436,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                 }
               />
               <TextInput
+                layout="inline"
                 label={t('timeoutMs')}
                 type="number"
                 min="1000"
@@ -472,27 +480,46 @@ function CapabilitiesTable({
   const t = useTranslations('adminProviders');
 
   return (
-    <div className="flex flex-col gap-1">
-      <p className="text-sm font-medium text-text">{t('capabilitiesTableTitle')}</p>
-      <p className="text-xs text-muted">{t('capabilitiesTableHint')}</p>
-      <div className="mt-2 flex flex-col divide-y divide-border rounded-[var(--radius-sm)] border border-border">
+    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+      <p className="col-start-2 row-start-1 text-xs leading-relaxed text-muted">
+        {t('capabilitiesTableHint')}
+      </p>
+      <div className="col-start-1 row-start-2 flex min-h-11 items-center">
+        <p className="text-sm font-medium text-text">{t('capabilitiesTableTitle')}</p>
+      </div>
+      {/* Single grid so col1 is max-content across rows; gap between capability
+          and enable is half of the gap before the model input (1.5 vs 3). */}
+      <div className="col-start-2 row-start-2 grid grid-cols-[max-content_auto_minmax(0,1fr)] items-center rounded-[var(--radius-sm)] border border-border [column-gap:0.375rem]">
+        <div className="col-span-3 grid grid-cols-subgrid items-center border-b border-border px-3 py-2 text-xs font-medium text-muted">
+          <span>{t('capabilityCol')}</span>
+          <span>{t('capabilityEnable')}</span>
+          <span className="pl-1.5">{t('capabilityModel')}</span>
+        </div>
         {MEDIA_CAPABILITY_TAGS.map((tag) => {
           const capability = capabilities[tag];
+          const capabilityLabel = t(CAPABILITY_LABEL_KEYS[tag]);
           return (
             <div
               key={tag}
-              className="grid grid-cols-1 items-end gap-3 p-3 sm:grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)]"
+              className="col-span-3 grid grid-cols-subgrid items-center border-b border-border px-3 py-3 last:border-b-0"
             >
+              <span className="text-sm font-medium text-text">{capabilityLabel}</span>
               <CapabilityToggle
-                label={t(CAPABILITY_LABEL_KEYS[tag])}
+                label={`${capabilityLabel} · ${t('capabilityEnable')}`}
                 checked={capability.enabled}
                 onChange={(checked) => onChange(tag, { ...capability, enabled: checked })}
               />
-              <TextInput
-                label={t('capabilityModel')}
+              <input
+                type="text"
+                aria-label={`${capabilityLabel} · ${t('capabilityModel')}`}
                 disabled={!capability.enabled}
                 value={capability.model}
                 onChange={(event) => onChange(tag, { ...capability, model: event.target.value })}
+                className={cn(
+                  'ml-1.5 h-11 w-full rounded-[var(--radius-sm)] border bg-surface-soft px-3 text-text',
+                  'placeholder:text-muted/70 transition-colors',
+                  'disabled:cursor-not-allowed disabled:opacity-60',
+                )}
               />
             </div>
           );
@@ -516,30 +543,26 @@ function CapabilityToggle({
   const id = useId();
 
   return (
-    <div className="flex h-11 items-center gap-3">
-      <button
-        id={id}
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
+    <button
+      id={id}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'relative h-6 w-11 shrink-0 rounded-full transition-colors',
+        checked ? 'bg-primary' : 'bg-track',
+      )}
+    >
+      <span
+        aria-hidden="true"
         className={cn(
-          'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-          checked ? 'bg-primary' : 'bg-track',
+          'absolute top-0.5 size-5 rounded-full bg-white shadow transition-[left]',
+          checked ? 'left-[22px]' : 'left-0.5',
         )}
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            'absolute top-0.5 size-5 rounded-full bg-white shadow transition-[left]',
-            checked ? 'left-[22px]' : 'left-0.5',
-          )}
-        />
-      </button>
-      <label htmlFor={id} className="text-sm font-medium text-text">
-        {label}
-      </label>
-    </div>
+      />
+    </button>
   );
 }
 

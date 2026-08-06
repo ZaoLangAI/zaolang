@@ -424,7 +424,7 @@ def _seed_llm_providers(session: Session) -> None:
     The gateway reads endpoints from the database only now (see
     `zaolang-agent-gateway`); `.env`'s `LLM_BASE_URL`/`LLM_API_KEY` are read
     here, once, purely to save a local developer from having to open
-    `/admin/providers` before anything can call out to a real model. Without
+    `/admin/models` before anything can call out to a real model. Without
     them the pool stays empty and every call degrades to the stub until an
     operator configures an endpoint by hand.
     """
@@ -437,7 +437,7 @@ def _seed_llm_providers(session: Session) -> None:
     if not base_url or not api_key:
         logger.info(
             "未在环境变量中找到 LLM_BASE_URL/LLM_API_KEY，跳过网关端点引导；"
-            "请到后台「/admin/providers」手动配置。"
+            "请到后台「/admin/models」手动配置。"
         )
         return
 

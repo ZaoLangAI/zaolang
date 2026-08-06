@@ -30,7 +30,7 @@ disable-model-invocation: true
 | `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | 控制台外壳 |
 | `front/src/components/admin/admin-session-provider.tsx` | 后台会话上下文 |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
-| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agent-node-graph` / `agent-skill-editor` / `providers/llm-providers-panel`（扁平主备列表 + 端点级主备）/ `log-center-console` |
+| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agent-node-graph` / `agent-skill-editor` / `models/llm-providers-panel`（模型管理：扁平主备列表 + 端点级主备）/ `log-center-console` |
 | `front/src/lib/api/admin-client.ts`、`admin-server.ts`、`use-admin-list.ts` | 后台专用客户端与列表 hook |
 
 ## 不可破坏的不变量

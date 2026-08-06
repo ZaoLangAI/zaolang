@@ -143,7 +143,7 @@ def complete(
         # Nothing in `llm_providers` is available (empty pool, or every
         # candidate is breaker-open/at capacity). There is no env-level
         # endpoint to fall back to any more — an operator has to configure one
-        # at `/admin/providers`.
+        # at `/admin/models`.
         reason = "no_endpoint_configured"
         if mode == "openai_compatible":
             from app.domain.errors import ProviderTemporaryFailure

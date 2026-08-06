@@ -9,11 +9,15 @@ const controlBase =
   'transition-colors disabled:cursor-not-allowed disabled:opacity-60 ' +
   'aria-[invalid=true]:border-danger';
 
+type FieldLayout = 'stacked' | 'inline';
+
 interface FieldShellProps {
   label: string;
   hint?: string;
   error?: string;
   required?: boolean;
+  /** `inline`: label beside control; hint sits above the control in the value column. */
+  layout?: FieldLayout;
   children: (ids: { controlId: string; describedBy: string | undefined }) => React.ReactNode;
 }
 
@@ -23,33 +27,70 @@ interface FieldShellProps {
  * The error is announced rather than only coloured, which is what makes the
  * form usable without sight and with a red-green colour deficiency.
  */
-export function Field({ label, hint, error, required, children }: FieldShellProps) {
+export function Field({
+  label,
+  hint,
+  error,
+  required,
+  layout = 'stacked',
+  children,
+}: FieldShellProps) {
   const controlId = useId();
   const hintId = `${controlId}-hint`;
   const errorId = `${controlId}-error`;
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(' ');
+  const labelNode = (
+    <label htmlFor={controlId} className="text-sm font-medium text-text">
+      {label}
+      {required ? (
+        <span className="ml-1 text-danger" aria-hidden="true">
+          *
+        </span>
+      ) : null}
+    </label>
+  );
+  const hintNode = hint ? (
+    <p id={hintId} className="text-xs leading-relaxed text-muted">
+      {hint}
+    </p>
+  ) : null;
+  const errorNode = error ? (
+    <p id={errorId} role="alert" className="text-xs text-danger">
+      {error}
+    </p>
+  ) : null;
+  const control = children({ controlId, describedBy: describedBy || undefined });
+
+  if (layout === 'inline') {
+    return (
+      <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+        {hintNode ? <div className="col-start-2 row-start-1">{hintNode}</div> : null}
+        <div
+          className={cn(
+            'col-start-1 flex min-h-11 items-center',
+            hintNode ? 'row-start-2' : 'row-start-1',
+          )}
+        >
+          {labelNode}
+        </div>
+        <div className={cn('col-start-2 min-w-0', hintNode ? 'row-start-2' : 'row-start-1')}>
+          {control}
+        </div>
+        {errorNode ? (
+          <div className={cn('col-start-2', hintNode ? 'row-start-3' : 'row-start-2')}>
+            {errorNode}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={controlId} className="text-sm font-medium text-text">
-        {label}
-        {required ? (
-          <span className="ml-1 text-danger" aria-hidden="true">
-            *
-          </span>
-        ) : null}
-      </label>
-      {hint ? (
-        <p id={hintId} className="text-xs text-muted">
-          {hint}
-        </p>
-      ) : null}
-      {children({ controlId, describedBy: describedBy || undefined })}
-      {error ? (
-        <p id={errorId} role="alert" className="text-xs text-danger">
-          {error}
-        </p>
-      ) : null}
+      {labelNode}
+      {hintNode}
+      {control}
+      {errorNode}
     </div>
   );
 }
@@ -58,14 +99,15 @@ export interface TextInputProps extends React.InputHTMLAttributes<HTMLInputEleme
   label: string;
   hint?: string;
   error?: string;
+  layout?: FieldLayout;
 }
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInput(
-  { label, hint, error, className, required, ...rest },
+  { label, hint, error, layout, className, required, ...rest },
   ref,
 ) {
   return (
-    <Field label={label} hint={hint} error={error} required={required}>
+    <Field label={label} hint={hint} error={error} required={required} layout={layout}>
       {({ controlId, describedBy }) => (
         <input
           ref={ref}
@@ -85,14 +127,15 @@ export interface TextAreaProps extends React.TextareaHTMLAttributes<HTMLTextArea
   label: string;
   hint?: string;
   error?: string;
+  layout?: FieldLayout;
 }
 
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(function TextArea(
-  { label, hint, error, className, required, ...rest },
+  { label, hint, error, layout, className, required, ...rest },
   ref,
 ) {
   return (
-    <Field label={label} hint={hint} error={error} required={required}>
+    <Field label={label} hint={hint} error={error} required={required} layout={layout}>
       {({ controlId, describedBy }) => (
         <textarea
           ref={ref}
@@ -112,15 +155,16 @@ export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElemen
   label: string;
   hint?: string;
   error?: string;
+  layout?: FieldLayout;
   options: Array<{ value: string; label: string; disabled?: boolean }>;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
-  { label, hint, error, options, className, required, ...rest },
+  { label, hint, error, layout, options, className, required, ...rest },
   ref,
 ) {
   return (
-    <Field label={label} hint={hint} error={error} required={required}>
+    <Field label={label} hint={hint} error={error} required={required} layout={layout}>
       {({ controlId, describedBy }) => (
         <select
           ref={ref}

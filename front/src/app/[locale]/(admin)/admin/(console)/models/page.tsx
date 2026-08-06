@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 
-import { LlmProvidersPanel } from '@/components/admin/providers/llm-providers-panel';
+import { LlmProvidersPanel } from '@/components/admin/models/llm-providers-panel';
 import { PageHeading } from '@/components/ui/primitives';
 import { adminFetchOrNull } from '@/lib/api/admin-server';
 import type { LlmProviderPool } from '@/lib/api/admin-types';

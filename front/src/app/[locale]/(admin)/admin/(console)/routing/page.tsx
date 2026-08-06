@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 
-import { RoutingWeightsPanel } from '@/components/admin/providers/routing-weights-panel';
+import { RoutingWeightsPanel } from '@/components/admin/models/routing-weights-panel';
 import { RoutingConsoleTabs } from '@/components/admin/workflows/routing-console-tabs';
 import { Badge, PageHeading } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';

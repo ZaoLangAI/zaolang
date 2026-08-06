@@ -119,23 +119,18 @@ test.describe('operations screens', () => {
     await expect(page.getByText('copy').first()).toBeVisible();
   });
 
-  test('the providers console renders the general/media tree', async ({ page }) => {
-    await page.goto('/zh-CN/admin/providers', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: '模型提供方配置', level: 1 })).toBeVisible();
+  test('the models console renders primary/backup lists', async ({ page }) => {
+    await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '模型管理', level: 1 })).toBeVisible();
 
-    // One flat "general models" section plus one "media models" branch with
-    // all six capability tags — present even before any media endpoint has
-    // been configured, since the tree itself is a fixed taxonomy.
-    await expect(page.getByRole('heading', { name: '通用模型' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '媒体模型' })).toBeVisible();
-    for (const capability of ['文生图', '图生图', '文生视频', '图生视频', '视频生视频', '音频生成']) {
-      await expect(page.getByRole('heading', { name: capability })).toBeVisible();
-    }
+    // Flat primary/backup list — taxonomy lives in the create/edit dialog.
+    await expect(page.getByText('主用节点')).toBeVisible();
+    await expect(page.getByText('备用节点')).toBeVisible();
 
-    await page.getByRole('button', { name: '新增模型提供方' }).click();
+    await page.getByRole('button', { name: '新增模型' }).click();
     await expect(page.getByRole('heading', { name: '新增端点' })).toBeVisible();
-    // Switching to a media provider swaps the single models field for the
-    // per-capability checklist, which is the whole point of this rewrite.
+    // Switching to a media model swaps the single models field for the
+    // per-capability checklist.
     await page.getByLabel('模型类型').selectOption('media');
     await expect(page.getByText('媒体能力')).toBeVisible();
   });

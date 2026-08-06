@@ -62,7 +62,7 @@ disable-model-invocation: true
 - **加一个 Agent**：继承 `base.py` 的基类 → 在配置中心 `agents` 段加模型绑定字段 → 只经 `tools.py` 调领域服务 → 补 stub 分支，否则测试无法确定性运行。
 - **给 Agent 加工具**：只加进 `tools.py`，函数签名保持窄（明确的参数、明确的返回），不要暴露 session。
 - **加一个内置（假）供应商**：实现 `providers/base.py` 的协议 → 在 `router.py` 的 `PROVIDER_CATALOG` 登记能力、先验与 `provider_factory` → 在配置中心 `providers` 段加开关与限额 → 补 `ProviderStat` 统计。
-- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/providers` 新增一个 `kind="media"` 端点，勾选它支持的能力（文生图/图生图/文/图/视频生视频/音频生成）；`router.build_catalog(session)` 会在下一次路由时自动把它按能力展开进目录参与打分。只有当目标供应商的 HTTP 契约与 `aihubmix_media.py` 不同时才需要新写一个 `GenerationProvider` 实现。
+- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/models` 新增一个 `kind="media"` 端点，勾选它支持的能力（文生图/图生图/文/图/视频生视频/音频生成）；`router.build_catalog(session)` 会在下一次路由时自动把它按能力展开进目录参与打分。只有当目标供应商的 HTTP 契约与 `aihubmix_media.py` 不同时才需要新写一个 `GenerationProvider` 实现。
 - **改评分公式**：先对照现有 `router` 实现与单测；改了必须同步后台回放页的解释文案与单元测试。
 
 ## 验证
