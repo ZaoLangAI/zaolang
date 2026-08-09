@@ -12,18 +12,20 @@ layer instead.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import GenerationWorkflowTemplate
 from app.models.base import utcnow
 from app.models.enums import Operation
 from app.workflows import registry
 from app.workflows.defaults import default_graph
-from app.workflows.graph import WorkflowGraph
+from app.workflows.graph import WorkflowGraph, WorkflowNode
 from app.workflows.graph import validate as validate_graph
 
 _REGISTRY_TYPES = set(registry.NODE_TYPES.keys())
@@ -60,13 +62,102 @@ def list_versions(
     )
 
 
-def validate_graph_json(graph_json: dict[str, Any]) -> list[str]:
-    """Never raises: returns human-readable problems, empty when safe."""
+def validate_graph_json(graph_json: dict[str, Any], *, session: Session | None = None) -> list[str]:
+    """Never raises: returns human-readable problems, empty when safe.
+
+    With a `session`, also checks that every agent variant a node binds
+    actually exists and is enabled. That is an error rather than a warning:
+    an unresolvable binding silently falls back to the role's default at
+    runtime, so an operator would see their edit "succeed" and the prompt
+    never change.
+    """
     try:
         graph = WorkflowGraph.from_dict(graph_json)
     except (KeyError, TypeError, ValueError) as exc:
         return [f"图结构格式不合法: {exc}"]
-    return validate_graph(graph, registry_types=_REGISTRY_TYPES)
+    errors = validate_graph(graph, registry_types=_REGISTRY_TYPES)
+    if session is not None:
+        errors.extend(_binding_errors(session, graph))
+    return errors
+
+
+def collect_warnings(session: Session, *, operation: str, graph_json: dict[str, Any]) -> list[str]:
+    """Advisory problems that do not block publishing.
+
+    Today that is capability mismatch: a variant declaring which operations
+    it was written for, bound into a workflow for a different one. Running it
+    is legitimate (an operator may be deliberately reusing a prompt), so this
+    only asks them to look twice.
+    """
+    try:
+        graph = WorkflowGraph.from_dict(graph_json)
+    except (KeyError, TypeError, ValueError):
+        return []
+
+    warnings: list[str] = []
+    for node, binding, key in _iter_profile_bindings(graph):
+        profile = agent_skills_service.find_profile(session, binding.role, key)
+        if profile is None or not profile.enabled:
+            continue  # already reported as an error
+        declared = list(profile.operations_json or [])
+        if declared and operation not in declared:
+            warnings.append(
+                f"节点 {node.id} 绑定的变体「{profile.display_name}」"
+                f"（{binding.role}/{key}）声明的适用操作为 {declared}，不包含 {operation}。"
+            )
+    return warnings
+
+
+def profile_usage(session: Session) -> dict[tuple[str, str], list[str]]:
+    """Which operations' live graphs reference each `(role, profile key)`.
+
+    Powers the agents console's "used by" badges. Only ever six active
+    templates, so a straight scan beats denormalising the reference into a
+    column that could drift from the graph it describes.
+    """
+    usage: dict[tuple[str, str], list[str]] = {}
+    templates = session.scalars(
+        select(GenerationWorkflowTemplate).where(GenerationWorkflowTemplate.is_active.is_(True))
+    )
+    for template in templates:
+        try:
+            graph = WorkflowGraph.from_dict(template.graph_json)
+        except (KeyError, TypeError, ValueError):
+            continue
+        for _node, binding, key in _iter_profile_bindings(graph):
+            operations = usage.setdefault((binding.role, key), [])
+            if template.operation not in operations:
+                operations.append(template.operation)
+    return usage
+
+
+def _iter_profile_bindings(
+    graph: WorkflowGraph,
+) -> Iterator[tuple[WorkflowNode, registry.ProfileBinding, str]]:
+    """Yields every explicit variant binding in a graph.
+
+    A node that leaves the field empty is not yielded: it resolves to the
+    role's default variant, which is always valid.
+    """
+    for node in graph.nodes:
+        spec = registry.NODE_TYPES.get(node.type)
+        if spec is None:
+            continue
+        for binding in spec.profile_bindings:
+            raw = node.config.get(binding.config_field)
+            if isinstance(raw, str) and raw.strip():
+                yield node, binding, raw.strip()
+
+
+def _binding_errors(session: Session, graph: WorkflowGraph) -> list[str]:
+    errors: list[str] = []
+    for node, binding, key in _iter_profile_bindings(graph):
+        profile = agent_skills_service.find_profile(session, binding.role, key)
+        if profile is None:
+            errors.append(f"节点 {node.id} 绑定了不存在的智能体变体: {binding.role}/{key}")
+        elif not profile.enabled:
+            errors.append(f"节点 {node.id} 绑定的智能体变体已停用: {binding.role}/{key}")
+    return errors
 
 
 def publish(
@@ -81,7 +172,7 @@ def publish(
     if operation not in {op.value for op in Operation}:
         raise ValidationFailed(f"未知的 operation: {operation}")
 
-    errors = validate_graph_json(graph_json)
+    errors = validate_graph_json(graph_json, session=session)
     if errors:
         raise ValidationFailed("工作流图校验未通过，无法发布。", errors=errors)
 

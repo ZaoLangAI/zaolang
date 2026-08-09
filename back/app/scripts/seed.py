@@ -24,6 +24,7 @@ from PIL import Image, ImageDraw
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.agents import safety as safety_agent
 from app.config import get_settings
 from app.db import session_scope
 from app.domain.agent_skills import service as agent_skills_service
@@ -345,6 +346,8 @@ def run(*, reset: bool = False) -> dict[str, int]:
 
         users = _seed_users(session)
         agent_skills_service.ensure_default_nodes(session)
+        agent_skills_service.ensure_default_profiles(session)
+        _seed_agent_profiles(session)
         workflow_templates_service.ensure_default_templates(session)
         _seed_llm_providers(session)
         _seed_tags(session)
@@ -416,6 +419,43 @@ def _seed_users(session: Session) -> dict[str, User]:
 
     session.flush()
     return users
+
+
+def _seed_agent_profiles(session: Session) -> None:
+    """Adds one non-default variant so the agents console has something to show.
+
+    Video generation is the case that actually motivates variants: the same
+    safety wording that suits a still image is too permissive once a subject
+    starts moving. Declaring the three video operations is what makes the
+    console warn if this ever gets bound to an image workflow.
+    """
+    if agent_skills_service.find_profile(session, "safety", "video-strict") is not None:
+        return
+    profile = agent_skills_service.create_profile(
+        session,
+        role="safety",
+        key="video-strict",
+        display_name="安全审核 · 视频严格版",
+        description="视频生成的安全阈值更严：连续动作会放大静态画面里看不出的风险。",
+        operations=[
+            Operation.TEXT_TO_VIDEO.value,
+            Operation.IMAGE_TO_VIDEO.value,
+            Operation.VIDEO_TO_VIDEO.value,
+        ],
+    )
+    agent_skills_service.publish(
+        session,
+        profile_id=profile.id,
+        slot="default",
+        prompt_template=(
+            f"{safety_agent.SYSTEM_PROMPT}\n\n"
+            "补充规则（视频）：连续动作会放大单帧看不出的风险，"
+            "涉及真实人物、未成年人特征或暴力动作时一律返回 needs_review，不要放行。"
+        ),
+        tool_grants=[],
+        actor_user_id=None,
+        reason="seed: 视频工作流的严格安全变体",
+    )
 
 
 def _seed_llm_providers(session: Session) -> None:

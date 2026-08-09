@@ -119,7 +119,11 @@ def job_stats(
     for status, operation, created_at, finished_at in rows:
         by_status[status] = by_status.get(status, 0) + 1
         by_operation[operation] = by_operation.get(operation, 0) + 1
-        if status == JobStatus.SUCCEEDED.value and finished_at is not None and created_at is not None:
+        if (
+            status == JobStatus.SUCCEEDED.value
+            and finished_at is not None
+            and created_at is not None
+        ):
             completion_ms.append((as_utc(finished_at) - as_utc(created_at)).total_seconds() * 1000)
 
     return JobStatsView(
@@ -183,6 +187,8 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
             AgentRunView(
                 id=r.id,
                 agent_name=r.agent_name,
+                agent_profile_id=r.agent_profile_id,
+                prompt_slot=r.prompt_slot,
                 model=r.model or "",
                 mode=r.mode,
                 degraded=r.degraded,

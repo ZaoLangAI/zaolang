@@ -282,34 +282,6 @@ def test_provider_stats_are_reported(
         assert 0.0 <= item["success_rate"] <= 1.0
 
 
-def test_agent_runs_are_listed(
-    client: TestClient, admin: User, finished_job: GenerationJob
-) -> None:
-    body = client.get("/v1/admin/agent-runs", headers=admin_header(admin)).json()
-    assert body["items"]
-
-
-def test_agent_runs_can_be_filtered_to_one_job(
-    client: TestClient, admin: User, finished_job: GenerationJob
-) -> None:
-    body = client.get(
-        "/v1/admin/agent-runs", params={"job_id": finished_job.id}, headers=admin_header(admin)
-    ).json()
-    assert body["items"]
-    assert all(run["job_id"] == finished_job.id for run in body["items"])
-
-
-def test_degraded_runs_can_be_isolated(
-    client: TestClient, admin: User, finished_job: GenerationJob
-) -> None:
-    """Finding out how often the gateway fell back to the stub is the point of
-    recording it."""
-    body = client.get(
-        "/v1/admin/agent-runs", params={"degraded_only": True}, headers=admin_header(admin)
-    ).json()
-    assert all(run["degraded"] for run in body["items"])
-
-
 def test_agent_usage_is_summarised_per_agent(
     client: TestClient, admin: User, finished_job: GenerationJob
 ) -> None:

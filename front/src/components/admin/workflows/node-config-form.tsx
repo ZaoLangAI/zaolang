@@ -1,6 +1,11 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
+import { useEffect, useState } from 'react';
+
 import { Select, Switch, TextInput } from '@/components/ui/field';
+import { adminApi } from '@/lib/api/admin-client';
+import type { AgentProfile, ProfileBinding } from '@/lib/api/admin-types';
 
 /**
  * Renders one node type's Pydantic config schema (fetched as JSON Schema from
@@ -10,6 +15,11 @@ import { Select, Switch, TextInput } from '@/components/ui/field';
  * every `NodeConfig` in `app/workflows/configs.py` is a handful of scalar
  * fields (`extra="forbid"`, no nesting), so a generic renderer covers all of
  * them today and automatically covers the next one a backend PR adds.
+ *
+ * The exception is `profile_bindings`: those fields are strings in the schema
+ * but only a handful of values are valid, and typing one wrong is exactly the
+ * mistake that would silently fall back to the default prompt. They get a
+ * picker fed by the live variant list instead.
  */
 
 export interface JsonSchemaProperty {
@@ -54,17 +64,20 @@ function resolveType(prop: JsonSchemaProperty): {
 
 export function NodeConfigForm({
   schema,
+  profileBindings = [],
   value,
   disabled,
   onChange,
 }: {
   schema: NodeConfigSchema;
+  profileBindings?: ProfileBinding[];
   value: Record<string, unknown>;
   disabled?: boolean;
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const properties = schema.properties ?? {};
   const entries = Object.entries(properties);
+  const bindingByField = new Map(profileBindings.map((binding) => [binding.config_field, binding]));
 
   if (entries.length === 0) {
     return null;
@@ -78,6 +91,20 @@ export function NodeConfigForm({
         const resolved = resolveType(prop);
         const label = prop.title ?? key;
         const current = value[key];
+
+        const binding = bindingByField.get(key);
+        if (binding) {
+          return (
+            <AgentProfileSelect
+              key={key}
+              binding={binding}
+              label={label}
+              value={typeof current === 'string' ? current : ''}
+              disabled={disabled}
+              onChange={(next) => set(key, next || null)}
+            />
+          );
+        }
 
         if (resolved.type === 'boolean') {
           return (
@@ -161,5 +188,84 @@ export function NodeConfigForm({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Picks one of a role's agent variants for this node.
+ *
+ * An empty selection is not "no prompt" — it means the role's default
+ * variant, which is what every node did before variants existed. Disabled
+ * variants are listed but not selectable, so an operator can see why a
+ * previously working binding is now flagged.
+ */
+function AgentProfileSelect({
+  binding,
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  binding: ProfileBinding;
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const t = useTranslations('adminWorkflows');
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    adminApi
+      .get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles', {
+        query: { role: binding.role },
+      })
+      .then((page) => {
+        if (!cancelled) setProfiles(page.items);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [binding.role]);
+
+  const defaultProfile = profiles.find((profile) => profile.is_default);
+  const options = [
+    {
+      value: '',
+      label: defaultProfile
+        ? t('profileDefaultOption', { name: defaultProfile.display_name })
+        : t('profileDefaultOptionPlain'),
+    },
+    ...profiles
+      .filter((profile) => !profile.is_default)
+      .map((profile) => ({
+        value: profile.key,
+        label: profile.enabled
+          ? `${profile.display_name} (${profile.key})`
+          : `${profile.display_name} (${profile.key}) · ${t('profileDisabledOption')}`,
+        disabled: !profile.enabled && profile.key !== value,
+      })),
+    // A graph can reference a variant that has since been deleted. Keeping it
+    // in the list is what makes the mismatch visible instead of the picker
+    // quietly snapping back to "default".
+    ...(value && !profiles.some((profile) => profile.key === value)
+      ? [{ value, label: t('profileMissingOption', { key: value }) }]
+      : []),
+  ];
+
+  return (
+    <Select
+      label={label}
+      hint={failed ? t('profileLoadFailed') : t('profileSelectHint', { slot: binding.slot })}
+      disabled={disabled}
+      value={value}
+      options={options}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }

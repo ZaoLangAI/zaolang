@@ -126,6 +126,7 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
         subject_id=ctx.job.id,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
+        profile=config.agent_profile,
     )
     ctx.state["_last_agent_run_id"] = verdict.agent_run_id
     if verdict.status == ModerationStatus.REJECTED:
@@ -176,6 +177,7 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
         requested_operation=ctx.job.operation,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
+        profile=config.agent_profile,
     )
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
     return NodeResult(port="ok")
@@ -191,6 +193,7 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
         requested_tier=ctx.job.quality_tier,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
+        profile=config.agent_profile,
     )
     ctx.state["intent_hint"] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
@@ -243,6 +246,7 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         exclude_providers=tried_providers,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
+        selector_profile=config.selector_profile,
     )
     ctx.job.routing_trace_json = decision.trace()
     ctx.session.flush()
@@ -393,6 +397,7 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
         attempt_number=attempt_number,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
+        profile=config.agent_profile,
     )
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 

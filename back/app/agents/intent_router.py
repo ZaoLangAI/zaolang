@@ -22,6 +22,10 @@ equally advisory: `classify`'s output only ever narrows a tier, while
 `select_provider`'s output is the routing decision itself. If it is
 unavailable or returns a provider outside the eligible set, `router.route`
 reports no selection — there is no formula to fall back to.
+
+Because the two share an agent identity, each names its own prompt *slot*
+when resolving a published `AgentSkill`. Without that, publishing one of
+these prompts from the console would overwrite the other's instructions.
 """
 
 from __future__ import annotations
@@ -33,6 +37,9 @@ from sqlalchemy.orm import Session
 
 from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent
 from app.models.enums import AgentName, QualityTier
+
+CLASSIFY_SLOT = "classify"
+SELECT_PROVIDER_SLOT = "select_provider"
 
 SYSTEM_PROMPT = f"""你是造浪平台的意图理解路由器。你的唯一职责是判断这次生成请求有多复杂，
 从而建议一个够用就好、不浪费成本的生成档位。你的建议只能让档位降级，绝不能升级用户已付费选择的档位，
@@ -65,6 +72,7 @@ def classify(
     requested_tier: str | None = None,
     job_id: str | None = None,
     user_id: str | None = None,
+    profile: str | None = None,
 ) -> AgentOutcome:
     payload = {
         "intent": intent,
@@ -82,6 +90,8 @@ def classify(
         ),
         job_id=job_id,
         user_id=user_id,
+        profile_key=profile,
+        slot=CLASSIFY_SLOT,
     )
     if outcome.data.get("suggested_quality_tier") not in {t.value for t in QualityTier}:
         outcome.data["suggested_quality_tier"] = requested_tier or QualityTier.STANDARD.value
@@ -119,6 +129,7 @@ def select_provider(
     candidates: list[dict[str, Any]],
     job_id: str | None = None,
     user_id: str | None = None,
+    profile: str | None = None,
 ) -> AgentOutcome:
     """Picks one provider from an already hard-filtered eligible list.
 
@@ -139,4 +150,6 @@ def select_provider(
         fallback=SELECT_PROVIDER_FALLBACK,
         job_id=job_id,
         user_id=user_id,
+        profile_key=profile,
+        slot=SELECT_PROVIDER_SLOT,
     )

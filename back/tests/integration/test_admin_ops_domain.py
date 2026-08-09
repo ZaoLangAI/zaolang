@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.agent_skills import service as agent_skills_service
 from app.domain.credits import service as credits_service
 from app.models import (
     AuditLog,
@@ -31,6 +32,7 @@ from app.models.enums import (
     UserStatus,
     Visibility,
 )
+from app.workflows.defaults import default_graph
 from tests.conftest import admin_header
 
 
@@ -578,3 +580,290 @@ def test_a_negative_adjustment_cannot_push_the_balance_below_zero(
 def test_domain_operations_are_closed_to_anonymous_callers(client: TestClient) -> None:
     for path in ("/v1/admin/moderation/queue", "/v1/admin/users", "/v1/admin/credits/ledger"):
         assert client.get(path).status_code == 401, path
+
+
+# --------------------------------------------------------------------------
+# Agent variants and workflow bindings
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def agent_roles(db: Session) -> None:
+    agent_skills_service.ensure_default_nodes(db)
+    agent_skills_service.ensure_default_profiles(db)
+    db.commit()
+
+
+def _graph_binding(profile_key: str | None) -> dict:
+    """The seed graph with its `safety_check` node bound to one variant."""
+    graph = default_graph()
+    for node in graph["nodes"]:
+        if node["type"] == "safety_check":
+            node["config"] = {"agent_profile": profile_key}
+    return graph
+
+
+def test_a_variant_can_be_created_and_is_audited(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    response = client.post(
+        "/v1/admin/agent-profiles",
+        json={
+            "role": "safety",
+            "key": "video-strict",
+            "display_name": "视频严格版",
+            "operations": ["text_to_video"],
+        },
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["key"] == "video-strict"
+    assert body["is_default"] is False
+    assert body["operations"] == ["text_to_video"]
+
+    entry = db.scalar(select(AuditLog).where(AuditLog.action == "agent_profile.create"))
+    assert entry is not None and entry.target_id == body["id"]
+
+
+def test_two_variants_of_one_role_cannot_share_a_key(
+    client: TestClient, admin: User, agent_roles: None
+) -> None:
+    payload = {"role": "safety", "key": "strict", "display_name": "严格版"}
+    assert (
+        client.post(
+            "/v1/admin/agent-profiles", json=payload, headers=admin_header(admin)
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            "/v1/admin/agent-profiles", json=payload, headers=admin_header(admin)
+        ).status_code
+        == 422
+    )
+
+
+def test_a_variants_role_and_key_cannot_be_renamed(
+    client: TestClient, admin: User, agent_roles: None
+) -> None:
+    """Published graphs bind by `role/key`, so a rename would silently
+    re-point live workflows at a different prompt."""
+    created = client.post(
+        "/v1/admin/agent-profiles",
+        json={"role": "safety", "key": "strict", "display_name": "严格版"},
+        headers=admin_header(admin),
+    ).json()
+
+    response = client.patch(
+        f"/v1/admin/agent-profiles/{created['id']}",
+        json={"key": "renamed", "display_name": "改名了"},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 200
+    assert response.json()["key"] == "strict"
+    assert response.json()["display_name"] == "改名了"
+
+
+def test_the_default_variant_cannot_be_disabled(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    """Disabling it would leave every unbound node with nowhere to fall back
+    to but the hardcoded constant."""
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    response = client.post(
+        f"/v1/admin/agent-profiles/{default.id}/disable",
+        json={"reason": "测试停用默认变体", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_publishing_a_graph_bound_to_an_unknown_variant_is_blocked(
+    client: TestClient, admin: User, agent_roles: None
+) -> None:
+    """A silent fallback would let an operator believe their edit took
+    effect when the prompt never changed."""
+    response = client.put(
+        "/v1/admin/workflow-templates/text_to_video",
+        json={
+            "name": "绑定了不存在的变体",
+            "graph": _graph_binding("no-such-variant"),
+            "reason": "测试未知变体阻断发布",
+            "confirm": True,
+        },
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+    errors = response.json()["error"]["details"]["errors"]
+    assert any("no-such-variant" in message for message in errors)
+
+
+def test_publishing_a_graph_bound_to_a_disabled_variant_is_blocked(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    profile = agent_skills_service.create_profile(
+        db, role="safety", key="retired", display_name="停用版"
+    )
+    agent_skills_service.update_profile(db, profile.id, enabled=False)
+    db.commit()
+
+    response = client.put(
+        "/v1/admin/workflow-templates/text_to_video",
+        json={
+            "name": "绑定了停用变体",
+            "graph": _graph_binding("retired"),
+            "reason": "测试停用变体阻断发布",
+            "confirm": True,
+        },
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_a_capability_mismatch_warns_but_does_not_block_publishing(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    """A declared capability is advice, not a constraint: reusing a video
+    prompt for images may well be deliberate."""
+    agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="video-strict",
+        display_name="视频严格版",
+        operations=["text_to_video"],
+    )
+    db.commit()
+    graph = _graph_binding("video-strict")
+
+    validated = client.post(
+        "/v1/admin/workflow-templates/validate",
+        json={"graph": graph, "operation": "text_to_image"},
+        headers=admin_header(admin),
+    ).json()
+    assert validated["errors"] == []
+    assert any("video-strict" in message for message in validated["warnings"])
+
+    published = client.put(
+        "/v1/admin/workflow-templates/text_to_image",
+        json={
+            "name": "复用视频变体",
+            "graph": graph,
+            "reason": "测试能力不匹配只警示",
+            "confirm": True,
+        },
+        headers=admin_header(admin),
+    )
+    assert published.status_code == 201
+
+
+def test_a_matching_capability_produces_no_warning(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="video-strict",
+        display_name="视频严格版",
+        operations=["text_to_video"],
+    )
+    db.commit()
+
+    validated = client.post(
+        "/v1/admin/workflow-templates/validate",
+        json={"graph": _graph_binding("video-strict"), "operation": "text_to_video"},
+        headers=admin_header(admin),
+    ).json()
+    assert validated["errors"] == []
+    assert validated["warnings"] == []
+
+
+def test_a_bound_variant_is_reported_as_used_by_that_operation(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    """The console's "used by" badge is what tells an operator whether
+    disabling a variant is safe."""
+    agent_skills_service.create_profile(
+        db, role="safety", key="video-strict", display_name="视频严格版"
+    )
+    db.commit()
+    client.put(
+        "/v1/admin/workflow-templates/text_to_video",
+        json={
+            "name": "绑定严格版",
+            "graph": _graph_binding("video-strict"),
+            "reason": "测试反查索引",
+            "confirm": True,
+        },
+        headers=admin_header(admin),
+    )
+
+    profiles = client.get(
+        "/v1/admin/agent-profiles", params={"role": "safety"}, headers=admin_header(admin)
+    ).json()["items"]
+    strict = next(profile for profile in profiles if profile["key"] == "video-strict")
+    assert strict["used_by_operations"] == ["text_to_video"]
+
+
+def test_a_prompt_published_for_one_slot_leaves_the_other_alone(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    """End-to-end cover for the `intent_router` defect: the console used to
+    expose one prompt chain for two unrelated calls."""
+    profile = agent_skills_service.default_profile(db, "intent_router")
+    assert profile is not None
+    db.commit()
+
+    for slot, text in (("classify", "档位判定"), ("select_provider", "供应商选型")):
+        assert (
+            client.post(
+                "/v1/admin/agent-skills",
+                json={
+                    "profile_id": profile.id,
+                    "slot": slot,
+                    "prompt_template": text,
+                    "reason": f"测试 {slot} 槽位",
+                    "confirm": True,
+                },
+                headers=admin_header(admin),
+            ).status_code
+            == 201
+        )
+
+    for slot, text in (("classify", "档位判定"), ("select_provider", "供应商选型")):
+        versions = client.get(
+            "/v1/admin/agent-skills",
+            params={"profile_id": profile.id, "slot": slot},
+            headers=admin_header(admin),
+        ).json()["items"]
+        active = [row for row in versions if row["is_active"]]
+        assert len(active) == 1
+        assert active[0]["prompt_template"] == text
+
+
+def test_agent_nodes_declare_their_prompt_slots(
+    client: TestClient, admin: User, agent_roles: None
+) -> None:
+    """Without this the console cannot know to render two editor tabs."""
+    nodes = client.get("/v1/admin/agent-nodes", headers=admin_header(admin)).json()["items"]
+    by_role = {node["role"]: node for node in nodes}
+    assert [slot["key"] for slot in by_role["intent_router"]["prompt_slots"]] == [
+        "classify",
+        "select_provider",
+    ]
+    assert [slot["key"] for slot in by_role["safety"]["prompt_slots"]] == ["default"]
+
+
+def test_a_viewer_can_read_variants_but_not_create_them(
+    client: TestClient, reviewer: User, admin: User, agent_roles: None
+) -> None:
+    assert client.get("/v1/admin/agent-profiles", headers=admin_header(reviewer)).status_code == 200
+    assert (
+        client.post(
+            "/v1/admin/agent-profiles",
+            json={"role": "safety", "key": "nope", "display_name": "不该成功"},
+            headers=admin_header(reviewer),
+        ).status_code
+        == 403
+    )

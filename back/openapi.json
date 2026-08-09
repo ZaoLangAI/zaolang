@@ -5775,125 +5775,6 @@
         }
       }
     },
-    "/v1/admin/agent-runs": {
-      "get": {
-        "tags": [
-          "admin:observability"
-        ],
-        "summary": "List Agent Runs",
-        "operationId": "list_agent_runs_v1_admin_agent_runs_get",
-        "parameters": [
-          {
-            "name": "agent_name",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Agent Name"
-            }
-          },
-          {
-            "name": "job_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Job Id"
-            }
-          },
-          {
-            "name": "degraded_only",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Degraded Only"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_AgentRunView_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/admin/workflow": {
       "get": {
         "tags": [
@@ -9664,6 +9545,267 @@
         }
       }
     },
+    "/v1/admin/agent-profiles": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Agent Profiles",
+        "operationId": "list_agent_profiles_v1_admin_agent_profiles_get",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AgentProfileView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Create Agent Profile",
+        "description": "Adds a variant. Not a dangerous action on its own — a variant changes\nnothing until a workflow node binds it, and binding is what carries the\nconfirmation ceremony.",
+        "operationId": "create_agent_profile_v1_admin_agent_profiles_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-profiles/{profile_id}": {
+      "patch": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Update Agent Profile",
+        "description": "Edits a variant's metadata. `role` and `key` are absent on purpose:\nlive graphs bind by key, so renaming one would silently re-point them.",
+        "operationId": "update_agent_profile_v1_admin_agent_profiles__profile_id__patch",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-profiles/{profile_id}/disable": {
+      "post": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Disable Agent Profile",
+        "description": "Takes a variant out of service.\n\nDangerous because a graph that still binds it keeps running: the prompt\nsilently falls back to the role's default. The console shows which\noperations reference a variant so this is not a blind decision.",
+        "operationId": "disable_agent_profile_v1_admin_agent_profiles__profile_id__disable_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/agent-skills": {
       "get": {
         "tags": [
@@ -9673,12 +9815,28 @@
         "operationId": "list_agent_skills_v1_admin_agent_skills_get",
         "parameters": [
           {
-            "name": "node_role",
+            "name": "profile_id",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Node Role"
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "slot",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Slot"
             }
           },
           {
@@ -9726,7 +9884,7 @@
           "admin:agent-skills"
         ],
         "summary": "Publish Agent Skill",
-        "description": "Publishes a new prompt version for one node and makes it active.\n\nA rejected or unparseable safety verdict is the direct, immediate result\nof what this prompt says, so publishing it is treated with the same\nconfirmation ceremony as any other dangerous admin action.",
+        "description": "Publishes a new prompt version for one variant's slot and activates it.\n\nA rejected or unparseable safety verdict is the direct, immediate result\nof what this prompt says, so publishing it is treated with the same\nconfirmation ceremony as any other dangerous admin action.",
         "operationId": "publish_agent_skill_v1_admin_agent_skills_post",
         "parameters": [
           {
@@ -10050,7 +10208,7 @@
           "admin:workflow-templates"
         ],
         "summary": "Validate Workflow Graph",
-        "description": "Structural pre-check so the editor can flag a broken graph before an\noperator spends a confirmation dialog on it.",
+        "description": "Pre-check so the editor can flag problems before an operator spends a\nconfirmation dialog on them.\n\n`warnings` are advisory and never block `publish`; they exist so a\ncapability mismatch between a bound agent variant and this operation is\nseen rather than discovered in production.",
         "operationId": "validate_workflow_graph_v1_admin_workflow_templates_validate_post",
         "parameters": [
           {
@@ -11212,6 +11370,13 @@
             },
             "type": "array",
             "title": "Candidate Endpoint Ids"
+          },
+          "prompt_slots": {
+            "items": {
+              "$ref": "#/components/schemas/PromptSlotView"
+            },
+            "type": "array",
+            "title": "Prompt Slots"
           }
         },
         "type": "object",
@@ -11226,6 +11391,180 @@
         "title": "AgentNodeView",
         "description": "One pipeline stage plus which failover-pool endpoints could serve it.\n\n`candidate_endpoint_ids` is derived, not stored: it is whichever\n`llm_providers` endpoints are enabled `kind=\"general\"` endpoints — every\nagent role shares that one pool now — so the node graph can show \"0\ncandidate endpoints\" as an actionable warning rather than a silent gap."
       },
+      "AgentProfileCreateRequest": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Role"
+          },
+          "key": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Key"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Operations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "key",
+          "display_name"
+        ],
+        "title": "AgentProfileCreateRequest"
+      },
+      "AgentProfileUpdateRequest": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "operations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operations"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "AgentProfileUpdateRequest"
+      },
+      "AgentProfileView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "used_by_operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used By Operations"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "key",
+          "display_name",
+          "description",
+          "is_default",
+          "enabled",
+          "created_at"
+        ],
+        "title": "AgentProfileView",
+        "description": "A named variant of one role.\n\n`operations` is the variant's declared capability — the operations its\nprompts were written for. Empty means general purpose. `used_by_operations`\nis derived from the currently active workflow templates, so the console\ncan show at a glance whether a variant is actually wired up and whether\nit is being used outside what it declares."
+      },
       "AgentRunView": {
         "properties": {
           "id": {
@@ -11235,6 +11574,28 @@
           "agent_name": {
             "type": "string",
             "title": "Agent Name"
+          },
+          "agent_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Profile Id"
+          },
+          "prompt_slot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Slot"
           },
           "model": {
             "type": "string",
@@ -11338,11 +11699,17 @@
             "title": "Confirm",
             "default": false
           },
-          "node_role": {
+          "profile_id": {
             "type": "string",
             "maxLength": 40,
             "minLength": 1,
-            "title": "Node Role"
+            "title": "Profile Id"
+          },
+          "slot": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Slot"
           },
           "prompt_template": {
             "type": "string",
@@ -11361,7 +11728,8 @@
         "type": "object",
         "required": [
           "reason",
-          "node_role",
+          "profile_id",
+          "slot",
           "prompt_template"
         ],
         "title": "AgentSkillPublishRequest"
@@ -11375,6 +11743,14 @@
           "node_role": {
             "type": "string",
             "title": "Node Role"
+          },
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
           },
           "version": {
             "type": "integer",
@@ -11427,6 +11803,8 @@
         "required": [
           "id",
           "node_role",
+          "profile_id",
+          "slot",
           "version",
           "prompt_template",
           "is_active",
@@ -15619,6 +15997,13 @@
             ],
             "title": "Agent Role"
           },
+          "profile_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileBindingView"
+            },
+            "type": "array",
+            "title": "Profile Bindings"
+          },
           "config_schema": {
             "additionalProperties": true,
             "type": "object",
@@ -15832,11 +16217,11 @@
         ],
         "title": "Page[AgentNodeView]"
       },
-      "Page_AgentRunView_": {
+      "Page_AgentProfileView_": {
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/AgentRunView"
+              "$ref": "#/components/schemas/AgentProfileView"
             },
             "type": "array",
             "title": "Items"
@@ -15862,7 +16247,7 @@
         "required": [
           "items"
         ],
-        "title": "Page[AgentRunView]"
+        "title": "Page[AgentProfileView]"
       },
       "Page_AgentSkillView_": {
         "properties": {
@@ -17075,6 +17460,30 @@
         "title": "PreferencesRequest",
         "description": "Partial update; every field is optional."
       },
+      "ProfileBindingView": {
+        "properties": {
+          "config_field": {
+            "type": "string",
+            "title": "Config Field"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_field",
+          "role",
+          "slot"
+        ],
+        "title": "ProfileBindingView",
+        "description": "Tells the editor that one config field selects an agent variant.\n\nWithout this the schema-driven form would render `agent_profile` as a\nfree-text box; with it the editor can offer the variants that actually\nexist for `role`."
+      },
       "ProfileResponse": {
         "properties": {
           "display_name": {
@@ -17260,6 +17669,30 @@
           "degraded"
         ],
         "title": "PromptEnhanceResponse"
+      },
+      "PromptSlotView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "PromptSlotView",
+        "description": "One of the system prompts a role owns.\n\nMost roles have exactly one; `intent_router` and `copy` each make two\nunrelated calls under a single agent identity, and each needs its own\nprompt chain."
       },
       "ProvenanceResponse": {
         "properties": {
@@ -19906,6 +20339,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Graph"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Operation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -19922,10 +20365,18 @@
             },
             "type": "array",
             "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
           }
         },
         "type": "object",
-        "title": "WorkflowTemplateValidateResponse"
+        "title": "WorkflowTemplateValidateResponse",
+        "description": "`errors` block publishing; `warnings` only ask the operator to look."
       },
       "WorkflowTemplateView": {
         "properties": {

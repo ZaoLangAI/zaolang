@@ -17,6 +17,7 @@ from app.api.deps import DbSession
 from app.api.schemas.admin import (
     DangerousAction,
     NodeTypeView,
+    ProfileBindingView,
     WorkflowDryRunRequest,
     WorkflowDryRunResult,
     WorkflowDryRunStepView,
@@ -64,6 +65,12 @@ def list_node_types(user: Viewer, _: AdminRead) -> Page[NodeTypeView]:
                 output_ports=list(spec.output_ports),
                 is_agent=spec.is_agent,
                 agent_role=spec.agent_role,
+                profile_bindings=[
+                    ProfileBindingView(
+                        config_field=binding.config_field, role=binding.role, slot=binding.slot
+                    )
+                    for binding in spec.profile_bindings
+                ],
                 config_schema=spec.config_schema.model_json_schema(),
             )
             for node_type, spec in sorted(registry.NODE_TYPES.items())
@@ -73,12 +80,25 @@ def list_node_types(user: Viewer, _: AdminRead) -> Page[NodeTypeView]:
 
 @router.post("/workflow-templates/validate", response_model=WorkflowTemplateValidateResponse)
 def validate_workflow_graph(
-    payload: WorkflowTemplateValidateRequest, user: Admin, _: AdminRead
+    payload: WorkflowTemplateValidateRequest, session: DbSession, user: Admin, _: AdminRead
 ) -> WorkflowTemplateValidateResponse:
-    """Structural pre-check so the editor can flag a broken graph before an
-    operator spends a confirmation dialog on it."""
+    """Pre-check so the editor can flag problems before an operator spends a
+    confirmation dialog on them.
+
+    `warnings` are advisory and never block `publish`; they exist so a
+    capability mismatch between a bound agent variant and this operation is
+    seen rather than discovered in production.
+    """
+    warnings = (
+        workflow_templates_service.collect_warnings(
+            session, operation=payload.operation.value, graph_json=payload.graph
+        )
+        if payload.operation is not None
+        else []
+    )
     return WorkflowTemplateValidateResponse(
-        errors=workflow_templates_service.validate_graph_json(payload.graph)
+        errors=workflow_templates_service.validate_graph_json(payload.graph, session=session),
+        warnings=warnings,
     )
 
 

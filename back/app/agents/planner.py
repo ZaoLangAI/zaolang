@@ -37,6 +37,7 @@ def plan(
     requested_operation: str | None = None,
     job_id: str | None = None,
     user_id: str | None = None,
+    profile: str | None = None,
 ) -> AgentOutcome:
     payload = {
         "intent": intent,
@@ -51,6 +52,7 @@ def plan(
         fallback=FALLBACK,
         job_id=job_id,
         user_id=user_id,
+        profile_key=profile,
     )
 
     # The user's explicit choice always wins over the model's suggestion.

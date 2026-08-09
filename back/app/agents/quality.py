@@ -42,6 +42,7 @@ def evaluate(
     attempt_number: int,
     job_id: str | None = None,
     user_id: str | None = None,
+    profile: str | None = None,
 ) -> AgentOutcome:
     outcome = run_agent(
         session,
@@ -51,6 +52,7 @@ def evaluate(
         fallback=FALLBACK,
         job_id=job_id,
         user_id=user_id,
+        profile_key=profile,
     )
 
     # Retrying is capped regardless of the verdict so a persistently unhappy

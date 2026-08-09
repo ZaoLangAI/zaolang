@@ -39,6 +39,7 @@ export function WorkflowPublishDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
   const validate = async () => {
     setBusy(true);
@@ -46,9 +47,10 @@ export function WorkflowPublishDialog({
     try {
       const result = await adminApi.post<WorkflowTemplateValidateResponse>(
         '/v1/admin/workflow-templates/validate',
-        { graph },
+        { graph, operation },
       );
       setValidationErrors(result.errors ?? []);
+      setValidationWarnings(result.warnings ?? []);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
     } finally {
@@ -120,6 +122,19 @@ export function WorkflowPublishDialog({
             <p className="text-sm font-medium text-danger">{t('validationFailed')}</p>
             <ul className="mt-1.5 list-disc pl-4 text-xs text-muted">
               {validationErrors.map((message, index) => (
+                <li key={index}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* Advisory only — the server publishes regardless. Shown so a
+            capability mismatch is a decision rather than a surprise. */}
+        {validationWarnings.length > 0 ? (
+          <div className="rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 p-3">
+            <p className="text-sm font-medium text-amber">{t('validationWarnings')}</p>
+            <ul className="mt-1.5 list-disc pl-4 text-xs text-muted">
+              {validationWarnings.map((message, index) => (
                 <li key={index}>{message}</li>
               ))}
             </ul>

@@ -1483,23 +1483,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/agent-runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Agent Runs */
-        get: operations["list_agent_runs_v1_admin_agent_runs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/admin/workflow": {
         parameters: {
             query?: never;
@@ -2457,6 +2440,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/agent-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agent Profiles */
+        get: operations["list_agent_profiles_v1_admin_agent_profiles_get"];
+        put?: never;
+        /**
+         * Create Agent Profile
+         * @description Adds a variant. Not a dangerous action on its own — a variant changes
+         *     nothing until a workflow node binds it, and binding is what carries the
+         *     confirmation ceremony.
+         */
+        post: operations["create_agent_profile_v1_admin_agent_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Agent Profile
+         * @description Edits a variant's metadata. `role` and `key` are absent on purpose:
+         *     live graphs bind by key, so renaming one would silently re-point them.
+         */
+        patch: operations["update_agent_profile_v1_admin_agent_profiles__profile_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/agent-profiles/{profile_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable Agent Profile
+         * @description Takes a variant out of service.
+         *
+         *     Dangerous because a graph that still binds it keeps running: the prompt
+         *     silently falls back to the role's default. The console shows which
+         *     operations reference a variant so this is not a blind decision.
+         */
+        post: operations["disable_agent_profile_v1_admin_agent_profiles__profile_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/agent-skills": {
         parameters: {
             query?: never;
@@ -2469,7 +2520,7 @@ export interface paths {
         put?: never;
         /**
          * Publish Agent Skill
-         * @description Publishes a new prompt version for one node and makes it active.
+         * @description Publishes a new prompt version for one variant's slot and activates it.
          *
          *     A rejected or unparseable safety verdict is the direct, immediate result
          *     of what this prompt says, so publishing it is treated with the same
@@ -2568,8 +2619,12 @@ export interface paths {
         put?: never;
         /**
          * Validate Workflow Graph
-         * @description Structural pre-check so the editor can flag a broken graph before an
-         *     operator spends a confirmation dialog on it.
+         * @description Pre-check so the editor can flag problems before an operator spends a
+         *     confirmation dialog on them.
+         *
+         *     `warnings` are advisory and never block `publish`; they exist so a
+         *     capability mismatch between a bound agent variant and this operation is
+         *     seen rather than discovered in production.
          */
         post: operations["validate_workflow_graph_v1_admin_workflow_templates_validate_post"];
         delete?: never;
@@ -2983,6 +3038,72 @@ export interface components {
             sort_order: number;
             /** Candidate Endpoint Ids */
             candidate_endpoint_ids?: string[];
+            /** Prompt Slots */
+            prompt_slots?: components["schemas"]["PromptSlotView"][];
+        };
+        /** AgentProfileCreateRequest */
+        AgentProfileCreateRequest: {
+            /** Role */
+            role: string;
+            /** Key */
+            key: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Operations */
+            operations?: string[];
+        };
+        /** AgentProfileUpdateRequest */
+        AgentProfileUpdateRequest: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Operations */
+            operations?: string[] | null;
+            /** Is Default */
+            is_default?: boolean | null;
+            /** Enabled */
+            enabled?: boolean | null;
+        };
+        /**
+         * AgentProfileView
+         * @description A named variant of one role.
+         *
+         *     `operations` is the variant's declared capability — the operations its
+         *     prompts were written for. Empty means general purpose. `used_by_operations`
+         *     is derived from the currently active workflow templates, so the console
+         *     can show at a glance whether a variant is actually wired up and whether
+         *     it is being used outside what it declares.
+         */
+        AgentProfileView: {
+            /** Id */
+            id: string;
+            /** Role */
+            role: string;
+            /** Key */
+            key: string;
+            /** Display Name */
+            display_name: string;
+            /** Description */
+            description: string;
+            /** Operations */
+            operations?: string[];
+            /** Is Default */
+            is_default: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /** Used By Operations */
+            used_by_operations?: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** AgentRunView */
         AgentRunView: {
@@ -2990,6 +3111,10 @@ export interface components {
             id: string;
             /** Agent Name */
             agent_name: string;
+            /** Agent Profile Id */
+            agent_profile_id?: string | null;
+            /** Prompt Slot */
+            prompt_slot?: string | null;
             /** Model */
             model: string;
             /** Mode */
@@ -3023,8 +3148,10 @@ export interface components {
              * @default false
              */
             confirm: boolean;
-            /** Node Role */
-            node_role: string;
+            /** Profile Id */
+            profile_id: string;
+            /** Slot */
+            slot: string;
             /** Prompt Template */
             prompt_template: string;
             /** Tool Grants */
@@ -3036,6 +3163,10 @@ export interface components {
             id: string;
             /** Node Role */
             node_role: string;
+            /** Profile Id */
+            profile_id: string;
+            /** Slot */
+            slot: string;
             /** Version */
             version: number;
             /** Prompt Template */
@@ -4688,6 +4819,8 @@ export interface components {
             is_agent: boolean;
             /** Agent Role */
             agent_role?: string | null;
+            /** Profile Bindings */
+            profile_bindings?: components["schemas"]["ProfileBindingView"][];
             /** Config Schema */
             config_schema: {
                 [key: string]: unknown;
@@ -4773,10 +4906,10 @@ export interface components {
              */
             has_more: boolean;
         };
-        /** Page[AgentRunView] */
-        Page_AgentRunView_: {
+        /** Page[AgentProfileView] */
+        Page_AgentProfileView_: {
             /** Items */
-            items: components["schemas"]["AgentRunView"][];
+            items: components["schemas"]["AgentProfileView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -5230,6 +5363,22 @@ export interface components {
             /** Notify On Remix */
             notify_on_remix?: boolean | null;
         };
+        /**
+         * ProfileBindingView
+         * @description Tells the editor that one config field selects an agent variant.
+         *
+         *     Without this the schema-driven form would render `agent_profile` as a
+         *     free-text box; with it the editor can offer the variants that actually
+         *     exist for `role`.
+         */
+        ProfileBindingView: {
+            /** Config Field */
+            config_field: string;
+            /** Role */
+            role: string;
+            /** Slot */
+            slot: string;
+        };
         /** ProfileResponse */
         ProfileResponse: {
             /** Display Name */
@@ -5286,6 +5435,25 @@ export interface components {
             prompt: string;
             /** Degraded */
             degraded: boolean;
+        };
+        /**
+         * PromptSlotView
+         * @description One of the system prompts a role owns.
+         *
+         *     Most roles have exactly one; `intent_router` and `copy` each make two
+         *     unrelated calls under a single agent identity, and each needs its own
+         *     prompt chain.
+         */
+        PromptSlotView: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
         /**
          * ProvenanceResponse
@@ -6330,11 +6498,17 @@ export interface components {
             graph: {
                 [key: string]: unknown;
             };
+            operation?: components["schemas"]["Operation"] | null;
         };
-        /** WorkflowTemplateValidateResponse */
+        /**
+         * WorkflowTemplateValidateResponse
+         * @description `errors` block publishing; `warnings` only ask the operator to look.
+         */
         WorkflowTemplateValidateResponse: {
             /** Errors */
             errors?: string[];
+            /** Warnings */
+            warnings?: string[];
         };
         /** WorkflowTemplateView */
         WorkflowTemplateView: {
@@ -9586,43 +9760,6 @@ export interface operations {
             };
         };
     };
-    list_agent_runs_v1_admin_agent_runs_get: {
-        parameters: {
-            query?: {
-                agent_name?: string | null;
-                job_id?: string | null;
-                degraded_only?: boolean;
-                cursor?: string | null;
-                limit?: number;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Page_AgentRunView_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     workflow_shape_v1_admin_workflow_get: {
         parameters: {
             query: {
@@ -11439,10 +11576,153 @@ export interface operations {
             };
         };
     };
+    list_agent_profiles_v1_admin_agent_profiles_get: {
+        parameters: {
+            query?: {
+                role?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AgentProfileView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_agent_profile_v1_admin_agent_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_agent_profile_v1_admin_agent_profiles__profile_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_agent_profile_v1_admin_agent_profiles__profile_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_agent_skills_v1_admin_agent_skills_get: {
         parameters: {
             query: {
-                node_role: string;
+                profile_id: string;
+                slot?: string | null;
             };
             header?: {
                 authorization?: string | null;

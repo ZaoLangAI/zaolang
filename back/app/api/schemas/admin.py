@@ -19,6 +19,7 @@ from app.models.enums import (
     JobStatus,
     LearnPostStatus,
     ModerationStatus,
+    Operation,
     RedemptionCodeKind,
     UserStatus,
 )
@@ -121,6 +122,10 @@ class JobEventView(ApiModel):
 class AgentRunView(ApiModel):
     id: str
     agent_name: str
+    # Which variant and prompt slot served this call. Null for runs recorded
+    # before agent profiles existed.
+    agent_profile_id: str | None = None
+    prompt_slot: str | None = None
     model: str
     mode: str
     degraded: bool
@@ -503,6 +508,19 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     enabled: bool = True
 
 
+class PromptSlotView(ApiModel):
+    """One of the system prompts a role owns.
+
+    Most roles have exactly one; `intent_router` and `copy` each make two
+    unrelated calls under a single agent identity, and each needs its own
+    prompt chain.
+    """
+
+    key: str
+    label: str
+    description: str = ""
+
+
 class AgentNodeView(ApiModel):
     """One pipeline stage plus which failover-pool endpoints could serve it.
 
@@ -519,11 +537,54 @@ class AgentNodeView(ApiModel):
     enabled: bool
     sort_order: int
     candidate_endpoint_ids: list[str] = Field(default_factory=list)
+    prompt_slots: list[PromptSlotView] = Field(default_factory=list)
+
+
+class AgentProfileView(ApiModel):
+    """A named variant of one role.
+
+    `operations` is the variant's declared capability — the operations its
+    prompts were written for. Empty means general purpose. `used_by_operations`
+    is derived from the currently active workflow templates, so the console
+    can show at a glance whether a variant is actually wired up and whether
+    it is being used outside what it declares.
+    """
+
+    id: str
+    role: str
+    key: str
+    display_name: str
+    description: str
+    operations: list[str] = Field(default_factory=list)
+    is_default: bool
+    enabled: bool
+    used_by_operations: list[str] = Field(default_factory=list)
+    created_at: dt.datetime
+
+
+class AgentProfileCreateRequest(ApiModel):
+    role: str = Field(min_length=1, max_length=40)
+    # Immutable once created: published graphs bind variants by key, so a
+    # rename would silently re-point live workflows.
+    key: str = Field(min_length=1, max_length=40, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    display_name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=2_000)
+    operations: list[str] = Field(default_factory=list)
+
+
+class AgentProfileUpdateRequest(ApiModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=2_000)
+    operations: list[str] | None = None
+    is_default: bool | None = None
+    enabled: bool | None = None
 
 
 class AgentSkillView(ApiModel):
     id: str
     node_role: str
+    profile_id: str
+    slot: str
     version: int
     prompt_template: str
     tool_grants: list[str] = Field(default_factory=list)
@@ -534,7 +595,8 @@ class AgentSkillView(ApiModel):
 
 
 class AgentSkillPublishRequest(DangerousAction):
-    node_role: str = Field(min_length=1, max_length=40)
+    profile_id: str = Field(min_length=1, max_length=40)
+    slot: str = Field(min_length=1, max_length=40)
     prompt_template: str = Field(min_length=1, max_length=20_000)
     tool_grants: list[str] = Field(default_factory=list)
 
@@ -646,6 +708,19 @@ class SeedRequest(DangerousAction):
     reset: bool = False
 
 
+class ProfileBindingView(ApiModel):
+    """Tells the editor that one config field selects an agent variant.
+
+    Without this the schema-driven form would render `agent_profile` as a
+    free-text box; with it the editor can offer the variants that actually
+    exist for `role`.
+    """
+
+    config_field: str
+    role: str
+    slot: str
+
+
 class NodeTypeView(ApiModel):
     """One entry in the admin-facing node palette.
 
@@ -661,6 +736,7 @@ class NodeTypeView(ApiModel):
     output_ports: list[str]
     is_agent: bool
     agent_role: str | None = None
+    profile_bindings: list[ProfileBindingView] = Field(default_factory=list)
     config_schema: dict[str, Any]
 
 
@@ -683,10 +759,17 @@ class WorkflowTemplatePublishRequest(DangerousAction):
 
 class WorkflowTemplateValidateRequest(ApiModel):
     graph: dict[str, Any]
+    # Needed to judge whether a bound agent variant declares this operation
+    # among its capabilities. Optional so a caller that only wants the
+    # structural checks can skip it.
+    operation: Operation | None = None
 
 
 class WorkflowTemplateValidateResponse(ApiModel):
+    """`errors` block publishing; `warnings` only ask the operator to look."""
+
     errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class WorkflowDryRunRequest(ApiModel):

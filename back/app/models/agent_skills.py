@@ -5,6 +5,17 @@ a node here is a pipeline stage (safety/planner/quality/copy/...) and a skill
 is that stage's prompt, versioned the same way `PlatformConfig` versions
 runtime config — append a new version, flip the active flag, keep every
 earlier version around for rollback.
+
+Three levels, from coarse to fine:
+
+* `AgentNode` — the *role* (`safety`, `planner`, ...), one row per pipeline
+  stage, stable identity that `AgentRun.agent_name` also keys on.
+* `AgentProfile` — a named *variant* of a role, so one workflow can run a
+  strict video-oriented safety agent while another runs a looser one.
+* `AgentSkill` — an append-only prompt version, scoped to a
+  `(profile, slot)` pair. A slot exists because one role can own more than
+  one system prompt (`intent_router` classifies tiers *and* selects
+  providers); see `app/agents/slots.py`.
 """
 
 from __future__ import annotations
@@ -38,18 +49,62 @@ class AgentNode(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
-class AgentSkill(Base):
-    """One append-only prompt version for one node.
+class AgentProfile(Base):
+    """A named variant of one role, so a prompt can differ per workflow.
 
-    No foreign key to `AgentNode.role`: an operator can publish a skill for a
-    role before the node row exists (e.g. while wiring up a brand new node),
-    the same way `PlatformConfig.key` is a free string rather than an FK.
+    `operations_json` is the variant's declared capability: the `Operation`
+    values it was written for. An empty list means "general purpose" and
+    never warns. The declaration is advisory — publishing a workflow that
+    binds a variant outside its declared operations warns but is not
+    blocked, because an operator experimenting is a legitimate case and the
+    runtime behaviour is identical either way.
+
+    Like `AgentSkill`, `role` is a free string rather than an FK to
+    `AgentNode.role`.
+    """
+
+    __tablename__ = "agent_profiles"
+
+    id: Mapped[str] = id_column("aprof")
+    role: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Stable, operator-chosen handle a workflow node binds to (`default`,
+    # `video-strict`, ...). Renaming a profile's display name is safe;
+    # changing this key breaks every graph that references it, so the admin
+    # API does not allow it.
+    key: Mapped[str] = mapped_column(String(40), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    operations_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
+    # Exactly one per role, enforced in `agent_skills.service` rather than by
+    # a partial index so the invariant lives next to the code that can
+    # repair it.
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("role", "key", name="uq_agent_profiles_role_key"),
+        Index("ix_agent_profiles_role_enabled", "role", "enabled"),
+    )
+
+
+class AgentSkill(Base):
+    """One append-only prompt version for one `(profile, slot)` pair.
+
+    `node_role` is kept alongside `profile_id` as a denormalised column: it
+    is what every reverse lookup ("show me every prompt this role has ever
+    run") filters on, and it lets a role's history survive even if a variant
+    is later reorganised.
     """
 
     __tablename__ = "agent_skills"
 
     id: Mapped[str] = id_column("askill")
     node_role: Mapped[str] = mapped_column(String(40), nullable=False)
+    profile_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    slot: Mapped[str] = mapped_column(String(40), default="default", nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     prompt_template: Mapped[str] = mapped_column(Text, nullable=False)
     tool_grants_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
@@ -61,6 +116,9 @@ class AgentSkill(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("node_role", "version", name="uq_agent_skills_role_version"),
+        UniqueConstraint(
+            "profile_id", "slot", "version", name="uq_agent_skills_profile_slot_version"
+        ),
+        Index("ix_agent_skills_profile_slot_active", "profile_id", "slot", "is_active"),
         Index("ix_agent_skills_role_active", "node_role", "is_active"),
     )

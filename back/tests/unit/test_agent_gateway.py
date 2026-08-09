@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
-from app.agents import router, tools
+from app.agents import copywriter, intent_router, router, tools
+from app.agents import slots as agent_slots
+from app.domain.agent_skills import service as agent_skills_service
+from app.domain.errors import ValidationFailed
 from app.models import ProviderStat, User
 from app.models.enums import AgentName, Operation, QualityTier
 from app.platform_config import service as config_service
@@ -214,7 +217,9 @@ def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
 def test_llm_picks_the_lowest_effective_cost_among_eligible_candidates(db: Session) -> None:
     """Deterministic stub selection: cheapest-effective-cost eligible route
     wins, and the reason trail says an LLM made the call."""
-    decision = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    decision = router.route(
+        db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    )
     assert decision.selected is not None
     eligible = [c for c in decision.candidates if c.eligible]
     cheapest = min(eligible, key=lambda c: (c.effective_cost, c.provider))
@@ -241,7 +246,9 @@ def test_llm_selection_unavailable_yields_no_route_not_a_formula_fallback(
 
     monkeypatch.setattr(intent_router_agent, "select_provider", _degraded)
 
-    decision = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    decision = router.route(
+        db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    )
     assert decision.selected is None
     assert decision.reason == "llm_selection_unavailable"
 
@@ -292,3 +299,244 @@ def test_every_agent_node_type_names_a_real_agent(db: Session) -> None:
     for step in payload["steps"]:
         if step["is_agent"]:
             assert step["agent_role"] in names
+
+
+# --------------------------------------------------------------------------
+# Agent variants (`AgentProfile`) and prompt slots
+# --------------------------------------------------------------------------
+
+
+def _seeded(db: Session) -> None:
+    agent_skills_service.ensure_default_nodes(db)
+    agent_skills_service.ensure_default_profiles(db)
+
+
+def test_a_role_with_no_published_prompt_falls_back_to_the_module_constant(db: Session) -> None:
+    """A fresh deploy has an empty `agent_skills` table; every agent must
+    still run on its own hardcoded prompt rather than an empty string."""
+    _seeded(db)
+    prompt, profile_id = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN")
+    assert prompt == "BUILTIN"
+    assert profile_id is not None
+
+
+def test_a_node_that_binds_nothing_gets_the_roles_default_variant(db: Session) -> None:
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    agent_skills_service.publish(
+        db,
+        profile_id=default.id,
+        slot="default",
+        prompt_template="DEFAULT_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+
+    prompt, profile_id = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN")
+    assert prompt == "DEFAULT_VARIANT"
+    assert profile_id == default.id
+
+
+def test_a_bound_variant_overrides_the_default_for_that_node_only(db: Session) -> None:
+    """The whole point of variants: one operation's safety prompt can change
+    without touching the other five."""
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    agent_skills_service.publish(
+        db,
+        profile_id=default.id,
+        slot="default",
+        prompt_template="DEFAULT_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+    strict = agent_skills_service.create_profile(
+        db, role="safety", key="video-strict", display_name="严格版"
+    )
+    agent_skills_service.publish(
+        db,
+        profile_id=strict.id,
+        slot="default",
+        prompt_template="STRICT_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+
+    bound, _ = agent_skills_service.get_active_prompt(
+        db, "safety", "BUILTIN", profile_key="video-strict"
+    )
+    unbound, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN")
+    assert bound == "STRICT_VARIANT"
+    assert unbound == "DEFAULT_VARIANT"
+
+
+def test_a_variant_with_nothing_published_inherits_the_default_variants_prompt(
+    db: Session,
+) -> None:
+    """Three-level fallback: bound variant, then the role default, then the
+    module constant. A half-configured variant must not drop an operator back
+    to the hardcoded text they already replaced."""
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    agent_skills_service.publish(
+        db,
+        profile_id=default.id,
+        slot="default",
+        prompt_template="DEFAULT_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+    agent_skills_service.create_profile(db, role="safety", key="empty", display_name="空变体")
+
+    prompt, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN", profile_key="empty")
+    assert prompt == "DEFAULT_VARIANT"
+
+
+def test_a_disabled_variant_falls_back_instead_of_running_no_prompt(db: Session) -> None:
+    """Publish-time validation blocks binding a disabled variant, but one can
+    be disabled after a graph goes live. Generation must keep working."""
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    agent_skills_service.publish(
+        db,
+        profile_id=default.id,
+        slot="default",
+        prompt_template="DEFAULT_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+    retired = agent_skills_service.create_profile(
+        db, role="safety", key="retired", display_name="停用版"
+    )
+    agent_skills_service.publish(
+        db,
+        profile_id=retired.id,
+        slot="default",
+        prompt_template="RETIRED_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+    agent_skills_service.update_profile(db, retired.id, enabled=False)
+
+    prompt, _ = agent_skills_service.get_active_prompt(
+        db, "safety", "BUILTIN", profile_key="retired"
+    )
+    assert prompt == "DEFAULT_VARIANT"
+
+
+def test_intent_routers_two_prompts_do_not_overwrite_each_other(db: Session) -> None:
+    """The defect prompt slots exist to fix: `classify` and `select_provider`
+    are one agent identity making two unrelated calls, so publishing one used
+    to silently replace the other's instructions."""
+    _seeded(db)
+    profile = agent_skills_service.default_profile(db, "intent_router")
+    assert profile is not None
+    agent_skills_service.publish(
+        db,
+        profile_id=profile.id,
+        slot="classify",
+        prompt_template="TIER_RULES",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+    agent_skills_service.publish(
+        db,
+        profile_id=profile.id,
+        slot="select_provider",
+        prompt_template="PROVIDER_RULES",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+
+    classify, _ = agent_skills_service.get_active_prompt(
+        db, "intent_router", "BUILTIN", slot="classify"
+    )
+    select, _ = agent_skills_service.get_active_prompt(
+        db, "intent_router", "BUILTIN", slot="select_provider"
+    )
+    assert classify == "TIER_RULES"
+    assert select == "PROVIDER_RULES"
+
+
+def test_versions_are_numbered_per_slot_not_per_role(db: Session) -> None:
+    """Shared numbering would make one slot's history look like it skipped
+    versions, and would collide on the unique constraint."""
+    _seeded(db)
+    profile = agent_skills_service.default_profile(db, "intent_router")
+    assert profile is not None
+    for slot in ("classify", "select_provider", "classify"):
+        agent_skills_service.publish(
+            db,
+            profile_id=profile.id,
+            slot=slot,
+            prompt_template=f"{slot}-text",
+            tool_grants=[],
+            actor_user_id=None,
+            reason="test",
+        )
+
+    classify = agent_skills_service.list_versions(db, profile_id=profile.id, slot="classify")
+    select = agent_skills_service.list_versions(db, profile_id=profile.id, slot="select_provider")
+    assert [row.version for row in classify] == [2, 1]
+    assert [row.version for row in select] == [1]
+    assert sum(1 for row in classify if row.is_active) == 1
+
+
+def test_publishing_to_a_slot_the_role_does_not_own_is_refused(db: Session) -> None:
+    """A typo'd slot would create a prompt chain nothing ever reads."""
+    _seeded(db)
+    profile = agent_skills_service.default_profile(db, "safety")
+    assert profile is not None
+    with pytest.raises(ValidationFailed):
+        agent_skills_service.publish(
+            db,
+            profile_id=profile.id,
+            slot="select_provider",
+            prompt_template="x",
+            tool_grants=[],
+            actor_user_id=None,
+            reason="test",
+        )
+
+
+def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
+    """A declared slot with no caller is an editor tab that changes nothing;
+    a caller using an undeclared slot cannot be edited at all."""
+    called = {
+        AgentName.SAFETY.value: {"default"},
+        AgentName.PLANNER.value: {"default"},
+        AgentName.QUALITY.value: {"default"},
+        AgentName.COPY.value: {copywriter.SUGGEST_SLOT, copywriter.ENHANCE_SLOT},
+        AgentName.INTENT_ROUTER.value: {
+            intent_router.CLASSIFY_SLOT,
+            intent_router.SELECT_PROVIDER_SLOT,
+        },
+    }
+    for role, slots in called.items():
+        declared = {slot.key for slot in agent_slots.slots_for(role)}
+        assert declared == slots, f"{role} 的槽位声明与实际调用不一致"
+
+
+def test_every_profile_binding_names_a_real_role_field_and_slot() -> None:
+    """A binding whose config field does not exist would render a picker that
+    writes into a field the backend rejects as `extra="forbid"`."""
+    for node_type, spec in registry.NODE_TYPES.items():
+        for binding in spec.profile_bindings:
+            assert binding.config_field in spec.config_schema.model_fields, (
+                f"{node_type} 绑定了不存在的配置字段 {binding.config_field}"
+            )
+            assert agent_slots.is_known_slot(binding.role, binding.slot), (
+                f"{node_type} 绑定了 {binding.role} 不存在的槽位 {binding.slot}"
+            )

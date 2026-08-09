@@ -13,7 +13,6 @@ export type ServiceHealth = S['ServiceHealth'];
 export type QueueDepth = S['QueueDepth'];
 export type ProviderStat = S['ProviderStatView'];
 export type RoutingReplay = S['RoutingReplayResponse'];
-export type AgentRun = S['AgentRunView'];
 export type AgentUsage = S['AgentUsageSummary'];
 export type AdminJob = S['AdminJobSummary'];
 export type AdminJobDetail = S['AdminJobDetail'];
@@ -47,6 +46,10 @@ export type LlmProviderUpsertRequest = S['LlmProviderEndpointUpsertRequest'];
 export type MediaCapability = S['MediaCapabilityView'];
 export type LlmProviderKind = LlmProviderEndpoint['kind'];
 export type AgentNode = S['AgentNodeView'];
+export type AgentProfile = S['AgentProfileView'];
+export type AgentProfileCreateRequest = S['AgentProfileCreateRequest'];
+export type AgentProfileUpdateRequest = S['AgentProfileUpdateRequest'];
+export type PromptSlot = S['PromptSlotView'];
 export type AgentSkill = S['AgentSkillView'];
 export type CreationSkillAdminView = S['CreationSkillAdminView'];
 export type RedemptionCode = S['RedemptionCodeView'];
@@ -78,6 +81,7 @@ export interface WorkflowShape {
 
 // The configurable node-graph editor (`/admin/routing` → 工作流编排 tab).
 export type NodeTypeView = S['NodeTypeView'];
+export type ProfileBinding = S['ProfileBindingView'];
 export type WorkflowTemplateView = S['WorkflowTemplateView'];
 export type WorkflowTemplatePublishRequest = S['WorkflowTemplatePublishRequest'];
 export type WorkflowTemplateValidateResponse = S['WorkflowTemplateValidateResponse'];

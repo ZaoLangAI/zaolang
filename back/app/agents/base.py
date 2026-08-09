@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agents.slots import DEFAULT_SLOT
 from app.domain.agent_skills import service as agent_skills_service
 from app.llm import client as llm_client
 from app.models import AgentRun
@@ -48,6 +49,8 @@ def run_agent(
     fallback: dict[str, Any],
     job_id: str | None = None,
     user_id: str | None = None,
+    profile_key: str | None = None,
+    slot: str = DEFAULT_SLOT,
 ) -> AgentOutcome:
     """Runs one agent turn and always returns usable structured data.
 
@@ -58,9 +61,16 @@ def run_agent(
     `system_prompt` is each agent module's own hardcoded constant. It is used
     verbatim only until an operator publishes an `AgentSkill` for this node;
     from then on the published prompt wins, without a code change or deploy.
+
+    `profile_key` is the variant a workflow node bound (`None` for every
+    caller outside the graph, which gets the role's default), and `slot`
+    picks between the several system prompts one role may own — a role with
+    two prompts must never resolve them by role alone.
     """
     binding = resolve_binding(session, agent_name)
-    effective_prompt = agent_skills_service.get_active_prompt(session, agent_name, system_prompt)
+    effective_prompt, profile_id = agent_skills_service.get_active_prompt(
+        session, agent_name, system_prompt, profile_key=profile_key, slot=slot
+    )
     result = llm_client.complete(
         session=session,
         agent_name=agent_name,
@@ -92,6 +102,8 @@ def run_agent(
         job_id=job_id,
         user_id=user_id,
         agent_name=agent_name,
+        agent_profile_id=profile_id,
+        prompt_slot=slot,
         mode=result.mode,
         model=result.response.model or binding.model,
         status=status,

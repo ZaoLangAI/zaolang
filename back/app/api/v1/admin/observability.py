@@ -1,4 +1,4 @@
-"""System health, provider statistics and agent-run inspection."""
+"""System health, provider statistics and agent-run usage."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from sqlalchemy import Integer, func, select, text
 
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
-    AgentRunView,
     AgentUsageSummary,
     ProviderStatView,
     QueueDepth,
@@ -100,37 +99,6 @@ def routing_replay(
     )
 
 
-@router.get("/agent-runs", response_model=Page[AgentRunView])
-def list_agent_runs(
-    session: DbSession,
-    user: Viewer,
-    _: AdminRead,
-    agent_name: str | None = None,
-    job_id: str | None = None,
-    degraded_only: bool = False,
-    cursor: str | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
-) -> Page[AgentRunView]:
-    stmt = select(AgentRun).order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-    if agent_name:
-        stmt = stmt.where(AgentRun.agent_name == agent_name)
-    if job_id:
-        stmt = stmt.where(AgentRun.job_id == job_id)
-    if degraded_only:
-        stmt = stmt.where(AgentRun.degraded.is_(True))
-    if cursor:
-        stmt = stmt.where(AgentRun.id < cursor)
-
-    rows = list(session.scalars(stmt.limit(limit + 1)))
-    has_more = len(rows) > limit
-    page = rows[:limit]
-    return Page(
-        items=[_agent_run_view(run) for run in page],
-        next_cursor=page[-1].id if has_more and page else None,
-        has_more=has_more,
-    )
-
-
 @router.get("/workflow", response_model=dict)
 def workflow_shape(
     session: DbSession, user: Viewer, _: AdminRead, operation: str = Query(...)
@@ -170,23 +138,6 @@ def agent_usage(
             )
             for name, runs, degraded, tokens, avg_latency in rows
         ]
-    )
-
-
-def _agent_run_view(run: AgentRun) -> AgentRunView:
-    return AgentRunView(
-        id=run.id,
-        agent_name=run.agent_name,
-        model=run.model or "",
-        mode=run.mode,
-        degraded=run.degraded,
-        prompt_tokens=run.prompt_tokens,
-        completion_tokens=run.completion_tokens,
-        latency_ms=run.latency_ms,
-        status=run.status,
-        error_message=run.degrade_reason,
-        job_id=run.job_id,
-        created_at=run.created_at,
     )
 
 

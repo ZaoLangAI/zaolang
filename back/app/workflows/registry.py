@@ -37,6 +37,23 @@ Executor = Callable[[WorkflowContext, Any], NodeResult]
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileBinding:
+    """Maps one config field onto the agent variant it selects.
+
+    `route_score` is why this is a list on the spec rather than a flag
+    derived from `agent_role`: it is not an agent node, yet it picks a
+    variant of the `intent_router` role for the `select_provider` slot. The
+    admin console reads these to render a variant picker instead of a raw
+    text box, and `workflow_templates.service` reads them to validate a
+    graph's bindings before publishing it.
+    """
+
+    config_field: str
+    role: str
+    slot: str
+
+
+@dataclass(frozen=True, slots=True)
 class NodeSpec:
     category: str
     label: str
@@ -46,6 +63,7 @@ class NodeSpec:
     output_ports: tuple[str, ...]
     is_agent: bool = False
     agent_role: str | None = None
+    profile_bindings: tuple[ProfileBinding, ...] = ()
     # The `JobEvent` this node writes on its way through, if any — used only
     # to derive the ops console's declared timeline (`workflows/shape.py`).
     # `None` for nodes with no single representative public event
@@ -64,6 +82,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("pass", "reject"),
         is_agent=True,
         agent_role="safety",
+        profile_bindings=(ProfileBinding("agent_profile", "safety", "default"),),
         event_type=JobEventType.SAFETY,
     ),
     "skill_context": NodeSpec(
@@ -84,6 +103,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("ok",),
         is_agent=True,
         agent_role="planner",
+        profile_bindings=(ProfileBinding("agent_profile", "planner", "default"),),
         event_type=JobEventType.PLANNING,
     ),
     "intent_router": NodeSpec(
@@ -95,6 +115,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("ok",),
         is_agent=True,
         agent_role="intent_router",
+        profile_bindings=(ProfileBinding("agent_profile", "intent_router", "classify"),),
         event_type=JobEventType.INTENT_ROUTING,
     ),
     "route_score": NodeSpec(
@@ -104,6 +125,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         config_schema=RouteScoreConfig,
         executor=nodes.execute_route_score,
         output_ports=("ok", "no_candidate", "retries_exhausted"),
+        profile_bindings=(ProfileBinding("selector_profile", "intent_router", "select_provider"),),
         event_type=JobEventType.ROUTING,
     ),
     "provider_generate": NodeSpec(
@@ -125,6 +147,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("pass", "retry", "fail"),
         is_agent=True,
         agent_role="quality",
+        profile_bindings=(ProfileBinding("agent_profile", "quality", "default"),),
         event_type=JobEventType.QUALITY_CHECK,
     ),
     "join": NodeSpec(

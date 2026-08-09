@@ -12,35 +12,26 @@ import { WorkflowVersionsDialog } from '@/components/admin/workflows/workflow-ve
 import { Button } from '@/components/ui/button';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
+import { OPERATION_LABEL_KEYS, OPERATIONS, type OperationValue } from '@/lib/admin/operations';
 import { atLeast, type AdminRole } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
   AgentNode,
+  AgentProfile,
   NodeTypeView,
   WorkflowGraphJson,
   WorkflowTemplateView,
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
 
-const OPERATIONS = [
-  'text_to_image',
-  'image_to_image',
-  'text_to_video',
-  'image_to_video',
-  'video_to_video',
-  'audio_generation',
-] as const;
-
-const OPERATION_LABEL_KEYS: Record<(typeof OPERATIONS)[number], string> = {
-  text_to_image: 'capabilityTextToImage',
-  image_to_image: 'capabilityImageToImage',
-  text_to_video: 'capabilityTextToVideo',
-  image_to_video: 'capabilityImageToVideo',
-  video_to_video: 'capabilityVideoToVideo',
-  audio_generation: 'capabilityAudioGeneration',
-};
-
 const EMPTY_GRAPH: WorkflowGraphJson = { nodes: [], edges: [] };
+
+/** Which agent variant a canvas node wants edited: the one it binds, or the
+ * role's default when it binds nothing. */
+export interface PromptEditTarget {
+  role: string;
+  profileKey: string | null;
+}
 
 /**
  * The Coze/ComfyUI-style node editor for `GenerationWorkflowTemplate`.
@@ -58,21 +49,38 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
   const tProviders = useTranslations('adminProviders');
   const { role } = useAdminSession();
 
-  const [operation, setOperation] = useState<(typeof OPERATIONS)[number]>(OPERATIONS[0]);
-  const [editingAgentRole, setEditingAgentRole] = useState<string | null>(null);
-  const [editingAgentNode, setEditingAgentNode] = useState<AgentNode | null>(null);
+  const [operation, setOperation] = useState<OperationValue>(OPERATIONS[0]);
+  const [promptTarget, setPromptTarget] = useState<PromptEditTarget | null>(null);
+  const [resolved, setResolved] = useState<{ node: AgentNode; profile: AgentProfile } | null>(null);
 
+  // The canvas knows a role and (maybe) a variant key; the prompt editor
+  // needs the actual node and profile rows, so resolve both before opening.
+  // Clearing is done by the callers that change `promptTarget`, so nothing
+  // here has to set state synchronously.
   useEffect(() => {
-    if (!editingAgentRole) return;
+    if (!promptTarget) return;
     let cancelled = false;
-    adminApi.get<{ items: AgentNode[] }>('/v1/admin/agent-nodes').then((page) => {
-      if (cancelled) return;
-      setEditingAgentNode(page.items.find((node) => node.role === editingAgentRole) ?? null);
-    });
+    Promise.all([
+      adminApi.get<{ items: AgentNode[] }>('/v1/admin/agent-nodes'),
+      adminApi.get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles', {
+        query: { role: promptTarget.role },
+      }),
+    ])
+      .then(([nodePage, profilePage]) => {
+        if (cancelled) return;
+        const node = nodePage.items.find((item) => item.role === promptTarget.role);
+        const profile =
+          profilePage.items.find((item) => item.key === promptTarget.profileKey) ??
+          profilePage.items.find((item) => item.is_default);
+        setResolved(node && profile ? { node, profile } : null);
+      })
+      .catch(() => {
+        if (!cancelled) setResolved(null);
+      });
     return () => {
       cancelled = true;
     };
-  }, [editingAgentRole]);
+  }, [promptTarget]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -104,14 +112,21 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
         operation={operation}
         nodeTypeCatalog={nodeTypeCatalog}
         role={role}
-        onEditPrompt={setEditingAgentRole}
+        onEditPrompt={(target) => {
+          setResolved(null);
+          setPromptTarget(target);
+        }}
       />
 
-      {editingAgentRole && editingAgentNode?.role === editingAgentRole ? (
+      {promptTarget && resolved ? (
         <AgentSkillEditorDialog
-          node={editingAgentNode}
+          node={resolved.node}
+          profile={resolved.profile}
           editable={atLeast(role, 'admin')}
-          onClose={() => setEditingAgentRole(null)}
+          onClose={() => {
+            setPromptTarget(null);
+            setResolved(null);
+          }}
           onPublished={() => {}}
         />
       ) : null}
@@ -125,10 +140,10 @@ function WorkflowOperationTab({
   role,
   onEditPrompt,
 }: {
-  operation: string;
+  operation: OperationValue;
   nodeTypeCatalog: NodeTypeView[];
   role: AdminRole;
-  onEditPrompt: (agentRole: string) => void;
+  onEditPrompt: (target: PromptEditTarget) => void;
 }) {
   const t = useTranslations('adminWorkflows');
   const tAdmin = useTranslations('admin');
@@ -189,7 +204,9 @@ function WorkflowOperationTab({
               <Badge tone="success">
                 v{template.version} · {template.name}
               </Badge>
-              <span className="text-xs text-muted">{t('versionCount', { count: versions.length })}</span>
+              <span className="text-xs text-muted">
+                {t('versionCount', { count: versions.length })}
+              </span>
             </>
           ) : template === null && !loadError ? (
             <Badge tone="amber">{t('noActiveTemplate')}</Badge>
@@ -270,7 +287,11 @@ function WorkflowOperationTab({
       />
 
       {canDryRun ? (
-        <WorkflowDryRunDialog open={dryRunOpen} operation={operation} onClose={() => setDryRunOpen(false)} />
+        <WorkflowDryRunDialog
+          open={dryRunOpen}
+          operation={operation}
+          onClose={() => setDryRunOpen(false)}
+        />
       ) : null}
     </>
   );

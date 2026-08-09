@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent
 from app.models.enums import AgentName
 
+# Two unrelated system prompts share the `copy` agent identity, so each names
+# its own slot — see `app.agents.slots`.
+SUGGEST_SLOT = "suggest"
+ENHANCE_SLOT = "enhance"
+
 SYSTEM_PROMPT = f"""你是造浪平台的文案助手。为即将发布的作品生成标题、简介与标签。
 规则：
 - 标题不超过 24 个字，具体而有画面感，不使用「震撼」「绝美」这类空洞形容词
@@ -34,6 +39,7 @@ def suggest(
     lineage_summary: str = "",
     locale: str = "zh-CN",
     user_id: str | None = None,
+    profile: str | None = None,
 ) -> AgentOutcome:
     outcome = run_agent(
         session,
@@ -45,6 +51,8 @@ def suggest(
         ),
         fallback=FALLBACK,
         user_id=user_id,
+        profile_key=profile,
+        slot=SUGGEST_SLOT,
     )
 
     title = str(outcome.data.get("title") or FALLBACK["title"])
@@ -67,7 +75,12 @@ ENHANCE_SYSTEM_PROMPT = f"""你是造浪平台的视频生成提示词教练。
 
 
 def enhance_prompt(
-    session: Session, *, prompt: str, max_length: int, user_id: str | None = None
+    session: Session,
+    *,
+    prompt: str,
+    max_length: int,
+    user_id: str | None = None,
+    profile: str | None = None,
 ) -> AgentOutcome:
     """Polishes a scene description while keeping the author's intent.
 
@@ -81,6 +94,8 @@ def enhance_prompt(
         user_prompt=json.dumps({"prompt": prompt, "max_length": max_length}, ensure_ascii=False),
         fallback={"prompt": prompt},
         user_id=user_id,
+        profile_key=profile,
+        slot=ENHANCE_SLOT,
     )
     enhanced = str(outcome.data.get("prompt") or "").strip() or prompt
     outcome.data["prompt"] = enhanced[:max_length]

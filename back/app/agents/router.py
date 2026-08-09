@@ -138,6 +138,7 @@ def route(
     exclude_providers: Iterable[str] | None = None,
     job_id: str | None = None,
     user_id: str | None = None,
+    selector_profile: str | None = None,
 ) -> RoutingDecision:
     provider_config = config_service.get_typed(session, "providers", ProviderConfig)
     catalog = build_catalog(session)
@@ -215,6 +216,7 @@ def route(
         candidates=[_candidate_payload(c, catalog[c.provider]) for c in eligible],
         job_id=job_id,
         user_id=user_id,
+        profile=selector_profile,
     )
     selected_name = outcome.data.get("selected_provider")
     winner = next((c for c in eligible if c.provider == selected_name), None)
@@ -227,7 +229,9 @@ def route(
         )
 
     rationale = outcome.data.get("rationale")
-    reason = f"llm_selected:{rationale}" if isinstance(rationale, str) and rationale else "llm_selected"
+    reason = (
+        f"llm_selected:{rationale}" if isinstance(rationale, str) and rationale else "llm_selected"
+    )
     return RoutingDecision(selected=winner, candidates=candidates, reason=reason, catalog=catalog)
 
 

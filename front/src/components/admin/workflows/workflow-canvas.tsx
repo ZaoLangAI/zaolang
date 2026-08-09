@@ -20,13 +20,17 @@ import '@xyflow/react/dist/style.css';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { NodeConfigForm, type NodeConfigSchema } from '@/components/admin/workflows/node-config-form';
+import {
+  NodeConfigForm,
+  type NodeConfigSchema,
+} from '@/components/admin/workflows/node-config-form';
 import { flowToGraph, graphToFlow } from '@/components/admin/workflows/graph-convert';
 import { WorkflowEdge, type WorkflowEdgeData } from '@/components/admin/workflows/workflow-edge';
 import { WorkflowNode, type WorkflowNodeData } from '@/components/admin/workflows/workflow-node';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
 import { Badge } from '@/components/ui/primitives';
+import type { PromptEditTarget } from '@/components/admin/workflows/workflow-editor';
 import type { NodeTypeView, WorkflowEdgeKind, WorkflowGraphJson } from '@/lib/api/admin-types';
 
 const nodeTypes: NodeTypes = { workflowNode: WorkflowNode };
@@ -58,7 +62,7 @@ export function WorkflowCanvas({
   nodeTypeCatalog: NodeTypeView[];
   readOnly: boolean;
   onChange: (graph: WorkflowGraphJson) => void;
-  onEditPrompt: (agentRole: string) => void;
+  onEditPrompt: (target: PromptEditTarget) => void;
 }) {
   return (
     <ReactFlowProvider>
@@ -84,7 +88,7 @@ function WorkflowCanvasInner({
   nodeTypeCatalog: NodeTypeView[];
   readOnly: boolean;
   onChange: (graph: WorkflowGraphJson) => void;
-  onEditPrompt: (agentRole: string) => void;
+  onEditPrompt: (target: PromptEditTarget) => void;
 }) {
   const t = useTranslations('adminWorkflows');
   const nodeTypesByType = useMemo(
@@ -198,7 +202,9 @@ function WorkflowCanvasInner({
                   event.dataTransfer.setData('application/x-workflow-node-type', spec.type);
                   event.dataTransfer.effectAllowed = 'move';
                 }}
-                onClick={() => addNode(spec, { x: 40 + Math.random() * 40, y: 40 + Math.random() * 200 })}
+                onClick={() =>
+                  addNode(spec, { x: 40 + Math.random() * 40, y: 40 + Math.random() * 200 })
+                }
                 className="rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2.5 py-2 text-left text-xs transition-colors hover:border-primary/50 hover:bg-primary/8"
                 title={spec.description}
               >
@@ -264,21 +270,30 @@ function WorkflowCanvasInner({
               )}
             </div>
 
-            {selectedNode.data.spec?.is_agent && selectedNode.data.spec.agent_role ? (
+            {(selectedNode.data.spec?.profile_bindings ?? []).map((binding) => (
               <Button
+                key={binding.config_field}
                 variant="secondary"
                 size="sm"
-                onClick={() => onEditPrompt(selectedNode.data.spec!.agent_role!)}
+                onClick={() =>
+                  onEditPrompt({
+                    role: binding.role,
+                    profileKey:
+                      (selectedNode.data.config[binding.config_field] as string | undefined) ??
+                      null,
+                  })
+                }
               >
                 {t('editPrompt')}
               </Button>
-            ) : null}
+            ))}
 
             {selectedNode.data.spec ? (
               <div className="border-t border-border pt-3">
                 <p className="mb-2 text-xs font-semibold text-muted">{t('nodeConfig')}</p>
                 <NodeConfigForm
                   schema={selectedNode.data.spec.config_schema as unknown as NodeConfigSchema}
+                  profileBindings={selectedNode.data.spec.profile_bindings ?? []}
                   value={selectedNode.data.config}
                   disabled={readOnly}
                   onChange={updateNodeConfig}
@@ -296,8 +311,8 @@ function WorkflowCanvasInner({
           <div className="flex flex-col gap-3">
             <p className="text-sm font-semibold">{t('edgeProperties')}</p>
             <p className="text-xs text-muted">
-              {selectedEdge.source} <span className="font-mono">:{selectedEdge.sourceHandle}</span> →{' '}
-              {selectedEdge.target}
+              {selectedEdge.source} <span className="font-mono">:{selectedEdge.sourceHandle}</span>{' '}
+              → {selectedEdge.target}
             </p>
             <Select
               label={t('edgeKind')}

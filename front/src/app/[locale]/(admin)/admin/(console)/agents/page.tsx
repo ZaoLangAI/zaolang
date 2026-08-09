@@ -1,6 +1,5 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 
-import { AgentRunsTable } from '@/components/admin/agents/agent-runs-table';
 import { AgentSkillsPanel } from '@/components/admin/agents/agent-skills-panel';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
@@ -53,8 +52,6 @@ export default async function AdminAgentsPage() {
       </section>
 
       <AgentSkillsPanel initial={nodes.items} />
-
-      <AgentRunsTable />
     </div>
   );
 }
