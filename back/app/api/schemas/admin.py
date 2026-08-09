@@ -430,18 +430,6 @@ class ConfigDiffResponse(ApiModel):
     entries: list[ConfigDiffEntry]
 
 
-class MediaCapabilityView(ApiModel):
-    """One media capability (e.g. `text_to_image`) an endpoint serves.
-
-    Used both to read and to write: it carries no secret, so the same shape
-    works for the upsert request and the response. Primary/backup role lives
-    on the parent endpoint, not here.
-    """
-
-    model: str = Field(min_length=1, max_length=200)
-    enabled: bool = True
-
-
 class LlmProviderEndpointView(ApiModel):
     """Read model for one model-provider endpoint.
 
@@ -449,8 +437,8 @@ class LlmProviderEndpointView(ApiModel):
     truncated preview — so a GET response is always safe to render or log.
 
     `role`/`backup_order` are endpoint-level for both `general` and `media`.
-    For media, `capabilities` only declares which tags the credential serves
-    and which model id each tag uses.
+    For media, `capabilities` is derived and read-only: it lists which tags
+    the declared `model` + `input_modalities`/`output_modalities` cover.
     """
 
     id: str
@@ -460,7 +448,12 @@ class LlmProviderEndpointView(ApiModel):
     api_key_preview: str | None = None
     kind: Literal["general", "media"] = "general"
     models: list[str] = Field(default_factory=list)
-    capabilities: dict[str, MediaCapabilityView] = Field(default_factory=dict)
+    # `kind="media"` only.
+    model: str = ""
+    input_modalities: list[str] = Field(default_factory=list)
+    output_modalities: list[str] = Field(default_factory=list)
+    # Derived from the modalities above; read-only.
+    capabilities: list[str] = Field(default_factory=list)
     max_concurrency: int
     role: Literal["primary", "backup"]
     backup_order: int
@@ -501,8 +494,11 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     models: list[str] = Field(default_factory=list)
     role: Literal["primary", "backup"] = "backup"
     backup_order: int = Field(default=100, ge=1, le=1000)
-    # `kind="media"` only, keyed by a `MEDIA_CAPABILITIES` tag.
-    capabilities: dict[str, MediaCapabilityView] = Field(default_factory=dict)
+    # `kind="media"` only: one model id plus the modalities it supports.
+    # Capability tags are derived server-side, not submitted here.
+    model: str = Field(default="", max_length=200)
+    input_modalities: list[str] = Field(default_factory=list)
+    output_modalities: list[str] = Field(default_factory=list)
     max_concurrency: int = Field(default=4, ge=1, le=256)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True

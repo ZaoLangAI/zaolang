@@ -15126,12 +15126,25 @@
             "title": "Backup Order",
             "default": 100
           },
-          "capabilities": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/MediaCapabilityView"
+          "model": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Model",
+            "default": ""
+          },
+          "input_modalities": {
+            "items": {
+              "type": "string"
             },
-            "type": "object",
-            "title": "Capabilities"
+            "type": "array",
+            "title": "Input Modalities"
+          },
+          "output_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Modalities"
           },
           "max_concurrency": {
             "type": "integer",
@@ -15205,11 +15218,30 @@
             "type": "array",
             "title": "Models"
           },
-          "capabilities": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/MediaCapabilityView"
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
+          },
+          "input_modalities": {
+            "items": {
+              "type": "string"
             },
-            "type": "object",
+            "type": "array",
+            "title": "Input Modalities"
+          },
+          "output_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Modalities"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
             "title": "Capabilities"
           },
           "max_concurrency": {
@@ -15276,7 +15308,7 @@
           "enabled"
         ],
         "title": "LlmProviderEndpointView",
-        "description": "Read model for one model-provider endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log.\n\n`role`/`backup_order` are endpoint-level for both `general` and `media`.\nFor media, `capabilities` only declares which tags the credential serves\nand which model id each tag uses."
+        "description": "Read model for one model-provider endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log.\n\n`role`/`backup_order` are endpoint-level for both `general` and `media`.\nFor media, `capabilities` is derived and read-only: it lists which tags\nthe declared `model` + `input_modalities`/`output_modalities` cover."
       },
       "LlmProviderPoolView": {
         "properties": {
@@ -15512,27 +15544,6 @@
           "age_gate_confirmed"
         ],
         "title": "MeResponse"
-      },
-      "MediaCapabilityView": {
-        "properties": {
-          "model": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Model"
-          },
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "model"
-        ],
-        "title": "MediaCapabilityView",
-        "description": "One media capability (e.g. `text_to_image`) an endpoint serves.\n\nUsed both to read and to write: it carries no secret, so the same shape\nworks for the upsert request and the response. Primary/backup role lives\non the parent endpoint, not here."
       },
       "MediaType": {
         "type": "string",

@@ -26,7 +26,6 @@ def _general_payload(**overrides: object) -> dict:
         "models": ["kimi-k3"],
         "role": "backup",
         "backup_order": 100,
-        "capabilities": {},
         "max_concurrency": 4,
         "timeout_ms": 30_000,
         "enabled": True,
@@ -35,7 +34,13 @@ def _general_payload(**overrides: object) -> dict:
     return payload
 
 
-def _media_payload(capabilities: dict, **overrides: object) -> dict:
+def _media_payload(
+    *,
+    model: str = "m1",
+    input_modalities: list[str],
+    output_modalities: list[str],
+    **overrides: object,
+) -> dict:
     payload = {
         "name": "AiHubMix",
         "base_url": "https://aihubmix.invalid",
@@ -44,7 +49,9 @@ def _media_payload(capabilities: dict, **overrides: object) -> dict:
         "models": [],
         "role": "backup",
         "backup_order": 100,
-        "capabilities": capabilities,
+        "model": model,
+        "input_modalities": input_modalities,
+        "output_modalities": output_modalities,
         "max_concurrency": 4,
         "timeout_ms": 30_000,
         "enabled": True,
@@ -80,10 +87,9 @@ def test_media_primary_demotes_other_media_not_general(client: TestClient, admin
         admin,
         "ep-a",
         _media_payload(
-            {
-                "text_to_image": {"model": "m1", "enabled": True},
-                "audio_generation": {"model": "tts-a", "enabled": True},
-            },
+            model="m1",
+            input_modalities=["text"],
+            output_modalities=["image", "audio"],
             role="primary",
         ),
     )
@@ -92,7 +98,9 @@ def test_media_primary_demotes_other_media_not_general(client: TestClient, admin
         admin,
         "ep-b",
         _media_payload(
-            {"text_to_image": {"model": "m2", "enabled": True}},
+            model="m2",
+            input_modalities=["text"],
+            output_modalities=["image"],
             role="primary",
         ),
     )
@@ -103,7 +111,29 @@ def test_media_primary_demotes_other_media_not_general(client: TestClient, admin
     assert by_id["ep-b"]["role"] == "primary"
     assert by_id["ep-general"]["role"] == "primary"
     assert set(by_id["ep-a"]["capabilities"]) == {"text_to_image", "audio_generation"}
-    assert "role" not in by_id["ep-b"]["capabilities"]["text_to_image"]
+    assert by_id["ep-b"]["capabilities"] == ["text_to_image"]
+
+
+def test_media_requires_a_modality_combination_that_derives_a_capability(
+    client: TestClient, admin: User
+) -> None:
+    """`video` input + `audio` output covers no `Operation`, so it must be
+    rejected rather than silently saved with zero servable capabilities."""
+    response = client.put(
+        "/v1/admin/llm-providers/ep-bad",
+        json=_media_payload(model="m1", input_modalities=["video"], output_modalities=["audio"]),
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_media_requires_a_model_name(client: TestClient, admin: User) -> None:
+    response = client.put(
+        "/v1/admin/llm-providers/ep-bad",
+        json=_media_payload(model="", input_modalities=["text"], output_modalities=["image"]),
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
 
 
 def test_api_key_is_never_echoed_back(client: TestClient, admin: User) -> None:

@@ -4467,10 +4467,15 @@ export interface components {
              * @default 100
              */
             backup_order: number;
-            /** Capabilities */
-            capabilities?: {
-                [key: string]: components["schemas"]["MediaCapabilityView"];
-            };
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Input Modalities */
+            input_modalities?: string[];
+            /** Output Modalities */
+            output_modalities?: string[];
             /**
              * Max Concurrency
              * @default 4
@@ -4495,8 +4500,8 @@ export interface components {
          *     truncated preview — so a GET response is always safe to render or log.
          *
          *     `role`/`backup_order` are endpoint-level for both `general` and `media`.
-         *     For media, `capabilities` only declares which tags the credential serves
-         *     and which model id each tag uses.
+         *     For media, `capabilities` is derived and read-only: it lists which tags
+         *     the declared `model` + `input_modalities`/`output_modalities` cover.
          */
         LlmProviderEndpointView: {
             /** Id */
@@ -4517,10 +4522,17 @@ export interface components {
             kind: "general" | "media";
             /** Models */
             models?: string[];
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /** Input Modalities */
+            input_modalities?: string[];
+            /** Output Modalities */
+            output_modalities?: string[];
             /** Capabilities */
-            capabilities?: {
-                [key: string]: components["schemas"]["MediaCapabilityView"];
-            };
+            capabilities?: string[];
             /** Max Concurrency */
             max_concurrency: number;
             /**
@@ -4644,23 +4656,6 @@ export interface components {
              * @default 0
              */
             reserved_credits: number;
-        };
-        /**
-         * MediaCapabilityView
-         * @description One media capability (e.g. `text_to_image`) an endpoint serves.
-         *
-         *     Used both to read and to write: it carries no secret, so the same shape
-         *     works for the upsert request and the response. Primary/backup role lives
-         *     on the parent endpoint, not here.
-         */
-        MediaCapabilityView: {
-            /** Model */
-            model: string;
-            /**
-             * Enabled
-             * @default true
-             */
-            enabled: boolean;
         };
         /**
          * MediaType

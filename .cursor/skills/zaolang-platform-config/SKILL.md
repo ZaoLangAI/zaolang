@@ -23,7 +23,7 @@ disable-model-invocation: true
 
 九个 key：`pricing`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`shortform`、`llm_providers`、`llm_reliability`。（曾经的第十个 key `routing_weights` 已随加权路由公式一起移除，见 `zaolang-agent-gateway` 不变量 #1。）
 
-`llm_providers` 里每个端点用 `kind` 二选一：`general`（纯文字 + 图片理解，四个 Agent 角色共用同一个池）或 `media`（图片/视频/音频生成；`capabilities` 只声明能力 tag 与模型名）。主/备角色在端点的 `role`/`backup_order` 上，同 `kind` 内仅一个 primary。熔断阈值/冷却时间/`max_retries` 不属于「哪些端点存在」这个目录本身，拆成独立的 `llm_reliability` 段，在配置中心走通用 JSON 编辑，不在 `llm-providers-panel.tsx` 里重复实现专属表单。
+`llm_providers` 里每个端点用 `kind` 二选一：`general`（纯文字 + 图片理解，四个 Agent 角色共用同一个池）或 `media`（图片/视频/音频生成）。`media` 端点只声明一个模型 id（`model`）+ 它支持的输入模态（`input_modalities`：文本/图片/视频）与输出模态（`output_modalities`：图片/视频/音频）；能力 tag（`text_to_image` 等）由固定映射表 `capabilities_for_modalities` 从模态组合推导，不再逐个能力填模型名——`LlmProviderEndpoint.capabilities` 是运行时 `@property`，不落库。同一凭证要用不同模型服务不同能力就拆成多个端点。主/备角色在端点的 `role`/`backup_order` 上，同 `kind` 内仅一个 primary。熔断阈值/冷却时间/`max_retries` 不属于「哪些端点存在」这个目录本身，拆成独立的 `llm_reliability` 段，在配置中心走通用 JSON 编辑，不在 `llm-providers-panel.tsx` 里重复实现专属表单。
 
 ## 不可破坏的不变量
 

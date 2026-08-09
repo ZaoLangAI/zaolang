@@ -7,6 +7,7 @@ against a malformed value.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -180,32 +181,48 @@ class ModerationConfig(ConfigSection):
 # value: each media generation job maps 1:1 onto one capability tag.
 MEDIA_CAPABILITIES: list[str] = [op.value for op in Operation]
 
+# The modality axes an operator picks from instead of naming a capability tag
+# directly. Every `Operation` maps onto exactly one (input, output) pair below,
+# so declaring modalities is equivalent to declaring capabilities — just
+# phrased in terms a non-engineer can reason about ("this model reads images
+# and writes video") rather than the internal tag vocabulary. `audio` is a
+# valid *input* modality (e.g. voice-driven lip-sync video) even though no
+# `Operation` pairs it with an output yet — declaring it alongside a modality
+# that does derive a capability is harmless, it just contributes nothing on
+# its own; see `_media_model_and_modalities_are_coherent` below.
+MEDIA_INPUT_MODALITIES: list[str] = ["text", "image", "video", "audio"]
+MEDIA_OUTPUT_MODALITIES: list[str] = ["image", "video", "audio"]
 
-class MediaCapability(ConfigSection):
-    """One capability a `kind="media"` endpoint can serve.
+# One (input modality, output modality) pair per `Operation` — the new
+# capability-selection axis. There is no per-capability model any more: an
+# endpoint declares one model plus which modalities it supports, and every
+# `Operation` whose pair is fully covered becomes a servable capability.
+_CAPABILITY_MODALITY_MAP: dict[Operation, tuple[str, str]] = {
+    Operation.TEXT_TO_IMAGE: ("text", "image"),
+    Operation.IMAGE_TO_IMAGE: ("image", "image"),
+    Operation.TEXT_TO_VIDEO: ("text", "video"),
+    Operation.IMAGE_TO_VIDEO: ("image", "video"),
+    Operation.VIDEO_TO_VIDEO: ("video", "video"),
+    Operation.AUDIO_GENERATION: ("text", "audio"),
+}
 
-    A single endpoint (one base_url/api_key credential) may hold several of
-    these at once — e.g. the same AiHubMix key doing both `text_to_image` and
-    `audio_generation` — each with its own model id. Primary/backup role lives
-    on the parent endpoint, not per capability.
+
+def capabilities_for_modalities(
+    input_modalities: Iterable[str], output_modalities: Iterable[str]
+) -> set[str]:
+    """Derives which `MEDIA_CAPABILITIES` tags a modality selection covers.
+
+    Pure and stateless on purpose: both the admin API and the router-facing
+    `media_endpoints.py` call this instead of storing the result, so the two
+    can never drift apart.
     """
-
-    model: str
-    enabled: bool = True
-
-    @model_validator(mode="before")
-    @classmethod
-    def _strip_legacy_role_fields(cls, data: Any) -> Any:
-        """Drops per-capability role/backup_order written before endpoint-level
-        primary/backup. Without this, `extra="forbid"` would reject any stored
-        endpoint that still carries those keys.
-        """
-        if not isinstance(data, dict):
-            return data
-        migrated = dict(data)
-        migrated.pop("role", None)
-        migrated.pop("backup_order", None)
-        return migrated
+    inputs = set(input_modalities)
+    outputs = set(output_modalities)
+    return {
+        operation.value
+        for operation, (in_modality, out_modality) in _CAPABILITY_MODALITY_MAP.items()
+        if in_modality in inputs and out_modality in outputs
+    }
 
 
 class LlmProviderEndpoint(ConfigSection):
@@ -235,28 +252,66 @@ class LlmProviderEndpoint(ConfigSection):
     role: Literal["primary", "backup"] = "backup"
     # Only meaningful when role == "backup": lower tries first among backups.
     backup_order: int = Field(default=100, ge=1, le=1000)
-    # `kind="media"` only: keyed by a `MEDIA_CAPABILITIES` tag.
-    capabilities: dict[str, MediaCapability] = Field(default_factory=dict)
+    # `kind="media"` only: the single model id every derived capability below
+    # dispatches to. One credential serving several different model ids means
+    # several endpoints, not several entries here.
+    model: str = ""
+    # `kind="media"` only: subsets of `MEDIA_INPUT_MODALITIES`/`_OUTPUT_MODALITIES`.
+    input_modalities: list[str] = Field(default_factory=list)
+    output_modalities: list[str] = Field(default_factory=list)
     max_concurrency: int = Field(default=4, ge=1, le=256)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
 
+    @property
+    def capabilities(self) -> set[str]:
+        """Which `MEDIA_CAPABILITIES` tags this endpoint serves.
+
+        Derived from `input_modalities`/`output_modalities`, not stored: a
+        plain `@property` (not a pydantic field), so it never round-trips
+        through `model_dump()` and can't go stale relative to the modalities
+        that produced it.
+        """
+        if self.kind != "media":
+            return set()
+        return capabilities_for_modalities(self.input_modalities, self.output_modalities)
+
+    @model_validator(mode="after")
+    def _media_model_and_modalities_are_coherent(self) -> LlmProviderEndpoint:
+        if self.kind != "media":
+            return self
+        if not self.model.strip():
+            raise ValueError("媒体模型必须填写模型名称。")
+        bad_inputs = set(self.input_modalities) - set(MEDIA_INPUT_MODALITIES)
+        bad_outputs = set(self.output_modalities) - set(MEDIA_OUTPUT_MODALITIES)
+        if bad_inputs or bad_outputs:
+            raise ValueError(f"不支持的模态: {sorted(bad_inputs | bad_outputs)}")
+        if not capabilities_for_modalities(self.input_modalities, self.output_modalities):
+            raise ValueError("所选输入/输出类型组合未对应任何生成能力，请重新选择。")
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def _migrate_legacy_fields(cls, data: Any) -> Any:
-        """Reads pre-migration rows saved before `role`/`kind` existed.
+        """Reads pre-migration rows saved before `role`/`kind` existed, and
+        drops the pre-modality `capabilities` shape (each tag carrying its own
+        `model`/`enabled`).
 
         `priority == 1` becomes the primary; anything else becomes a backup
         ordered by its old priority value. `scenario_tags` (the old Agent-role
         categorisation) is simply dropped — every endpoint that had one is a
-        `kind="general"` endpoint, which is already the default. Without
-        this, `extra="forbid"` would make `get_typed` raise on any endpoint
-        saved before this migration.
+        `kind="general"` endpoint, which is already the default. The old
+        `capabilities` dict cannot be losslessly converted to one model id
+        plus modalities (it could name a different model per tag), so it is
+        dropped rather than guessed at; an operator re-declares the endpoint
+        once in the new form. Without this, `extra="forbid"` would make
+        `get_typed` raise on any endpoint saved before this migration.
         """
         if not isinstance(data, dict):
             return data
         migrated = dict(data)
         migrated.pop("scenario_tags", None)
+        migrated.pop("capabilities", None)
         if "priority" in migrated:
             legacy_priority = migrated.pop("priority")
             migrated.setdefault("role", "primary" if legacy_priority <= 1 else "backup")

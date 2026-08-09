@@ -15,7 +15,9 @@ def _seed_media_endpoint(
     db: Session,
     *,
     endpoint_id: str = "media-ep",
-    capabilities: dict[str, dict] | None = None,
+    model: str = "gpt-image-1",
+    input_modalities: list[str] | None = None,
+    output_modalities: list[str] | None = None,
     enabled: bool = True,
 ) -> None:
     config_service.set_value(
@@ -29,15 +31,9 @@ def _seed_media_endpoint(
                     "api_key": "test-key",
                     "kind": "media",
                     "enabled": enabled,
-                    "capabilities": capabilities
-                    or {
-                        "image_to_image": {
-                            "model": "gpt-image-1",
-                            "role": "primary",
-                            "backup_order": 100,
-                            "enabled": True,
-                        }
-                    },
+                    "model": model,
+                    "input_modalities": input_modalities or ["image"],
+                    "output_modalities": output_modalities or ["image"],
                 }
             }
         },
@@ -65,17 +61,14 @@ def test_a_configured_media_endpoint_can_serve_an_operation_the_fakes_cannot(
     assert isinstance(decision.provider, AiHubMixMediaProvider)
 
 
-def test_disabling_the_capability_removes_it_from_the_catalog(db: Session) -> None:
+def test_narrow_modalities_remove_uncovered_operations_from_the_catalog(db: Session) -> None:
+    """Only modalities that cover an operation make it routable — text→audio
+    covers `audio_generation`, not `image_to_image`."""
     _seed_media_endpoint(
         db,
-        capabilities={
-            "image_to_image": {
-                "model": "gpt-image-1",
-                "role": "primary",
-                "backup_order": 100,
-                "enabled": False,
-            }
-        },
+        model="tts-1",
+        input_modalities=["text"],
+        output_modalities=["audio"],
     )
     decision = router.route(
         db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
@@ -93,18 +86,19 @@ def test_disabling_the_whole_endpoint_removes_every_capability(db: Session) -> N
 
 
 def test_one_endpoint_can_serve_two_independent_capabilities(db: Session) -> None:
+    """One model + modalities that cover two operations yields two catalog
+    entries, both dispatching to the same model id."""
     _seed_media_endpoint(
         db,
-        capabilities={
-            "image_to_image": {"model": "gpt-image-1", "role": "primary", "enabled": True},
-            "audio_generation": {"model": "tts-1", "role": "backup", "enabled": True},
-        },
+        model="multi-modal-1",
+        input_modalities=["image", "text"],
+        output_modalities=["image", "audio"],
     )
     catalog = router.build_catalog(db)
     assert "media-ep:image_to_image" in catalog
     assert "media-ep:audio_generation" in catalog
-    assert catalog["media-ep:image_to_image"].model_or_workflow == "gpt-image-1"
-    assert catalog["media-ep:audio_generation"].model_or_workflow == "tts-1"
+    assert catalog["media-ep:image_to_image"].model_or_workflow == "multi-modal-1"
+    assert catalog["media-ep:audio_generation"].model_or_workflow == "multi-modal-1"
 
 
 def test_the_static_fakes_are_still_present_alongside_dynamic_routes(db: Session) -> None:

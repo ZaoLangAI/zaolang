@@ -43,7 +43,6 @@ export type LlmProviderEndpoint = S['LlmProviderEndpointView'];
 export type LlmProviderCategory = S['LlmProviderCategoryView'];
 export type LlmProviderPool = S['LlmProviderPoolView'];
 export type LlmProviderUpsertRequest = S['LlmProviderEndpointUpsertRequest'];
-export type MediaCapability = S['MediaCapabilityView'];
 export type LlmProviderKind = LlmProviderEndpoint['kind'];
 export type AgentNode = S['AgentNodeView'];
 export type AgentProfile = S['AgentProfileView'];

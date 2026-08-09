@@ -58,9 +58,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
     for endpoint_id, endpoint in config.endpoints.items():
         if not endpoint.enabled or endpoint.kind != "media":
             continue
-        for tag, capability in endpoint.capabilities.items():
-            if not capability.enabled:
-                continue
+        for tag in endpoint.capabilities:
             catalog_key = f"{endpoint_id}:{tag}"
             catalog[catalog_key] = ProviderCapability(
                 name=catalog_key,
@@ -70,11 +68,11 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 quality_prior=_QUALITY_PRIOR,
                 typical_latency_ms=_TYPICAL_LATENCY_MS.get(tag, 30_000),
                 unit_cost_minor=_UNIT_COST_MINOR.get(tag, 20),
-                model_or_workflow=capability.model,
+                model_or_workflow=endpoint.model,
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
-                    model=capability.model,
+                    model=endpoint.model,
                     base_url=endpoint.base_url,
                     api_key=endpoint.api_key,
                     timeout_ms=endpoint.timeout_ms,

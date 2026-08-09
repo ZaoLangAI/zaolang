@@ -7,7 +7,7 @@ import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Select, Switch, TextInput } from '@/components/ui/field';
+import { Select, TextInput } from '@/components/ui/field';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
@@ -37,9 +37,49 @@ const CAPABILITY_LABEL_KEYS: Record<MediaCapabilityTag, string> = {
   audio_generation: 'capabilityAudioGeneration',
 };
 
-interface CapabilityFormState {
-  model: string;
-  enabled: boolean;
+// The two modality axes an operator picks from instead of naming a capability
+// tag directly, mirroring `MEDIA_INPUT_MODALITIES`/`MEDIA_OUTPUT_MODALITIES`
+// in `app/platform_config/schemas.py`. `audio` is a valid input (e.g.
+// voice-driven lip-sync video) even though no capability tag derives from it
+// alone yet — see `CAPABILITY_MODALITY_MAP` below.
+const MEDIA_INPUT_MODALITIES = ['text', 'image', 'video', 'audio'] as const;
+type MediaInputModality = (typeof MEDIA_INPUT_MODALITIES)[number];
+const MEDIA_OUTPUT_MODALITIES = ['image', 'video', 'audio'] as const;
+type MediaOutputModality = (typeof MEDIA_OUTPUT_MODALITIES)[number];
+
+const MODALITY_LABEL_KEYS: Record<MediaInputModality | MediaOutputModality, string> = {
+  text: 'modalityText',
+  image: 'modalityImage',
+  video: 'modalityVideo',
+  audio: 'modalityAudio',
+};
+
+// One (input, output) pair per capability tag — mirrors the backend's
+// `_CAPABILITY_MODALITY_MAP`. Kept in sync by hand since this is a small,
+// stable, six-entry table shared by exactly these two places.
+const CAPABILITY_MODALITY_MAP: Record<MediaCapabilityTag, readonly [MediaInputModality, MediaOutputModality]> = {
+  text_to_image: ['text', 'image'],
+  image_to_image: ['image', 'image'],
+  text_to_video: ['text', 'video'],
+  image_to_video: ['image', 'video'],
+  video_to_video: ['video', 'video'],
+  audio_generation: ['text', 'audio'],
+};
+
+/** Which capability tags a modality selection covers — the client-side
+ * mirror of `capabilities_for_modalities` used for the live preview and for
+ * pre-submit validation, so the admin sees the same result the API will
+ * derive after saving. */
+function capabilitiesForModalities(
+  inputModalities: readonly string[],
+  outputModalities: readonly string[],
+): MediaCapabilityTag[] {
+  const inputs = new Set(inputModalities);
+  const outputs = new Set(outputModalities);
+  return MEDIA_CAPABILITY_TAGS.filter((tag) => {
+    const [input, output] = CAPABILITY_MODALITY_MAP[tag];
+    return inputs.has(input) && outputs.has(output);
+  });
 }
 
 interface EndpointFormState {
@@ -49,33 +89,46 @@ interface EndpointFormState {
   api_key: string;
   kind: LlmProviderKind;
   models: string;
+  // `kind="media"` only: one model id plus the modalities it supports.
+  model: string;
+  input_modalities: MediaInputModality[];
+  output_modalities: MediaOutputModality[];
   role: 'primary' | 'backup';
   backup_order: string;
-  capabilities: Record<MediaCapabilityTag, CapabilityFormState>;
   max_concurrency: string;
   timeout_ms: string;
   enabled: boolean;
 }
 
-function emptyCapabilities(preset?: MediaCapabilityTag): Record<MediaCapabilityTag, CapabilityFormState> {
-  const capabilities = {} as Record<MediaCapabilityTag, CapabilityFormState>;
-  for (const tag of MEDIA_CAPABILITY_TAGS) {
-    capabilities[tag] = { model: '', enabled: tag === preset };
+/**
+ * Model ids are no longer admin-authored: the endpoint id is just the config
+ * dict key, so a random id is exactly as good as a hand-picked slug and
+ * removes an input the admin has no reason to think about. `ep_` mirrors the
+ * repo's typed-id-prefix convention even though this key never touches
+ * `back/app/models/base.py:new_id` — it lives in `PlatformConfig` JSON, not a
+ * database row.
+ */
+function generateModelId(existingIds: Set<string>): string {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const id = `ep_${globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    if (!existingIds.has(id)) return id;
   }
-  return capabilities;
+  return `ep_${globalThis.crypto.randomUUID().replace(/-/g, '')}`;
 }
 
-function emptyForm(kind: LlmProviderKind, hasPrimary: boolean): EndpointFormState {
+function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): EndpointFormState {
   return {
-    id: '',
+    id,
     name: '',
     base_url: '',
     api_key: '',
     kind,
     models: '',
+    model: '',
+    input_modalities: [],
+    output_modalities: [],
     role: !hasPrimary ? 'primary' : 'backup',
     backup_order: '100',
-    capabilities: emptyCapabilities(),
     max_concurrency: '4',
     timeout_ms: '30000',
     enabled: true,
@@ -83,13 +136,6 @@ function emptyForm(kind: LlmProviderKind, hasPrimary: boolean): EndpointFormStat
 }
 
 function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
-  const capabilities = {} as Record<MediaCapabilityTag, CapabilityFormState>;
-  for (const tag of MEDIA_CAPABILITY_TAGS) {
-    const existing = endpoint.capabilities?.[tag];
-    capabilities[tag] = existing
-      ? { model: existing.model, enabled: existing.enabled }
-      : { model: '', enabled: false };
-  }
   return {
     id: endpoint.id,
     name: endpoint.name,
@@ -97,9 +143,11 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     api_key: '',
     kind: endpoint.kind,
     models: (endpoint.models ?? []).join(', '),
+    model: endpoint.model ?? '',
+    input_modalities: (endpoint.input_modalities ?? []) as MediaInputModality[],
+    output_modalities: (endpoint.output_modalities ?? []) as MediaOutputModality[],
     role: endpoint.role,
     backup_order: String(endpoint.backup_order),
-    capabilities,
     max_concurrency: String(endpoint.max_concurrency),
     timeout_ms: String(endpoint.timeout_ms),
     enabled: endpoint.enabled,
@@ -111,6 +159,27 @@ function splitList(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+/** Shared shape for `PUT /admin/llm-providers/{id}`, used both by the full
+ * editor save and by the list row's quick enable/disable toggle so the two
+ * never drift on what a "no-op except one field" write looks like. */
+function buildUpsertPayload(form: EndpointFormState) {
+  return {
+    name: form.name,
+    base_url: form.base_url,
+    api_key: form.api_key.trim() ? form.api_key.trim() : undefined,
+    kind: form.kind,
+    models: form.kind === 'general' ? splitList(form.models) : [],
+    role: form.role,
+    backup_order: Number(form.backup_order),
+    model: form.kind === 'media' ? form.model.trim() : '',
+    input_modalities: form.kind === 'media' ? form.input_modalities : [],
+    output_modalities: form.kind === 'media' ? form.output_modalities : [],
+    max_concurrency: Number(form.max_concurrency),
+    timeout_ms: Number(form.timeout_ms),
+    enabled: form.enabled,
+  };
 }
 
 /**
@@ -144,6 +213,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   const [removing, setRemoving] = useState<LlmProviderEndpoint | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const knownIds = new Set(endpoints.map((e) => e.id));
 
   const hasPrimaryOfKind = (kind: LlmProviderKind) =>
@@ -154,7 +224,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   };
 
   const openCreate = () => {
-    setEditing(emptyForm('general', hasPrimaryOfKind('general')));
+    setEditing(emptyForm(generateModelId(knownIds), 'general', hasPrimaryOfKind('general')));
   };
 
   const openEdit = (endpoint: LlmProviderEndpoint) => {
@@ -166,46 +236,28 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
     setBusy(true);
     setError(null);
     try {
-      const capabilities: Record<string, { model: string; enabled: boolean }> = {};
       if (editing.kind === 'media') {
-        for (const tag of MEDIA_CAPABILITY_TAGS) {
-          const capability = editing.capabilities[tag];
-          if (!capability.enabled) continue;
-          if (!capability.model.trim()) {
-            setError(t('capabilityModelRequired'));
-            setBusy(false);
-            return;
-          }
-          capabilities[tag] = {
-            model: capability.model.trim(),
-            enabled: true,
-          };
+        if (!editing.model.trim()) {
+          setError(t('mediaModelRequired'));
+          setBusy(false);
+          return;
         }
-        if (Object.keys(capabilities).length === 0) {
-          setError(t('capabilitiesRequired'));
+        if (capabilitiesForModalities(editing.input_modalities, editing.output_modalities).length === 0) {
+          setError(t('modalitiesRequired'));
           setBusy(false);
           return;
         }
       }
-      const updated = await adminApi.put<LlmProviderPool>(`/v1/admin/llm-providers/${editing.id}`, {
-        name: editing.name,
-        base_url: editing.base_url,
-        api_key: editing.api_key.trim() ? editing.api_key.trim() : undefined,
-        kind: editing.kind,
-        models: editing.kind === 'general' ? splitList(editing.models) : [],
-        role: editing.role,
-        backup_order: Number(editing.backup_order),
-        capabilities,
-        max_concurrency: Number(editing.max_concurrency),
-        timeout_ms: Number(editing.timeout_ms),
-        enabled: editing.enabled,
-      });
+      const updated = await adminApi.put<LlmProviderPool>(
+        `/v1/admin/llm-providers/${editing.id}`,
+        buildUpsertPayload(editing),
+      );
       setPool(updated);
       const demoted = updated.demoted_endpoint_ids ?? [];
       if (demoted.length > 0) {
         notify(t('demotedNotice', { count: demoted.length }), 'info');
       }
-      notify(t('endpointSaved'), 'success');
+      notify(t('modelSaved'), 'success');
       setEditing(null);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
@@ -217,8 +269,22 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   const remove = async (reason: string) => {
     if (!removing) return;
     await adminApi.post(`/v1/admin/llm-providers/${removing.id}/remove`, { reason, confirm: true });
-    notify(t('endpointRemoved'), 'success');
+    notify(t('modelRemoved'), 'success');
     await reload();
+  };
+
+  const toggleEnabled = async (endpoint: LlmProviderEndpoint) => {
+    setTogglingId(endpoint.id);
+    try {
+      const payload = buildUpsertPayload({ ...formFrom(endpoint), enabled: !endpoint.enabled });
+      const updated = await adminApi.put<LlmProviderPool>(`/v1/admin/llm-providers/${endpoint.id}`, payload);
+      setPool(updated);
+      notify(endpoint.enabled ? t('modelDisabled') : t('modelEnabledNotice'), 'success');
+    } catch (caught) {
+      notify(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'), 'error');
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   return (
@@ -258,8 +324,10 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                         key={endpoint.id}
                         endpoint={endpoint}
                         editable={editable}
+                        toggling={togglingId === endpoint.id}
                         onEdit={openEdit}
                         onRemove={(item) => setRemoving(item)}
+                        onToggleEnabled={toggleEnabled}
                       />
                     ))}
                   </div>
@@ -277,8 +345,10 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                         key={endpoint.id}
                         endpoint={endpoint}
                         editable={editable}
+                        toggling={togglingId === endpoint.id}
                         onEdit={openEdit}
                         onRemove={(item) => setRemoving(item)}
+                        onToggleEnabled={toggleEnabled}
                       />
                     ))}
                   </div>
@@ -293,34 +363,18 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
         open={editing !== null}
         onClose={() => setEditing(null)}
         size="lg"
-        title={editing?.id && knownIds.has(editing.id) ? t('editEndpoint') : t('addEndpoint')}
+        title={editing?.id && knownIds.has(editing.id) ? t('editModel') : t('addModel')}
         footer={
-          <>
-            <Button variant="ghost" onClick={() => setEditing(null)}>
-              {tAdmin('reset')}
-            </Button>
-            <Button loading={busy} onClick={() => void save()}>
-              {tAdmin('save')}
-            </Button>
-          </>
+          <Button loading={busy} onClick={() => void save()}>
+            {tAdmin('save')}
+          </Button>
         }
       >
         {editing ? (
           <div className="flex flex-col gap-3">
             <TextInput
               layout="inline"
-              label={t('endpointId')}
-              hint={t('endpointIdHint')}
-              value={editing.id}
-              disabled={knownIds.has(editing.id)}
-              pattern="[a-z0-9_]+"
-              onChange={(event) =>
-                setEditing((current) => current && { ...current, id: event.target.value })
-              }
-            />
-            <TextInput
-              layout="inline"
-              label={t('endpointName')}
+              label={t('modelName')}
               value={editing.name}
               onChange={(event) =>
                 setEditing((current) => current && { ...current, name: event.target.value })
@@ -378,18 +432,24 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                 }
               />
             ) : (
-              <CapabilitiesTable
-                capabilities={editing.capabilities}
-                onChange={(tag, next) =>
-                  setEditing(
-                    (current) =>
-                      current && {
-                        ...current,
-                        capabilities: { ...current.capabilities, [tag]: next },
-                      },
-                  )
-                }
-              />
+              <>
+                <TextInput
+                  layout="inline"
+                  label={t('mediaModelName')}
+                  hint={t('mediaModelNameHint')}
+                  value={editing.model}
+                  onChange={(event) =>
+                    setEditing((current) => current && { ...current, model: event.target.value })
+                  }
+                />
+                <ModalitySelector
+                  inputModalities={editing.input_modalities}
+                  outputModalities={editing.output_modalities}
+                  onChange={(next) =>
+                    setEditing((current) => current && { ...current, ...next })
+                  }
+                />
+              </>
             )}
 
             <Select
@@ -446,13 +506,6 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                 }
               />
             </div>
-            <Switch
-              label={t('endpointEnabled')}
-              checked={editing.enabled}
-              onChange={(checked) =>
-                setEditing((current) => current && { ...current, enabled: checked })
-              }
-            />
             {error ? <ErrorNotice title={error} /> : null}
           </div>
         ) : null}
@@ -461,8 +514,8 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
       <DangerConfirm
         open={removing !== null}
         onClose={() => setRemoving(null)}
-        title={t('removeEndpoint')}
-        description={t('removeEndpointDesc')}
+        title={t('removeModel')}
+        description={t('removeModelDesc')}
         reasonLabel={tAdmin('dangerReason')}
         onConfirm={remove}
       />
@@ -470,56 +523,103 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   );
 }
 
-function CapabilitiesTable({
-  capabilities,
+/** Two modality checklists (input/output) plus a live preview of the
+ * capability tags they derive, mirroring `capabilities_for_modalities` in
+ * `app/platform_config/schemas.py` so what the admin sees here matches what
+ * gets saved. */
+function ModalitySelector({
+  inputModalities,
+  outputModalities,
   onChange,
 }: {
-  capabilities: Record<MediaCapabilityTag, CapabilityFormState>;
-  onChange: (tag: MediaCapabilityTag, next: CapabilityFormState) => void;
+  inputModalities: MediaInputModality[];
+  outputModalities: MediaOutputModality[];
+  onChange: (next: {
+    input_modalities: MediaInputModality[];
+    output_modalities: MediaOutputModality[];
+  }) => void;
+}) {
+  const t = useTranslations('adminProviders');
+  const derived = capabilitiesForModalities(inputModalities, outputModalities);
+
+  const toggleInput = (modality: MediaInputModality) => {
+    const next = inputModalities.includes(modality)
+      ? inputModalities.filter((item) => item !== modality)
+      : [...inputModalities, modality];
+    onChange({ input_modalities: next, output_modalities: outputModalities });
+  };
+
+  const toggleOutput = (modality: MediaOutputModality) => {
+    const next = outputModalities.includes(modality)
+      ? outputModalities.filter((item) => item !== modality)
+      : [...outputModalities, modality];
+    onChange({ input_modalities: inputModalities, output_modalities: next });
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+      <p className="text-xs leading-relaxed text-muted">{t('modalitiesHint')}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ModalityGroup
+          title={t('inputModalities')}
+          options={MEDIA_INPUT_MODALITIES}
+          selected={inputModalities}
+          onToggle={toggleInput}
+        />
+        <ModalityGroup
+          title={t('outputModalities')}
+          options={MEDIA_OUTPUT_MODALITIES}
+          selected={outputModalities}
+          onToggle={toggleOutput}
+        />
+      </div>
+      <div>
+        <p className="text-xs font-medium text-muted">{t('derivedCapabilitiesLabel')}</p>
+        {derived.length === 0 ? (
+          <p className="mt-1 text-xs text-muted">{t('derivedCapabilitiesEmpty')}</p>
+        ) : (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {derived.map((tag) => (
+              <Badge key={tag} tone="neutral">
+                {t(CAPABILITY_LABEL_KEYS[tag])}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ModalityGroup<M extends string>({
+  title,
+  options,
+  selected,
+  onToggle,
+}: {
+  title: string;
+  options: readonly M[];
+  selected: M[];
+  onToggle: (option: M) => void;
 }) {
   const t = useTranslations('adminProviders');
 
   return (
-    <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
-      <p className="col-start-2 row-start-1 text-xs leading-relaxed text-muted">
-        {t('capabilitiesTableHint')}
-      </p>
-      <div className="col-start-1 row-start-2 flex min-h-11 items-center">
-        <p className="text-sm font-medium text-text">{t('capabilitiesTableTitle')}</p>
-      </div>
-      {/* Single grid so col1 is max-content across rows; gap between capability
-          and enable is half of the gap before the model input (1.5 vs 3). */}
-      <div className="col-start-2 row-start-2 grid grid-cols-[max-content_auto_minmax(0,1fr)] items-center rounded-[var(--radius-sm)] border border-border [column-gap:0.375rem]">
-        <div className="col-span-3 grid grid-cols-subgrid items-center border-b border-border px-3 py-2 text-xs font-medium text-muted">
-          <span>{t('capabilityCol')}</span>
-          <span>{t('capabilityEnable')}</span>
-          <span className="pl-1.5">{t('capabilityModel')}</span>
-        </div>
-        {MEDIA_CAPABILITY_TAGS.map((tag) => {
-          const capability = capabilities[tag];
-          const capabilityLabel = t(CAPABILITY_LABEL_KEYS[tag]);
+    <div className="flex flex-col gap-1.5">
+      <p className="text-sm font-medium text-text">{title}</p>
+      <div className="flex flex-col rounded-[var(--radius-sm)] border border-border">
+        {options.map((option) => {
+          const label = t(MODALITY_LABEL_KEYS[option as MediaInputModality | MediaOutputModality]);
           return (
             <div
-              key={tag}
-              className="col-span-3 grid grid-cols-subgrid items-center border-b border-border px-3 py-3 last:border-b-0"
+              key={option}
+              className="flex items-center justify-between gap-2 border-b border-border px-3 py-2 last:border-b-0"
             >
-              <span className="text-sm font-medium text-text">{capabilityLabel}</span>
-              <CapabilityToggle
-                label={`${capabilityLabel} · ${t('capabilityEnable')}`}
-                checked={capability.enabled}
-                onChange={(checked) => onChange(tag, { ...capability, enabled: checked })}
-              />
-              <input
-                type="text"
-                aria-label={`${capabilityLabel} · ${t('capabilityModel')}`}
-                disabled={!capability.enabled}
-                value={capability.model}
-                onChange={(event) => onChange(tag, { ...capability, model: event.target.value })}
-                className={cn(
-                  'ml-1.5 h-11 w-full rounded-[var(--radius-sm)] border bg-surface-soft px-3 text-text',
-                  'placeholder:text-muted/70 transition-colors',
-                  'disabled:cursor-not-allowed disabled:opacity-60',
-                )}
+              <span className="text-sm text-text">{label}</span>
+              <InlineToggle
+                label={`${title} · ${label}`}
+                checked={selected.includes(option)}
+                onChange={() => onToggle(option)}
               />
             </div>
           );
@@ -529,15 +629,18 @@ function CapabilitiesTable({
   );
 }
 
-/** Compact switch for capability rows — the shared `Switch` is a full settings
- * row (`justify-between` + `py-3`) and misaligns next to labeled inputs. */
-function CapabilityToggle({
+/** Compact switch reused for modality rows and the list's enable/disable
+ * action — the shared `Switch` is a full settings row (`justify-between` +
+ * `py-3`) and misaligns in both of those tighter layouts. */
+function InlineToggle({
   label,
   checked,
+  disabled,
   onChange,
 }: {
   label: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (next: boolean) => void;
 }) {
   const id = useId();
@@ -549,10 +652,12 @@ function CapabilityToggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
         'relative h-6 w-11 shrink-0 rounded-full transition-colors',
         checked ? 'bg-primary' : 'bg-track',
+        disabled ? 'cursor-not-allowed opacity-60' : '',
       )}
     >
       <span
@@ -569,20 +674,21 @@ function CapabilityToggle({
 function NodeRow({
   endpoint,
   editable,
+  toggling,
   onEdit,
   onRemove,
+  onToggleEnabled,
 }: {
   endpoint: LlmProviderEndpoint;
   editable: boolean;
+  toggling: boolean;
   onEdit: (endpoint: LlmProviderEndpoint) => void;
   onRemove: (endpoint: LlmProviderEndpoint) => void;
+  onToggleEnabled: (endpoint: LlmProviderEndpoint) => void;
 }) {
   const t = useTranslations('adminProviders');
   const tAdmin = useTranslations('admin');
-  const enabledCapabilities =
-    endpoint.kind === 'media'
-      ? Object.entries(endpoint.capabilities ?? {}).filter(([, capability]) => capability.enabled)
-      : [];
+  const capabilityTags = endpoint.kind === 'media' ? endpoint.capabilities ?? [] : [];
 
   return (
     <div
@@ -609,9 +715,12 @@ function NodeRow({
         {endpoint.kind === 'general' && (endpoint.models ?? []).length > 0 ? (
           <p className="mt-0.5 truncate text-[11px] text-muted">{(endpoint.models ?? []).join(', ')}</p>
         ) : null}
-        {enabledCapabilities.length > 0 ? (
+        {endpoint.kind === 'media' && endpoint.model ? (
+          <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{endpoint.model}</p>
+        ) : null}
+        {capabilityTags.length > 0 ? (
           <div className="mt-1 flex flex-wrap gap-1">
-            {enabledCapabilities.map(([tag]) => (
+            {capabilityTags.map((tag) => (
               <Badge key={tag} tone="neutral">
                 {t(CAPABILITY_LABEL_KEYS[tag as MediaCapabilityTag] ?? tag)}
               </Badge>
@@ -631,13 +740,21 @@ function NodeRow({
         </div>
       </div>
       {editable ? (
-        <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={() => onEdit(endpoint)}>
-            {tAdmin('detail')}
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => onRemove(endpoint)}>
-            {t('removeEndpoint')}
-          </Button>
+        <div className="flex items-center gap-3">
+          <InlineToggle
+            label={`${endpoint.name} · ${t('modelEnabled')}`}
+            checked={endpoint.enabled}
+            disabled={toggling}
+            onChange={() => onToggleEnabled(endpoint)}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => onEdit(endpoint)}>
+              {tAdmin('detail')}
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => onRemove(endpoint)}>
+              {t('removeModel')}
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>

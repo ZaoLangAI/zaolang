@@ -42,7 +42,7 @@ disable-model-invocation: true
 8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
 9. **密钥只从环境变量读**，不进日志、不进 prompt、不回显。
 10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频/音频生成的 `router.py` 选型路由并行，不要混用同一套候选选择逻辑——两者共享同一个配置段 `llm_providers`（按 `kind` 区分 `general`/`media`），但端点一旦落到 `kind="media"`，就只服务 `router.py` 的候选目录，绝不会被 failover 池选中，反之亦然。
-11. **媒体端点的主/备角色只是展示与审计元数据**：端点级 `role`/`backup_order` 不参与 `router.py` 的候选目录构建，胜出者始终由 `intent_router.select_provider()` 这次 LLM 调用决定；只有 `kind="general"` 的 LLM 端点，端点级主/备才是 failover 硬路由依据。`capabilities` 仅声明能力 tag 与模型名。
+11. **媒体端点的主/备角色只是展示与审计元数据**：端点级 `role`/`backup_order` 不参与 `router.py` 的候选目录构建，胜出者始终由 `intent_router.select_provider()` 这次 LLM 调用决定；只有 `kind="general"` 的 LLM 端点，端点级主/备才是 failover 硬路由依据。`media` 端点一个模型 id + 输入/输出模态声明，能力 tag 由映射表推导，不再逐能力填模型名。
 
 ## Prompt 与模型绑定
 
@@ -63,7 +63,7 @@ disable-model-invocation: true
 - **加一个 Agent**：继承 `base.py` 的基类 → 在配置中心 `agents` 段加模型绑定字段 → 只经 `tools.py` 调领域服务 → 补 stub 分支，否则测试无法确定性运行。
 - **给 Agent 加工具**：只加进 `tools.py`，函数签名保持窄（明确的参数、明确的返回），不要暴露 session。
 - **加一个内置（假）供应商**：实现 `providers/base.py` 的协议 → 在 `router.py` 的 `PROVIDER_CATALOG` 登记能力、先验与 `provider_factory` → 在配置中心 `providers` 段加开关与限额 → 补 `ProviderStat` 统计。
-- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/models` 新增一个 `kind="media"` 端点，勾选它支持的能力（文生图/图生图/文/图/视频生视频/音频生成）；`router.build_catalog(session)` 会在下一次路由时自动把它按能力展开进候选目录，交给 `intent_router.select_provider()` 挑选。只有当目标供应商的 HTTP 契约与 `aihubmix_media.py` 不同时才需要新写一个 `GenerationProvider` 实现。
+- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/models` 新增一个 `kind="media"` 端点，填它的模型 id，再勾选它支持的输入模态（文本/图片/视频）与输出模态（图片/视频/音频）；能力 tag 由 `capabilities_for_modalities` 自动推导，`router.build_catalog(session)` 会在下一次路由时把它按能力展开进候选目录，交给 `intent_router.select_provider()` 挑选。同一凭证要用不同模型服务不同能力就配多个端点。只有当目标供应商的 HTTP 契约与 `aihubmix_media.py` 不同时才需要新写一个 `GenerationProvider` 实现。
 - **改选型逻辑**：不要在 `router.py` 里加任何排序/加权代码——那是刻意留白的（不变量 #1）。要改"选哪个供应商"的判断标准，去改 `intent_router.py` 的 `SELECT_PROVIDER_SYSTEM_PROMPT`（或后台可发布的 `AgentSkill` 版本），并同步 `llm/stub.py` 里 `_intent_router` 的确定性分支，否则 `LLM_MODE=stub` 下的路由测试会全部改变行为。
 
 ## 验证

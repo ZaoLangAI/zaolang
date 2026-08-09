@@ -17,6 +17,7 @@ section instead of here — see
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from pydantic import ValidationError
 
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
@@ -24,7 +25,6 @@ from app.api.schemas.admin import (
     LlmProviderEndpointUpsertRequest,
     LlmProviderEndpointView,
     LlmProviderPoolView,
-    MediaCapabilityView,
 )
 from app.api.v1.admin.deps import (
     Admin,
@@ -35,13 +35,12 @@ from app.api.v1.admin.deps import (
     require_confirmation,
 )
 from app.domain.audit import service as audit
-from app.domain.errors import NotFound
+from app.domain.errors import NotFound, ValidationFailed
 from app.llm import failover
 from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     LlmProviderConfig,
     LlmProviderEndpoint,
-    MediaCapability,
 )
 
 router = APIRouter(tags=["admin:llm-providers"])
@@ -83,24 +82,27 @@ def upsert_llm_provider(
                 other.role = "backup"
                 demoted_ids.append(other_id)
 
-    config.endpoints[endpoint_id] = LlmProviderEndpoint(
-        name=payload.name,
-        base_url=payload.base_url,
-        api_key=api_key,
-        kind=payload.kind,
-        models=payload.models if payload.kind == "general" else [],
-        role=payload.role,
-        backup_order=payload.backup_order,
-        capabilities={
-            tag: MediaCapability(model=cap.model, enabled=cap.enabled)
-            for tag, cap in payload.capabilities.items()
-        }
-        if payload.kind == "media"
-        else {},
-        max_concurrency=payload.max_concurrency,
-        timeout_ms=payload.timeout_ms,
-        enabled=payload.enabled,
-    )
+    try:
+        config.endpoints[endpoint_id] = LlmProviderEndpoint(
+            name=payload.name,
+            base_url=payload.base_url,
+            api_key=api_key,
+            kind=payload.kind,
+            models=payload.models if payload.kind == "general" else [],
+            role=payload.role,
+            backup_order=payload.backup_order,
+            model=payload.model if payload.kind == "media" else "",
+            input_modalities=list(payload.input_modalities) if payload.kind == "media" else [],
+            output_modalities=list(payload.output_modalities) if payload.kind == "media" else [],
+            max_concurrency=payload.max_concurrency,
+            timeout_ms=payload.timeout_ms,
+            enabled=payload.enabled,
+        )
+    except ValidationError as exc:
+        # Business-rule checks (e.g. "modalities must cover a capability")
+        # live on the domain model's own validator, not the request schema,
+        # so they surface here rather than as a `RequestValidationError`.
+        raise ValidationFailed(f"模型配置校验失败: {exc}") from exc
     row = _save(session, config, user_id=user.id, note=f"更新端点 {endpoint_id}")
     audit.record(
         session,
@@ -114,7 +116,11 @@ def upsert_llm_provider(
             "enabled": payload.enabled,
             "kind": payload.kind,
             "role": payload.role,
-            "capabilities": sorted(payload.capabilities) if payload.kind == "media" else [],
+            "model": payload.model if payload.kind == "media" else None,
+            "input_modalities": sorted(payload.input_modalities) if payload.kind == "media" else [],
+            "output_modalities": sorted(payload.output_modalities)
+            if payload.kind == "media"
+            else [],
             "demoted_endpoint_ids": demoted_ids,
         },
         request=request,
@@ -185,10 +191,10 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         api_key_preview=_mask(endpoint.api_key),
         kind=endpoint.kind,
         models=endpoint.models,
-        capabilities={
-            tag: MediaCapabilityView(model=cap.model, enabled=cap.enabled)
-            for tag, cap in endpoint.capabilities.items()
-        },
+        model=endpoint.model,
+        input_modalities=list(endpoint.input_modalities),
+        output_modalities=list(endpoint.output_modalities),
+        capabilities=sorted(endpoint.capabilities),
         max_concurrency=endpoint.max_concurrency,
         role=endpoint.role,
         backup_order=endpoint.backup_order,
