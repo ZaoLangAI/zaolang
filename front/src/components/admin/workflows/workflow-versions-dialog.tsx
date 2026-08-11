@@ -46,10 +46,10 @@ export function WorkflowVersionsDialog({
 
   const rollback = async (reason: string) => {
     if (!rollingBackTo) return;
-    await adminApi.post(
-      `/v1/admin/workflow-templates/${operation}/activate/${rollingBackTo.id}`,
-      { reason, confirm: true },
-    );
+    await adminApi.post(`/v1/admin/workflow-templates/${operation}/activate/${rollingBackTo.id}`, {
+      reason,
+      confirm: true,
+    });
     setRollingBackTo(null);
     onRolledBack();
   };
@@ -89,7 +89,9 @@ export function WorkflowVersionsDialog({
 
               {comparing?.id === version.id ? (
                 <div className="mt-2.5 border-t border-border pt-2.5">
-                  <p className="mb-1.5 text-xs font-semibold text-muted">{t('diffAgainstCurrent')}</p>
+                  <p className="mb-1.5 text-xs font-semibold text-muted">
+                    {t('diffAgainstCurrent')}
+                  </p>
                   <JsonDiff before={version.graph} after={currentGraph} />
                 </div>
               ) : null}

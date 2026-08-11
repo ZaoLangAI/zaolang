@@ -57,7 +57,10 @@ def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
         return _copy(prompt)
     if agent_name == AgentName.INTENT_ROUTER:
         return _intent_router(prompt)
-    return {"result": "ok"}
+    # An operator-created role (run by the `custom_agent` node): the stub has
+    # no idea what it was told to judge, so it returns the neutral shape
+    # `app.agents.custom` declares rather than a fabricated verdict.
+    return {"verdict": "unknown", "confidence": 0.0, "notes": "stub_custom_agent"}
 
 
 def _safety(prompt: str) -> dict[str, Any]:
@@ -128,7 +131,11 @@ def _intent_router(prompt: str) -> dict[str, Any]:
     if isinstance(candidates, list) and candidates:
         # Cheapest effective cost wins, tie-broken by name — deterministic
         # and independent of dict/set ordering so routing tests stay stable
-        # without a real model in the loop.
+        # without a real model in the loop. A candidate's
+        # `configured_weight` is deliberately ignored here: it is a cost
+        # *preference* a real model weighs against quality, and folding it
+        # into a stub formula would make the offline path behave like the
+        # weighted router that was removed on purpose.
         winner = min(
             candidates,
             key=lambda c: (c.get("effective_cost", 0), str(c.get("provider", ""))),

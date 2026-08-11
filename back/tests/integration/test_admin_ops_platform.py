@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Announcement, AuditLog, Notification, User
 from app.platform_config import service as config_service
-from app.platform_config.schemas import AgentConfig, DEFAULT_CONFIGS, FeatureFlags, PricingConfig
+from app.platform_config.schemas import DEFAULT_CONFIGS, AgentConfig, FeatureFlags, PricingConfig
 from tests.conftest import admin_header
 
 # `pricing` stands in for "some editable config key" across these CRUD/
@@ -132,9 +132,7 @@ def test_a_change_is_audited_with_before_and_after(
     _put_pricing(client, admin, PRICING_B, note="调整时长基准")
 
     entry = db.scalar(
-        select(AuditLog).where(
-            AuditLog.action == "config.update", AuditLog.target_id == "pricing"
-        )
+        select(AuditLog).where(AuditLog.action == "config.update", AuditLog.target_id == "pricing")
     )
     assert entry is not None
     assert entry.reason == "调整时长基准"
@@ -156,9 +154,9 @@ def test_each_write_adds_a_version_and_only_one_stays_active(
     _put_pricing(client, admin, PRICING_A)
     _put_pricing(client, admin, PRICING_B)
 
-    items = client.get(
-        "/v1/admin/config/pricing/history", headers=admin_header(admin)
-    ).json()["items"]
+    items = client.get("/v1/admin/config/pricing/history", headers=admin_header(admin)).json()[
+        "items"
+    ]
     assert [v["version"] for v in items] == [2, 1]
     assert [v["version"] for v in items if v["is_active"]] == [2]
 

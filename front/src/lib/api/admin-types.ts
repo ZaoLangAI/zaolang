@@ -48,6 +48,10 @@ export type AgentNode = S['AgentNodeView'];
 export type AgentProfile = S['AgentProfileView'];
 export type AgentProfileCreateRequest = S['AgentProfileCreateRequest'];
 export type AgentProfileUpdateRequest = S['AgentProfileUpdateRequest'];
+export type AgentCategory = AgentProfile['category'];
+export type RolePreset = S['RolePresetView'];
+export type SkillTemplate = S['SkillTemplateView'];
+export type MediaCandidate = S['MediaCandidate'];
 export type PromptSlot = S['PromptSlotView'];
 export type AgentSkill = S['AgentSkillView'];
 export type CreationSkillAdminView = S['CreationSkillAdminView'];
@@ -80,7 +84,7 @@ export interface WorkflowShape {
 
 // The configurable node-graph editor (`/admin/routing` → 工作流编排 tab).
 export type NodeTypeView = S['NodeTypeView'];
-export type ProfileBinding = S['ProfileBindingView'];
+export type AgentBinding = S['AgentBindingView'];
 export type WorkflowTemplateView = S['WorkflowTemplateView'];
 export type WorkflowTemplatePublishRequest = S['WorkflowTemplatePublishRequest'];
 export type WorkflowTemplateValidateResponse = S['WorkflowTemplateValidateResponse'];

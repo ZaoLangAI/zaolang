@@ -59,7 +59,15 @@ class NodeResult:
     tells the runner to stop immediately and return this outcome regardless
     of the graph — used only for the cancellation path, which (per design) is
     built into `provider_generate` rather than modelled as its own node type.
+
+    `suspend` stops the walk *without* finishing the job: the node handed
+    work to an external system that will take minutes, and
+    `app.workers.tasks.poll_async_provider_tasks` resumes from this node once
+    it settles. `checkpoint` is everything the resumed run needs that lives
+    only in `ctx.state`, and must be JSON-safe — it goes to the database.
     """
 
     port: str
     terminal: PipelineOutcome | None = None
+    suspend: bool = False
+    checkpoint: dict[str, Any] | None = None

@@ -9496,6 +9496,56 @@
         }
       }
     },
+    "/v1/admin/agent-node-presets": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Agent Node Presets",
+        "description": "The roles an operator may create an agent for.\n\nThe console's role dropdown reads this instead of accepting free text —\nsee `app.domain.agent_skills.presets` for why the catalogue lives in code.",
+        "operationId": "list_agent_node_presets_v1_admin_agent_node_presets_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_RolePresetView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/agent-nodes": {
       "get": {
         "tags": [
@@ -9614,7 +9664,7 @@
           "admin:agent-skills"
         ],
         "summary": "Create Agent Profile",
-        "description": "Adds a variant. Not a dangerous action on its own — a variant changes\nnothing until a workflow node binds it, and binding is what carries the\nconfirmation ceremony.",
+        "description": "Creates an agent under one of the preset roles.\n\nNot a dangerous action on its own — an agent changes nothing until a\nworkflow node binds it, and binding is what carries the confirmation\nceremony. The role's `AgentNode` row is created here on first use, so\nthis is also how a role that has never been used before enters the\ntopology.",
         "operationId": "create_agent_profile_v1_admin_agent_profiles_post",
         "parameters": [
           {
@@ -9674,7 +9724,7 @@
           "admin:agent-skills"
         ],
         "summary": "Update Agent Profile",
-        "description": "Edits a variant's metadata. `role` and `key` are absent on purpose:\nlive graphs bind by key, so renaming one would silently re-point them.",
+        "description": "Edits an agent's metadata. `role` and `key` are absent on purpose:\nlive graphs bind by key, so renaming one would silently re-point them.",
         "operationId": "update_agent_profile_v1_admin_agent_profiles__profile_id__patch",
         "parameters": [
           {
@@ -9743,7 +9793,7 @@
           "admin:agent-skills"
         ],
         "summary": "Disable Agent Profile",
-        "description": "Takes a variant out of service.\n\nDangerous because a graph that still binds it keeps running: the prompt\nsilently falls back to the role's default. The console shows which\noperations reference a variant so this is not a blind decision.",
+        "description": "Takes an agent out of service.\n\nDangerous because a graph that still binds it keeps running: the prompt\nsilently falls back to the role's default. The console shows which\noperations reference an agent so this is not a blind decision.",
         "operationId": "disable_agent_profile_v1_admin_agent_profiles__profile_id__disable_post",
         "parameters": [
           {
@@ -9789,6 +9839,88 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentProfileView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-skill-templates": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Agent Skill Templates",
+        "description": "Starting prompts for the skill editor's \"fill from template\" control.",
+        "operationId": "list_agent_skill_templates_v1_admin_agent_skill_templates_get",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_SkillTemplateView_"
                 }
               }
             }
@@ -9884,7 +10016,7 @@
           "admin:agent-skills"
         ],
         "summary": "Publish Agent Skill",
-        "description": "Publishes a new prompt version for one variant's slot and activates it.\n\nA rejected or unparseable safety verdict is the direct, immediate result\nof what this prompt says, so publishing it is treated with the same\nconfirmation ceremony as any other dangerous admin action.",
+        "description": "Publishes a new prompt version for one agent's slot and activates it.\n\nA rejected or unparseable safety verdict is the direct, immediate result\nof what this prompt says, so publishing it is treated with the same\nconfirmation ceremony as any other dangerous admin action.",
         "operationId": "publish_agent_skill_v1_admin_agent_skills_post",
         "parameters": [
           {
@@ -10208,7 +10340,7 @@
           "admin:workflow-templates"
         ],
         "summary": "Validate Workflow Graph",
-        "description": "Pre-check so the editor can flag problems before an operator spends a\nconfirmation dialog on them.\n\n`warnings` are advisory and never block `publish`; they exist so a\ncapability mismatch between a bound agent variant and this operation is\nseen rather than discovered in production.",
+        "description": "Pre-check so the editor can flag problems before an operator spends a\nconfirmation dialog on them.\n\n`warnings` are advisory and never block `publish`; they exist so a\ncapability mismatch between a bound agent agent and this operation is\nseen rather than discovered in production.",
         "operationId": "validate_workflow_graph_v1_admin_workflow_templates_validate_post",
         "parameters": [
           {
@@ -11338,6 +11470,30 @@
         ],
         "title": "AdminUserView"
       },
+      "AgentBindingView": {
+        "properties": {
+          "config_field": {
+            "type": "string",
+            "title": "Config Field"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_field",
+          "role",
+          "slot"
+        ],
+        "title": "AgentBindingView",
+        "description": "Tells the editor that one config field selects an agent.\n\nWithout this the schema-driven form would render `agent_id` as a\nfree-text box; with it the editor can offer the agents that actually\nexist for `role`, which is also the only role this field accepts."
+      },
       "AgentNodeView": {
         "properties": {
           "id": {
@@ -11355,6 +11511,15 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "judgment",
+              "creative"
+            ],
+            "title": "Category",
+            "default": "judgment"
           },
           "enabled": {
             "type": "boolean",
@@ -11424,6 +11589,74 @@
             },
             "type": "array",
             "title": "Operations"
+          },
+          "default_endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Endpoint Id"
+          },
+          "backup_endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Endpoint Id"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 32768.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "reasoning_model": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Model"
+          },
+          "media_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCandidate"
+            },
+            "type": "array",
+            "title": "Media Candidates"
           }
         },
         "type": "object",
@@ -11496,10 +11729,86 @@
               }
             ],
             "title": "Enabled"
+          },
+          "default_endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Endpoint Id"
+          },
+          "backup_endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Endpoint Id"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 32768.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "reasoning_model": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Model"
+          },
+          "media_candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MediaCandidate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Candidates"
           }
         },
         "type": "object",
-        "title": "AgentProfileUpdateRequest"
+        "title": "AgentProfileUpdateRequest",
+        "description": "Every field is optional and `None` means \"leave as is\".\n\nAn **empty string** on either endpoint id is how the console clears a\nmodel pin, and an **empty list** clears media candidates — otherwise an\nagent could never go back to the shared pool once pinned."
       },
       "AgentProfileView": {
         "properties": {
@@ -11523,6 +11832,15 @@
             "type": "string",
             "title": "Description"
           },
+          "category": {
+            "type": "string",
+            "enum": [
+              "judgment",
+              "creative"
+            ],
+            "title": "Category",
+            "default": "judgment"
+          },
           "operations": {
             "items": {
               "type": "string"
@@ -11537,6 +11855,68 @@
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
+          },
+          "default_endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Endpoint Id"
+          },
+          "backup_endpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Endpoint Id"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "reasoning_model": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Model"
+          },
+          "media_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/MediaCandidate"
+            },
+            "type": "array",
+            "title": "Media Candidates"
           },
           "used_by_operations": {
             "items": {
@@ -11563,7 +11943,7 @@
           "created_at"
         ],
         "title": "AgentProfileView",
-        "description": "A named variant of one role.\n\n`operations` is the variant's declared capability — the operations its\nprompts were written for. Empty means general purpose. `used_by_operations`\nis derived from the currently active workflow templates, so the console\ncan show at a glance whether a variant is actually wired up and whether\nit is being used outside what it declares."
+        "description": "One agent. Its `role` says which pipeline stage it can run.\n\n`operations` is the agent's declared capability — the operations its\nprompts were written for. Empty means general purpose. `used_by_operations`\nis derived from the currently active workflow templates, so the console\ncan show at a glance whether an agent is actually wired up and whether\nit is being used outside what it declares."
       },
       "AgentRunView": {
         "properties": {
@@ -15545,6 +15925,36 @@
         ],
         "title": "MeResponse"
       },
+      "MediaCandidate": {
+        "properties": {
+          "endpoint_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Endpoint Id"
+          },
+          "capability": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Capability"
+          },
+          "weight": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Weight",
+            "default": 100
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint_id",
+          "capability"
+        ],
+        "title": "MediaCandidate",
+        "description": "One media route a creative agent may use, with a cost preference.\n\n`weight` is shown to the routing agent as operational context alongside\neach candidate's observed success rate, latency and cost — it is not a\ncoefficient. Nothing in `app/agents/router.py` ranks by it; the routing\nagent still makes the call."
+      },
       "MediaType": {
         "type": "string",
         "enum": [
@@ -16008,12 +16418,12 @@
             ],
             "title": "Agent Role"
           },
-          "profile_bindings": {
+          "agent_bindings": {
             "items": {
-              "$ref": "#/components/schemas/ProfileBindingView"
+              "$ref": "#/components/schemas/AgentBindingView"
             },
             "type": "array",
-            "title": "Profile Bindings"
+            "title": "Agent Bindings"
           },
           "config_schema": {
             "additionalProperties": true,
@@ -17284,6 +17694,70 @@
         ],
         "title": "Page[ReportCaseView]"
       },
+      "Page_RolePresetView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RolePresetView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[RolePresetView]"
+      },
+      "Page_SkillTemplateView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillTemplateView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[SkillTemplateView]"
+      },
       "Page_StylePresetResponse_": {
         "properties": {
           "items": {
@@ -17470,30 +17944,6 @@
         "type": "object",
         "title": "PreferencesRequest",
         "description": "Partial update; every field is optional."
-      },
-      "ProfileBindingView": {
-        "properties": {
-          "config_field": {
-            "type": "string",
-            "title": "Config Field"
-          },
-          "role": {
-            "type": "string",
-            "title": "Role"
-          },
-          "slot": {
-            "type": "string",
-            "title": "Slot"
-          }
-        },
-        "type": "object",
-        "required": [
-          "config_field",
-          "role",
-          "slot"
-        ],
-        "title": "ProfileBindingView",
-        "description": "Tells the editor that one config field selects an agent variant.\n\nWithout this the schema-driven form would render `agent_profile` as a\nfree-text box; with it the editor can offer the variants that actually\nexist for `role`."
       },
       "ProfileResponse": {
         "properties": {
@@ -18852,6 +19302,67 @@
         ],
         "title": "RoleGrantRequest"
       },
+      "RolePresetView": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "judgment",
+              "creative"
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Operations"
+          },
+          "default_template_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Template Key"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          },
+          "is_new": {
+            "type": "boolean",
+            "title": "Is New",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "display_name",
+          "category"
+        ],
+        "title": "RolePresetView",
+        "description": "One role an operator may create an agent for.\n\nA code-maintained catalogue rather than a table: a role only runs if some\nnode type invokes it, so free-text roles would produce agents that never\nexecute. `category` drives which half of the create form applies —\n`judgment` binds one LLM model, `creative` binds media endpoints with a\ncost weight each — and `operations` is what the media-candidate picker\nfilters by."
+      },
       "RouteSummary": {
         "properties": {
           "provider": {
@@ -19301,6 +19812,67 @@
           "profiles"
         ],
         "title": "ShortformProfilesResponse"
+      },
+      "SkillTemplateView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "judgment",
+              "creative"
+            ],
+            "title": "Category"
+          },
+          "prompt_template": {
+            "type": "string",
+            "title": "Prompt Template"
+          },
+          "tool_grants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tool Grants"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot",
+            "default": "default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "category",
+          "prompt_template"
+        ],
+        "title": "SkillTemplateView",
+        "description": "A starting prompt the skill editor can load.\n\nLoading one only fills the form: publishing stays a separate confirmed\naction, because the published text is what decides whether content gets\nrejected or a retry spends credits."
       },
       "StorageUsageResponse": {
         "properties": {

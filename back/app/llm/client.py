@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -80,6 +81,7 @@ def complete(
     temperature: float = 0.2,
     expect_json: bool = True,
     reasoning_model: bool = False,
+    preferred_endpoint_ids: Sequence[str] = (),
 ) -> LlmCallResult:
     """Runs one agent inference and normalises whatever comes back.
 
@@ -87,6 +89,11 @@ def complete(
     `kind="general"` endpoint pool now — there is no per-agent scenario tag.
     `agent_name` is kept only because `stub_completion` uses it to vary its
     deterministic output.
+
+    `preferred_endpoint_ids` is the endpoint order an `AgentProfile` pinned
+    (its default model, then its backup). They are tried first; the rest of
+    the shared pool remains as a last resort — see
+    `failover.eligible_candidates`.
     """
     settings = get_settings()
     mode = settings.llm_mode
@@ -105,7 +112,7 @@ def complete(
     budget = max(max_tokens, REASONING_TOKEN_FLOOR) if reasoning_model else max_tokens
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     reliability = config_service.get_typed(session, "llm_reliability", LlmReliabilityConfig)
-    endpoints = failover.eligible_candidates(provider_config)
+    endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
 
     last_error: Exception | None = None
     tried_endpoint = False

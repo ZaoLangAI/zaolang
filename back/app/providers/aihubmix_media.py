@@ -32,14 +32,16 @@ _VIDEO_OPERATIONS = frozenset(
     {Operation.TEXT_TO_VIDEO.value, Operation.IMAGE_TO_VIDEO.value, Operation.VIDEO_TO_VIDEO.value}
 )
 
-# Polling cadence and ceiling for the async video contract. A render that has
-# not finished within this window is presumed stuck, not merely slow — the
-# job fails and the user can retry rather than the worker blocking forever.
-_VIDEO_POLL_INTERVAL_SECONDS = 15
-_VIDEO_POLL_TIMEOUT_SECONDS = 480
-# How long a reference image's signed URL must stay valid: the whole poll
-# window plus slack for AiHubMix to actually fetch it.
-_REFERENCE_URL_TTL_SECONDS = _VIDEO_POLL_TIMEOUT_SECONDS + 300
+# AiHubMix accepts at most nine reference images per task and rejects the
+# whole request if given more.
+_MAX_INPUT_REFERENCES = 9
+# Anything else non-terminal is treated as "still working".
+_TASK_FAILED_STATUSES = frozenset({"failed", "cancelled", "canceled", "expired"})
+# How long a reference image's signed URL must stay valid. Comfortably beyond
+# `app.domain.jobs.async_tasks.TASK_TIMEOUT_SECONDS`, the point at which the
+# platform gives up on a render — a URL that expired while the render was
+# still legitimately running would fail the task for the wrong reason.
+_REFERENCE_URL_TTL_SECONDS = 900
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +158,14 @@ class AiHubMixMediaProvider(GenerationProvider):
     # -- video: text_to_video / image_to_video / video_to_video -------------
 
     def _submit_video(self, request: GenerationRequest, started: float) -> GenerationResult:
+        """Creates the render task and returns immediately.
+
+        A render runs for minutes. Waiting for it here would pin a worker for
+        the whole time and, worse, leave the job's event stream silent until
+        the very end — the user would watch one status until it suddenly
+        jumped to done. `app.workers.tasks.poll_async_provider_tasks` takes it
+        from here, writing a heartbeat on every check.
+        """
         body: dict[str, object] = {
             "model": self._model,
             "prompt": request.prompt,
@@ -166,37 +176,76 @@ class AiHubMixMediaProvider(GenerationProvider):
             body["seed"] = request.seed
         if request.reference_object_keys:
             body["input_references"] = [
-                s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS)
-                for key in request.reference_object_keys
+                {
+                    "type": "image_url",
+                    "url": s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS),
+                }
+                for key in request.reference_object_keys[:_MAX_INPUT_REFERENCES]
             ]
 
         with self._client() as client:
             create = client.post("/ai/v1/videos", json=body)
             create.raise_for_status()
             task_id = create.json().get("task_id")
-            if not task_id:
-                return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_task_id")
 
-            deadline = time.monotonic() + _VIDEO_POLL_TIMEOUT_SECONDS
-            while True:
-                status_response = client.get(f"/ai/v1/tasks/{task_id}")
+        if not task_id:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_task_id")
+
+        return GenerationResult(
+            succeeded=False,
+            pending=True,
+            mime_type="video/mp4",
+            duration_ms=request.duration_seconds * 1000,
+            latency_ms=self._elapsed_ms(started),
+            external_task_id=task_id,
+            metadata={"provider": self.name, "model": self._model},
+        )
+
+    def poll(self, external_task_id: str, request: GenerationRequest) -> GenerationResult:
+        """One status check for a video task, plus the download when it is done.
+
+        Deliberately a single round trip with no sleeping: the caller is a
+        scheduler tick that must stay short, and how often to come back is
+        its decision, not this method's. The overall deadline is enforced by
+        the caller too, which is the only side that knows when the task was
+        created.
+        """
+        started = time.perf_counter()
+        try:
+            with self._client() as client:
+                status_response = client.get(f"/ai/v1/tasks/{external_task_id}")
                 status_response.raise_for_status()
-                status_payload = status_response.json()
-                status = status_payload.get("status")
+                payload = status_response.json()
+                status = str(payload.get("status") or "")
 
-                if status == "completed":
-                    break
-                if status == "failed":
+                if status in _TASK_FAILED_STATUSES:
                     return self._failure(
-                        started, "PROVIDER_TASK_FAILED", str(status_payload.get("error") or "")
+                        started, "PROVIDER_TASK_FAILED", str(payload.get("error") or status)
                     )
-                if time.monotonic() >= deadline:
-                    return self._failure(started, "PROVIDER_TIMEOUT", f"task {task_id} timed out")
-                time.sleep(_VIDEO_POLL_INTERVAL_SECONDS)
+                if status != "completed":
+                    return GenerationResult(
+                        succeeded=False,
+                        pending=True,
+                        external_task_id=external_task_id,
+                        latency_ms=self._elapsed_ms(started),
+                        metadata={"provider": self.name, "status": status},
+                    )
 
-            content = client.get(f"/ai/v1/tasks/{task_id}/content")
-            content.raise_for_status()
-            video_bytes = content.content
+                content = client.get(_content_path(external_task_id, payload))
+                content.raise_for_status()
+                video_bytes = content.content
+        except httpx.HTTPError as exc:
+            logger.warning("aihubmix poll failed for task %s: %s", external_task_id, exc)
+            # A transient network error must not end the render: report it as
+            # still pending so the next tick tries again, and let the caller's
+            # deadline be what eventually gives up.
+            return GenerationResult(
+                succeeded=False,
+                pending=True,
+                external_task_id=external_task_id,
+                latency_ms=self._elapsed_ms(started),
+                metadata={"provider": self.name, "detail": type(exc).__name__},
+            )
 
         object_key = f"generated/{request.job_id}/output.mp4"
         s3.put_object(object_key, video_bytes, content_type="video/mp4")
@@ -207,7 +256,7 @@ class AiHubMixMediaProvider(GenerationProvider):
             mime_type="video/mp4",
             duration_ms=request.duration_seconds * 1000,
             latency_ms=self._elapsed_ms(started),
-            external_task_id=task_id,
+            external_task_id=external_task_id,
             metadata={"provider": self.name, "model": self._model},
         )
 
@@ -237,6 +286,22 @@ class AiHubMixMediaProvider(GenerationProvider):
     @staticmethod
     def _elapsed_ms(started: float) -> int:
         return int((time.perf_counter() - started) * 1000)
+
+
+def _content_path(task_id: str, payload: dict[str, object]) -> str:
+    """The download URL for a finished task.
+
+    A task that produced several outputs rejects the plain path with
+    `400 result_id_required`, so the first result's id is appended when the
+    status response reports more than one.
+    """
+    results = payload.get("results")
+    if isinstance(results, list) and len(results) > 1:
+        first = results[0]
+        result_id = first.get("id") if isinstance(first, dict) else None
+        if result_id:
+            return f"/ai/v1/tasks/{task_id}/content/{result_id}"
+    return f"/ai/v1/tasks/{task_id}/content"
 
 
 def _size_for(aspect_ratio: str, quality_tier: str) -> str:

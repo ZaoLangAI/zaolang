@@ -40,6 +40,11 @@ class GenerationResult:
     latency_ms: int = 0
     external_task_id: str | None = None
     failure_code: str | None = None
+    # The upstream accepted the work and is still running it. Neither a
+    # success nor a failure: the workflow suspends on a checkpoint and
+    # `poll()` decides which it becomes. `external_task_id` is mandatory when
+    # this is set — it is the only handle left to the work in flight.
+    pending: bool = False
     # Redacted before it reaches ProviderAttempt: no keys, no signed URLs.
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -50,11 +55,35 @@ class GenerationProvider(ABC):
 
     @abstractmethod
     def submit(self, request: GenerationRequest) -> GenerationResult:
-        """Runs one generation attempt.
+        """Starts one generation attempt.
 
-        Implementations must be synchronous from the worker's point of view;
-        polling an async upstream belongs inside the implementation.
+        Either returns a settled result (the synchronous case) or one with
+        `pending=True` and an `external_task_id`, meaning the upstream is
+        still working and `poll()` will decide the outcome later. An
+        implementation must never block a worker waiting for a slow upstream:
+        a render that takes minutes belongs in the pending path so the worker
+        is free and the user sees progress in the meantime.
         """
+
+    def poll(self, external_task_id: str, request: GenerationRequest) -> GenerationResult:
+        """Checks a pending task once, without blocking.
+
+        `request` is the original one, replayed from the suspended workflow's
+        checkpoint, so an implementation can work out where the artifact
+        belongs and how long it should be without keeping state of its own.
+
+        Only ever called for a result `submit()` marked pending, which a
+        synchronous provider never returns — hence the default that reports a
+        failure instead of raising: a scheduler tick must not crash because
+        one row points at a provider that has since stopped supporting async
+        work.
+        """
+        return GenerationResult(
+            succeeded=False,
+            failure_code="PROVIDER_POLL_UNSUPPORTED",
+            external_task_id=external_task_id,
+            metadata={"provider": self.name},
+        )
 
     def cancel(self, external_task_id: str) -> bool:
         """Best-effort cancellation. Returning False is acceptable: the job may

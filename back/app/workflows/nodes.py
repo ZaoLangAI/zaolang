@@ -11,7 +11,9 @@ Keep every executor's shape close to the step it replaces in the old
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 
+from app.agents import custom as custom_agent
 from app.agents import intent_router as intent_router_agent
 from app.agents import planner, quality, router, safety
 from app.domain.credits.pricing import settlement_credits
@@ -21,7 +23,7 @@ from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
 from app.domain.notifications import push as notifications
 from app.domain.skill_library import service as skill_library_service
-from app.models import Draft, ProviderAttempt
+from app.models import AgentProfile, Draft, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
     JobEventType,
@@ -35,6 +37,7 @@ from app.models.enums import (
 from app.providers.base import GenerationRequest, GenerationResult
 from app.realtime import publisher
 from app.workflows.configs import (
+    CustomAgentStepConfig,
     FailConfig,
     IntentRouterConfig,
     JoinConfig,
@@ -126,7 +129,7 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
         subject_id=ctx.job.id,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
-        profile=config.agent_profile,
+        agent_id=config.agent_id,
     )
     ctx.state["_last_agent_run_id"] = verdict.agent_run_id
     if verdict.status == ModerationStatus.REJECTED:
@@ -177,7 +180,7 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
         requested_operation=ctx.job.operation,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
-        profile=config.agent_profile,
+        agent_id=config.agent_id,
     )
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
     return NodeResult(port="ok")
@@ -193,9 +196,31 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
         requested_tier=ctx.job.quality_tier,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
-        profile=config.agent_profile,
+        agent_id=config.agent_id,
     )
     ctx.state["intent_hint"] = outcome.data
+    ctx.state["_last_agent_run_id"] = outcome.agent_run_id
+    return NodeResult(port="ok")
+
+
+def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfig) -> NodeResult:
+    """Runs an operator-created judgment role and parks its output.
+
+    The single port is the point: a role that shipped without a code review
+    may inform a later node, but it may not decide the job's fate on its
+    own. Nothing here settles credits or transitions state.
+    """
+    _emit(ctx, JobEventType.PROGRESS, JobStatus.RUNNING, "正在进行智能体判断", 30)
+    outcome = custom_agent.judge(
+        ctx.session,
+        role=config.agent_role,
+        payload={"prompt": ctx.prompt, "params": ctx.params, "operation": ctx.job.operation},
+        job_id=ctx.agent_job_id,
+        user_id=ctx.job.user_id,
+        agent_id=config.agent_id,
+        slot=config.slot,
+    )
+    ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
     return NodeResult(port="ok")
 
@@ -210,6 +235,31 @@ def _effective_tier(requested: str, hint: dict[str, object]) -> str:
     if not isinstance(suggested, str) or suggested not in _TIER_RANK or requested not in _TIER_RANK:
         return requested
     return suggested if _TIER_RANK[suggested] < _TIER_RANK[requested] else requested
+
+
+def _creative_candidates(ctx: WorkflowContext, agent_id: str | None) -> dict[str, int] | None:
+    """The media shortlist a bound creative agent configured, or `None`.
+
+    `None` means "no shortlist configured", which leaves the whole catalogue
+    eligible — the behaviour before creative agents existed. A bound agent
+    that has been disabled since publication is treated the same way, with a
+    log line, rather than routing the job to nothing: that matches how a
+    disabled agent's prompt degrades in `agent_skills.service`.
+    """
+    if not agent_id:
+        return None
+    agent = ctx.session.get(AgentProfile, agent_id)
+    if agent is None or not agent.enabled or not agent.media_candidates_json:
+        logger.warning(
+            "route_score bound creative agent %s which is missing, disabled or has no "
+            "media candidates; routing against the full catalogue",
+            agent_id,
+        )
+        return None
+    return {
+        f"{candidate['endpoint_id']}:{candidate['capability']}": int(candidate.get("weight", 100))
+        for candidate in agent.media_candidates_json
+    }
 
 
 def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeResult:
@@ -246,7 +296,8 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         exclude_providers=tried_providers,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
-        selector_profile=config.selector_profile,
+        selector_agent_id=config.selector_agent_id,
+        allowed_providers=_creative_candidates(ctx, config.creative_agent_id),
     )
     ctx.job.routing_trace_json = decision.trace()
     ctx.session.flush()
@@ -266,6 +317,41 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
     }
     ctx.session.flush()
     return NodeResult(port="ok")
+
+
+def _attempt_status(result: GenerationResult) -> ProviderAttemptStatus:
+    if result.pending:
+        return ProviderAttemptStatus.RUNNING
+    return ProviderAttemptStatus.SUCCEEDED if result.succeeded else ProviderAttemptStatus.FAILED
+
+
+def _provider_checkpoint(
+    ctx: WorkflowContext,
+    *,
+    capability_name: str,
+    external_task_id: str,
+    request: GenerationRequest,
+    attempt_id: str,
+) -> dict[str, object]:
+    """The slice of `ctx.state` a resumed run cannot rebuild for itself.
+
+    Only JSON-safe primitives: this is written to a database column, and the
+    live `RoutingDecision` / `ProviderCapability` objects in `ctx.state` are
+    rebuilt from `capability_name` against the catalogue at resume time
+    instead of being serialised.
+    """
+    return {
+        "capability_name": capability_name,
+        "external_task_id": external_task_id,
+        "provider_attempt_id": attempt_id,
+        "request": asdict(request),
+        "state": {
+            "attempt_number": ctx.state.get("attempt_number", 1),
+            "route_attempts": ctx.state.get("route_attempts", 1),
+            "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
+            "intent_hint": ctx.state.get("intent_hint") or {},
+        },
+    }
 
 
 def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConfig) -> NodeResult:
@@ -312,42 +398,63 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
                 port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
             )
 
-        result = decision.provider.submit(
-            GenerationRequest(
-                job_id=ctx.job.id,
-                operation=ctx.job.operation,
-                quality_tier=ctx.job.quality_tier,
-                prompt=ctx.prompt,
-                negative_prompt=ctx.params.get("negative_prompt"),
-                seed=ctx.params.get("seed"),
-                aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
-                duration_seconds=int(ctx.params.get("duration_seconds") or 0),
-                reference_object_keys=media_service.object_keys_for(
-                    ctx.session, asset_ids=ctx.params.get("reference_asset_ids") or []
-                ),
-                extra=dict(ctx.params.get("extra") or {}),
-            )
+        request = GenerationRequest(
+            job_id=ctx.job.id,
+            operation=ctx.job.operation,
+            quality_tier=ctx.job.quality_tier,
+            prompt=ctx.prompt,
+            negative_prompt=ctx.params.get("negative_prompt"),
+            seed=ctx.params.get("seed"),
+            aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
+            duration_seconds=int(ctx.params.get("duration_seconds") or 0),
+            reference_object_keys=media_service.object_keys_for(
+                ctx.session, asset_ids=ctx.params.get("reference_asset_ids") or []
+            ),
+            extra=dict(ctx.params.get("extra") or {}),
         )
-        ctx.session.add(
-            ProviderAttempt(
-                job_id=ctx.job.id,
-                provider=capability.name,
-                provider_kind=capability.kind,
-                model_or_workflow_version=capability.model_or_workflow,
-                external_task_id=result.external_task_id,
-                attempt_number=attempt_number,
-                status=(
-                    ProviderAttemptStatus.SUCCEEDED
-                    if result.succeeded
-                    else ProviderAttemptStatus.FAILED
-                ),
-                cost_minor=result.cost_minor,
-                latency_ms=result.latency_ms,
-                failure_code=result.failure_code,
-                raw_metadata_redacted_json=result.metadata,
-                created_at=utcnow(),
-            )
+        result = decision.provider.submit(request)
+        attempt = ProviderAttempt(
+            job_id=ctx.job.id,
+            provider=capability.name,
+            provider_kind=capability.kind,
+            model_or_workflow_version=capability.model_or_workflow,
+            external_task_id=result.external_task_id,
+            attempt_number=attempt_number,
+            status=_attempt_status(result),
+            cost_minor=result.cost_minor,
+            latency_ms=result.latency_ms,
+            failure_code=result.failure_code,
+            raw_metadata_redacted_json=result.metadata,
+            created_at=utcnow(),
         )
+        ctx.session.add(attempt)
+        ctx.session.flush()
+
+        if result.pending and result.external_task_id:
+            # The upstream owns the work now. Suspending keeps the job
+            # `RUNNING` with no Celery task in flight — see
+            # `app.models.async_tasks` — and the statistics stay unrecorded
+            # until the outcome is actually known.
+            _emit(
+                ctx,
+                JobEventType.GENERATING,
+                JobStatus.RUNNING,
+                "已提交生成任务，正在渲染",
+                45,
+                payload={"external_task_id": result.external_task_id},
+            )
+            return NodeResult(
+                port="succeeded",
+                suspend=True,
+                checkpoint=_provider_checkpoint(
+                    ctx,
+                    capability_name=capability.name,
+                    external_task_id=result.external_task_id,
+                    request=request,
+                    attempt_id=attempt.id,
+                ),
+            )
+
         router.record_attempt_outcome(
             ctx.session,
             provider=capability.name,
@@ -397,7 +504,7 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
         attempt_number=attempt_number,
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
-        profile=config.agent_profile,
+        agent_id=config.agent_id,
     )
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 

@@ -117,7 +117,7 @@ services:
       - app.workers.celery_app
       - worker
       - -Q
-      - moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile
+      - moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile,provider_task_polling
       - --loglevel=info
 
   web:

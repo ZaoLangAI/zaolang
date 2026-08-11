@@ -15,9 +15,9 @@ from fastapi import APIRouter, Request
 
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
+    AgentBindingView,
     DangerousAction,
     NodeTypeView,
-    ProfileBindingView,
     WorkflowDryRunRequest,
     WorkflowDryRunResult,
     WorkflowDryRunStepView,
@@ -65,11 +65,11 @@ def list_node_types(user: Viewer, _: AdminRead) -> Page[NodeTypeView]:
                 output_ports=list(spec.output_ports),
                 is_agent=spec.is_agent,
                 agent_role=spec.agent_role,
-                profile_bindings=[
-                    ProfileBindingView(
+                agent_bindings=[
+                    AgentBindingView(
                         config_field=binding.config_field, role=binding.role, slot=binding.slot
                     )
-                    for binding in spec.profile_bindings
+                    for binding in spec.agent_bindings
                 ],
                 config_schema=spec.config_schema.model_json_schema(),
             )
@@ -86,7 +86,7 @@ def validate_workflow_graph(
     confirmation dialog on them.
 
     `warnings` are advisory and never block `publish`; they exist so a
-    capability mismatch between a bound agent variant and this operation is
+    capability mismatch between a bound agent agent and this operation is
     seen rather than discovered in production.
     """
     warnings = (

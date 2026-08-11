@@ -18,11 +18,17 @@ from __future__ import annotations
 
 import logging
 
+from app.domain.jobs import async_tasks
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.models.enums import JobStatus
 from app.workflows import registry
-from app.workflows.graph import HARD_MAX_NODE_VISITS, WorkflowEdge, WorkflowGraph
+from app.workflows.graph import (
+    HARD_MAX_NODE_VISITS,
+    WorkflowEdge,
+    WorkflowGraph,
+    WorkflowNode,
+)
 from app.workflows.types import NodeResult, PipelineOutcome, WorkflowContext
 
 logger = logging.getLogger(__name__)
@@ -44,18 +50,47 @@ class WorkflowRunner:
         self._node_map = graph.node_map
         self._entry_id = _entry_node_id(graph)
 
+    def node(self, node_id: str) -> WorkflowNode | None:
+        """One node of the graph, for a caller resuming a suspended run that
+        needs to know how the node was configured."""
+        return self._node_map.get(node_id)
+
     def run(self, ctx: WorkflowContext) -> PipelineOutcome:
         if not ctx.dry_run and ctx.job.status == JobStatus.CREATED:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.QUEUED)
+        return self._walk(ctx, self._entry_id, {})
 
+    def resume(self, ctx: WorkflowContext, *, node_id: str, port: str) -> PipelineOutcome:
+        """Continues a suspended walk from the node that handed work outside.
+
+        Called by `app.workers.tasks.poll_async_provider_tasks` once the
+        external task settled. The node itself is *not* re-executed — it
+        already did its work — so this starts from its outgoing `port`.
+
+        Visit counts start fresh: the loop limit exists to stop a graph
+        cycling forever inside one run, and the budget that actually governs
+        retries (`route_score.max_attempts`) is restored from the checkpoint
+        instead.
+        """
         visits: dict[str, int] = {}
-        current = self._entry_id
+        try:
+            next_id = self._next_node(node_id, port)
+        except _EngineError as exc:
+            return self._engine_failure(ctx, code=exc.code, node_id=exc.node_id, port=exc.port)
+        return self._walk(ctx, next_id, visits)
+
+    def _walk(
+        self, ctx: WorkflowContext, start_node_id: str, visits: dict[str, int]
+    ) -> PipelineOutcome:
+        current = start_node_id
         try:
             while True:
                 node = self._node_map[current]
                 result = self._execute_node(ctx, current, node.type, visits)
                 if result.terminal is not None:
                     return result.terminal
+                if result.suspend:
+                    return self._suspend(ctx, node_id=current, result=result)
 
                 out_edges = self._graph.edges_from(current, result.port)
                 edges = [e for e in out_edges if e.kind != "parallel"]
@@ -79,6 +114,34 @@ class WorkflowRunner:
             # re-raises for Celery's retry, and that contract must stay in one
             # place, not duplicated here.
             return self._engine_failure(ctx, code=exc.code, node_id=exc.node_id, port=exc.port)
+
+    def _next_node(self, node_id: str, port: str) -> str:
+        edges = [e for e in self._graph.edges_from(node_id, port) if e.kind != "parallel"]
+        if not edges:
+            raise _EngineError("WORKFLOW_MISCONFIGURED", node_id, port)
+        return edges[0].to_node
+
+    def _suspend(
+        self, ctx: WorkflowContext, *, node_id: str, result: NodeResult
+    ) -> PipelineOutcome:
+        """Parks the job on an external task and stops, leaving it `RUNNING`.
+
+        Not a terminal outcome: nothing settles, no status transition
+        happens, and the reservation stays reserved. What makes this safe is
+        the row written here — without it the job would sit `RUNNING` with
+        nothing left to advance it, and only `expire_stale_jobs` would
+        eventually release the credits.
+        """
+        if ctx.dry_run:
+            # A sandbox run has no real job to attach a task row to, and no
+            # scheduler will ever come back for it.
+            return PipelineOutcome(status=JobStatus.RUNNING)
+        async_tasks.suspend(
+            ctx.session, job_id=ctx.job.id, node_id=node_id, checkpoint=result.checkpoint or {}
+        )
+        ctx.session.commit()
+        logger.info("job %s suspended at node %s awaiting an external task", ctx.job.id, node_id)
+        return PipelineOutcome(status=JobStatus.RUNNING)
 
     def _execute_node(
         self, ctx: WorkflowContext, node_id: str, node_type: str, visits: dict[str, int]

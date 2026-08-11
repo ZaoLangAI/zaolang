@@ -26,11 +26,11 @@ import { ApiError } from '@/lib/api/errors';
 
 const EMPTY_GRAPH: WorkflowGraphJson = { nodes: [], edges: [] };
 
-/** Which agent variant a canvas node wants edited: the one it binds, or the
- * role's default when it binds nothing. */
+/** Which agent a canvas node wants edited: the one it binds, or the role's
+ * default when it binds nothing. */
 export interface PromptEditTarget {
   role: string;
-  profileKey: string | null;
+  agentId: string | null;
 }
 
 /**
@@ -53,8 +53,8 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
   const [promptTarget, setPromptTarget] = useState<PromptEditTarget | null>(null);
   const [resolved, setResolved] = useState<{ node: AgentNode; profile: AgentProfile } | null>(null);
 
-  // The canvas knows a role and (maybe) a variant key; the prompt editor
-  // needs the actual node and profile rows, so resolve both before opening.
+  // The canvas knows a role and (maybe) an agent id; the prompt editor
+  // needs the actual node and agent rows, so resolve both before opening.
   // Clearing is done by the callers that change `promptTarget`, so nothing
   // here has to set state synchronously.
   useEffect(() => {
@@ -70,7 +70,7 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
         if (cancelled) return;
         const node = nodePage.items.find((item) => item.role === promptTarget.role);
         const profile =
-          profilePage.items.find((item) => item.key === promptTarget.profileKey) ??
+          profilePage.items.find((item) => item.id === promptTarget.agentId) ??
           profilePage.items.find((item) => item.is_default);
         setResolved(node && profile ? { node, profile } : null);
       })

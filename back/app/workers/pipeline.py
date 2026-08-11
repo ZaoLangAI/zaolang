@@ -29,7 +29,12 @@ from app.workflows.graph import WorkflowGraph
 from app.workflows.runner import WorkflowRunner
 from app.workflows.types import PipelineOutcome, WorkflowContext
 
-__all__ = ["MAX_PROVIDER_ATTEMPTS", "PipelineOutcome", "run_generation_pipeline"]
+__all__ = [
+    "MAX_PROVIDER_ATTEMPTS",
+    "PipelineOutcome",
+    "resolve_graph",
+    "run_generation_pipeline",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +56,7 @@ def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
         return PipelineOutcome(status=JobStatus(job.status))
 
     try:
-        graph = _resolve_graph(session, job)
+        graph = resolve_graph(session, job)
         params = dict(job.request_json)
         ctx = WorkflowContext(
             session=session, job=job, prompt=str(params.get("prompt", "")), params=params
@@ -63,8 +68,12 @@ def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
         raise exc from None
 
 
-def _resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:
+def resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:
     """Which graph this job runs, in order of precedence.
+
+    Public because resuming a suspended job (`workers/async_polling.py`) has
+    to land in the very same graph the earlier run was walking, which the
+    precedence below already guarantees by preferring the pinned template.
 
     1. The template already pinned on the job (set at submission, or by a
        previous call to this function for a legacy row) — never changes

@@ -10,8 +10,9 @@ Three levels, from coarse to fine:
 
 * `AgentNode` — the *role* (`safety`, `planner`, ...), one row per pipeline
   stage, stable identity that `AgentRun.agent_name` also keys on.
-* `AgentProfile` — a named *variant* of a role, so one workflow can run a
-  strict video-oriented safety agent while another runs a looser one.
+* `AgentProfile` — one *agent*, which has a role. More than one may share a
+  role, so one workflow can run a strict video-oriented safety agent while
+  another runs a looser one; a workflow node binds whichever it wants by id.
 * `AgentSkill` — an append-only prompt version, scoped to a
   `(profile, slot)` pair. A slot exists because one role can own more than
   one system prompt (`intent_router` classifies tiers *and* selects
@@ -23,7 +24,17 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, id_column
@@ -36,6 +47,12 @@ class AgentNode(Base):
     `AgentRun.agent_name` key on — a string, not a foreign key, since roles
     like the four built-in agents are also `AgentName` enum values used
     outside the database.
+
+    Rows are only ever created from `app.domain.agent_skills.presets`, so
+    `category` is a copy of the chosen preset's category rather than
+    something an operator types: it decides whether the agents under this
+    role bind one LLM model (`judgment`) or several media endpoints with a
+    cost weight each (`creative`).
     """
 
     __tablename__ = "agent_nodes"
@@ -44,37 +61,65 @@ class AgentNode(Base):
     role: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    category: Mapped[str] = mapped_column(String(20), default="judgment", nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Display order in the node topology graph, ascending.
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class AgentProfile(Base):
-    """A named variant of one role, so a prompt can differ per workflow.
+    """One agent. `role` is which pipeline stage it is able to run.
 
-    `operations_json` is the variant's declared capability: the `Operation`
+    Several agents may share a role, which is how a prompt can differ per
+    workflow: a node binds one of them by id, and a node that binds nothing
+    gets the role's `is_default` agent.
+
+    `operations_json` is the agent's declared capability: the `Operation`
     values it was written for. An empty list means "general purpose" and
     never warns. The declaration is advisory — publishing a workflow that
-    binds a variant outside its declared operations warns but is not
+    binds an agent outside its declared operations warns but is not
     blocked, because an operator experimenting is a legitimate case and the
     runtime behaviour is identical either way.
 
     Like `AgentSkill`, `role` is a free string rather than an FK to
     `AgentNode.role`.
+
+    Which of the two binding groups below applies is decided by the role's
+    category (`app.domain.agent_skills.presets`): a `judgment` agent runs
+    an LLM, so it may pin `default_endpoint_id` (plus a backup) and its
+    sampling parameters; a `creative` agent does not run an LLM itself, it
+    declares in `media_candidates_json` which media routes the router may
+    consider for it. Both groups are optional: an empty binding keeps the
+    pre-existing behaviour of drawing from the shared `kind="general"` pool.
     """
 
     __tablename__ = "agent_profiles"
 
     id: Mapped[str] = id_column("aprof")
     role: Mapped[str] = mapped_column(String(40), nullable=False)
-    # Stable, operator-chosen handle a workflow node binds to (`default`,
-    # `video-strict`, ...). Renaming a profile's display name is safe;
-    # changing this key breaks every graph that references it, so the admin
-    # API does not allow it.
+    # A stable, operator-chosen handle (`default`, `video-strict`, ...),
+    # unique within the role. Graphs bind by `id`, so this is a label for
+    # logs and the console rather than a reference; it is still immutable so
+    # that audit history keeps lining up with what an operator saw.
     key: Mapped[str] = mapped_column(String(40), nullable=False)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     operations_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
+    # `llm_providers` endpoint ids, not model names: the endpoint carries the
+    # model, base url and key together, so a binding cannot point at a model
+    # no configured gateway serves. NULL means "use the shared pool".
+    default_endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    backup_endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Stored per mille (0-2000) because floats are not used for persisted
+    # numbers anywhere in this schema; 200 means temperature 0.2.
+    temperature_milli: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reasoning_model: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # `[{"endpoint_id": ..., "capability": ..., "weight": 100}]` — the media
+    # routes a creative agent may use, with an operator's cost preference on
+    # each. The weight is context handed to the routing agent, never a
+    # formula: `app/agents/router.py` still lets the LLM choose.
+    media_candidates_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
     # Exactly one per role, enforced in `agent_skills.service` rather than by
     # a partial index so the invariant lives next to the code that can
     # repair it.
@@ -85,16 +130,25 @@ class AgentProfile(Base):
     __table_args__ = (
         UniqueConstraint("role", "key", name="uq_agent_profiles_role_key"),
         Index("ix_agent_profiles_role_enabled", "role", "enabled"),
+        CheckConstraint(
+            "temperature_milli IS NULL OR (temperature_milli >= 0 AND temperature_milli <= 2000)",
+            name="temperature_milli_range",
+        ),
+        # A backup with nothing to back up would silently become the primary.
+        CheckConstraint(
+            "backup_endpoint_id IS NULL OR default_endpoint_id IS NOT NULL",
+            name="backup_requires_default",
+        ),
     )
 
 
 class AgentSkill(Base):
-    """One append-only prompt version for one `(profile, slot)` pair.
+    """One append-only prompt version for one `(agent, slot)` pair.
 
     `node_role` is kept alongside `profile_id` as a denormalised column: it
     is what every reverse lookup ("show me every prompt this role has ever
-    run") filters on, and it lets a role's history survive even if a variant
-    is later reorganised.
+    run") filters on, and it lets a role's history survive even if the agent
+    that ran it is later deleted.
     """
 
     __tablename__ = "agent_skills"

@@ -422,9 +422,9 @@ def _seed_users(session: Session) -> dict[str, User]:
 
 
 def _seed_agent_profiles(session: Session) -> None:
-    """Adds one non-default variant so the agents console has something to show.
+    """Adds one non-default agent so the agents console has something to show.
 
-    Video generation is the case that actually motivates variants: the same
+    Video generation is the case that actually motivates agents: the same
     safety wording that suits a still image is too permissive once a subject
     starts moving. Declaring the three video operations is what makes the
     console warn if this ever gets bound to an image workflow.
@@ -454,7 +454,7 @@ def _seed_agent_profiles(session: Session) -> None:
         ),
         tool_grants=[],
         actor_user_id=None,
-        reason="seed: 视频工作流的严格安全变体",
+        reason="seed: 视频工作流的严格安全智能体",
     )
 
 

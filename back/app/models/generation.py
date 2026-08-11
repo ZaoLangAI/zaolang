@@ -246,9 +246,9 @@ class AgentRun(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     agent_name: Mapped[str] = mapped_column(String(32), nullable=False)
-    # Which variant and prompt slot actually served this call. Nullable
+    # Which agent and prompt slot actually served this call. Nullable
     # because a run predating agent profiles has neither, and not a foreign
-    # key so deleting a variant never erases the record of what it did.
+    # key so deleting an agent never erases the record of what it did.
     agent_profile_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     prompt_slot: Mapped[str | None] = mapped_column(String(40), nullable=True)
     mode: Mapped[str] = mapped_column(String(32), nullable=False)

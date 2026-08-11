@@ -304,8 +304,9 @@ def test_job_stats_reports_status_and_operation_mix(
 def test_job_stats_window_excludes_jobs_outside_it(
     client: TestClient, db: Session, admin: User, finished_job: GenerationJob
 ) -> None:
-    from app.models.base import utcnow
     import datetime as dt
+
+    from app.models.base import utcnow
 
     finished_job.created_at = utcnow() - dt.timedelta(hours=48)
     db.flush()

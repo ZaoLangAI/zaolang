@@ -72,7 +72,7 @@ def classify(
     requested_tier: str | None = None,
     job_id: str | None = None,
     user_id: str | None = None,
-    profile: str | None = None,
+    agent_id: str | None = None,
 ) -> AgentOutcome:
     payload = {
         "intent": intent,
@@ -90,7 +90,7 @@ def classify(
         ),
         job_id=job_id,
         user_id=user_id,
-        profile_key=profile,
+        agent_id=agent_id,
         slot=CLASSIFY_SLOT,
     )
     if outcome.data.get("suggested_quality_tier") not in {t.value for t in QualityTier}:
@@ -98,14 +98,17 @@ def classify(
     return outcome
 
 
-SELECT_PROVIDER_SYSTEM_PROMPT = f"""你是造浪平台的生成路线选择器。你会收到这次生成请求的操作类型、质量档位，
-以及一份已经过硬性能力过滤的候选供应商列表——列表里的每一个都真实支持这个操作和这个档位，你只需要从中选出
-最合适的一个，不需要也不允许再做能力过滤。
+SELECT_PROVIDER_SYSTEM_PROMPT = f"""你是造浪平台的生成路线选择器。你会收到这次生成请求的操作类型、
+质量档位，以及一份已经过硬性能力过滤的候选供应商列表——列表里的每一个都真实支持这个操作和这个档位，
+你只需要从中选出最合适的一个，不需要也不允许再做能力过滤。
 综合考虑每个候选自带的信息：
 - quality_prior：供应商产出质量的先验评估
 - success_rate：近期实际观测到的成功率（样本不足时已经用保守先验兜底，数值本身可信）
 - avg_latency_ms：平均延迟
 - effective_cost：已经把重试放大后的有效成本
+- configured_weight：运营为这条路线配置的成本偏好参考（数值越大表示越倾向克制使用），
+  只在部分请求里出现。它是参考不是硬性指标：效果明显更好时可以选权重更高的路线，
+  但要在 rationale 里说明理由。
 只能从给定列表的 provider 字段里原样选一个，不要编造列表之外的名字。
 
 {JSON_INSTRUCTION}
@@ -129,7 +132,7 @@ def select_provider(
     candidates: list[dict[str, Any]],
     job_id: str | None = None,
     user_id: str | None = None,
-    profile: str | None = None,
+    agent_id: str | None = None,
 ) -> AgentOutcome:
     """Picks one provider from an already hard-filtered eligible list.
 
@@ -150,6 +153,6 @@ def select_provider(
         fallback=SELECT_PROVIDER_FALLBACK,
         job_id=job_id,
         user_id=user_id,
-        profile_key=profile,
+        agent_id=agent_id,
         slot=SELECT_PROVIDER_SLOT,
     )

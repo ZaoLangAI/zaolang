@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { Select, Switch, TextInput } from '@/components/ui/field';
 import { adminApi } from '@/lib/api/admin-client';
-import type { AgentProfile, ProfileBinding } from '@/lib/api/admin-types';
+import type { AgentBinding, AgentProfile } from '@/lib/api/admin-types';
 
 /**
  * Renders one node type's Pydantic config schema (fetched as JSON Schema from
@@ -16,11 +16,17 @@ import type { AgentProfile, ProfileBinding } from '@/lib/api/admin-types';
  * fields (`extra="forbid"`, no nesting), so a generic renderer covers all of
  * them today and automatically covers the next one a backend PR adds.
  *
- * The exception is `profile_bindings`: those fields are strings in the schema
- * but only a handful of values are valid, and typing one wrong is exactly the
- * mistake that would silently fall back to the default prompt. They get a
- * picker fed by the live variant list instead.
+ * The exception is the agent bindings: those fields hold an agent id, which is
+ * a string in the schema but only ever one of a short list, and picking the
+ * wrong one is exactly the mistake that would silently fall back to the role's
+ * default prompt. They get a picker fed by the live agent list instead —
+ * `agent_bindings` names the ones filtered to a role the node type requires,
+ * and `creative_agent_id` the one filtered by category, since creative roles
+ * are operator-created and their names are not fixed at code-review time.
  */
+
+/** Config field naming a creative agent — see `RouteScoreConfig`. */
+const CREATIVE_AGENT_FIELD = 'creative_agent_id';
 
 export interface JsonSchemaProperty {
   type?: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'null';
@@ -64,20 +70,20 @@ function resolveType(prop: JsonSchemaProperty): {
 
 export function NodeConfigForm({
   schema,
-  profileBindings = [],
+  agentBindings = [],
   value,
   disabled,
   onChange,
 }: {
   schema: NodeConfigSchema;
-  profileBindings?: ProfileBinding[];
+  agentBindings?: AgentBinding[];
   value: Record<string, unknown>;
   disabled?: boolean;
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const properties = schema.properties ?? {};
   const entries = Object.entries(properties);
-  const bindingByField = new Map(profileBindings.map((binding) => [binding.config_field, binding]));
+  const bindingByField = new Map(agentBindings.map((binding) => [binding.config_field, binding]));
 
   if (entries.length === 0) {
     return null;
@@ -92,10 +98,22 @@ export function NodeConfigForm({
         const label = prop.title ?? key;
         const current = value[key];
 
+        if (key === CREATIVE_AGENT_FIELD) {
+          return (
+            <CreativeAgentSelect
+              key={key}
+              label={label}
+              value={typeof current === 'string' ? current : ''}
+              disabled={disabled}
+              onChange={(next) => set(key, next || null)}
+            />
+          );
+        }
+
         const binding = bindingByField.get(key);
         if (binding) {
           return (
-            <AgentProfileSelect
+            <AgentSelect
               key={key}
               binding={binding}
               label={label}
@@ -192,28 +210,28 @@ export function NodeConfigForm({
 }
 
 /**
- * Picks one of a role's agent variants for this node.
+ * Picks which agent runs this node, out of the ones whose role it accepts.
  *
- * An empty selection is not "no prompt" — it means the role's default
- * variant, which is what every node did before variants existed. Disabled
- * variants are listed but not selectable, so an operator can see why a
+ * An empty selection is not "no prompt" — it means the role's default agent,
+ * which is what every node did before more than one agent per role existed.
+ * Disabled agents are listed but not selectable, so an operator can see why a
  * previously working binding is now flagged.
  */
-function AgentProfileSelect({
+function AgentSelect({
   binding,
   label,
   value,
   disabled,
   onChange,
 }: {
-  binding: ProfileBinding;
+  binding: AgentBinding;
   label: string;
   value: string;
   disabled?: boolean;
   onChange: (next: string) => void;
 }) {
   const t = useTranslations('adminWorkflows');
-  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -223,7 +241,7 @@ function AgentProfileSelect({
         query: { role: binding.role },
       })
       .then((page) => {
-        if (!cancelled) setProfiles(page.items);
+        if (!cancelled) setAgents(page.items);
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -233,35 +251,100 @@ function AgentProfileSelect({
     };
   }, [binding.role]);
 
-  const defaultProfile = profiles.find((profile) => profile.is_default);
+  const fallback = agents.find((agent) => agent.is_default);
   const options = [
     {
       value: '',
-      label: defaultProfile
-        ? t('profileDefaultOption', { name: defaultProfile.display_name })
-        : t('profileDefaultOptionPlain'),
+      label: fallback
+        ? t('agentDefaultOption', { name: fallback.display_name })
+        : t('agentDefaultOptionPlain'),
     },
-    ...profiles
-      .filter((profile) => !profile.is_default)
-      .map((profile) => ({
-        value: profile.key,
-        label: profile.enabled
-          ? `${profile.display_name} (${profile.key})`
-          : `${profile.display_name} (${profile.key}) · ${t('profileDisabledOption')}`,
-        disabled: !profile.enabled && profile.key !== value,
+    ...agents
+      .filter((agent) => !agent.is_default)
+      .map((agent) => ({
+        value: agent.id,
+        label: agent.enabled
+          ? agent.display_name
+          : `${agent.display_name} · ${t('agentDisabledOption')}`,
+        disabled: !agent.enabled && agent.id !== value,
       })),
-    // A graph can reference a variant that has since been deleted. Keeping it
+    // A graph can reference an agent that has since been deleted. Keeping it
     // in the list is what makes the mismatch visible instead of the picker
     // quietly snapping back to "default".
-    ...(value && !profiles.some((profile) => profile.key === value)
-      ? [{ value, label: t('profileMissingOption', { key: value }) }]
+    ...(value && !agents.some((agent) => agent.id === value)
+      ? [{ value, label: t('agentMissingOption', { id: value }) }]
       : []),
   ];
 
   return (
     <Select
       label={label}
-      hint={failed ? t('profileLoadFailed') : t('profileSelectHint', { slot: binding.slot })}
+      hint={failed ? t('agentLoadFailed') : t('agentSelectHint', { slot: binding.slot })}
+      disabled={disabled}
+      value={value}
+      options={options}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
+/**
+ * Picks the creative agent whose media candidates narrow this node's routing.
+ *
+ * Empty means the full catalogue, which is what routing did before creative
+ * agents existed. The candidates and their cost weights are context the
+ * routing agent reads — they never rank candidates on their own.
+ */
+function CreativeAgentSelect({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onChange: (next: string) => void;
+}) {
+  const t = useTranslations('adminWorkflows');
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    adminApi
+      .get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles')
+      .then((page) => {
+        if (!cancelled) setAgents(page.items.filter((item) => item.category === 'creative'));
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const options = [
+    { value: '', label: t('creativeAgentNone') },
+    ...agents.map((agent) => ({
+      value: agent.id,
+      label: agent.enabled
+        ? `${agent.display_name} (${agent.role})`
+        : `${agent.display_name} (${agent.role}) · ${t('agentDisabledOption')}`,
+      disabled: !agent.enabled && agent.id !== value,
+    })),
+    // Same reasoning as the agent picker: a graph can outlive the agent it
+    // references, and hiding that would look like "no narrowing configured".
+    ...(value && !agents.some((agent) => agent.id === value)
+      ? [{ value, label: t('agentMissingOption', { id: value }) }]
+      : []),
+  ];
+
+  return (
+    <Select
+      label={label}
+      hint={failed ? t('agentLoadFailed') : t('creativeAgentHint')}
       disabled={disabled}
       value={value}
       options={options}

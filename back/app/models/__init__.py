@@ -5,6 +5,7 @@ single import, which is what Alembic autogenerate relies on.
 """
 
 from app.models.agent_skills import AgentNode, AgentProfile, AgentSkill
+from app.models.async_tasks import AsyncProviderTask
 from app.models.base import Base, TimestampMixin, new_id, utcnow
 from app.models.characters import Character, Series
 from app.models.credits import (
@@ -77,6 +78,7 @@ __all__ = [
     "Announcement",
     "Asset",
     "AssetConsent",
+    "AsyncProviderTask",
     "AuditLog",
     "BackupRecord",
     "Base",

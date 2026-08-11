@@ -92,7 +92,7 @@ dev-api: ## 启动 FastAPI（含 AgentOS）
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（订阅全部队列）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q moderation_short,image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile \
+		-Q moderation_short,image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,provider_task_polling \
 		--loglevel=info
 
 .PHONY: dev-web
@@ -163,9 +163,17 @@ openapi: ## 导出 OpenAPI 并生成前端类型
 	cd front && $(FNM_ENV) && npm run gen:api
 
 .PHONY: openapi-check
-openapi-check: openapi ## 校验生成的类型未过期
-	@git diff --exit-code -- front/src/lib/api/schema.d.ts back/openapi.json \
-		|| (echo "OpenAPI 类型已漂移，请提交 make openapi 的结果" && exit 1)
+openapi-check: ## 校验生成的类型未过期
+# 比对「重新生成前 / 后」而不是比对 HEAD：工作区里本来就会有未提交的 API 改动，
+# 跟 HEAD 比会把「还没提交」误报成「没重新生成」。
+	@cp back/openapi.json .openapi-check.json
+	@cp front/src/lib/api/schema.d.ts .openapi-check.d.ts
+	@$(MAKE) --no-print-directory openapi >/dev/null
+	@diff -q .openapi-check.json back/openapi.json >/dev/null \
+		&& diff -q .openapi-check.d.ts front/src/lib/api/schema.d.ts >/dev/null \
+		|| (rm -f .openapi-check.json .openapi-check.d.ts; \
+			echo "OpenAPI 类型已漂移，请提交 make openapi 的结果" && exit 1)
+	@rm -f .openapi-check.json .openapi-check.d.ts
 
 .PHONY: docs
 docs: ## 本地预览文档站

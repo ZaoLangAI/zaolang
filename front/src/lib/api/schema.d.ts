@@ -2423,6 +2423,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/agent-node-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Node Presets
+         * @description The roles an operator may create an agent for.
+         *
+         *     The console's role dropdown reads this instead of accepting free text —
+         *     see `app.domain.agent_skills.presets` for why the catalogue lives in code.
+         */
+        get: operations["list_agent_node_presets_v1_admin_agent_node_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/agent-nodes": {
         parameters: {
             query?: never;
@@ -2452,9 +2475,13 @@ export interface paths {
         put?: never;
         /**
          * Create Agent Profile
-         * @description Adds a variant. Not a dangerous action on its own — a variant changes
-         *     nothing until a workflow node binds it, and binding is what carries the
-         *     confirmation ceremony.
+         * @description Creates an agent under one of the preset roles.
+         *
+         *     Not a dangerous action on its own — an agent changes nothing until a
+         *     workflow node binds it, and binding is what carries the confirmation
+         *     ceremony. The role's `AgentNode` row is created here on first use, so
+         *     this is also how a role that has never been used before enters the
+         *     topology.
          */
         post: operations["create_agent_profile_v1_admin_agent_profiles_post"];
         delete?: never;
@@ -2478,7 +2505,7 @@ export interface paths {
         head?: never;
         /**
          * Update Agent Profile
-         * @description Edits a variant's metadata. `role` and `key` are absent on purpose:
+         * @description Edits an agent's metadata. `role` and `key` are absent on purpose:
          *     live graphs bind by key, so renaming one would silently re-point them.
          */
         patch: operations["update_agent_profile_v1_admin_agent_profiles__profile_id__patch"];
@@ -2495,13 +2522,33 @@ export interface paths {
         put?: never;
         /**
          * Disable Agent Profile
-         * @description Takes a variant out of service.
+         * @description Takes an agent out of service.
          *
          *     Dangerous because a graph that still binds it keeps running: the prompt
          *     silently falls back to the role's default. The console shows which
-         *     operations reference a variant so this is not a blind decision.
+         *     operations reference an agent so this is not a blind decision.
          */
         post: operations["disable_agent_profile_v1_admin_agent_profiles__profile_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-skill-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Skill Templates
+         * @description Starting prompts for the skill editor's "fill from template" control.
+         */
+        get: operations["list_agent_skill_templates_v1_admin_agent_skill_templates_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2520,7 +2567,7 @@ export interface paths {
         put?: never;
         /**
          * Publish Agent Skill
-         * @description Publishes a new prompt version for one variant's slot and activates it.
+         * @description Publishes a new prompt version for one agent's slot and activates it.
          *
          *     A rejected or unparseable safety verdict is the direct, immediate result
          *     of what this prompt says, so publishing it is treated with the same
@@ -2623,7 +2670,7 @@ export interface paths {
          *     confirmation dialog on them.
          *
          *     `warnings` are advisory and never block `publish`; they exist so a
-         *     capability mismatch between a bound agent variant and this operation is
+         *     capability mismatch between a bound agent agent and this operation is
          *     seen rather than discovered in production.
          */
         post: operations["validate_workflow_graph_v1_admin_workflow_templates_validate_post"];
@@ -3015,6 +3062,22 @@ export interface components {
             last_login_at?: string | null;
         };
         /**
+         * AgentBindingView
+         * @description Tells the editor that one config field selects an agent.
+         *
+         *     Without this the schema-driven form would render `agent_id` as a
+         *     free-text box; with it the editor can offer the agents that actually
+         *     exist for `role`, which is also the only role this field accepts.
+         */
+        AgentBindingView: {
+            /** Config Field */
+            config_field: string;
+            /** Role */
+            role: string;
+            /** Slot */
+            slot: string;
+        };
+        /**
          * AgentNodeView
          * @description One pipeline stage plus which failover-pool endpoints could serve it.
          *
@@ -3032,6 +3095,12 @@ export interface components {
             display_name: string;
             /** Description */
             description: string;
+            /**
+             * Category
+             * @default judgment
+             * @enum {string}
+             */
+            category: "judgment" | "creative";
             /** Enabled */
             enabled: boolean;
             /** Sort Order */
@@ -3056,8 +3125,27 @@ export interface components {
             description: string;
             /** Operations */
             operations?: string[];
+            /** Default Endpoint Id */
+            default_endpoint_id?: string | null;
+            /** Backup Endpoint Id */
+            backup_endpoint_id?: string | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Temperature */
+            temperature?: number | null;
+            /** Reasoning Model */
+            reasoning_model?: boolean | null;
+            /** Media Candidates */
+            media_candidates?: components["schemas"]["MediaCandidate"][];
         };
-        /** AgentProfileUpdateRequest */
+        /**
+         * AgentProfileUpdateRequest
+         * @description Every field is optional and `None` means "leave as is".
+         *
+         *     An **empty string** on either endpoint id is how the console clears a
+         *     model pin, and an **empty list** clears media candidates — otherwise an
+         *     agent could never go back to the shared pool once pinned.
+         */
         AgentProfileUpdateRequest: {
             /** Display Name */
             display_name?: string | null;
@@ -3069,15 +3157,27 @@ export interface components {
             is_default?: boolean | null;
             /** Enabled */
             enabled?: boolean | null;
+            /** Default Endpoint Id */
+            default_endpoint_id?: string | null;
+            /** Backup Endpoint Id */
+            backup_endpoint_id?: string | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Temperature */
+            temperature?: number | null;
+            /** Reasoning Model */
+            reasoning_model?: boolean | null;
+            /** Media Candidates */
+            media_candidates?: components["schemas"]["MediaCandidate"][] | null;
         };
         /**
          * AgentProfileView
-         * @description A named variant of one role.
+         * @description One agent. Its `role` says which pipeline stage it can run.
          *
-         *     `operations` is the variant's declared capability — the operations its
+         *     `operations` is the agent's declared capability — the operations its
          *     prompts were written for. Empty means general purpose. `used_by_operations`
          *     is derived from the currently active workflow templates, so the console
-         *     can show at a glance whether a variant is actually wired up and whether
+         *     can show at a glance whether an agent is actually wired up and whether
          *     it is being used outside what it declares.
          */
         AgentProfileView: {
@@ -3091,12 +3191,30 @@ export interface components {
             display_name: string;
             /** Description */
             description: string;
+            /**
+             * Category
+             * @default judgment
+             * @enum {string}
+             */
+            category: "judgment" | "creative";
             /** Operations */
             operations?: string[];
             /** Is Default */
             is_default: boolean;
             /** Enabled */
             enabled: boolean;
+            /** Default Endpoint Id */
+            default_endpoint_id?: string | null;
+            /** Backup Endpoint Id */
+            backup_endpoint_id?: string | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Temperature */
+            temperature?: number | null;
+            /** Reasoning Model */
+            reasoning_model?: boolean | null;
+            /** Media Candidates */
+            media_candidates?: components["schemas"]["MediaCandidate"][];
             /** Used By Operations */
             used_by_operations?: string[];
             /**
@@ -4658,6 +4776,26 @@ export interface components {
             reserved_credits: number;
         };
         /**
+         * MediaCandidate
+         * @description One media route a creative agent may use, with a cost preference.
+         *
+         *     `weight` is shown to the routing agent as operational context alongside
+         *     each candidate's observed success rate, latency and cost — it is not a
+         *     coefficient. Nothing in `app/agents/router.py` ranks by it; the routing
+         *     agent still makes the call.
+         */
+        MediaCandidate: {
+            /** Endpoint Id */
+            endpoint_id: string;
+            /** Capability */
+            capability: string;
+            /**
+             * Weight
+             * @default 100
+             */
+            weight: number;
+        };
+        /**
          * MediaType
          * @enum {string}
          */
@@ -4814,8 +4952,8 @@ export interface components {
             is_agent: boolean;
             /** Agent Role */
             agent_role?: string | null;
-            /** Profile Bindings */
-            profile_bindings?: components["schemas"]["ProfileBindingView"][];
+            /** Agent Bindings */
+            agent_bindings?: components["schemas"]["AgentBindingView"][];
             /** Config Schema */
             config_schema: {
                 [key: string]: unknown;
@@ -5297,6 +5435,30 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[RolePresetView] */
+        Page_RolePresetView_: {
+            /** Items */
+            items: components["schemas"]["RolePresetView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[SkillTemplateView] */
+        Page_SkillTemplateView_: {
+            /** Items */
+            items: components["schemas"]["SkillTemplateView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[StylePresetResponse] */
         Page_StylePresetResponse_: {
             /** Items */
@@ -5357,22 +5519,6 @@ export interface components {
             reduce_motion?: boolean | null;
             /** Notify On Remix */
             notify_on_remix?: boolean | null;
-        };
-        /**
-         * ProfileBindingView
-         * @description Tells the editor that one config field selects an agent variant.
-         *
-         *     Without this the schema-driven form would render `agent_profile` as a
-         *     free-text box; with it the editor can offer the variants that actually
-         *     exist for `role`.
-         */
-        ProfileBindingView: {
-            /** Config Field */
-            config_field: string;
-            /** Role */
-            role: string;
-            /** Slot */
-            slot: string;
         };
         /** ProfileResponse */
         ProfileResponse: {
@@ -5903,6 +6049,47 @@ export interface components {
             /** Roles */
             roles: string[];
         };
+        /**
+         * RolePresetView
+         * @description One role an operator may create an agent for.
+         *
+         *     A code-maintained catalogue rather than a table: a role only runs if some
+         *     node type invokes it, so free-text roles would produce agents that never
+         *     execute. `category` drives which half of the create form applies —
+         *     `judgment` binds one LLM model, `creative` binds media endpoints with a
+         *     cost weight each — and `operations` is what the media-candidate picker
+         *     filters by.
+         */
+        RolePresetView: {
+            /** Role */
+            role: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "judgment" | "creative";
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Operations */
+            operations?: string[];
+            /** Default Template Key */
+            default_template_key?: string | null;
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /**
+             * Is New
+             * @default true
+             */
+            is_new: boolean;
+        };
         /** RouteSummary */
         RouteSummary: {
             /** Provider */
@@ -6078,6 +6265,41 @@ export interface components {
             default_profile: string;
             /** Profiles */
             profiles: components["schemas"]["ShortformProfileResponse"][];
+        };
+        /**
+         * SkillTemplateView
+         * @description A starting prompt the skill editor can load.
+         *
+         *     Loading one only fills the form: publishing stays a separate confirmed
+         *     action, because the published text is what decides whether content gets
+         *     rejected or a retry spends credits.
+         */
+        SkillTemplateView: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "judgment" | "creative";
+            /** Prompt Template */
+            prompt_template: string;
+            /** Tool Grants */
+            tool_grants?: string[];
+            /** Role */
+            role?: string | null;
+            /**
+             * Slot
+             * @default default
+             */
+            slot: string;
         };
         /** StorageUsageResponse */
         StorageUsageResponse: {
@@ -11540,6 +11762,37 @@ export interface operations {
             };
         };
     };
+    list_agent_node_presets_v1_admin_agent_node_presets_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_RolePresetView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_agent_nodes_v1_admin_agent_nodes_get: {
         parameters: {
             query?: never;
@@ -11700,6 +11953,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_agent_skill_templates_v1_admin_agent_skill_templates_get: {
+        parameters: {
+            query?: {
+                category?: string | null;
+                role?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_SkillTemplateView_"];
                 };
             };
             /** @description Validation Error */

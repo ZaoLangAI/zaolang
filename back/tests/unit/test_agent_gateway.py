@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
+from app.agents import base as agent_base
 from app.agents import copywriter, intent_router, router, tools
 from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
@@ -12,6 +13,7 @@ from app.domain.errors import ValidationFailed
 from app.models import ProviderStat, User
 from app.models.enums import AgentName, Operation, QualityTier
 from app.platform_config import service as config_service
+from app.platform_config.schemas import LlmProviderConfig
 from app.workflows import describe_workflow, registry
 from app.workflows.defaults import default_graph
 from app.workflows.graph import WorkflowGraph
@@ -339,9 +341,9 @@ def test_a_node_that_binds_nothing_gets_the_roles_default_variant(db: Session) -
     assert profile_id == default.id
 
 
-def test_a_bound_variant_overrides_the_default_for_that_node_only(db: Session) -> None:
-    """The whole point of variants: one operation's safety prompt can change
-    without touching the other five."""
+def test_a_bound_agent_overrides_the_default_for_that_node_only(db: Session) -> None:
+    """The whole point of letting a role have several agents: one operation's
+    safety prompt can change without touching the other five."""
     _seeded(db)
     default = agent_skills_service.default_profile(db, "safety")
     assert default is not None
@@ -367,19 +369,17 @@ def test_a_bound_variant_overrides_the_default_for_that_node_only(db: Session) -
         reason="test",
     )
 
-    bound, _ = agent_skills_service.get_active_prompt(
-        db, "safety", "BUILTIN", profile_key="video-strict"
-    )
+    bound, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN", agent_id=strict.id)
     unbound, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN")
     assert bound == "STRICT_VARIANT"
     assert unbound == "DEFAULT_VARIANT"
 
 
-def test_a_variant_with_nothing_published_inherits_the_default_variants_prompt(
+def test_an_agent_with_nothing_published_inherits_the_default_agents_prompt(
     db: Session,
 ) -> None:
-    """Three-level fallback: bound variant, then the role default, then the
-    module constant. A half-configured variant must not drop an operator back
+    """Three-level fallback: bound agent, then the role default, then the
+    module constant. A half-configured agent must not drop an operator back
     to the hardcoded text they already replaced."""
     _seeded(db)
     default = agent_skills_service.default_profile(db, "safety")
@@ -393,14 +393,16 @@ def test_a_variant_with_nothing_published_inherits_the_default_variants_prompt(
         actor_user_id=None,
         reason="test",
     )
-    agent_skills_service.create_profile(db, role="safety", key="empty", display_name="空变体")
+    empty = agent_skills_service.create_profile(
+        db, role="safety", key="empty", display_name="空智能体"
+    )
 
-    prompt, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN", profile_key="empty")
+    prompt, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN", agent_id=empty.id)
     assert prompt == "DEFAULT_VARIANT"
 
 
-def test_a_disabled_variant_falls_back_instead_of_running_no_prompt(db: Session) -> None:
-    """Publish-time validation blocks binding a disabled variant, but one can
+def test_a_disabled_agent_falls_back_instead_of_running_no_prompt(db: Session) -> None:
+    """Publish-time validation blocks binding a disabled agent, but one can
     be disabled after a graph goes live. Generation must keep working."""
     _seeded(db)
     default = agent_skills_service.default_profile(db, "safety")
@@ -428,10 +430,34 @@ def test_a_disabled_variant_falls_back_instead_of_running_no_prompt(db: Session)
     )
     agent_skills_service.update_profile(db, retired.id, enabled=False)
 
-    prompt, _ = agent_skills_service.get_active_prompt(
-        db, "safety", "BUILTIN", profile_key="retired"
+    prompt, _ = agent_skills_service.get_active_prompt(db, "safety", "BUILTIN", agent_id=retired.id)
+    assert prompt == "DEFAULT_VARIANT"
+
+
+def test_an_agent_of_another_role_is_refused_at_run_time_too(db: Session) -> None:
+    """Publishing rejects a cross-role binding, but a hand-edited graph or a
+    reused id must not be able to run a copywriter where the pipeline reads a
+    safety verdict."""
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    agent_skills_service.publish(
+        db,
+        profile_id=default.id,
+        slot="default",
+        prompt_template="DEFAULT_VARIANT",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="test",
+    )
+    copywriter = agent_skills_service.default_profile(db, "copy")
+    assert copywriter is not None
+
+    prompt, resolved_id = agent_skills_service.get_active_prompt(
+        db, "safety", "BUILTIN", agent_id=copywriter.id
     )
     assert prompt == "DEFAULT_VARIANT"
+    assert resolved_id == default.id
 
 
 def test_intent_routers_two_prompts_do_not_overwrite_each_other(db: Session) -> None:
@@ -529,11 +555,128 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
         assert declared == slots, f"{role} 的槽位声明与实际调用不一致"
 
 
-def test_every_profile_binding_names_a_real_role_field_and_slot() -> None:
+# --------------------------------------------------------------------------
+# Per-variant model bindings
+# --------------------------------------------------------------------------
+
+
+def _seed_general_endpoints(db: Session) -> None:
+    config_service.set_value(
+        db,
+        "llm_providers",
+        {
+            "endpoints": {
+                "pinned-ep": {
+                    "name": "钉住的端点",
+                    "base_url": "https://pinned.invalid",
+                    "api_key": "k",
+                    "kind": "general",
+                    "models": ["pinned-model"],
+                    "role": "primary",
+                },
+                "backup-ep": {
+                    "name": "备用端点",
+                    "base_url": "https://backup.invalid",
+                    "api_key": "k",
+                    "kind": "general",
+                    "models": ["backup-model"],
+                    "role": "backup",
+                },
+            }
+        },
+        actor_user_id=None,
+        note="test bootstrap",
+    )
+
+
+def test_a_variant_that_pins_nothing_still_draws_from_the_shared_pool(db: Session) -> None:
+    """The behaviour every variant had before per-variant bindings existed."""
+    _seeded(db)
+    _seed_general_endpoints(db)
+    profile = agent_skills_service.default_profile(db, "safety")
+    assert profile is not None
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert binding.preferred_endpoint_ids == ()
+    assert binding.model == agent_base.resolve_binding(db, AgentName.SAFETY.value).model
+
+
+def test_a_pinned_variant_tries_its_own_endpoints_first(db: Session) -> None:
+    _seeded(db)
+    _seed_general_endpoints(db)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="pinned",
+        display_name="钉模型版",
+        default_endpoint_id="pinned-ep",
+        backup_endpoint_id="backup-ep",
+    )
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert binding.preferred_endpoint_ids == ("pinned-ep", "backup-ep")
+    # The role-wide model is not one this endpoint serves, so the endpoint's
+    # own model wins — otherwise the pin would send an unknown model id.
+    assert binding.model == "pinned-model"
+
+
+def test_pinning_an_endpoint_does_not_remove_the_rest_of_the_pool(db: Session) -> None:
+    """A pin is a preference order, not a replacement pool: the shared
+    endpoints stay behind it as fallbacks."""
+    from app.llm import failover
+
+    _seeded(db)
+    _seed_general_endpoints(db)
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+
+    # Without a pin, `backup-ep` sorts last because it is a backup endpoint.
+    assert [pair[0] for pair in failover.eligible_candidates(config)] == [
+        "pinned-ep",
+        "backup-ep",
+    ]
+    assert [
+        pair[0] for pair in failover.eligible_candidates(config, preferred_ids=("backup-ep",))
+    ] == ["backup-ep", "pinned-ep"]
+
+
+def test_a_variant_can_override_sampling_without_pinning_an_endpoint(db: Session) -> None:
+    _seeded(db)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="hot",
+        display_name="高温版",
+        max_tokens=1_234,
+        temperature_milli=900,
+        reasoning_model=True,
+    )
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert (binding.max_tokens, binding.temperature, binding.reasoning_model) == (1234, 0.9, True)
+    assert binding.preferred_endpoint_ids == ()
+
+
+def test_pinning_an_endpoint_that_no_longer_exists_falls_back_to_the_pool(db: Session) -> None:
+    """An operator can delete an endpoint a variant pinned. Generation must
+    keep working rather than routing at a dangling id."""
+    _seeded(db)
+    _seed_general_endpoints(db)
+    profile = agent_skills_service.create_profile(
+        db, role="safety", key="stale", display_name="悬空版", default_endpoint_id="pinned-ep"
+    )
+    config_service.set_value(
+        db, "llm_providers", {"endpoints": {}}, actor_user_id=None, note="删除端点"
+    )
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert binding.preferred_endpoint_ids == ()
+
+
+def test_every_agent_binding_names_a_real_role_field_and_slot() -> None:
     """A binding whose config field does not exist would render a picker that
     writes into a field the backend rejects as `extra="forbid"`."""
     for node_type, spec in registry.NODE_TYPES.items():
-        for binding in spec.profile_bindings:
+        for binding in spec.agent_bindings:
             assert binding.config_field in spec.config_schema.model_fields, (
                 f"{node_type} 绑定了不存在的配置字段 {binding.config_field}"
             )

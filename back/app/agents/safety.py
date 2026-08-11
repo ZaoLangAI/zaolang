@@ -50,7 +50,7 @@ def review(
     subject_id: str,
     job_id: str | None = None,
     user_id: str | None = None,
-    profile: str | None = None,
+    agent_id: str | None = None,
 ) -> ModerationResult:
     """Runs a safety check and records the verdict.
 
@@ -81,7 +81,7 @@ def review(
         fallback=FALLBACK,
         job_id=job_id,
         user_id=user_id,
-        profile_key=profile,
+        agent_id=agent_id,
     )
 
     decision = str(outcome.data.get("decision", "needs_review"))

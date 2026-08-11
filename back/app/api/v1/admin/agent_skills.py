@@ -1,4 +1,4 @@
-"""Agent node topology, variants and versioned prompts (engineering-side Agent Skill).
+"""Agents, their roles, and their versioned prompts (engineering-side Agent Skill).
 
 Distinct from the technical `AgentRunView`/`AgentUsageSummary` observation
 endpoints in `observability.py`: those read what already happened, this
@@ -6,9 +6,10 @@ writes what happens next. Also distinct from the user-facing skill library
 (`skill_library.py`) — this is the built-in pipeline stages' prompts, not
 user-authored generation parameter templates.
 
-Three levels, matching `app.models.agent_skills`: a *node* is a role, a
-*profile* is a named variant of that role bound by a workflow node, and a
-*skill* is one append-only prompt version for a `(profile, slot)` pair.
+Three levels, matching `app.models.agent_skills`: a *node* is a role, an
+*agent* (`AgentProfile`) has one of those roles and is what a workflow node
+binds by id, and a *skill* is one append-only prompt version for an
+`(agent, slot)` pair.
 """
 
 from __future__ import annotations
@@ -25,7 +26,10 @@ from app.api.schemas.admin import (
     AgentSkillPublishRequest,
     AgentSkillView,
     DangerousAction,
+    MediaCandidate,
     PromptSlotView,
+    RolePresetView,
+    SkillTemplateView,
 )
 from app.api.schemas.common import Page
 from app.api.v1.admin.deps import (
@@ -36,13 +40,40 @@ from app.api.v1.admin.deps import (
     Viewer,
     require_confirmation,
 )
+from app.domain.agent_skills import presets as role_presets
 from app.domain.agent_skills import service as agent_skills_service
+from app.domain.agent_skills import templates as skill_templates
 from app.domain.audit import service as audit
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 
 router = APIRouter(tags=["admin:agent-skills"])
+
+
+@router.get("/agent-node-presets", response_model=Page[RolePresetView])
+def list_agent_node_presets(session: DbSession, user: Viewer, _: AdminRead) -> Page[RolePresetView]:
+    """The roles an operator may create an agent for.
+
+    The console's role dropdown reads this instead of accepting free text —
+    see `app.domain.agent_skills.presets` for why the catalogue lives in code.
+    """
+    existing_roles = {node.role for node in agent_skills_service.list_nodes(session)}
+    return Page(
+        items=[
+            RolePresetView(
+                role=preset.role,
+                display_name=preset.display_name,
+                category=preset.category,
+                description=preset.description,
+                operations=list(preset.operations),
+                default_template_key=preset.default_template_key,
+                sort_order=preset.sort_order,
+                is_new=preset.role not in existing_roles,
+            )
+            for preset in role_presets.all_presets()
+        ]
+    )
 
 
 @router.get("/agent-nodes", response_model=Page[AgentNodeView])
@@ -57,7 +88,7 @@ def list_agent_profiles(
     session: DbSession, user: Viewer, _: AdminRead, role: str | None = None
 ) -> Page[AgentProfileView]:
     profiles = agent_skills_service.list_profiles(session, role=role)
-    usage = workflow_templates_service.profile_usage(session)
+    usage = workflow_templates_service.agent_usage(session)
     return Page(items=[_profile_view(p, usage) for p in profiles])
 
 
@@ -69,9 +100,14 @@ def create_agent_profile(
     user: Admin,
     _: AdminWrite,
 ) -> AgentProfileView:
-    """Adds a variant. Not a dangerous action on its own — a variant changes
-    nothing until a workflow node binds it, and binding is what carries the
-    confirmation ceremony."""
+    """Creates an agent under one of the preset roles.
+
+    Not a dangerous action on its own — an agent changes nothing until a
+    workflow node binds it, and binding is what carries the confirmation
+    ceremony. The role's `AgentNode` row is created here on first use, so
+    this is also how a role that has never been used before enters the
+    topology.
+    """
     row = agent_skills_service.create_profile(
         session,
         role=payload.role,
@@ -79,6 +115,12 @@ def create_agent_profile(
         display_name=payload.display_name,
         description=payload.description,
         operations=payload.operations,
+        default_endpoint_id=payload.default_endpoint_id,
+        backup_endpoint_id=payload.backup_endpoint_id,
+        max_tokens=payload.max_tokens,
+        temperature_milli=_temperature_milli(payload.temperature),
+        reasoning_model=payload.reasoning_model,
+        media_candidates=[candidate.model_dump() for candidate in payload.media_candidates],
     )
     audit.record(
         session,
@@ -90,7 +132,7 @@ def create_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(row, workflow_templates_service.profile_usage(session))
+    return _profile_view(row, workflow_templates_service.agent_usage(session))
 
 
 @router.patch("/agent-profiles/{profile_id}", response_model=AgentProfileView)
@@ -102,7 +144,7 @@ def update_agent_profile(
     user: Admin,
     _: AdminWrite,
 ) -> AgentProfileView:
-    """Edits a variant's metadata. `role` and `key` are absent on purpose:
+    """Edits an agent's metadata. `role` and `key` are absent on purpose:
     live graphs bind by key, so renaming one would silently re-point them."""
     before = agent_skills_service.get_profile(session, profile_id)
     before_state = {
@@ -118,6 +160,16 @@ def update_agent_profile(
         operations=payload.operations,
         is_default=payload.is_default,
         enabled=payload.enabled,
+        default_endpoint_id=payload.default_endpoint_id,
+        backup_endpoint_id=payload.backup_endpoint_id,
+        max_tokens=payload.max_tokens,
+        temperature_milli=_temperature_milli(payload.temperature),
+        reasoning_model=payload.reasoning_model,
+        media_candidates=(
+            None
+            if payload.media_candidates is None
+            else [candidate.model_dump() for candidate in payload.media_candidates]
+        ),
     )
     audit.record(
         session,
@@ -134,7 +186,7 @@ def update_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(row, workflow_templates_service.profile_usage(session))
+    return _profile_view(row, workflow_templates_service.agent_usage(session))
 
 
 @router.post("/agent-profiles/{profile_id}/disable", response_model=AgentProfileView)
@@ -146,11 +198,11 @@ def disable_agent_profile(
     user: Admin,
     _: AdminDangerous,
 ) -> AgentProfileView:
-    """Takes a variant out of service.
+    """Takes an agent out of service.
 
     Dangerous because a graph that still binds it keeps running: the prompt
     silently falls back to the role's default. The console shows which
-    operations reference a variant so this is not a blind decision.
+    operations reference an agent so this is not a blind decision.
     """
     require_confirmation(payload.confirm)
     row = agent_skills_service.update_profile(session, profile_id, enabled=False)
@@ -165,7 +217,32 @@ def disable_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(row, workflow_templates_service.profile_usage(session))
+    return _profile_view(row, workflow_templates_service.agent_usage(session))
+
+
+@router.get("/agent-skill-templates", response_model=Page[SkillTemplateView])
+def list_agent_skill_templates(
+    user: Viewer,
+    _: AdminRead,
+    category: str | None = None,
+    role: str | None = None,
+) -> Page[SkillTemplateView]:
+    """Starting prompts for the skill editor's "fill from template" control."""
+    return Page(
+        items=[
+            SkillTemplateView(
+                key=template.key,
+                label=template.label,
+                description=template.description,
+                category=template.category,
+                prompt_template=template.prompt_template,
+                tool_grants=list(template.tool_grants),
+                role=template.role,
+                slot=template.slot,
+            )
+            for template in skill_templates.templates_for(category=category, role=role)
+        ]
+    )
 
 
 @router.get("/agent-skills", response_model=Page[AgentSkillView])
@@ -187,7 +264,7 @@ def publish_agent_skill(
     user: Admin,
     _: AdminDangerous,
 ) -> AgentSkillView:
-    """Publishes a new prompt version for one variant's slot and activates it.
+    """Publishes a new prompt version for one agent's slot and activates it.
 
     A rejected or unparseable safety verdict is the direct, immediate result
     of what this prompt says, so publishing it is treated with the same
@@ -267,6 +344,7 @@ def _node_view(node, provider_config: LlmProviderConfig) -> AgentNodeView:  # ty
         role=node.role,
         display_name=node.display_name,
         description=node.description,
+        category=node.category or role_presets.category_for(node.role),
         enabled=node.enabled,
         sort_order=node.sort_order,
         candidate_endpoint_ids=candidates,
@@ -277,17 +355,39 @@ def _node_view(node, provider_config: LlmProviderConfig) -> AgentNodeView:  # ty
     )
 
 
-def _profile_view(profile, usage: dict[tuple[str, str], list[str]]) -> AgentProfileView:  # type: ignore[no-untyped-def]
+def _temperature_milli(temperature: float | None) -> int | None:
+    """Temperature is stored as an integer per mille — this schema keeps no
+    floating point numbers in columns."""
+    return None if temperature is None else round(temperature * 1000)
+
+
+def _profile_view(profile, usage: dict[str, list[str]]) -> AgentProfileView:  # type: ignore[no-untyped-def]
     return AgentProfileView(
         id=profile.id,
         role=profile.role,
         key=profile.key,
         display_name=profile.display_name,
         description=profile.description,
+        category=role_presets.category_for(profile.role),
         operations=list(profile.operations_json),
         is_default=profile.is_default,
         enabled=profile.enabled,
-        used_by_operations=usage.get((profile.role, profile.key), []),
+        default_endpoint_id=profile.default_endpoint_id,
+        backup_endpoint_id=profile.backup_endpoint_id,
+        max_tokens=profile.max_tokens,
+        temperature=(
+            None if profile.temperature_milli is None else profile.temperature_milli / 1000
+        ),
+        reasoning_model=profile.reasoning_model,
+        media_candidates=[
+            MediaCandidate(
+                endpoint_id=str(candidate.get("endpoint_id", "")),
+                capability=str(candidate.get("capability", "")),
+                weight=int(candidate.get("weight", 100)),
+            )
+            for candidate in (profile.media_candidates_json or [])
+        ],
+        used_by_operations=usage.get(profile.id, []),
         created_at=profile.created_at,
     )
 

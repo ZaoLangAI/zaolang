@@ -292,6 +292,106 @@ def test_releasing_twice_does_not_return_the_credits_twice(db: Session, funded: 
     assert len(_ledger(db, funded, LedgerEntryType.RELEASE)) == 1
 
 
+def test_an_externally_rendered_video_reports_progress_before_it_finishes(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The user-visible reason the polling mechanism exists: a render handed
+    to an upstream must still move the progress bar, rather than sitting on
+    one status for minutes and then jumping to done."""
+    from app.agents import router
+    from app.domain.jobs import async_tasks
+    from app.models.base import new_id as _new_id
+    from app.models.enums import ProviderKind
+    from app.platform_config import service as config_service
+    from app.providers.base import GenerationRequest, GenerationResult, ProviderCapability
+    from app.storage.s3 import put_object
+    from app.workers import async_polling
+
+    class _SlowUpstream:
+        name = "slow_video"
+        kind = ProviderKind.COMMERCIAL_API
+
+        def __init__(self) -> None:
+            self.remaining_polls = 2
+
+        def submit(self, request: GenerationRequest) -> GenerationResult:
+            return GenerationResult(succeeded=False, pending=True, external_task_id="ext_slow")
+
+        def poll(self, external_task_id: str, request: GenerationRequest) -> GenerationResult:
+            if self.remaining_polls > 0:
+                self.remaining_polls -= 1
+                return GenerationResult(
+                    succeeded=False, pending=True, external_task_id=external_task_id
+                )
+            put_object("generated/slow.mp4", b"video-bytes", content_type="video/mp4")
+            return GenerationResult(
+                succeeded=True,
+                object_key="generated/slow.mp4",
+                mime_type="video/mp4",
+                width=1920,
+                height=1080,
+                duration_ms=5_000,
+                cost_minor=20,
+                latency_ms=90_000,
+            )
+
+        def cancel(self, external_task_id: str) -> bool:
+            return True
+
+    upstream = _SlowUpstream()
+    monkeypatch.setattr(
+        router,
+        "PROVIDER_CATALOG",
+        {
+            "slow_video": ProviderCapability(
+                name="slow_video",
+                kind=ProviderKind.COMMERCIAL_API,
+                operations=frozenset({Operation.TEXT_TO_VIDEO}),
+                tiers=frozenset({QualityTier.STANDARD}),
+                quality_prior=0.9,
+                typical_latency_ms=90_000,
+                unit_cost_minor=20,
+                model_or_workflow="minimax-h3",
+                provider_factory=lambda: upstream,
+            )
+        },
+    )
+    config_service.set_value(
+        db,
+        "providers",
+        {"providers": {"slow_video": {"enabled": True}}},
+        actor_user_id=None,
+        note="test bootstrap",
+    )
+
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "霓虹街头", "aspect_ratio": "16:9", "duration_seconds": 5},
+        idempotency_key=_new_id("idk"),
+    ).job
+
+    assert pipeline.run_generation_pipeline(db, job.id).status == JobStatus.RUNNING
+    progress_before = [e.progress for e in sm.events_since(db, job.id, 0)]
+
+    for _ in range(3):
+        task = async_tasks.find_for_job(db, job.id)
+        if task is None:
+            break
+        task.next_poll_at = utcnow() - dt.timedelta(seconds=1)
+        db.flush()
+        async_polling.poll_once(db)
+
+    db.refresh(job)
+    assert job.status == JobStatus.SUCCEEDED
+    progress_after = [e.progress for e in sm.events_since(db, job.id, 0)]
+    # At least one heartbeat landed between submission and completion.
+    assert len(progress_after) > len(progress_before) + 1
+    assert progress_after == sorted(progress_after)
+
+
 def test_video_work_is_dispatched_to_the_long_queue(monkeypatch) -> None:
     """A four-minute render on the image queue would block every quick job
     behind it."""

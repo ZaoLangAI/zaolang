@@ -14,6 +14,7 @@ from typing import Any
 from app.models.enums import JobEventType
 from app.workflows import nodes
 from app.workflows.configs import (
+    CustomAgentStepConfig,
     FailConfig,
     IntentRouterConfig,
     JoinConfig,
@@ -37,15 +38,19 @@ Executor = Callable[[WorkflowContext, Any], NodeResult]
 
 
 @dataclass(frozen=True, slots=True)
-class ProfileBinding:
-    """Maps one config field onto the agent variant it selects.
+class AgentBinding:
+    """Maps one config field onto the agent it selects.
+
+    `role` is which role the bound agent must have, and it is what the
+    console filters its picker by — a `safety_check` node may only run a
+    safety agent, however many of those exist.
 
     `route_score` is why this is a list on the spec rather than a flag
-    derived from `agent_role`: it is not an agent node, yet it picks a
-    variant of the `intent_router` role for the `select_provider` slot. The
-    admin console reads these to render a variant picker instead of a raw
-    text box, and `workflow_templates.service` reads them to validate a
-    graph's bindings before publishing it.
+    derived from `agent_role`: it is not an agent node, yet it runs an
+    `intent_router` agent for the `select_provider` slot. The admin console
+    reads these to render a picker instead of a raw text box, and
+    `workflow_templates.service` reads them to validate a graph's bindings
+    before publishing it.
     """
 
     config_field: str
@@ -63,7 +68,7 @@ class NodeSpec:
     output_ports: tuple[str, ...]
     is_agent: bool = False
     agent_role: str | None = None
-    profile_bindings: tuple[ProfileBinding, ...] = ()
+    agent_bindings: tuple[AgentBinding, ...] = ()
     # The `JobEvent` this node writes on its way through, if any — used only
     # to derive the ops console's declared timeline (`workflows/shape.py`).
     # `None` for nodes with no single representative public event
@@ -82,7 +87,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("pass", "reject"),
         is_agent=True,
         agent_role="safety",
-        profile_bindings=(ProfileBinding("agent_profile", "safety", "default"),),
+        agent_bindings=(AgentBinding("agent_id", "safety", "default"),),
         event_type=JobEventType.SAFETY,
     ),
     "skill_context": NodeSpec(
@@ -103,7 +108,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("ok",),
         is_agent=True,
         agent_role="planner",
-        profile_bindings=(ProfileBinding("agent_profile", "planner", "default"),),
+        agent_bindings=(AgentBinding("agent_id", "planner", "default"),),
         event_type=JobEventType.PLANNING,
     ),
     "intent_router": NodeSpec(
@@ -115,8 +120,23 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("ok",),
         is_agent=True,
         agent_role="intent_router",
-        profile_bindings=(ProfileBinding("agent_profile", "intent_router", "classify"),),
+        agent_bindings=(AgentBinding("agent_id", "intent_router", "classify"),),
         event_type=JobEventType.INTENT_ROUTING,
+    ),
+    "custom_agent": NodeSpec(
+        category="planning",
+        label="自定义智能体判断",
+        description="运行一个在管理台创建的判断类智能体，把结构化结论写入工作流状态供后续节点读取；"
+        "不结算积分、不迁移任务状态。",
+        config_schema=CustomAgentStepConfig,
+        executor=nodes.execute_custom_agent_step,
+        output_ports=("ok",),
+        is_agent=True,
+        # Fixed at runtime from `config.agent_role`: this node type exists
+        # precisely because the role is not known at code-review time, so
+        # neither `agent_role` nor `agent_bindings` can be declared here.
+        agent_role=None,
+        event_type=JobEventType.PROGRESS,
     ),
     "route_score": NodeSpec(
         category="routing",
@@ -125,7 +145,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         config_schema=RouteScoreConfig,
         executor=nodes.execute_route_score,
         output_ports=("ok", "no_candidate", "retries_exhausted"),
-        profile_bindings=(ProfileBinding("selector_profile", "intent_router", "select_provider"),),
+        agent_bindings=(AgentBinding("selector_agent_id", "intent_router", "select_provider"),),
         event_type=JobEventType.ROUTING,
     ),
     "provider_generate": NodeSpec(
@@ -147,7 +167,7 @@ NODE_TYPES: dict[str, NodeSpec] = {
         output_ports=("pass", "retry", "fail"),
         is_agent=True,
         agent_role="quality",
-        profile_bindings=(ProfileBinding("agent_profile", "quality", "default"),),
+        agent_bindings=(AgentBinding("agent_id", "quality", "default"),),
         event_type=JobEventType.QUALITY_CHECK,
     ),
     "join": NodeSpec(

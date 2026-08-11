@@ -113,6 +113,21 @@ def expire_stale_jobs() -> int:
     return expired
 
 
+@celery_app.task(name="app.workers.tasks.poll_async_provider_tasks")
+def poll_async_provider_tasks() -> int:
+    """Advances every job parked on an external render.
+
+    This is the other half of `WorkflowRunner._suspend`: those jobs are
+    `RUNNING` with no Celery task in flight, so without this tick they would
+    sit there until `expire_stale_jobs` released their credits. Returns how
+    many rows this tick actually settled or rescheduled.
+    """
+    from app.workers.async_polling import poll_once
+
+    with session_scope() as session:
+        return poll_once(session)
+
+
 @celery_app.task(name="app.workers.tasks.reconcile_webhooks")
 def reconcile_webhooks() -> int:
     """Processes webhook events that arrived but were never handled."""
@@ -156,6 +171,7 @@ def dispatch_generation(job: GenerationJob) -> None:
 __all__ = [
     "dispatch_generation",
     "expire_stale_jobs",
+    "poll_async_provider_tasks",
     "reconcile_credits",
     "reconcile_webhooks",
     "run_audio_generation",

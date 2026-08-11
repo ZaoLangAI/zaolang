@@ -8,33 +8,38 @@ import { AgentProfileDialog } from '@/components/admin/agents/agent-profile-dial
 import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { TextArea, TextInput } from '@/components/ui/field';
+import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
 import { operationLabelKey } from '@/lib/admin/operations';
 import { atLeast } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
-import type { AgentNode, AgentProfile, AgentSkill } from '@/lib/api/admin-types';
+import type {
+  AgentNode,
+  AgentProfile,
+  AgentSkill,
+  Page,
+  SkillTemplate,
+} from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
 import { formatDateTime } from '@/lib/format';
 
 /**
- * Node topology, agent variants and versioned prompts.
+ * The agent roster and each agent's versioned prompts.
  *
- * Three levels, mirroring `app/models/agent_skills.py`:
- * - a **node** is a role (`safety`, `planner`, ...) — the pipeline stage;
- * - a **profile** is a named variant of that role, which a workflow node
- *   binds by key over in `/admin/routing`, so `text_to_video` can run a
- *   stricter prompt than `text_to_image`;
- * - a **skill** is one append-only prompt version for a `(profile, slot)`.
+ * An **agent** is the unit here; its **role** (`safety`, `planner`, ...) says
+ * which pipeline stage it can run, and is only a grouping in this list. More
+ * than one agent may share a role — `/admin/routing` is where a workflow node
+ * picks which of them it runs, so `text_to_video` can bind a stricter safety
+ * agent than `text_to_image`. A **skill** is one append-only prompt version
+ * for an `(agent, slot)` pair.
  *
  * Distinct from `LlmProvidersPanel`: that maintains *which endpoints exist*,
- * this maintains *what each variant says* — every enabled `kind="general"`
- * endpoint is a candidate for every node, since all agent roles share one
- * pool. Publishing here writes through `agent_skills.service.publish`, which
- * is append-only and activates the new row atomically, so "rollback" is
- * re-publishing an older row's content, never an edit in place.
+ * this maintains *what each agent says*. Publishing here writes through
+ * `agent_skills.service.publish`, which is append-only and activates the new
+ * row atomically, so "rollback" is re-publishing an older row's content,
+ * never an edit in place.
  */
 export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
   const t = useTranslations('adminAgents');
@@ -45,11 +50,8 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
   const [profiles, setProfiles] = useState<AgentProfile[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState<{ node: AgentNode; profile: AgentProfile } | null>(null);
-  const [creatingFor, setCreatingFor] = useState<AgentNode | null>(null);
-  const [editingMeta, setEditingMeta] = useState<{
-    node: AgentNode;
-    profile: AgentProfile;
-  } | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editingMeta, setEditingMeta] = useState<AgentProfile | null>(null);
 
   const reload = useCallback(
     () =>
@@ -71,12 +73,23 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
   }, [reload]);
 
   const sorted = [...nodes].sort((a, b) => a.sort_order - b.sort_order);
+  // Every role draws from the same enabled `kind="general"` pool, so an empty
+  // one is a page-level problem rather than something to repeat per role.
+  const noEndpoints =
+    sorted.length > 0 && sorted.every((node) => !node.candidate_endpoint_ids?.length);
 
   return (
     <section className="rounded-[var(--radius-md)] border border-border bg-surface p-5">
-      <div>
-        <h2 className="text-sm font-semibold">{t('sectionNodes')}</h2>
-        <p className="mt-1 max-w-3xl text-xs text-muted">{t('sectionNodesDesc')}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">{t('sectionAgents')}</h2>
+          <p className="mt-1 max-w-3xl text-xs text-muted">{t('sectionAgentsDesc')}</p>
+        </div>
+        {editable ? (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            {t('newAgent')}
+          </Button>
+        ) : null}
       </div>
 
       {loadFailed ? (
@@ -85,16 +98,21 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
         </div>
       ) : null}
 
-      <ol className="mt-4 flex flex-col gap-3">
+      {noEndpoints ? (
+        <p className="mt-4 rounded-[var(--radius-sm)] border border-amber/40 bg-amber/10 px-3 py-2 text-xs text-amber">
+          {t('noCandidateEndpoints')}
+        </p>
+      ) : null}
+
+      <ol className="mt-4 flex flex-col gap-5">
         {sorted.map((node) => (
           <li key={node.id}>
-            <NodeRow
+            <RoleGroup
               node={node}
               profiles={profiles?.filter((profile) => profile.role === node.role) ?? null}
               editable={editable}
               onEditPrompt={(profile) => setEditing({ node, profile })}
-              onEditMeta={(profile) => setEditingMeta({ node, profile })}
-              onCreate={() => setCreatingFor(node)}
+              onEditMeta={setEditingMeta}
             />
           </li>
         ))}
@@ -110,18 +128,13 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
         />
       ) : null}
 
-      {creatingFor ? (
-        <AgentProfileDialog
-          node={creatingFor}
-          onClose={() => setCreatingFor(null)}
-          onSaved={() => void reload()}
-        />
+      {creating ? (
+        <AgentProfileDialog onClose={() => setCreating(false)} onSaved={() => void reload()} />
       ) : null}
 
       {editingMeta ? (
         <AgentProfileDialog
-          node={editingMeta.node}
-          profile={editingMeta.profile}
+          profile={editingMeta}
           onClose={() => setEditingMeta(null)}
           onSaved={() => void reload()}
         />
@@ -130,64 +143,49 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
   );
 }
 
-function NodeRow({
+/**
+ * One role's heading and the agents filed under it.
+ *
+ * The heading is a label, not a thing to act on: a role is a slot in the
+ * pipeline that ships in `app/workflows/registry.py`, so there is nothing here
+ * to create, edit or disable. Every action belongs to an agent.
+ */
+function RoleGroup({
   node,
   profiles,
   editable,
   onEditPrompt,
   onEditMeta,
-  onCreate,
 }: {
   node: AgentNode;
   profiles: AgentProfile[] | null;
   editable: boolean;
   onEditPrompt: (profile: AgentProfile) => void;
   onEditMeta: (profile: AgentProfile) => void;
-  onCreate: () => void;
 }) {
   const t = useTranslations('adminAgents');
 
   return (
-    <div className="rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-text">{node.display_name}</span>
-            <span className="font-mono text-[11px] text-muted">{node.role}</span>
-            <Badge tone={node.enabled ? 'success' : 'neutral'}>
-              {node.enabled ? t('enabled') : t('disabled')}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs text-muted">{node.description}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-1">
-            {(node.candidate_endpoint_ids ?? []).length === 0 ? (
-              <Badge tone="amber">{t('noCandidateEndpoints')}</Badge>
-            ) : (
-              (node.candidate_endpoint_ids ?? []).map((id) => (
-                <Badge key={id} tone="neutral">
-                  {id}
-                </Badge>
-              ))
-            )}
-          </div>
-        </div>
-        {editable ? (
-          <Button size="sm" variant="secondary" onClick={onCreate}>
-            {t('newProfile')}
-          </Button>
-        ) : null}
+    <div>
+      <div className="flex flex-wrap items-baseline gap-2 border-b border-border pb-2">
+        <h3 className="text-sm font-medium text-text">{node.display_name}</h3>
+        <span className="font-mono text-[11px] text-muted">{node.role}</span>
+        <Badge tone={node.category === 'creative' ? 'primary' : 'neutral'}>
+          {node.category === 'creative' ? t('categoryCreative') : t('categoryJudgment')}
+        </Badge>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted">{node.description}</span>
       </div>
 
-      <div className="mt-3 border-t border-border pt-3">
+      <div className="mt-3">
         {profiles === null ? (
           <p className="text-xs text-muted">{t('loading')}</p>
         ) : profiles.length === 0 ? (
-          <p className="text-xs text-muted">{t('noProfilesYet')}</p>
+          <p className="text-xs text-muted">{t('noAgentsYet')}</p>
         ) : (
           <ul className="flex flex-wrap gap-3">
             {profiles.map((profile) => (
               <li key={profile.id} className="w-72">
-                <ProfileCard
+                <AgentCard
                   profile={profile}
                   editable={editable}
                   onEditPrompt={() => onEditPrompt(profile)}
@@ -202,7 +200,7 @@ function NodeRow({
   );
 }
 
-function ProfileCard({
+function AgentCard({
   profile,
   editable,
   onEditPrompt,
@@ -222,8 +220,8 @@ function ProfileCard({
 
   const declared = profile.operations ?? [];
   const usedBy = profile.used_by_operations ?? [];
-  // The one thing an operator can get wrong that nothing else catches: a
-  // variant written for video wired into an image workflow. Publishing warns
+  // The one thing an operator can get wrong that nothing else catches: an
+  // agent written for video wired into an image workflow. Publishing warns
   // about it too, but this is where they would notice it after the fact.
   const mismatched = declared.length > 0 ? usedBy.filter((op) => !declared.includes(op)) : [];
 
@@ -232,7 +230,7 @@ function ProfileCard({
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-[11px] text-muted">{profile.key}</span>
         <span className="flex items-center gap-1">
-          {profile.is_default ? <Badge tone="primary">{t('defaultProfile')}</Badge> : null}
+          {profile.is_default ? <Badge tone="primary">{t('defaultAgent')}</Badge> : null}
           {profile.enabled ? null : <Badge tone="neutral">{t('disabled')}</Badge>}
         </span>
       </div>
@@ -277,7 +275,7 @@ function ProfileCard({
         </Button>
         {editable ? (
           <Button size="sm" variant="ghost" onClick={onEditMeta}>
-            {t('editProfile')}
+            {t('editAgent')}
           </Button>
         ) : null}
       </div>
@@ -313,6 +311,33 @@ export function AgentSkillEditorDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState<AgentSkill | null>(null);
+  const [templates, setTemplates] = useState<SkillTemplate[]>([]);
+  const [templateKey, setTemplateKey] = useState('');
+
+  useEffect(() => {
+    if (!editable) return;
+    void adminApi
+      .get<Page<SkillTemplate>>('/v1/admin/agent-skill-templates', {
+        query: { category: profile.category, role: profile.role },
+      })
+      .then((page) => setTemplates(page.items))
+      .catch(() => setTemplates([]));
+  }, [editable, profile.category, profile.role]);
+
+  // A role's templates are written for one slot — offering `copy`'s prompt
+  // polisher while editing its tag suggester would fill in the wrong prompt.
+  // Role-agnostic templates suit any slot.
+  const slotTemplates = templates.filter((template) => !template.role || template.slot === slot);
+
+  /** Fills the form only. Publishing stays a separate confirmed action:
+   * the published text is what decides whether content gets rejected. */
+  const applyTemplate = (key: string) => {
+    setTemplateKey(key);
+    const template = templates.find((item) => item.key === key);
+    if (!template) return;
+    setPromptTemplate(template.prompt_template);
+    setToolGrants((template.tool_grants ?? []).join(', '));
+  };
 
   const load = useCallback(
     () =>
@@ -378,7 +403,7 @@ export function AgentSkillEditorDialog({
       open
       onClose={onClose}
       size="xl"
-      title={`${profile.display_name} · ${node.role}/${profile.key}`}
+      title={`${profile.display_name} · ${node.display_name}`}
       description={t('editSkillDesc')}
     >
       <div className="flex flex-col gap-6">
@@ -426,7 +451,7 @@ export function AgentSkillEditorDialog({
             <p className="mt-2 text-xs text-muted">{t('loading')}</p>
           ) : versions.length === 0 ? (
             <p className="mt-2 text-xs text-muted">
-              {profile.is_default ? t('noVersionsYet') : t('noVersionsYetVariant')}
+              {profile.is_default ? t('noVersionsYet') : t('noVersionsYetInherited')}
             </p>
           ) : (
             <ul className="mt-2 flex flex-col gap-2">
@@ -455,6 +480,21 @@ export function AgentSkillEditorDialog({
         {editable ? (
           <section className="flex flex-col gap-4 border-t border-border pt-4">
             <h3 className="text-sm font-semibold">{t('publishNewVersion')}</h3>
+            {slotTemplates.length > 0 ? (
+              <Select
+                label={t('fillFromTemplate')}
+                hint={t('fillFromTemplateHint')}
+                value={templateKey}
+                onChange={(event) => applyTemplate(event.target.value)}
+                options={[
+                  { value: '', label: t('fillFromTemplatePlaceholder') },
+                  ...slotTemplates.map((template) => ({
+                    value: template.key,
+                    label: template.label,
+                  })),
+                ]}
+              />
+            ) : null}
             <TextArea
               label={t('promptTemplate')}
               value={promptTemplate}

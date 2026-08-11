@@ -108,9 +108,7 @@ export function WorkflowDryRunDialog({
                     <span className="font-mono text-muted">{step.node_type}</span>
                   </span>
                   <span className="flex items-center gap-2">
-                    {step.agent_run_id ? (
-                      <Badge tone="primary">{t('agentRunTrace')}</Badge>
-                    ) : null}
+                    {step.agent_run_id ? <Badge tone="primary">{t('agentRunTrace')}</Badge> : null}
                     <Badge tone="neutral">{step.port}</Badge>
                   </span>
                 </li>

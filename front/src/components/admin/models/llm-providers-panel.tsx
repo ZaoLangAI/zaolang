@@ -11,76 +11,19 @@ import { Select, TextInput } from '@/components/ui/field';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
+import {
+  MEDIA_INPUT_MODALITIES,
+  MEDIA_OUTPUT_MODALITIES,
+  MODALITY_LABEL_KEYS,
+  OPERATION_LABEL_KEYS,
+  capabilitiesForModalities,
+  operationLabelKey,
+} from '@/lib/admin/operations';
+import type { MediaInputModality, MediaOutputModality } from '@/lib/admin/operations';
 import { atLeast } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
 import type { LlmProviderEndpoint, LlmProviderKind, LlmProviderPool } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
-
-// Fixed set, mirroring `MEDIA_CAPABILITIES` in `app/platform_config/schemas.py`
-// — the six capability tags a `kind="media"` endpoint may serve.
-const MEDIA_CAPABILITY_TAGS = [
-  'text_to_image',
-  'image_to_image',
-  'text_to_video',
-  'image_to_video',
-  'video_to_video',
-  'audio_generation',
-] as const;
-type MediaCapabilityTag = (typeof MEDIA_CAPABILITY_TAGS)[number];
-
-const CAPABILITY_LABEL_KEYS: Record<MediaCapabilityTag, string> = {
-  text_to_image: 'capabilityTextToImage',
-  image_to_image: 'capabilityImageToImage',
-  text_to_video: 'capabilityTextToVideo',
-  image_to_video: 'capabilityImageToVideo',
-  video_to_video: 'capabilityVideoToVideo',
-  audio_generation: 'capabilityAudioGeneration',
-};
-
-// The two modality axes an operator picks from instead of naming a capability
-// tag directly, mirroring `MEDIA_INPUT_MODALITIES`/`MEDIA_OUTPUT_MODALITIES`
-// in `app/platform_config/schemas.py`. `audio` is a valid input (e.g.
-// voice-driven lip-sync video) even though no capability tag derives from it
-// alone yet — see `CAPABILITY_MODALITY_MAP` below.
-const MEDIA_INPUT_MODALITIES = ['text', 'image', 'video', 'audio'] as const;
-type MediaInputModality = (typeof MEDIA_INPUT_MODALITIES)[number];
-const MEDIA_OUTPUT_MODALITIES = ['image', 'video', 'audio'] as const;
-type MediaOutputModality = (typeof MEDIA_OUTPUT_MODALITIES)[number];
-
-const MODALITY_LABEL_KEYS: Record<MediaInputModality | MediaOutputModality, string> = {
-  text: 'modalityText',
-  image: 'modalityImage',
-  video: 'modalityVideo',
-  audio: 'modalityAudio',
-};
-
-// One (input, output) pair per capability tag — mirrors the backend's
-// `_CAPABILITY_MODALITY_MAP`. Kept in sync by hand since this is a small,
-// stable, six-entry table shared by exactly these two places.
-const CAPABILITY_MODALITY_MAP: Record<MediaCapabilityTag, readonly [MediaInputModality, MediaOutputModality]> = {
-  text_to_image: ['text', 'image'],
-  image_to_image: ['image', 'image'],
-  text_to_video: ['text', 'video'],
-  image_to_video: ['image', 'video'],
-  video_to_video: ['video', 'video'],
-  audio_generation: ['text', 'audio'],
-};
-
-/** Which capability tags a modality selection covers — the client-side
- * mirror of `capabilities_for_modalities` used for the live preview and for
- * pre-submit validation, so the admin sees the same result the API will
- * derive after saving. */
-function capabilitiesForModalities(
-  inputModalities: readonly string[],
-  outputModalities: readonly string[],
-): MediaCapabilityTag[] {
-  const inputs = new Set(inputModalities);
-  const outputs = new Set(outputModalities);
-  return MEDIA_CAPABILITY_TAGS.filter((tag) => {
-    const [input, output] = CAPABILITY_MODALITY_MAP[tag];
-    return inputs.has(input) && outputs.has(output);
-  });
-}
 
 interface EndpointFormState {
   id: string;
@@ -581,7 +524,7 @@ function ModalitySelector({
           <div className="mt-1 flex flex-wrap gap-1">
             {derived.map((tag) => (
               <Badge key={tag} tone="neutral">
-                {t(CAPABILITY_LABEL_KEYS[tag])}
+                {t(OPERATION_LABEL_KEYS[tag])}
               </Badge>
             ))}
           </div>
@@ -720,11 +663,14 @@ function NodeRow({
         ) : null}
         {capabilityTags.length > 0 ? (
           <div className="mt-1 flex flex-wrap gap-1">
-            {capabilityTags.map((tag) => (
-              <Badge key={tag} tone="neutral">
-                {t(CAPABILITY_LABEL_KEYS[tag as MediaCapabilityTag] ?? tag)}
-              </Badge>
-            ))}
+            {capabilityTags.map((tag) => {
+              const labelKey = operationLabelKey(tag);
+              return (
+                <Badge key={tag} tone="neutral">
+                  {labelKey ? t(labelKey) : tag}
+                </Badge>
+              );
+            })}
           </div>
         ) : null}
         <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">

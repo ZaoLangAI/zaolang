@@ -48,9 +48,7 @@ def test_a_provider_that_just_failed_is_excluded_from_the_retry(db: Session, aut
     second_decision = ctx.state["decision"]
     assert second_decision.selected.provider != first_provider
 
-    excluded = next(
-        c for c in second_decision.candidates if c.provider == first_provider
-    )
+    excluded = next(c for c in second_decision.candidates if c.provider == first_provider)
     assert excluded.eligible is False
     assert excluded.filter_reason == "previously_failed_this_job"
 

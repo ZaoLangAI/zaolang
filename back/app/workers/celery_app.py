@@ -1,6 +1,6 @@
 """Celery configuration.
 
-Five queues, split by latency profile rather than by feature. A four-minute
+Queues are split by latency profile rather than by feature. A four-minute
 video render must never sit behind — or in front of — a two-second moderation
 check, so they get separate workers that can be scaled independently.
 """
@@ -11,6 +11,7 @@ from celery import Celery
 from kombu import Queue
 
 from app.config import get_settings
+from app.domain.jobs import async_tasks
 
 settings = get_settings()
 
@@ -23,6 +24,11 @@ QUEUE_NAMES = (
     "audio_generation",
     "quality_check",
     "webhook_reconcile",
+    # Short, frequent ticks that check on renders already running upstream.
+    # Its own queue because the tick must stay punctual: behind a video
+    # render it would fire minutes late and the heartbeats it exists to
+    # produce would stop.
+    "provider_task_polling",
 )
 
 celery_app.conf.update(
@@ -49,11 +55,19 @@ celery_app.conf.update(
         "app.workers.tasks.run_quality_check": {"queue": "quality_check"},
         "app.workers.tasks.reconcile_webhooks": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_jobs": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.poll_async_provider_tasks": {"queue": "provider_task_polling"},
     },
     beat_schedule={
         "expire-stale-jobs": {
             "task": "app.workers.tasks.expire_stale_jobs",
             "schedule": 300.0,
+        },
+        "poll-async-provider-tasks": {
+            "task": "app.workers.tasks.poll_async_provider_tasks",
+            "schedule": float(async_tasks.POLL_INTERVAL_SECONDS),
+            # A tick that has not finished before the next one is due is a
+            # sign of a stuck provider, not a reason to pile up.
+            "options": {"expires": async_tasks.POLL_INTERVAL_SECONDS},
         },
         "reconcile-credits": {
             "task": "app.workers.tasks.reconcile_credits",

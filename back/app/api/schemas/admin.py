@@ -122,7 +122,7 @@ class JobEventView(ApiModel):
 class AgentRunView(ApiModel):
     id: str
     agent_name: str
-    # Which variant and prompt slot served this call. Null for runs recorded
+    # Which agent and prompt slot served this call. Null for runs recorded
     # before agent profiles existed.
     agent_profile_id: str | None = None
     prompt_slot: str | None = None
@@ -517,6 +517,29 @@ class PromptSlotView(ApiModel):
     description: str = ""
 
 
+class RolePresetView(ApiModel):
+    """One role an operator may create an agent for.
+
+    A code-maintained catalogue rather than a table: a role only runs if some
+    node type invokes it, so free-text roles would produce agents that never
+    execute. `category` drives which half of the create form applies —
+    `judgment` binds one LLM model, `creative` binds media endpoints with a
+    cost weight each — and `operations` is what the media-candidate picker
+    filters by.
+    """
+
+    role: str
+    display_name: str
+    category: Literal["judgment", "creative"]
+    description: str = ""
+    operations: list[str] = Field(default_factory=list)
+    default_template_key: str | None = None
+    sort_order: int = 0
+    # False once an `AgentNode` row exists for this role, so the console can
+    # tell "brand new role" from "role already in the topology".
+    is_new: bool = True
+
+
 class AgentNodeView(ApiModel):
     """One pipeline stage plus which failover-pool endpoints could serve it.
 
@@ -530,19 +553,37 @@ class AgentNodeView(ApiModel):
     role: str
     display_name: str
     description: str
+    category: Literal["judgment", "creative"] = "judgment"
     enabled: bool
     sort_order: int
     candidate_endpoint_ids: list[str] = Field(default_factory=list)
     prompt_slots: list[PromptSlotView] = Field(default_factory=list)
 
 
-class AgentProfileView(ApiModel):
-    """A named variant of one role.
+class MediaCandidate(ApiModel):
+    """One media route a creative agent may use, with a cost preference.
 
-    `operations` is the variant's declared capability — the operations its
+    `weight` is shown to the routing agent as operational context alongside
+    each candidate's observed success rate, latency and cost — it is not a
+    coefficient. Nothing in `app/agents/router.py` ranks by it; the routing
+    agent still makes the call.
+    """
+
+    endpoint_id: str = Field(min_length=1, max_length=64)
+    # A capability tag the endpoint derives from its modalities, e.g.
+    # `text_to_video`. Together with `endpoint_id` this is the router's
+    # catalogue key (`"{endpoint_id}:{capability}"`).
+    capability: str = Field(min_length=1, max_length=40)
+    weight: int = Field(default=100, ge=1, le=1_000)
+
+
+class AgentProfileView(ApiModel):
+    """One agent. Its `role` says which pipeline stage it can run.
+
+    `operations` is the agent's declared capability — the operations its
     prompts were written for. Empty means general purpose. `used_by_operations`
     is derived from the currently active workflow templates, so the console
-    can show at a glance whether a variant is actually wired up and whether
+    can show at a glance whether an agent is actually wired up and whether
     it is being used outside what it declares.
     """
 
@@ -551,29 +592,81 @@ class AgentProfileView(ApiModel):
     key: str
     display_name: str
     description: str
+    category: Literal["judgment", "creative"] = "judgment"
     operations: list[str] = Field(default_factory=list)
     is_default: bool
     enabled: bool
+    # `judgment` agents only. Null means the agent draws from the shared
+    # `kind="general"` pool, which is what every agent did before per-agent
+    # bindings existed.
+    default_endpoint_id: str | None = None
+    backup_endpoint_id: str | None = None
+    max_tokens: int | None = None
+    temperature: float | None = None
+    reasoning_model: bool | None = None
+    # `creative` agents only.
+    media_candidates: list[MediaCandidate] = Field(default_factory=list)
     used_by_operations: list[str] = Field(default_factory=list)
     created_at: dt.datetime
 
 
 class AgentProfileCreateRequest(ApiModel):
+    # Validated against `ROLE_PRESETS` in the domain service rather than here:
+    # a role that already has an `AgentNode` row stays usable even after its
+    # preset leaves the catalogue, and only the service can see that.
     role: str = Field(min_length=1, max_length=40)
-    # Immutable once created: published graphs bind variants by key, so a
-    # rename would silently re-point live workflows.
+    # A stable operator-facing handle, unique within the role. Graphs bind by
+    # id, not by this, so it is safe to read in logs without being load
+    # bearing; it stays immutable anyway so audit history keeps lining up.
     key: str = Field(min_length=1, max_length=40, pattern=r"^[a-z0-9][a-z0-9-]*$")
     display_name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=2_000)
     operations: list[str] = Field(default_factory=list)
+    default_endpoint_id: str | None = Field(default=None, max_length=64)
+    backup_endpoint_id: str | None = Field(default=None, max_length=64)
+    max_tokens: int | None = Field(default=None, ge=0, le=32_768)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    reasoning_model: bool | None = None
+    media_candidates: list[MediaCandidate] = Field(default_factory=list)
 
 
 class AgentProfileUpdateRequest(ApiModel):
+    """Every field is optional and `None` means "leave as is".
+
+    An **empty string** on either endpoint id is how the console clears a
+    model pin, and an **empty list** clears media candidates — otherwise an
+    agent could never go back to the shared pool once pinned.
+    """
+
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=2_000)
     operations: list[str] | None = None
     is_default: bool | None = None
     enabled: bool | None = None
+    default_endpoint_id: str | None = Field(default=None, max_length=64)
+    backup_endpoint_id: str | None = Field(default=None, max_length=64)
+    max_tokens: int | None = Field(default=None, ge=0, le=32_768)
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    reasoning_model: bool | None = None
+    media_candidates: list[MediaCandidate] | None = None
+
+
+class SkillTemplateView(ApiModel):
+    """A starting prompt the skill editor can load.
+
+    Loading one only fills the form: publishing stays a separate confirmed
+    action, because the published text is what decides whether content gets
+    rejected or a retry spends credits.
+    """
+
+    key: str
+    label: str
+    description: str = ""
+    category: Literal["judgment", "creative"]
+    prompt_template: str
+    tool_grants: list[str] = Field(default_factory=list)
+    role: str | None = None
+    slot: str = "default"
 
 
 class AgentSkillView(ApiModel):
@@ -704,12 +797,12 @@ class SeedRequest(DangerousAction):
     reset: bool = False
 
 
-class ProfileBindingView(ApiModel):
-    """Tells the editor that one config field selects an agent variant.
+class AgentBindingView(ApiModel):
+    """Tells the editor that one config field selects an agent.
 
-    Without this the schema-driven form would render `agent_profile` as a
-    free-text box; with it the editor can offer the variants that actually
-    exist for `role`.
+    Without this the schema-driven form would render `agent_id` as a
+    free-text box; with it the editor can offer the agents that actually
+    exist for `role`, which is also the only role this field accepts.
     """
 
     config_field: str
@@ -732,7 +825,7 @@ class NodeTypeView(ApiModel):
     output_ports: list[str]
     is_agent: bool
     agent_role: str | None = None
-    profile_bindings: list[ProfileBindingView] = Field(default_factory=list)
+    agent_bindings: list[AgentBindingView] = Field(default_factory=list)
     config_schema: dict[str, Any]
 
 
@@ -755,7 +848,7 @@ class WorkflowTemplatePublishRequest(DangerousAction):
 
 class WorkflowTemplateValidateRequest(ApiModel):
     graph: dict[str, Any]
-    # Needed to judge whether a bound agent variant declares this operation
+    # Needed to judge whether a bound agent declares this operation
     # among its capabilities. Optional so a caller that only wants the
     # structural checks can skip it.
     operation: Operation | None = None

@@ -42,7 +42,11 @@ export function WorkflowEdge({
 
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={{ ...KIND_STYLE[kind], opacity: selected ? 1 : 0.75 }} />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{ ...KIND_STYLE[kind], opacity: selected ? 1 : 0.75 }}
+      />
       {label ? (
         <EdgeLabelRenderer>
           <div

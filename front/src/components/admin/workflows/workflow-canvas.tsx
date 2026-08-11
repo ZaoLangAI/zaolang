@@ -270,7 +270,7 @@ function WorkflowCanvasInner({
               )}
             </div>
 
-            {(selectedNode.data.spec?.profile_bindings ?? []).map((binding) => (
+            {(selectedNode.data.spec?.agent_bindings ?? []).map((binding) => (
               <Button
                 key={binding.config_field}
                 variant="secondary"
@@ -278,7 +278,7 @@ function WorkflowCanvasInner({
                 onClick={() =>
                   onEditPrompt({
                     role: binding.role,
-                    profileKey:
+                    agentId:
                       (selectedNode.data.config[binding.config_field] as string | undefined) ??
                       null,
                   })
@@ -293,7 +293,7 @@ function WorkflowCanvasInner({
                 <p className="mb-2 text-xs font-semibold text-muted">{t('nodeConfig')}</p>
                 <NodeConfigForm
                   schema={selectedNode.data.spec.config_schema as unknown as NodeConfigSchema}
-                  profileBindings={selectedNode.data.spec.profile_bindings ?? []}
+                  agentBindings={selectedNode.data.spec.agent_bindings ?? []}
                   value={selectedNode.data.config}
                   disabled={readOnly}
                   onChange={updateNodeConfig}

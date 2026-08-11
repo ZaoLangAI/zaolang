@@ -38,7 +38,7 @@ export function WorkflowNode({ data, selected }: NodeProps & { data: WorkflowNod
     <div
       className={cn(
         'w-56 rounded-[var(--radius-md)] border border-l-4 bg-surface-raised px-3 py-2.5 shadow-card',
-        spec ? CATEGORY_TONE[spec.category] ?? 'border-l-muted' : 'border-l-danger',
+        spec ? (CATEGORY_TONE[spec.category] ?? 'border-l-muted') : 'border-l-danger',
         selected ? 'ring-2 ring-primary' : '',
         data.broken ? 'border-danger' : 'border-border',
       )}
@@ -81,7 +81,9 @@ export function WorkflowNode({ data, selected }: NodeProps & { data: WorkflowNod
 }
 
 function summarize(config: Record<string, unknown>): string {
-  const entries = Object.entries(config).filter(([, value]) => value !== null && value !== undefined);
+  const entries = Object.entries(config).filter(
+    ([, value]) => value !== null && value !== undefined,
+  );
   if (entries.length === 0) return '';
   return entries
     .slice(0, 3)

@@ -65,11 +65,11 @@ def list_versions(
 def validate_graph_json(graph_json: dict[str, Any], *, session: Session | None = None) -> list[str]:
     """Never raises: returns human-readable problems, empty when safe.
 
-    With a `session`, also checks that every agent variant a node binds
-    actually exists and is enabled. That is an error rather than a warning:
-    an unresolvable binding silently falls back to the role's default at
-    runtime, so an operator would see their edit "succeed" and the prompt
-    never change.
+    With a `session`, also checks that every agent a node binds actually
+    exists, is enabled, and has the role the node type expects. Those are
+    errors rather than warnings: an unresolvable binding silently falls back
+    to the role's default at runtime, so an operator would see their edit
+    "succeed" and the prompt never change.
     """
     try:
         graph = WorkflowGraph.from_dict(graph_json)
@@ -84,7 +84,7 @@ def validate_graph_json(graph_json: dict[str, Any], *, session: Session | None =
 def collect_warnings(session: Session, *, operation: str, graph_json: dict[str, Any]) -> list[str]:
     """Advisory problems that do not block publishing.
 
-    Today that is capability mismatch: a variant declaring which operations
+    Today that is capability mismatch: an agent declaring which operations
     it was written for, bound into a workflow for a different one. Running it
     is legitimate (an operator may be deliberately reusing a prompt), so this
     only asks them to look twice.
@@ -95,27 +95,27 @@ def collect_warnings(session: Session, *, operation: str, graph_json: dict[str, 
         return []
 
     warnings: list[str] = []
-    for node, binding, key in _iter_profile_bindings(graph):
-        profile = agent_skills_service.find_profile(session, binding.role, key)
-        if profile is None or not profile.enabled:
+    for node, binding, agent_id in _iter_agent_bindings(graph):
+        agent = agent_skills_service.find_agent(session, agent_id)
+        if agent is None or not agent.enabled or agent.role != binding.role:
             continue  # already reported as an error
-        declared = list(profile.operations_json or [])
+        declared = list(agent.operations_json or [])
         if declared and operation not in declared:
             warnings.append(
-                f"节点 {node.id} 绑定的变体「{profile.display_name}」"
-                f"（{binding.role}/{key}）声明的适用操作为 {declared}，不包含 {operation}。"
+                f"节点 {node.id} 绑定的智能体「{agent.display_name}」"
+                f"声明的适用操作为 {declared}，不包含 {operation}。"
             )
     return warnings
 
 
-def profile_usage(session: Session) -> dict[tuple[str, str], list[str]]:
-    """Which operations' live graphs reference each `(role, profile key)`.
+def agent_usage(session: Session) -> dict[str, list[str]]:
+    """Which operations' live graphs reference each agent, keyed by agent id.
 
     Powers the agents console's "used by" badges. Only ever six active
     templates, so a straight scan beats denormalising the reference into a
     column that could drift from the graph it describes.
     """
-    usage: dict[tuple[str, str], list[str]] = {}
+    usage: dict[str, list[str]] = {}
     templates = session.scalars(
         select(GenerationWorkflowTemplate).where(GenerationWorkflowTemplate.is_active.is_(True))
     )
@@ -124,26 +124,26 @@ def profile_usage(session: Session) -> dict[tuple[str, str], list[str]]:
             graph = WorkflowGraph.from_dict(template.graph_json)
         except (KeyError, TypeError, ValueError):
             continue
-        for _node, binding, key in _iter_profile_bindings(graph):
-            operations = usage.setdefault((binding.role, key), [])
+        for _node, _binding, agent_id in _iter_agent_bindings(graph):
+            operations = usage.setdefault(agent_id, [])
             if template.operation not in operations:
                 operations.append(template.operation)
     return usage
 
 
-def _iter_profile_bindings(
+def _iter_agent_bindings(
     graph: WorkflowGraph,
-) -> Iterator[tuple[WorkflowNode, registry.ProfileBinding, str]]:
-    """Yields every explicit variant binding in a graph.
+) -> Iterator[tuple[WorkflowNode, registry.AgentBinding, str]]:
+    """Yields every explicit agent binding in a graph.
 
     A node that leaves the field empty is not yielded: it resolves to the
-    role's default variant, which is always valid.
+    role's default agent, which is always valid.
     """
     for node in graph.nodes:
         spec = registry.NODE_TYPES.get(node.type)
         if spec is None:
             continue
-        for binding in spec.profile_bindings:
+        for binding in spec.agent_bindings:
             raw = node.config.get(binding.config_field)
             if isinstance(raw, str) and raw.strip():
                 yield node, binding, raw.strip()
@@ -151,12 +151,20 @@ def _iter_profile_bindings(
 
 def _binding_errors(session: Session, graph: WorkflowGraph) -> list[str]:
     errors: list[str] = []
-    for node, binding, key in _iter_profile_bindings(graph):
-        profile = agent_skills_service.find_profile(session, binding.role, key)
-        if profile is None:
-            errors.append(f"节点 {node.id} 绑定了不存在的智能体变体: {binding.role}/{key}")
-        elif not profile.enabled:
-            errors.append(f"节点 {node.id} 绑定的智能体变体已停用: {binding.role}/{key}")
+    for node, binding, agent_id in _iter_agent_bindings(graph):
+        agent = agent_skills_service.find_agent(session, agent_id)
+        if agent is None:
+            errors.append(f"节点 {node.id} 绑定了不存在的智能体: {agent_id}")
+        elif not agent.enabled:
+            errors.append(f"节点 {node.id} 绑定的智能体「{agent.display_name}」已停用。")
+        elif agent.role != binding.role:
+            # Only reachable by hand-editing the graph JSON — the console
+            # filters its picker by role — but a mismatch would run the wrong
+            # kind of agent for the stage, so it must not publish.
+            errors.append(
+                f"节点 {node.id} 需要 {binding.role} 角色的智能体，"
+                f"但绑定的「{agent.display_name}」是 {agent.role}。"
+            )
     return errors
 
 

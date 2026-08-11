@@ -10,7 +10,6 @@ import pytest
 from PIL import Image
 
 from app.models.enums import Operation
-from app.providers import aihubmix_media as media_module
 from app.providers.aihubmix_media import AiHubMixMediaProvider
 from app.providers.base import GenerationRequest
 from app.storage import s3
@@ -119,22 +118,47 @@ def test_audio_generation_stores_the_raw_response_bytes(monkeypatch: pytest.Monk
     assert s3.get_object(result.object_key) == audio_bytes
 
 
-def test_video_generation_polls_the_task_until_completion(monkeypatch: pytest.MonkeyPatch) -> None:
-    video_bytes = b"fake-mp4-bytes"
+def test_video_submit_returns_pending_without_waiting_for_the_render(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submitting must not block: a render takes minutes, and holding the
+    worker for that long is exactly what the async task table exists to
+    avoid."""
+    gets: list[str] = []
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
         assert url == "/ai/v1/videos"
         return _FakeResponse(json_body={"task_id": "task-123"})
 
     def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
-        if url.endswith("/content"):
-            return _FakeResponse(content=video_bytes)
-        return _FakeResponse(json_body={"status": "completed"})
+        gets.append(url)
+        raise AssertionError("submit must not poll")
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(httpx.Client, "get", fake_get)
     provider = _provider(Operation.TEXT_TO_VIDEO.value)
     result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=6))
+
+    assert result.pending is True
+    assert result.succeeded is False
+    assert result.external_task_id == "task-123"
+    assert gets == []
+
+
+def test_polling_a_finished_video_downloads_and_stores_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_bytes = b"fake-mp4-bytes"
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        if url.endswith("/content"):
+            return _FakeResponse(content=video_bytes)
+        return _FakeResponse(json_body={"status": "completed"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value)
+    request = _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=6)
+    result = provider.poll("task-123", request)
 
     assert result.succeeded is True
     assert result.mime_type == "video/mp4"
@@ -143,44 +167,68 @@ def test_video_generation_polls_the_task_until_completion(monkeypatch: pytest.Mo
     assert s3.get_object(result.object_key) == video_bytes
 
 
-def test_a_failed_video_task_is_reported_without_retrying_forever(
+def test_polling_a_multi_output_task_asks_for_a_specific_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
-        return _FakeResponse(json_body={"task_id": "task-failed"})
+    """The plain content path answers `400 result_id_required` when a task
+    produced more than one output."""
+    requested: list[str] = []
 
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        requested.append(url)
+        if "/content" in url:
+            return _FakeResponse(content=b"mp4")
+        return _FakeResponse(
+            json_body={"status": "completed", "results": [{"id": "res-1"}, {"id": "res-2"}]}
+        )
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value)
+    provider.poll("task-multi", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert requested[-1] == "/ai/v1/tasks/task-multi/content/res-1"
+
+
+def test_polling_an_unfinished_video_stays_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={"status": "running"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.IMAGE_TO_VIDEO.value)
+    result = provider.poll("task-stuck", _request(Operation.IMAGE_TO_VIDEO.value))
+
+    assert result.pending is True
+    assert result.failure_code is None
+
+
+def test_a_failed_video_task_is_reported_as_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
         return _FakeResponse(json_body={"status": "failed", "error": "上游拒绝"})
 
-    monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(httpx.Client, "get", fake_get)
     provider = _provider(Operation.TEXT_TO_VIDEO.value)
-    result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value))
+    result = provider.poll("task-failed", _request(Operation.TEXT_TO_VIDEO.value))
 
+    assert result.pending is False
     assert result.succeeded is False
     assert result.failure_code == "PROVIDER_TASK_FAILED"
 
 
-def test_a_stalled_video_task_times_out_instead_of_blocking_forever(
+def test_a_transport_error_while_polling_keeps_the_task_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(media_module, "_VIDEO_POLL_TIMEOUT_SECONDS", 0)
-    monkeypatch.setattr(media_module, "_VIDEO_POLL_INTERVAL_SECONDS", 0)
-    monkeypatch.setattr(media_module.time, "sleep", lambda _seconds: None)
-
-    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
-        return _FakeResponse(json_body={"task_id": "task-stuck"})
+    """A blip in the network is not the render failing — the deadline, owned
+    by the caller, is what eventually gives up."""
 
     def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
-        return _FakeResponse(json_body={"status": "running"})
+        raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(httpx.Client, "get", fake_get)
-    provider = _provider(Operation.IMAGE_TO_VIDEO.value)
-    result = provider.submit(_request(Operation.IMAGE_TO_VIDEO.value))
+    provider = _provider(Operation.TEXT_TO_VIDEO.value)
+    result = provider.poll("task-flaky", _request(Operation.TEXT_TO_VIDEO.value))
 
-    assert result.succeeded is False
-    assert result.failure_code == "PROVIDER_TIMEOUT"
+    assert result.pending is True
+    assert result.failure_code is None
 
 
 def test_a_transport_error_degrades_to_a_temporary_failure(monkeypatch: pytest.MonkeyPatch) -> None:

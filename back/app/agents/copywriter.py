@@ -39,7 +39,7 @@ def suggest(
     lineage_summary: str = "",
     locale: str = "zh-CN",
     user_id: str | None = None,
-    profile: str | None = None,
+    agent_id: str | None = None,
 ) -> AgentOutcome:
     outcome = run_agent(
         session,
@@ -51,7 +51,7 @@ def suggest(
         ),
         fallback=FALLBACK,
         user_id=user_id,
-        profile_key=profile,
+        agent_id=agent_id,
         slot=SUGGEST_SLOT,
     )
 
@@ -80,7 +80,7 @@ def enhance_prompt(
     prompt: str,
     max_length: int,
     user_id: str | None = None,
-    profile: str | None = None,
+    agent_id: str | None = None,
 ) -> AgentOutcome:
     """Polishes a scene description while keeping the author's intent.
 
@@ -94,7 +94,7 @@ def enhance_prompt(
         user_prompt=json.dumps({"prompt": prompt, "max_length": max_length}, ensure_ascii=False),
         fallback={"prompt": prompt},
         user_id=user_id,
-        profile_key=profile,
+        agent_id=agent_id,
         slot=ENHANCE_SLOT,
     )
     enhanced = str(outcome.data.get("prompt") or "").strip() or prompt

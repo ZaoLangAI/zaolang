@@ -24,7 +24,7 @@ Order of evaluation, applied identically for every job:
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -104,6 +104,11 @@ class Candidate:
     success_rate: float = 0.0
     avg_latency_ms: int = 0
     effective_cost: int = 0
+    # The cost preference an operator put on this route in the creative
+    # agent's configuration, if this job routes through one. Shown to the
+    # selecting agent as context and recorded in the trace; deliberately
+    # never multiplied into anything here.
+    configured_weight: int | None = None
 
     def to_trace(self) -> dict[str, object]:
         return asdict(self)
@@ -138,8 +143,19 @@ def route(
     exclude_providers: Iterable[str] | None = None,
     job_id: str | None = None,
     user_id: str | None = None,
-    selector_profile: str | None = None,
+    selector_agent_id: str | None = None,
+    allowed_providers: Mapping[str, int] | None = None,
 ) -> RoutingDecision:
+    """Filters the catalogue down to what can actually serve this job, then
+    lets the routing agent pick.
+
+    `allowed_providers` is the creative agent's configured shortlist —
+    catalogue name to cost weight. It is a *hard* filter, in the same
+    category as capability and tier: a route the operator did not put on the
+    agent's list must not be used at all. The weight it carries is the
+    opposite kind of input — pure context for the selecting agent, never a
+    coefficient.
+    """
     provider_config = config_service.get_typed(session, "providers", ProviderConfig)
     catalog = build_catalog(session)
     stats = _load_stats(session, operation, quality_tier)
@@ -180,6 +196,13 @@ def route(
             candidate.filter_reason = "previously_failed_this_job"
             candidates.append(candidate)
             continue
+        if allowed_providers is not None:
+            if name not in allowed_providers:
+                candidate.eligible = False
+                candidate.filter_reason = "not_in_agent_candidates"
+                candidates.append(candidate)
+                continue
+            candidate.configured_weight = allowed_providers[name]
 
         retry_amplification = setting.retry_amplification if setting is not None else 1.2
         stat = stats.get(name)
@@ -216,7 +239,7 @@ def route(
         candidates=[_candidate_payload(c, catalog[c.provider]) for c in eligible],
         job_id=job_id,
         user_id=user_id,
-        profile=selector_profile,
+        agent_id=selector_agent_id,
     )
     selected_name = outcome.data.get("selected_provider")
     winner = next((c for c in eligible if c.provider == selected_name), None)
@@ -236,7 +259,7 @@ def route(
 
 
 def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> dict[str, Any]:
-    return {
+    payload = {
         "provider": candidate.provider,
         "kind": capability.kind.value,
         "quality_prior": capability.quality_prior,
@@ -244,6 +267,9 @@ def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> 
         "avg_latency_ms": candidate.avg_latency_ms,
         "effective_cost": candidate.effective_cost,
     }
+    if candidate.configured_weight is not None:
+        payload["configured_weight"] = candidate.configured_weight
+    return payload
 
 
 def _load_stats(session: Session, operation: str, quality_tier: str) -> dict[str, ProviderStat]:

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import redis
@@ -55,14 +55,26 @@ def _role_sort_key(endpoint: LlmProviderEndpoint, endpoint_id: str) -> tuple[int
     return (int(is_backup), endpoint.backup_order if is_backup else 0, endpoint_id)
 
 
-def eligible_candidates(config: LlmProviderConfig) -> list[tuple[str, LlmProviderEndpoint]]:
+def eligible_candidates(
+    config: LlmProviderConfig, *, preferred_ids: Sequence[str] = ()
+) -> list[tuple[str, LlmProviderEndpoint]]:
     """Candidates with a free concurrency slot and a closed circuit breaker.
 
     `client.complete()` walks this list in order, trying the next endpoint on
     failure — the list is the fallback order, not just the top pick.
+
+    `preferred_ids` moves an agent agent's explicitly bound endpoints
+    (default first, then its backup) to the front. The rest of the shared
+    pool stays behind them rather than being dropped: a pin expresses "use
+    this one when you can", and failing an agent call outright because a
+    preferred endpoint is briefly at capacity would trade a working
+    degradation for an outage.
     """
     client = get_redis()
     ordered = general_candidates(config)
+    if preferred_ids:
+        rank = {endpoint_id: index for index, endpoint_id in enumerate(preferred_ids)}
+        ordered.sort(key=lambda pair: rank.get(pair[0], len(rank)))
     return [
         (endpoint_id, endpoint)
         for endpoint_id, endpoint in ordered
