@@ -26,7 +26,8 @@ from app.config import get_settings
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.models import Asset, ContentFingerprint, ProvenanceManifest, UploadSession
 from app.models.base import new_id, utcnow
-from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
+from app.models.enums import AssetRole, MediaType, ModerationStatus, Operation, Visibility
+from app.providers.base import ProviderReference
 from app.storage import s3
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ PURPOSE_TO_ROLE: dict[str, AssetRole] = {
     "profile_cover": AssetRole.PROFILE_COVER,
     "consent_evidence": AssetRole.CONSENT_EVIDENCE,
     "learn_media": AssetRole.LEARN_MEDIA,
+    "style_gallery_cover": AssetRole.COVER,
 }
 
 # Two images within this Hamming distance are treated as the same content.
@@ -73,7 +75,12 @@ def presign_upload(
         raise ValidationFailed(
             f"文件超过 {limit // (1024 * 1024)}MB 上限。", size_bytes=size_bytes, limit=limit
         )
-    if purpose in ("avatar", "profile_cover", "learn_media") and not mime_type.startswith("image/"):
+    if purpose in (
+        "avatar",
+        "profile_cover",
+        "learn_media",
+        "style_gallery_cover",
+    ) and not mime_type.startswith("image/"):
         raise ValidationFailed("头像、封面与学习内容配图必须是图片。", mime_type=mime_type)
 
     # The key embeds the owner, so an object's directory alone proves who may
@@ -175,6 +182,102 @@ def object_keys_for(session: Session, *, asset_ids: Sequence[str]) -> list[str]:
     rows = session.scalars(select(Asset).where(Asset.id.in_(asset_ids)))
     by_id = {asset.id: asset.object_key for asset in rows}
     return [by_id[asset_id] for asset_id in asset_ids if asset_id in by_id]
+
+
+def validate_generation_references(
+    session: Session,
+    *,
+    user_id: str,
+    operation: str,
+    params: dict[str, Any],
+) -> None:
+    """Validate ownership and media types before credits are reserved.
+
+    Asset ids are user input.  Resolving them later in a worker without this
+    ownership check would let a guessed private id become a signed provider
+    URL, even though the object itself never becomes public.
+    """
+
+    ordinary_ids = list(params.get("reference_asset_ids") or [])
+    video_options = params.get("video_options") or {}
+    first_id = video_options.get("first_frame_asset_id")
+    last_id = video_options.get("last_frame_asset_id")
+    frame_ids = [asset_id for asset_id in (first_id, last_id) if asset_id]
+    requested = ordinary_ids + frame_ids
+    if len(set(requested)) != len(requested):
+        raise ValidationFailed(
+            "参考素材不能重复。", fields={"params.reference_asset_ids": "包含重复素材"}
+        )
+    if not requested:
+        return
+
+    rows = list(session.scalars(select(Asset).where(Asset.id.in_(requested))))
+    by_id = {asset.id: asset for asset in rows}
+    for asset_id in requested:
+        asset = by_id.get(asset_id)
+        if asset is None or asset.owner_user_id != user_id:
+            raise ValidationFailed(
+                "参考素材不存在或不属于当前用户。",
+                fields={"params.reference_asset_ids": "包含不可用素材"},
+            )
+
+    for asset_id in frame_ids:
+        if by_id[asset_id].media_type != MediaType.IMAGE:
+            raise ValidationFailed(
+                "首帧和尾帧必须是图片。",
+                fields={"params.video_options": "首尾帧必须是图片"},
+            )
+
+    if operation == Operation.IMAGE_TO_IMAGE.value:
+        if any(by_id[asset_id].media_type != MediaType.IMAGE for asset_id in ordinary_ids):
+            raise ValidationFailed(
+                "图生图参考素材必须是图片。",
+                fields={"params.reference_asset_ids": "必须是图片"},
+            )
+    elif operation in {
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }:
+        allowed = {MediaType.IMAGE, MediaType.VIDEO}
+        if any(by_id[asset_id].media_type not in allowed for asset_id in ordinary_ids):
+            raise ValidationFailed(
+                "视频生成参考素材仅支持图片或视频。",
+                fields={"params.reference_asset_ids": "仅支持图片或视频"},
+            )
+
+
+def provider_references_for(
+    session: Session,
+    *,
+    user_id: str,
+    asset_ids: Sequence[str],
+    video_options: dict[str, Any] | None = None,
+) -> list[ProviderReference]:
+    """Resolve validated user assets into provider-neutral reference inputs."""
+
+    options = video_options or {}
+    frame_pairs = [
+        (options.get("first_frame_asset_id"), "first_frame"),
+        (options.get("last_frame_asset_id"), "last_frame"),
+    ]
+    ordered: list[tuple[str, str | None]] = [(asset_id, None) for asset_id in asset_ids]
+    ordered.extend((asset_id, frame_type) for asset_id, frame_type in frame_pairs if asset_id)
+    if not ordered:
+        return []
+
+    ids = [asset_id for asset_id, _ in ordered]
+    rows = session.scalars(select(Asset).where(Asset.id.in_(ids), Asset.owner_user_id == user_id))
+    by_id = {asset.id: asset for asset in rows}
+    return [
+        ProviderReference(
+            object_key=by_id[asset_id].object_key,
+            media_type=by_id[asset_id].media_type,
+            frame_type=frame_type,
+        )
+        for asset_id, frame_type in ordered
+        if asset_id in by_id
+    ]
 
 
 def register_generated_asset(

@@ -39,6 +39,7 @@ export interface NavItem {
     | 'reports'
     | 'learnPosts'
     | 'skillLibrary'
+    | 'styleGallery'
     | 'users'
     | 'credits'
     | 'config'
@@ -100,6 +101,12 @@ export const NAV_GROUPS: NavGroup[] = [
     labelKey: 'groupPlatform',
     items: [
       { href: '/admin/config', labelKey: 'navConfig', requires: 'operator', icon: 'config' },
+      {
+        href: '/admin/style-gallery',
+        labelKey: 'navStyleGallery',
+        requires: 'operator',
+        icon: 'styleGallery',
+      },
       { href: '/admin/data', labelKey: 'navData', requires: 'operator', icon: 'data' },
       { href: '/admin/audit', labelKey: 'navAudit', requires: 'viewer', icon: 'audit' },
       {

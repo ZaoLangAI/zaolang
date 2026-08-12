@@ -33,6 +33,7 @@ MAX_UPLOAD_BYTES: dict[str, int] = {
     "profile_cover": 12 * 1024 * 1024,
     "consent_evidence": 16 * 1024 * 1024,
     "learn_media": 12 * 1024 * 1024,
+    "style_gallery_cover": 8 * 1024 * 1024,
 }
 
 # Each purpose is confined to its own prefix so a signed URL for an avatar can
@@ -43,6 +44,7 @@ PURPOSE_PREFIXES: dict[str, str] = {
     "profile_cover": "staging/covers",
     "consent_evidence": "staging/consents",
     "learn_media": "staging/learn-media",
+    "style_gallery_cover": "staging/style-gallery",
 }
 
 

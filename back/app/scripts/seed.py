@@ -17,6 +17,7 @@ import io
 import logging
 import os
 import random
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,7 @@ from app.models import (
     AgentSkill,
     Announcement,
     Asset,
+    AsyncProviderTask,
     Bookmark,
     Collection,
     CollectionItem,
@@ -63,7 +65,9 @@ from app.models import (
     ProviderStat,
     PublicationIntent,
     ReportCase,
+    StyleGalleryEntry,
     StylePreset,
+    SystemLog,
     Tag,
     User,
     Work,
@@ -90,12 +94,13 @@ from app.models.enums import (
     ModerationStatus,
     NotificationType,
     Operation,
-    ProviderAttemptStatus,
     PublicationStatus,
     QualityTier,
     Region,
     ReportReason,
     ReportStatus,
+    SystemLogLevel,
+    SystemLogSource,
     ThemePreference,
     UserRole,
     UserStatus,
@@ -199,6 +204,294 @@ SEED_TAGS: tuple[tuple[str, str, str, str], ...] = (
     ("slow-motion", "慢动作", "Slow motion", "スローモーション"),
     ("monochrome", "单色", "Monochrome", "モノクロ"),
     ("aerial", "航拍", "Aerial", "空撮"),
+)
+
+# Curated style-picker catalogue (studio dialog + create page's inspiration
+# section share this one table). Fields: slug, 中/英/日 label, description,
+# default aspect ratio, prompt suffix injected on apply, style tag slugs.
+SEED_STYLE_GALLERY: tuple[
+    tuple[str, str, str, str, str, str, str, tuple[str, ...]], ...
+] = (
+    (
+        "anime-japanese",
+        "日漫",
+        "Japanese anime",
+        "日本アニメ",
+        "赛璐璐渲染，锐利线条，鲜艳色块。",
+        "9:16",
+        "japanese anime style, cel shading, crisp linework, vivid flat colors",
+        ("anime",),
+    ),
+    (
+        "imperial-china",
+        "国产宫廷",
+        "Chinese imperial court",
+        "中国宮廷風",
+        "华服雕梁，工笔重彩，宫廷光影。",
+        "16:9",
+        "chinese imperial court drama, ornate hanfu, gongbi fine brushwork, palace lighting",
+        ("imperial", "chinese"),
+    ),
+    (
+        "suspense-thriller",
+        "悬疑",
+        "Suspense thriller",
+        "サスペンス",
+        "高对比冷调，压迫构图，悬念留白。",
+        "21:9",
+        "suspense thriller mood, high contrast cold tones, oppressive framing, negative space",
+        ("suspense",),
+    ),
+    (
+        "cartoon-3d",
+        "3D卡通",
+        "3D cartoon",
+        "3Dカートゥーン",
+        "圆润建模，明快色彩，卡通渲染。",
+        "16:9",
+        "3d cartoon render, rounded stylized modeling, bright saturated colors, pixar-like shading",
+        ("3d", "cartoon"),
+    ),
+    (
+        "ancient-3d",
+        "3D古风",
+        "3D ancient style",
+        "3D古風",
+        "水墨质感与三维建模结合，飘逸古装。",
+        "9:16",
+        "3d ancient chinese style, ink-wash texture blended with 3d modeling, flowing hanfu",
+        ("3d", "ancient", "chinese"),
+    ),
+    (
+        "wuxia",
+        "武侠",
+        "Wuxia",
+        "武侠",
+        "江湖侠客，御风轻功，山水写意。",
+        "21:9",
+        "wuxia martial arts style, flowing robes, wire-fu wind effects, ink-wash landscape",
+        ("wuxia", "chinese"),
+    ),
+    (
+        "cyberpunk",
+        "赛博朋克",
+        "Cyberpunk",
+        "サイバーパンク",
+        "霓虹雨夜，高密度招牌，未来都市。",
+        "21:9",
+        "cyberpunk city, neon rain at night, dense signage, futuristic megacity",
+        ("cyberpunk", "neon"),
+    ),
+    (
+        "ink-wash",
+        "水墨",
+        "Ink wash painting",
+        "水墨画",
+        "留白写意，浓淡干湿，山水意境。",
+        "16:9",
+        "chinese ink wash painting style, expressive negative space, varying ink density",
+        ("ink-wash", "chinese"),
+    ),
+    (
+        "steampunk",
+        "蒸汽朋克",
+        "Steampunk",
+        "スチームパンク",
+        "黄铜齿轮，蒸汽管道，维多利亚质感。",
+        "16:9",
+        "steampunk style, brass gears, steam pipes, victorian industrial texture",
+        ("steampunk",),
+    ),
+    (
+        "fairy-tale",
+        "童话",
+        "Fairy tale",
+        "童話",
+        "柔光色调，梦幻插画，温暖童趣。",
+        "4:3",
+        "fairy tale illustration style, soft pastel lighting, whimsical dreamlike scenery",
+        ("fairy-tale",),
+    ),
+    (
+        "horror",
+        "恐怖",
+        "Horror",
+        "ホラー",
+        "阴冷色调，扭曲构图，压抑氛围。",
+        "16:9",
+        "horror atmosphere, desaturated cold tones, unsettling distorted framing",
+        ("horror",),
+    ),
+    (
+        "romantic-comedy",
+        "爱情喜剧",
+        "Romantic comedy",
+        "ラブコメ",
+        "明亮暖调，轻盈运镜，都市甜宠。",
+        "16:9",
+        "romantic comedy style, warm bright lighting, light playful camera movement",
+        ("romance", "comedy"),
+    ),
+    (
+        "sci-fi",
+        "科幻",
+        "Science fiction",
+        "SF",
+        "冷调金属质感，宏大空间站场景。",
+        "21:9",
+        "science fiction style, cold metallic texture, grand space station scale",
+        ("sci-fi",),
+    ),
+    (
+        "retro-hongkong",
+        "复古港片",
+        "Retro Hong Kong film",
+        "レトロ香港映画",
+        "80年代港式霓虹，胶片颗粒，湿润街道。",
+        "16:9",
+        "retro 1980s hong kong film style, neon signage, heavy film grain, wet streets",
+        ("retro", "hongkong"),
+    ),
+    (
+        "healing-slice-of-life",
+        "治愈系",
+        "Healing slice of life",
+        "日常系",
+        "柔和自然光，恬静日常，暖色滤镜。",
+        "4:3",
+        "healing slice-of-life style, soft natural light, tranquil everyday scenery, warm tones",
+        ("healing",),
+    ),
+    (
+        "war-epic",
+        "战争史诗",
+        "War epic",
+        "戦争叙事詩",
+        "烟尘弥漫，宏大战场，冷峻纪实感。",
+        "21:9",
+        "war epic style, dust and smoke, sweeping battlefield scale, gritty documentary tone",
+        ("war", "epic"),
+    ),
+    (
+        "campus-youth",
+        "校园青春",
+        "Campus youth",
+        "学園青春",
+        "清新自然光，校园场景，明快色彩。",
+        "4:3",
+        "campus youth style, fresh natural lighting, school setting, bright clean colors",
+        ("campus", "youth"),
+    ),
+    (
+        "urban-workplace",
+        "都市职场",
+        "Urban workplace",
+        "都会オフィス",
+        "写实都市，玻璃幕墙，冷调职场质感。",
+        "16:9",
+        "urban workplace drama style, realistic city office, glass facades, cool corporate tones",
+        ("urban", "workplace"),
+    ),
+    (
+        "xianxia",
+        "仙侠",
+        "Xianxia fantasy",
+        "仙侠ファンタジー",
+        "云雾缭绕，法术光效，飘逸仙气。",
+        "9:16",
+        "xianxia fantasy style, misty clouds, glowing spell effects, ethereal flowing robes",
+        ("xianxia", "fantasy"),
+    ),
+    (
+        "western",
+        "西部片",
+        "Western",
+        "西部劇",
+        "荒漠黄沙，硬光长影，复古胶片。",
+        "21:9",
+        "classic western film style, arid desert, hard light long shadows, vintage film grade",
+        ("western",),
+    ),
+    (
+        "film-noir",
+        "黑色电影",
+        "Film noir",
+        "フィルム・ノワール",
+        "高对比黑白，百叶窗光影，压抑悬疑。",
+        "16:9",
+        "film noir style, high contrast black and white, venetian blind shadows, moody tension",
+        ("noir",),
+    ),
+    (
+        "family-drama",
+        "温馨家庭",
+        "Family drama",
+        "ホームドラマ",
+        "暖黄光调，家居场景，柔和写实。",
+        "4:3",
+        "warm family drama style, soft yellow lighting, cozy domestic setting, gentle realism",
+        ("family",),
+    ),
+    (
+        "musical",
+        "音乐剧",
+        "Musical",
+        "ミュージカル",
+        "舞台聚光，饱和色彩，戏剧化构图。",
+        "16:9",
+        "musical stage style, dramatic spotlighting, saturated colors, theatrical framing",
+        ("musical",),
+    ),
+    (
+        "documentary-realism",
+        "纪录片写实",
+        "Documentary realism",
+        "ドキュメンタリー",
+        "自然光，手持质感，未加修饰的真实。",
+        "16:9",
+        "documentary realism style, natural available light, handheld texture, unpolished truth",
+        ("documentary",),
+    ),
+    (
+        "fantasy-epic",
+        "奇幻史诗",
+        "Fantasy epic",
+        "ファンタジー叙事詩",
+        "宏大城堡，魔法光效，史诗级构图。",
+        "21:9",
+        "fantasy epic style, grand castle scale, magical glow effects, sweeping cinematic framing",
+        ("fantasy", "epic"),
+    ),
+    (
+        "future-metropolis",
+        "未来都市",
+        "Future metropolis",
+        "未来都市",
+        "垂直城市，飞行载具，冷蓝主调。",
+        "21:9",
+        "future metropolis style, vertical megacity, flying vehicles, cool blue palette",
+        ("future", "urban"),
+    ),
+    (
+        "chinese-watercolor",
+        "中式水彩",
+        "Chinese watercolor",
+        "中国水彩画",
+        "淡雅晕染，留白通透，江南意境。",
+        "3:4",
+        "chinese watercolor style, delicate wash bleeding, airy negative space, jiangnan mood",
+        ("watercolor", "chinese"),
+    ),
+    (
+        "pop-art",
+        "波普艺术",
+        "Pop art",
+        "ポップアート",
+        "高饱和色块，网点印刷质感，强烈轮廓。",
+        "4:3",
+        "pop art style, high-saturation flat colors, halftone print texture, bold outlines",
+        ("pop-art",),
+    ),
 )
 
 # The discover feed needs enough material for a masonry wall, so the corpus is
@@ -311,9 +604,14 @@ RESET_TABLES = (
     ModerationResult,
     ReportCase,
     DataRequest,
+    StyleGalleryEntry,
     StylePreset,
     JobEvent,
     ProviderAttempt,
+    # Not FK-linked to `generation_jobs` (matches `AuditLog.target_id`'s
+    # cleanup-must-not-cascade design), so `TRUNCATE ... CASCADE` on that
+    # table alone would leave these rows behind across re-seeds.
+    SystemLog,
     GenerationJob,
     GenerationWorkflowTemplate,
     Draft,
@@ -359,6 +657,7 @@ def run(*, reset: bool = False) -> dict[str, int]:
         _seed_credits(session, users, chain)
         _seed_moderation(session, users, chain)
         _seed_presets(session, users, chain)
+        _seed_style_gallery(session, users)
         _seed_announcements(session, users)
         _seed_ops_material(session, users, chain)
 
@@ -487,6 +786,7 @@ def _seed_llm_providers(session: Session) -> None:
         api_key=api_key,
         kind="general",
         role="primary",
+        models=[os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"],
     )
     config_service.set_value(
         session,
@@ -894,28 +1194,10 @@ def _completed_job(
         reserved_credits=cost,
         actual_credits=cost,
         idempotency_key=f"seed:{asset.id}",
-        selected_route_summary_json={
-            "provider": "fake_open_workflow",
-            "provider_kind": "open_workflow",
-            "model_or_workflow": "comfy-sdxl-base@1.4.0",
-            "reason": "llm_selected:成本更低且近期成功率稳定",
-        },
-        routing_trace_json=[
-            {
-                "provider": "fake_open_workflow",
-                "eligible": True,
-                "success_rate": 0.85,
-                "avg_latency_ms": 9_000,
-                "effective_cost": 2,
-            },
-            {
-                "provider": "fake_paid_api",
-                "eligible": True,
-                "success_rate": 0.9,
-                "avg_latency_ms": 22_000,
-                "effective_cost": 18,
-            },
-        ],
+        # Seed data must not invent production media providers. Real routing
+        # metadata appears only after an endpoint is configured in Models.
+        selected_route_summary_json={},
+        routing_trace_json=[],
         output_asset_id=asset.id,
         estimated_seconds=25,
         started_at=utcnow(),
@@ -949,50 +1231,8 @@ def _completed_job(
             )
         )
 
-    session.add(
-        ProviderAttempt(
-            job_id=job.id,
-            provider="fake_open_workflow",
-            provider_kind="open_workflow",
-            model_or_workflow_version="comfy-sdxl-base@1.4.0",
-            attempt_number=1,
-            status=ProviderAttemptStatus.SUCCEEDED,
-            cost_minor=2,
-            latency_ms=1180,
-            created_at=utcnow(),
-        )
-    )
-    _bump_provider_stat(session, "fake_open_workflow", operation, tier)
     session.flush()
     return job
-
-
-def _bump_provider_stat(session: Session, provider: str, operation: str, tier: str) -> None:
-    stat = session.scalar(
-        select(ProviderStat).where(
-            ProviderStat.provider == provider,
-            ProviderStat.operation == operation,
-            ProviderStat.quality_tier == tier,
-        )
-    )
-    if stat is None:
-        # The counters have column defaults, which only apply at INSERT; the
-        # in-memory object would still hold None when incremented below.
-        stat = ProviderStat(
-            provider=provider,
-            operation=operation,
-            quality_tier=tier,
-            attempts=0,
-            successes=0,
-            total_latency_ms=0,
-            total_cost_minor=0,
-        )
-        session.add(stat)
-    stat.attempts += 1
-    stat.successes += 1
-    stat.total_latency_ms += 1180
-    stat.total_cost_minor += 2
-    session.flush()
 
 
 def _seed_community(session: Session, users: dict[str, User], works: list[Work]) -> None:
@@ -1245,6 +1485,52 @@ def _seed_presets(session: Session, users: dict[str, User], works: list[Work]) -
     session.flush()
 
 
+def _seed_style_gallery(session: Session, users: dict[str, User]) -> None:
+    """Populates the curated style catalogue with placeholder covers.
+
+    Covers are the same `_prototype_asset` renderer used for work thumbnails —
+    real generated samples replace them later without touching this table's
+    shape (see `zaolang-media-assets`). Owner is the admin account since these
+    rows have no user-generated provenance to attribute.
+    """
+    if session.scalar(select(StyleGalleryEntry).limit(1)) is not None:
+        return
+
+    owner = users["admin"]
+    for index, (
+        slug,
+        label_zh,
+        label_en,
+        label_ja,
+        description,
+        aspect_ratio,
+        prompt_suffix,
+        style_tags,
+    ) in enumerate(SEED_STYLE_GALLERY):
+        cover = _prototype_asset(
+            session, owner=owner, label=label_en, aspect=aspect_ratio, role=AssetRole.COVER
+        )
+        session.add(
+            StyleGalleryEntry(
+                slug=slug,
+                label_zh=label_zh,
+                label_en=label_en,
+                label_ja=label_ja,
+                description=description,
+                cover_asset_id=cover.id,
+                params_json={
+                    "aspect_ratio": aspect_ratio,
+                    "prompt_suffix": prompt_suffix,
+                    "style_tags": list(style_tags),
+                },
+                sort_order=index,
+                apply_count=index * 3,
+            )
+        )
+    session.flush()
+    logger.info("seeded %d style gallery entries", len(SEED_STYLE_GALLERY))
+
+
 def _seed_announcements(session: Session, users: dict[str, User]) -> None:
     if session.scalar(select(Announcement).limit(1)) is not None:
         return
@@ -1317,6 +1603,41 @@ def _seed_ops_material(session: Session, users: dict[str, User], works: list[Wor
             )
         )
 
+    # The reason the job is stuck: an `AsyncProviderTask` whose deadline is
+    # long past, but nothing has come along to reap it — exactly what the
+    # ops console's "stuck" badge and async-task section exist to surface.
+    # `capability_name` deliberately follows the real `f"{endpoint_id}:{cap}"`
+    # shape even though no such endpoint exists in this seed's `llm_providers`
+    # config, so `provider_label` resolution's "not found, show raw value"
+    # fallback is what the console actually renders here.
+    session.add(
+        AsyncProviderTask(
+            job_id=stuck.id,
+            node_id="provider_generate",
+            capability_name="ep_seed_video:image_to_video",
+            external_task_id="seed-ext-task-4242",
+            request_json={},
+            state_checkpoint_json={},
+            next_poll_at=stale,
+            deadline_at=stale + dt.timedelta(minutes=10),
+            poll_count=37,
+        )
+    )
+    session.add(
+        SystemLog(
+            source=SystemLogSource.PIPELINE.value,
+            event="async_task_deadline_exceeded",
+            level=SystemLogLevel.WARNING.value,
+            message=f"async task for job {stuck.id} exceeded its deadline; still unresolved.",
+            dedup_key=f"job:{stuck.id}",
+            window_started_at=stale,
+            occurrence_count=1,
+            job_id=stuck.id,
+            details_json={"async_task_id": "seed-ext-task-4242"},
+            created_at=stale,
+        )
+    )
+
     # Failed and settled: the contrast case, where the reservation went back.
     failed = GenerationJob(
         user_id=ava.id,
@@ -1348,23 +1669,6 @@ def _seed_ops_material(session: Session, users: dict[str, User], works: list[Wor
             created_at=stale,
         )
     )
-    for attempt_number, provider in enumerate(("fake_open_workflow", "fake_paid_api"), start=1):
-        session.add(
-            ProviderAttempt(
-                job_id=failed.id,
-                provider=provider,
-                provider_kind="open_workflow" if attempt_number == 1 else "paid_api",
-                model_or_workflow_version=(
-                    "comfy-sdxl-base@1.4.0" if attempt_number == 1 else "paid-video@2026-01"
-                ),
-                attempt_number=attempt_number,
-                status=ProviderAttemptStatus.FAILED,
-                failure_code="UPSTREAM_TIMEOUT",
-                latency_ms=30_000,
-                created_at=stale,
-            )
-        )
-
     # Agent runs for the agent-ops screen, including one degraded call so the
     # "how often are we falling back to the stub" panel is not empty.
     agent_runs = (
@@ -1472,6 +1776,13 @@ def main() -> None:
     counts = run(reset=args.reset)
     print(f"种子数据完成: {counts}")
     print(f"所有演示账号密码: {SEED_PASSWORD}")
+    if args.reset:
+        print(
+            "已清空业务表，但 Celery/Redis 队列未动。"
+            "请先停 worker，再执行 make dev-purge-queues"
+            "（或 redis-cli -p 6380 -n 0 FLUSHDB），然后重启 worker。",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":
