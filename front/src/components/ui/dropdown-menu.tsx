@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { IconChevronDown } from '@/components/ui/icons';
+import { IconCheck, IconChevronDown } from '@/components/ui/icons';
 import { cn } from '@/lib/cn';
 import { loadAnime, useIsomorphicLayoutEffect, useReducedMotion } from '@/lib/motion';
 import { useOverlayTransition } from '@/lib/use-overlay-transition';
@@ -164,6 +164,33 @@ export function DropdownMenuRadioItem({
     >
       {icon}
       {children}
+    </button>
+  );
+}
+
+/** Toggleable item for a multi-choice menu (e.g. the jobs console's status filter). */
+export function DropdownMenuCheckboxItem({
+  checked,
+  onToggle,
+  children,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      onClick={onToggle}
+      className={cn(
+        'flex h-9 items-center justify-between gap-2 rounded-[var(--radius-sm)] px-2 text-left text-sm transition-colors focus-visible:outline-2',
+        checked ? 'bg-primary/12 text-primary' : 'text-text hover:bg-surface-soft',
+      )}
+    >
+      {children}
+      {checked ? <IconCheck className="size-3.5 shrink-0" /> : null}
     </button>
   );
 }

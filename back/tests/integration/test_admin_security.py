@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import ADMIN_COOKIE_NAME
-from app.models import AuditLog, User
+from app.models import AuditLog, GenerationWorkflowTemplate, User
 from app.models.enums import UserRole, UserStatus
 from app.platform_config.schemas import DEFAULT_CONFIGS
 from app.security.tokens import issue_admin_token, issue_consumer_tokens
@@ -190,6 +190,22 @@ def test_an_operator_cannot_change_platform_configuration(
     assert response.status_code == 403
 
 
+def test_a_viewer_cannot_create_a_style_gallery_entry(client: TestClient, viewer: User) -> None:
+    response = client.post(
+        "/v1/admin/style-gallery",
+        json={
+            "slug": "test-style",
+            "label_zh": "测试",
+            "label_en": "Test",
+            "label_ja": "テスト",
+            "params": {},
+            "sort_order": 0,
+        },
+        headers=admin_header(viewer),
+    )
+    assert response.status_code == 403
+
+
 def test_an_operator_cannot_grant_roles(client: TestClient, operator: User, author: User) -> None:
     """Otherwise any operator could promote themselves to admin."""
     response = client.post(
@@ -204,7 +220,7 @@ def test_an_admin_can_change_platform_configuration(client: TestClient, admin: U
     value = {**DEFAULT_CONFIGS["pricing"], "video_base_seconds": 6}
     response = client.put(
         "/v1/admin/config/pricing",
-        json={"value": value, "reason": "调整定价"},
+        json={"value": value, "note": "调整定价"},
         headers=admin_header(admin),
     )
     assert response.status_code == 200
@@ -325,10 +341,10 @@ def test_seeding_is_refused_in_production(
 # --- workflow templates ----------------------------------------------------
 
 
-def _sample_graph() -> dict:
+def _sample_graph(session: Session) -> dict:
     from app.workflows.defaults import default_graph
 
-    return default_graph()
+    return default_graph(session)
 
 
 def test_a_viewer_can_list_node_types(client: TestClient, viewer: User) -> None:
@@ -338,23 +354,25 @@ def test_a_viewer_can_list_node_types(client: TestClient, viewer: User) -> None:
     assert "safety_check" in types and "settle_success" in types
 
 
-def test_an_operator_cannot_publish_a_workflow_template(client: TestClient, operator: User) -> None:
+def test_an_operator_cannot_publish_a_workflow_template(
+    client: TestClient, db: Session, operator: User
+) -> None:
     """Wiring the real execution path of every future job is an admin
     decision, not an operator one."""
     response = client.put(
         "/v1/admin/workflow-templates/text_to_image",
-        json={"name": "测试模板", "graph": _sample_graph(), "reason": "测试", "confirm": True},
+        json={"name": "测试模板", "graph": _sample_graph(db), "reason": "测试", "confirm": True},
         headers=admin_header(operator),
     )
     assert response.status_code == 403
 
 
 def test_publishing_a_workflow_template_without_confirmation_is_refused(
-    client: TestClient, admin: User
+    client: TestClient, db: Session, admin: User
 ) -> None:
     response = client.put(
         "/v1/admin/workflow-templates/text_to_image",
-        json={"name": "测试模板", "graph": _sample_graph(), "reason": "测试", "confirm": False},
+        json={"name": "测试模板", "graph": _sample_graph(db), "reason": "测试", "confirm": False},
         headers=admin_header(admin),
     )
     assert response.status_code == 422
@@ -382,7 +400,7 @@ def test_a_confirmed_publish_becomes_active_and_is_audited(
         "/v1/admin/workflow-templates/text_to_image",
         json={
             "name": "v2 测试模板",
-            "graph": _sample_graph(),
+            "graph": _sample_graph(db),
             "reason": "回归测试",
             "confirm": True,
         },
@@ -407,16 +425,16 @@ def test_a_confirmed_publish_becomes_active_and_is_audited(
 
 
 def test_rolling_back_to_an_earlier_version_republishes_its_graph(
-    client: TestClient, admin: User
+    client: TestClient, db: Session, admin: User
 ) -> None:
     first = client.put(
         "/v1/admin/workflow-templates/text_to_video",
-        json={"name": "v1", "graph": _sample_graph(), "reason": "首次发布", "confirm": True},
+        json={"name": "v1", "graph": _sample_graph(db), "reason": "首次发布", "confirm": True},
         headers=admin_header(admin),
     ).json()
     client.put(
         "/v1/admin/workflow-templates/text_to_video",
-        json={"name": "v2", "graph": _sample_graph(), "reason": "第二次发布", "confirm": True},
+        json={"name": "v2", "graph": _sample_graph(db), "reason": "第二次发布", "confirm": True},
         headers=admin_header(admin),
     )
 
@@ -444,6 +462,62 @@ def test_an_operator_can_dry_run_a_workflow_template(client: TestClient, operato
     assert body["status"] in ("succeeded", "failed")
     assert body["trace"]
     assert body["trace"][0]["node_type"] == "safety_check"
+
+
+def test_dry_running_an_unpublished_draft_graph_leaves_the_live_template_alone(
+    client: TestClient, db: Session, operator: User
+) -> None:
+    """The editor's edit -> run -> look loop: an operator must be able to try
+    a canvas edit without first publishing it to every job."""
+    draft = _sample_graph(db)
+    draft["nodes"] = [node for node in draft["nodes"] if node["id"] != "skill_context"]
+    draft["edges"] = [
+        edge
+        for edge in draft["edges"]
+        if "skill_context" not in (edge["from"], edge["to"])
+    ]
+    draft["edges"].append(
+        {"id": "draft", "from": "safety", "from_port": "pass", "to": "planning"}
+    )
+
+    before = db.scalar(
+        select(GenerationWorkflowTemplate).where(
+            GenerationWorkflowTemplate.operation == "text_to_image",
+            GenerationWorkflowTemplate.is_active.is_(True),
+        )
+    )
+    response = client.post(
+        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        json={"prompt": "雨后的东京街头", "graph": draft},
+        headers=admin_header(operator),
+    )
+    assert response.status_code == 200, response.text
+    assert not any(step["node_type"] == "skill_context" for step in response.json()["trace"])
+
+    after = db.scalar(
+        select(GenerationWorkflowTemplate).where(
+            GenerationWorkflowTemplate.operation == "text_to_image",
+            GenerationWorkflowTemplate.is_active.is_(True),
+        )
+    )
+    # Trying a draft must never publish it, nor bump the active version.
+    assert (before.id if before else None) == (after.id if after else None)
+
+
+def test_dry_running_a_structurally_broken_draft_is_refused(
+    client: TestClient, operator: User
+) -> None:
+    """Held to the same validation as a publish — the runner cannot walk a
+    graph that fails it, and a 500 in the try-it panel teaches nothing."""
+    response = client.post(
+        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        json={
+            "prompt": "雨后的东京街头",
+            "graph": {"nodes": [{"id": "a", "type": "safety_check", "config": {}}], "edges": []},
+        },
+        headers=admin_header(operator),
+    )
+    assert response.status_code == 422
 
 
 def test_a_viewer_cannot_dry_run_a_workflow_template(client: TestClient, viewer: User) -> None:

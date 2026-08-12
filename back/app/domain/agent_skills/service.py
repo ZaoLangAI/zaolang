@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.agents.slots import DEFAULT_SLOT, is_known_slot
 from app.domain.agent_skills import presets
 from app.domain.errors import NotFound, ValidationFailed
+from app.llm import model_defaults
 from app.models import AgentNode, AgentProfile, AgentSkill
 from app.models.base import utcnow
 from app.models.enums import Operation
@@ -41,11 +42,9 @@ from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 logger = logging.getLogger(__name__)
 
 DEFAULT_PROFILE_KEY = "default"
+UNSET_BINDING = object()
 
-# The judgment roles the shipped pipeline invokes by name. Creative presets are
-# deliberately not seeded: their node row is created the first time an operator
-# actually builds an agent for one, so an untouched install shows exactly the
-# five stages its workflow templates reference.
+# The five roles the shipped pipeline invokes by name.
 DEFAULT_NODES: list[dict[str, Any]] = [
     {
         "role": "safety",
@@ -80,14 +79,6 @@ DEFAULT_NODES: list[dict[str, Any]] = [
 ]
 
 _VALID_OPERATIONS = {op.value for op in Operation}
-
-# A creative agent's cost preference per media candidate. Deliberately a plain
-# relative number with a neutral midpoint rather than a percentage: it is
-# context handed to the routing agent, not a share of anything, and nothing in
-# `app/agents/router.py` computes with it.
-MIN_CANDIDATE_WEIGHT = 1
-MAX_CANDIDATE_WEIGHT = 1_000
-DEFAULT_CANDIDATE_WEIGHT = 100
 
 
 # --------------------------------------------------------------------------
@@ -185,25 +176,19 @@ def create_profile(
     is_default: bool = False,
     default_endpoint_id: str | None = None,
     backup_endpoint_id: str | None = None,
-    max_tokens: int | None = None,
-    temperature_milli: int | None = None,
+    model: str | None = None,
     reasoning_model: bool | None = None,
-    media_candidates: list[dict[str, Any]] | None = None,
+    allow_unbound_default: bool = False,
 ) -> AgentProfile:
     """Creates one agent under a preset role.
 
     The role's node row is created here on first use, so an operator building
-    the first `video_creative` agent does not need a separate "create the
-    role" step. A creative role's declared operations come from its preset
-    rather than the caller: they are what the media-candidate picker filters
-    by, so letting them drift would allow an image endpoint into a video
-    agent.
+    the first agent for a role does not need a separate "create the role"
+    step.
     """
     ensure_node_for_role(session, role)
     if find_profile(session, role, key) is not None:
         raise ValidationFailed(f"角色 {role} 下已存在智能体 {key}。")
-    if presets.is_creative(role):
-        operations = presets.operations_for(role)
     row = AgentProfile(
         role=role,
         key=key,
@@ -219,12 +204,15 @@ def create_profile(
         row,
         default_endpoint_id=default_endpoint_id,
         backup_endpoint_id=backup_endpoint_id,
-        max_tokens=max_tokens,
-        temperature_milli=temperature_milli,
+        model=model,
         reasoning_model=reasoning_model,
-        media_candidates=media_candidates,
-        require_media_candidates=True,
     )
+    if (
+        not allow_unbound_default
+        and default_profile(session, role) is None
+        and row.default_endpoint_id is None
+    ):
+        raise ValidationFailed("默认智能体必须手动选择模型供应商。")
     session.add(row)
     session.flush()
     if is_default or default_profile(session, role) is None:
@@ -243,10 +231,8 @@ def update_profile(
     enabled: bool | None = None,
     default_endpoint_id: str | None = None,
     backup_endpoint_id: str | None = None,
-    max_tokens: int | None = None,
-    temperature_milli: int | None = None,
-    reasoning_model: bool | None = None,
-    media_candidates: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+    reasoning_model: bool | object | None = UNSET_BINDING,
 ) -> AgentProfile:
     """Edits an agent's metadata.
 
@@ -258,20 +244,15 @@ def update_profile(
         row.display_name = display_name
     if description is not None:
         row.description = description
-    if operations is not None and not presets.is_creative(row.role):
-        # A creative agent's operations are its preset's, not an operator's
-        # choice — see `create_profile`.
+    if operations is not None:
         row.operations_json = _validated_operations(operations)
     _apply_bindings(
         session,
         row,
         default_endpoint_id=default_endpoint_id,
         backup_endpoint_id=backup_endpoint_id,
-        max_tokens=max_tokens,
-        temperature_milli=temperature_milli,
+        model=model,
         reasoning_model=reasoning_model,
-        media_candidates=media_candidates,
-        require_media_candidates=False,
     )
     if enabled is not None:
         if not enabled and row.is_default:
@@ -287,42 +268,50 @@ def update_profile(
     return row
 
 
+def delete_profile(session: Session, profile_id: str) -> None:
+    """Hard-deletes an agent and every prompt version it ever published.
+
+    `AgentSkill.profile_id` cascades at the database level, so the versions
+    disappear with it. `AgentRun.agent_profile_id` is deliberately not a
+    foreign key (see its model docstring) precisely so this delete never
+    touches history: past invocations keep pointing at an id that no longer
+    resolves, the same as they already do for a disabled agent.
+
+    Mirrors `update_profile`'s default-agent guard: a role must always have
+    somewhere to fall back to, so its default cannot be removed either.
+    """
+    row = get_profile(session, profile_id)
+    if row.is_default:
+        raise ValidationFailed("默认智能体不能删除，请先把另一个智能体设为默认。")
+    session.delete(row)
+    session.flush()
+
+
 def _apply_bindings(
     session: Session,
     row: AgentProfile,
     *,
     default_endpoint_id: str | None,
     backup_endpoint_id: str | None,
-    max_tokens: int | None,
-    temperature_milli: int | None,
-    reasoning_model: bool | None,
-    media_candidates: list[dict[str, Any]] | None,
-    require_media_candidates: bool,
+    model: str | None,
+    reasoning_model: bool | object | None,
 ) -> None:
-    """Validates and writes an agent's model / media bindings.
+    """Validates and writes an agent's model bindings.
 
     `None` means "leave as is" on every argument, following the rest of
-    `update_profile`. An **empty string** is how a caller clears a model pin
-    and an **empty list** is how it clears media candidates — without that
-    distinction there would be no way to go back to the shared pool once an
-    endpoint had been pinned.
+    `update_profile`. An **empty string** is how a caller clears a model pin —
+    without that distinction there would be no way to go back to the shared
+    pool once an endpoint had been pinned.
+
+    `max_tokens`/`temperature_milli` are deliberately not parameters here: an
+    operator no longer fills them in, they are fixed by whatever `row.model`
+    resolves to (see the lookup at the end of this function) exactly the way
+    `reasoning_model` still is a manual override.
     """
-    creative = presets.is_creative(row.role)
-
-    if creative:
-        if media_candidates is not None or require_media_candidates:
-            row.media_candidates_json = _validated_media_candidates(
-                session, row.role, media_candidates or []
-            )
-        if default_endpoint_id or backup_endpoint_id:
-            raise ValidationFailed("创作类智能体绑定的是媒体候选，不是通用模型端点。")
-        return
-
-    if media_candidates:
-        raise ValidationFailed("判断类智能体不能绑定媒体候选。")
-
     endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
     if default_endpoint_id is not None:
+        if row.is_default and not default_endpoint_id:
+            raise ValidationFailed("默认智能体必须保留模型供应商绑定。")
         row.default_endpoint_id = _validated_general_endpoint(endpoints, default_endpoint_id)
         if row.default_endpoint_id is None:
             # A backup with nothing to back up would silently become the
@@ -335,16 +324,30 @@ def _apply_bindings(
     if row.backup_endpoint_id is not None and row.default_endpoint_id is None:
         raise ValidationFailed("先选择默认模型，才能配置备用模型。")
 
-    if max_tokens is not None:
-        if not 0 <= max_tokens <= 32_768:
-            raise ValidationFailed("max_tokens 需要在 0 到 32768 之间。")
-        row.max_tokens = max_tokens or None
-    if temperature_milli is not None:
-        if not 0 <= temperature_milli <= 2_000:
-            raise ValidationFailed("temperature 需要在 0 到 2 之间。")
-        row.temperature_milli = temperature_milli
-    if reasoning_model is not None:
-        row.reasoning_model = reasoning_model
+    if model is not None:
+        row.model = model.strip() or None
+    if row.model is not None:
+        bound_ids = [
+            endpoint_id
+            for endpoint_id in (row.default_endpoint_id, row.backup_endpoint_id)
+            if endpoint_id
+        ]
+        for endpoint_id in bound_ids:
+            endpoint = endpoints[endpoint_id]
+            if row.model not in endpoint.models:
+                raise ValidationFailed(f"供应商 {endpoint.name} 不支持模型 {row.model}。")
+    elif row.default_endpoint_id is not None:
+        endpoint = endpoints[row.default_endpoint_id]
+        row.model = endpoint.models[0]
+
+    # Fixed by the model, not typed in: a model missing from the table keeps
+    # inheriting the role default, same as an unset value always has.
+    defaults = model_defaults.for_model(row.model)
+    row.max_tokens = defaults.max_tokens if defaults is not None else None
+    row.temperature_milli = round(defaults.temperature * 1000) if defaults is not None else None
+
+    if reasoning_model is not UNSET_BINDING:
+        row.reasoning_model = reasoning_model if isinstance(reasoning_model, bool) else None
 
 
 def _validated_general_endpoint(
@@ -356,45 +359,6 @@ def _validated_general_endpoint(
     if endpoint is None or not endpoint.enabled or endpoint.kind != "general":
         raise ValidationFailed(f"{endpoint_id} 不是一个已启用的通用模型端点。")
     return endpoint_id
-
-
-def _validated_media_candidates(
-    session: Session, role: str, candidates: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """Checks every candidate against the live media pool and the role's preset.
-
-    A creative agent with no candidate is not a half-configured agent, it is
-    one the router can never satisfy — so an empty list is rejected rather
-    than quietly falling back to the whole catalogue.
-    """
-    if not candidates:
-        raise ValidationFailed("创作类智能体至少需要配置一个媒体候选。")
-
-    endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
-    allowed_operations = set(presets.operations_for(role))
-    seen: set[tuple[str, str]] = set()
-    validated: list[dict[str, Any]] = []
-    for candidate in candidates:
-        endpoint_id = str(candidate.get("endpoint_id") or "")
-        capability = str(candidate.get("capability") or "")
-        weight = int(candidate.get("weight") or DEFAULT_CANDIDATE_WEIGHT)
-
-        endpoint = endpoints.get(endpoint_id)
-        if endpoint is None or not endpoint.enabled or endpoint.kind != "media":
-            raise ValidationFailed(f"{endpoint_id} 不是一个已启用的媒体端点。")
-        if capability not in endpoint.capabilities:
-            raise ValidationFailed(f"{endpoint_id} 不提供 {capability} 能力。")
-        if allowed_operations and capability not in allowed_operations:
-            raise ValidationFailed(f"{role} 角色不能使用 {capability} 能力。")
-        if not MIN_CANDIDATE_WEIGHT <= weight <= MAX_CANDIDATE_WEIGHT:
-            raise ValidationFailed(
-                f"成本权重需要在 {MIN_CANDIDATE_WEIGHT} 到 {MAX_CANDIDATE_WEIGHT} 之间。"
-            )
-        if (endpoint_id, capability) in seen:
-            raise ValidationFailed(f"媒体候选 {endpoint_id}:{capability} 重复。")
-        seen.add((endpoint_id, capability))
-        validated.append({"endpoint_id": endpoint_id, "capability": capability, "weight": weight})
-    return validated
 
 
 def _promote_default(session: Session, row: AgentProfile) -> None:
@@ -647,5 +611,6 @@ def ensure_default_profiles(session: Session) -> None:
             description="所有未显式绑定智能体的工作流节点都会回落到这里。",
             operations=[],
             is_default=True,
+            allow_unbound_default=True,
         )
     session.flush()

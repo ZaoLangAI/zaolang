@@ -10,8 +10,9 @@ import { cn } from '@/lib/cn';
  * Side panel for the row you clicked.
  *
  * A drawer rather than a route: the operator keeps the filtered list in view
- * while reading one row, which is the whole point of a triage screen. It traps
- * focus like a dialog because it covers the list on narrow screens.
+ * while reading one row, which is the whole point of a triage screen. Backdrop
+ * click and Escape both dismiss it; focus returns to the previously focused
+ * control when it closes.
  */
 export function DetailDrawer({
   open,
@@ -54,12 +55,12 @@ export function DetailDrawer({
       <div
         aria-hidden="true"
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-overlay lg:hidden"
+        className="fixed inset-0 z-40 bg-overlay"
       />
       <div
         ref={panelRef}
         role="dialog"
-        aria-modal="false"
+        aria-modal="true"
         aria-label={title}
         tabIndex={-1}
         className={cn(

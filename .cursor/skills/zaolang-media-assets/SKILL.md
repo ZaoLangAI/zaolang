@@ -18,7 +18,7 @@ disable-model-invocation: true
 | `back/app/storage/s3.py` | `ALLOWED_UPLOAD_MIME_TYPES`、`MAX_UPLOAD_BYTES`、`PURPOSE_PREFIXES`、预签名与生命周期策略 |
 | `back/app/api/v1/uploads.py` | `POST /v1/uploads/presign` 与 `POST /v1/uploads/complete` |
 | `back/app/presenters/media_urls.py` | 出站 URL 组装（签名与有效期） |
-| `back/app/scripts/import_assets_pack.py` | `assets-pack/manifest.json` 导入与 `--dry-run` 校验 |
+| `back/app/scripts/import_assets_pack.py` | 按 `assets-pack/manifest.example.json` 契约读取本地 `assets-pack/manifest.json`，支持导入与 `--dry-run` 校验 |
 | `front/src/lib/upload.ts`、`front/src/components/studio/source-material-rail.tsx` | 前端两段式上传 |
 
 ## 不可破坏的不变量
@@ -31,6 +31,7 @@ disable-model-invocation: true
 6. **pHash 存 64 位有符号整数的字符串形式**（`_to_signed_64`），比较用汉明距离，阈值 `DUPLICATE_HAMMING_THRESHOLD = 6`。改阈值会同时改变「重复上传拦截」与后台「指纹重复项」两处行为。
 7. **AI 生成产物必须有溯源清单**（`ProvenanceManifest`：模型、参数、来源资产、时间）。C2PA 签名是预留接口位，不要声称已实现。
 8. **`AssetConsent`**：涉及真人肖像等素材的授权证据与资产分离存储，状态流转要留痕。
+9. **生成参考素材按用户所有权解析**：普通 H3 参考最多 9 个，支持图片/视频；首尾帧只接受图片并与普通参考互斥。供应商只能收到由对象 key 生成的短时签名 URL，不能接受用户任意外链。
 
 ## 改造切入点
 
@@ -41,7 +42,7 @@ disable-model-invocation: true
 
 ## 素材包
 
-`assets-pack/manifest.json` 是与用户约定的契约：`make check-assets` 只校验不写库，`make import-assets` 才落库。真实素材未到位前，种子里用明确标记 `PROTOTYPE` 的临时媒体，**视觉验收在真实素材到位前不能宣布通过**。
+`assets-pack/manifest.example.json` 是随代码维护的契约示例；真实素材到位后复制为本地 `assets-pack/manifest.json` 并填写，该文件当前不在仓库中。`make check-assets` 只校验不写库，`make import-assets` 才落库。真实素材未到位前，种子里用明确标记 `PROTOTYPE` 的临时媒体，**视觉验收在真实素材到位前不能宣布通过**。
 
 ## 验证
 

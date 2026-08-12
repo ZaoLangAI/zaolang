@@ -65,9 +65,16 @@ class NodeResult:
     `app.workers.tasks.poll_async_provider_tasks` resumes from this node once
     it settles. `checkpoint` is everything the resumed run needs that lives
     only in `ctx.state`, and must be JSON-safe — it goes to the database.
+
+    `summary` is one human-readable line about what this step decided, shown
+    in the editor's dry-run trace. Purely diagnostic: nothing branches on it,
+    and a node with nothing worth saying leaves it `None`. It must never
+    carry anything the C-end user is not allowed to see, since the ops
+    console renders it verbatim.
     """
 
     port: str
     terminal: PipelineOutcome | None = None
     suspend: bool = False
     checkpoint: dict[str, Any] | None = None
+    summary: str | None = None

@@ -24,16 +24,32 @@ make hooks     # 安装 pre-commit 钩子
 ## 日常开发
 
 ```bash
-make dev       # 同时起 API(8000)、Celery worker、Web(3000)
+make dev       # 同时起 API(8000)、Celery worker、Celery beat、Web(3000)
 make dev-api   # 只起 FastAPI
-make dev-worker # 只起 Celery worker（订阅五个队列）
+make dev-worker # 只起 Celery worker（订阅七个队列）
+make dev-beat  # 只起 Celery Beat（异步轮询与超时回收）
 make dev-web   # 只起 Next.js
+make dev-purge-queues  # 清空 Celery 队列（先停 worker）
 ```
+
+`make seed ARGS=--reset`（或任何会 `TRUNCATE generation_jobs` 的操作）只会清 PostgreSQL，
+**不会**清 Redis 里已入队的 Celery 消息。旧 `job_id` 仍会被 worker 取到并报
+`job ... not found`，还会短暂占住并发槽。清库后请先停 worker，再执行
+`make dev-purge-queues`（或 `redis-cli -p 6380 -n 0 FLUSHDB`），然后重启 worker。
 
 - C 端：<http://localhost:3000/zh-CN/discover>
 - 后台运维台：<http://localhost:3000/zh-CN/admin>
 - API 文档：<http://localhost:8000/docs>
 - MinIO 控制台：<http://localhost:9001>
+
+### 受信任局域网访问
+
+`make dev` 默认让 Web 与 API 监听 `0.0.0.0`。要让同一局域网内的其他主机完整使用登录、SSE、上传和媒体预览，还需要把以下地址统一为运行主机的固定局域网 IP（示例为 `192.168.1.10`）：
+
+- `back/.env`：`API_BASE_URL=http://192.168.1.10:8000`、`WEB_BASE_URL=http://192.168.1.10:3000`、`S3_PUBLIC_ENDPOINT_URL=http://192.168.1.10:9000`，并把 `http://192.168.1.10:3000` 加入 `CORS_ORIGINS`；
+- `front/.env.local`：`NEXT_PUBLIC_API_URL=http://192.168.1.10:8000`、`NEXT_ALLOWED_DEV_ORIGINS=192.168.1.10`、`LOCAL_MEDIA_HOST=192.168.1.10`、`ALLOW_LOCAL_IMAGE_HOSTS=1`；`API_INTERNAL_URL` 仍保留 `http://localhost:8000`。`NEXT_ALLOWED_DEV_ORIGINS` 只填写主机名或 IP，多个值用逗号分隔，不带协议与端口。
+
+重启 `make dev` 后，其他主机从 `http://192.168.1.10:3000/zh-CN/discover` 进入。不要把开发默认密钥、MinIO 凭据或 HTTP 服务直接暴露到公网；公网部署必须更换密钥并使用 HTTPS/反向代理。
 
 !!! note "端口刻意错开"
     Postgres 用 `5433`、Redis 用 `6380`，避免和你机器上已有的本地服务抢端口。改端口时同时改 `infra/.env.example` 与 `back/.env`。

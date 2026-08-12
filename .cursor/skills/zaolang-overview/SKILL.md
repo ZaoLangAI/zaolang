@@ -16,7 +16,7 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | `ios/` | 原生 iOS 客户端，SwiftUI + Swift Concurrency，XcodeGen 工程，只读 M1 闭环，不含后台能力 |
 | `infra/` | docker-compose：PostgreSQL 17 (pgvector) `5433`、Redis `6380`、MinIO `9000` |
 | `docs/` | MkDocs 文档站源与运维手册 |
-| `assets-pack/` | 用户素材投放目录，`manifest.json` 定义导入契约 |
+| `assets-pack/` | 用户素材投放目录；仓库内 `manifest.example.json` 定义导入契约，真实导入时复制/填写本地 `assets-pack/manifest.json`（默认不随仓库提交） |
 
 后端分层：`api/v1`（HTTP 契约）→ `domain/*`（不变量所在）→ `models`（SQLAlchemy）。`agents` / `teams` / `workflows` / `providers` / `workers` 挂在 domain 之上，**Agent 只能通过 `app/agents/tools.py` 的白名单调用领域服务，返回值必须落库才算事实**。
 

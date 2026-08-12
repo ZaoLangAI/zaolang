@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -23,6 +23,7 @@ export function WorkflowPublishDialog({
   graph,
   defaultName,
   onClose,
+  onValidated,
   onPublished,
 }: {
   open: boolean;
@@ -30,6 +31,9 @@ export function WorkflowPublishDialog({
   graph: WorkflowGraphJson;
   defaultName: string;
   onClose: () => void;
+  /** Lifted so the canvas can outline the nodes these messages are about,
+   * even after this dialog closes. */
+  onValidated?: (errors: string[]) => void;
   onPublished: () => void;
 }) {
   const t = useTranslations('adminWorkflows');
@@ -40,6 +44,7 @@ export function WorkflowPublishDialog({
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const wasOpen = useRef(false);
 
   const validate = async () => {
     setBusy(true);
@@ -49,14 +54,34 @@ export function WorkflowPublishDialog({
         '/v1/admin/workflow-templates/validate',
         { graph, operation },
       );
-      setValidationErrors(result.errors ?? []);
+      const errors = result.errors ?? [];
+      setValidationErrors(errors);
       setValidationWarnings(result.warnings ?? []);
+      onValidated?.(errors);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
     } finally {
       setBusy(false);
     }
   };
+
+  // `defaultName` only carries the real template name once the operation
+  // tab's own fetch resolves — on the *first* render it is still the
+  // "default generation flow" placeholder. Re-seeding `name` only on the
+  // false→true transition (not on every `defaultName` change while open)
+  // is what fixed the previous `useState(defaultName)`: that only ever ran
+  // once total, so the real name landing after this dialog had already
+  // mounted silently reset whatever the operator had typed.
+  useEffect(() => {
+    if (open && !wasOpen.current) {
+      setName(defaultName);
+      setReason('');
+      setError(null);
+      void validate();
+    }
+    wasOpen.current = open;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultName]);
 
   const publish = async () => {
     setBusy(true);
@@ -69,16 +94,22 @@ export function WorkflowPublishDialog({
         confirm: true,
       });
       setReason('');
+      onValidated?.([]);
       onPublished();
     } catch (caught) {
       if (caught instanceof ApiError && Array.isArray(caught.details.errors)) {
-        setValidationErrors(caught.details.errors as string[]);
+        const errors = caught.details.errors as string[];
+        setValidationErrors(errors);
+        onValidated?.(errors);
       }
       setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
     } finally {
       setBusy(false);
     }
   };
+
+  const canPublish =
+    name.trim().length > 0 && reason.trim().length >= 4 && validationErrors.length === 0;
 
   return (
     <Dialog
@@ -91,12 +122,7 @@ export function WorkflowPublishDialog({
           <Button variant="ghost" onClick={() => void validate()} loading={busy}>
             {t('validateGraph')}
           </Button>
-          <Button
-            variant="primary"
-            disabled={name.trim().length === 0 || reason.trim().length < 4}
-            loading={busy}
-            onClick={() => void publish()}
-          >
+          <Button variant="primary" disabled={!canPublish} loading={busy} onClick={() => void publish()}>
             {t('publishAndActivate')}
           </Button>
         </>

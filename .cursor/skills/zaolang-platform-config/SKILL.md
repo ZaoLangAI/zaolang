@@ -1,6 +1,6 @@
 ---
 name: zaolang-platform-config
-description: 造浪的运行时配置中心与 Feature Flag：九个配置段（pricing / providers / agents / royalty / feature_flags / moderation / shortform / llm_providers / llm_reliability）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
+description: 造浪的运行时配置：pricing / royalty / feature_flags / shortform / llm_providers 与内容、学习、技能三类审核配置的强类型 schema、版本化写入、审计和回滚。Use when adding or relocating runtime settings, changing pricing or flags, or debugging why a config change did not take effect.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## 职责
 
-凡是「上线后可能要调」的数值都不写死在代码里：档位定价、供应商开关与限额、各智能体的模型绑定、回流分成规则、审核阈值、Feature Flag。全部存 `PlatformConfig`，后台可热改、可看 diff、可回滚，每次变更进 `AuditLog`。路由**选谁**已经不是配置值——它是 `intent_router` 每次的 LLM 判断（见 `zaolang-agent-gateway`），这里只管供应商目录本身的开关与限额。
+运行时配置按业务归属展示：配置中心首页直接展示全局 Feature Flag 与短视频规格；定价/分成及三类审核规则只由各业务列表“刷新”右侧的配置按钮打开弹窗。模型端点仍版本化存于 `llm_providers`，但只能通过专用掩码 API 管理；智能体供应商与模型绑定存 `AgentProfile`，不属于 `PlatformConfig`。端点级超时、并发在模型页维护，不另设全局 LLM 可靠性段。
 
 ## 关键路径
 
@@ -17,20 +17,19 @@ disable-model-invocation: true
 | `back/app/platform_config/schemas.py` | `CONFIG_SCHEMAS`（key → pydantic 类型）与 `DEFAULT_CONFIGS`（默认值） |
 | `back/app/platform_config/service.py` | `get_typed` / `get_raw` / `set_value` / `rollback` / `history` / `invalidate` / `is_enabled` |
 | `back/app/api/v1/admin/config.py` | 读接口 viewer 级、写接口与 rollback **admin 级** |
-| `front/src/components/admin/config/config-console.tsx` | 编辑器 + 版本历史 + JSON diff |
-| `front/src/components/admin/config/feature-flags-panel.tsx` | Flag 灰度开关 |
+| `front/src/components/admin/config/runtime-config-panel.tsx` | 可复用表单/JSON、diff、理由、历史和回滚编辑器 |
 | `front/src/components/admin/models/llm-providers-panel.tsx` | 模型管理：扁平主备列表 + 端点级主/备，支持增删改 |
 
-九个 key：`pricing`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`、`shortform`、`llm_providers`、`llm_reliability`。（曾经的第十个 key `routing_weights` 已随加权路由公式一起移除，见 `zaolang-agent-gateway` 不变量 #1。）
+八个 key：`pricing`、`royalty`、`feature_flags`、`shortform`、`llm_providers`、`content_moderation`、`learning_moderation`、`skill_moderation`。旧 `providers`、`agents`、`moderation`、`llm_reliability` 只保留失活历史，不能读取或回滚。
 
-`llm_providers` 里每个端点用 `kind` 二选一：`general`（纯文字 + 图片理解，四个 Agent 角色共用同一个池）或 `media`（图片/视频/音频生成）。`media` 端点只声明一个模型 id（`model`）+ 它支持的输入模态（`input_modalities`：文本/图片/视频）与输出模态（`output_modalities`：图片/视频/音频）；能力 tag（`text_to_image` 等）由固定映射表 `capabilities_for_modalities` 从模态组合推导，不再逐个能力填模型名——`LlmProviderEndpoint.capabilities` 是运行时 `@property`，不落库。同一凭证要用不同模型服务不同能力就拆成多个端点。主/备角色在端点的 `role`/`backup_order` 上，同 `kind` 内仅一个 primary。熔断阈值/冷却时间/`max_retries` 不属于「哪些端点存在」这个目录本身，拆成独立的 `llm_reliability` 段，在配置中心走通用 JSON 编辑，不在 `llm-providers-panel.tsx` 里重复实现专属表单。
+`llm_providers` 里每个端点用 `kind` 二选一：`general`（文字与图片理解）或 `media`（图片/视频/音频生成）。判断类与辅助生成类 `AgentProfile` 手动选择默认供应商端点、兼容模型和可选备用端点；未显式绑定的非默认 Agent 才继承角色默认 Agent。`media` 端点只声明一个模型 id（`model`）+ 输入/输出模态，能力 tag 由 `capabilities_for_modalities` 推导，进入 `router.py` 的动态候选目录由 `intent_router` 的 LLM 选型挑选。媒体端点没有主备顺序和并发调度语义。
 
 ## 不可破坏的不变量
 
 1. **读配置只走 `get_typed(session, key, Schema)`**，返回强类型对象。不要 `get_raw` 后直接下标取值，schema 校验是防止一次错误编辑把生产打挂的唯一屏障。
 2. **写入是版本化追加**：`set_value` 新增一条 `PlatformConfig` 版本、失效 Redis 缓存、写 `AuditLog`（含操作者、前后值摘要、理由）。绕过 service 直接 UPDATE 表 = 丢历史、丢审计、缓存不失效。
 3. **改配置必须带理由**，`rollback` 同样。后台高危操作走二次确认（见 `zaolang-admin-console`）。
-4. **密钥类字段永不回显**：接口与界面只返回掩码与连通性状态。新增敏感字段时同步 schema 的脱敏逻辑。
+4. **密钥类字段永不进入通用配置 API**：`llm_providers` 的 list/get/update/diff/history/rollback 全部拒绝，只能由专用模型 API 返回掩码与连通性状态。
 5. **缓存失效不能靠 TTL 兜底**：`set_value` 与 `rollback` 都要 `invalidate(key)`。Redis 不可用时 service 退化为直读数据库（探测包在 `begin_nested` 里，不污染事务）。
 6. **默认值必须能让空库正常工作**：`DEFAULT_CONFIGS` 是 `get_typed` 在数据库无该 key 时的回退，测试与全新部署都依赖它。
 7. **不要再加回路由评分权重类的配置段**。供应商之间选谁由 `intent_router` 的 LLM 判断决定（`zaolang-agent-gateway` 不变量 #1），不是可调数值；这里只负责供应商目录本身「存不存在、开不开、限额多少」这类硬性开关。
@@ -42,7 +41,7 @@ disable-model-invocation: true
 1. 在 `schemas.py` 对应 `ConfigSection` 加字段（**带默认值**，否则存量版本反序列化会炸）。
 2. 同步 `DEFAULT_CONFIGS` 里的同名段。
 3. 调用处改成读新字段，不要留 `getattr(cfg, "x", fallback)` 这种绕过类型的写法。
-4. 前端 `config-console.tsx` 靠 JSON 编辑器自动支持，无需改代码；有专用面板的（定价、Flag）要同步面板。
+4. 前端 `config-console.tsx` 靠 JSON 编辑器自动支持，无需改代码；有专用面板的（定价、Flag、短视频）要同步面板——`runtime-config-panel.tsx` 的 `ShortformForm` 是手写字段列表，不是 schema 自动渲染，新字段要显式加控件（例如 `ShortformConfig.enable_clarifying_questions` / `enable_preview_picker` / `preview_candidate_count` 这三个短视频工作室的追问/预览开关）。
 5. 写单元测试进 `back/tests/unit/test_platform_config.py`。
 
 **加一个新配置段**：`CONFIG_SCHEMAS` 与 `DEFAULT_CONFIGS` 各加一项即可，`all_keys()` 自动带出，后台列表自动出现。

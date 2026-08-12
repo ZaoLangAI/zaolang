@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.agents import base as agent_base
-from app.agents import copywriter, intent_router, router, tools
+from app.agents import copywriter, intent_router, planner, router, tools
 from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ValidationFailed
-from app.models import ProviderStat, User
+from app.models import AgentRun, ProviderStat, User
 from app.models.enums import AgentName, Operation, QualityTier
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
@@ -18,11 +20,37 @@ from app.workflows import describe_workflow, registry
 from app.workflows.defaults import default_graph
 from app.workflows.graph import WorkflowGraph
 from app.workflows.graph import validate as validate_graph
+from tests.fake_provider_catalog import build_fake_catalog
+
+
+@pytest.fixture(autouse=True)
+def _inject_test_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
 
 
 def test_the_safety_agent_gets_no_tools_at_all(db: Session) -> None:
     """A content judgement must not depend on anything a prompt could steer."""
     assert tools.build_toolkit(db, AgentName.SAFETY) == {}
+
+
+def test_realistic_gang_violence_is_sent_to_review_rather_than_approved(db: Session) -> None:
+    """Written policy allows adult artistic expression, but a written, realistic
+    brawl/gore scene is not a blanket approval — it must land in the human
+    review queue instead of being auto-approved."""
+    from app.agents import safety
+    from app.models.enums import ModerationStage, ModerationStatus
+
+    result = safety.review(
+        db,
+        text="生成一个社会帮派港风街道斗殴的场景",
+        stage=ModerationStage.PRE_GENERATION,
+        subject_type="job",
+        subject_id="job_test",
+    )
+
+    assert result.status == ModerationStatus.NEEDS_REVIEW
+    assert result.categories_json == {"categories": ["sensitive_content"]}
+    assert result.reason_code == "SENSITIVE_CONTENT"
 
 
 def test_every_agent_has_an_explicit_grant() -> None:
@@ -104,7 +132,7 @@ def test_every_candidate_records_why_it_was_rejected(db: Session) -> None:
         db, operation=Operation.TEXT_TO_VIDEO, quality_tier=QualityTier.CINEMATIC
     )
     trace = decision.trace()
-    assert len(trace) == len(router.PROVIDER_CATALOG)
+    assert len(trace) == len(router.build_catalog(db))
     for entry in trace:
         if not entry["eligible"]:
             assert entry["filter_reason"]
@@ -118,54 +146,6 @@ def test_a_route_that_cannot_do_the_operation_is_filtered_not_scored(db: Session
     assert open_workflow.eligible is False
     assert open_workflow.filter_reason == "operation_not_supported"
     assert open_workflow.effective_cost == 0
-
-
-def test_disabling_a_provider_takes_effect_without_a_restart(db: Session, admin: User) -> None:
-    config_service.set_value(
-        db,
-        "providers",
-        {
-            "providers": {
-                "fake_open_workflow": {"enabled": False},
-                "fake_paid_api": {"enabled": True},
-            },
-            "conservative_prior_success_rate": 0.8,
-            "minimum_samples_for_stats": 20,
-        },
-        actor_user_id=admin.id,
-        note="test",
-    )
-
-    decision = router.route(
-        db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
-    )
-    assert decision.selected is not None
-    assert decision.selected.provider == "fake_paid_api"
-    disabled = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
-    assert disabled.filter_reason == "provider_disabled"
-
-
-def test_disabling_everything_yields_no_route_rather_than_a_crash(db: Session, admin: User) -> None:
-    config_service.set_value(
-        db,
-        "providers",
-        {
-            "providers": {
-                "fake_open_workflow": {"enabled": False},
-                "fake_paid_api": {"enabled": False},
-            },
-            "conservative_prior_success_rate": 0.8,
-            "minimum_samples_for_stats": 20,
-        },
-        actor_user_id=admin.id,
-        note="test",
-    )
-
-    decision = router.route(
-        db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
-    )
-    assert decision.selected is None
-    assert decision.reason.startswith("no_eligible_provider")
 
 
 def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> None:
@@ -187,10 +167,7 @@ def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> 
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
     scored = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
-    from app.platform_config.schemas import ProviderConfig
-
-    prior = config_service.get_typed(db, "providers", ProviderConfig)
-    assert scored.success_rate == prior.conservative_prior_success_rate
+    assert scored.success_rate == router.CONSERVATIVE_PRIOR_SUCCESS_RATE
 
 
 def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
@@ -212,7 +189,7 @@ def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
     flaky = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
-    catalogue_cost = router.PROVIDER_CATALOG["fake_open_workflow"].unit_cost_minor
+    catalogue_cost = router.build_catalog(db)["fake_open_workflow"].unit_cost_minor
     assert flaky.effective_cost > catalogue_cost
 
 
@@ -255,19 +232,87 @@ def test_llm_selection_unavailable_yields_no_route_not_a_formula_fallback(
     assert decision.reason == "llm_selection_unavailable"
 
 
-def test_the_default_graph_uses_only_registered_node_types() -> None:
+def test_cost_bias_reaches_the_agent_as_context_only(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`classify()`'s request-level cost signal rides along with
+    `select_provider`'s candidates as context — never a coefficient
+    `route()` applies itself."""
+    captured: list[str] = []
+    real_run_agent = intent_router.run_agent
+
+    def capture(session, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(kwargs["user_prompt"])
+        return real_run_agent(session, **kwargs)
+
+    monkeypatch.setattr(intent_router, "run_agent", capture)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        cost_bias=0.9,
+    )
+    assert decision.selected is not None
+    assert json.loads(captured[0])["cost_bias"] == 0.9
+
+
+def test_cost_bias_is_omitted_from_the_payload_when_the_caller_has_none(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[str] = []
+    real_run_agent = intent_router.run_agent
+
+    def capture(session, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(kwargs["user_prompt"])
+        return real_run_agent(session, **kwargs)
+
+    monkeypatch.setattr(intent_router, "run_agent", capture)
+
+    router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    assert "cost_bias" not in json.loads(captured[0])
+
+
+def test_classify_flags_a_short_but_action_heavy_video_prompt_as_more_complex(
+    db: Session,
+) -> None:
+    """A short prompt naming a multi-subject fight is not `simple` just
+    because the text is short — motion/action content drives video
+    complexity, not word count (the video-specific dimension in
+    `classify()`'s prompt, mirrored deterministically by the stub)."""
+    outcome = intent_router.classify(
+        db,
+        intent="生成一段香港街头斗殴的动态视频，确保动作连贯、场景真实",
+        operation=Operation.TEXT_TO_VIDEO.value,
+        requested_tier=QualityTier.STANDARD.value,
+    )
+    assert outcome.data["complexity"] == "complex"
+
+
+def test_classify_does_not_inflate_complexity_for_a_plain_video_prompt(db: Session) -> None:
+    outcome = intent_router.classify(
+        db,
+        intent="拍一段海边日落的延时视频",
+        operation=Operation.TEXT_TO_VIDEO.value,
+        requested_tier=QualityTier.STANDARD.value,
+    )
+    assert outcome.data["complexity"] == "moderate"
+
+
+def test_the_default_graph_uses_only_registered_node_types(db: Session) -> None:
     """A node type in the seed graph that engineering forgot to register
     would otherwise only surface as a runtime crash on the first real job."""
-    graph = default_graph()
+    graph = default_graph(db)
     types = {n["type"] for n in graph["nodes"]}
     assert types <= set(registry.NODE_TYPES)
 
 
-def test_the_default_graph_passes_structural_validation() -> None:
+def test_the_default_graph_passes_structural_validation(db: Session) -> None:
     """The graph every `Operation` is seeded with must itself satisfy the
     same publish-time checks an admin's custom graph is held to."""
-    graph = WorkflowGraph.from_dict(default_graph())
-    assert validate_graph(graph, registry_types=set(registry.NODE_TYPES)) == []
+    graph = WorkflowGraph.from_dict(default_graph(db))
+    ports = {node_type: spec.output_ports for node_type, spec in registry.NODE_TYPES.items()}
+    assert validate_graph(graph, output_ports_by_type=ports) == []
 
 
 def test_the_workflow_description_is_serialisable(db: Session) -> None:
@@ -542,9 +587,13 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
     a caller using an undeclared slot cannot be edited at all."""
     called = {
         AgentName.SAFETY.value: {"default"},
-        AgentName.PLANNER.value: {"default"},
+        AgentName.PLANNER.value: {"default", planner.CLARIFY_SLOT},
         AgentName.QUALITY.value: {"default"},
-        AgentName.COPY.value: {copywriter.SUGGEST_SLOT, copywriter.ENHANCE_SLOT},
+        AgentName.COPY.value: {
+            copywriter.SUGGEST_SLOT,
+            copywriter.ENHANCE_SLOT,
+            copywriter.CLARIFY_SLOT,
+        },
         AgentName.INTENT_ROUTER.value: {
             intent_router.CLASSIFY_SLOT,
             intent_router.SELECT_PROVIDER_SLOT,
@@ -579,7 +628,7 @@ def _seed_general_endpoints(db: Session) -> None:
                     "base_url": "https://backup.invalid",
                     "api_key": "k",
                     "kind": "general",
-                    "models": ["backup-model"],
+                    "models": ["pinned-model", "backup-model"],
                     "role": "backup",
                 },
             }
@@ -611,18 +660,18 @@ def test_a_pinned_variant_tries_its_own_endpoints_first(db: Session) -> None:
         display_name="钉模型版",
         default_endpoint_id="pinned-ep",
         backup_endpoint_id="backup-ep",
+        model="pinned-model",
     )
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
     assert binding.preferred_endpoint_ids == ("pinned-ep", "backup-ep")
-    # The role-wide model is not one this endpoint serves, so the endpoint's
-    # own model wins — otherwise the pin would send an unknown model id.
+    # The model is selected together with the provider and validated against
+    # both the default and backup endpoint.
     assert binding.model == "pinned-model"
 
 
-def test_pinning_an_endpoint_does_not_remove_the_rest_of_the_pool(db: Session) -> None:
-    """A pin is a preference order, not a replacement pool: the shared
-    endpoints stay behind it as fallbacks."""
+def test_pinning_an_endpoint_restricts_the_provider_pool(db: Session) -> None:
+    """A manual provider binding is authoritative, not a soft preference."""
     from app.llm import failover
 
     _seeded(db)
@@ -636,29 +685,90 @@ def test_pinning_an_endpoint_does_not_remove_the_rest_of_the_pool(db: Session) -
     ]
     assert [
         pair[0] for pair in failover.eligible_candidates(config, preferred_ids=("backup-ep",))
-    ] == ["backup-ep", "pinned-ep"]
+    ] == ["backup-ep"]
 
 
-def test_a_variant_can_override_sampling_without_pinning_an_endpoint(db: Session) -> None:
+def test_a_profile_bound_to_a_known_model_gets_fixed_sampling_params(db: Session) -> None:
+    """max_tokens/temperature are no longer typed in by hand — they follow
+    whichever model was picked (`app.llm.model_defaults`), same as an agent's
+    other properties follow its role."""
     _seeded(db)
     profile = agent_skills_service.create_profile(
         db,
         role="safety",
         key="hot",
         display_name="高温版",
-        max_tokens=1_234,
-        temperature_milli=900,
+        model="kimi-k3",
         reasoning_model=True,
     )
+    assert (profile.max_tokens, profile.temperature_milli) == (2048, 300)
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
-    assert (binding.max_tokens, binding.temperature, binding.reasoning_model) == (1234, 0.9, True)
+    assert (binding.max_tokens, binding.temperature, binding.reasoning_model) == (2048, 0.3, True)
     assert binding.preferred_endpoint_ids == ()
 
 
-def test_pinning_an_endpoint_that_no_longer_exists_falls_back_to_the_pool(db: Session) -> None:
-    """An operator can delete an endpoint a variant pinned. Generation must
-    keep working rather than routing at a dangling id."""
+def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
+    db: Session,
+) -> None:
+    """The whole point of the debug endpoint: an unpublished draft can be
+    tried against a real (here, stubbed) model, and the attempt still shows
+    up in the agent's usage history despite backing no job."""
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+
+    outcome = agent_base.run_agent_debug(
+        db,
+        profile=default,
+        slot=agent_slots.DEFAULT_SLOT,
+        prompt_override="DRAFT_SAFETY_PROMPT",
+        history=[{"role": "user", "content": "画面里有血腥场景"}],
+    )
+
+    assert outcome.parsed_json == {
+        "decision": "needs_review",
+        "categories": ["sensitive_content"],
+        "reason_code": "SENSITIVE_CONTENT",
+        "public_message": "内容需要人工复核，稍后会通知你结果。",
+    }
+    assert outcome.degraded is False
+
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.job_id is None
+    assert run.agent_profile_id == default.id
+    assert run.prompt_slot == agent_slots.DEFAULT_SLOT
+
+
+def test_an_unregistered_model_leaves_sampling_params_unset(db: Session) -> None:
+    """A model this table has never heard of behaves exactly like an unset
+    override always did: inherit whatever the role's default agent runs
+    with."""
+    _seeded(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    agent_skills_service.update_profile(db, default.id, model="kimi-k3", reasoning_model=True)
+
+    variant = agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="temporary-override",
+        display_name="临时覆盖版",
+        model="some-unlisted-model",
+        reasoning_model=False,
+    )
+    assert (variant.max_tokens, variant.temperature_milli) == (None, None)
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, variant)
+    assert (binding.max_tokens, binding.temperature) == (2048, 0.3)
+    assert binding.reasoning_model is False
+
+
+def test_pinning_an_endpoint_that_no_longer_exists_does_not_change_provider(db: Session) -> None:
+    """A dangling manual binding fails closed instead of changing supplier."""
+    from app.llm import failover
+
     _seeded(db)
     _seed_general_endpoints(db)
     profile = agent_skills_service.create_profile(
@@ -669,7 +779,14 @@ def test_pinning_an_endpoint_that_no_longer_exists_falls_back_to_the_pool(db: Se
     )
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
-    assert binding.preferred_endpoint_ids == ()
+    assert binding.preferred_endpoint_ids == ("pinned-ep",)
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+    assert (
+        failover.eligible_candidates(
+            config, preferred_ids=binding.preferred_endpoint_ids, model=binding.model
+        )
+        == []
+    )
 
 
 def test_every_agent_binding_names_a_real_role_field_and_slot() -> None:

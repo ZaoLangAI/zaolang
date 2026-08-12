@@ -13,22 +13,22 @@ disable-model-invocation: true
 | 域 | 后端 | 前端 |
 | --- | --- | --- |
 | 系统健康 | `admin/observability.py: /health` | `components/admin/health/health-cards.tsx` |
-| 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`）、`/jobs/stats`（按状态/操作分组计数 + 平均完成耗时，声明在 `/jobs/{job_id}` 之前避免路径冲突） | `admin/jobs/jobs-console.tsx`（含 `stepper` / `duration-bars` / 路由候选对比与 LLM `reason` 说明） |
-| 智能体 | `admin/agent_skills.py`: 节点与 Prompt 版本；`observability.py`: `/agent-runs`、`/agent-runs/usage`、`/workflow` | `admin/agents/agent-node-graph.tsx`、`agent-skill-editor.tsx`、`agent-runs-table.tsx` |
-| 供应商与工作流 | `admin/llm_providers.py`: 模型管理目录（端点级主/备；`media` 的 `capabilities` 仅 model+enabled，可编辑）；`admin/workflow_templates.py`: 工作流模板 DAG；`observability.py`: `/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（扁平主备列表）、`routing-replay-table.tsx`（LLM 选型理由 + 候选成功率/延迟/成本）、`/admin/routing` 页只剩 `WorkflowEditor`（无权重面板，选谁由 `intent_router` 判定，见 `zaolang-agent-gateway`） |
+| 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`）、`/jobs/stats`（按状态/操作分组计数 + 平均完成耗时，声明在 `/jobs/{job_id}` 之前避免路径冲突）。列表/详情不再吐裸 id：`AdminJobSummary` 带 `user_display_name`/`user_handle`/`provider_label`/`stuck`，`AgentRunView` 带 `agent_display_name`，`JobEventView`/`AgentRunView` 带 `node_id`（真正执行的图节点，见 `zaolang-generation-jobs` 不变量 #13），`AdminJobDetail` 带 `async_task: AsyncProviderTaskView | None`（在途外部供应商任务的节点/供应商/轮询次数/截止时间）；`admin/logs.py::/logs` 新增可选 `job_id` 参数，命中时对审计与 SystemLog 两路都按该任务过滤，合并返回 | `admin/jobs/jobs-console.tsx`（含 `stepper` / `duration-bars` / 路由候选对比与 LLM `reason` 说明、异步供应商任务小节、关联日志小节） |
+| 智能体 | `admin/agent_skills.py`: AgentProfile 手动供应商/模型绑定、采样参数、Prompt 版本 | `/admin/agents`；模型关系不在配置中心或模型页维护 |
+| 供应商与工作流 | `admin/llm_providers.py`: 模型管理目录（`general` 有模型列表/主备/并发；`media` 有单模型/模态/超时）；`admin/workflow_templates.py`: 工作流模板 DAG；`observability.py`: `/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（通用与媒体分区）、`routing-replay-table.tsx`（LLM 选型理由 + 候选成功率/延迟/成本）、`/admin/routing` 页只剩 `WorkflowEditor`（无权重面板，选谁由 `intent_router` 判定，见 `zaolang-agent-gateway`） |
 | 数据统计中心 | `observability.py`: `/providers/stats`（供应商统计）、`/agent-runs/usage`（智能体用量）；`admin/jobs.py`: `/jobs/stats`（任务吞吐）；`admin/ledger.py`: `/credits/reconciliation`（积分对账） | `/admin/statistics` 页，一站式聚合以上四类现有指标，不新增数据源 |
 | 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`/`detail`/`history`)、`/reports`、`/works/{id}/tombstone|hide|restore` | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
 | 技能库运维 | `admin/skill_library.py`: 全局技能列表/下架/精选 | `admin/skill-library/skill-library-console.tsx` |
 | 用户与权限 | `admin/users.py`: `/users`、`/suspend`、`/unsuspend`、`/roles`、`/data-requests` | `admin/users/*` |
 | 积分运维 | `admin/ledger.py` + `admin/redemption.py`: 账本/对账/调账/兑换码 CRUD | `admin/credits/*`（含 `redemption-codes-panel.tsx`） |
-| 配置运维 | `admin/config.py`（见 `zaolang-platform-config`） | `admin/config/*` |
+| 配置运维 | `admin/config.py`（通用 API 排除 `llm_providers`） | `/admin/config` 只放 Feature Flag 与短视频；其他配置由业务页“刷新”右侧的配置按钮打开弹窗 |
 | 数据运维 | `admin/data.py`: `/storage/usage`、`/storage/lifecycle`、`/backups`、`/seed` | `admin/data/*` |
 | 日志中心 | `admin/logs.py`: `/logs`（审计 + SystemLog 聚合）；`admin/config.py`: `/audit-logs`（向后兼容） | `admin/audit/log-center-console.tsx`、`admin/announcements/*` |
 
 ## 不可破坏的不变量
 
-1. **健康探针只报告，不修复**。它检查 Postgres / Redis / MinIO / Celery 存活、六个队列积压与消费速率、Alembic 版本、**LLM 网关连通性与当前运行模式**。探测查询必须包在 `begin_nested()` 里——一个失败的探针污染事务会让整页 500。
-2. **强制终止任务也走状态机**（`state_machine.transition`），不是直接 UPDATE `status`。终止后必须释放预扣，否则制造悬挂预扣。
+1. **健康探针只报告，不修复**。它检查 Postgres / Redis / MinIO / Celery 存活、当前 7 个队列积压与消费速率、Alembic 版本、**LLM 网关连通性与当前运行模式**。队列真源是 `back/app/workers/celery_app.py:QUEUE_NAMES`，新增队列时同步健康页。探测查询必须包在 `begin_nested()` 里——一个失败的探针污染事务会让整页 500。
+2. **强制终止任务也走状态机**（`state_machine.transition`），不是直接 UPDATE `status`。终止后必须释放预扣，否则制造悬挂预扣。**命中在途 `AsyncProviderTask` 时会在同一次请求内同步尝试 `async_tasks.cancel_upstream()` 通知供应商**，失败（catalogue 里找不到能力、`provider.cancel()` 报错或超时）也不阻断状态迁移，只落一条 `system_log.emit`；审计的 `after_json` 记 `upstream_cancel_attempted`/`upstream_cancel_succeeded` 供事后核对。
 3. **卡死重放不制造第二次扣费**：`requeue` 复用原任务与原预扣，不新建 job、不重新 reserve。
 4. **全链路回放是只读的**：`JobEvent` + `ProviderAttempt` + 路由候选决策，展示即可，不允许「顺手改一下」。
 5. **`ProviderStat` 是累计计数器**，新建行必须显式初始化为 0（`attempts` / `successes` / `total_latency_ms` / `total_cost_minor`）——依赖列默认值会在 flush 前拿到 `None` 并在 `+=` 时炸。

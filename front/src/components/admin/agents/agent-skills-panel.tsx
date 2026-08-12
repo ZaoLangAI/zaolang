@@ -4,22 +4,28 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAdminSession } from '@/components/admin/admin-session-provider';
+import { AgentDebugChatDialog } from '@/components/admin/agents/agent-debug-chat-dialog';
 import { AgentProfileDialog } from '@/components/admin/agents/agent-profile-dialog';
 import { DangerConfirm } from '@/components/admin/danger-confirm';
-import { Button } from '@/components/ui/button';
+import { Button, IconButton } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Select, TextArea, TextInput } from '@/components/ui/field';
+import { MultiSelect, Select, Switch, TextArea } from '@/components/ui/field';
+import { IconGear, IconMessage, IconPencil, IconTrash } from '@/components/ui/icons';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
 import { operationLabelKey } from '@/lib/admin/operations';
 import { atLeast } from '@/lib/admin/rbac';
+import { toolGrantLabelKey } from '@/lib/admin/tool-grants';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
+  AgentCategory,
   AgentNode,
   AgentProfile,
   AgentSkill,
+  AgentSkillTool,
   Page,
+  RolePreset,
   SkillTemplate,
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
@@ -41,27 +47,72 @@ import { formatDateTime } from '@/lib/format';
  * row atomically, so "rollback" is re-publishing an older row's content,
  * never an edit in place.
  */
+
+// Mirrors the actual job pipeline (`app/workflows/defaults.py`): safety
+// gates first, then planning, then routing picks a generation lane, then
+// quality checks the result. `copy` never appears in that DAG — it backs a
+// separate "AI polish" button the user triggers by hand — so it sorts after
+// the roles a generation job actually runs. A role missing from this table
+// keeps its existing relative order at the end.
+const PIPELINE_ROLE_ORDER: Record<string, number> = {
+  safety: 0,
+  planner: 1,
+  intent_router: 2,
+  quality: 3,
+  copy: 4,
+};
+
+function displayRank(role: string, sortOrder: number): number {
+  return PIPELINE_ROLE_ORDER[role] ?? 100 + sortOrder;
+}
+
+function categoryLabel(category: AgentCategory, t: (key: string) => string): string {
+  if (category === 'assist') return t('categoryAssist');
+  return t('categoryJudgment');
+}
+
+/** One role's group header, merging its `AgentNode` (once at least one agent
+ * exists) with its catalogue `RolePreset` (always exists). A role has no
+ * node row until its first agent is created (see
+ * `agent_skills.service.create_profile`'s `ensure_node_for_role`), so without
+ * the preset half a role nobody has used yet would have no arrow to create
+ * one from. */
+interface RoleSummary {
+  role: string;
+  displayName: string;
+  category: AgentCategory;
+  description: string;
+  sortOrder: number;
+  node: AgentNode | null;
+}
+
 export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
   const t = useTranslations('adminAgents');
   const { role } = useAdminSession();
   const editable = atLeast(role, 'admin');
 
   const [nodes, setNodes] = useState(initial);
+  const [presets, setPresets] = useState<RolePreset[]>([]);
   const [profiles, setProfiles] = useState<AgentProfile[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [editing, setEditing] = useState<{ node: AgentNode; profile: AgentProfile } | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creatingForRole, setCreatingForRole] = useState<string | null>(null);
   const [editingMeta, setEditingMeta] = useState<AgentProfile | null>(null);
+  const [debugging, setDebugging] = useState<{ node: AgentNode; profile: AgentProfile } | null>(
+    null,
+  );
 
   const reload = useCallback(
     () =>
       Promise.all([
         adminApi.get<{ items: AgentNode[] }>('/v1/admin/agent-nodes'),
         adminApi.get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles'),
+        adminApi.get<Page<RolePreset>>('/v1/admin/agent-node-presets'),
       ])
-        .then(([nodePage, profilePage]) => {
+        .then(([nodePage, profilePage, presetPage]) => {
           setNodes(nodePage.items);
           setProfiles(profilePage.items);
+          setPresets(presetPage.items);
           setLoadFailed(false);
         })
         .catch(() => setLoadFailed(true)),
@@ -72,31 +123,31 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
     void reload();
   }, [reload]);
 
-  const sorted = [...nodes].sort((a, b) => a.sort_order - b.sort_order);
+  const nodeByRole = new Map(nodes.map((node) => [node.role, node]));
+  const allRoles = new Set([...nodeByRole.keys(), ...presets.map((preset) => preset.role)]);
+  const summaries: RoleSummary[] = [...allRoles].map((roleKey, index) => {
+    const node = nodeByRole.get(roleKey) ?? null;
+    const preset = presets.find((item) => item.role === roleKey);
+    return {
+      role: roleKey,
+      displayName: node?.display_name ?? preset?.display_name ?? roleKey,
+      category: node?.category ?? preset?.category ?? 'judgment',
+      description: node?.description ?? preset?.description ?? '',
+      sortOrder: node?.sort_order ?? 100 + index,
+      node,
+    };
+  });
+  const sorted = summaries.sort(
+    (a, b) => displayRank(a.role, a.sortOrder) - displayRank(b.role, b.sortOrder),
+  );
   // Every role draws from the same enabled `kind="general"` pool, so an empty
   // one is a page-level problem rather than something to repeat per role.
   const noEndpoints =
-    sorted.length > 0 && sorted.every((node) => !node.candidate_endpoint_ids?.length);
+    nodes.length > 0 && nodes.every((node) => !node.candidate_endpoint_ids?.length);
 
   return (
     <section className="rounded-[var(--radius-md)] border border-border bg-surface p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{t('sectionAgents')}</h2>
-          <p className="mt-1 max-w-3xl text-xs text-muted">{t('sectionAgentsDesc')}</p>
-        </div>
-        {editable ? (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            {t('newAgent')}
-          </Button>
-        ) : null}
-      </div>
-
-      {loadFailed ? (
-        <div className="mt-4">
-          <ErrorNotice title={t('loadProfilesFailed')} />
-        </div>
-      ) : null}
+      {loadFailed ? <ErrorNotice title={t('loadProfilesFailed')} /> : null}
 
       {noEndpoints ? (
         <p className="mt-4 rounded-[var(--radius-sm)] border border-amber/40 bg-amber/10 px-3 py-2 text-xs text-amber">
@@ -105,14 +156,21 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
       ) : null}
 
       <ol className="mt-4 flex flex-col gap-5">
-        {sorted.map((node) => (
-          <li key={node.id}>
+        {sorted.map((summary) => (
+          <li key={summary.role}>
             <RoleGroup
-              node={node}
-              profiles={profiles?.filter((profile) => profile.role === node.role) ?? null}
+              summary={summary}
+              profiles={profiles?.filter((profile) => profile.role === summary.role) ?? null}
               editable={editable}
-              onEditPrompt={(profile) => setEditing({ node, profile })}
+              onEditPrompt={(profile) =>
+                summary.node ? setEditing({ node: summary.node, profile }) : undefined
+              }
               onEditMeta={setEditingMeta}
+              onDebug={(profile) =>
+                summary.node ? setDebugging({ node: summary.node, profile }) : undefined
+              }
+              onCreate={() => setCreatingForRole(summary.role)}
+              onChanged={() => void reload()}
             />
           </li>
         ))}
@@ -128,8 +186,12 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
         />
       ) : null}
 
-      {creating ? (
-        <AgentProfileDialog onClose={() => setCreating(false)} onSaved={() => void reload()} />
+      {creatingForRole ? (
+        <AgentProfileDialog
+          initialRole={creatingForRole}
+          onClose={() => setCreatingForRole(null)}
+          onSaved={() => void reload()}
+        />
       ) : null}
 
       {editingMeta ? (
@@ -139,6 +201,14 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
           onSaved={() => void reload()}
         />
       ) : null}
+
+      {debugging ? (
+        <AgentDebugChatDialog
+          node={debugging.node}
+          profile={debugging.profile}
+          onClose={() => setDebugging(null)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -146,34 +216,50 @@ export function AgentSkillsPanel({ initial }: { initial: AgentNode[] }) {
 /**
  * One role's heading and the agents filed under it.
  *
- * The heading is a label, not a thing to act on: a role is a slot in the
- * pipeline that ships in `app/workflows/registry.py`, so there is nothing here
- * to create, edit or disable. Every action belongs to an agent.
+ * The heading itself is still a label, not a thing to act on: a role is a
+ * slot in the pipeline that ships in `app/workflows/registry.py`. The one
+ * exception is the arrow button, which does not edit the role — it opens
+ * `AgentProfileDialog` to create a new agent under it.
  */
 function RoleGroup({
-  node,
+  summary,
   profiles,
   editable,
   onEditPrompt,
   onEditMeta,
+  onDebug,
+  onCreate,
+  onChanged,
 }: {
-  node: AgentNode;
+  summary: RoleSummary;
   profiles: AgentProfile[] | null;
   editable: boolean;
   onEditPrompt: (profile: AgentProfile) => void;
   onEditMeta: (profile: AgentProfile) => void;
+  onDebug: (profile: AgentProfile) => void;
+  onCreate: () => void;
+  onChanged: () => void;
 }) {
   const t = useTranslations('adminAgents');
 
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-2 border-b border-border pb-2">
-        <h3 className="text-sm font-medium text-text">{node.display_name}</h3>
-        <span className="font-mono text-[11px] text-muted">{node.role}</span>
-        <Badge tone={node.category === 'creative' ? 'primary' : 'neutral'}>
-          {node.category === 'creative' ? t('categoryCreative') : t('categoryJudgment')}
-        </Badge>
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">{node.description}</span>
+        <h3 className="text-sm font-medium text-text">{summary.displayName}</h3>
+        <span className="font-mono text-[11px] text-muted">{summary.role}</span>
+        <Badge tone="neutral">{categoryLabel(summary.category, t)}</Badge>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary.description}</span>
+        {editable ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={t('newAgentForRole', { role: summary.displayName })}
+            title={t('newAgentForRole', { role: summary.displayName })}
+            onClick={onCreate}
+          >
+            {t('newAgentArrow')}
+          </Button>
+        ) : null}
       </div>
 
       <div className="mt-3">
@@ -190,6 +276,8 @@ function RoleGroup({
                   editable={editable}
                   onEditPrompt={() => onEditPrompt(profile)}
                   onEditMeta={() => onEditMeta(profile)}
+                  onDebug={() => onDebug(profile)}
+                  onChanged={onChanged}
                 />
               </li>
             ))}
@@ -205,18 +293,29 @@ function AgentCard({
   editable,
   onEditPrompt,
   onEditMeta,
+  onDebug,
+  onChanged,
 }: {
   profile: AgentProfile;
   editable: boolean;
   onEditPrompt: () => void;
   onEditMeta: () => void;
+  onDebug: () => void;
+  onChanged: () => void;
 }) {
   const t = useTranslations('adminAgents');
+  const tAdmin = useTranslations('admin');
   const tProviders = useTranslations('adminProviders');
+  const { notify } = useToast();
   const label = (operation: string) => {
     const key = operationLabelKey(operation);
     return key ? tProviders(key) : operation;
   };
+
+  const [toggling, setToggling] = useState(false);
+  const [disabling, setDisabling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const declared = profile.operations ?? [];
   const usedBy = profile.used_by_operations ?? [];
@@ -225,14 +324,45 @@ function AgentCard({
   // about it too, but this is where they would notice it after the fact.
   const mismatched = declared.length > 0 ? usedBy.filter((op) => !declared.includes(op)) : [];
 
+  const enable = async () => {
+    setToggling(true);
+    setActionError(null);
+    try {
+      await adminApi.patch<AgentProfile>(`/v1/admin/agent-profiles/${profile.id}`, {
+        enabled: true,
+      });
+      notify(t('agentEnabled'), 'success');
+      onChanged();
+    } catch (caught) {
+      setActionError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const disable = async (reason: string) => {
+    await adminApi.post<AgentProfile>(`/v1/admin/agent-profiles/${profile.id}/disable`, {
+      reason,
+      confirm: true,
+    });
+    notify(t('agentDisabled'), 'success');
+    onChanged();
+  };
+
+  const remove = async (reason: string) => {
+    await adminApi.post(`/v1/admin/agent-profiles/${profile.id}/delete`, {
+      reason,
+      confirm: true,
+    });
+    notify(t('agentDeleted'), 'success');
+    onChanged();
+  };
+
   return (
     <div className="flex h-full flex-col gap-2 rounded-[var(--radius-md)] border border-border bg-surface p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-[11px] text-muted">{profile.key}</span>
-        <span className="flex items-center gap-1">
-          {profile.is_default ? <Badge tone="primary">{t('defaultAgent')}</Badge> : null}
-          {profile.enabled ? null : <Badge tone="neutral">{t('disabled')}</Badge>}
-        </span>
+        {profile.is_default ? <Badge tone="primary">{t('defaultAgent')}</Badge> : null}
       </div>
       <p className="text-sm font-medium text-text">{profile.display_name}</p>
       {profile.description ? <p className="text-xs text-muted">{profile.description}</p> : null}
@@ -269,16 +399,57 @@ function AgentCard({
         </p>
       ) : null}
 
-      <div className="mt-auto flex gap-2 pt-2">
-        <Button size="sm" variant="secondary" onClick={onEditPrompt}>
-          {t('editSkill')}
-        </Button>
+      {actionError ? <ErrorNotice title={actionError} /> : null}
+
+      <div className="mt-auto flex items-center gap-1.5 border-t border-border pt-2">
+        <IconButton label={t('editSkill')} variant="secondary" onClick={onEditPrompt}>
+          <IconPencil className="size-4" />
+        </IconButton>
         {editable ? (
-          <Button size="sm" variant="ghost" onClick={onEditMeta}>
-            {t('editAgent')}
-          </Button>
+          <IconButton label={t('editAgent')} onClick={onEditMeta}>
+            <IconGear className="size-4" />
+          </IconButton>
+        ) : null}
+        {editable ? (
+          <IconButton label={t('debugChat')} onClick={onDebug}>
+            <IconMessage className="size-4" />
+          </IconButton>
+        ) : null}
+        {editable ? (
+          <Switch
+            compact
+            className="ml-auto"
+            label={profile.enabled ? t('enabled') : t('disabled')}
+            checked={profile.enabled}
+            disabled={profile.is_default || toggling}
+            onChange={(next) => (next ? void enable() : setDisabling(true))}
+          />
+        ) : null}
+        {editable && !profile.is_default ? (
+          <IconButton label={t('deleteAgent')} variant="danger" onClick={() => setDeleting(true)}>
+            <IconTrash className="size-4" />
+          </IconButton>
         ) : null}
       </div>
+
+      <DangerConfirm
+        open={disabling}
+        onClose={() => setDisabling(false)}
+        title={t('disableAgent')}
+        description={t('disableAgentDesc')}
+        reasonLabel={tAdmin('dangerReason')}
+        onConfirm={disable}
+      />
+
+      <DangerConfirm
+        open={deleting}
+        onClose={() => setDeleting(false)}
+        title={t('deleteAgent')}
+        description={t('deleteAgentDesc')}
+        reasonLabel={tAdmin('dangerReason')}
+        confirmWord={profile.key}
+        onConfirm={remove}
+      />
     </div>
   );
 }
@@ -306,13 +477,16 @@ export function AgentSkillEditorDialog({
   const [versions, setVersions] = useState<AgentSkill[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [promptTemplate, setPromptTemplate] = useState('');
-  const [toolGrants, setToolGrants] = useState('');
-  const [reason, setReason] = useState('');
+  const [toolGrants, setToolGrants] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState<AgentSkill | null>(null);
+  const [rollbackBusy, setRollbackBusy] = useState(false);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<SkillTemplate[]>([]);
   const [templateKey, setTemplateKey] = useState('');
+  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [debuggingDraft, setDebuggingDraft] = useState(false);
 
   useEffect(() => {
     if (!editable) return;
@@ -324,10 +498,23 @@ export function AgentSkillEditorDialog({
       .catch(() => setTemplates([]));
   }, [editable, profile.category, profile.role]);
 
+  useEffect(() => {
+    if (!editable) return;
+    void adminApi
+      .get<Page<AgentSkillTool>>('/v1/admin/agent-skill-tools', { query: { role: node.role } })
+      .then((page) => setAvailableTools(page.items.map((item) => item.name)))
+      .catch(() => setAvailableTools([]));
+  }, [editable, node.role]);
+
   // A role's templates are written for one slot — offering `copy`'s prompt
   // polisher while editing its tag suggester would fill in the wrong prompt.
   // Role-agnostic templates suit any slot.
   const slotTemplates = templates.filter((template) => !template.role || template.slot === slot);
+
+  const toolLabel = (tool: string) => {
+    const key = toolGrantLabelKey(tool);
+    return key ? t(key) : tool;
+  };
 
   /** Fills the form only. Publishing stays a separate confirmed action:
    * the published text is what decides whether content gets rejected. */
@@ -336,7 +523,7 @@ export function AgentSkillEditorDialog({
     const template = templates.find((item) => item.key === key);
     if (!template) return;
     setPromptTemplate(template.prompt_template);
-    setToolGrants((template.tool_grants ?? []).join(', '));
+    setToolGrants(template.tool_grants ?? []);
   };
 
   const load = useCallback(
@@ -349,7 +536,7 @@ export function AgentSkillEditorDialog({
           setVersions(page.items);
           const active = page.items.find((version) => version.is_active);
           setPromptTemplate(active?.prompt_template ?? '');
-          setToolGrants((active?.tool_grants ?? []).join(', '));
+          setToolGrants(active?.tool_grants ?? []);
           setLoadFailed(false);
         })
         .catch(() => setLoadFailed(true)),
@@ -364,21 +551,25 @@ export function AgentSkillEditorDialog({
     setBusy(true);
     setError(null);
     try {
+      const active = versions?.find((version) => version.is_active) ?? null;
       await adminApi.post<AgentSkill>('/v1/admin/agent-skills', {
         profile_id: profile.id,
         slot,
         prompt_template: promptTemplate,
-        tool_grants: toolGrants
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean),
-        reason,
+        tool_grants: toolGrants,
+        reason: summarizeSkillChange(active, {
+          promptTemplate,
+          toolGrants,
+          templateLabel: templates.find((item) => item.key === templateKey)?.label,
+        }),
         confirm: true,
       });
       notify(t('skillPublished'), 'success');
-      setReason('');
       await load();
       onPublished();
+      // Publishing is the end of this dialog's job — leave the operator back
+      // on the roster instead of sitting on a form that just succeeded.
+      onClose();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
     } finally {
@@ -386,16 +577,24 @@ export function AgentSkillEditorDialog({
     }
   };
 
-  const activate = async (activateReason: string) => {
+  const activate = async () => {
     if (!activating) return;
-    await adminApi.post<AgentSkill>(`/v1/admin/agent-skills/${activating.id}/activate`, {
-      reason: activateReason,
-      confirm: true,
-    });
-    notify(t('skillActivated'), 'success');
-    setActivating(null);
-    await load();
-    onPublished();
+    setRollbackBusy(true);
+    setRollbackError(null);
+    try {
+      await adminApi.post<AgentSkill>(`/v1/admin/agent-skills/${activating.id}/activate`, {
+        reason: `回滚到版本 ${activating.version}`,
+        confirm: true,
+      });
+      notify(t('skillActivated'), 'success');
+      setActivating(null);
+      await load();
+      onPublished();
+    } catch (caught) {
+      setRollbackError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
+    } finally {
+      setRollbackBusy(false);
+    }
   };
 
   return (
@@ -441,101 +640,195 @@ export function AgentSkillEditorDialog({
           </section>
         ) : null}
 
-        <section>
-          <h3 className="text-sm font-semibold">{t('versionHistory')}</h3>
-          {loadFailed ? (
-            <div className="mt-2">
-              <ErrorNotice title={tAdmin('loadFailed')} />
-            </div>
-          ) : versions === null ? (
-            <p className="mt-2 text-xs text-muted">{t('loading')}</p>
-          ) : versions.length === 0 ? (
-            <p className="mt-2 text-xs text-muted">
-              {profile.is_default ? t('noVersionsYet') : t('noVersionsYetInherited')}
-            </p>
-          ) : (
-            <ul className="mt-2 flex flex-col gap-2">
-              {versions.map((version) => (
-                <li
-                  key={version.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2 text-xs"
-                >
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono">v{version.version}</span>
-                    {version.is_active ? <Badge tone="success">{t('active')}</Badge> : null}
-                    <span className="text-muted">{formatDateTime(version.created_at, locale)}</span>
-                    {version.reason ? <span className="text-muted">· {version.reason}</span> : null}
-                  </span>
-                  {editable && !version.is_active ? (
-                    <Button size="sm" variant="ghost" onClick={() => setActivating(version)}>
-                      {t('activateVersion')}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
         {editable ? (
-          <section className="flex flex-col gap-4 border-t border-border pt-4">
-            <h3 className="text-sm font-semibold">{t('publishNewVersion')}</h3>
-            {slotTemplates.length > 0 ? (
-              <Select
-                label={t('fillFromTemplate')}
-                hint={t('fillFromTemplateHint')}
-                value={templateKey}
-                onChange={(event) => applyTemplate(event.target.value)}
-                options={[
-                  { value: '', label: t('fillFromTemplatePlaceholder') },
-                  ...slotTemplates.map((template) => ({
-                    value: template.key,
-                    label: template.label,
-                  })),
-                ]}
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <section className="flex flex-col gap-4">
+              <h3 className="text-sm font-semibold">{t('publishNewVersion')}</h3>
+              {slotTemplates.length > 0 ? (
+                <Select
+                  label={t('fillFromTemplate')}
+                  hint={t('fillFromTemplateHint')}
+                  value={templateKey}
+                  onChange={(event) => applyTemplate(event.target.value)}
+                  options={[
+                    { value: '', label: t('fillFromTemplatePlaceholder') },
+                    ...slotTemplates.map((template) => ({
+                      value: template.key,
+                      label: template.label,
+                    })),
+                  ]}
+                />
+              ) : null}
+              <TextArea
+                label={t('promptTemplate')}
+                value={promptTemplate}
+                onChange={(event) => setPromptTemplate(event.target.value)}
+                className="min-h-56 font-mono text-xs"
               />
-            ) : null}
-            <TextArea
-              label={t('promptTemplate')}
-              value={promptTemplate}
-              onChange={(event) => setPromptTemplate(event.target.value)}
-              className="min-h-56 font-mono text-xs"
+              <MultiSelect
+                label={t('toolGrants')}
+                hint={t('toolGrantsHint')}
+                value={toolGrants}
+                onChange={setToolGrants}
+                placeholder={t('toolGrantsPlaceholder')}
+                emptyHint={t('toolGrantsEmpty')}
+                options={availableTools.map((tool) => ({ value: tool, label: toolLabel(tool) }))}
+              />
+              {error ? <ErrorNotice title={error} /> : null}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  disabled={promptTemplate.trim().length === 0}
+                  onClick={() => setDebuggingDraft(true)}
+                >
+                  {t('debugChatDraft')}
+                </Button>
+                <Button
+                  loading={busy}
+                  disabled={promptTemplate.trim().length === 0}
+                  onClick={() => void publish()}
+                >
+                  {t('publish')}
+                </Button>
+              </div>
+            </section>
+
+            <VersionHistorySection
+              loadFailed={loadFailed}
+              versions={versions}
+              profile={profile}
+              editable={editable}
+              locale={locale}
+              onActivate={setActivating}
             />
-            <TextInput
-              label={t('toolGrants')}
-              hint={t('toolGrantsHint')}
-              value={toolGrants}
-              onChange={(event) => setToolGrants(event.target.value)}
-            />
-            <TextArea
-              label={tAdmin('dangerReason')}
-              hint={tAdmin('dangerReasonHint')}
-              value={reason}
-              maxLength={500}
-              onChange={(event) => setReason(event.target.value)}
-            />
-            {error ? <ErrorNotice title={error} /> : null}
-            <div className="flex justify-end">
-              <Button
-                loading={busy}
-                disabled={promptTemplate.trim().length === 0 || reason.trim().length < 4}
-                onClick={() => void publish()}
-              >
-                {t('publish')}
-              </Button>
-            </div>
-          </section>
-        ) : null}
+          </div>
+        ) : (
+          <VersionHistorySection
+            loadFailed={loadFailed}
+            versions={versions}
+            profile={profile}
+            editable={editable}
+            locale={locale}
+            onActivate={setActivating}
+          />
+        )}
       </div>
 
-      <DangerConfirm
-        open={activating !== null}
-        onClose={() => setActivating(null)}
-        title={t('activateVersion')}
-        description={t('activateVersionDesc')}
-        reasonLabel={tAdmin('dangerReason')}
-        onConfirm={activate}
-      />
+      {activating ? (
+        <Dialog
+          open
+          onClose={() => setActivating(null)}
+          title={t('activateVersion')}
+          description={t('activateVersionDesc')}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setActivating(null)}>
+                {tAdmin('reset')}
+              </Button>
+              <Button variant="danger" loading={rollbackBusy} onClick={() => void activate()}>
+                {tAdmin('dangerProceed')}
+              </Button>
+            </>
+          }
+        >
+          {rollbackError ? <ErrorNotice title={rollbackError} /> : null}
+        </Dialog>
+      ) : null}
+
+      {debuggingDraft ? (
+        <AgentDebugChatDialog
+          node={node}
+          profile={profile}
+          draftPromptTemplate={promptTemplate}
+          onClose={() => setDebuggingDraft(false)}
+        />
+      ) : null}
     </Dialog>
   );
+}
+
+function VersionHistorySection({
+  loadFailed,
+  versions,
+  profile,
+  editable,
+  locale,
+  onActivate,
+}: {
+  loadFailed: boolean;
+  versions: AgentSkill[] | null;
+  profile: AgentProfile;
+  editable: boolean;
+  locale: Locale;
+  onActivate: (version: AgentSkill) => void;
+}) {
+  const t = useTranslations('adminAgents');
+  const tAdmin = useTranslations('admin');
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-sm font-semibold">{t('versionHistory')}</h3>
+      {loadFailed ? (
+        <div className="mt-2">
+          <ErrorNotice title={tAdmin('loadFailed')} />
+        </div>
+      ) : versions === null ? (
+        <p className="mt-2 text-xs text-muted">{t('loading')}</p>
+      ) : versions.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">
+          {profile.is_default ? t('noVersionsYet') : t('noVersionsYetInherited')}
+        </p>
+      ) : (
+        <ul className="mt-2 flex max-h-96 flex-col gap-2 overflow-y-auto">
+          {versions.map((version) => (
+            <li
+              key={version.id}
+              className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-border px-3 py-2 text-xs"
+            >
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-mono">v{version.version}</span>
+                {version.is_active ? <Badge tone="success">{t('active')}</Badge> : null}
+              </span>
+              <span className="text-muted">{formatDateTime(version.created_at, locale)}</span>
+              {version.reason ? <span className="text-muted">{version.reason}</span> : null}
+              {editable && !version.is_active ? (
+                <Button size="sm" variant="ghost" onClick={() => onActivate(version)}>
+                  {t('activateVersion')}
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** A short, auditable summary of what changed since the last published
+ * version — computed instead of asked for, since the diff already says it.
+ * Kept in Chinese regardless of admin locale, matching the backend's own
+ * auto-generated reason text (`activate_version`'s rollback default). */
+function summarizeSkillChange(
+  previous: AgentSkill | null,
+  next: { promptTemplate: string; toolGrants: string[]; templateLabel?: string },
+): string {
+  if (!previous) return '创建初始版本';
+
+  const parts: string[] = [];
+  if (next.templateLabel) parts.push(`应用模板「${next.templateLabel}」`);
+
+  if (next.promptTemplate !== previous.prompt_template) {
+    const delta = next.promptTemplate.length - previous.prompt_template.length;
+    parts.push(`更新提示词（${delta >= 0 ? '+' : ''}${delta} 字）`);
+  }
+
+  const previousTools = previous.tool_grants ?? [];
+  const added = next.toolGrants.filter((tool) => !previousTools.includes(tool));
+  const removed = previousTools.filter((tool) => !next.toolGrants.includes(tool));
+  if (added.length > 0 || removed.length > 0) {
+    const changes = [...added.map((tool) => `+${tool}`), ...removed.map((tool) => `-${tool}`)];
+    parts.push(`工具授权：${changes.join(' ')}`);
+  }
+
+  return parts.length > 0 ? parts.join('；') : '更新技能配置';
 }

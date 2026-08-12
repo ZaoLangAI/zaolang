@@ -8,13 +8,17 @@ directory rather than a table:
   invoked by their own workflow node types, and anything else needs the
   generic `custom_agent` node — so "any string an operator types" would
   produce agents that can never run;
-* the `operations` on a preset is what filters the media-candidate picker
-  for creative agents, and a wrong value there would let an operator wire a
-  text-to-image endpoint into a video agent.
+* every role here binds one LLM model (plus an optional backup); the
+  `operations` field is advisory capability metadata for the console, not
+  a media-endpoint picker.
 
-`category` decides which half of the console's create form applies:
-`judgment` agents bind one LLM model (plus an optional backup),
-`creative` agents bind several media endpoints with a cost weight each.
+`category` decides which half of the console's create form applies only
+semantically — both categories bind an LLM the same way:
+
+* `judgment` — pass/fail (or classify/score) verdicts (`safety`, `planner`,
+  `quality`, `intent_router`);
+* `assist` — generate or polish content rather than hand down a verdict
+  (`copy` is the only one today).
 """
 
 from __future__ import annotations
@@ -22,12 +26,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from app.models.enums import AgentName, Operation
+from app.models.enums import AgentName
 
-AgentCategory = Literal["judgment", "creative"]
+AgentCategory = Literal["judgment", "assist"]
 
 JUDGMENT: AgentCategory = "judgment"
-CREATIVE: AgentCategory = "creative"
+ASSIST: AgentCategory = "assist"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,23 +40,14 @@ class RolePreset:
     display_name: str
     category: AgentCategory
     description: str = ""
-    # Empty means general purpose: a judgment agent is not tied to any single
-    # operation. For creative roles this is the set the media-candidate picker
-    # filters by, and it is copied onto `AgentProfile.operations_json`.
+    # Empty means general purpose: the agent is not tied to any single
+    # operation. Copied onto `AgentProfile.operations_json` when set.
     operations: tuple[str, ...] = ()
     # Which `SKILL_TEMPLATES` entry the console pre-selects. `None` means the
     # role has no shipped starting prompt.
     default_template_key: str | None = None
     # Display order in the console's role dropdown.
     sort_order: int = 0
-
-
-_VIDEO_OPERATIONS = (
-    Operation.TEXT_TO_VIDEO.value,
-    Operation.IMAGE_TO_VIDEO.value,
-    Operation.VIDEO_TO_VIDEO.value,
-)
-_IMAGE_OPERATIONS = (Operation.TEXT_TO_IMAGE.value, Operation.IMAGE_TO_IMAGE.value)
 
 
 ROLE_PRESETS: tuple[RolePreset, ...] = (
@@ -83,8 +78,8 @@ ROLE_PRESETS: tuple[RolePreset, ...] = (
     RolePreset(
         role=AgentName.COPY.value,
         display_name="文案生成",
-        category=JUDGMENT,
-        description="生成标题、简介与标签，或润色画面描述。",
+        category=ASSIST,
+        description="生成标题、简介与标签，或润色画面描述——辅助创作，不做通过/拒绝式判断。",
         default_template_key="copy-suggest",
         sort_order=3,
     ),
@@ -95,33 +90,6 @@ ROLE_PRESETS: tuple[RolePreset, ...] = (
         description="判断需求复杂度建议生成档位（只降不升），并在候选中选出本次生成路线。",
         default_template_key="intent-router-classify",
         sort_order=4,
-    ),
-    RolePreset(
-        role="image_creative",
-        display_name="图片创作",
-        category=CREATIVE,
-        description="按内容与成本权衡挑选图片生成路线的创作智能体。",
-        operations=_IMAGE_OPERATIONS,
-        default_template_key="creative-brief",
-        sort_order=10,
-    ),
-    RolePreset(
-        role="video_creative",
-        display_name="视频创作",
-        category=CREATIVE,
-        description="按内容与成本权衡挑选视频生成路线的创作智能体。",
-        operations=_VIDEO_OPERATIONS,
-        default_template_key="creative-brief",
-        sort_order=11,
-    ),
-    RolePreset(
-        role="audio_creative",
-        display_name="语音创作",
-        category=CREATIVE,
-        description="按内容与成本权衡挑选语音生成路线的创作智能体。",
-        operations=(Operation.AUDIO_GENERATION.value,),
-        default_template_key="creative-brief",
-        sort_order=12,
     ),
 )
 
@@ -148,10 +116,6 @@ def category_for(role: str) -> AgentCategory:
 def operations_for(role: str) -> list[str]:
     preset = _BY_ROLE.get(role)
     return list(preset.operations) if preset is not None else []
-
-
-def is_creative(role: str) -> bool:
-    return category_for(role) == CREATIVE
 
 
 def known_roles() -> set[str]:

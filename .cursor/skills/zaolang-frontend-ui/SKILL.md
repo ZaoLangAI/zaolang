@@ -1,6 +1,6 @@
 ---
 name: zaolang-frontend-ui
-description: 造浪 C 端前端：12 个页面的路由结构、共享组件族与全状态要求、API client 与 token 刷新、登录弹窗与 pendingAction 恢复、Cmd+K 命令面板、断点与无横向溢出约束。Use when adding or changing a consumer-facing page, shared UI component, the API client, the login dialog, the command palette, or responsive behaviour.
+description: 造浪 C 端 Next.js 前端：发现、作品、创作、角色、短片、任务、发布、技能、学习、个人与账单等当前路由族，共享组件与全状态要求，API client 与 token 刷新，登录弹窗与 pendingAction 恢复，Cmd+K 命令面板，以及响应式无横向溢出约束。Use when adding or changing a consumer-facing route, shared UI component, the API client, the login dialog, the command palette, or responsive behaviour.
 disable-model-invocation: true
 ---
 
@@ -8,13 +8,13 @@ disable-model-invocation: true
 
 ## 职责
 
-`front/src/app/[locale]/(site)/` 下的 12 个页面与它们共用的组件族。**以现有页面、共享组件与视觉 e2e 为准**，深色主题是验收基准。
+`front/src/app/[locale]/(site)/` 下的当前 C 端路由与它们共用的组件族。**以现有 `page.tsx`、共享组件与视觉 e2e 为准**，不要依赖文档里的固定页面数量；深色主题是验收基准。
 
 ## 关键路径
 
 | 路径 | 内容 |
 | --- | --- |
-| `front/src/app/[locale]/(site)/` | `discover` / `work/[workId]` / `create` / `remix/[workId]` / `jobs/[jobId]` / `publish/[draftId]` / `collection` / `profile` / `profile/settings` / `billing` / `notifications` / `learn` |
+| `front/src/app/[locale]/(site)/` | 首页、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
 | `front/src/components/ui/` | `button` / `dialog` / `field` / `primitives` / `spinner` / `toast` / `icons` |
 | `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer` / `brand` |
 | `front/src/components/auth/` | `login-dialog` / `session-provider` / `sign-in-prompt` |
@@ -35,6 +35,7 @@ disable-model-invocation: true
 7. **三个断点无横向溢出**：1440×1024 / 1024 / 390×844，断言 `scrollWidth === clientWidth`。视觉 QA 套件会逐页检查。
 8. **文案一律走 next-intl**，不允许硬编码中文字符串（见 `zaolang-i18n-region`）。
 9. **命令面板是 combobox 而不是 dialog**：`role="search"` 容器 + `role="combobox"` 输入 + `role="listbox"`/`role="option"`。这个 ARIA 结构被 axe 检查，改标记前先看 `e2e/a11y.spec.ts`。
+10. **视频创作参数必须保持 provider-safe**：H3 用户控件只提交 4–15 秒、六种画幅、2K、可选 seed，以及互斥的普通参考/首尾帧模式。上传只传平台 `Asset.id`，不在 `extra` 中透传 webhook、外部 URL 或任意供应商 JSON。
 
 ## 改造切入点
 

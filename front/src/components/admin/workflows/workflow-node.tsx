@@ -10,8 +10,20 @@ export interface WorkflowNodeData {
   nodeType: string;
   config: Record<string, unknown>;
   spec: NodeTypeView | undefined;
+  /** The node type's name in the operator's locale. */
   label: string;
+  /** The operator's own name for this instance, when they gave it one. */
+  title?: string;
+  /** One line naming what this node is wired to, in human terms — the bound
+   * agent's name and model rather than its `ap_…` id. */
+  summary?: string;
+  /** Failed publish-time validation: an error names this node. */
   broken?: boolean;
+  /** Hit a workflow engine failure on real jobs recently. Structurally valid
+   * but, in practice, misconfigured. */
+  hotspot?: boolean;
+  /** Executed during the last dry run, and which port it left by. */
+  tracedPort?: string | null;
   [key: string]: unknown;
 }
 
@@ -32,45 +44,68 @@ const CATEGORY_TONE: Record<string, string> = {
 export function WorkflowNode({ data, selected }: NodeProps & { data: WorkflowNodeData }) {
   const spec = data.spec;
   const ports = spec?.output_ports ?? [];
-  const summary = summarize(data.config);
+  const traced = data.tracedPort != null;
 
   return (
     <div
       className={cn(
-        'w-56 rounded-[var(--radius-md)] border border-l-4 bg-surface-raised px-3 py-2.5 shadow-card',
+        'flex w-64 rounded-[var(--radius-md)] border border-l-4 bg-surface-raised shadow-card',
         spec ? (CATEGORY_TONE[spec.category] ?? 'border-l-muted') : 'border-l-danger',
         selected ? 'ring-2 ring-primary' : '',
-        data.broken ? 'border-danger' : 'border-border',
+        // A validation error outranks a live-failure warning, which outranks
+        // "this ran in the last dry run" — the first two are things to fix.
+        data.broken
+          ? 'border-danger'
+          : data.hotspot
+            ? 'border-amber'
+            : traced
+              ? 'border-success'
+              : 'border-border',
       )}
     >
       <Handle
         type="target"
-        position={Position.Top}
+        position={Position.Left}
         className="!size-2.5 !border-border !bg-surface"
       />
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium">{data.label}</span>
-        {spec?.is_agent ? (
-          <Badge tone="primary" className="shrink-0">
-            AI
-          </Badge>
+      <div className="min-w-0 flex-1 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-sm font-medium">{data.title || data.label}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            {data.hotspot ? <Badge tone="amber">!</Badge> : null}
+            {spec?.is_agent ? <Badge tone="primary">AI</Badge> : null}
+          </span>
+        </div>
+        {data.title ? (
+          <p className="mt-0.5 truncate text-[11px] text-muted">{data.label}</p>
+        ) : null}
+        <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{data.nodeType}</p>
+        {data.summary ? (
+          <p className="mt-1 truncate text-[11px] text-muted" title={data.summary}>
+            {data.summary}
+          </p>
         ) : null}
       </div>
-      <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{data.nodeType}</p>
-      {summary ? <p className="mt-1 truncate text-[11px] text-muted">{summary}</p> : null}
 
       {ports.length > 0 ? (
-        <div className="mt-2.5 flex justify-between gap-1 border-t border-border pt-1.5">
+        <div className="flex w-16 shrink-0 flex-col justify-around gap-1 border-l border-border py-2">
           {ports.map((port) => (
-            <span key={port} className="relative flex-1 pt-2.5 text-center">
-              <span className="truncate text-[10px] text-muted">{port}</span>
+            <span key={port} className="relative flex items-center justify-end pr-2.5 text-right">
+              <span
+                className={cn(
+                  'truncate text-[10px]',
+                  data.tracedPort === port ? 'font-medium text-success' : 'text-muted',
+                )}
+              >
+                {port}
+              </span>
               <Handle
                 type="source"
-                position={Position.Bottom}
+                position={Position.Right}
                 id={port}
                 className="!size-2.5 !border-border !bg-surface"
-                style={{ left: '50%' }}
+                style={{ top: '50%' }}
               />
             </span>
           ))}
@@ -78,15 +113,4 @@ export function WorkflowNode({ data, selected }: NodeProps & { data: WorkflowNod
       ) : null}
     </div>
   );
-}
-
-function summarize(config: Record<string, unknown>): string {
-  const entries = Object.entries(config).filter(
-    ([, value]) => value !== null && value !== undefined,
-  );
-  if (entries.length === 0) return '';
-  return entries
-    .slice(0, 3)
-    .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join('/') : String(value)}`)
-    .join('  ');
 }

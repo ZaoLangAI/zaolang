@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 | 文件 | 内容 |
 | --- | --- |
-| `back/app/api/v1/*.py` | C 端路由：`auth` / `works` / `drafts` / `jobs` / `uploads` / `credits` / `community` / `profiles` / `privacy` / `gateway` |
+| `back/app/api/v1/*.py` | C 端路由：`auth` / `works` / `drafts` / `jobs` / `uploads` / `credits` / `community` / `profiles` / `privacy` / `gateway` / `characters` / `devices` / `learning` / `shortform` / `skills`；以目录和 `back/app/api/v1/__init__.py` 的注册为准 |
 | `back/app/api/v1/admin/*.py` | 后台路由，独立命名空间，见 `zaolang-admin-console` |
 | `back/app/api/deps.py` | `CurrentUser` / `OptionalUser` / `AdminUser` / `IdempotencyKey` / `rate_limited(bucket)` / `require_admin_role(minimum)` |
 | `back/app/api/errors.py` | 统一错误信封与异常处理器注册 |

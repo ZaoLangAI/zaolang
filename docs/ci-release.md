@@ -41,14 +41,14 @@ make check   # 提交前跑一遍完整门禁
 
 | 镜像 | 内容 |
 | --- | --- |
-| `ghcr.io/zaolangai/zaolang-back` | FastAPI + Celery worker（同一镜像，不同 command） |
+| `ghcr.io/zaolangai/zaolang-back` | FastAPI + Celery worker/beat（同一镜像，不同 command） |
 | `ghcr.io/zaolangai/zaolang-front` | Next.js standalone 产物 |
 
 - 架构：`linux/amd64` + `linux/arm64`（arm64 走 QEMU 模拟，靠 GHA 层缓存把重复构建时间压下来）。
 - 每次推送附 SBOM 与 provenance 证明（`actions/attest-build-provenance`）。
 - 标签：main 推 `edge` 与短 sha；release tag 推 `x.y.z`、`x.y`、`x`。
 
-API 与 worker 共用一个镜像是刻意的：它们共享领域代码，分成两个镜像就有可能部署到两个不同的 revision，然后在状态机迁移上打架。
+API、worker 与 beat 共用一个镜像是刻意的：它们共享领域代码，分成多个镜像就有可能部署到不同 revision，然后在状态机迁移上打架。Beat 必须常驻；异步供应商轮询、卡死任务回收和积分释放都依赖它调度。
 
 前端镜像有一个约束值得记住：`NEXT_PUBLIC_API_URL` 会被内联进浏览器 bundle，因此它是**构建期**参数（`build-args`），不是运行期环境变量。服务端读的 `API_INTERNAL_URL` 才是运行期配置。
 

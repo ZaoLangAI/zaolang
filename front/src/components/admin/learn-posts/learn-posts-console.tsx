@@ -42,7 +42,7 @@ const STATUS_LABEL_KEY: Record<
   withdrawn: 'learnPostStatusWithdrawn',
 };
 
-export function LearnPostsConsole() {
+export function LearnPostsConsole({ configAction }: { configAction?: React.ReactNode }) {
   const t = useTranslations('admin');
   const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
@@ -124,6 +124,7 @@ export function LearnPostsConsole() {
         <Button size="sm" variant="secondary" onClick={list.reload}>
           {t('refresh')}
         </Button>
+        {configAction}
       </FilterBar>
 
       <div className="mt-3">

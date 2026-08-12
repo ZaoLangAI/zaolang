@@ -68,8 +68,7 @@ const OPERATION_MODALITY_MAP: Record<
 /**
  * Which operations a modality selection covers — the client-side mirror of
  * `capabilities_for_modalities`, so the console shows the same capability set
- * the API derives on save, and the creative agent's candidate picker can list
- * an endpoint's routable capabilities without a second round trip.
+ * the API derives on save.
  */
 export function capabilitiesForModalities(
   inputModalities: readonly string[],

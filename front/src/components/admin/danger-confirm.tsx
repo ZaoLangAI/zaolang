@@ -25,6 +25,7 @@ export function DangerConfirm({
   reasonLabel,
   confirmWord,
   onConfirm,
+  children,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +35,9 @@ export function DangerConfirm({
   /** Set for irreversible actions; the operator must type it exactly. */
   confirmWord?: string;
   onConfirm: (reason: string) => Promise<void>;
+  /** Extra fields rendered above the reason text area, e.g. a reason-code
+   * picker — the free-text reason still carries the human explanation. */
+  children?: React.ReactNode;
 }) {
   const t = useTranslations('admin');
   const [reason, setReason] = useState('');
@@ -77,6 +81,8 @@ export function DangerConfirm({
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">{description}</p>
+
+        {children}
 
         <TextArea
           label={reasonLabel}

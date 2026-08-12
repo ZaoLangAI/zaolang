@@ -2,11 +2,17 @@ import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
+const localMediaHost = process.env.LOCAL_MEDIA_HOST?.trim();
+const allowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   output: 'standalone',
+  allowedDevOrigins,
   env: {
     // Surfaced in the footer to satisfy AGPL section 13.
     NEXT_PUBLIC_SOURCE_URL:
@@ -19,6 +25,9 @@ const config: NextConfig = {
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost', port: '9000', pathname: '/**' },
       { protocol: 'http', hostname: '127.0.0.1', port: '9000', pathname: '/**' },
+      ...(localMediaHost
+        ? [{ protocol: 'http' as const, hostname: localMediaHost, port: '9000', pathname: '/**' }]
+        : []),
     ],
     // Next 16 refuses to optimise an upstream image that resolves to a private
     // address. That is sound SSRF protection, and it also describes every object

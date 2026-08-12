@@ -12,11 +12,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.agents.base import JSON_INSTRUCTION, run_agent
+from app.domain.moderation_policy import match_blocked_keyword, record_block_signal
 from app.models import ModerationResult
 from app.models.base import utcnow
 from app.models.enums import AgentName, ModerationStage, ModerationStatus
 from app.platform_config import service as config_service
-from app.platform_config.schemas import ModerationConfig
+from app.platform_config.schemas import ContentModerationConfig
 
 SYSTEM_PROMPT = f"""你是造浪平台的内容安全审核器。平台面向 18 岁以上用户，
 允许成人向的艺术表达，但必须严格拒绝以下内容：
@@ -24,6 +25,10 @@ SYSTEM_PROMPT = f"""你是造浪平台的内容安全审核器。平台面向 18
 - 未获授权的真实人物换脸、裸露或诽谤性描绘
 - 具体可执行的违法行为指导
 - 仇恨、极端主义与恐怖主义宣传
+
+以下内容不触发一票否决，但应判定为 needs_review 交人工复核，不要直接放行：
+- 具有写实血腥、暴力伤害细节或武器伤人描写的场景（包括社会帮派、团伙斗殴等真实感暴力场面）
+命中这条规则时，categories 必须包含 "sensitive_content"，reason_code 为 "SENSITIVE_CONTENT"。
 
 判定为 reject 时，public_message 必须是给普通用户看的中文提示，不得复述违规内容本身。
 不确定时返回 needs_review，不要放行。
@@ -57,9 +62,11 @@ def review(
     Operator-configured keywords are applied before the model, so an incident
     can be contained immediately without waiting for a model to learn.
     """
-    config = config_service.get_typed(session, "moderation", ModerationConfig)
-    blocked = _match_blocked_keyword(text, config.blocked_keywords)
-    if blocked is not None:
+    config = config_service.get_typed(session, "content_moderation", ContentModerationConfig)
+    if match_blocked_keyword([text], config.blocked_keywords):
+        record_block_signal(
+            config_key="content_moderation", subject_type=subject_type, user_id=user_id
+        )
         return _persist(
             session,
             stage=stage,
@@ -102,14 +109,6 @@ def review(
         decided_by="agent",
         agent_run_id=outcome.agent_run_id,
     )
-
-
-def _match_blocked_keyword(text: str, keywords: list[str]) -> str | None:
-    lowered = text.lower()
-    for keyword in keywords:
-        if keyword and keyword.lower() in lowered:
-            return keyword
-    return None
 
 
 def _persist(

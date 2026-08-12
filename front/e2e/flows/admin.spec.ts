@@ -66,6 +66,66 @@ test.describe('operations screens', () => {
     await expect(page.getByText(/^job_/).first()).toBeVisible();
   });
 
+  test('the wedged job detail surfaces its async task and related logs', async ({ page }) => {
+    // The seeded async provider task is a best-effort demo fixture: a live
+    // `poll_async_provider_tasks` beat tick reaps it (this seed environment has
+    // no real media endpoint, so the capability is always "missing from the
+    // catalogue") within seconds of `make seed` running, well before this test
+    // gets a chance to render it. The section itself is still worth asserting
+    // on, so this augments the real detail response with a synthetic
+    // `async_task` rather than racing the beat scheduler for one.
+    await page.route('**/v1/admin/jobs/job_*', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const body = await response.json();
+      await route.fulfill({
+        response,
+        body: JSON.stringify({
+          ...body,
+          async_task: {
+            node_id: 'provider_generate',
+            capability_name: 'ep_seed_video:image_to_video',
+            provider_label: null,
+            external_task_id: 'e2e-mock-task-1',
+            poll_count: 12,
+            next_poll_at: new Date().toISOString(),
+            deadline_at: new Date().toISOString(),
+            claimed_at: null,
+            provider_attempt_id: null,
+          },
+        }),
+      });
+    });
+
+    await page.goto('/zh-CN/admin/jobs', { waitUntil: 'networkidle' });
+
+    // Mizuki also owns most of the seed's ordinary succeeded jobs, so this
+    // filters to `failed` first — the wedged job lands there once the beat
+    // gives up on it (`AsyncProviderTask.deadline_at` already elapsed by
+    // seed time) — leaving exactly one Mizuki row to disambiguate on. The
+    // user column shows a name, not the raw `usr_...` id. Status is now a
+    // multiselect dropdown and the filter bar only applies on "搜索".
+    await page.getByRole('button', { name: '状态' }).click();
+    await page.getByRole('menuitemcheckbox', { name: '已失败' }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '搜索' }).click();
+    const wedgedRow = page.getByRole('row', { name: 'Mizuki' });
+    await expect(wedgedRow).toBeVisible();
+    await wedgedRow.click();
+
+    await expect(page.getByRole('heading', { name: '异步供应商任务' })).toBeVisible();
+    await expect(page.getByText('e2e-mock-task-1')).toBeVisible();
+
+    // The related-logs section reads straight from `/v1/admin/logs?job_id=`,
+    // untouched by the mock above, so this is the real seeded runtime-error
+    // signal — present whether or not the beat has already reaped the task.
+    await expect(page.getByRole('heading', { name: '关联日志' })).toBeVisible();
+    await expect(page.getByText('async_task_deadline_exceeded')).toBeVisible();
+  });
+
   test('the credits console surfaces the overdue reservation', async ({ page }) => {
     await page.goto('/zh-CN/admin/credits', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '积分运维', level: 1 })).toBeVisible();
@@ -74,20 +134,21 @@ test.describe('operations screens', () => {
     // period, so this section must not be empty.
     await expect(page.getByRole('heading', { name: '悬挂预扣' })).toBeVisible();
     await expect(page.getByText(/^job_/).first()).toBeVisible();
+
+    const ledger = page.getByRole('heading', { name: '积分账本' }).locator('..');
+    const actions = await ledger.getByRole('button').allTextContents();
+    expect(actions.indexOf('配置')).toBe(actions.indexOf('刷新') + 1);
+    await ledger.getByRole('button', { name: '配置' }).click();
+    await expect(page.getByRole('heading', { name: '积分与分成配置' })).toBeVisible();
+    await expect(page.getByText('定价矩阵', { exact: true })).toBeVisible();
   });
 
-  test('the config console opens a key for editing', async ({ page }) => {
+  test('the config console contains only global flags and shortform specs', async ({ page }) => {
     await page.goto('/zh-CN/admin/config', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '配置中心', level: 1 })).toBeVisible();
-
-    // Every hot reload of pricing and routing goes through this editor, so it
-    // has to load a real value rather than an empty form.
-    await expect(page.getByRole('button', { name: /pricing/ }).first()).toBeVisible();
-    await page
-      .getByRole('button', { name: /pricing/ })
-      .first()
-      .click();
-    await expect(page.getByRole('textbox').first()).not.toBeEmpty();
+    await expect(page.getByText('Feature Flag', { exact: true })).toBeVisible();
+    await expect(page.getByText('短视频规格目录', { exact: true })).toBeVisible();
+    await expect(page.getByText('定价矩阵', { exact: true })).toHaveCount(0);
   });
 
   test('the log centre renders its table', async ({ page }) => {
@@ -100,6 +161,9 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/moderation', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '内容审核', level: 1 })).toBeVisible();
     await expect(page.getByText('Night Tide · Neon').first()).toBeVisible();
+    const queueActions = page.getByRole('heading', { name: '内容审核', level: 2 }).locator('..');
+    const actionLabels = await queueActions.getByRole('button').allTextContents();
+    expect(actionLabels.indexOf('配置')).toBe(actionLabels.indexOf('刷新') + 1);
 
     await page.goto('/zh-CN/admin/reports', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '举报与申诉', level: 1 })).toBeVisible();
@@ -125,8 +189,8 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/statistics', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '数据统计', level: 1 })).toBeVisible();
 
-    // Provider stats table: populated from the seeded finished job's attempts.
-    await expect(page.getByText('fake_open_workflow').first()).toBeVisible();
+    // Fake providers are test-only; production seed data leaves this section empty.
+    await expect(page.getByRole('heading', { name: '供应商统计' })).toBeVisible();
 
     // Agent usage grid: the seeded intent_router run, same source this feature's
     // routing decisions now come from.
@@ -149,20 +213,133 @@ test.describe('operations screens', () => {
     await expect(page.getByText('路由权重')).toHaveCount(0);
   });
 
+  test('a sandbox dry run of the canvas draft returns a trace', async ({ page }) => {
+    // Real agent calls go through the stub LLM provider in this environment
+    // (see the agent console test above), so this exercises the whole
+    // `dry_run_workflow_template` path deterministically without a live key.
+    await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '沙盒试跑' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '沙盒试跑' })).toBeVisible();
+    // "画布上的草稿" is the default source — running it, unpublished, is the
+    // whole point of the dry run existing.
+    await expect(dialog.getByLabel('试跑对象')).toHaveValue('draft');
+    await dialog.getByLabel('提示词').fill('一只在雨中奔跑的猫');
+
+    const dryRun = page.waitForResponse(
+      (response) => response.request().method() === 'POST' && response.url().includes('/dry-run'),
+    );
+    await dialog.getByRole('button', { name: '开始试跑' }).click();
+    await dryRun;
+
+    // Only rendered once a run comes back with at least one trace step —
+    // this is also the signal the canvas has something to highlight.
+    await expect(dialog.getByText('画布上已高亮本次试跑走过的路径。')).toBeVisible();
+  });
+
+  test('a graph that fails validation cannot be published', async ({ page }) => {
+    await page.route('**/v1/admin/workflow-templates/validate', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          errors: ['节点 quality_check 的输出端口 retry 没有连线，任务走到该分支会直接失败。'],
+          warnings: [],
+        }),
+      });
+    });
+
+    await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '发布', exact: true }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText('图校验未通过')).toBeVisible();
+    await expect(dialog.getByText('没有连线，任务走到该分支会直接失败。')).toBeVisible();
+    // Blocked so an operator cannot burn an `admin_dangerous` confirmation on
+    // a graph already known to fail.
+    await expect(dialog.getByRole('button', { name: '发布并生效' })).toBeDisabled();
+  });
+
   test('the models console renders primary/backup lists', async ({ page }) => {
+    await page.route('**/v1/admin/llm-providers/*/validate', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          endpoint_id: 'ep_e6a55be6a06d',
+          kind: 'media',
+          target_model: 'minimax-h3',
+          probe_type: 'text_to_video',
+          reachable: true,
+          usable: true,
+          latency_ms: 42,
+          provider_status_code: 200,
+          error_code: null,
+          warning_code: null,
+          provider_error_code: null,
+          provider_error_message: null,
+          external_task_id: 'task-live-1',
+        }),
+      });
+    });
     await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '模型管理', level: 1 })).toBeVisible();
 
+    const refreshed = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' && response.url().includes('/v1/admin/llm-providers'),
+    );
+    await page.getByRole('button', { name: '刷新' }).click();
+    await refreshed;
+
     // Flat primary/backup list — taxonomy lives in the create/edit dialog.
-    await expect(page.getByText('主用节点')).toBeVisible();
-    await expect(page.getByText('备用节点')).toBeVisible();
+    await expect(page.getByText('主用节点', { exact: true })).toBeVisible();
+    await expect(page.getByText('备用节点', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: '新增模型' }).click();
-    await expect(page.getByRole('heading', { name: '新增端点' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '新增模型' })).toBeVisible();
     // Switching to a media model swaps the single models field for the
     // per-capability checklist.
     await page.getByLabel('模型类型').selectOption('media');
-    await expect(page.getByText('媒体能力')).toBeVisible();
+    await expect(page.getByText('支持的输入类型', { exact: true })).toBeVisible();
+    const editorDialog = page.getByRole('dialog');
+    await editorDialog.press('Escape');
+    await expect(editorDialog).toBeHidden();
+
+    const mediaRow = page
+      .getByText('minimax-h3', { exact: true })
+      .first()
+      .locator('xpath=../../..');
+    await mediaRow.getByRole('button', { name: '验证' }).click();
+    await expect(page.getByRole('heading', { name: '验证媒体模型' })).toBeVisible();
+    await page.getByRole('button', { name: '发送验证请求' }).click();
+    await expect(mediaRow.getByText('验证成功')).toBeVisible();
+    await expect(mediaRow.getByText('42 ms')).toBeVisible();
+    await expect(mediaRow.getByText('任务 task-live-1')).toBeVisible();
+  });
+
+  test('the style gallery console lists the seeded catalogue and creates an entry', async ({
+    page,
+  }) => {
+    await page.goto('/zh-CN/admin/style-gallery', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '画风库', level: 1 })).toBeVisible();
+
+    // Seeded via `back/app/scripts/seed.py`, which is what the studio's style
+    // picker dialog and the create page's inspiration wall both read from.
+    await expect(page.getByText('日漫').first()).toBeVisible();
+
+    await page.getByRole('button', { name: '新建画风' }).click();
+    await expect(page.getByRole('heading', { name: '新建画风' })).toBeVisible();
+    const slug = `e2e-style-${Date.now()}`;
+    await page.getByLabel('标识（slug）').fill(slug);
+    await page.getByLabel('中文名称').fill('E2E 测试画风');
+    await page.getByLabel('英文名称').fill('E2E test style');
+    await page.getByLabel('日文名称').fill('E2E テスト画風');
+    await page.getByRole('button', { name: '保存' }).click();
+
+    await expect(page.getByRole('heading', { name: '新建画风' })).toBeHidden();
+    await expect(page.getByText('E2E 测试画风').first()).toBeVisible();
   });
 });
 
@@ -178,6 +355,7 @@ test.describe('reviewer navigation', () => {
     // regardless of what the client renders, which the API tests cover.
     await expect(nav.getByRole('link', { name: '配置中心' })).toBeHidden();
     await expect(nav.getByRole('link', { name: '数据运维' })).toBeHidden();
+    await expect(nav.getByRole('link', { name: '画风库' })).toBeHidden();
   });
 });
 

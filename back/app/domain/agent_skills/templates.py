@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from app.agents import copywriter, custom, intent_router, planner, quality, safety
 from app.agents.slots import DEFAULT_SLOT
-from app.domain.agent_skills.presets import CREATIVE, JUDGMENT, AgentCategory
+from app.domain.agent_skills.presets import ASSIST, JUDGMENT, AgentCategory
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,21 +60,11 @@ _GENERIC_SCORE = """你是造浪平台的结构化评分器。按下列维度为
 格式：{"verdict": "pass"|"fail", "scores": {"relevance": number, "craft": number,
 "originality": number}, "notes": string}"""
 
-_CREATIVE_BRIEF = """你是造浪平台的创作路线说明智能体。你不直接生成媒体内容，
-而是为这次创作说明取舍：画面/音频重点是什么，哪些候选路线更契合，成本上应偏保守还是偏效果。
-规则：
-- 运营为每个候选配置的成本权重是参考，不是硬性指标，可以为了明显更好的效果选择权重较高的路线
-- 说明要具体到这次请求的内容，不要给通用套话
-
-只输出一个 JSON 对象，不要输出任何解释、前言或 Markdown 代码块标记。
-格式：{"focus": string, "cost_stance": "saving"|"balanced"|"quality_first", "notes": string}"""
-
-
 SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="safety-default",
         label="安全审核 · 平台默认",
-        description="当前代码内置的安全审核提示词，18+ 艺术表达放行、未成年人性化等一票否决。",
+        description="当前代码内置的安全审核提示词，18+ 艺术表达放行、未成年人性化等一票否决，写实暴力/血腥内容转人工复核。",
         category=JUDGMENT,
         prompt_template=safety.SYSTEM_PROMPT,
         role="safety",
@@ -89,6 +79,15 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         role="planner",
     ),
     SkillTemplate(
+        key="planner-clarify",
+        label="任务规划 · 追问澄清",
+        description="生成前判断用户意图是否需要补充信息，并给出结构化问题。",
+        category=JUDGMENT,
+        prompt_template=planner.CLARIFY_SYSTEM_PROMPT,
+        role="planner",
+        slot=planner.CLARIFY_SLOT,
+    ),
+    SkillTemplate(
         key="quality-default",
         label="质量评估 · 平台默认",
         description="三维打分并判断是否值得重试；重试会额外消耗积分，默认从宽。",
@@ -100,7 +99,7 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         key="copy-suggest",
         label="文案生成 · 作品文案",
         description="为待发布作品生成标题、简介与标签。",
-        category=JUDGMENT,
+        category=ASSIST,
         prompt_template=copywriter.SYSTEM_PROMPT,
         tool_grants=("suggest_tags",),
         role="copy",
@@ -110,10 +109,19 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         key="copy-enhance",
         label="文案生成 · 提示词润色",
         description="在保留作者意图的前提下把画面描述写得更具体。",
-        category=JUDGMENT,
+        category=ASSIST,
         prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT,
         role="copy",
         slot=copywriter.ENHANCE_SLOT,
+    ),
+    SkillTemplate(
+        key="copy-clarify",
+        label="文案生成 · 追问澄清",
+        description="生成前判断画面描述是否需要补充信息，并给出结构化问题。",
+        category=ASSIST,
+        prompt_template=copywriter.CLARIFY_SYSTEM_PROMPT,
+        role="copy",
+        slot=copywriter.CLARIFY_SLOT,
     ),
     SkillTemplate(
         key="intent-router-classify",
@@ -153,13 +161,6 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         description="按相关性/完成度/新意三个维度打分并给出通过与否。",
         category=JUDGMENT,
         prompt_template=_GENERIC_SCORE,
-    ),
-    SkillTemplate(
-        key="creative-brief",
-        label="创作决策 · 路线说明",
-        description="说明本次创作的重点与成本取舍，作为路由决策的上下文。",
-        category=CREATIVE,
-        prompt_template=_CREATIVE_BRIEF,
     ),
 )
 

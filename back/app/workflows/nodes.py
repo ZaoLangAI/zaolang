@@ -12,18 +12,20 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from typing import Any
 
+from app.agents import copywriter, planner, quality, router, safety
 from app.agents import custom as custom_agent
 from app.agents import intent_router as intent_router_agent
-from app.agents import planner, quality, router, safety
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
+from app.domain.moderation_queue import service as moderation_queue
 from app.domain.notifications import push as notifications
 from app.domain.skill_library import service as skill_library_service
-from app.models import AgentProfile, Draft, ProviderAttempt
+from app.models import Draft, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
     JobEventType,
@@ -37,6 +39,7 @@ from app.models.enums import (
 from app.providers.base import GenerationRequest, GenerationResult
 from app.realtime import publisher
 from app.workflows.configs import (
+    CopyGenerateConfig,
     CustomAgentStepConfig,
     FailConfig,
     IntentRouterConfig,
@@ -86,6 +89,7 @@ def _emit(
         progress=progress,
         internal_code=internal_code,
         payload=payload,
+        node_id=ctx.state.get("_current_node_id"),
     )
     if status in (JobStatus.SUCCEEDED, JobStatus.FAILED):
         # 只在终态发通知：进度事件太吵，用户只关心结果。
@@ -137,8 +141,20 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
         # downstream may override it.
         ctx.state["failure_code"] = "MODERATION_REJECTED"
         ctx.state["failure_message"] = verdict.public_message or "内容未通过安全检查。"
-        return NodeResult(port="reject")
-    return NodeResult(port="pass")
+        return NodeResult(port="reject", summary=f"拒绝：{verdict.public_message or '未通过'}")
+    if verdict.status == ModerationStatus.NEEDS_REVIEW:
+        # Uncertain, not unsafe enough to hard-block: the job still runs, but
+        # a human now has something to look at instead of the verdict being
+        # recorded and never followed up on.
+        moderation_queue.enqueue_for_review(
+            ctx.session,
+            subject_type="generation_job",
+            subject_id=ctx.job.id,
+            stage=ModerationStage.PRE_GENERATION,
+            reason_code=verdict.reason_code,
+            categories=verdict.categories_json.get("categories"),
+        )
+    return NodeResult(port="pass", summary="通过")
 
 
 def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> NodeResult:
@@ -171,7 +187,22 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
     return NodeResult(port="ok")
 
 
+PLAN_STATE_KEY = "plan"
+
+
 def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult:
+    """Runs the planner agent's plan slot, optionally pausing for a follow-up.
+
+    The plan always runs and lands in `ctx.state[config.output_key]` —
+    `execute_provider_generate` reads it back under the `PLAN_STATE_KEY`
+    convention (which is also `PlanningConfig.output_key`'s default) to fold
+    `prompt_enhancements` / `negative_prompt_suggestions` into the actual
+    generation request. Same "does not decide the job's fate on its own,
+    except by suspending" contract as `execute_copy_generate`: suspending to
+    `AWAITING_INPUT` is the one thing that changes the job's status, and only
+    when `allow_followup_question` is set and the planner's own `clarify`
+    slot judges the intent worth asking about.
+    """
     _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划生成方案", 16)
     outcome = planner.plan(
         ctx.session,
@@ -182,8 +213,43 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
         user_id=ctx.job.user_id,
         agent_id=config.agent_id,
     )
+    ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
-    return NodeResult(port="ok")
+
+    if not config.allow_followup_question or ctx.dry_run:
+        return NodeResult(port="ok", summary=f"生成计划 → {config.output_key}")
+
+    clarify_outcome = planner.clarify(
+        ctx.session,
+        intent=ctx.prompt,
+        job_id=ctx.agent_job_id,
+        user_id=ctx.job.user_id,
+        agent_id=config.agent_id,
+    )
+    ctx.state["_last_agent_run_id"] = clarify_outcome.agent_run_id
+    questions = clarify_outcome.data.get("questions") or []
+    if not clarify_outcome.data.get("needs_clarification") or not questions:
+        return NodeResult(port="ok", summary=f"生成计划 → {config.output_key}（无需追问）")
+
+    # Folded into the checkpoint's `output_value` (via `ctx.state` below) so a
+    # resumed run can still render "what was asked" alongside "what was
+    # answered" when `_plan_enhancements` builds the effective prompt.
+    ctx.state[config.output_key] = {**ctx.state[config.output_key], "clarify_questions": questions}
+
+    _emit(
+        ctx,
+        JobEventType.AWAITING_INPUT,
+        JobStatus.AWAITING_INPUT,
+        "规划智能体有几个问题需要你确认，请回答后继续",
+        18,
+        payload={"question_count": len(questions)},
+    )
+    return NodeResult(
+        port="ok",
+        suspend=True,
+        checkpoint=_input_checkpoint(ctx, output_key=config.output_key, questions=questions),
+        summary=f"暂停等待追问：{len(questions)} 个问题",
+    )
 
 
 def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> NodeResult:
@@ -200,7 +266,8 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
     )
     ctx.state["intent_hint"] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
-    return NodeResult(port="ok")
+    suggested = outcome.data.get("suggested_quality_tier")
+    return NodeResult(port="ok", summary=f"建议档位：{suggested}" if suggested else None)
 
 
 def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfig) -> NodeResult:
@@ -222,7 +289,81 @@ def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfi
     )
     ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
-    return NodeResult(port="ok")
+    return NodeResult(port="ok", summary=f"{config.agent_role} → {config.output_key}")
+
+
+def _input_checkpoint(
+    ctx: WorkflowContext, *, output_key: str, questions: list[dict[str, object]]
+) -> dict[str, object]:
+    """The slice of `ctx.state` a resumed run cannot rebuild for itself.
+
+    Mirrors `_provider_checkpoint`'s shape (same four routing-progress keys)
+    so `POST /v1/generation-jobs/{id}/answer` can rebuild a `WorkflowContext`
+    the same way `async_polling._context` does, whichever kind of suspension
+    it is resuming from. `output_value` additionally carries this node's own
+    first-pass output, since unlike a provider render there is nothing to
+    re-fetch — the suggestion already happened, only the questions are new.
+    """
+    return {
+        "kind": "input_request",
+        "output_key": output_key,
+        "questions": questions,
+        "state": {
+            "output_value": ctx.state.get(output_key) or {},
+            "attempt_number": ctx.state.get("attempt_number", 1),
+            "route_attempts": ctx.state.get("route_attempts", 1),
+            "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
+            "intent_hint": ctx.state.get("intent_hint") or {},
+        },
+    }
+
+
+def execute_copy_generate(ctx: WorkflowContext, config: CopyGenerateConfig) -> NodeResult:
+    """Runs the copy agent's suggestion, optionally pausing for a follow-up.
+
+    Single port, the same "does not decide the job's fate" contract as
+    `custom_agent`: whatever lands in `ctx.state[output_key]` only matters to
+    whichever downstream node reads it. Suspending is the one thing that does
+    change the job's status — to `AWAITING_INPUT`, resumed by
+    `POST /v1/generation-jobs/{id}/answer` — and only when
+    `allow_followup_question` is set and the copy agent's own `clarify` slot
+    judges the description worth asking about.
+    """
+    outcome = copywriter.suggest(
+        ctx.session,
+        prompt=ctx.prompt,
+        lineage_summary=str(ctx.params.get("lineage_summary") or ""),
+        user_id=ctx.job.user_id,
+        agent_id=config.agent_id,
+    )
+    ctx.state[config.output_key] = outcome.data
+    ctx.state["_last_agent_run_id"] = outcome.agent_run_id
+
+    if not config.allow_followup_question or ctx.dry_run:
+        return NodeResult(port="ok", summary=f"文案建议 → {config.output_key}")
+
+    clarify_outcome = copywriter.clarify(
+        ctx.session, prompt=ctx.prompt, user_id=ctx.job.user_id, agent_id=config.agent_id
+    )
+    ctx.state["_last_agent_run_id"] = clarify_outcome.agent_run_id
+    questions = clarify_outcome.data.get("questions") or []
+    if not clarify_outcome.data.get("needs_clarification") or not questions:
+        return NodeResult(port="ok", summary=f"文案建议 → {config.output_key}（无需追问）")
+
+    _emit(
+        ctx,
+        JobEventType.AWAITING_INPUT,
+        JobStatus.AWAITING_INPUT,
+        "文案智能体有几个问题需要你确认，请回答后继续",
+        30,
+        payload={"question_count": len(questions)},
+    )
+    return NodeResult(
+        port="ok",
+        suspend=True,
+        checkpoint=_input_checkpoint(ctx, output_key=config.output_key, questions=questions),
+        summary=f"暂停等待追问：{len(questions)} 个问题",
+    )
 
 
 def _effective_tier(requested: str, hint: dict[str, object]) -> str:
@@ -237,36 +378,13 @@ def _effective_tier(requested: str, hint: dict[str, object]) -> str:
     return suggested if _TIER_RANK[suggested] < _TIER_RANK[requested] else requested
 
 
-def _creative_candidates(ctx: WorkflowContext, agent_id: str | None) -> dict[str, int] | None:
-    """The media shortlist a bound creative agent configured, or `None`.
-
-    `None` means "no shortlist configured", which leaves the whole catalogue
-    eligible — the behaviour before creative agents existed. A bound agent
-    that has been disabled since publication is treated the same way, with a
-    log line, rather than routing the job to nothing: that matches how a
-    disabled agent's prompt degrades in `agent_skills.service`.
-    """
-    if not agent_id:
-        return None
-    agent = ctx.session.get(AgentProfile, agent_id)
-    if agent is None or not agent.enabled or not agent.media_candidates_json:
-        logger.warning(
-            "route_score bound creative agent %s which is missing, disabled or has no "
-            "media candidates; routing against the full catalogue",
-            agent_id,
-        )
-        return None
-    return {
-        f"{candidate['endpoint_id']}:{candidate['capability']}": int(candidate.get("weight", 100))
-        for candidate in agent.media_candidates_json
-    }
-
-
 def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeResult:
     attempts = ctx.state.get("route_attempts", 0) + 1
     ctx.state["route_attempts"] = attempts
     if attempts > config.max_attempts:
-        return NodeResult(port="retries_exhausted")
+        return NodeResult(
+            port="retries_exhausted", summary=f"已用尽 {config.max_attempts} 次选路预算"
+        )
     ctx.state["attempt_number"] = attempts
 
     _emit(ctx, JobEventType.ROUTING, JobStatus.QUEUED, "正在选择生成路线", 24)
@@ -288,6 +406,8 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
 
     hint = ctx.state.get("intent_hint") or {}
     tier = _effective_tier(ctx.job.quality_tier, hint)
+    raw_cost_bias = hint.get("cost_bias")
+    cost_bias = raw_cost_bias if isinstance(raw_cost_bias, (int, float)) else None
     decision = router.route(
         ctx.session,
         operation=ctx.job.operation,
@@ -297,7 +417,8 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         job_id=ctx.agent_job_id,
         user_id=ctx.job.user_id,
         selector_agent_id=config.selector_agent_id,
-        allowed_providers=_creative_candidates(ctx, config.creative_agent_id),
+        request_params=ctx.params,
+        cost_bias=cost_bias,
     )
     ctx.job.routing_trace_json = decision.trace()
     ctx.session.flush()
@@ -305,9 +426,11 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
     if decision.selected is None or decision.capability is None:
         ctx.state["failure_code"] = "PROVIDER_TEMPORARY_FAILURE"
         ctx.state["failure_message"] = "暂时没有可用的生成路线，积分已退回。"
-        return NodeResult(port="no_candidate")
+        return NodeResult(port="no_candidate", summary=f"无可用候选：{decision.reason}")
 
     ctx.state["decision"] = decision
+    if decision.agent_run_id:
+        ctx.state["_last_agent_run_id"] = decision.agent_run_id
     capability = decision.capability
     ctx.job.selected_route_summary_json = {
         "provider": capability.name,
@@ -316,7 +439,10 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         "reason": decision.reason,
     }
     ctx.session.flush()
-    return NodeResult(port="ok")
+    return NodeResult(
+        port="ok",
+        summary=f"第 {attempts} 次选路 → {capability.name} / {capability.model_or_workflow}",
+    )
 
 
 def _attempt_status(result: GenerationResult) -> ProviderAttemptStatus:
@@ -341,6 +467,7 @@ def _provider_checkpoint(
     instead of being serialised.
     """
     return {
+        "kind": "provider",
         "capability_name": capability_name,
         "external_task_id": external_task_id,
         "provider_attempt_id": attempt_id,
@@ -352,6 +479,71 @@ def _provider_checkpoint(
             "intent_hint": ctx.state.get("intent_hint") or {},
         },
     }
+
+
+def _clarify_answer_text(plan: dict[str, Any]) -> str:
+    """Renders the planner's follow-up answers into a short prose fragment.
+
+    `clarify_questions` (what was asked) and `clarify_answers` (the author's
+    replies, keyed by question id — written by `POST
+    /v1/generation-jobs/{id}/answer`) are both restored from the same
+    checkpoint `execute_planning` wrote, so this only ever produces text after
+    a real round trip; it never fabricates something the author never
+    confirmed.
+    """
+    answers = plan.get("clarify_answers")
+    questions = plan.get("clarify_questions")
+    if not isinstance(answers, dict) or not answers or not isinstance(questions, list):
+        return ""
+    labels_by_question: dict[str, dict[str, str]] = {
+        str(question.get("id")): {
+            str(option.get("value")): str(option.get("label"))
+            for option in (question.get("options") or [])
+            if isinstance(option, dict)
+        }
+        for question in questions
+        if isinstance(question, dict)
+    }
+    parts: list[str] = []
+    for question_id, value in answers.items():
+        labels = labels_by_question.get(question_id, {})
+        if isinstance(value, list):
+            parts.extend(labels.get(str(item), str(item)) for item in value if item)
+        elif value:
+            parts.append(labels.get(str(value), str(value)))
+    return "，".join(part for part in parts if part)
+
+
+def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
+    """Folds the planning node's suggestions into what actually gets sent.
+
+    Reads the `PLAN_STATE_KEY` convention key regardless of what
+    `PlanningConfig.output_key` a graph configured for the `planning` node —
+    a custom graph that renamed it loses this wiring gracefully (no
+    enhancement, no error). `prompt_enhancements` and `negative_prompt_
+    suggestions` never overwrite the author's own text, only extend it.
+    """
+    plan = ctx.state.get(PLAN_STATE_KEY)
+    if not isinstance(plan, dict):
+        return ctx.prompt, ctx.params.get("negative_prompt")
+
+    prompt_parts = [ctx.prompt]
+    enhancements = plan.get("prompt_enhancements")
+    if isinstance(enhancements, list):
+        prompt_parts.extend(str(item) for item in enhancements if item)
+    answer_text = _clarify_answer_text(plan)
+    if answer_text:
+        prompt_parts.append(answer_text)
+    prompt = "，".join(part for part in prompt_parts if part)
+
+    negative_prompt = ctx.params.get("negative_prompt")
+    suggestions = plan.get("negative_prompt_suggestions")
+    if isinstance(suggestions, list):
+        joined = "，".join(str(item) for item in suggestions if item)
+        if joined:
+            negative_prompt = f"{negative_prompt}，{joined}" if negative_prompt else joined
+
+    return prompt, negative_prompt
 
 
 def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConfig) -> NodeResult:
@@ -398,17 +590,21 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
                 port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
             )
 
+        effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
         request = GenerationRequest(
             job_id=ctx.job.id,
             operation=ctx.job.operation,
             quality_tier=ctx.job.quality_tier,
-            prompt=ctx.prompt,
-            negative_prompt=ctx.params.get("negative_prompt"),
+            prompt=effective_prompt,
+            negative_prompt=effective_negative_prompt,
             seed=ctx.params.get("seed"),
             aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
             duration_seconds=int(ctx.params.get("duration_seconds") or 0),
-            reference_object_keys=media_service.object_keys_for(
-                ctx.session, asset_ids=ctx.params.get("reference_asset_ids") or []
+            references=media_service.provider_references_for(
+                ctx.session,
+                user_id=ctx.job.user_id,
+                asset_ids=ctx.params.get("reference_asset_ids") or [],
+                video_options=ctx.params.get("video_options"),
             ),
             extra=dict(ctx.params.get("extra") or {}),
         )
@@ -476,14 +672,15 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             45,
             internal_code=ctx.state["failure_code"],
         )
+        failure_summary = f"{capability.name} 失败：{ctx.state['failure_code']}"
         if not config.retry_on_failure:
             ctx.state["failure_message"] = "生成失败，积分已退回。"
-            return NodeResult(port="failed")
-        return NodeResult(port="retry")
+            return NodeResult(port="failed", summary=failure_summary)
+        return NodeResult(port="retry", summary=failure_summary)
 
     ctx.state["result"] = result
     ctx.state["capability"] = capability
-    return NodeResult(port="succeeded")
+    return NodeResult(port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功")
 
 
 def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> NodeResult:
@@ -500,6 +697,8 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
             "height": result.height if result else None,
             "duration_ms": result.duration_ms if result else None,
             "provider": capability.name if capability else None,
+            "partial_output": bool(result and result.metadata.get("partial_output")),
+            "upstream_status": result.metadata.get("upstream_status") if result else None,
         },
         attempt_number=attempt_number,
         job_id=ctx.agent_job_id,
@@ -519,14 +718,14 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
                 50,
                 internal_code="QUALITY_REJECTED",
             )
-            return NodeResult(port="retry")
+            return NodeResult(port="retry", summary="不达标，建议重试")
         ctx.state["failure_message"] = "生成结果未通过质量校验，积分已退回。"
-        return NodeResult(port="fail")
+        return NodeResult(port="fail", summary="不达标，不再重试")
 
     if ctx.dry_run or result is None or capability is None:
         ctx.state["asset_id"] = None
         ctx.state["actual_credits"] = 0
-        return NodeResult(port="pass")
+        return NodeResult(port="pass", summary="达标（沙盒未登记产出）")
 
     asset = media_service.register_generated_asset(
         ctx.session,
@@ -557,7 +756,7 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
         requested_duration_seconds=int(ctx.params.get("duration_seconds") or 0),
         delivered_duration_ms=result.duration_ms,
     )
-    return NodeResult(port="pass")
+    return NodeResult(port="pass", summary=f"达标，结算 {ctx.state['actual_credits']} 积分")
 
 
 def execute_join(ctx: WorkflowContext, config: JoinConfig) -> NodeResult:

@@ -8,6 +8,10 @@ export interface StepperItem {
   label: string;
   detail?: string;
   tone: 'success' | 'danger' | 'primary' | 'pending';
+  /** Which agent actually served this step, when it is an agent-backed node. */
+  agent?: string | null;
+  /** Pre-localized label; the caller owns the wording, this just renders it. */
+  degradedLabel?: string | null;
 }
 
 /**
@@ -53,6 +57,16 @@ export function Stepper({ items }: { items: StepperItem[] }) {
             </p>
             {item.detail ? (
               <p className="text-center text-[10px] leading-tight text-muted">{item.detail}</p>
+            ) : null}
+            {item.agent ? (
+              <p className="text-center text-[10px] font-medium leading-tight text-primary">
+                {item.agent}
+              </p>
+            ) : null}
+            {item.degradedLabel ? (
+              <span className="rounded-full bg-amber/12 px-1.5 py-0.5 text-[9px] font-semibold text-amber">
+                {item.degradedLabel}
+              </span>
             ) : null}
           </div>
           {index < items.length - 1 ? (

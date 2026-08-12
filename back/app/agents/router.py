@@ -33,60 +33,22 @@ from sqlalchemy.orm import Session
 
 from app.agents import intent_router
 from app.models import ProviderStat
-from app.models.enums import Operation, ProviderKind, QualityTier
-from app.platform_config import service as config_service
-from app.platform_config.schemas import ProviderConfig
-from app.providers import fake
 from app.providers.base import ProviderCapability
 from app.providers.media_endpoints import dynamic_capabilities
 
-# The two routes the product ships with, always present regardless of what an
-# operator has configured. Real (database-configured) media routes are
-# layered on top at request time by `build_catalog` — see its docstring for
-# why that composition happens outside this module.
-PROVIDER_CATALOG: dict[str, ProviderCapability] = {
-    "fake_open_workflow": ProviderCapability(
-        name="fake_open_workflow",
-        kind=ProviderKind.OPEN_WORKFLOW,
-        operations=frozenset(
-            {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
-        ),
-        tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD}),
-        quality_prior=0.72,
-        typical_latency_ms=9_000,
-        unit_cost_minor=2,
-        model_or_workflow="comfy-sdxl-base@1.4.0",
-        provider_factory=lambda: fake.get_provider("fake_open_workflow"),
-    ),
-    "fake_paid_api": ProviderCapability(
-        name="fake_paid_api",
-        kind=ProviderKind.COMMERCIAL_API,
-        operations=frozenset(
-            {
-                Operation.TEXT_TO_IMAGE,
-                Operation.TEXT_TO_VIDEO,
-                Operation.IMAGE_TO_VIDEO,
-                Operation.VIDEO_TO_VIDEO,
-            }
-        ),
-        tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),
-        quality_prior=0.9,
-        typical_latency_ms=22_000,
-        unit_cost_minor=18,
-        model_or_workflow="paid-video-v3",
-        provider_factory=lambda: fake.get_provider("fake_paid_api"),
-    ),
-}
+CONSERVATIVE_PRIOR_SUCCESS_RATE = 0.8
+MINIMUM_SAMPLES_FOR_STATS = 20
+RETRY_COST_AMPLIFICATION = 1.2
 
 
 def build_catalog(session: Session) -> dict[str, ProviderCapability]:
-    """The static fakes plus every enabled database-configured media route.
+    """Every enabled database-configured media route.
 
     Built fresh per call — like every other config-driven lookup in this
     codebase — so an operator adding an endpoint at `/admin/models` takes
     effect on the very next job, not after a restart.
     """
-    return {**PROVIDER_CATALOG, **dynamic_capabilities(session)}
+    return dynamic_capabilities(session)
 
 
 @dataclass
@@ -104,11 +66,6 @@ class Candidate:
     success_rate: float = 0.0
     avg_latency_ms: int = 0
     effective_cost: int = 0
-    # The cost preference an operator put on this route in the creative
-    # agent's configuration, if this job routes through one. Shown to the
-    # selecting agent as context and recorded in the trace; deliberately
-    # never multiplied into anything here.
-    configured_weight: int | None = None
 
     def to_trace(self) -> dict[str, object]:
         return asdict(self)
@@ -120,6 +77,10 @@ class RoutingDecision:
     candidates: list[Candidate] = field(default_factory=list)
     reason: str = ""
     catalog: dict[str, ProviderCapability] = field(default_factory=dict)
+    # The `intent_router` agent call that made (or failed to make) this
+    # selection, so `route_score`'s node can be tagged as the node that ran
+    # it — `None` only when there were no eligible candidates to show it.
+    agent_run_id: str | None = None
 
     @property
     def capability(self) -> ProviderCapability | None:
@@ -144,19 +105,16 @@ def route(
     job_id: str | None = None,
     user_id: str | None = None,
     selector_agent_id: str | None = None,
-    allowed_providers: Mapping[str, int] | None = None,
+    request_params: Mapping[str, Any] | None = None,
+    cost_bias: float | None = None,
 ) -> RoutingDecision:
     """Filters the catalogue down to what can actually serve this job, then
     lets the routing agent pick.
 
-    `allowed_providers` is the creative agent's configured shortlist —
-    catalogue name to cost weight. It is a *hard* filter, in the same
-    category as capability and tier: a route the operator did not put on the
-    agent's list must not be used at all. The weight it carries is the
-    opposite kind of input — pure context for the selecting agent, never a
-    coefficient.
+    `cost_bias` is `intent_router.classify()`'s request-level cost signal
+    (`None` when no `classify()` ran ahead of this call, e.g. a direct test).
+    Forwarded to `select_provider` as context only.
     """
-    provider_config = config_service.get_typed(session, "providers", ProviderConfig)
     catalog = build_catalog(session)
     stats = _load_stats(session, operation, quality_tier)
     excluded = set(exclude_providers or ())
@@ -175,17 +133,13 @@ def route(
             candidate.filter_reason = "tier_not_supported"
             candidates.append(candidate)
             continue
-
-        # `providers` config only ever describes the two built-in fakes; a
-        # database-configured media route's on/off switch is its own
-        # `enabled` flag, already applied by `build_catalog` before this
-        # loop ever sees it.
-        setting = provider_config.providers.get(name)
-        if name in PROVIDER_CATALOG and (setting is None or not setting.enabled):
+        constraint_failure = _request_constraint_failure(capability, request_params or {})
+        if constraint_failure is not None:
             candidate.eligible = False
-            candidate.filter_reason = "provider_disabled"
+            candidate.filter_reason = constraint_failure
             candidates.append(candidate)
             continue
+
         if max_latency_ms is not None and capability.typical_latency_ms > max_latency_ms:
             candidate.eligible = False
             candidate.filter_reason = "latency_budget_exceeded"
@@ -196,23 +150,15 @@ def route(
             candidate.filter_reason = "previously_failed_this_job"
             candidates.append(candidate)
             continue
-        if allowed_providers is not None:
-            if name not in allowed_providers:
-                candidate.eligible = False
-                candidate.filter_reason = "not_in_agent_candidates"
-                candidates.append(candidate)
-                continue
-            candidate.configured_weight = allowed_providers[name]
 
-        retry_amplification = setting.retry_amplification if setting is not None else 1.2
         stat = stats.get(name)
-        success_rate = _success_rate(stat, provider_config)
+        success_rate = _success_rate(stat)
         # Failures are not free: a provider that fails a third of the time
         # really costs about 1.5 attempts per success. Still shown to the
         # LLM (and the replay console) even though nothing here ranks by it
         # any more.
         candidate.effective_cost = int(
-            capability.unit_cost_minor * retry_amplification / max(success_rate, 0.05)
+            capability.unit_cost_minor * RETRY_COST_AMPLIFICATION / max(success_rate, 0.05)
         )
         candidate.success_rate = round(success_rate, 4)
         candidate.avg_latency_ms = _avg_latency_ms(stat, capability)
@@ -237,6 +183,7 @@ def route(
         operation=operation,
         quality_tier=quality_tier,
         candidates=[_candidate_payload(c, catalog[c.provider]) for c in eligible],
+        cost_bias=cost_bias,
         job_id=job_id,
         user_id=user_id,
         agent_id=selector_agent_id,
@@ -249,17 +196,51 @@ def route(
             candidates=candidates,
             reason="llm_selection_unavailable",
             catalog=catalog,
+            agent_run_id=outcome.agent_run_id,
         )
 
     rationale = outcome.data.get("rationale")
     reason = (
         f"llm_selected:{rationale}" if isinstance(rationale, str) and rationale else "llm_selected"
     )
-    return RoutingDecision(selected=winner, candidates=candidates, reason=reason, catalog=catalog)
+    return RoutingDecision(
+        selected=winner,
+        candidates=candidates,
+        reason=reason,
+        catalog=catalog,
+        agent_run_id=outcome.agent_run_id,
+    )
+
+
+def _request_constraint_failure(
+    capability: ProviderCapability, params: Mapping[str, Any]
+) -> str | None:
+    """Hard-filter a provider that physically cannot honour the request."""
+
+    duration = int(params.get("duration_seconds") or 0)
+    if capability.min_duration_seconds is not None and duration < capability.min_duration_seconds:
+        return "duration_below_provider_minimum"
+    if capability.max_duration_seconds is not None and duration > capability.max_duration_seconds:
+        return "duration_above_provider_maximum"
+    aspect_ratio = str(params.get("aspect_ratio") or "16:9")
+    if capability.aspect_ratios is not None and aspect_ratio not in capability.aspect_ratios:
+        return "aspect_ratio_not_supported"
+    video_options = params.get("video_options")
+    if isinstance(video_options, Mapping):
+        resolution = str(video_options.get("resolution") or "2K")
+        reference_mode = str(video_options.get("reference_mode") or "input_references")
+        if capability.resolutions is not None and resolution not in capability.resolutions:
+            return "resolution_not_supported"
+        if (
+            capability.reference_modes is not None
+            and reference_mode not in capability.reference_modes
+        ):
+            return "reference_mode_not_supported"
+    return None
 
 
 def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> dict[str, Any]:
-    payload = {
+    return {
         "provider": candidate.provider,
         "kind": capability.kind.value,
         "quality_prior": capability.quality_prior,
@@ -267,9 +248,6 @@ def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> 
         "avg_latency_ms": candidate.avg_latency_ms,
         "effective_cost": candidate.effective_cost,
     }
-    if candidate.configured_weight is not None:
-        payload["configured_weight"] = candidate.configured_weight
-    return payload
 
 
 def _load_stats(session: Session, operation: str, quality_tier: str) -> dict[str, ProviderStat]:
@@ -281,14 +259,14 @@ def _load_stats(session: Session, operation: str, quality_tier: str) -> dict[str
     return {row.provider: row for row in rows}
 
 
-def _success_rate(stat: ProviderStat | None, config: ProviderConfig) -> float:
+def _success_rate(stat: ProviderStat | None) -> float:
     """Falls back to a conservative prior until there is enough evidence.
 
     Without this, a provider with a single lucky success would look as
     trustworthy as one with hundreds of reliable runs.
     """
-    if stat is None or stat.attempts < config.minimum_samples_for_stats:
-        return config.conservative_prior_success_rate
+    if stat is None or stat.attempts < MINIMUM_SAMPLES_FOR_STATS:
+        return CONSERVATIVE_PRIOR_SUCCESS_RATE
     return max(0.01, min(1.0, stat.successes / stat.attempts))
 
 

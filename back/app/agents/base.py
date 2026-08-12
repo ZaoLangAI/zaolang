@@ -1,7 +1,7 @@
 """Agent execution wrapper.
 
-Every agent call goes through `run_agent`, which resolves the model binding
-from the config centre, calls the gateway, and records an `AgentRun`. Nothing
+Every agent call goes through `run_agent`, which resolves its AgentProfile
+provider/model binding, calls the gateway, and records an `AgentRun`. Nothing
 an agent returns is a fact until a caller persists it through a domain service.
 """
 
@@ -21,7 +21,7 @@ from app.models.base import utcnow
 from app.models.enums import AgentName, AgentRunStatus
 from app.observability.context import get_request_id
 from app.platform_config import service as config_service
-from app.platform_config.schemas import AgentConfig, AgentModelBinding, LlmProviderConfig
+from app.platform_config.schemas import AgentModelBinding, LlmProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -35,24 +35,36 @@ class AgentOutcome:
     agent_run_id: str
 
 
-def resolve_binding(session: Session, agent_name: str) -> AgentModelBinding:
-    """The config-centre model binding for a role.
+DEFAULT_ROLE_BINDINGS: dict[str, AgentModelBinding] = {
+    AgentName.SAFETY.value: AgentModelBinding(
+        model="doubao-seed-2-1-pro", max_tokens=1024, temperature=0.0
+    ),
+    AgentName.PLANNER.value: AgentModelBinding(
+        model="kimi-k3", max_tokens=2048, temperature=0.3, reasoning_model=True
+    ),
+    AgentName.QUALITY.value: AgentModelBinding(
+        model="kimi-k3", max_tokens=1536, temperature=0.1, reasoning_model=True
+    ),
+    AgentName.COPY.value: AgentModelBinding(
+        model="ling-3.0-flash-free", max_tokens=4096, temperature=0.7, reasoning_model=True
+    ),
+    AgentName.INTENT_ROUTER.value: AgentModelBinding(
+        model="ling-3.0-flash-free", max_tokens=512, temperature=0.0
+    ),
+}
 
-    `AgentConfig` only guarantees an entry for the five built-in
-    `AgentName` roles. A role created later from a preset falls back to the
-    intent router's binding — the cheapest general-purpose one — which is
-    only ever the starting point: such a role is expected to pin its own
-    endpoint on the agent, and `effective_binding` layers that on top.
+
+def resolve_binding(session: Session, agent_name: str) -> AgentModelBinding:
+    """Bootstrap defaults used only when the role's default AgentProfile is empty.
+
+    Runtime ownership lives in `/admin/agents`; these constants only keep a
+    fresh or partially migrated database operable until an administrator
+    explicitly binds the role's default agent to a provider and model.
     """
-    config = config_service.get_typed(session, "agents", AgentConfig)
-    binding = config.bindings.get(agent_name)
-    if binding is not None:
-        return binding
-    logger.info(
-        "role %s has no entry in the agents config; using the intent_router binding as its base",
-        agent_name,
+    del session
+    return DEFAULT_ROLE_BINDINGS.get(
+        agent_name, DEFAULT_ROLE_BINDINGS[AgentName.INTENT_ROUTER.value]
     )
-    return config.bindings[AgentName.INTENT_ROUTER.value]
 
 
 @dataclass(slots=True, frozen=True)
@@ -71,54 +83,50 @@ class EffectiveBinding:
 def effective_binding(
     session: Session, agent_name: str, profile: AgentProfile | None
 ) -> EffectiveBinding:
-    """Layers an agent's own model binding over the role's config default.
+    """Resolves provider/model selection from AgentProfile.
 
-    An agent that pins nothing behaves exactly as before: the config
-    centre's binding, dispatched across the shared endpoint pool. An agent
-    that pins `default_endpoint_id` gets that endpoint first and its
-    `backup_endpoint_id` next, and — because an endpoint carries its own
-    model list — is run against a model that endpoint actually serves rather
-    than whatever the role-wide binding happens to name.
+    Non-default profiles inherit empty values from the role's default profile.
+    The endpoint ids are the provider binding an administrator selected; the
+    model is required to be supported by those endpoints at write time.
     """
     base = resolve_binding(session, agent_name)
-    if profile is None or not profile.default_endpoint_id:
-        return EffectiveBinding(
-            model=base.model,
-            max_tokens=profile.max_tokens if profile and profile.max_tokens else base.max_tokens,
-            temperature=_temperature(profile, base),
-            reasoning_model=_reasoning(profile, base),
-        )
+    role_default = agent_skills_service.default_profile(session, agent_name)
+    inherited = (
+        role_default
+        if role_default is not None and (profile is None or role_default.id != profile.id)
+        else None
+    )
+
+    def value(name: str) -> Any:
+        own = getattr(profile, name, None) if profile is not None else None
+        return own if own is not None and own != "" else getattr(inherited, name, None)
 
     endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
+    default_endpoint_id = value("default_endpoint_id")
+    backup_endpoint_id = value("backup_endpoint_id")
     preferred = tuple(
-        endpoint_id
-        for endpoint_id in (profile.default_endpoint_id, profile.backup_endpoint_id)
-        if endpoint_id and endpoint_id in endpoints
+        endpoint_id for endpoint_id in (default_endpoint_id, backup_endpoint_id) if endpoint_id
     )
-    pinned = endpoints.get(profile.default_endpoint_id)
-    model = base.model
-    if pinned is not None and pinned.models and base.model not in pinned.models:
+    model = value("model") or base.model
+    pinned = endpoints.get(default_endpoint_id) if default_endpoint_id else None
+    if pinned is not None and model not in pinned.models:
         model = pinned.models[0]
 
     return EffectiveBinding(
         model=model,
-        max_tokens=profile.max_tokens or base.max_tokens,
-        temperature=_temperature(profile, base),
-        reasoning_model=_reasoning(profile, base),
+        max_tokens=value("max_tokens") or base.max_tokens,
+        temperature=(
+            value("temperature_milli") / 1000
+            if value("temperature_milli") is not None
+            else base.temperature
+        ),
+        reasoning_model=(
+            value("reasoning_model")
+            if value("reasoning_model") is not None
+            else base.reasoning_model
+        ),
         preferred_endpoint_ids=preferred,
     )
-
-
-def _temperature(profile: AgentProfile | None, base: AgentModelBinding) -> float:
-    if profile is None or profile.temperature_milli is None:
-        return base.temperature
-    return profile.temperature_milli / 1000
-
-
-def _reasoning(profile: AgentProfile | None, base: AgentModelBinding) -> bool:
-    if profile is None or profile.reasoning_model is None:
-        return base.reasoning_model
-    return profile.reasoning_model
 
 
 def run_agent(
@@ -209,6 +217,101 @@ def run_agent(
         raw_text=result.response.text,
         degraded=run.degraded,
         model=run.model or binding.model,
+        agent_run_id=run.id,
+    )
+
+
+@dataclass(slots=True)
+class DebugChatOutcome:
+    reply_text: str
+    parsed_json: dict[str, Any] | None
+    degraded: bool
+    model: str
+    latency_ms: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    agent_run_id: str
+
+
+def run_agent_debug(
+    session: Session,
+    *,
+    profile: AgentProfile,
+    slot: str,
+    prompt_override: str | None,
+    history: list[dict[str, str]],
+) -> DebugChatOutcome:
+    """Runs one turn of prompt-evaluation chat against a real model, with no
+    job behind it.
+
+    Mirrors the workflow dry-run's own precedent
+    (`workflow_templates_service` + its `dry-run` endpoint): a draft prompt
+    can be tried before it is ever published, the call is real (never
+    stubbed unless `LLM_MODE=stub`), and an `AgentRun` is written with
+    `job_id=None` so the "agent invocations" console list still shows what a
+    debug session cost — the same way a dry run's `AgentRun` rows are real
+    despite backing no job.
+
+    `prompt_override` is the skill editor's unsaved draft when given;
+    otherwise this resolves whatever is currently active for
+    `(profile, slot)`, falling back through the role's default agent exactly
+    as a live run would (`resolve_prompt`). The empty-string floor at the
+    end of that chain only bites a role nobody has ever published anything
+    for — a clearly-empty reply here is the right way to surface that during
+    debugging, where `run_agent`'s callers instead have their own hardcoded
+    constant to fall back to.
+    """
+    if prompt_override is not None:
+        system_prompt = prompt_override
+    else:
+        resolved = agent_skills_service.resolve_prompt(
+            session, profile.role, "", agent_id=profile.id, slot=slot
+        )
+        system_prompt = resolved.text
+
+    binding = effective_binding(session, profile.role, profile)
+    result = llm_client.complete(
+        session=session,
+        agent_name=profile.role,
+        model=binding.model,
+        messages=[{"role": "system", "content": system_prompt}, *history],
+        max_tokens=binding.max_tokens,
+        temperature=binding.temperature,
+        expect_json=True,
+        reasoning_model=binding.reasoning_model,
+        preferred_endpoint_ids=binding.preferred_endpoint_ids,
+    )
+
+    run = AgentRun(
+        job_id=None,
+        user_id=None,
+        agent_name=profile.role,
+        agent_profile_id=profile.id,
+        prompt_slot=slot,
+        mode=result.mode,
+        model=result.response.model or binding.model,
+        status=AgentRunStatus.DEGRADED if result.degraded else AgentRunStatus.SUCCEEDED,
+        degraded=result.degraded,
+        degrade_reason=result.degrade_reason,
+        prompt_tokens=result.response.prompt_tokens,
+        completion_tokens=result.response.completion_tokens,
+        latency_ms=result.latency_ms,
+        endpoint_id=result.endpoint_id,
+        output_json=result.response.data or {},
+        request_id=get_request_id() or None,
+        created_at=utcnow(),
+    )
+    session.add(run)
+    session.flush()
+
+    return DebugChatOutcome(
+        reply_text=result.response.text,
+        parsed_json=result.response.data,
+        degraded=result.degraded,
+        model=run.model or binding.model,
+        latency_ms=result.latency_ms,
+        prompt_tokens=result.response.prompt_tokens,
+        completion_tokens=result.response.completion_tokens,
         agent_run_id=run.id,
     )
 

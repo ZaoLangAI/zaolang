@@ -13,11 +13,14 @@ layer instead.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.agents.slots import is_known_slot
+from app.domain.agent_skills import presets
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import GenerationWorkflowTemplate
@@ -28,7 +31,9 @@ from app.workflows.defaults import default_graph
 from app.workflows.graph import WorkflowGraph, WorkflowNode
 from app.workflows.graph import validate as validate_graph
 
-_REGISTRY_TYPES = set(registry.NODE_TYPES.keys())
+_OUTPUT_PORTS_BY_TYPE = {
+    node_type: spec.output_ports for node_type, spec in registry.NODE_TYPES.items()
+}
 
 DEFAULT_TEMPLATE_NAME = "默认生成流程"
 
@@ -75,7 +80,7 @@ def validate_graph_json(graph_json: dict[str, Any], *, session: Session | None =
         graph = WorkflowGraph.from_dict(graph_json)
     except (KeyError, TypeError, ValueError) as exc:
         return [f"图结构格式不合法: {exc}"]
-    errors = validate_graph(graph, registry_types=_REGISTRY_TYPES)
+    errors = validate_graph(graph, output_ports_by_type=_OUTPUT_PORTS_BY_TYPE)
     if session is not None:
         errors.extend(_binding_errors(session, graph))
     return errors
@@ -95,14 +100,18 @@ def collect_warnings(session: Session, *, operation: str, graph_json: dict[str, 
         return []
 
     warnings: list[str] = []
-    for node, binding, agent_id in _iter_agent_bindings(graph):
-        agent = agent_skills_service.find_agent(session, agent_id)
-        if agent is None or not agent.enabled or agent.role != binding.role:
+    for binding in _iter_agent_bindings(graph):
+        if binding.agent_id is None:
+            continue
+        agent = agent_skills_service.find_agent(session, binding.agent_id)
+        if agent is None or not agent.enabled:
             continue  # already reported as an error
+        if binding.expected_role is not None and agent.role != binding.expected_role:
+            continue  # ditto
         declared = list(agent.operations_json or [])
         if declared and operation not in declared:
             warnings.append(
-                f"节点 {node.id} 绑定的智能体「{agent.display_name}」"
+                f"节点 {binding.node.id} 绑定的智能体「{agent.display_name}」"
                 f"声明的适用操作为 {declared}，不包含 {operation}。"
             )
     return warnings
@@ -124,45 +133,126 @@ def agent_usage(session: Session) -> dict[str, list[str]]:
             graph = WorkflowGraph.from_dict(template.graph_json)
         except (KeyError, TypeError, ValueError):
             continue
-        for _node, _binding, agent_id in _iter_agent_bindings(graph):
-            operations = usage.setdefault(agent_id, [])
+        for binding in _iter_agent_bindings(graph):
+            if binding.agent_id is None:
+                continue
+            operations = usage.setdefault(binding.agent_id, [])
             if template.operation not in operations:
                 operations.append(template.operation)
     return usage
 
 
-def _iter_agent_bindings(
-    graph: WorkflowGraph,
-) -> Iterator[tuple[WorkflowNode, registry.AgentBinding, str]]:
-    """Yields every explicit agent binding in a graph.
+@dataclass(frozen=True, slots=True)
+class ResolvedBinding:
+    """One node's agent selection, flattened across the two ways a node
+    type can declare one (`registry.AgentBinding` /
+    `registry.DynamicAgentBinding`).
 
-    A node that leaves the field empty is not yielded: it resolves to the
-    role's default agent, which is always valid.
+    `agent_id` is `None` when the field was left empty, which means "the
+    role's default agent" — always a valid choice, since a default judgment
+    agent is required to carry a model binding. It is still yielded for a
+    dynamic binding, because there the *role* is a config value that has to
+    be checked whether or not a specific agent was picked.
+    """
+
+    node: WorkflowNode
+    agent_id: str | None
+    expected_role: str | None = None
+    slot: str | None = None
+    # True when `expected_role`/`slot` came out of the graph rather than out
+    # of `registry.py`, and so are themselves operator input to be checked.
+    is_dynamic: bool = False
+
+
+def _config_str(node: WorkflowNode, field: str) -> str | None:
+    raw = node.config.get(field)
+    return raw.strip() or None if isinstance(raw, str) else None
+
+
+def _iter_agent_bindings(graph: WorkflowGraph) -> Iterator[ResolvedBinding]:
+    """Yields every agent selection a graph makes.
+
+    A role binding left empty is skipped: it resolves to the role's default
+    agent, which needs no checking. A dynamic binding is always yielded —
+    its role field is what decides whether the node can run at all.
     """
     for node in graph.nodes:
         spec = registry.NODE_TYPES.get(node.type)
         if spec is None:
             continue
+
         for binding in spec.agent_bindings:
-            raw = node.config.get(binding.config_field)
-            if isinstance(raw, str) and raw.strip():
-                yield node, binding, raw.strip()
+            agent_id = _config_str(node, binding.config_field)
+            if agent_id is not None:
+                yield ResolvedBinding(
+                    node=node,
+                    agent_id=agent_id,
+                    expected_role=binding.role,
+                    slot=binding.slot,
+                )
+
+        dynamic = spec.dynamic_agent_binding
+        if dynamic is not None:
+            yield ResolvedBinding(
+                node=node,
+                agent_id=_config_str(node, dynamic.config_field),
+                expected_role=_config_str(node, dynamic.role_field),
+                slot=_config_str(node, dynamic.slot_field),
+                is_dynamic=True,
+            )
+
+
+def _dynamic_role_errors(node: WorkflowNode, role: str | None) -> list[str]:
+    """Checks a role an operator typed into a `custom_agent`-style node.
+
+    A role outside `ROLE_PRESETS` is not merely unusual — no node type
+    invokes it and no agent can be created for it, so the node would fail
+    every time it ran. Both `judgment` and `assist` roles are accepted,
+    since `assist` is just the semantic label for a prompt-bound role that
+    generates/polishes content instead of handing down a verdict (`copy`'s
+    `enhance`/`clarify` slots are reached this way from anywhere in a graph).
+    """
+    if role is None:
+        return [f"节点 {node.id} 没有指定智能体角色。"]
+    preset = presets.find(role)
+    if preset is None:
+        return [f"节点 {node.id} 指定的角色 {role} 不在角色预设里，不会被执行。"]
+    return []
 
 
 def _binding_errors(session: Session, graph: WorkflowGraph) -> list[str]:
     errors: list[str] = []
-    for node, binding, agent_id in _iter_agent_bindings(graph):
-        agent = agent_skills_service.find_agent(session, agent_id)
+    for binding in _iter_agent_bindings(graph):
+        node = binding.node
+
+        if binding.is_dynamic:
+            # A static binding's role and slot shipped in `registry.py` and
+            # are code-reviewed; a dynamic one's are operator input.
+            role_errors = _dynamic_role_errors(node, binding.expected_role)
+            if role_errors:
+                errors.extend(role_errors)
+                continue
+            role = binding.expected_role
+            assert role is not None  # `_dynamic_role_errors` rejects `None`
+            if binding.slot is not None and not is_known_slot(role, binding.slot):
+                errors.append(
+                    f"节点 {node.id} 指定的提示词槽位 {binding.slot} 不属于角色 {role}。"
+                )
+
+        if binding.agent_id is None:
+            continue
+
+        agent = agent_skills_service.find_agent(session, binding.agent_id)
         if agent is None:
-            errors.append(f"节点 {node.id} 绑定了不存在的智能体: {agent_id}")
+            errors.append(f"节点 {node.id} 绑定了不存在的智能体: {binding.agent_id}")
         elif not agent.enabled:
             errors.append(f"节点 {node.id} 绑定的智能体「{agent.display_name}」已停用。")
-        elif agent.role != binding.role:
+        elif binding.expected_role is not None and agent.role != binding.expected_role:
             # Only reachable by hand-editing the graph JSON — the console
             # filters its picker by role — but a mismatch would run the wrong
             # kind of agent for the stage, so it must not publish.
             errors.append(
-                f"节点 {node.id} 需要 {binding.role} 角色的智能体，"
+                f"节点 {node.id} 需要 {binding.expected_role} 角色的智能体，"
                 f"但绑定的「{agent.display_name}」是 {agent.role}。"
             )
     return errors
@@ -247,7 +337,7 @@ def ensure_default_templates(session: Session) -> None:
             session,
             operation=operation.value,
             name=DEFAULT_TEMPLATE_NAME,
-            graph_json=default_graph(),
+            graph_json=default_graph(session),
             actor_user_id=None,
             reason="seed: 初始默认模板",
         )

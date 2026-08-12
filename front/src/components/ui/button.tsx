@@ -78,3 +78,55 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     </button>
   );
 });
+
+const iconButtonSizes: Record<Size, string> = {
+  sm: 'size-9 rounded-[var(--radius-sm)]',
+  md: 'size-11 rounded-[var(--radius-sm)]',
+  lg: 'size-13 rounded-[var(--radius-md)]',
+};
+
+export interface IconButtonProps
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  variant?: Variant;
+  size?: Size;
+  loading?: boolean;
+  /** No visible text sits next to the icon, so this doubles as the
+   * accessible name and the hover tooltip. */
+  label: string;
+  children: React.ReactNode;
+}
+
+/**
+ * A square, icon-only button: a dense action row (e.g. an agent card's
+ * edit/debug/delete row) that would otherwise wrap across lines once every
+ * action carries its own text label.
+ *
+ * Kept separate from {@link Button} rather than an `iconOnly` flag on it —
+ * that component's padding and gap are tuned for icon-plus-text, which does
+ * not collapse cleanly to a centered square.
+ */
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { variant = 'ghost', size = 'sm', loading = false, label, className, children, disabled, type = 'button', ...rest },
+  ref,
+) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      aria-label={label}
+      title={label}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
+      className={cn(
+        'inline-flex shrink-0 select-none items-center justify-center transition-colors',
+        'disabled:cursor-not-allowed disabled:opacity-70',
+        variants[variant],
+        iconButtonSizes[size],
+        className,
+      )}
+      {...rest}
+    >
+      {loading ? <Spinner /> : <span aria-hidden="true">{children}</span>}
+    </button>
+  );
+});

@@ -11,6 +11,10 @@ export interface AdminList<T> {
   failed: boolean;
   filters: Record<string, string>;
   setFilter: (id: string, value: string) => void;
+  /** Replaces every filter at once — one request instead of the N a
+   * sequence of `setFilter` calls would produce. Backs a console's explicit
+   * "search" button, which submits a whole draft in one go. */
+  applyFilters: (next: Record<string, string>) => void;
   resetFilters: () => void;
   hasPrev: boolean;
   hasNext: boolean;
@@ -83,6 +87,11 @@ export function useAdminList<T>(
     setFilters((current) => ({ ...current, [id]: value }));
   }, []);
 
+  const applyFilters = useCallback((next: Record<string, string>) => {
+    setCursors([null]);
+    setFilters(next);
+  }, []);
+
   const resetFilters = useCallback(() => {
     setCursors([null]);
     setFilters(initialFilters);
@@ -96,6 +105,7 @@ export function useAdminList<T>(
     failed: fresh?.failed ?? false,
     filters,
     setFilter,
+    applyFilters,
     resetFilters,
     hasPrev: cursors.length > 1,
     hasNext: fresh?.hasNext ?? false,

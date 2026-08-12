@@ -38,7 +38,7 @@ const STATUS_LABEL_KEY: Record<
   rejected: 'skillStatusRejected',
 };
 
-export function SkillLibraryConsole() {
+export function SkillLibraryConsole({ configAction }: { configAction?: React.ReactNode }) {
   const t = useTranslations('adminSkillLibrary');
   const tAdmin = useTranslations('admin');
   const locale = useLocale() as Locale;
@@ -120,6 +120,7 @@ export function SkillLibraryConsole() {
         <Button size="sm" variant="secondary" onClick={list.reload}>
           {tAdmin('refresh')}
         </Button>
+        {configAction}
       </FilterBar>
 
       <div className="mt-3">

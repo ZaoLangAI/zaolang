@@ -17,6 +17,7 @@ from app.api.deps import DbSession
 from app.api.schemas.admin import (
     AgentBindingView,
     DangerousAction,
+    DynamicAgentBindingView,
     NodeTypeView,
     WorkflowDryRunRequest,
     WorkflowDryRunResult,
@@ -62,6 +63,8 @@ def list_node_types(user: Viewer, _: AdminRead) -> Page[NodeTypeView]:
                 category=spec.category,
                 label=spec.label,
                 description=spec.description,
+                label_key=f"nodeType_{node_type}_label",
+                description_key=f"nodeType_{node_type}_desc",
                 output_ports=list(spec.output_ports),
                 is_agent=spec.is_agent,
                 agent_role=spec.agent_role,
@@ -71,6 +74,15 @@ def list_node_types(user: Viewer, _: AdminRead) -> Page[NodeTypeView]:
                     )
                     for binding in spec.agent_bindings
                 ],
+                dynamic_agent_binding=(
+                    DynamicAgentBindingView(
+                        config_field=spec.dynamic_agent_binding.config_field,
+                        role_field=spec.dynamic_agent_binding.role_field,
+                        slot_field=spec.dynamic_agent_binding.slot_field,
+                    )
+                    if spec.dynamic_agent_binding is not None
+                    else None
+                ),
                 config_schema=spec.config_schema.model_json_schema(),
             )
             for node_type, spec in sorted(registry.NODE_TYPES.items())
@@ -200,20 +212,36 @@ def dry_run_workflow_template(
     user: Operator,
     _: AdminWrite,
 ) -> WorkflowDryRunResult:
-    """Simulates a job through the operation's *active* published graph.
+    """Simulates a job through a graph — the editor's unpublished draft when
+    `payload.graph` is given, otherwise the operation's active published one.
 
     Never creates a `GenerationJob` row, reserves credits, or hits a paid
     provider — see `WorkflowContext.dry_run` and every node executor's own
     `if ctx.dry_run` branch for the specifics. The four agent nodes
     (safety/planning/intent_router/quality) still call the real LLM gateway
     on purpose: that is the one thing worth spending a little real cost on to
-    actually validate a prompt change before publishing it.
+    actually validate a prompt change before publishing it. `AdminWrite`'s
+    rate limit is what keeps that cost bounded.
+
+    A draft is held to exactly the same validation as a publish, because a
+    graph that fails it cannot be walked safely; but it is never written
+    anywhere, so trying one out has no effect on live traffic. This is the
+    whole point of the endpoint: without it, checking an edit would mean
+    publishing it to every job first.
     """
-    # Mirrors `pipeline._resolve_graph`'s fallback: dry-running should show
-    # exactly what a real job would run right now, including before anything
-    # has ever been published for this operation.
-    template = workflow_templates_service.get_active(session, operation.value)
-    graph = WorkflowGraph.from_dict(template.graph_json if template else default_graph())
+    if payload.graph is not None:
+        errors = workflow_templates_service.validate_graph_json(payload.graph, session=session)
+        if errors:
+            raise ValidationFailed("草稿工作流图校验未通过，无法试跑。", errors=errors)
+        graph = WorkflowGraph.from_dict(payload.graph)
+    else:
+        # Mirrors `pipeline._resolve_graph`'s fallback: dry-running should
+        # show exactly what a real job would run right now, including before
+        # anything has ever been published for this operation.
+        template = workflow_templates_service.get_active(session, operation.value)
+        graph = WorkflowGraph.from_dict(
+            template.graph_json if template else default_graph(session)
+        )
 
     params: dict[str, Any] = {"prompt": payload.prompt, **payload.params}
     fake_job = GenerationJob(
@@ -263,6 +291,8 @@ def _trace_view(ctx: WorkflowContext) -> list[WorkflowDryRunStepView]:
             node_type=entry["node_type"],
             port=entry["port"],
             agent_run_id=entry.get("agent_run_id"),
+            duration_ms=entry.get("duration_ms"),
+            summary=entry.get("summary"),
         )
         for entry in trace
     ]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "造浪项目开发"
+  short_description: "按当前代码安全迭代造浪全栈、智能体、后台与 iOS"
+  default_prompt: "Use $zaolang-project to inspect the current implementation and make a verified change in this repository."

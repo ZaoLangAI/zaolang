@@ -16,19 +16,45 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.domain.workflow_templates import service as workflow_templates_service
+from app.models import GenerationWorkflowTemplate
 from app.workflows import registry
 from app.workflows.defaults import default_graph
 from app.workflows.graph import TERMINAL_NODE_TYPES, WorkflowEdge, WorkflowGraph, WorkflowNode
 
 
-def describe_workflow(session: Session, operation: str) -> dict[str, Any]:
-    template = workflow_templates_service.get_active(session, operation)
-    graph = WorkflowGraph.from_dict(template.graph_json if template else default_graph())
+def describe_workflow(
+    session: Session, operation: str, template_id: str | None = None
+) -> dict[str, Any]:
+    """Describes one graph, preferring the exact template a job pinned.
+
+    `template_id` should be a job's own `GenerationJob.workflow_template_id`
+    when the caller wants to know what that specific job actually ran —
+    mirrors `pipeline.py::resolve_graph`'s precedence (pinned template →
+    operation's current active template → code-level default) so this never
+    disagrees with what really executed. Falls through to the active
+    template when `template_id` is absent or no longer resolves (e.g. a
+    caller passing a stale id), which is also the right answer for a job
+    that has not started running yet and so never pinned one.
+    """
+    template: GenerationWorkflowTemplate | None = None
+    if template_id:
+        template = session.get(GenerationWorkflowTemplate, template_id)
+    is_pinned = template is not None
+
+    if template is None:
+        template = workflow_templates_service.get_active(session, operation)
+
+    graph = WorkflowGraph.from_dict(template.graph_json if template else default_graph(session))
 
     return {
         "operation": operation,
         "name": template.name if template else "默认生成流程",
         "version": template.version if template else None,
+        # `True` only when this is the exact template the job pinned at
+        # submission/first run — `False` means it is a best-effort fallback
+        # to the operation's currently active template, which may have
+        # since diverged from what the job actually executed.
+        "is_pinned": is_pinned,
         "description": (
             "按已发布的节点图执行；终态节点保证一次预扣积分最终恰好一次 capture 或 release。"
         ),

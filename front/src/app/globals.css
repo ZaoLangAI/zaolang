@@ -39,6 +39,8 @@
   --track: rgb(255 255 255 / 14%);
   --gateway-panel:
     radial-gradient(120% 160% at 0% 0%, rgb(121 215 154 / 10%) 0%, transparent 55%), #0e1315;
+  --shortform-hero-panel:
+    radial-gradient(120% 160% at 100% 0%, rgb(217 173 89 / 14%) 0%, transparent 55%), #0e1315;
 }
 
 [data-theme='light'] {
@@ -73,6 +75,8 @@
   --track: rgb(26 23 20 / 14%);
   --gateway-panel:
     radial-gradient(120% 160% at 0% 0%, rgb(29 122 68 / 8%) 0%, transparent 55%), #ffffff;
+  --shortform-hero-panel:
+    radial-gradient(120% 160% at 100% 0%, rgb(138 100 16 / 10%) 0%, transparent 55%), #ffffff;
 }
 
 @theme inline {
@@ -174,6 +178,10 @@
 
   .gateway-panel {
     background: var(--gateway-panel);
+  }
+
+  .shortform-hero-panel {
+    background: var(--shortform-hero-panel);
   }
 
   .poster-scrim::after {

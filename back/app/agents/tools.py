@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.router import PROVIDER_CATALOG
+from app.agents.router import build_catalog
 from app.domain.jobs import service as jobs_service
 from app.models import Tag, Work, WorkVersion
 from app.models.enums import LifecycleStatus, Visibility
@@ -55,7 +55,7 @@ def list_provider_capabilities(session: Session) -> list[dict[str, Any]]:
             "operations": sorted(capability.operations),
             "tiers": sorted(capability.tiers),
         }
-        for capability in sorted(PROVIDER_CATALOG.values(), key=lambda c: c.name)
+        for capability in sorted(build_catalog(session).values(), key=lambda c: c.name)
     ]
 
 

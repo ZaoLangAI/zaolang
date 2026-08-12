@@ -11,8 +11,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.orm import Session
 
-def default_graph() -> dict[str, Any]:
+from app.domain.agent_skills import service as agent_skills_service
+
+# The five static `AgentBinding`s (`registry.NODE_TYPES`) this seed graph
+# actually wires up: (node id, config field, role).
+_STATIC_BINDINGS: tuple[tuple[str, str, str], ...] = (
+    ("safety", "agent_id", "safety"),
+    ("planning", "agent_id", "planner"),
+    ("intent_router", "agent_id", "intent_router"),
+    ("quality_check", "agent_id", "quality"),
+    ("route_score", "selector_agent_id", "intent_router"),
+)
+
+
+def default_graph(session: Session) -> dict[str, Any]:
     nodes = [
         {"id": "safety", "type": "safety_check", "config": {}, "position": {"x": 0, "y": 0}},
         {
@@ -54,6 +68,19 @@ def default_graph() -> dict[str, Any]:
         },
         {"id": "fail", "type": "fail", "config": {}, "position": {"x": 760, "y": 260}},
     ]
+
+    # Bind each judgment node to whatever agent is currently the role's
+    # default, so a freshly seeded workflow is editable/visible in the
+    # console from day one instead of showing an opaque "role default".
+    # A role with no default agent yet (empty DB, `ensure_default_profiles`
+    # not run) is left unset — the existing "empty = role default, resolved
+    # at run time" fallback still applies, so seeding never fails on this.
+    nodes_by_id = {node["id"]: node for node in nodes}
+    for node_id, config_field, role in _STATIC_BINDINGS:
+        profile = agent_skills_service.default_profile(session, role)
+        if profile is not None:
+            nodes_by_id[node_id]["config"][config_field] = profile.id
+
     edges = [
         _edge("safety", "pass", "skill_context"),
         _edge("safety", "reject", "fail"),

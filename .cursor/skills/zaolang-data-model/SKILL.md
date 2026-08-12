@@ -1,6 +1,6 @@
 ---
 name: zaolang-data-model
-description: 造浪的 SQLAlchemy 模型与 Alembic 迁移：前缀 ID、整数金额、枚举与状态迁移表、唯一键与索引、六个模型模块的边界。Use when adding or altering database tables, columns, enums, indexes, unique constraints, or when writing an Alembic migration in this repository.
+description: 造浪的 SQLAlchemy 模型与线性 Alembic 迁移链：前缀 ID、整数金额、枚举与状态迁移表、唯一键与索引，以及 identity/works/generation/credits/media/platform/search/agents/async tasks/characters/learning/skills/system logs 等模型模块的边界。Use when adding or altering database tables, columns, enums, indexes, unique constraints, or when writing an Alembic migration in this repository.
 disable-model-invocation: true
 ---
 
@@ -23,7 +23,9 @@ disable-model-invocation: true
 | `back/app/models/media.py` | `Asset` / `UploadSession` / `AssetConsent` / `ContentFingerprint` / `ProvenanceManifest` |
 | `back/app/models/platform.py` | `ModerationResult` / `ReportCase` / `Notification` / `PlatformConfig` / `AuditLog` / `IdempotencyRecord` / `Announcement` / `DataRequest` / `BackupRecord` / `ReconciliationReport` |
 | `back/app/models/search.py` | `WorkEmbedding`（pgvector `Vector` 列） |
-| `back/alembic/versions/` | 迁移链，目前单条基线迁移 |
+| `back/app/models/agent_skills.py` / `async_tasks.py` | `AgentNode` / `AgentProfile` / `AgentSkill` 与异步供应商检查点 `AsyncProviderTask` |
+| `back/app/models/characters.py` / `learning.py` / `skill_library.py` / `system_log.py` | 角色资产、学习内容、技能市场与聚合系统日志 |
+| `back/alembic/versions/` | 从基线持续追加的线性迁移链；以 Alembic 当前 head 为准，不依赖文档里的迁移数量 |
 
 ## 不可破坏的不变量
 
@@ -45,7 +47,7 @@ disable-model-invocation: true
 4. `make migrate` 在空库上验证：`make reset` 是最干净的检验。
 5. 如果是业务表，加进 `back/app/scripts/seed.py` 的 `RESET_TABLES`，否则 `make seed --reset` 会留下脏数据。
 
-**加一列**：可空或带 `server_default` 才能对存量数据安全升级；要求非空就分两步（先加可空并回填，再改非空）。
+**加一列**：可空或带 `server_default` 才能对存量数据安全升级；要求非空就分两步（先加可空并回填，再改非空）。**纯关联/追溯用的列（例如 `JobEvent.node_id`、`AgentRun.node_id`、`SystemLog.job_id`）可以只加可空列、不回填历史数据、不设外键**——同 `AuditLog.target_id` 一样，允许被引用的那一行先被清理，日志/追溯记录仍要能存在；这类列的目的是让后台能查到"是谁/哪个节点"，不是维护关系完整性。
 
 **加枚举值**：只加不改，并检查所有 `match` 分支与前端 `front/src/lib/api/types.ts` 的联合类型。
 

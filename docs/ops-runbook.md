@@ -36,14 +36,15 @@ make logs                                    # 跟容器日志
 
 ## 2. 队列积压 { #queue-backlog }
 
-五个队列：`moderation_short`、`image_generation`、`video_generation_long`、`quality_check`、`webhook_reconcile`。
+六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`provider_task_polling`。
 
 **确认**：健康页的积压数与消费速率。积压高但速率为 0 → worker 没在消费；两者都高 → 容量不足。
 
 **处理**
 
 ```bash
-make dev-worker      # 本地：确认 -Q 列表包含全部五个队列
+make dev-worker      # 本地：确认 -Q 列表包含全部七个队列
+make dev-beat        # 本地：异步轮询与超时回收必须有 Beat 调度
 ```
 
 worker 起来了但某个队列不动，先确认它有没有在 `-Q` 列表里——**新增队列忘了加进 `Makefile` 与部署参数**是最常见的原因。
@@ -74,7 +75,7 @@ worker 起来了但某个队列不动，先确认它有没有在 `-Q` 列表里�
 
 - 网关限流或超时：等待自动恢复。`LLM_MODE=auto` 下降级是**设计好的**保护，不是故障本身。
 - 某个模型持续失败：在 `/admin/config` 的 `agents` 段把该智能体切到别的模型（热生效，需理由）。免费模型 `ling-3.0-flash-free` 有配额不确定性，Copy Agent 优先切它。
-- 密钥失效：只改 `back/.env` 的 `LLM_API_KEY` 并重启 API。**不要**把密钥写进配置中心或任何会回显的地方。
+- 密钥失效：在 `/admin/models` 的专用模型端点表单中轮换密钥并执行连通性校验。通用配置 API 与 JSON 编辑器禁止读取 `llm_providers`；不要把密钥写入其他配置段。
 
 **收尾**：模式回到 `openai_compatible`；降级计数停止增长。
 

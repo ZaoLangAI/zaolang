@@ -6,6 +6,9 @@ import type { WorkflowEdgeKind } from '@/lib/api/admin-types';
 
 export interface WorkflowEdgeData {
   kind: WorkflowEdgeKind;
+  /** This edge was walked in the last dry run. Display-only — computed by
+   * the canvas from the trace, never persisted in the graph. */
+  traced?: boolean;
   [key: string]: unknown;
 }
 
@@ -45,7 +48,14 @@ export function WorkflowEdge({
       <BaseEdge
         id={id}
         path={edgePath}
-        style={{ ...KIND_STYLE[kind], opacity: selected ? 1 : 0.75 }}
+        style={{
+          ...KIND_STYLE[kind],
+          opacity: selected ? 1 : data?.traced ? 1 : 0.75,
+          // A traced edge overrides the kind colour with success green — the
+          // last dry run actually walked it, which is worth seeing over
+          // "what kind of edge is this" once you have run one.
+          ...(data?.traced ? { stroke: 'var(--success)', strokeWidth: 2.5 } : null),
+        }}
       />
       {label ? (
         <EdgeLabelRenderer>

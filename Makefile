@@ -56,8 +56,8 @@ migration: ## 生成迁移，用法 make migration m="add table"
 	cd back && $(CONDA_RUN) alembic revision --autogenerate -m "$(m)"
 
 .PHONY: seed
-seed: ## 导入种子数据（会先清空业务表）
-	cd back && $(CONDA_RUN) python -m app.scripts.seed
+seed: ## 导入种子数据（可选 make seed ARGS=--reset）
+	cd back && $(CONDA_RUN) python -m app.scripts.seed $(ARGS)
 
 .PHONY: import-assets
 import-assets: ## 导入 assets-pack/manifest.json 描述的真实素材
@@ -82,22 +82,31 @@ dev: ## 同时启动 API、Worker 与 Web
 	@trap 'kill 0' EXIT INT TERM; \
 	$(MAKE) dev-api & \
 	$(MAKE) dev-worker & \
+	$(MAKE) dev-beat & \
 	$(MAKE) dev-web & \
 	wait
 
 .PHONY: dev-api
 dev-api: ## 启动 FastAPI（含 AgentOS）
-	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --port 8000
+	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（订阅全部队列）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q moderation_short,image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,provider_task_polling \
+		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,provider_task_polling \
 		--loglevel=info
+
+.PHONY: dev-purge-queues
+dev-purge-queues: ## 清空 Celery 队列（seed --reset / 清库后使用，先停 worker）
+	cd back && $(CONDA_RUN) celery -A app.workers.celery_app purge -f
+
+.PHONY: dev-beat
+dev-beat: ## 启动 Celery Beat（异步供应商轮询与超时回收）
+	cd back && $(CONDA_RUN) celery -A app.workers.celery_app beat --loglevel=info
 
 .PHONY: dev-web
 dev-web: ## 启动 Next.js
-	cd front && $(FNM_ENV) && npm run dev
+	cd front && $(FNM_ENV) && npm run dev -- --hostname 0.0.0.0
 
 # --- quality gates -------------------------------------------------------
 

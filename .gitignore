@@ -54,6 +54,8 @@ assets-pack/media/
 # --- infra local state ---
 infra/data/
 infra/backups/
+celerybeat-schedule.db
+back/celerybeat-schedule.db
 
 # --- os / editor ---
 .DS_Store

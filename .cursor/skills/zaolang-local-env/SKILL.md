@@ -28,8 +28,9 @@ disable-model-invocation: true
 - **端口刻意错开**：Postgres `5433`、Redis `6380`，避开机器上已有服务。改端口要同时改 `infra/.env.example` 与 `back/.env`。
 - **密钥只进 `back/.env`**（已 gitignore）。`.env.example` 只放占位符；日志、Agent prompt、配置中心界面都不得回显密钥。
 - **两条工具链不混用**：后端命令一律 `conda run -n zaolang`，前端一律先 `fnm use`。Makefile 里的 `CONDA_RUN` / `FNM_ENV` 已经封好。
-- **`make seed` 会先 TRUNCATE 业务表**，只在本地与测试环境用；后台的 seed 面板在生产环境直接拒绝。
+- **`make seed ARGS=--reset` 会 TRUNCATE 业务表**（默认 `make seed` 幂等补齐、不清表），只在本地与测试环境用；后台的 seed 面板在生产环境直接拒绝。清库后必须 `make dev-purge-queues`（先停 worker），否则 Redis 残留的旧 `job_id` 会让 worker 报 `job not found`。
 - Alembic 只有一条线性迁移链，`make migrate` 必须能在空库上一路升到 head。
+- `make dev` 的 Web 与 API 监听 `0.0.0.0`，但局域网客户端地址必须通过 `NEXT_PUBLIC_API_URL`、`NEXT_ALLOWED_DEV_ORIGINS`、`CORS_ORIGINS`、`S3_PUBLIC_ENDPOINT_URL` 与 `LOCAL_MEDIA_HOST` 精确配置；不要用 `*` 代替凭据请求的 CORS 来源。`NEXT_ALLOWED_DEV_ORIGINS` 只填主机名或 IP，用于 Next.js 开发资源与 HMR WebSocket 的来源校验。
 
 ## 常用目标
 
@@ -37,7 +38,9 @@ disable-model-invocation: true
 make setup          # 建 conda 环境、装前后端依赖、复制 .env
 make up             # 起容器并创建 MinIO 桶
 make migrate seed   # 建表 + 种子数据
-make dev            # 并行起 API(8000) / Celery worker / Web(3000)
+make dev            # 并行起 API(8000) / Celery worker / Celery beat / Web(3000)
+make dev-beat       # 单独启动异步供应商轮询与超时回收调度器
+make dev-purge-queues  # 清空 Celery 队列（seed --reset / 清库后，先停 worker）
 make reset          # 销毁数据卷后重建（up + migrate + seed）
 make logs
 ```
@@ -54,7 +57,8 @@ make logs
 
 ```bash
 make up && make migrate && make seed
-curl -s localhost:8000/health | jq        # 依赖探针全 ok
+curl -s localhost:8000/healthz | jq       # 进程存活
+curl -s localhost:8000/readyz | jq        # Postgres / Redis 就绪（MinIO 由后台系统健康页检查）
 make dev                                  # 三个进程都不报错
 ```
 

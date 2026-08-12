@@ -14,6 +14,7 @@ from typing import Any
 from app.models.enums import JobEventType
 from app.workflows import nodes
 from app.workflows.configs import (
+    CopyGenerateConfig,
     CustomAgentStepConfig,
     FailConfig,
     IntentRouterConfig,
@@ -59,8 +60,32 @@ class AgentBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class DynamicAgentBinding:
+    """An agent binding whose role is only known at run time.
+
+    `custom_agent` exists precisely because its role is chosen in the console
+    rather than fixed by the node type, so it cannot appear in
+    `agent_bindings` — that list keys off a role known at code-review time.
+    The role and slot live in sibling config fields named here, which is what
+    lets the console render three cascading dropdowns instead of three raw
+    text boxes, and lets `workflow_templates.service` check the combination
+    before it is published.
+    """
+
+    config_field: str
+    role_field: str
+    slot_field: str
+
+
+@dataclass(frozen=True, slots=True)
 class NodeSpec:
     category: str
+    # The Chinese `label`/`description` stay the source of truth for anything
+    # server-side that has no locale (OpenAPI, logs, `shape.describe_workflow`).
+    # The console renders `nodeType_<type>_label` / `_desc` out of its own
+    # `adminWorkflows` messages instead, falling back to these — the back
+    # office ships zh-CN and en, and a hardcoded Chinese palette left English
+    # operators reading Chinese node names.
     label: str
     description: str
     config_schema: type[NodeConfig]
@@ -69,6 +94,7 @@ class NodeSpec:
     is_agent: bool = False
     agent_role: str | None = None
     agent_bindings: tuple[AgentBinding, ...] = ()
+    dynamic_agent_binding: DynamicAgentBinding | None = None
     # The `JobEvent` this node writes on its way through, if any — used only
     # to derive the ops console's declared timeline (`workflows/shape.py`).
     # `None` for nodes with no single representative public event
@@ -136,7 +162,23 @@ NODE_TYPES: dict[str, NodeSpec] = {
         # precisely because the role is not known at code-review time, so
         # neither `agent_role` nor `agent_bindings` can be declared here.
         agent_role=None,
+        dynamic_agent_binding=DynamicAgentBinding(
+            config_field="agent_id", role_field="agent_role", slot_field="slot"
+        ),
         event_type=JobEventType.PROGRESS,
+    ),
+    "copy_generate": NodeSpec(
+        category="generation",
+        label="文案生成",
+        description="运行文案智能体生成标题/简介/标签；开启「允许追问」时，"
+        "遇到信息不足会暂停任务等待用户回答单选/多选/填写题，而不是直接输出。",
+        config_schema=CopyGenerateConfig,
+        executor=nodes.execute_copy_generate,
+        output_ports=("ok",),
+        is_agent=True,
+        agent_role="copy",
+        agent_bindings=(AgentBinding("agent_id", "copy", "suggest"),),
+        event_type=JobEventType.AWAITING_INPUT,
     ),
     "route_score": NodeSpec(
         category="routing",

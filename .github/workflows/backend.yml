@@ -62,8 +62,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://zaolang:zaolang@localhost:5432/zaolang_test
       TEST_DATABASE_URL: postgresql+psycopg://zaolang:zaolang@localhost:5432/zaolang_test
       REDIS_URL: redis://localhost:6379/0
-      JWT_SECRET: ci-only-secret
-      ADMIN_JWT_SECRET: ci-only-admin-secret
+      JWT_SECRET: Ubbk3iZfLMPZ05iR4jYlv5B0oxJo3nLJ5yGFr9I5798
+      ADMIN_JWT_SECRET: vZRiZobou-hpP29SlTkI9fkBtCb0xD5jKy3GyKvJ-pc
       PAYMENT_WEBHOOK_SECRET: ci-only-webhook-secret
       S3_ENDPOINT_URL: http://localhost:9000
       S3_PUBLIC_ENDPOINT_URL: http://localhost:9000

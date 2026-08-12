@@ -50,9 +50,10 @@ class AgentNode(Base):
 
     Rows are only ever created from `app.domain.agent_skills.presets`, so
     `category` is a copy of the chosen preset's category rather than
-    something an operator types: it decides whether the agents under this
-    role bind one LLM model (`judgment`) or several media endpoints with a
-    cost weight each (`creative`).
+    something an operator types. Both `judgment` and `assist` bind one LLM
+    model the same way — the split is purely semantic: `assist` marks a role
+    that generates/polishes content instead of handing down a pass/fail
+    verdict (`copy` is the only one today).
     """
 
     __tablename__ = "agent_nodes"
@@ -84,13 +85,10 @@ class AgentProfile(Base):
     Like `AgentSkill`, `role` is a free string rather than an FK to
     `AgentNode.role`.
 
-    Which of the two binding groups below applies is decided by the role's
-    category (`app.domain.agent_skills.presets`): a `judgment` agent runs
-    an LLM, so it may pin `default_endpoint_id` (plus a backup) and its
-    sampling parameters; a `creative` agent does not run an LLM itself, it
-    declares in `media_candidates_json` which media routes the router may
-    consider for it. Both groups are optional: an empty binding keeps the
-    pre-existing behaviour of drawing from the shared `kind="general"` pool.
+    An agent runs an LLM, so it may pin `default_endpoint_id` (plus a
+    backup) and its sampling parameters. The binding is optional: an empty
+    one keeps the pre-existing behaviour of drawing from the shared
+    `kind="general"` pool.
     """
 
     __tablename__ = "agent_profiles"
@@ -105,21 +103,19 @@ class AgentProfile(Base):
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     operations_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
-    # `llm_providers` endpoint ids, not model names: the endpoint carries the
-    # model, base url and key together, so a binding cannot point at a model
-    # no configured gateway serves. NULL means "use the shared pool".
+    # `llm_providers` endpoint ids. A judgment agent also chooses one model
+    # declared by its default and backup endpoints; NULL on a non-default
+    # profile means "inherit the role default", then use the compatible pool.
     default_endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     backup_endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Model id selected for this agent. It must be declared by every pinned
+    # general endpoint, so the provider and model cannot drift independently.
+    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
     max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Stored per mille (0-2000) because floats are not used for persisted
     # numbers anywhere in this schema; 200 means temperature 0.2.
     temperature_milli: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reasoning_model: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    # `[{"endpoint_id": ..., "capability": ..., "weight": 100}]` — the media
-    # routes a creative agent may use, with an operator's cost preference on
-    # each. The weight is context handed to the routing agent, never a
-    # formula: `app/agents/router.py` still lets the LLM choose.
-    media_candidates_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
     # Exactly one per role, enforced in `agent_skills.service` rather than by
     # a partial index so the invariant lives next to the code that can
     # repair it.

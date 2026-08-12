@@ -22,7 +22,7 @@ const ENTRY_TYPES = [
   'royalty_out',
 ] as const;
 
-export function LedgerConsole() {
+export function LedgerConsole({ configAction }: { configAction?: React.ReactNode }) {
   const t = useTranslations('adminCredits');
   const tAdmin = useTranslations('admin');
   const locale = useLocale() as Locale;
@@ -112,6 +112,7 @@ export function LedgerConsole() {
         <Button size="sm" variant="secondary" onClick={list.reload}>
           {tAdmin('refresh')}
         </Button>
+        {configAction}
       </FilterBar>
 
       <div className="mt-3">

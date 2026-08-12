@@ -16,17 +16,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from app.agents import base as agent_base
 from app.agents import slots as agent_slots
+from app.agents import tools as agent_tools
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
+    AgentDebugChatRequest,
+    AgentDebugChatResponse,
     AgentNodeView,
     AgentProfileCreateRequest,
     AgentProfileUpdateRequest,
     AgentProfileView,
     AgentSkillPublishRequest,
+    AgentSkillToolView,
     AgentSkillView,
     DangerousAction,
-    MediaCandidate,
+    ModelSamplingDefaultView,
     PromptSlotView,
     RolePresetView,
     SkillTemplateView,
@@ -37,6 +42,7 @@ from app.api.v1.admin.deps import (
     AdminDangerous,
     AdminRead,
     AdminWrite,
+    Operator,
     Viewer,
     require_confirmation,
 )
@@ -45,6 +51,7 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.agent_skills import templates as skill_templates
 from app.domain.audit import service as audit
 from app.domain.workflow_templates import service as workflow_templates_service
+from app.llm import model_defaults
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 
@@ -76,6 +83,26 @@ def list_agent_node_presets(session: DbSession, user: Viewer, _: AdminRead) -> P
     )
 
 
+@router.get("/model-sampling-defaults", response_model=Page[ModelSamplingDefaultView])
+def list_model_sampling_defaults(
+    user: Viewer, _: AdminRead
+) -> Page[ModelSamplingDefaultView]:
+    """The fixed max_tokens/temperature each known model resolves to.
+
+    The console reads this to preview what picking a model will fix sampling
+    to (`app.llm.model_defaults`) — those two fields are no longer typed in
+    by hand, so this is the only place their numbers are visible pre-save.
+    """
+    return Page(
+        items=[
+            ModelSamplingDefaultView(
+                model=model, max_tokens=defaults.max_tokens, temperature=defaults.temperature
+            )
+            for model, defaults in model_defaults.MODEL_SAMPLING_DEFAULTS.items()
+        ]
+    )
+
+
 @router.get("/agent-nodes", response_model=Page[AgentNodeView])
 def list_agent_nodes(session: DbSession, user: Viewer, _: AdminRead) -> Page[AgentNodeView]:
     nodes = agent_skills_service.list_nodes(session)
@@ -90,6 +117,19 @@ def list_agent_profiles(
     profiles = agent_skills_service.list_profiles(session, role=role)
     usage = workflow_templates_service.agent_usage(session)
     return Page(items=[_profile_view(p, usage) for p in profiles])
+
+
+@router.get("/agent-skill-tools", response_model=Page[AgentSkillToolView])
+def list_agent_skill_tools(
+    role: str, session: DbSession, user: Viewer, _: AdminRead
+) -> Page[AgentSkillToolView]:
+    """The tools a role's skill may be granted, from `AGENT_TOOL_GRANTS`.
+
+    A role missing from the grant table has no tools of its own yet, not an
+    error — the console shows an empty picker.
+    """
+    granted = agent_tools.AGENT_TOOL_GRANTS.get(role, frozenset())
+    return Page(items=[AgentSkillToolView(name=name) for name in sorted(granted)])
 
 
 @router.post("/agent-profiles", response_model=AgentProfileView, status_code=201)
@@ -117,10 +157,8 @@ def create_agent_profile(
         operations=payload.operations,
         default_endpoint_id=payload.default_endpoint_id,
         backup_endpoint_id=payload.backup_endpoint_id,
-        max_tokens=payload.max_tokens,
-        temperature_milli=_temperature_milli(payload.temperature),
+        model=payload.model,
         reasoning_model=payload.reasoning_model,
-        media_candidates=[candidate.model_dump() for candidate in payload.media_candidates],
     )
     audit.record(
         session,
@@ -162,13 +200,11 @@ def update_agent_profile(
         enabled=payload.enabled,
         default_endpoint_id=payload.default_endpoint_id,
         backup_endpoint_id=payload.backup_endpoint_id,
-        max_tokens=payload.max_tokens,
-        temperature_milli=_temperature_milli(payload.temperature),
-        reasoning_model=payload.reasoning_model,
-        media_candidates=(
-            None
-            if payload.media_candidates is None
-            else [candidate.model_dump() for candidate in payload.media_candidates]
+        model=payload.model,
+        reasoning_model=(
+            payload.reasoning_model
+            if "reasoning_model" in payload.model_fields_set
+            else agent_skills_service.UNSET_BINDING
         ),
     )
     audit.record(
@@ -218,6 +254,75 @@ def disable_agent_profile(
     )
     session.commit()
     return _profile_view(row, workflow_templates_service.agent_usage(session))
+
+
+@router.post("/agent-profiles/{profile_id}/delete", status_code=204)
+def delete_agent_profile(
+    profile_id: str,
+    payload: DangerousAction,
+    request: Request,
+    session: DbSession,
+    user: Admin,
+    _: AdminDangerous,
+) -> None:
+    """Hard-deletes an agent.
+
+    Dangerous for the same reason `disable` is — a graph that still binds it
+    falls back to the role's default agent — but irreversible where disable
+    is not, so the console shows the same "used by" list before asking for
+    the confirmation reason.
+    """
+    require_confirmation(payload.confirm)
+    before = agent_skills_service.get_profile(session, profile_id)
+    before_state = {"role": before.role, "key": before.key, "display_name": before.display_name}
+    agent_skills_service.delete_profile(session, profile_id)
+    audit.record(
+        session,
+        actor=user,
+        action="agent_profile.delete",
+        target_type="agent_profile",
+        target_id=profile_id,
+        before=before_state,
+        reason=payload.reason,
+        request=request,
+    )
+    session.commit()
+
+
+@router.post("/agent-profiles/{profile_id}/debug-chat", response_model=AgentDebugChatResponse)
+def debug_chat_agent_profile(
+    profile_id: str,
+    payload: AgentDebugChatRequest,
+    session: DbSession,
+    user: Operator,
+    _: AdminWrite,
+) -> AgentDebugChatResponse:
+    """Evaluates a skill prompt — draft or published — with a real model call.
+
+    `AdminWrite`'s rate limit is what keeps this bounded, the same way it is
+    for the workflow dry-run endpoint this mirrors: no `DangerousAction`
+    confirmation, because nothing here is written to any workflow or made
+    live, but real enough to cost real tokens.
+    """
+    profile = agent_skills_service.get_profile(session, profile_id)
+    outcome = agent_base.run_agent_debug(
+        session,
+        profile=profile,
+        slot=payload.slot,
+        prompt_override=payload.prompt_template,
+        history=[message.model_dump() for message in payload.messages],
+    )
+    session.commit()
+    return AgentDebugChatResponse(
+        reply_text=outcome.reply_text,
+        parsed_json=outcome.parsed_json,
+        degraded=outcome.degraded,
+        model=outcome.model,
+        latency_ms=outcome.latency_ms,
+        prompt_tokens=outcome.prompt_tokens,
+        completion_tokens=outcome.completion_tokens,
+        agent_run_id=outcome.agent_run_id,
+    )
 
 
 @router.get("/agent-skill-templates", response_model=Page[SkillTemplateView])
@@ -355,12 +460,6 @@ def _node_view(node, provider_config: LlmProviderConfig) -> AgentNodeView:  # ty
     )
 
 
-def _temperature_milli(temperature: float | None) -> int | None:
-    """Temperature is stored as an integer per mille — this schema keeps no
-    floating point numbers in columns."""
-    return None if temperature is None else round(temperature * 1000)
-
-
 def _profile_view(profile, usage: dict[str, list[str]]) -> AgentProfileView:  # type: ignore[no-untyped-def]
     return AgentProfileView(
         id=profile.id,
@@ -374,19 +473,12 @@ def _profile_view(profile, usage: dict[str, list[str]]) -> AgentProfileView:  # 
         enabled=profile.enabled,
         default_endpoint_id=profile.default_endpoint_id,
         backup_endpoint_id=profile.backup_endpoint_id,
+        model=profile.model,
         max_tokens=profile.max_tokens,
         temperature=(
             None if profile.temperature_milli is None else profile.temperature_milli / 1000
         ),
         reasoning_model=profile.reasoning_model,
-        media_candidates=[
-            MediaCandidate(
-                endpoint_id=str(candidate.get("endpoint_id", "")),
-                capability=str(candidate.get("capability", "")),
-                weight=int(candidate.get("weight", 100)),
-            )
-            for candidate in (profile.media_candidates_json or [])
-        ],
         used_by_operations=usage.get(profile.id, []),
         created_at=profile.created_at,
     )

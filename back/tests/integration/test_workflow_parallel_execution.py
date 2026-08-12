@@ -22,6 +22,8 @@ from app.workflows.graph import WorkflowGraph
 from app.workflows.runner import WorkflowRunner
 from app.workflows.types import WorkflowContext
 
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
+
 
 @pytest.fixture
 def funded(db: Session, author: User) -> User:

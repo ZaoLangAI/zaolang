@@ -37,6 +37,7 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
     ),
     AgentName.PLANNER.value: (
         PromptSlot(DEFAULT_SLOT, "任务规划", "把用户意图拆解为可执行的生成计划。"),
+        PromptSlot("clarify", "追问澄清", "生成前判断用户意图是否需要补充信息，并给出结构化问题。"),
     ),
     AgentName.QUALITY.value: (
         PromptSlot(DEFAULT_SLOT, "质量评估", "判断生成结果是否达标、是否值得重试。"),
@@ -44,6 +45,7 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
     AgentName.COPY.value: (
         PromptSlot("suggest", "作品文案", "为即将发布的作品生成标题、简介与标签。"),
         PromptSlot("enhance", "提示词润色", "在保留作者意图的前提下把画面描述写得更具体。"),
+        PromptSlot("clarify", "追问澄清", "在生成前判断画面描述是否需要用户补充信息，并给出结构化问题。"),
     ),
     AgentName.INTENT_ROUTER.value: (
         PromptSlot("classify", "档位判定", "判断需求复杂度并建议生成档位，只降不升。"),

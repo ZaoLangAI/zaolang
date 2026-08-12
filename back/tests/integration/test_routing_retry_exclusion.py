@@ -7,6 +7,7 @@ runner: this is a property of one node's state handling, not of the graph.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy.orm import Session
 
 from app.models import GenerationJob, User
@@ -15,6 +16,8 @@ from app.models.enums import Operation, QualityTier
 from app.workflows.configs import RouteScoreConfig
 from app.workflows.nodes import execute_route_score
 from app.workflows.types import WorkflowContext
+
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
 
 def _ctx(db: Session, user: User) -> WorkflowContext:

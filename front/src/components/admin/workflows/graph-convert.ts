@@ -16,12 +16,15 @@ export function graphToFlow(
     return {
       id: node.id,
       type: 'workflowNode',
-      position: node.position ?? { x: (index % 4) * 260, y: Math.floor(index / 4) * 180 },
+      // Left-to-right reading order for nodes with no persisted position
+      // (historical rows only — new nodes always get a real drop position).
+      position: node.position ?? { x: index * 260, y: 0 },
       data: {
         nodeType: node.type,
         config: node.config ?? {},
         spec,
         label: spec?.label ?? node.type,
+        title: node.title ?? '',
       },
     };
   });
@@ -48,6 +51,7 @@ export function flowToGraph(
       type: node.data.nodeType,
       config: node.data.config,
       position: { x: node.position.x, y: node.position.y },
+      title: node.data.title ?? '',
     })),
     edges: edges.map((edge) => ({
       id: edge.id,

@@ -37,7 +37,20 @@ class SkillContextConfig(NodeConfig):
 
 
 class PlanningConfig(NodeConfig):
+    """Runs the planner agent's plan slot.
+
+    `allow_followup_question` defaults to `True`: a graph left without this
+    field explicitly set (every existing graph, including the seeded default
+    one) gets reverse-questioning for free the moment this ships. Setting it
+    to `False` on a specific graph opts back out to the pre-existing
+    behaviour. Mirrors `CopyGenerateConfig`'s `allow_followup_question` /
+    `output_key` shape so the two suspend-capable planning-stage nodes stay
+    easy to compare.
+    """
+
     agent_id: str | None = Field(default=None, max_length=40)
+    output_key: str = Field(default="plan", min_length=1, max_length=40)
+    allow_followup_question: bool = True
 
 
 class IntentRouterConfig(NodeConfig):
@@ -59,16 +72,29 @@ class CustomAgentStepConfig(NodeConfig):
     output_key: str = Field(default="custom_agent", min_length=1, max_length=40)
 
 
+class CopyGenerateConfig(NodeConfig):
+    """Runs the copy agent's title/description/tags suggestion.
+
+    `agent_id` is bound to the `copy` role's `suggest` slot (see
+    `registry.NODE_TYPES["copy_generate"].agent_bindings`); the same agent's
+    `clarify` slot is what `allow_followup_question` opts into, so one
+    binding covers both calls this node type makes.
+    """
+
+    agent_id: str | None = Field(default=None, max_length=40)
+    output_key: str = Field(default="copy_suggestion", min_length=1, max_length=40)
+    # When true, the node also runs the copy agent's `clarify` slot and, if
+    # it judges the description worth a follow-up, suspends the job at
+    # `AWAITING_INPUT` instead of moving straight on. When false this node
+    # behaves like a plain suggestion step that never pauses the job.
+    allow_followup_question: bool = False
+
+
 class RouteScoreConfig(NodeConfig):
     # Routing has no agent node of its own: this node calls the
     # `intent_router` role's `select_provider` slot directly, so the agent
     # running that slot is bound here rather than on the `intent_router` node.
     selector_agent_id: str | None = Field(default=None, max_length=40)
-    # A `category="creative"` agent. Its media candidates restrict — and
-    # annotate with the operator's cost preference — what the routing agent
-    # may choose from. Not an `agent_bindings` entry because it is picked by
-    # category rather than by a role this node type knows at code-review time.
-    creative_agent_id: str | None = Field(default=None, max_length=40)
     max_latency_ms: int | None = Field(default=None, ge=1_000, le=600_000)
     # How many times this node may be (re-)entered for one job before the
     # runner gives up and takes the `retries_exhausted` port instead of
@@ -111,6 +137,7 @@ NODE_CONFIG_SCHEMAS: dict[str, type[NodeConfig]] = {
     "planning": PlanningConfig,
     "intent_router": IntentRouterConfig,
     "custom_agent": CustomAgentStepConfig,
+    "copy_generate": CopyGenerateConfig,
     "route_score": RouteScoreConfig,
     "provider_generate": ProviderGenerateConfig,
     "quality_check": QualityCheckConfig,

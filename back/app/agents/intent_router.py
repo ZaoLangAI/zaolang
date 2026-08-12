@@ -8,14 +8,18 @@ and never share a system prompt:
   and can the user's chosen quality tier be safely downgraded to save cost?
   Its suggestion can only ever lower the tier the user already paid for
   (`app.workflows.nodes._effective_tier` enforces that) and never touches
-  which provider gets used.
+  which provider gets used. It also emits `cost_bias`, a request-level "how
+  cost-sensitive is this one" signal that `select_provider()` receives purely
+  as context (see below) — `classify()` itself never reads it back.
 
 - `select_provider()` — the actual routing decision. Given the operation and
   quality tier already settled, plus every candidate that survived
   `app.agents.router.route`'s hard eligibility filter (capability, tier,
   enabled state, latency budget), it picks the one to use and explains why.
   `router.py` no longer has a scoring formula of its own: this call *is* the
-  choice, not a suggestion layered on top of one.
+  choice, not a suggestion layered on top of one. `classify()`'s `cost_bias`
+  rides along as context — informational only, never a coefficient applied
+  in code.
 
 Neither call moves credits or talks to a provider directly, but they are not
 equally advisory: `classify`'s output only ever narrows a tier, while
@@ -45,8 +49,17 @@ SYSTEM_PROMPT = f"""你是造浪平台的意图理解路由器。你的唯一职
 从而建议一个够用就好、不浪费成本的生成档位。你的建议只能让档位降级，绝不能升级用户已付费选择的档位，
 也完全不影响计费——只影响平台内部选哪条生成路线。
 判断维度：
-- complexity: 描述的具体程度、细节数量、是否有特殊构图/多主体/复杂运镜等要求
+- complexity 对图片类操作（text_to_image / image_to_image）：描述的具体程度、细节数量、
+  是否有特殊构图/多主体/复杂运镜等要求
+- complexity 对视频类操作（text_to_video / image_to_video / video_to_video）：文字描述本身可能很短，
+  但视频的复杂度主要看内容而不是字数——多主体是否有同步/对抗性动作（如打斗、追逐、人群互动）、
+  是否要求动作连贯或运动幅度大、是否要求写实的物理/光影一致性、镜头是否需要多次切换或复杂运镜。
+  这些即使描述简短也应该判为 moderate 甚至 complex，不要因为文字少就默认判 simple
 - 简单、常规的请求应建议更低档位以节省成本；复杂、精细的请求应建议保持原档位
+- cost_bias: 0 到 1 之间的小数，表示这次请求本身有多适合往省成本的方向倾斜——
+  0 表示应该优先保证效果，不要为了省成本牺牲质量；1 表示内容对渲染精细度不敏感，
+  可以明显偏向更省成本的路线；不确定时给 0.5。这个信号会作为参考传给后续的供应商选型，
+  不是硬性指标。
 
 {JSON_INSTRUCTION}
 格式：{{"complexity": "simple" | "moderate" | "complex",
@@ -106,9 +119,9 @@ SELECT_PROVIDER_SYSTEM_PROMPT = f"""你是造浪平台的生成路线选择器�
 - success_rate：近期实际观测到的成功率（样本不足时已经用保守先验兜底，数值本身可信）
 - avg_latency_ms：平均延迟
 - effective_cost：已经把重试放大后的有效成本
-- configured_weight：运营为这条路线配置的成本偏好参考（数值越大表示越倾向克制使用），
-  只在部分请求里出现。它是参考不是硬性指标：效果明显更好时可以选权重更高的路线，
-  但要在 rationale 里说明理由。
+- cost_bias：整次请求级别（不是逐个候选）的成本倾向参考，来自意图判档的结果，
+  只在部分请求里出现。越接近 1 越可以放心选更省成本的候选，越接近 0 越应该优先选效果更好的候选，
+  同样是参考不是硬性指标。
 只能从给定列表的 provider 字段里原样选一个，不要编造列表之外的名字。
 
 {JSON_INSTRUCTION}
@@ -130,6 +143,7 @@ def select_provider(
     operation: str,
     quality_tier: str,
     candidates: list[dict[str, Any]],
+    cost_bias: float | None = None,
     job_id: str | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
@@ -139,12 +153,19 @@ def select_provider(
     `candidates` must already be restricted to providers that can serve
     `operation`/`quality_tier` at all — this call never re-checks capability,
     only chooses among options that are all technically valid.
+
+    `cost_bias` is `classify()`'s request-level cost signal, forwarded here as
+    context for the model to weigh, never a coefficient this function applies
+    itself. Omitted entirely when the caller has none (e.g. no `classify()`
+    ran).
     """
-    payload = {
+    payload: dict[str, Any] = {
         "operation": operation,
         "quality_tier": quality_tier,
         "candidates": candidates,
     }
+    if cost_bias is not None:
+        payload["cost_bias"] = cost_bias
     return run_agent(
         session,
         agent_name=AgentName.INTENT_ROUTER,

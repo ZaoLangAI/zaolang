@@ -75,8 +75,9 @@ services:
       APP_ENV: production
       DATABASE_URL: postgresql+psycopg://zaolang:zaolang@postgres:5432/zaolang
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: change-me-before-exposing-this
-      ADMIN_JWT_SECRET: change-me-before-exposing-this-admin
+      # HS256 needs >= 32 bytes. Replace before exposing the stack.
+      JWT_SECRET: change-me-before-exposing-this-jwt-secret
+      ADMIN_JWT_SECRET: change-me-before-exposing-this-admin-jwt
       PAYMENT_WEBHOOK_SECRET: change-me-before-exposing-this-webhook
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
@@ -117,7 +118,22 @@ services:
       - app.workers.celery_app
       - worker
       - -Q
-      - moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile,provider_task_polling
+      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,provider_task_polling
+      - --loglevel=info
+
+  beat:
+    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - beat
       - --loglevel=info
 
   web:

@@ -30,7 +30,7 @@ disable-model-invocation: true
 | `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | 控制台外壳 |
 | `front/src/components/admin/admin-session-provider.tsx` | 后台会话上下文 |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
-| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agent-node-graph` / `agent-skill-editor` / `models/llm-providers-panel`（模型管理：扁平主备列表 + 端点级主备）/ `log-center-console` |
+| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor` / `models/llm-providers-panel`（模型管理：扁平主备列表 + 端点级主备）/ `audit/log-center-console` |
 | `front/src/lib/api/admin-client.ts`、`admin-server.ts`、`use-admin-list.ts` | 后台专用客户端与列表 hook |
 
 ## 不可破坏的不变量
@@ -44,6 +44,7 @@ disable-model-invocation: true
 7. **管理员不能自己摘掉自己的 admin 角色**（避免把系统锁死），有专门用例守着。
 8. **被封禁的管理员立即失去访问**，不等 token 过期。
 9. **后台复用同一套设计令牌与三态主题**，但组件族与 C 端截然不同（表格、筛选、游标分页、批量操作、抽屉、JSON diff、时间线）。后台文案 `zh-CN` 与 `en`，`ja` 回退 `en`。
+10. **列表与详情优先展示人类可读名称，原始 id 收进 tooltip**，不要在正文里直接吐 `usr_.../job_.../ep_...` 这类裸编号。约定做法：后端 schema 在保留原始 id 字段的同时加一个解出来的名称字段（如 `user_display_name`/`provider_label`/`agent_display_name`），前端渲染优先用名称、id 只作为 `title` tooltip 或次要说明——参考 `jobs-console.tsx` 的用户列/供应商列/AgentRuns 小节。新增任何列出用户、供应商、智能体的后台页面都要遵守，否则运营只能对着裸 id 猜。
 
 ## 改造切入点
 

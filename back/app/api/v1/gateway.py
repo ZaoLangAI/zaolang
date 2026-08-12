@@ -13,14 +13,12 @@ import datetime as dt
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
-from app.agents.router import PROVIDER_CATALOG
+from app.agents.router import build_catalog
 from app.api.deps import DbSession
 from app.api.schemas.common import ApiModel
 from app.config import get_settings
 from app.models import AgentRun, ProviderStat
 from app.models.enums import ProviderKind
-from app.platform_config import service as config_service
-from app.platform_config.schemas import ProviderConfig
 
 router = APIRouter(tags=["gateway"])
 
@@ -46,13 +44,7 @@ class GatewayStatusResponse(ApiModel):
 
 @router.get("/gateway/status", response_model=GatewayStatusResponse)
 def gateway_status(session: DbSession) -> GatewayStatusResponse:
-    provider_config = config_service.get_typed(session, "providers", ProviderConfig)
-
-    enabled = [
-        capability
-        for name, capability in PROVIDER_CATALOG.items()
-        if (setting := provider_config.providers.get(name)) is not None and setting.enabled
-    ]
+    enabled = list(build_catalog(session).values())
 
     since = dt.datetime.now(dt.UTC) - DEGRADED_WINDOW
     degraded_runs = (
@@ -89,7 +81,7 @@ def _savings_percent(session: DbSession) -> int:
     baseline_unit = max(
         (
             c.unit_cost_minor
-            for c in PROVIDER_CATALOG.values()
+            for c in build_catalog(session).values()
             if c.kind == ProviderKind.COMMERCIAL_API
         ),
         default=0,

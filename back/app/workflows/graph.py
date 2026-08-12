@@ -33,6 +33,11 @@ class WorkflowNode:
     type: str
     config: dict[str, Any] = field(default_factory=dict)
     position: dict[str, float] = field(default_factory=dict)
+    # An operator-supplied name for *this instance* of the node type, so a
+    # graph with two `provider_generate` nodes is readable. Display only —
+    # nothing in the runner reads it, and an older graph without the key
+    # simply has an empty one.
+    title: str = ""
 
 
 @dataclass(slots=True)
@@ -68,6 +73,7 @@ class WorkflowGraph:
                 type=str(n["type"]),
                 config=dict(n.get("config") or {}),
                 position=dict(n.get("position") or {}),
+                title=str(n.get("title") or ""),
             )
             for n in payload.get("nodes", [])
         ]
@@ -86,7 +92,13 @@ class WorkflowGraph:
     def to_dict(self) -> dict[str, Any]:
         return {
             "nodes": [
-                {"id": n.id, "type": n.type, "config": n.config, "position": n.position}
+                {
+                    "id": n.id,
+                    "type": n.type,
+                    "config": n.config,
+                    "position": n.position,
+                    "title": n.title,
+                }
                 for n in self.nodes
             ],
             "edges": [
@@ -102,12 +114,17 @@ class WorkflowGraph:
         }
 
 
-def validate(graph: WorkflowGraph, *, registry_types: set[str]) -> list[str]:
+def validate(graph: WorkflowGraph, *, output_ports_by_type: dict[str, tuple[str, ...]]) -> list[str]:
     """Structural checks a graph must pass before it can be published.
 
     Returns human-readable problems; an empty list means the graph is safe to
     run. Never raises — the caller (the admin API) decides what a non-empty
     list means for the request.
+
+    `output_ports_by_type` is `registry.NODE_TYPES`'s port table, injected
+    rather than imported: `registry` imports `nodes`, which imports the
+    domain services, so importing it back here would close a cycle. Its keys
+    double as the set of known node types.
     """
     errors: list[str] = []
 
@@ -119,7 +136,7 @@ def validate(graph: WorkflowGraph, *, registry_types: set[str]) -> list[str]:
         if node.id in seen_ids:
             errors.append(f"节点 id 重复: {node.id}")
         seen_ids.add(node.id)
-        if node.type not in registry_types:
+        if node.type not in output_ports_by_type:
             errors.append(f"未知节点类型: {node.type} ({node.id})")
 
     node_map = graph.node_map
@@ -137,6 +154,8 @@ def validate(graph: WorkflowGraph, *, registry_types: set[str]) -> list[str]:
     for edge in graph.edges:
         incoming[edge.to_node] += 1
         outgoing[edge.from_node].append(edge)
+
+    errors.extend(_port_errors(graph, outgoing, output_ports_by_type))
 
     entries = [n.id for n in graph.nodes if incoming.get(n.id, 0) == 0]
     if len(entries) != 1:
@@ -193,6 +212,54 @@ def validate(graph: WorkflowGraph, *, registry_types: set[str]) -> list[str]:
         elif len(set(joins)) != 1:
             errors.append(f"{from_node}:{from_port} 的并行分支必须汇合到同一个 join 节点。")
 
+    return errors
+
+
+def _port_errors(
+    graph: WorkflowGraph,
+    outgoing: dict[str, list[WorkflowEdge]],
+    output_ports_by_type: dict[str, tuple[str, ...]],
+) -> list[str]:
+    """Per-port wiring checks the runner's behaviour makes mandatory.
+
+    All three describe the same class of bug — the graph an operator sees on
+    the canvas is not the graph that runs — and all three were previously
+    only discovered in production:
+
+    - An unwired port is not "this branch does nothing": `_walk` raises
+      `WORKFLOW_MISCONFIGURED` there, which fails the whole job and refunds
+      it. Forgetting `quality_check:retry` used to publish cleanly.
+    - A `from_port` the node type does not declare can never be selected, so
+      whatever it leads to is dead — only reachable by hand-editing the JSON
+      or by retyping a node, since the canvas draws handles from this table.
+    - `_walk` takes `edges[0]` of the matching non-parallel edges, so a
+      second `sequential` edge off one port is silently ignored while still
+      being drawn. `parallel` edges are exempt: fan-out is what they are for.
+    """
+    errors: list[str] = []
+    for node in graph.nodes:
+        ports = output_ports_by_type[node.type]
+        edges = outgoing.get(node.id, [])
+
+        wired = {edge.from_port for edge in edges}
+        for port in ports:
+            if port not in wired:
+                errors.append(
+                    f"节点 {node.id} 的输出端口 {port} 没有连线，任务走到该分支会直接失败。"
+                )
+        for port in sorted(wired - set(ports)):
+            errors.append(f"节点 {node.id} 没有名为 {port} 的输出端口，该连线永远不会被走到。")
+
+        sequential: dict[str, int] = defaultdict(int)
+        for edge in edges:
+            if edge.kind != "parallel":
+                sequential[edge.from_port] += 1
+        for port, count in sorted(sequential.items()):
+            if count > 1:
+                errors.append(
+                    f"节点 {node.id} 的输出端口 {port} 有 {count} 条非并行连线，"
+                    "执行时只会走其中一条；要并行请把它们都改成并行连线。"
+                )
     return errors
 
 

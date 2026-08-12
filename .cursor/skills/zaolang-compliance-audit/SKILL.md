@@ -15,7 +15,7 @@ disable-model-invocation: true
 | 文件 | 内容 |
 | --- | --- |
 | `back/app/domain/audit/service.py` | `record()` / `search()`，自动带上操作者、角色、request_id、IP、UA |
-| `back/app/domain/system_log/service.py` | `emit()`（窗口聚合）/ `search()`，登录失败、限流、鉴权拒绝等安全信号 |
+| `back/app/domain/system_log/service.py` | `emit()`（窗口聚合）/ `search()`，登录失败、限流、鉴权拒绝等安全信号；`emit()` 与 `search()` 都带可选 `job_id`，用于把 pipeline/worker 的运行时报错信号与具体生成任务关联起来 |
 | `back/app/domain/compliance/service.py` | `export_user_data` / `anonymise_user` / `signed_export_url` / `purge_expired_exports` |
 | `back/app/api/v1/privacy.py` | 用户侧导出与删除请求入口 |
 | `back/app/api/v1/admin/users.py` | 后台审批 `DataRequest` |
@@ -27,7 +27,7 @@ disable-model-invocation: true
 ## 不可破坏的不变量
 
 1. **`AuditLog` 只追加**，永不 UPDATE/DELETE。字段包含操作者、角色、目标对象、**前后值摘要**、理由、request_id、IP、UA。
-2. **`SystemLog` 是旁路聚合投影**，用于高频安全信号（登录失败、限流、鉴权拒绝），窗口内计数折叠防写爆；**不替代** `AuditLog` 与各业务专表。
+2. **`SystemLog` 是旁路聚合投影**，用于高频安全信号（登录失败、限流、鉴权拒绝）**以及关键运行时报错信号**（`SystemLogSource.PIPELINE`：`pipeline.py` 顶层 crash、`WorkflowRunner._engine_failure`、异步供应商轮询里 capability 缺失/超时放弃、Celery 任务边界兜底失败），窗口内计数折叠防写爆；**不替代** `AuditLog` 与各业务专表。运行时报错信号带 `job_id` 是为了让后台任务详情能查到"这条任务当时到底崩在哪一行"——`JobEvent.public_message` 依然是给用户看的模糊文案，异常原文只进 `SystemLog.message`，两者不要混。
 3. **`/v1/admin/*` 的所有写操作都必须留痕**，由审计装饰器统一处理。新增后台写接口忘了接装饰器，是这个仓库最容易犯又最难发现的错。
 4. **高危操作强制理由**：调账、墓碑、封禁、配置回滚、强制终止任务、切换智能体模型、触发恢复。没有理由要 `ReasonRequired`（而不是存一个空字符串）。
 5. **删除用户是匿名化，不是 DELETE**：`anonymise_user` 抹掉 PII、保留 `Work` / `WorkVersion` / `LineageEdge` 的墓碑节点。**下游二创的来源不能凭空消失**，这是创作链的完整性要求，也是 `LineageProtected` 存在的原因。

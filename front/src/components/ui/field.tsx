@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useId } from 'react';
+import { forwardRef, useEffect, useId, useRef, useState } from 'react';
 
 import { cn } from '@/lib/cn';
 
@@ -186,6 +186,116 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   );
 });
 
+export interface MultiSelectProps {
+  label: string;
+  hint?: string;
+  error?: string;
+  layout?: FieldLayout;
+  value: string[];
+  onChange: (next: string[]) => void;
+  options: Array<{ value: string; label: string }>;
+  placeholder?: string;
+  emptyHint?: string;
+  disabled?: boolean;
+}
+
+/**
+ * A dropdown checkbox list, for choosing zero or more of a small option set.
+ *
+ * Native `<select multiple>` needs a modifier key per pick and shows an
+ * awkward fixed-height listbox, so this is a button that opens a popover
+ * instead — closer to what "multi-select dropdown" means to most people.
+ */
+export function MultiSelect({
+  label,
+  hint,
+  error,
+  layout,
+  value,
+  onChange,
+  options,
+  placeholder,
+  emptyHint,
+  disabled,
+}: MultiSelectProps) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  const toggle = (optionValue: string) =>
+    onChange(
+      value.includes(optionValue)
+        ? value.filter((item) => item !== optionValue)
+        : [...value, optionValue],
+    );
+
+  const summary = value
+    .map((item) => options.find((option) => option.value === item)?.label ?? item)
+    .join('、');
+  const isDisabled = disabled || options.length === 0;
+
+  return (
+    <Field label={label} hint={hint} error={error} layout={layout}>
+      {({ controlId, describedBy }) => (
+        <div ref={rootRef} className="relative">
+          <button
+            type="button"
+            id={controlId}
+            aria-describedby={describedBy}
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            disabled={isDisabled}
+            onClick={() => setOpen((current) => !current)}
+            className={cn(
+              controlBase,
+              'flex h-11 items-center justify-between gap-2 text-left',
+              !summary && 'text-muted/70',
+              error && 'border-danger',
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {summary || (options.length === 0 ? emptyHint : placeholder)}
+            </span>
+            {value.length > 0 ? (
+              <span className="shrink-0 text-xs text-muted">{value.length}</span>
+            ) : null}
+          </button>
+          {open ? (
+            <ul
+              role="listbox"
+              aria-multiselectable="true"
+              className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-[var(--radius-sm)] border border-border bg-surface-raised py-1 shadow-raised"
+            >
+              {options.map((option) => (
+                <li key={option.value}>
+                  <label className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-text hover:bg-surface-soft">
+                    <input
+                      type="checkbox"
+                      checked={value.includes(option.value)}
+                      onChange={() => toggle(option.value)}
+                    />
+                    {option.label}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
+    </Field>
+  );
+}
+
 /** Labelled switch. The label is clickable and the state is programmatic. */
 export function Switch({
   checked,
@@ -193,15 +303,53 @@ export function Switch({
   label,
   description,
   disabled,
+  compact = false,
+  className,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
   description?: string;
   disabled?: boolean;
+  /** Icon-toolbar rendering: just the toggle, sized to sit among icon
+   * buttons instead of a full label row. `label` still becomes the
+   * accessible name and hover tooltip — there's no room for visible text
+   * next to it in a dense action row. */
+  compact?: boolean;
+  /** Only applied in `compact` mode, e.g. `ml-auto` to group it with the
+   * delete button at the end of an action row. */
+  className?: string;
 }) {
   const id = useId();
   const descriptionId = `${id}-description`;
+
+  if (compact) {
+    return (
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        title={label}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          'relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+          checked ? 'bg-primary' : 'bg-track',
+          className,
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute top-0.5 size-4 rounded-full bg-white shadow transition-[left]',
+            checked ? 'left-[18px]' : 'left-0.5',
+          )}
+        />
+      </button>
+    );
+  }
 
   return (
     <div className="flex items-start justify-between gap-6 py-3">

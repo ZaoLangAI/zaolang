@@ -87,6 +87,13 @@ export const IconPlay = (p: IconProps) => (
   </Icon>
 );
 
+export const IconRefresh = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 11a8 8 0 0 0-14.9-4M4 4v5h5" />
+    <path d="M4 13a8 8 0 0 0 14.9 4M20 20v-5h-5" />
+  </Icon>
+);
+
 export const IconPause = (p: IconProps) => (
   <Icon {...p} fill="currentColor" stroke="none">
     <path d="M8 5h3v14H8zM13 5h3v14h-3z" />
@@ -262,6 +269,20 @@ export const IconVideo = (p: IconProps) => (
   </Icon>
 );
 
+/** A wide frame: the landscape half of the orientation picker. */
+export const IconLandscape = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2.5" y="6" width="19" height="12" rx="2" />
+  </Icon>
+);
+
+/** A tall frame: the portrait half of the orientation picker. */
+export const IconPortrait = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="6" y="2.5" width="12" height="19" rx="2" />
+  </Icon>
+);
+
 /** A phone held upright: the short-form entry point and its previews. */
 export const IconPhone = (p: IconProps) => (
   <Icon {...p}>
@@ -328,6 +349,29 @@ export const IconBranch = (p: IconProps) => (
 export const IconChart = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 20V10M10 20V4M16 20v-7M20 20H4" />
+  </Icon>
+);
+
+/** A pencil: editing text/content in place (e.g. a published prompt). */
+export const IconPencil = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20l1-4L15.5 5.5l3 3L8 19l-4 1Z" />
+    <path d="m13.5 7.5 3 3" />
+  </Icon>
+);
+
+/** A chat bubble: opening a conversational debug/test session. */
+export const IconMessage = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H10l-4 3v-3h-.5a2 2 0 0 1-2-2Z" />
+  </Icon>
+);
+
+/** A trash can: a destructive, hard-delete action. */
+export const IconTrash = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 7h14M10 7V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" />
+    <path d="M10 11v6M14 11v6" />
   </Icon>
 );
 

@@ -1,11 +1,14 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
 
+import {
+  describeAgent,
+  useAgentCatalog,
+  type AgentCatalog,
+} from '@/components/admin/workflows/agent-catalog';
 import { Select, Switch, TextInput } from '@/components/ui/field';
-import { adminApi } from '@/lib/api/admin-client';
-import type { AgentBinding, AgentProfile } from '@/lib/api/admin-types';
+import type { AgentBinding, DynamicAgentBinding, NodeTypeView } from '@/lib/api/admin-types';
 
 /**
  * Renders one node type's Pydantic config schema (fetched as JSON Schema from
@@ -16,17 +19,19 @@ import type { AgentBinding, AgentProfile } from '@/lib/api/admin-types';
  * fields (`extra="forbid"`, no nesting), so a generic renderer covers all of
  * them today and automatically covers the next one a backend PR adds.
  *
- * The exception is the agent bindings: those fields hold an agent id, which is
- * a string in the schema but only ever one of a short list, and picking the
- * wrong one is exactly the mistake that would silently fall back to the role's
- * default prompt. They get a picker fed by the live agent list instead —
- * `agent_bindings` names the ones filtered to a role the node type requires,
- * and `creative_agent_id` the one filtered by category, since creative roles
- * are operator-created and their names are not fixed at code-review time.
+ * The exception is the agent bindings. Those fields hold an agent id, which
+ * is a string in the schema but only ever one of a short list, and picking
+ * the wrong one is exactly the mistake that would silently fall back to the
+ * role's default prompt. Which fields those are is *declared by the backend*
+ * (`registry.NodeSpec`), in three flavours the spec exposes separately:
+ *
+ * - `agent_bindings` — the role is fixed by the node type.
+ * - `dynamic_agent_binding` — the role is itself a config field, because the
+ *   whole point of `custom_agent` is running a role created in the console.
+ *
+ * Nothing here matches on a field name: adding a third such field to a node
+ * type is a backend-only change.
  */
-
-/** Config field naming a creative agent — see `RouteScoreConfig`. */
-const CREATIVE_AGENT_FIELD = 'creative_agent_id';
 
 export interface JsonSchemaProperty {
   type?: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'null';
@@ -45,6 +50,23 @@ export interface NodeConfigSchema {
 }
 
 type ConfigValue = string | number | boolean | string[] | null | undefined;
+
+/**
+ * `fail.default_code` — the failure code a job that reaches this node is
+ * closed out with. There is no backend enum to import (job failure codes are
+ * string literals scattered across `workflows/nodes.py` /
+ * `workers/tasks.py`, unlike the `DomainError.code` table `errors.py` owns
+ * for API responses), so this is a curated list of the codes those modules
+ * actually assign today, kept as a starting point rather than a closed set —
+ * the field stays a free string underneath, this only adds a picker for the
+ * common cases and always keeps whatever is already there as an option.
+ */
+const KNOWN_FAILURE_CODES = [
+  'PROVIDER_TEMPORARY_FAILURE',
+  'MODERATION_REJECTED',
+  'QUALITY_REJECTED',
+  'WORKFLOW_MISCONFIGURED',
+] as const;
 
 function resolveType(prop: JsonSchemaProperty): {
   type: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'enum';
@@ -69,21 +91,29 @@ function resolveType(prop: JsonSchemaProperty): {
 }
 
 export function NodeConfigForm({
-  schema,
-  agentBindings = [],
+  spec,
   value,
   disabled,
+  availablePorts,
   onChange,
 }: {
-  schema: NodeConfigSchema;
-  agentBindings?: AgentBinding[];
+  spec: NodeTypeView;
   value: Record<string, unknown>;
   disabled?: boolean;
+  /** Every output port reachable on the branches feeding this node, for the
+   * `join` node's success-port picker. */
+  availablePorts?: string[];
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const catalog = useAgentCatalog();
+  const schema = spec.config_schema as unknown as NodeConfigSchema;
   const properties = schema.properties ?? {};
   const entries = Object.entries(properties);
-  const bindingByField = new Map(agentBindings.map((binding) => [binding.config_field, binding]));
+
+  const roleBindings = new Map(
+    (spec.agent_bindings ?? []).map((binding) => [binding.config_field, binding]),
+  );
+  const dynamic = spec.dynamic_agent_binding ?? null;
 
   if (entries.length === 0) {
     return null;
@@ -98,24 +128,41 @@ export function NodeConfigForm({
         const label = prop.title ?? key;
         const current = value[key];
 
-        if (key === CREATIVE_AGENT_FIELD) {
+        if (dynamic && key === dynamic.config_field) {
           return (
-            <CreativeAgentSelect
+            <DynamicAgentFields
               key={key}
-              label={label}
-              value={typeof current === 'string' ? current : ''}
+              binding={dynamic}
+              catalog={catalog}
               disabled={disabled}
-              onChange={(next) => set(key, next || null)}
+              role={
+                typeof value[dynamic.role_field] === 'string'
+                  ? String(value[dynamic.role_field])
+                  : ''
+              }
+              agentId={typeof current === 'string' ? current : ''}
+              slot={
+                typeof value[dynamic.slot_field] === 'string'
+                  ? String(value[dynamic.slot_field])
+                  : ''
+              }
+              onChange={(next) => onChange({ ...value, ...next })}
             />
           );
         }
+        // The role and slot are rendered by `DynamicAgentFields` above, as
+        // part of the cascade — not as two more standalone text boxes.
+        if (dynamic && (key === dynamic.role_field || key === dynamic.slot_field)) {
+          return null;
+        }
 
-        const binding = bindingByField.get(key);
-        if (binding) {
+        const roleBinding = roleBindings.get(key);
+        if (roleBinding) {
           return (
             <AgentSelect
               key={key}
-              binding={binding}
+              binding={roleBinding}
+              catalog={catalog}
               label={label}
               value={typeof current === 'string' ? current : ''}
               disabled={disabled}
@@ -151,6 +198,18 @@ export function NodeConfigForm({
 
         if (resolved.type === 'array') {
           const items = Array.isArray(current) ? (current as string[]) : [];
+          if (availablePorts && availablePorts.length > 0) {
+            return (
+              <PortChecklist
+                key={key}
+                label={label}
+                ports={availablePorts}
+                selected={items.length > 0 ? items : ((prop.default as string[]) ?? [])}
+                disabled={disabled}
+                onChange={(next) => set(key, next)}
+              />
+            );
+          }
           return (
             <TextInput
               key={key}
@@ -166,6 +225,25 @@ export function NodeConfigForm({
                     .filter(Boolean),
                 )
               }
+            />
+          );
+        }
+
+        if (spec.type === 'fail' && key === 'default_code') {
+          const code = String(current ?? prop.default ?? KNOWN_FAILURE_CODES[0]);
+          return (
+            <Select
+              key={key}
+              label={label}
+              disabled={disabled}
+              value={code}
+              options={[
+                ...KNOWN_FAILURE_CODES.map((option) => ({ value: option, label: option })),
+                ...(KNOWN_FAILURE_CODES.includes(code as (typeof KNOWN_FAILURE_CODES)[number])
+                  ? []
+                  : [{ value: code, label: code }]),
+              ]}
+              onChange={(event) => set(key, event.target.value)}
             />
           );
         }
@@ -209,146 +287,221 @@ export function NodeConfigForm({
   );
 }
 
+/** The options every agent picker shares: a "role default" entry naming the
+ * agent that would actually run, then the rest, then — crucially — the bound
+ * id itself when it no longer resolves, because a graph can outlive the agent
+ * it references and quietly snapping back to "default" would hide that. */
+function agentOptions(
+  profiles: ReturnType<AgentCatalog['profilesOf']>,
+  value: string,
+  labels: { fallback: string; disabled: string; missing: (id: string) => string },
+  describe: (profile: (typeof profiles)[number]) => string = describeAgent,
+) {
+  return [
+    { value: '', label: labels.fallback },
+    ...profiles
+      .filter((profile) => !profile.is_default)
+      .map((profile) => ({
+        value: profile.id,
+        label: profile.enabled ? describe(profile) : `${describe(profile)} · ${labels.disabled}`,
+        disabled: !profile.enabled && profile.id !== value,
+      })),
+    ...(value && !profiles.some((profile) => profile.id === value)
+      ? [{ value, label: labels.missing(value) }]
+      : []),
+  ];
+}
+
 /**
  * Picks which agent runs this node, out of the ones whose role it accepts.
  *
- * An empty selection is not "no prompt" — it means the role's default agent,
- * which is what every node did before more than one agent per role existed.
- * Disabled agents are listed but not selectable, so an operator can see why a
- * previously working binding is now flagged.
+ * An empty selection is not "no prompt" — it means the role's default agent.
+ * That is a safe choice by construction: a default judgment agent is required
+ * to carry a model binding (`agent_skills.service._apply_bindings`), so the
+ * option names it and its model rather than leaving an operator guessing
+ * whether blank means unconfigured.
  */
 function AgentSelect({
   binding,
+  catalog,
   label,
   value,
   disabled,
   onChange,
 }: {
   binding: AgentBinding;
+  catalog: AgentCatalog;
   label: string;
   value: string;
   disabled?: boolean;
   onChange: (next: string) => void;
 }) {
   const t = useTranslations('adminWorkflows');
-  const [agents, setAgents] = useState<AgentProfile[]>([]);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    adminApi
-      .get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles', {
-        query: { role: binding.role },
-      })
-      .then((page) => {
-        if (!cancelled) setAgents(page.items);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [binding.role]);
-
-  const fallback = agents.find((agent) => agent.is_default);
-  const options = [
-    {
-      value: '',
-      label: fallback
-        ? t('agentDefaultOption', { name: fallback.display_name })
-        : t('agentDefaultOptionPlain'),
-    },
-    ...agents
-      .filter((agent) => !agent.is_default)
-      .map((agent) => ({
-        value: agent.id,
-        label: agent.enabled
-          ? agent.display_name
-          : `${agent.display_name} · ${t('agentDisabledOption')}`,
-        disabled: !agent.enabled && agent.id !== value,
-      })),
-    // A graph can reference an agent that has since been deleted. Keeping it
-    // in the list is what makes the mismatch visible instead of the picker
-    // quietly snapping back to "default".
-    ...(value && !agents.some((agent) => agent.id === value)
-      ? [{ value, label: t('agentMissingOption', { id: value }) }]
-      : []),
-  ];
+  const profiles = catalog.profilesOf(binding.role);
+  const fallback = catalog.defaultProfileOf(binding.role);
 
   return (
     <Select
       label={label}
-      hint={failed ? t('agentLoadFailed') : t('agentSelectHint', { slot: binding.slot })}
+      hint={t('agentSelectHint', { slot: binding.slot })}
       disabled={disabled}
       value={value}
-      options={options}
+      options={agentOptions(profiles, value, {
+        fallback: fallback
+          ? t('agentDefaultOption', { name: describeAgent(fallback) })
+          : t('agentDefaultOptionPlain'),
+        disabled: t('agentDisabledOption'),
+        missing: (id) => t('agentMissingOption', { id }),
+      })}
       onChange={(event) => onChange(event.target.value)}
     />
   );
 }
 
 /**
- * Picks the creative agent whose media candidates narrow this node's routing.
+ * The `custom_agent` cascade: role, then that role's agents, then that role's
+ * prompt slots.
  *
- * Empty means the full catalogue, which is what routing did before creative
- * agents existed. The candidates and their cost weights are context the
- * routing agent reads — they never rank candidates on their own.
+ * All three used to be free-text boxes, which meant typing a 40-character
+ * `ap_…` id by hand and getting no warning at all when the role did not
+ * exist. Roles come from `ROLE_PRESETS` (a role no node type invokes can
+ * never run) and slots from `app/agents/slots.py` via the role's node row —
+ * never a hardcoded list here, since roles gain slots over time.
+ *
+ * Changing the role resets the agent and slot together: keeping either would
+ * leave the node pointing at an agent of the wrong role, which the publish
+ * check rejects and the runtime falls back out of.
  */
-function CreativeAgentSelect({
+function DynamicAgentFields({
+  binding,
+  catalog,
+  role,
+  agentId,
+  slot,
+  disabled,
+  onChange,
+}: {
+  binding: DynamicAgentBinding;
+  catalog: AgentCatalog;
+  role: string;
+  agentId: string;
+  slot: string;
+  disabled?: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const t = useTranslations('adminWorkflows');
+  const presets = catalog.presets;
+  const profiles = role ? catalog.profilesOf(role) : [];
+  const fallback = role ? catalog.defaultProfileOf(role) : undefined;
+  const slots = role ? catalog.slotsOf(role) : [];
+
+  const selectRole = (nextRole: string) =>
+    onChange({
+      [binding.role_field]: nextRole,
+      [binding.config_field]: null,
+      [binding.slot_field]: catalog.slotsOf(nextRole)[0]?.key ?? 'default',
+    });
+
+  return (
+    <>
+      <Select
+        label={t('customAgentRole')}
+        hint={t('customAgentRoleHint')}
+        disabled={disabled}
+        value={role}
+        options={[
+          { value: '', label: t('customAgentRolePlaceholder') },
+          ...presets.map((preset) => ({ value: preset.role, label: preset.display_name })),
+          // A role removed from the presets since publishing would otherwise
+          // vanish from the dropdown and read as "nothing selected".
+          ...(role && !presets.some((preset) => preset.role === role)
+            ? [{ value: role, label: t('customAgentRoleUnknown', { role }) }]
+            : []),
+        ]}
+        onChange={(event) => selectRole(event.target.value)}
+      />
+      <Select
+        label={t('customAgentAgent')}
+        disabled={disabled || !role}
+        value={agentId}
+        options={agentOptions(profiles, agentId, {
+          fallback: fallback
+            ? t('agentDefaultOption', { name: describeAgent(fallback) })
+            : t('agentDefaultOptionPlain'),
+          disabled: t('agentDisabledOption'),
+          missing: (id) => t('agentMissingOption', { id }),
+        })}
+        onChange={(event) => onChange({ [binding.config_field]: event.target.value || null })}
+      />
+      <Select
+        label={t('customAgentSlot')}
+        hint={t('customAgentSlotHint')}
+        disabled={disabled || !role}
+        value={slot}
+        options={[
+          ...slots.map((candidate) => ({ value: candidate.key, label: candidate.label })),
+          ...(slot && !slots.some((candidate) => candidate.key === slot)
+            ? [{ value: slot, label: t('customAgentSlotUnknown', { slot }) }]
+            : []),
+        ]}
+        onChange={(event) => onChange({ [binding.slot_field]: event.target.value })}
+      />
+    </>
+  );
+}
+
+/**
+ * Which ports count as "this branch succeeded", for a `join`.
+ *
+ * A comma-separated text box invited typos that silently made a barrier
+ * unsatisfiable; the options are the ports the branches feeding this join can
+ * actually produce.
+ */
+function PortChecklist({
   label,
-  value,
+  ports,
+  selected,
   disabled,
   onChange,
 }: {
   label: string;
-  value: string;
+  ports: string[];
+  selected: string[];
   disabled?: boolean;
-  onChange: (next: string) => void;
+  onChange: (next: string[]) => void;
 }) {
-  const t = useTranslations('adminWorkflows');
-  const [agents, setAgents] = useState<AgentProfile[]>([]);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    adminApi
-      .get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles')
-      .then((page) => {
-        if (!cancelled) setAgents(page.items.filter((item) => item.category === 'creative'));
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const options = [
-    { value: '', label: t('creativeAgentNone') },
-    ...agents.map((agent) => ({
-      value: agent.id,
-      label: agent.enabled
-        ? `${agent.display_name} (${agent.role})`
-        : `${agent.display_name} (${agent.role}) · ${t('agentDisabledOption')}`,
-      disabled: !agent.enabled && agent.id !== value,
-    })),
-    // Same reasoning as the agent picker: a graph can outlive the agent it
-    // references, and hiding that would look like "no narrowing configured".
-    ...(value && !agents.some((agent) => agent.id === value)
-      ? [{ value, label: t('agentMissingOption', { id: value }) }]
-      : []),
-  ];
+  const toggle = (port: string) =>
+    onChange(
+      selected.includes(port) ? selected.filter((item) => item !== port) : [...selected, port],
+    );
 
   return (
-    <Select
-      label={label}
-      hint={failed ? t('agentLoadFailed') : t('creativeAgentHint')}
-      disabled={disabled}
-      value={value}
-      options={options}
-      onChange={(event) => onChange(event.target.value)}
-    />
+    <fieldset className="flex flex-col gap-1.5">
+      <legend className="text-xs font-medium text-text">{label}</legend>
+      <div className="flex flex-wrap gap-1.5">
+        {ports.map((port) => {
+          const checked = selected.includes(port);
+          return (
+            <label
+              key={port}
+              className={
+                checked
+                  ? 'cursor-pointer rounded-[var(--radius-sm)] border border-primary bg-primary/12 px-2 py-1 font-mono text-[11px] text-primary'
+                  : 'cursor-pointer rounded-[var(--radius-sm)] border border-border px-2 py-1 font-mono text-[11px] text-muted hover:text-text'
+              }
+            >
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={checked}
+                disabled={disabled}
+                onChange={() => toggle(port)}
+              />
+              {port}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }

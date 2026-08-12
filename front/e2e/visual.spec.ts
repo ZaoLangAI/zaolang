@@ -88,6 +88,48 @@ test.describe('signed in', () => {
 
   for (const theme of ['dark', 'light'] as const) {
     for (const viewport of VIEWPORTS) {
+      test(`the generation studio's style gallery and more-settings render without overflow · ${theme} · ${viewport.label}`, async ({
+        page,
+      }, info) => {
+        const problems = watchForPageErrors(page);
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await setTheme(page, theme);
+        await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'networkidle' });
+        await expectTheme(page, theme);
+
+        // Below the `lg` breakpoint the params panel — including the style
+        // gallery trigger — lives inside a sheet opened from the fixed bottom
+        // bar, rather than the aside rendered on wide viewports.
+        const styleTrigger = page.getByRole('button', { name: '选择系统画风' });
+        if (!(await styleTrigger.isVisible())) {
+          await page.getByRole('button', { name: '参数', exact: true }).click();
+        }
+
+        await styleTrigger.click();
+        // Named explicitly: on narrow viewports the params sheet underneath is
+        // itself a `role="dialog"`, so an unscoped lookup is ambiguous.
+        const styleDialog = page.getByRole('dialog', { name: '系统画风库' });
+        await styleDialog.waitFor();
+        await page.waitForTimeout(300);
+        await expectNoHorizontalOverflow(page);
+        await info.attach(`generation-studio-style-gallery-${theme}-${viewport.label}.png`, {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        });
+        await styleDialog.focus();
+        await page.keyboard.press('Escape');
+        await styleDialog.waitFor({ state: 'hidden' });
+
+        await page.getByRole('button', { name: '更多设置' }).click();
+        await expectNoHorizontalOverflow(page);
+        await info.attach(`generation-studio-more-settings-${theme}-${viewport.label}.png`, {
+          body: await page.screenshot({ fullPage: true }),
+          contentType: 'image/png',
+        });
+
+        expect(problems(), 'console errors on generation-studio').toEqual([]);
+      });
+
       test(`the creation chain renders without overflow · ${theme} · ${viewport.label}`, async ({
         page,
       }, info) => {
