@@ -8,8 +8,10 @@ import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { DataTable, type Column } from '@/components/admin/data-table';
 import { DetailDrawer, DetailList } from '@/components/admin/detail-drawer';
+import { FilterBar, Pager } from '@/components/admin/filter-bar';
 import { Poster } from '@/components/media/poster';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/field';
 import { Badge, type BadgeTone } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
@@ -45,7 +47,39 @@ const VISIBILITY_LABEL_KEY: Record<string, string> = {
   private: 'visibilityPrivate',
 };
 
-export function ModerationQueue() {
+const SUBJECT_TYPES = ['work', 'skill', 'generation_job', 'asset'] as const;
+const SUBJECT_TYPE_LABEL_KEY: Record<string, string> = {
+  work: 'subjectTypeWork',
+  skill: 'subjectTypeSkill',
+  generation_job: 'subjectTypeGenerationJob',
+  asset: 'subjectTypeAsset',
+};
+
+// The categories a reviewer can pick from when rejecting by hand, roughly
+// mirroring what the safety agent itself is instructed to look for, plus a
+// couple of operator-only reasons it never produces.
+const REJECT_REASON_CODES = [
+  'PROHIBITED_CONTENT',
+  'NONCONSENSUAL_LIKENESS',
+  'ILLEGAL_ACTIVITY',
+  'HATE_EXTREMISM',
+  'COPYRIGHT',
+  'SPAM_DUPLICATE',
+  'OTHER',
+] as const;
+const REASON_CODE_LABEL_KEY: Record<string, string> = {
+  PROHIBITED_CONTENT: 'reasonProhibitedContent',
+  NONCONSENSUAL_LIKENESS: 'reasonNonconsensualLikeness',
+  ILLEGAL_ACTIVITY: 'reasonIllegalActivity',
+  HATE_EXTREMISM: 'reasonHateExtremism',
+  COPYRIGHT: 'reasonCopyright',
+  SPAM_DUPLICATE: 'reasonSpamDuplicate',
+  OTHER: 'reasonOther',
+};
+
+type WorkAction = 'hide' | 'tombstone' | 'restore';
+
+export function ModerationQueue({ configAction }: { configAction?: React.ReactNode }) {
   const t = useTranslations('adminModeration');
   const tAdmin = useTranslations('admin');
   const locale = useLocale() as Locale;
@@ -54,12 +88,16 @@ export function ModerationQueue() {
 
   const list = useAdminList<ModerationItem>('/v1/admin/moderation/queue');
   const [rejecting, setRejecting] = useState<ModerationItem | null>(null);
+  const [rejectReasonCode, setRejectReasonCode] = useState<string>('OTHER');
   const [viewing, setViewing] = useState<ModerationItem | null>(null);
   const [detail, setDetail] = useState<ModerationSubjectDetail | null>(null);
+  const [workAction, setWorkAction] = useState<WorkAction | null>(null);
   const detailLoading = viewing !== null && detail?.queue_item.id !== viewing.id;
 
   const canReview = atLeast(role, 'reviewer');
-  const canRestore = atLeast(role, 'operator');
+  // Tombstoning and restoring are both `operator`-and-above, same as
+  // everywhere else an irreversible or reversal action gates on that level.
+  const canOperate = atLeast(role, 'operator');
 
   useEffect(() => {
     if (!viewing) return;
@@ -77,11 +115,19 @@ export function ModerationQueue() {
     };
   }, [viewing]);
 
+  const refreshDetail = () => {
+    if (!viewing) return;
+    adminApi
+      .get<ModerationSubjectDetail>(`/v1/admin/moderation/queue/${viewing.id}/detail`)
+      .then((data) => setDetail(data))
+      .catch(() => {});
+  };
+
   const decide = async (item: ModerationItem, decision: 'approved' | 'rejected', note?: string) => {
     await adminApi.post(`/v1/admin/moderation/queue/${item.id}/decide`, {
       decision,
       note,
-      reason_code: decision === 'rejected' ? 'manual_review' : undefined,
+      reason_code: decision === 'rejected' ? rejectReasonCode : undefined,
     });
     notify(t(decision === 'approved' ? 'approve' : 'reject'), 'success');
     list.reload();
@@ -92,15 +138,17 @@ export function ModerationQueue() {
     list.reload();
   };
 
-  const restore = async () => {
+  const actOnWork = async (action: WorkAction, reason: string) => {
     if (!detail?.work) return;
-    await adminApi.post(`/v1/admin/works/${detail.work.id}/restore`);
-    notify(t('restored'), 'success');
-    setDetail((current) =>
-      current?.work
-        ? { ...current, work: { ...current.work, lifecycle_status: 'active' } }
-        : current,
+    await adminApi.post(
+      `/v1/admin/works/${detail.work.id}/${action}`,
+      action === 'restore' ? undefined : { reason, confirm: true },
     );
+    notify(
+      t(action === 'hide' ? 'hideWork' : action === 'tombstone' ? 'tombstoneWork' : 'restoreWork'),
+      'success',
+    );
+    refreshDetail();
     list.reload();
   };
 
@@ -171,7 +219,14 @@ export function ModerationQueue() {
               <Button size="sm" variant="secondary" onClick={() => void decide(item, 'approved')}>
                 {t('approve')}
               </Button>
-              <Button size="sm" variant="danger" onClick={() => setRejecting(item)}>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  setRejectReasonCode('OTHER');
+                  setRejecting(item);
+                }}
+              >
                 {t('reject')}
               </Button>
             </>
@@ -185,18 +240,56 @@ export function ModerationQueue() {
     <section>
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold">{t('title')}</h2>
-        <Button size="sm" variant="secondary" onClick={list.reload}>
-          {tAdmin('refresh')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={list.reload}>
+            {tAdmin('refresh')}
+          </Button>
+          {configAction}
+        </div>
       </div>
 
-      <DataTable
-        caption={t('title')}
-        columns={columns}
-        rows={list.rows}
-        rowKey={(item) => item.id}
-        loading={list.loading}
-        failed={list.failed}
+      <FilterBar
+        filters={[
+          {
+            id: 'status',
+            label: t('colStatus'),
+            kind: 'select',
+            options: Object.entries(STATUS_LABEL_KEY).map(([value, key]) => ({
+              value,
+              label: t(key),
+            })),
+          },
+          {
+            id: 'subject_type',
+            label: t('filterSubjectType'),
+            kind: 'select',
+            options: SUBJECT_TYPES.map((value) => ({
+              value,
+              label: t(SUBJECT_TYPE_LABEL_KEY[value] ?? 'subjectTypeWork'),
+            })),
+          },
+        ]}
+        values={list.filters}
+        onChange={list.setFilter}
+        onReset={list.resetFilters}
+      />
+
+      <div className="mt-3">
+        <DataTable
+          caption={t('title')}
+          columns={columns}
+          rows={list.rows}
+          rowKey={(item) => item.id}
+          loading={list.loading}
+          failed={list.failed}
+        />
+      </div>
+
+      <Pager
+        onPrev={list.prevPage}
+        onNext={list.nextPage}
+        hasPrev={list.hasPrev}
+        hasNext={list.hasNext}
       />
 
       <DangerConfirm
@@ -208,7 +301,17 @@ export function ModerationQueue() {
         onConfirm={async (reason) => {
           if (rejecting) await decide(rejecting, 'rejected', reason);
         }}
-      />
+      >
+        <Select
+          label={t('rejectReasonCode')}
+          value={rejectReasonCode}
+          onChange={(event) => setRejectReasonCode(event.target.value)}
+          options={REJECT_REASON_CODES.map((code) => ({
+            value: code,
+            label: t(REASON_CODE_LABEL_KEY[code] ?? 'reasonOther'),
+          }))}
+        />
+      </DangerConfirm>
 
       <DetailDrawer
         open={viewing !== null}
@@ -218,13 +321,6 @@ export function ModerationQueue() {
         }}
         title={viewing?.preview_title ?? viewing?.subject_id ?? ''}
         subtitle={viewing ? `${viewing.subject_type} · ${viewing.stage}` : undefined}
-        footer={
-          canRestore && detail?.work?.lifecycle_status === 'hidden' ? (
-            <Button size="sm" variant="secondary" onClick={() => void restore()}>
-              {t('restore')}
-            </Button>
-          ) : null
-        }
       >
         {detailLoading ? <p className="text-xs text-muted">{t('loading')}…</p> : null}
         {!detailLoading && detail ? (
@@ -246,6 +342,14 @@ export function ModerationQueue() {
                 {
                   label: t('colLabel'),
                   value: detail.queue_item.reason_code ?? detail.queue_item.stage,
+                },
+                {
+                  label: t('openReportCount'),
+                  value: (
+                    <Badge tone={detail.open_report_count > 0 ? 'danger' : 'neutral'}>
+                      {detail.open_report_count}
+                    </Badge>
+                  ),
                 },
               ]}
             />
@@ -281,6 +385,28 @@ export function ModerationQueue() {
                       : []),
                   ]}
                 />
+
+                <section className="flex flex-wrap gap-2">
+                  {canReview && detail.work.lifecycle_status === 'active' ? (
+                    <Button size="sm" variant="secondary" onClick={() => setWorkAction('hide')}>
+                      {t('hideWork')}
+                    </Button>
+                  ) : null}
+                  {canOperate && detail.work.lifecycle_status !== 'tombstone' ? (
+                    <Button size="sm" variant="danger" onClick={() => setWorkAction('tombstone')}>
+                      {t('tombstoneWork')}
+                    </Button>
+                  ) : null}
+                  {canOperate && detail.work.lifecycle_status === 'hidden' ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void actOnWork('restore', 'restore')}
+                    >
+                      {t('restore')}
+                    </Button>
+                  ) : null}
+                </section>
               </div>
             ) : null}
 
@@ -332,6 +458,15 @@ export function ModerationQueue() {
                       {entry.reason_code ? (
                         <p className="font-mono text-[11px] text-muted">{entry.reason_code}</p>
                       ) : null}
+                      {entry.categories && entry.categories.length > 0 ? (
+                        <span className="flex flex-wrap gap-1">
+                          {entry.categories.map((category) => (
+                            <Badge key={category} tone="neutral">
+                              {category}
+                            </Badge>
+                          ))}
+                        </span>
+                      ) : null}
                       <span className="tabular text-[11px] text-muted">
                         {formatDateTime(entry.created_at, locale)}
                       </span>
@@ -343,6 +478,25 @@ export function ModerationQueue() {
           </div>
         ) : null}
       </DetailDrawer>
+
+      <DangerConfirm
+        open={workAction !== null}
+        onClose={() => setWorkAction(null)}
+        title={t(
+          workAction === 'tombstone'
+            ? 'tombstoneWork'
+            : workAction === 'hide'
+              ? 'hideWork'
+              : 'restoreWork',
+        )}
+        description={t('subtitle')}
+        reasonLabel={tAdmin('dangerReason')}
+        // A tombstone is irreversible, so it also asks for the work id.
+        confirmWord={workAction === 'tombstone' ? (detail?.work?.id ?? undefined) : undefined}
+        onConfirm={async (reason) => {
+          if (workAction) await actOnWork(workAction, reason);
+        }}
+      />
     </section>
   );
 }

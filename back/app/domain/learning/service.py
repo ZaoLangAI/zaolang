@@ -16,6 +16,7 @@ from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
+from app.domain.moderation_policy import assert_allowed
 from app.models import Asset, LearnPost
 from app.models.base import utcnow
 from app.models.enums import AssetRole, LearnPostLevel, LearnPostStatus
@@ -46,6 +47,13 @@ def submit(
     cover_asset_id: str | None,
     body_markdown: str,
 ) -> LearnPost:
+    assert_allowed(
+        session,
+        config_key="learning_moderation",
+        texts=[title, summary, body_markdown],
+        user_id=author_user_id,
+        subject_type="learn_post",
+    )
     _assert_media_owned(session, author_user_id=author_user_id, cover_asset_id=cover_asset_id)
     _assert_body_markdown_valid(session, author_user_id=author_user_id, body_markdown=body_markdown)
 
@@ -76,6 +84,14 @@ def update(
 ) -> LearnPost:
     if post.author_user_id != actor_user_id:
         raise Forbidden("只能编辑自己发表的内容。")
+
+    assert_allowed(
+        session,
+        config_key="learning_moderation",
+        texts=[title, summary, body_markdown],
+        user_id=actor_user_id,
+        subject_type="learn_post",
+    )
 
     _assert_media_owned(session, author_user_id=actor_user_id, cover_asset_id=cover_asset_id)
     _assert_body_markdown_valid(session, author_user_id=actor_user_id, body_markdown=body_markdown)

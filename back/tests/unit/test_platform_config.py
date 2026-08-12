@@ -14,7 +14,7 @@ from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     DEFAULT_CONFIGS,
     MAX_GENERATION_DURATION_SECONDS,
-    AgentConfig,
+    ContentModerationConfig,
     FeatureFlags,
     PricingConfig,
     ShortformConfig,
@@ -92,56 +92,38 @@ def test_an_unknown_key_is_rejected(db: Session, admin: User) -> None:
         config_service.set_value(db, "not_a_real_key", {}, actor_user_id=admin.id)
 
 
-def test_every_agent_must_stay_bound_to_a_model(db: Session, admin: User) -> None:
-    """An unbound agent would fail at generation time rather than at edit time."""
-    value = copy.deepcopy(DEFAULT_CONFIGS["agents"])
-    del value["bindings"]["safety"]
-
-    with pytest.raises(ValidationFailed):
-        config_service.set_value(db, "agents", value, actor_user_id=admin.id)
-
-
-def test_an_agent_model_can_be_switched_without_a_restart(db: Session, admin: User) -> None:
-    value = copy.deepcopy(DEFAULT_CONFIGS["agents"])
-    value["bindings"]["safety"]["model"] = "kimi-k3"
-    config_service.set_value(db, "agents", value, actor_user_id=admin.id)
-
-    bindings = config_service.get_typed(db, "agents", AgentConfig).bindings
-    assert bindings["safety"].model == "kimi-k3"
-
-
 def test_a_disabled_flag_is_off_for_everyone(db: Session, admin: User) -> None:
     value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
-    value["royalties"] = False
+    value["video_generation"] = False
     config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
 
-    assert config_service.is_enabled(db, "royalties") is False
-    assert config_service.is_enabled(db, "royalties", user_id="usr_anything") is False
+    assert config_service.is_enabled(db, "video_generation") is False
+    assert config_service.is_enabled(db, "video_generation", user_id="usr_anything") is False
 
 
 def test_rollout_bucketing_is_stable_for_a_given_user(db: Session, admin: User) -> None:
     """A user whose bucket flipped between requests would see the feature appear
     and vanish at random."""
     value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
-    value["rollout_percentages"] = {"semantic_search": 50}
+    value["rollout_percentages"] = {"video_generation": 50}
     config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
 
-    first = config_service.is_enabled(db, "semantic_search", user_id="usr_stable_1")
+    first = config_service.is_enabled(db, "video_generation", user_id="usr_stable_1")
     for _ in range(5):
-        assert config_service.is_enabled(db, "semantic_search", user_id="usr_stable_1") is first
+        assert config_service.is_enabled(db, "video_generation", user_id="usr_stable_1") is first
 
 
 def test_a_partial_rollout_excludes_anonymous_callers(db: Session, admin: User) -> None:
     value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
-    value["rollout_percentages"] = {"command_palette": 10}
+    value["rollout_percentages"] = {"shortform_studio": 10}
     config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
 
-    assert config_service.is_enabled(db, "command_palette", user_id=None) is False
+    assert config_service.is_enabled(db, "shortform_studio", user_id=None) is False
 
 
 def test_rollout_percentages_stay_within_range(db: Session, admin: User) -> None:
     value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
-    value["rollout_percentages"] = {"semantic_search": 140}
+    value["rollout_percentages"] = {"video_generation": 140}
 
     with pytest.raises(ValidationFailed):
         config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
@@ -153,6 +135,31 @@ def test_unknown_fields_are_rejected_rather_than_silently_dropped(db: Session, a
 
     with pytest.raises(ValidationFailed):
         config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
+
+
+def test_public_registration_does_not_allow_rollout(db: Session, admin: User) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
+    value["rollout_percentages"] = {"public_registration": 50}
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
+
+
+def test_moderation_keywords_are_normalised_and_deduplicated(db: Session, admin: User) -> None:
+    config_service.set_value(
+        db,
+        "content_moderation",
+        {"blocked_keywords": ["  Bad ", "bad", "BAD", ""]},
+        actor_user_id=admin.id,
+    )
+    config = config_service.get_typed(db, "content_moderation", ContentModerationConfig)
+    assert config.blocked_keywords == ["bad"]
+
+
+def test_pricing_requires_every_operation(db: Session, admin: User) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    value["tier_pricing"].pop("audio_generation")
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
 
 
 def test_a_stored_value_that_no_longer_parses_falls_back_to_defaults(
@@ -235,6 +242,38 @@ def test_a_new_shortform_spec_takes_effect_without_a_restart(db: Session, admin:
     profiles = config_service.get_typed(db, "shortform", ShortformConfig).profiles
     assert profiles["douyin_square"].aspect_ratio == "1:1"
     assert profiles["douyin_square"].max_title_length == 55
+
+
+def test_the_clarify_and_preview_toggles_default_on_with_three_candidates(
+    db: Session,
+) -> None:
+    config = config_service.get_typed(db, "shortform", ShortformConfig)
+
+    assert config.enable_clarifying_questions is True
+    assert config.enable_preview_picker is True
+    assert config.preview_candidate_count == 3
+
+
+def test_the_preview_candidate_count_cannot_exceed_three(db: Session, admin: User) -> None:
+    """A guard rail: a fat-fingered edit must not silently multiply everyone's
+    preview cost."""
+    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    value["preview_candidate_count"] = 5
+
+    with pytest.raises(ValidationFailed):
+        config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
+
+
+def test_the_preview_picker_can_be_switched_off_independently_of_clarify(
+    db: Session, admin: User
+) -> None:
+    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    value["enable_preview_picker"] = False
+    config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
+
+    config = config_service.get_typed(db, "shortform", ShortformConfig)
+    assert config.enable_preview_picker is False
+    assert config.enable_clarifying_questions is True
 
 
 def test_the_shortform_studio_flag_can_be_turned_off(db: Session, admin: User) -> None:

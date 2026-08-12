@@ -18,6 +18,8 @@ from app.models.base import new_id, utcnow
 from app.models.enums import LifecycleStatus, UserStatus, Visibility
 from app.storage import s3
 
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
+
 # --- audit ----------------------------------------------------------------
 
 

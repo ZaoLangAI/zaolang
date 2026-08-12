@@ -18,6 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
+from app.domain.moderation_policy import assert_allowed, text_values
+from app.domain.moderation_queue import service as moderation_queue
 from app.models import Asset, CreationSkill, ModerationQueueItem
 from app.models.base import utcnow
 from app.models.enums import (
@@ -114,6 +116,14 @@ def publish(session: Session, *, skill: CreationSkill, actor_user_id: str) -> Cr
         return skill
     if skill.status == CreationSkillStatus.PUBLISHED:
         return skill
+
+    assert_allowed(
+        session,
+        config_key="skill_moderation",
+        texts=[skill.title, skill.description, *text_values(skill.params_json)],
+        user_id=actor_user_id,
+        subject_type="skill",
+    )
 
     skill.visibility = CreationSkillVisibility.PUBLIC
     skill.status = CreationSkillStatus.PENDING_REVIEW
@@ -271,21 +281,13 @@ def _queue_item_for(session: Session, skill: CreationSkill) -> ModerationQueueIt
 
 
 def _reopen_queue_item(session: Session, skill: CreationSkill) -> None:
-    item = _queue_item_for(session, skill)
-    if item is None:
-        session.add(
-            ModerationQueueItem(
-                subject_type=QUEUE_SUBJECT_TYPE,
-                subject_id=skill.id,
-                stage=QUEUE_STAGE,
-                status=ModerationStatus.NEEDS_REVIEW,
-            )
-        )
-        return
-    item.status = ModerationStatus.NEEDS_REVIEW
-    item.claimed_by_user_id = None
-    item.reason_code = None
-    item.resolved_at = None
+    moderation_queue.enqueue_for_review(
+        session,
+        subject_type=QUEUE_SUBJECT_TYPE,
+        subject_id=skill.id,
+        stage=QUEUE_STAGE,
+        reason_code=None,
+    )
 
 
 def _resolve_open_queue_item(session: Session, skill: CreationSkill) -> None:

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Announcement, AuditLog, Notification, User
 from app.platform_config import service as config_service
-from app.platform_config.schemas import DEFAULT_CONFIGS, AgentConfig, FeatureFlags, PricingConfig
+from app.platform_config.schemas import DEFAULT_CONFIGS, FeatureFlags, PricingConfig
 from tests.conftest import admin_header
 
 # `pricing` stands in for "some editable config key" across these CRUD/
@@ -57,7 +57,7 @@ def _announcement(**overrides: object) -> dict:
 
 def test_every_known_key_is_listed(client: TestClient, admin: User) -> None:
     body = client.get("/v1/admin/config", headers=admin_header(admin)).json()
-    assert {item["key"] for item in body["items"]} == set(config_service.all_keys())
+    assert {item["key"] for item in body["items"]} == {"feature_flags", "shortform"}
 
 
 def test_an_unset_key_reports_its_built_in_default(client: TestClient, admin: User) -> None:
@@ -83,6 +83,38 @@ def test_a_reviewer_can_read_configuration(client: TestClient, reviewer: User) -
 
 def test_a_reviewer_cannot_edit_configuration(client: TestClient, reviewer: User) -> None:
     assert _put_pricing(client, reviewer, PRICING_A).status_code == 403
+
+
+def test_a_change_reason_is_required(client: TestClient, admin: User) -> None:
+    response = client.put(
+        "/v1/admin/config/pricing",
+        json={"value": PRICING_A},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_model_secrets_are_not_available_through_generic_config_api(
+    client: TestClient, admin: User
+) -> None:
+    requests = (
+        ("get", "/v1/admin/config/llm_providers", None),
+        ("get", "/v1/admin/config/llm_providers/history", None),
+        ("get", "/v1/admin/config/llm_providers/diff?from_version=0&to_version=1", None),
+        ("put", "/v1/admin/config/llm_providers", {"value": {}, "note": "禁止旁路"}),
+        (
+            "post",
+            "/v1/admin/config/llm_providers/rollback",
+            {"target_version": 1, "reason": "禁止旁路", "confirm": True},
+        ),
+    )
+    for method, path, payload in requests:
+        response = (
+            getattr(client, method)(path, headers=admin_header(admin), json=payload)
+            if payload is not None
+            else getattr(client, method)(path, headers=admin_header(admin))
+        )
+        assert response.status_code == 404
 
 
 # --- editing --------------------------------------------------------------
@@ -203,30 +235,27 @@ def test_version_zero_diffs_against_the_built_in_default(client: TestClient, adm
 def test_a_nested_change_reads_as_one_dotted_path(
     client: TestClient, db: Session, admin: User
 ) -> None:
-    from app.platform_config.schemas import ProviderConfig
-
-    first = config_service.get_typed(db, "providers", ProviderConfig).model_dump(mode="json")
-    second = {**first}
-    second["providers"] = {name: {**setting} for name, setting in first["providers"].items()}
-    second["providers"]["fake_paid_api"]["enabled"] = False
+    first = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
+    second = copy.deepcopy(first)
+    second["profiles"]["douyin_vertical"]["max_hashtags"] = 8
 
     client.put(
-        "/v1/admin/config/providers",
+        "/v1/admin/config/shortform",
         json={"value": first, "note": "基线"},
         headers=admin_header(admin),
     )
     client.put(
-        "/v1/admin/config/providers",
-        json={"value": second, "note": "停用付费供应商"},
+        "/v1/admin/config/shortform",
+        json={"value": second, "note": "调整标签数"},
         headers=admin_header(admin),
     )
 
     body = client.get(
-        "/v1/admin/config/providers/diff",
+        "/v1/admin/config/shortform/diff",
         params={"from_version": 1, "to_version": 2},
         headers=admin_header(admin),
     ).json()
-    assert [e["path"] for e in body["entries"]] == ["providers.fake_paid_api.enabled"]
+    assert [e["path"] for e in body["entries"]] == ["profiles.douyin_vertical.max_hashtags"]
 
 
 def test_rollback_restores_the_earlier_value(client: TestClient, db: Session, admin: User) -> None:
@@ -303,33 +332,15 @@ def test_rollback_is_audited(client: TestClient, db: Session, admin: User) -> No
     assert entry.reason == "成本失控"
 
 
-# --- agent model binding --------------------------------------------------
+# --- removed configuration -----------------------------------------------
 
 
-def test_an_agent_model_can_be_switched_without_a_restart(
-    client: TestClient, db: Session, admin: User
+def test_removed_provider_and_agent_keys_cannot_be_reactivated(
+    client: TestClient, admin: User
 ) -> None:
-    payload = config_service.get_typed(db, "agents", AgentConfig).model_dump(mode="json")
-    payload["bindings"]["planner"]["model"] = "doubao-seed-2-1-pro"
-
-    response = client.put(
-        "/v1/admin/config/agents",
-        json={"value": payload, "note": "切换规划器模型"},
-        headers=admin_header(admin),
-    )
-    assert response.status_code == 200, response.text
-
-    updated = config_service.get_typed(db, "agents", AgentConfig)
-    assert updated.bindings["planner"].model == "doubao-seed-2-1-pro"
-
-
-def test_an_agent_cannot_be_left_without_a_model(client: TestClient, admin: User) -> None:
-    response = client.put(
-        "/v1/admin/config/agents",
-        json={"value": {"bindings": {"planner": {"model": "kimi-k3"}}}, "note": "只留一个"},
-        headers=admin_header(admin),
-    )
-    assert response.status_code == 422
+    for key in ("providers", "agents", "moderation"):
+        response = client.get(f"/v1/admin/config/{key}", headers=admin_header(admin))
+        assert response.status_code == 404
 
 
 # --- feature flags --------------------------------------------------------
@@ -345,22 +356,22 @@ def test_feature_flags_are_listed_with_state_and_description(
 
 def test_a_flag_can_be_turned_off(client: TestClient, db: Session, admin: User) -> None:
     value = config_service.get_typed(db, "feature_flags", FeatureFlags).model_dump(mode="json")
-    value["royalties"] = False
+    value["video_generation"] = False
 
     response = client.put(
         "/v1/admin/config/feature_flags",
-        json={"value": value, "note": "临时关闭回流分成"},
+        json={"value": value, "note": "临时关闭视频生成"},
         headers=admin_header(admin),
     )
     assert response.status_code == 200, response.text
-    assert config_service.is_enabled(db, "royalties") is False
+    assert config_service.is_enabled(db, "video_generation") is False
 
 
 def test_a_rollout_percentage_outside_the_range_is_rejected(
     client: TestClient, db: Session, admin: User
 ) -> None:
     value = config_service.get_typed(db, "feature_flags", FeatureFlags).model_dump(mode="json")
-    value["rollout_percentages"] = {"semantic_search": 140}
+    value["rollout_percentages"] = {"video_generation": 140}
 
     response = client.put(
         "/v1/admin/config/feature_flags",
@@ -374,7 +385,7 @@ def test_a_greyscale_rollout_is_reported_per_flag(
     client: TestClient, db: Session, admin: User
 ) -> None:
     value = config_service.get_typed(db, "feature_flags", FeatureFlags).model_dump(mode="json")
-    value["rollout_percentages"] = {"semantic_search": 25}
+    value["rollout_percentages"] = {"video_generation": 25}
     client.put(
         "/v1/admin/config/feature_flags",
         json={"value": value, "note": "灰度 25%"},
@@ -382,7 +393,7 @@ def test_a_greyscale_rollout_is_reported_per_flag(
     )
 
     items = client.get("/v1/admin/feature-flags", headers=admin_header(admin)).json()["items"]
-    flag = next(f for f in items if f["name"] == "semantic_search")
+    flag = next(f for f in items if f["name"] == "video_generation")
     assert flag["rollout_percent"] == 25
 
 

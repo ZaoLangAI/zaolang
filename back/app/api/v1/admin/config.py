@@ -43,18 +43,23 @@ from app.platform_config.schemas import CONFIG_SCHEMAS, DEFAULT_CONFIGS, Feature
 router = APIRouter(tags=["admin:config"])
 
 FLAG_DESCRIPTIONS = {
-    "semantic_search": "语义检索与相似作品推荐",
-    "style_presets": "风格预设库",
-    "royalties": "二创回流分成",
-    "command_palette": "Cmd+K 命令面板",
     "video_generation": "视频生成能力",
     "public_registration": "开放注册",
+    "shortform_studio": "短视频工作室",
 }
+
+# The landing page deliberately owns only truly global settings. Domain
+# settings remain reachable by their explicit key from the business page
+# that owns them, but are not advertised here.
+CONFIG_CENTRE_KEYS = ("feature_flags", "shortform")
+# Model endpoints contain credentials and are only ever managed through the
+# masked, relation-aware `/llm-providers` API.
+GENERIC_CONFIG_KEYS = frozenset(set(CONFIG_SCHEMAS) - {"llm_providers"})
 
 
 @router.get("/config", response_model=Page[ConfigValueResponse])
 def list_config(session: DbSession, user: Viewer, _: AdminRead) -> Page[ConfigValueResponse]:
-    return Page(items=[_value_response(session, key) for key in config_service.all_keys()])
+    return Page(items=[_value_response(session, key) for key in CONFIG_CENTRE_KEYS])
 
 
 @router.get("/config/{key}", response_model=ConfigValueResponse)
@@ -264,7 +269,7 @@ def list_announcements(session: DbSession, user: Viewer, _: AdminRead) -> Page[A
 
 
 def _assert_known(key: str) -> None:
-    if key not in CONFIG_SCHEMAS:
+    if key not in GENERIC_CONFIG_KEYS:
         raise NotFound(f"未知的配置键: {key}")
 
 

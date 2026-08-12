@@ -10,9 +10,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.enums import AgentName, Operation, QualityTier
+from app.models.enums import Operation, QualityTier
 
 # The longest clip a generation request may ask for. Config that promises more
 # than this would be unreachable, so every duration setting is capped by it.
@@ -32,6 +32,14 @@ class PricingConfig(ConfigSection):
 
     @model_validator(mode="after")
     def _tiers_are_monotonic(self) -> PricingConfig:
+        expected_operations = {operation.value for operation in Operation}
+        actual_operations = set(self.tier_pricing)
+        if actual_operations != expected_operations:
+            missing_operations = sorted(expected_operations - actual_operations)
+            extra_operations = sorted(actual_operations - expected_operations)
+            raise ValueError(
+                f"定价矩阵必须覆盖全部操作；缺少 {missing_operations}，未知 {extra_operations}。"
+            )
         for operation, tiers in self.tier_pricing.items():
             missing = {t.value for t in QualityTier} - set(tiers)
             if missing:
@@ -57,21 +65,6 @@ class PricingConfig(ConfigSection):
         return self
 
 
-class ProviderSetting(ConfigSection):
-    enabled: bool = True
-    daily_job_limit: int = Field(default=0, ge=0)
-    max_concurrency: int = Field(default=4, ge=1, le=256)
-    # Multiplies the observed failure rate when estimating effective cost.
-    retry_amplification: float = Field(default=1.2, ge=1.0, le=5.0)
-
-
-class ProviderConfig(ConfigSection):
-    providers: dict[str, ProviderSetting]
-    # Applied when a provider has too few samples to trust its own statistics.
-    conservative_prior_success_rate: float = Field(default=0.8, ge=0.1, le=1.0)
-    minimum_samples_for_stats: int = Field(default=20, ge=1)
-
-
 class AgentModelBinding(ConfigSection):
     model: str
     max_tokens: int = Field(default=1024, ge=64, le=32_768)
@@ -79,17 +72,6 @@ class AgentModelBinding(ConfigSection):
     # Reasoning models spend part of the budget on hidden thinking, so their
     # ceiling has to be raised well above the visible output length.
     reasoning_model: bool = False
-
-
-class AgentConfig(ConfigSection):
-    bindings: dict[str, AgentModelBinding]
-
-    @model_validator(mode="after")
-    def _all_agents_bound(self) -> AgentConfig:
-        missing = {a.value for a in AgentName} - set(self.bindings)
-        if missing:
-            raise ValueError(f"缺少智能体模型绑定: {sorted(missing)}")
-        return self
 
 
 class RoyaltyConfig(ConfigSection):
@@ -141,6 +123,15 @@ class ShortformProfile(ConfigSection):
 class ShortformConfig(ConfigSection):
     profiles: dict[str, ShortformProfile]
     default_profile: str = "douyin_vertical"
+    # Finer-grained kill switches underneath `FeatureFlags.shortform_studio`:
+    # the studio surface can stay open while either of these ships off
+    # instantly without a deploy.
+    enable_clarifying_questions: bool = True
+    enable_preview_picker: bool = True
+    # How many `QualityTier.PREVIEW` drafts the studio submits before the
+    # user picks one to promote. Capped at 3 so a fat-fingered admin edit
+    # cannot silently multiply everyone's preview cost.
+    preview_candidate_count: int = Field(default=3, ge=2, le=3)
 
     @model_validator(mode="after")
     def _default_profile_exists(self) -> ShortformConfig:
@@ -152,10 +143,6 @@ class ShortformConfig(ConfigSection):
 
 
 class FeatureFlags(ConfigSection):
-    semantic_search: bool = True
-    style_presets: bool = True
-    royalties: bool = True
-    command_palette: bool = True
     video_generation: bool = True
     public_registration: bool = True
     shortform_studio: bool = True
@@ -164,16 +151,43 @@ class FeatureFlags(ConfigSection):
 
     @model_validator(mode="after")
     def _percentages_in_range(self) -> FeatureFlags:
+        allowed = {"video_generation", "shortform_studio"}
         for name, pct in self.rollout_percentages.items():
+            if name not in allowed:
+                raise ValueError(f"{name} 不支持灰度发布。")
             if not 0 <= pct <= 100:
                 raise ValueError(f"灰度比例 {name}={pct} 必须在 0-100 之间。")
         return self
 
 
-class ModerationConfig(ConfigSection):
+class KeywordModerationConfig(ConfigSection):
     blocked_keywords: list[str] = Field(default_factory=list)
-    auto_review_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
-    require_human_review_for_video: bool = True
+
+    @field_validator("blocked_keywords", mode="before")
+    @classmethod
+    def _normalise_keywords(cls, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return value
+        normalised: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            keyword = str(item).strip().casefold()
+            if keyword and keyword not in seen:
+                seen.add(keyword)
+                normalised.append(keyword)
+        return normalised
+
+
+class ContentModerationConfig(KeywordModerationConfig):
+    pass
+
+
+class LearningModerationConfig(KeywordModerationConfig):
+    pass
+
+
+class SkillModerationConfig(KeywordModerationConfig):
+    pass
 
 
 # The six media generation capabilities a provider endpoint may declare,
@@ -234,9 +248,8 @@ class LlmProviderEndpoint(ConfigSection):
     live concurrency + circuit-breaker state, no scoring formula.
 
     `kind="media"` is a media generation endpoint (image/video/audio). It is
-    scored instead by `app/agents/router.py`'s explainable rules alongside
-    the built-in fake providers; endpoint-level `role`/`backup_order` are
-    display/audit metadata for the admin console, not a dispatch override.
+    selected from the enabled endpoints maintained in Models; test fakes are
+    never registered in this production directory.
     """
 
     name: str
@@ -279,6 +292,13 @@ class LlmProviderEndpoint(ConfigSection):
     @model_validator(mode="after")
     def _media_model_and_modalities_are_coherent(self) -> LlmProviderEndpoint:
         if self.kind != "media":
+            if not self.models:
+                raise ValueError("通用模型端点至少需要声明一个模型。")
+            self.models = list(
+                dict.fromkeys(model.strip() for model in self.models if model.strip())
+            )
+            if not self.models:
+                raise ValueError("通用模型端点至少需要声明一个模型。")
             return self
         if not self.model.strip():
             raise ValueError("媒体模型必须填写模型名称。")
@@ -288,6 +308,11 @@ class LlmProviderEndpoint(ConfigSection):
             raise ValueError(f"不支持的模态: {sorted(bad_inputs | bad_outputs)}")
         if not capabilities_for_modalities(self.input_modalities, self.output_modalities):
             raise ValueError("所选输入/输出类型组合未对应任何生成能力，请重新选择。")
+        # Media routes are selected by capability and the intent router, not
+        # by the LLM pool's primary/backup or concurrency lease semantics.
+        self.role = "backup"
+        self.backup_order = 100
+        self.max_concurrency = 1
         return self
 
     @model_validator(mode="before")
@@ -323,31 +348,15 @@ class LlmProviderConfig(ConfigSection):
     endpoints: dict[str, LlmProviderEndpoint] = Field(default_factory=dict)
 
 
-class LlmReliabilityConfig(ConfigSection):
-    """Gateway-wide reliability knobs.
-
-    Split out of `LlmProviderConfig` because these are generic ops parameters
-    (not part of the "which endpoints exist" directory), so they belong in
-    the generic config centre instead of a bespoke form on `/admin/models`.
-    """
-
-    circuit_breaker_failure_threshold: int = Field(default=5, ge=1, le=100)
-    circuit_breaker_cooldown_s: int = Field(default=60, ge=5, le=3600)
-    # Replaces the old env-level `LLM_MAX_RETRIES`: a runtime-tunable knob now
-    # that every endpoint lives in the config centre instead of `.env`.
-    max_retries: int = Field(default=1, ge=0, le=10)
-
-
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "pricing": PricingConfig,
-    "providers": ProviderConfig,
-    "agents": AgentConfig,
     "royalty": RoyaltyConfig,
     "feature_flags": FeatureFlags,
-    "moderation": ModerationConfig,
+    "content_moderation": ContentModerationConfig,
+    "learning_moderation": LearningModerationConfig,
+    "skill_moderation": SkillModerationConfig,
     "shortform": ShortformConfig,
     "llm_providers": LlmProviderConfig,
-    "llm_reliability": LlmReliabilityConfig,
 }
 
 
@@ -364,61 +373,6 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "video_base_seconds": 4,
         "video_per_second_surcharge": {"preview": 4, "standard": 12, "cinematic": 30},
     },
-    "providers": {
-        "providers": {
-            "fake_open_workflow": {
-                "enabled": True,
-                "daily_job_limit": 0,
-                "max_concurrency": 4,
-                "retry_amplification": 1.2,
-            },
-            "fake_paid_api": {
-                "enabled": True,
-                "daily_job_limit": 500,
-                "max_concurrency": 8,
-                "retry_amplification": 1.1,
-            },
-        },
-        "conservative_prior_success_rate": 0.8,
-        "minimum_samples_for_stats": 20,
-    },
-    "agents": {
-        "bindings": {
-            # Clean JSON output matters most for a hard safety verdict.
-            AgentName.SAFETY.value: {
-                "model": "doubao-seed-2-1-pro",
-                "max_tokens": 1024,
-                "temperature": 0.0,
-                "reasoning_model": False,
-            },
-            AgentName.PLANNER.value: {
-                "model": "kimi-k3",
-                "max_tokens": 2048,
-                "temperature": 0.3,
-                "reasoning_model": True,
-            },
-            AgentName.QUALITY.value: {
-                "model": "kimi-k3",
-                "max_tokens": 1536,
-                "temperature": 0.1,
-                "reasoning_model": True,
-            },
-            AgentName.COPY.value: {
-                "model": "ling-3.0-flash-free",
-                "max_tokens": 4096,
-                "temperature": 0.7,
-                "reasoning_model": True,
-            },
-            # Cheap and fast on purpose: this agent's whole job is picking a
-            # lower-cost route, so it must not itself be an expensive call.
-            AgentName.INTENT_ROUTER.value: {
-                "model": "ling-3.0-flash-free",
-                "max_tokens": 512,
-                "temperature": 0.0,
-                "reasoning_model": False,
-            },
-        }
-    },
     "royalty": {
         "enabled": True,
         "first_level_rate_bps": 1000,
@@ -428,20 +382,14 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "total_cap_bps": 2000,
     },
     "feature_flags": {
-        "semantic_search": True,
-        "style_presets": True,
-        "royalties": True,
-        "command_palette": True,
         "video_generation": True,
         "public_registration": True,
         "shortform_studio": True,
         "rollout_percentages": {},
     },
-    "moderation": {
-        "blocked_keywords": [],
-        "auto_review_threshold": 0.7,
-        "require_human_review_for_video": True,
-    },
+    "content_moderation": {"blocked_keywords": []},
+    "learning_moderation": {"blocked_keywords": []},
+    "skill_moderation": {"blocked_keywords": []},
     "shortform": {
         "profiles": {
             "douyin_vertical": {
@@ -475,6 +423,9 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
             },
         },
         "default_profile": "douyin_vertical",
+        "enable_clarifying_questions": True,
+        "enable_preview_picker": True,
+        "preview_candidate_count": 3,
     },
     # Empty by default: with no endpoints configured, `app/llm/client.py` has
     # nothing to call and degrades every request straight to the stub (or
@@ -483,10 +434,5 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
     # development; see `app/scripts/seed.py`.
     "llm_providers": {
         "endpoints": {},
-    },
-    "llm_reliability": {
-        "circuit_breaker_failure_threshold": 5,
-        "circuit_breaker_cooldown_s": 60,
-        "max_retries": 1,
     },
 }

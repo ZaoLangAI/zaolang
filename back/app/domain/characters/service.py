@@ -5,10 +5,9 @@ and a text voice description. A series is a named cast roster plus the
 episode numbering that published `Work` rows carry, so a creator can ask for
 "the same face and voice" on episode two without retyping anything.
 
-Nothing here talks to a real TTS or face-consistency provider — those do not
-exist yet (see `back/app/providers/fake.py`). `voice_description` and the
-reference images are carried through to the job so a real provider has
-something to match against once one is wired in.
+Nothing here talks to a TTS or face-consistency provider directly.
+`voice_description` and reference images are carried through to the job so
+the media endpoint selected from Models has something to match against.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ MAX_REFERENCE_ASSETS = 4
 # Mirrors GenerationParams.reference_asset_ids / character_ids in jobs.py —
 # kept here too so a validation error names the right limit before a job ever
 # reaches the API schema.
-MAX_JOB_REFERENCE_ASSETS = 6
+MAX_JOB_REFERENCE_ASSETS = 9
 MAX_SELECTED_CHARACTERS = 4
 
 

@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     test_database_url: str = "postgresql+psycopg://zaolang:zaolang@localhost:5433/zaolang_test"
     redis_url: str = "redis://localhost:6380/0"
 
-    jwt_secret: str = "dev-only-change-me"
-    admin_jwt_secret: str = "dev-only-change-me-admin"
+    # HS256 requires >= 32 bytes (RFC 7518 §3.2 / PyJWT). Local defaults are
+    # random placeholders only — rotate before any shared or production deploy.
+    jwt_secret: str = "k9Yxvz5CCVmGk9OKwnnBF6VfsWs5VS8r21kmQZ9DSsc"
+    admin_jwt_secret: str = "dbTYs3wmf9v5Hc6ZJwLivNUAA0t1NpX4b_eLZX53G5E"
     payment_webhook_secret: str = "dev-only-change-me-webhook"
     access_token_ttl_seconds: int = 60 * 30
     refresh_token_ttl_seconds: int = 60 * 60 * 24 * 14
@@ -72,6 +74,15 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     otel_exporter: Literal["console", "otlp", "none"] = "console"
     otel_endpoint: str = ""
+
+    @field_validator("jwt_secret", "admin_jwt_secret")
+    @classmethod
+    def _hmac_secrets_meet_hs256_minimum(cls, value: str) -> str:
+        if len(value.encode("utf-8")) < 32:
+            raise ValueError(
+                "must be at least 32 bytes for HS256 (RFC 7518 Section 3.2)"
+            )
+        return value
 
     @field_validator("cors_origins", mode="before")
     @classmethod

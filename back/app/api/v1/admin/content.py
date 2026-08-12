@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
@@ -31,7 +31,8 @@ from app.api.v1.admin.deps import (
     require_confirmation,
 )
 from app.domain.audit import service as audit
-from app.domain.errors import NotFound
+from app.domain.errors import Conflict, NotFound
+from app.domain.moderation_queue import service as moderation_queue
 from app.domain.notifications import push as notifications
 from app.domain.publishing import service as publishing
 from app.domain.skill_library import service as skill_library
@@ -58,21 +59,50 @@ router = APIRouter(tags=["admin:content"])
 
 
 @router.get("/moderation/queue", response_model=Page[ModerationQueueView])
-def moderation_queue(
+def moderation_queue_list(
     session: DbSession,
     user: Viewer,
     _: AdminRead,
     status: ModerationStatus | None = None,
+    subject_type: str | None = None,
+    cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[ModerationQueueView]:
-    """Highest priority first; ties broken by age so nothing starves."""
-    stmt = (
-        select(ModerationQueueItem)
-        .order_by(ModerationQueueItem.priority.desc(), ModerationQueueItem.created_at)
-        .limit(limit)
+    """Highest priority first; ties broken by id (which sorts with creation
+    time), so nothing at the back of the queue starves.
+
+    The cursor is `"{priority}:{id}"`: `priority` alone cannot order a page
+    boundary because many rows share a value, so the id breaks the tie the
+    same way the query itself does.
+    """
+    stmt = select(ModerationQueueItem).order_by(
+        ModerationQueueItem.priority.desc(), ModerationQueueItem.id
     )
     stmt = stmt.where(ModerationQueueItem.status == (status or ModerationStatus.NEEDS_REVIEW))
-    return Page(items=[_queue_view(session, item) for item in session.scalars(stmt)])
+    if subject_type:
+        stmt = stmt.where(ModerationQueueItem.subject_type == subject_type)
+    if cursor:
+        cursor_priority, _, cursor_id = cursor.partition(":")
+        stmt = stmt.where(
+            or_(
+                ModerationQueueItem.priority < int(cursor_priority),
+                and_(
+                    ModerationQueueItem.priority == int(cursor_priority),
+                    ModerationQueueItem.id > cursor_id,
+                ),
+            )
+        )
+
+    rows = list(session.scalars(stmt.limit(limit + 1)))
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    next_cursor = f"{page[-1].priority}:{page[-1].id}" if has_more and page else None
+
+    return Page(
+        items=[_queue_view(session, item) for item in page],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
 
 
 @router.get("/moderation/queue/{item_id}/detail", response_model=ModerationSubjectDetailView)
@@ -98,6 +128,7 @@ def moderation_detail(
             decided_by=row.decided_by,
             reviewer_user_id=row.reviewer_user_id,
             reason_code=row.reason_code,
+            categories=row.categories_json.get("categories", []),
             public_message=row.public_message,
             created_at=row.created_at,
         )
@@ -130,6 +161,9 @@ def moderation_detail(
         history=history,
         work=work_detail,
         skill=skill_detail,
+        open_report_count=moderation_queue.open_report_count(
+            session, subject_type=item.subject_type, subject_id=item.subject_id
+        ),
     )
 
 
@@ -137,6 +171,8 @@ def moderation_detail(
 def claim(item_id: str, session: DbSession, user: Reviewer, _: AdminWrite) -> ModerationQueueView:
     """Assigns an item so two reviewers do not duplicate work."""
     item = _queue_item(session, item_id)
+    if item.claimed_by_user_id is not None and item.claimed_by_user_id != user.id:
+        raise Conflict("该审核项已被其他审核员认领。")
     item.claimed_by_user_id = user.id
     session.commit()
     return _queue_view(session, item)
@@ -158,6 +194,11 @@ def decide(
     record.
     """
     item = _queue_item(session, item_id)
+    if item.claimed_by_user_id is not None and item.claimed_by_user_id != user.id:
+        # `claim` exists so two reviewers do not duplicate work; without this
+        # check it is advisory only and a second reviewer can silently
+        # overwrite the first one's in-progress call.
+        raise Conflict("该审核项已被其他审核员认领，无法由他人判定。")
     before = {"status": item.status}
 
     session.add(
@@ -204,15 +245,31 @@ def list_reports(
     user: Viewer,
     _: AdminRead,
     status: str | None = None,
+    cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[ReportCaseView]:
+    """Oldest first, so a report cannot age out of view behind newer ones.
+
+    `id` alone is enough of a cursor: ids are lexically time-ordered, so it
+    sorts consistently with `created_at` without needing a composite key.
+    """
     stmt = (
         select(ReportCase)
         .where(ReportCase.status == (status or ReportStatus.OPEN))
-        .order_by(ReportCase.created_at)
-        .limit(limit)
+        .order_by(ReportCase.id)
     )
-    return Page(items=[ReportCaseView.model_validate(r) for r in session.scalars(stmt)])
+    if cursor:
+        stmt = stmt.where(ReportCase.id > cursor)
+
+    rows = list(session.scalars(stmt.limit(limit + 1)))
+    has_more = len(rows) > limit
+    page = rows[:limit]
+
+    return Page(
+        items=[ReportCaseView.model_validate(r) for r in page],
+        next_cursor=page[-1].id if has_more and page else None,
+        has_more=has_more,
+    )
 
 
 @router.post("/reports/{report_id}/resolve", response_model=ReportCaseView)

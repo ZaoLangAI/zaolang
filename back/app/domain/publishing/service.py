@@ -31,6 +31,7 @@ from app.domain.errors import (
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage
 from app.domain.media import service as media_service
+from app.domain.moderation_queue import service as moderation_queue
 from app.domain.notifications import push as notifications
 from app.domain.search import service as search_service
 from app.models import (
@@ -196,6 +197,20 @@ def publish(
     session.flush()
     work.current_version_id = version.id
 
+    if verdict.status == ModerationStatus.NEEDS_REVIEW:
+        # Uncertain rather than unsafe: the work still goes live (an
+        # indefinite hold with no queue to clear it would just be a silent
+        # block by another name), but a reviewer now has a real row to act
+        # on instead of the verdict being recorded and never followed up on.
+        moderation_queue.enqueue_for_review(
+            session,
+            subject_type="work",
+            subject_id=work.id,
+            stage=ModerationStage.PRE_PUBLISH,
+            reason_code=verdict.reason_code,
+            categories=verdict.categories_json.get("categories"),
+        )
+
     # 4. Media becomes readable to anyone who can see the work.
     for asset_id in {draft.output_asset_id, cover_asset_id} - {None}:
         asset = session.get(Asset, asset_id)
@@ -337,10 +352,9 @@ def _attach_tags(session: Session, work: Work, tags: list[str]) -> None:
 def _pay_royalties(
     session: Session, *, user_id: str, draft: Draft, version: WorkVersion
 ) -> list[dict[str, Any]]:
-    if not config_service.is_enabled(session, "royalties"):
-        return []
-
     config = config_service.get_typed(session, "royalty", RoyaltyConfig)
+    if not config.enabled:
+        return []
     rule = RoyaltyRule(
         enabled=config.enabled,
         first_level_rate_bps=config.first_level_rate_bps,

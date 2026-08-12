@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.credits import service as credits_service
+from app.domain.errors import NotFound
 from app.models import (
     AuditLog,
     CreationSkill,
@@ -121,6 +122,55 @@ def test_the_queue_lists_items_needing_review(
     assert queue_item.id in [i["id"] for i in body["items"]]
 
 
+def test_the_queue_can_be_filtered_by_subject_type(
+    client: TestClient,
+    reviewer: User,
+    queue_item: ModerationQueueItem,
+    skill_queue_item: ModerationQueueItem,
+) -> None:
+    body = client.get(
+        "/v1/admin/moderation/queue",
+        params={"subject_type": "skill"},
+        headers=admin_header(reviewer),
+    ).json()
+    ids = [i["id"] for i in body["items"]]
+    assert skill_queue_item.id in ids
+    assert queue_item.id not in ids
+
+
+def test_the_queue_pages_by_cursor_without_skipping_or_repeating(
+    client: TestClient, db: Session, reviewer: User, work: Work
+) -> None:
+    items = [
+        ModerationQueueItem(
+            stage=ModerationStage.PRE_PUBLISH,
+            subject_type="work",
+            subject_id=new_id("wrk"),
+            status=ModerationStatus.NEEDS_REVIEW,
+            priority=priority,
+        )
+        for priority in range(5)
+    ]
+    db.add_all(items)
+    db.commit()
+
+    first = client.get(
+        "/v1/admin/moderation/queue", params={"limit": 2}, headers=admin_header(reviewer)
+    ).json()
+    assert first["has_more"] is True
+    assert first["next_cursor"]
+
+    second = client.get(
+        "/v1/admin/moderation/queue",
+        params={"limit": 2, "cursor": first["next_cursor"]},
+        headers=admin_header(reviewer),
+    ).json()
+
+    first_ids = {i["id"] for i in first["items"]}
+    second_ids = {i["id"] for i in second["items"]}
+    assert first_ids.isdisjoint(second_ids)
+
+
 def test_claiming_an_item_records_the_reviewer(
     client: TestClient, db: Session, reviewer: User, queue_item: ModerationQueueItem
 ) -> None:
@@ -133,6 +183,48 @@ def test_claiming_an_item_records_the_reviewer(
 
     db.refresh(queue_item)
     assert queue_item.claimed_by_user_id == reviewer.id
+
+
+def test_a_second_reviewer_cannot_claim_an_already_claimed_item(
+    client: TestClient, reviewer: User, admin: User, queue_item: ModerationQueueItem
+) -> None:
+    client.post(f"/v1/admin/moderation/queue/{queue_item.id}/claim", headers=admin_header(reviewer))
+
+    response = client.post(
+        f"/v1/admin/moderation/queue/{queue_item.id}/claim", headers=admin_header(admin)
+    )
+    assert response.status_code == 409
+
+
+def test_a_non_claimant_cannot_decide_a_claimed_item(
+    client: TestClient, db: Session, reviewer: User, admin: User, queue_item: ModerationQueueItem
+) -> None:
+    """`claim` exists to stop two reviewers producing conflicting verdicts —
+    `decide` has to actually enforce that, not just offer the claim button."""
+    client.post(f"/v1/admin/moderation/queue/{queue_item.id}/claim", headers=admin_header(reviewer))
+
+    response = client.post(
+        f"/v1/admin/moderation/queue/{queue_item.id}/decide",
+        json={"decision": ModerationStatus.APPROVED.value, "reason_code": None, "public_message": None},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 409
+
+    db.refresh(queue_item)
+    assert queue_item.status == ModerationStatus.NEEDS_REVIEW
+
+
+def test_the_claimant_can_still_decide_their_own_claim(
+    client: TestClient, reviewer: User, queue_item: ModerationQueueItem
+) -> None:
+    client.post(f"/v1/admin/moderation/queue/{queue_item.id}/claim", headers=admin_header(reviewer))
+
+    response = client.post(
+        f"/v1/admin/moderation/queue/{queue_item.id}/decide",
+        json={"decision": ModerationStatus.APPROVED.value, "reason_code": None, "public_message": None},
+        headers=admin_header(reviewer),
+    )
+    assert response.status_code == 200, response.text
 
 
 def test_approving_leaves_the_work_visible(
@@ -226,6 +318,45 @@ def test_moderation_detail_exposes_work_and_history_and_supports_restore(
             Notification.title_key == "notification.work_restored",
         )
     )
+
+
+def test_moderation_detail_exposes_the_agents_categories(
+    client: TestClient, db: Session, admin: User, queue_item: ModerationQueueItem
+) -> None:
+    """The agent's category tags are the reviewer's only view into *why* it
+    flagged the subject beyond a single reason code — losing them at the API
+    boundary would make the audit trail strictly less useful than the row
+    already sitting in the database."""
+    db.add(
+        ModerationResult(
+            stage=queue_item.stage,
+            subject_type=queue_item.subject_type,
+            subject_id=queue_item.subject_id,
+            status=ModerationStatus.NEEDS_REVIEW,
+            categories_json={"categories": ["sensitive_content", "violence"]},
+            decided_by="agent",
+            created_at=utcnow(),
+        )
+    )
+    db.commit()
+
+    body = client.get(
+        f"/v1/admin/moderation/queue/{queue_item.id}/detail", headers=admin_header(admin)
+    ).json()
+    agent_entry = next(h for h in body["history"] if h["decided_by"] == "agent")
+    assert agent_entry["categories"] == ["sensitive_content", "violence"]
+
+
+def test_moderation_detail_surfaces_the_open_report_count(
+    client: TestClient, admin: User, queue_item: ModerationQueueItem, report: ReportCase
+) -> None:
+    """Reports and the moderation queue are independent backlogs; a reviewer
+    acting only off the agent's flag should still see that users have
+    separately complained about the same subject."""
+    body = client.get(
+        f"/v1/admin/moderation/queue/{queue_item.id}/detail", headers=admin_header(admin)
+    ).json()
+    assert body["open_report_count"] == 1
 
 
 def test_rejecting_a_skill_notifies_its_owner(
@@ -341,6 +472,33 @@ def test_a_moderation_decision_is_audited(
 def test_reports_are_listed(client: TestClient, reviewer: User, report: ReportCase) -> None:
     body = client.get("/v1/admin/reports", headers=admin_header(reviewer)).json()
     assert report.id in [r["id"] for r in body["items"]]
+
+
+def test_reports_page_by_cursor_without_skipping_or_repeating(
+    client: TestClient, db: Session, reviewer: User, work: Work
+) -> None:
+    cases = [
+        ReportCase(subject_type="work", subject_id=work.id, reason="copyright")
+        for _ in range(3)
+    ]
+    db.add_all(cases)
+    db.commit()
+
+    first = client.get(
+        "/v1/admin/reports", params={"limit": 2}, headers=admin_header(reviewer)
+    ).json()
+    assert first["has_more"] is True
+    assert first["next_cursor"]
+
+    second = client.get(
+        "/v1/admin/reports",
+        params={"limit": 2, "cursor": first["next_cursor"]},
+        headers=admin_header(reviewer),
+    ).json()
+
+    first_ids = {r["id"] for r in first["items"]}
+    second_ids = {r["id"] for r in second["items"]}
+    assert first_ids.isdisjoint(second_ids)
 
 
 def test_resolving_a_report_records_who_handled_it(
@@ -595,9 +753,9 @@ def agent_roles(db: Session) -> None:
     db.commit()
 
 
-def _graph_binding(agent_id: str | None) -> dict:
+def _graph_binding(session: Session, agent_id: str | None) -> dict:
     """The seed graph with its `safety_check` node bound to one agent."""
-    graph = default_graph()
+    graph = default_graph(session)
     for node in graph["nodes"]:
         if node["type"] == "safety_check":
             node["config"] = {"agent_id": agent_id}
@@ -682,8 +840,42 @@ def test_the_default_agent_cannot_be_disabled(
     assert response.status_code == 422
 
 
+def test_the_default_agent_cannot_be_deleted(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+    response = client.post(
+        f"/v1/admin/agent-profiles/{default.id}/delete",
+        json={"reason": "测试删除默认智能体", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+    assert agent_skills_service.get_profile(db, default.id) is not None
+
+
+def test_a_non_default_agent_can_be_deleted(
+    client: TestClient, db: Session, admin: User, agent_roles: None
+) -> None:
+    created = client.post(
+        "/v1/admin/agent-profiles",
+        json={"role": "safety", "key": "throwaway", "display_name": "临时版"},
+        headers=admin_header(admin),
+    ).json()
+
+    response = client.post(
+        f"/v1/admin/agent-profiles/{created['id']}/delete",
+        json={"reason": "测试删除智能体", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 204
+
+    with pytest.raises(NotFound):
+        agent_skills_service.get_profile(db, created["id"])
+
+
 def test_publishing_a_graph_bound_to_an_unknown_agent_is_blocked(
-    client: TestClient, admin: User, agent_roles: None
+    client: TestClient, db: Session, admin: User, agent_roles: None
 ) -> None:
     """A silent fallback would let an operator believe their edit took
     effect when the prompt never changed."""
@@ -691,7 +883,7 @@ def test_publishing_a_graph_bound_to_an_unknown_agent_is_blocked(
         "/v1/admin/workflow-templates/text_to_video",
         json={
             "name": "绑定了不存在的智能体",
-            "graph": _graph_binding("aprof_nosuchagent"),
+            "graph": _graph_binding(db, "aprof_nosuchagent"),
             "reason": "测试未知智能体阻断发布",
             "confirm": True,
         },
@@ -715,7 +907,7 @@ def test_publishing_a_graph_bound_to_a_disabled_agent_is_blocked(
         "/v1/admin/workflow-templates/text_to_video",
         json={
             "name": "绑定了停用智能体",
-            "graph": _graph_binding(profile.id),
+            "graph": _graph_binding(db, profile.id),
             "reason": "测试停用智能体阻断发布",
             "confirm": True,
         },
@@ -737,7 +929,7 @@ def test_publishing_a_graph_bound_to_an_agent_of_the_wrong_role_is_blocked(
         "/v1/admin/workflow-templates/text_to_video",
         json={
             "name": "安全节点绑定了文案智能体",
-            "graph": _graph_binding(copywriter.id),
+            "graph": _graph_binding(db, copywriter.id),
             "reason": "测试角色不匹配阻断发布",
             "confirm": True,
         },
@@ -761,7 +953,7 @@ def test_a_capability_mismatch_warns_but_does_not_block_publishing(
         operations=["text_to_video"],
     )
     db.commit()
-    graph = _graph_binding(strict.id)
+    graph = _graph_binding(db, strict.id)
 
     validated = client.post(
         "/v1/admin/workflow-templates/validate",
@@ -798,7 +990,7 @@ def test_a_matching_capability_produces_no_warning(
 
     validated = client.post(
         "/v1/admin/workflow-templates/validate",
-        json={"graph": _graph_binding(strict.id), "operation": "text_to_video"},
+        json={"graph": _graph_binding(db, strict.id), "operation": "text_to_video"},
         headers=admin_header(admin),
     ).json()
     assert validated["errors"] == []
@@ -818,7 +1010,7 @@ def test_a_bound_agent_is_reported_as_used_by_that_operation(
         "/v1/admin/workflow-templates/text_to_video",
         json={
             "name": "绑定严格版",
-            "graph": _graph_binding(strict.id),
+            "graph": _graph_binding(db, strict.id),
             "reason": "测试反查索引",
             "confirm": True,
         },
@@ -901,8 +1093,8 @@ def test_a_viewer_can_read_agents_but_not_create_them(
 
 
 def _seed_endpoints(db: Session) -> None:
-    """One general endpoint to pin a judgment agent to, and one media
-    endpoint a video creative agent can route through."""
+    """One general endpoint to pin a judgment agent to, and media endpoints
+    that must never be pinnable as an LLM default."""
     config_service.set_value(
         db,
         "llm_providers",
@@ -952,14 +1144,17 @@ def test_the_role_dropdown_is_served_from_the_preset_catalogue(
     by_role = {preset["role"]: preset for preset in presets}
 
     assert by_role["safety"]["category"] == "judgment"
-    assert by_role["video_creative"]["category"] == "creative"
-    assert set(by_role["video_creative"]["operations"]) == {
-        "text_to_video",
-        "image_to_video",
-        "video_to_video",
-    }
     assert by_role["safety"]["is_new"] is False
-    assert by_role["video_creative"]["is_new"] is True
+
+
+def test_a_role_with_no_node_row_yet_is_flagged_new(client: TestClient, admin: User) -> None:
+    """Without the `agent_roles` fixture's seeding, no `AgentNode` rows exist
+    yet, so every preset in the catalogue is a role nobody has used."""
+    presets = client.get("/v1/admin/agent-node-presets", headers=admin_header(admin)).json()[
+        "items"
+    ]
+    by_role = {preset["role"]: preset for preset in presets}
+    assert by_role["safety"]["is_new"] is True
 
 
 def test_a_role_outside_the_catalogue_is_refused(
@@ -968,74 +1163,6 @@ def test_a_role_outside_the_catalogue_is_refused(
     response = client.post(
         "/v1/admin/agent-profiles",
         json={"role": "make-believe", "key": "x", "display_name": "凭空捏造"},
-        headers=admin_header(admin),
-    )
-    assert response.status_code == 422
-
-
-def test_creating_the_first_agent_for_a_creative_preset_creates_its_node(
-    client: TestClient, db: Session, admin: User, agent_roles: None
-) -> None:
-    """Creative roles are not seeded — an untouched install shows only the
-    five stages its workflow templates reference."""
-    _seed_endpoints(db)
-    assert agent_skills_service.find_node(db, "video_creative") is None
-
-    response = client.post(
-        "/v1/admin/agent-profiles",
-        json={
-            "role": "video_creative",
-            "key": "default",
-            "display_name": "视频创作",
-            "media_candidates": [
-                {"endpoint_id": "video-ep", "capability": "text_to_video", "weight": 120}
-            ],
-        },
-        headers=admin_header(admin),
-    )
-    assert response.status_code == 201
-    body = response.json()
-    assert body["category"] == "creative"
-    assert body["media_candidates"] == [
-        {"endpoint_id": "video-ep", "capability": "text_to_video", "weight": 120}
-    ]
-    # Operations follow the preset rather than the caller.
-    assert set(body["operations"]) == {"text_to_video", "image_to_video", "video_to_video"}
-
-    node = agent_skills_service.find_node(db, "video_creative")
-    assert node is not None and node.category == "creative"
-
-
-def test_a_creative_agent_cannot_claim_a_capability_its_role_excludes(
-    client: TestClient, db: Session, admin: User, agent_roles: None
-) -> None:
-    """The whole point of filtering the picker by preset: a video agent
-    offering the routing agent an image route it was never written for."""
-    _seed_endpoints(db)
-    response = client.post(
-        "/v1/admin/agent-profiles",
-        json={
-            "role": "video_creative",
-            "key": "wrong-modality",
-            "display_name": "串了模态",
-            "media_candidates": [
-                {"endpoint_id": "image-ep", "capability": "text_to_image", "weight": 100}
-            ],
-        },
-        headers=admin_header(admin),
-    )
-    assert response.status_code == 422
-
-
-def test_a_creative_agent_needs_at_least_one_media_candidate(
-    client: TestClient, db: Session, admin: User, agent_roles: None
-) -> None:
-    """No candidates is not half-configured, it is a route the router can
-    never satisfy."""
-    _seed_endpoints(db)
-    response = client.post(
-        "/v1/admin/agent-profiles",
-        json={"role": "video_creative", "key": "empty", "display_name": "没有候选"},
         headers=admin_header(admin),
     )
     assert response.status_code == 422
@@ -1052,16 +1179,18 @@ def test_a_judgment_agent_can_pin_a_default_and_backup_model(
             "key": "pinned",
             "display_name": "钉模型版",
             "default_endpoint_id": "general-ep",
-            "max_tokens": 2048,
-            "temperature": 0.1,
         },
         headers=admin_header(admin),
     )
     assert created.status_code == 201
     body = created.json()
     assert body["default_endpoint_id"] == "general-ep"
+    # max_tokens/temperature are no longer an operator input — they are fixed
+    # by whichever model the endpoint resolved to (`kimi-k3` here), per
+    # `app.llm.model_defaults`.
+    assert body["model"] == "kimi-k3"
     assert body["max_tokens"] == 2048
-    assert body["temperature"] == pytest.approx(0.1)
+    assert body["temperature"] == pytest.approx(0.3)
 
     # An empty string is how the console goes back to the shared pool.
     cleared = client.patch(
@@ -1110,30 +1239,10 @@ def test_a_backup_model_without_a_default_is_refused(
     assert response.status_code == 422
 
 
-def test_a_judgment_agent_cannot_bind_media_candidates(
-    client: TestClient, db: Session, admin: User, agent_roles: None
-) -> None:
-    _seed_endpoints(db)
-    response = client.post(
-        "/v1/admin/agent-profiles",
-        json={
-            "role": "safety",
-            "key": "confused",
-            "display_name": "混淆类别",
-            "media_candidates": [
-                {"endpoint_id": "video-ep", "capability": "text_to_video", "weight": 100}
-            ],
-        },
-        headers=admin_header(admin),
-    )
-    assert response.status_code == 422
-
-
 def test_skill_templates_are_filtered_to_what_suits_the_agent(
     client: TestClient, admin: User, agent_roles: None
 ) -> None:
-    """The editor's dropdown must not offer a creative brief to a safety
-    agent, nor another role's prompt."""
+    """The editor's dropdown must not offer another role's prompt."""
     templates = client.get(
         "/v1/admin/agent-skill-templates",
         params={"category": "judgment", "role": "safety"},
@@ -1142,7 +1251,6 @@ def test_skill_templates_are_filtered_to_what_suits_the_agent(
 
     keys = [template["key"] for template in templates]
     assert "safety-default" in keys
-    assert "creative-brief" not in keys
     assert "planner-default" not in keys
     # The role's own template sorts ahead of the generic ones.
     assert keys[0] == "safety-default"
