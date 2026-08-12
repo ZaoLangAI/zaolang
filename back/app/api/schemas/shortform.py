@@ -35,6 +35,9 @@ class ShortformProfileResponse(ApiModel):
 class ShortformProfilesResponse(ApiModel):
     default_profile: str
     profiles: list[ShortformProfileResponse]
+    enable_clarifying_questions: bool
+    enable_preview_picker: bool
+    preview_candidate_count: int
 
 
 class ComplianceCheckRequest(ApiModel):
@@ -72,6 +75,31 @@ class PromptEnhanceRequest(ApiModel):
 
 class PromptEnhanceResponse(ApiModel):
     prompt: str
+    detail_level: Literal["sparse", "adequate", "detailed"]
+    feedback: str
+    degraded: bool
+
+
+class PromptClarifyRequest(ApiModel):
+    prompt: str = Field(min_length=1, max_length=600)
+
+
+class ClarifyQuestionOption(ApiModel):
+    value: str
+    label: str
+
+
+class ClarifyQuestionResponse(ApiModel):
+    id: str
+    kind: Literal["single_choice", "multi_choice", "free_text"]
+    prompt: str
+    options: list[ClarifyQuestionOption] = Field(default_factory=list)
+    required: bool
+
+
+class PromptClarifyResponse(ApiModel):
+    needs_clarification: bool
+    questions: list[ClarifyQuestionResponse] = Field(default_factory=list)
     degraded: bool
 
 

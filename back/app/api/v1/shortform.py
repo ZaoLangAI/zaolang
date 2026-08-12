@@ -10,9 +10,12 @@ from app.api import idempotency
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.shortform import (
+    ClarifyQuestionResponse,
     ComplianceCheckItem,
     ComplianceCheckRequest,
     ComplianceCheckResponse,
+    PromptClarifyRequest,
+    PromptClarifyResponse,
     PromptEnhanceRequest,
     PromptEnhanceResponse,
     PublicationCreateRequest,
@@ -42,6 +45,9 @@ def list_profiles(
     return ShortformProfilesResponse(
         default_profile=catalog.default_profile,
         profiles=[_profile_response(key, p) for key, p in sorted(catalog.profiles.items())],
+        enable_clarifying_questions=catalog.enable_clarifying_questions,
+        enable_preview_picker=catalog.enable_preview_picker,
+        preview_candidate_count=catalog.preview_candidate_count,
     )
 
 
@@ -85,11 +91,43 @@ def enhance_prompt(
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> PromptEnhanceResponse:
-    """把画面描述交给文案 Agent 润色，保留用户核心意图。"""
+    """把画面描述交给文案 Agent 评估详细度并润色，保留用户核心意图。"""
     _assert_shortform_enabled(session, user.id)
-    enhanced, degraded = shortform.enhance_prompt(session, user_id=user.id, prompt=payload.prompt)
+    result = shortform.enhance_prompt(session, user_id=user.id, prompt=payload.prompt)
     session.commit()
-    return PromptEnhanceResponse(prompt=enhanced, degraded=degraded)
+    return PromptEnhanceResponse(
+        prompt=result.prompt,
+        detail_level=result.detail_level,
+        feedback=result.feedback,
+        degraded=result.degraded,
+    )
+
+
+@router.post("/shortform/prompt/clarify", response_model=PromptClarifyResponse)
+def clarify_prompt(
+    payload: PromptClarifyRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> PromptClarifyResponse:
+    """判断画面描述是否需要用户补充信息，生成前给出结构化问题。"""
+    _assert_shortform_enabled(session, user.id)
+    result = shortform.clarify_prompt(session, user_id=user.id, prompt=payload.prompt)
+    session.commit()
+    return PromptClarifyResponse(
+        needs_clarification=result.needs_clarification,
+        questions=[
+            ClarifyQuestionResponse(
+                id=q.id,
+                kind=q.kind,
+                prompt=q.prompt,
+                options=[{"value": o.value, "label": o.label} for o in q.options],
+                required=q.required,
+            )
+            for q in result.questions
+        ],
+        degraded=result.degraded,
+    )
 
 
 @router.post(

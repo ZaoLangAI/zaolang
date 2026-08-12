@@ -13,13 +13,19 @@ import { RoutingReplayTable } from '@/components/admin/jobs/routing-replay-table
 import { WorkflowSteps } from '@/components/admin/jobs/workflow-steps';
 import { Timeline, type TimelineEntry } from '@/components/admin/timeline';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/primitives';
+import { Badge, type BadgeTone } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
 import { atLeast } from '@/lib/admin/rbac';
 import { useAdminList } from '@/lib/admin/use-admin-list';
 import { adminApi } from '@/lib/api/admin-client';
-import type { AdminJob, AdminJobDetail, WorkflowShape } from '@/lib/api/admin-types';
+import type {
+  AdminJob,
+  AdminJobDetail,
+  LogEntry,
+  Page,
+  WorkflowShape,
+} from '@/lib/api/admin-types';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
@@ -34,6 +40,23 @@ const STATUSES = [
   'expired',
 ] as const;
 
+const LOG_SOURCE_TONE: Record<string, BadgeTone> = {
+  audit: 'primary',
+  pipeline: 'danger',
+  auth: 'neutral',
+  rate_limit: 'amber',
+  permission: 'amber',
+};
+
+/** A raw id kept out of the primary text, one hover away via `title`. */
+function IdWithTooltip({ primary, id }: { primary: string; id: string }) {
+  return (
+    <span className="font-mono text-xs" title={id}>
+      {primary}
+    </span>
+  );
+}
+
 export function JobsConsole() {
   const t = useTranslations('adminJobs');
   const tAdmin = useTranslations('admin');
@@ -43,6 +66,10 @@ export function JobsConsole() {
   const { role } = useAdminSession();
 
   const list = useAdminList<AdminJob>('/v1/admin/jobs');
+  // The filter bar edits this draft, not `list.filters` directly — a request
+  // only goes out when the operator clicks "search" (or presses Enter),
+  // never on every keystroke/checkbox toggle.
+  const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [danger, setDanger] = useState<'terminate' | null>(null);
 
@@ -57,36 +84,44 @@ export function JobsConsole() {
     {
       id: 'user',
       header: t('colUser'),
-      render: (row) => <span className="font-mono text-xs text-muted">{row.user_id}</span>,
+      render: (row) => (
+        <IdWithTooltip
+          primary={row.user_display_name ?? row.user_handle ?? row.user_id}
+          id={row.user_id}
+        />
+      ),
     },
     {
       id: 'status',
       header: t('colStatus'),
       render: (row) => (
-        <Badge
-          tone={
-            row.status === 'succeeded'
-              ? 'success'
-              : row.status === 'failed' || row.status === 'expired'
-                ? 'danger'
-                : row.status === 'cancelled'
-                  ? 'neutral'
-                  : 'primary'
-          }
-        >
-          {tJob(row.status)}
-        </Badge>
+        <span className="flex items-center gap-1.5">
+          <Badge
+            tone={
+              row.status === 'succeeded'
+                ? 'success'
+                : row.status === 'failed' || row.status === 'expired'
+                  ? 'danger'
+                  : row.status === 'cancelled'
+                    ? 'neutral'
+                    : 'primary'
+            }
+          >
+            {tJob(row.status)}
+          </Badge>
+          {row.stuck ? <Badge tone="danger">{t('stuckBadge')}</Badge> : null}
+        </span>
       ),
     },
     {
       id: 'operation',
       header: t('colOperation'),
-      render: (row) => <span className="text-xs">{row.operation}</span>,
+      render: (row) => <span className="text-xs">{t(`operation.${row.operation}`)}</span>,
     },
     {
       id: 'tier',
       header: t('colTier'),
-      render: (row) => <span className="text-xs">{row.quality_tier}</span>,
+      render: (row) => <span className="text-xs">{t(`tier.${row.quality_tier}`)}</span>,
     },
     {
       id: 'credits',
@@ -98,7 +133,12 @@ export function JobsConsole() {
     {
       id: 'provider',
       header: t('colProvider'),
-      render: (row) => <span className="font-mono text-xs">{row.provider ?? '—'}</span>,
+      render: (row) =>
+        row.provider ? (
+          <IdWithTooltip primary={row.provider_label ?? row.provider} id={row.provider} />
+        ) : (
+          <span className="text-xs text-muted">—</span>
+        ),
     },
     {
       id: 'created',
@@ -115,12 +155,23 @@ export function JobsConsole() {
   const job = detail.data;
   // The pipeline shape depends on the job's operation (each operation has its
   // own configurable workflow template), so it's re-fetched per selected job.
+  // Passing the job's own `workflow_template_id` asks for the exact graph it
+  // pinned at submission/first run, not whatever is active for the operation
+  // today — those two can diverge once someone republishes the template.
   const workflow = useResource<WorkflowShape>(
-    job ? `/v1/admin/workflow?operation=${job.operation}` : null,
+    job
+      ? `/v1/admin/workflow?operation=${job.operation}${
+          job.workflow_template_id ? `&template_id=${job.workflow_template_id}` : ''
+        }`
+      : null,
+  );
+  const relatedLogs = useResource<Page<LogEntry>>(
+    openId ? `/v1/admin/logs?job_id=${openId}&limit=20` : null,
   );
   const attempts = job?.attempts ?? [];
   const agentRuns = job?.agent_runs ?? [];
   const events = job?.events ?? [];
+  const logRows = relatedLogs.data?.items ?? [];
 
   // Each segment is the gap between two consecutive events, labelled by the
   // stage that just finished — "how long safety took before planning started".
@@ -161,6 +212,13 @@ export function JobsConsole() {
           : 'neutral',
   }));
 
+  // The node the async task is suspended on, resolved to its declared label
+  // so the section reads "waiting on <step>" rather than a bare node key.
+  const asyncTaskStepLabel = job?.async_task
+    ? (workflow.data?.steps.find((step) => step.key === job.async_task?.node_id)?.label ??
+      job.async_task.node_id)
+    : null;
+
   const act = async (action: 'requeue' | 'terminate', reason?: string) => {
     if (!openId) return;
     await adminApi.post(
@@ -179,27 +237,31 @@ export function JobsConsole() {
           {
             id: 'status',
             label: t('filterStatus'),
-            kind: 'select',
+            kind: 'multiselect',
             options: STATUSES.map((value) => ({ value, label: tJob(value) })),
           },
-          { id: 'user_id', label: t('filterUser'), kind: 'text', placeholder: 'usr_…' },
+          { id: 'user', label: t('filterUser'), kind: 'text', placeholder: t('filterUserPlaceholder') },
           {
             id: 'provider',
             label: t('colProvider'),
             kind: 'text',
-            placeholder: 'fake_open_workflow',
+            placeholder: t('filterProviderPlaceholder'),
           },
           { id: 'created', label: t('filterCreated'), kind: 'daterange' },
           {
             id: 'stuck_only',
-            label: tAdmin('filters'),
+            label: t('filterStuckOnly'),
             kind: 'select',
-            options: [{ value: 'true', label: t('requeue') }],
+            options: [{ value: 'true', label: t('stuckBadge') }],
           },
         ]}
-        values={list.filters}
-        onChange={list.setFilter}
-        onReset={list.resetFilters}
+        values={draftFilters}
+        onChange={(id, value) => setDraftFilters((current) => ({ ...current, [id]: value }))}
+        onReset={() => {
+          setDraftFilters({});
+          list.resetFilters();
+        }}
+        onSearch={() => list.applyFilters(draftFilters)}
       >
         <Button size="sm" variant="secondary" onClick={list.reload}>
           {tAdmin('refresh')}
@@ -230,7 +292,11 @@ export function JobsConsole() {
         open={openId !== null}
         onClose={() => setOpenId(null)}
         title={openId ?? ''}
-        subtitle={job ? `${job.operation} · ${job.quality_tier}` : undefined}
+        subtitle={
+          job
+            ? [job.operation, job.quality_tier, workflow.data?.name].filter(Boolean).join(' · ')
+            : undefined
+        }
         footer={
           canOperate &&
           job &&
@@ -252,16 +318,36 @@ export function JobsConsole() {
               items={[
                 {
                   label: t('colUser'),
-                  value: <span className="font-mono text-xs">{job.user_id}</span>,
+                  value: (
+                    <IdWithTooltip
+                      primary={job.user_display_name ?? job.user_handle ?? job.user_id}
+                      id={job.user_id}
+                    />
+                  ),
                 },
-                { label: t('colStatus'), value: tJob(job.status) },
+                {
+                  label: t('colStatus'),
+                  value: (
+                    <span className="flex items-center gap-1.5">
+                      {tJob(job.status)}
+                      {job.stuck ? <Badge tone="danger">{t('stuckBadge')}</Badge> : null}
+                    </span>
+                  ),
+                },
                 {
                   label: t('colCredits'),
                   value: `${formatNumber(job.quoted_credits, locale)} → ${
                     job.actual_credits == null ? '—' : formatNumber(job.actual_credits, locale)
                   }`,
                 },
-                { label: t('colProvider'), value: job.provider ?? '—' },
+                {
+                  label: t('colProvider'),
+                  value: job.provider ? (
+                    <IdWithTooltip primary={job.provider_label ?? job.provider} id={job.provider} />
+                  ) : (
+                    '—'
+                  ),
+                },
                 { label: t('attempts'), value: formatNumber(job.attempt_count ?? 0, locale) },
                 { label: t('colCreated'), value: formatDateTime(job.created_at, locale) },
               ]}
@@ -269,12 +355,56 @@ export function JobsConsole() {
 
             {workflow.data ? (
               <section>
-                <h3 className="mb-3 text-sm font-semibold">{t('pipeline')}</h3>
+                <h3 className="mb-3 flex flex-wrap items-center gap-2 text-sm font-semibold">
+                  {t('pipeline')}
+                  {workflow.data.version != null ? (
+                    <Badge tone={workflow.data.is_pinned ? 'primary' : 'amber'}>
+                      {workflow.data.is_pinned
+                        ? t('pipelineVersionPinned', { version: workflow.data.version })
+                        : t('pipelineVersionFallback', { version: workflow.data.version })}
+                    </Badge>
+                  ) : null}
+                </h3>
                 <WorkflowSteps
                   steps={workflow.data.steps}
                   events={job.events}
+                  agentRuns={job.agent_runs}
                   jobStatus={job.status}
                 />
+              </section>
+            ) : null}
+
+            {job.async_task ? (
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">{t('asyncTask')}</h3>
+                <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 p-3 text-xs">
+                  <p className="text-muted">{t('asyncTaskHint')}</p>
+                  <DetailList
+                    items={[
+                      { label: t('asyncTaskNode'), value: asyncTaskStepLabel ?? '—' },
+                      {
+                        label: t('asyncTaskProvider'),
+                        value: job.async_task.provider_label ?? job.async_task.capability_name,
+                      },
+                      {
+                        label: t('asyncTaskExternalId'),
+                        value: (
+                          <span className="font-mono text-xs">
+                            {job.async_task.external_task_id}
+                          </span>
+                        ),
+                      },
+                      {
+                        label: t('asyncTaskPolls'),
+                        value: formatNumber(job.async_task.poll_count, locale),
+                      },
+                      {
+                        label: t('asyncTaskDeadline'),
+                        value: formatDateTime(job.async_task.deadline_at, locale),
+                      },
+                    ]}
+                  />
+                </div>
               </section>
             ) : null}
 
@@ -334,7 +464,12 @@ export function JobsConsole() {
                       className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2"
                     >
                       <span className="font-mono">
-                        {run.agent_name}
+                        {run.agent_display_name ?? run.agent_name}
+                        {run.agent_display_name ? (
+                          <span className="ml-1.5 text-muted">
+                            ({t('agentProfile', { role: run.agent_name })})
+                          </span>
+                        ) : null}
                         {run.model ? ` · ${run.model}` : ''}
                         {run.degraded ? (
                           <Badge tone="amber" className="ml-2">
@@ -352,6 +487,33 @@ export function JobsConsole() {
                 </ol>
               </section>
             ) : null}
+
+            <section>
+              <h3 className="mb-3 text-sm font-semibold">{t('relatedLogs')}</h3>
+              {logRows.length > 0 ? (
+                <ol className="flex flex-col gap-2 text-xs">
+                  {logRows.map((entry) => (
+                    <li
+                      key={entry.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Badge tone={LOG_SOURCE_TONE[entry.source] ?? 'neutral'}>
+                          {entry.source}
+                        </Badge>
+                        <span className="font-mono">{entry.event}</span>
+                        <span className="max-w-[220px] truncate text-muted">{entry.message}</span>
+                      </span>
+                      <span className="tabular whitespace-nowrap text-muted">
+                        {formatDateTime(entry.occurred_at, locale)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-xs text-muted">{t('relatedLogsEmpty')}</p>
+              )}
+            </section>
           </div>
         ) : null}
       </DetailDrawer>
@@ -360,7 +522,7 @@ export function JobsConsole() {
         open={danger === 'terminate'}
         onClose={() => setDanger(null)}
         title={t('terminate')}
-        description={t('terminateReason')}
+        description={job?.async_task ? t('terminateAsyncHint') : t('terminateReason')}
         reasonLabel={tAdmin('dangerReason')}
         confirmWord={openId ?? undefined}
         onConfirm={(reason) => act('terminate', reason)}

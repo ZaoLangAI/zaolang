@@ -36,9 +36,16 @@ def list_logs(
     q: str | None = None,
     created_after: dt.datetime | None = None,
     created_before: dt.datetime | None = None,
+    job_id: str | None = None,
     cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[LogEntryView]:
+    """`job_id` is a convenience filter for the jobs console's "related logs"
+    section: an audit row about `job_id` (`target_type="generation_job"`)
+    OR'd with a `SystemLog` row carrying that same `job_id`, so an operator
+    sees both "what was deliberately done to this job" and "what crashed
+    while running it" in one list without knowing which table either lives
+    in."""
     after = as_utc(created_after) if created_after else None
     cursor_dt = _parse_cursor(cursor)
     until = None if cursor_dt else (as_utc(created_before) if created_before else None)
@@ -50,6 +57,8 @@ def list_logs(
         audit_rows = audit.search(
             session,
             actor_user_id=actor_user_id,
+            target_type="generation_job" if job_id else None,
+            target_id=job_id,
             since=after,
             until=until,
             before=before,
@@ -68,6 +77,7 @@ def list_logs(
             since=after,
             until=until,
             before=before,
+            job_id=job_id,
             limit=fetch,
         )
         entries.extend(_from_system(row) for row in system_rows)
@@ -129,6 +139,7 @@ def _from_audit(row: AuditLog) -> LogEntryView:
         request_id=row.request_id,
         reason=row.reason,
         details=details,
+        job_id=row.target_id if row.target_type == "generation_job" else None,
         occurred_at=row.created_at,
     )
 
@@ -150,5 +161,6 @@ def _from_system(row: SystemLog) -> LogEntryView:
         request_id=row.request_id,
         occurrence_count=row.occurrence_count,
         details=details,
+        job_id=row.job_id,
         occurred_at=row.updated_at,
     )

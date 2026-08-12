@@ -708,6 +708,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/generation-jobs/{job_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote Job
+         * @description Upgrades a succeeded preview-tier job to a full deep-generation job.
+         *
+         *     A new job (rather than reopening the preview) keeps the ledger honest, same
+         *     reasoning as `retry_job` — the preview's reservation and the deep job's
+         *     reservation stay separate records.
+         */
+        post: operations["promote_job_v1_generation_jobs__job_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/generation-jobs/{job_id}/input-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Input Request
+         * @description The follow-up questions a `copy_generate` node is waiting on.
+         *
+         *     404 both when the job has no pending request and when it belongs to
+         *     someone else — `get_owned_job` already refuses to reveal the latter.
+         */
+        get: operations["get_input_request_v1_generation_jobs__job_id__input_request_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/generation-jobs/{job_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Job Input
+         * @description Answers a `copy_generate` node's follow-up questions and resumes the job.
+         *
+         *     Mirrors `app.workers.async_polling._resume_succeeded`'s rebuild-context-
+         *     then-resume shape, but runs inline in the request rather than off a
+         *     scheduler tick: unlike a provider render, nothing else is going to come
+         *     back and finish this for the user.
+         */
+        post: operations["answer_job_input_v1_generation_jobs__job_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/generation-jobs/{job_id}/events": {
         parameters: {
             query?: never;
@@ -726,6 +798,23 @@ export interface paths {
         get: operations["stream_events_v1_generation_jobs__job_id__events_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/generation/prompts/enhance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enhance Generation Prompt */
+        post: operations["enhance_generation_prompt_v1_generation_prompts_enhance_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -783,9 +872,29 @@ export interface paths {
         put?: never;
         /**
          * Enhance Prompt
-         * @description 把画面描述交给文案 Agent 润色，保留用户核心意图。
+         * @description 把画面描述交给文案 Agent 评估详细度并润色，保留用户核心意图。
          */
         post: operations["enhance_prompt_v1_shortform_prompt_enhance_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shortform/prompt/clarify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clarify Prompt
+         * @description 判断画面描述是否需要用户补充信息，生成前给出结构化问题。
+         */
+        post: operations["clarify_prompt_v1_shortform_prompt_clarify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1316,6 +1425,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/style-gallery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Style Gallery */
+        get: operations["list_style_gallery_v1_style_gallery_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/style-gallery/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Style Gallery Entry */
+        get: operations["get_style_gallery_entry_v1_style_gallery__entry_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/style-gallery/{entry_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Style Gallery Entry */
+        post: operations["apply_style_gallery_entry_v1_style_gallery__entry_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/data-requests": {
         parameters: {
             query?: never;
@@ -1494,6 +1654,9 @@ export interface paths {
          * Workflow Shape
          * @description The declared pipeline for one operation, used to render a timeline
          *     even for a job that failed before emitting its later steps.
+         *
+         *     Pass a job's own `workflow_template_id` as `template_id` to describe
+         *     exactly what that job ran rather than the operation's current template.
          */
         get: operations["workflow_shape_v1_admin_workflow_get"];
         put?: never;
@@ -1654,10 +1817,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Moderation Queue
-         * @description Highest priority first; ties broken by age so nothing starves.
+         * Moderation Queue List
+         * @description Highest priority first; ties broken by id (which sorts with creation
+         *     time), so nothing at the back of the queue starves.
+         *
+         *     The cursor is `"{priority}:{id}"`: `priority` alone cannot order a page
+         *     boundary because many rows share a value, so the id breaks the tie the
+         *     same way the query itself does.
          */
-        get: operations["moderation_queue_v1_admin_moderation_queue_get"];
+        get: operations["moderation_queue_list_v1_admin_moderation_queue_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1738,7 +1906,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Reports */
+        /**
+         * List Reports
+         * @description Oldest first, so a report cannot age out of view behind newer ones.
+         *
+         *     `id` alone is enough of a cursor: ids are lexically time-ordered, so it
+         *     sorts consistently with `created_at` without needing a composite key.
+         */
         get: operations["list_reports_v1_admin_reports_get"];
         put?: never;
         post?: never;
@@ -2349,7 +2523,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Logs */
+        /**
+         * List Logs
+         * @description `job_id` is a convenience filter for the jobs console's "related logs"
+         *     section: an audit row about `job_id` (`target_type="generation_job"`)
+         *     OR'd with a `SystemLog` row carrying that same `job_id`, so an operator
+         *     sees both "what was deliberately done to this job" and "what crashed
+         *     while running it" in one list without knowing which table either lives
+         *     in.
+         */
         get: operations["list_logs_v1_admin_logs_get"];
         put?: never;
         post?: never;
@@ -2388,11 +2570,9 @@ export interface paths {
          * Upsert Llm Provider
          * @description Creates or replaces one endpoint. `api_key=None` keeps the stored secret.
          *
-         *     Demotion happens automatically rather than being rejected, because each
-         *     `kind` has exactly one primary node by definition: saving with
-         *     `role="primary"` demotes whichever other endpoint of the same `kind`
-         *     currently holds it. The demotion is recorded on the same audit entry so
-         *     it stays traceable.
+         *     General endpoints have one primary: saving one as primary demotes the
+         *     previous primary and records that relation change in the same audit entry.
+         *     Media endpoints have no primary/backup semantics.
          */
         put: operations["upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put"];
         post?: never;
@@ -2423,6 +2603,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/llm-providers/{endpoint_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Llm Provider
+         * @description Send one real request directly to a saved endpoint.
+         *
+         *     This intentionally bypasses enabled state, failover, breaker state, and
+         *     provider statistics: the result must describe this endpoint alone.
+         */
+        post: operations["validate_llm_provider_v1_admin_llm_providers__endpoint_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/agent-node-presets": {
         parameters: {
             query?: never;
@@ -2438,6 +2641,30 @@ export interface paths {
          *     see `app.domain.agent_skills.presets` for why the catalogue lives in code.
          */
         get: operations["list_agent_node_presets_v1_admin_agent_node_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/model-sampling-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Model Sampling Defaults
+         * @description The fixed max_tokens/temperature each known model resolves to.
+         *
+         *     The console reads this to preview what picking a model will fix sampling
+         *     to (`app.llm.model_defaults`) — those two fields are no longer typed in
+         *     by hand, so this is the only place their numbers are visible pre-save.
+         */
+        get: operations["list_model_sampling_defaults_v1_admin_model_sampling_defaults_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2490,6 +2717,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/agent-skill-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agent Skill Tools
+         * @description The tools a role's skill may be granted, from `AGENT_TOOL_GRANTS`.
+         *
+         *     A role missing from the grant table has no tools of its own yet, not an
+         *     error — the console shows an empty picker.
+         */
+        get: operations["list_agent_skill_tools_v1_admin_agent_skill_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/agent-profiles/{profile_id}": {
         parameters: {
             query?: never;
@@ -2529,6 +2779,56 @@ export interface paths {
          *     operations reference an agent so this is not a blind decision.
          */
         post: operations["disable_agent_profile_v1_admin_agent_profiles__profile_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-profiles/{profile_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Agent Profile
+         * @description Hard-deletes an agent.
+         *
+         *     Dangerous for the same reason `disable` is — a graph that still binds it
+         *     falls back to the role's default agent — but irreversible where disable
+         *     is not, so the console shows the same "used by" list before asking for
+         *     the confirmation reason.
+         */
+        post: operations["delete_agent_profile_v1_admin_agent_profiles__profile_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/agent-profiles/{profile_id}/debug-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Debug Chat Agent Profile
+         * @description Evaluates a skill prompt — draft or published — with a real model call.
+         *
+         *     `AdminWrite`'s rate limit is what keeps this bounded, the same way it is
+         *     for the workflow dry-run endpoint this mirrors: no `DangerousAction`
+         *     confirmation, because nothing here is written to any workflow or made
+         *     live, but real enough to cost real tokens.
+         */
+        post: operations["debug_chat_agent_profile_v1_admin_agent_profiles__profile_id__debug_chat_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2628,6 +2928,96 @@ export interface paths {
         put?: never;
         /** Takedown Skill */
         post: operations["takedown_skill_v1_admin_skills__skill_id__takedown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/style-gallery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Entries */
+        get: operations["list_entries_v1_admin_style_gallery_get"];
+        put?: never;
+        /** Create Entry */
+        post: operations["create_entry_v1_admin_style_gallery_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/style-gallery/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Entry */
+        put: operations["update_entry_v1_admin_style_gallery__entry_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/style-gallery/{entry_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Entry
+         * @description Permanent removal — turning an entry off without deleting it is
+         *     `update(is_active=False)`, which is the reversible everyday action.
+         */
+        post: operations["delete_entry_v1_admin_style_gallery__entry_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/style-gallery/uploads/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Presign Cover Upload */
+        post: operations["presign_cover_upload_v1_admin_style_gallery_uploads_presign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/style-gallery/uploads/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Cover Upload */
+        post: operations["complete_cover_upload_v1_admin_style_gallery_uploads_complete_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2753,14 +3143,22 @@ export interface paths {
         put?: never;
         /**
          * Dry Run Workflow Template
-         * @description Simulates a job through the operation's *active* published graph.
+         * @description Simulates a job through a graph — the editor's unpublished draft when
+         *     `payload.graph` is given, otherwise the operation's active published one.
          *
          *     Never creates a `GenerationJob` row, reserves credits, or hits a paid
          *     provider — see `WorkflowContext.dry_run` and every node executor's own
          *     `if ctx.dry_run` branch for the specifics. The four agent nodes
          *     (safety/planning/intent_router/quality) still call the real LLM gateway
          *     on purpose: that is the one thing worth spending a little real cost on to
-         *     actually validate a prompt change before publishing it.
+         *     actually validate a prompt change before publishing it. `AdminWrite`'s
+         *     rate limit is what keeps that cost bounded.
+         *
+         *     A draft is held to exactly the same validation as a publish, because a
+         *     graph that fails it cannot be walked safely; but it is never written
+         *     anywhere, so trying one out has no effect on live traffic. This is the
+         *     whole point of the endpoint: without it, checking an edit would mean
+         *     publishing it to every job first.
          */
         post: operations["dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post"];
         delete?: never;
@@ -2914,6 +3312,10 @@ export interface components {
             id: string;
             /** User Id */
             user_id: string;
+            /** User Display Name */
+            user_display_name?: string | null;
+            /** User Handle */
+            user_handle?: string | null;
             status: components["schemas"]["JobStatus"];
             /** Operation */
             operation: string;
@@ -2921,6 +3323,8 @@ export interface components {
             quality_tier: string;
             /** Provider */
             provider?: string | null;
+            /** Provider Label */
+            provider_label?: string | null;
             /** Routing Reason */
             routing_reason?: string | null;
             /** Quoted Credits */
@@ -2941,6 +3345,13 @@ export interface components {
             created_at: string;
             /** Finished At */
             finished_at?: string | null;
+            /**
+             * Stuck
+             * @default false
+             */
+            stuck: boolean;
+            /** Workflow Template Id */
+            workflow_template_id?: string | null;
             /** Params */
             params?: {
                 [key: string]: unknown;
@@ -2955,6 +3366,7 @@ export interface components {
             attempts?: components["schemas"]["ProviderAttemptView"][];
             /** Agent Runs */
             agent_runs?: components["schemas"]["AgentRunView"][];
+            async_task?: components["schemas"]["AsyncProviderTaskView"] | null;
         };
         /** AdminJobSummary */
         AdminJobSummary: {
@@ -2962,6 +3374,10 @@ export interface components {
             id: string;
             /** User Id */
             user_id: string;
+            /** User Display Name */
+            user_display_name?: string | null;
+            /** User Handle */
+            user_handle?: string | null;
             status: components["schemas"]["JobStatus"];
             /** Operation */
             operation: string;
@@ -2969,6 +3385,8 @@ export interface components {
             quality_tier: string;
             /** Provider */
             provider?: string | null;
+            /** Provider Label */
+            provider_label?: string | null;
             /** Routing Reason */
             routing_reason?: string | null;
             /** Quoted Credits */
@@ -2989,6 +3407,13 @@ export interface components {
             created_at: string;
             /** Finished At */
             finished_at?: string | null;
+            /**
+             * Stuck
+             * @default false
+             */
+            stuck: boolean;
+            /** Workflow Template Id */
+            workflow_template_id?: string | null;
         };
         /** AdminLoginRequest */
         AdminLoginRequest: {
@@ -3077,6 +3502,57 @@ export interface components {
             /** Slot */
             slot: string;
         };
+        /** AgentDebugChatMessage */
+        AgentDebugChatMessage: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Content */
+            content: string;
+        };
+        /**
+         * AgentDebugChatRequest
+         * @description One turn of prompt-evaluation chat against a real model.
+         *
+         *     `prompt_template`, when given, is the skill editor's unsaved draft — the
+         *     whole point of "debug the draft" is trying a prompt before it is ever
+         *     published. Omitted, this debugs whatever is currently active for
+         *     `(profile, slot)`. `messages` is the whole conversation so far, not just
+         *     the newest turn: this is a stateless endpoint, so the console resends
+         *     history on every call the same way it already does for the shortform
+         *     clarify flow.
+         */
+        AgentDebugChatRequest: {
+            /** Slot */
+            slot: string;
+            /** Prompt Template */
+            prompt_template?: string | null;
+            /** Messages */
+            messages: components["schemas"]["AgentDebugChatMessage"][];
+        };
+        /** AgentDebugChatResponse */
+        AgentDebugChatResponse: {
+            /** Reply Text */
+            reply_text: string;
+            /** Parsed Json */
+            parsed_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Degraded */
+            degraded: boolean;
+            /** Model */
+            model: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Prompt Tokens */
+            prompt_tokens?: number | null;
+            /** Completion Tokens */
+            completion_tokens?: number | null;
+            /** Agent Run Id */
+            agent_run_id: string;
+        };
         /**
          * AgentNodeView
          * @description One pipeline stage plus which failover-pool endpoints could serve it.
@@ -3100,7 +3576,7 @@ export interface components {
              * @default judgment
              * @enum {string}
              */
-            category: "judgment" | "creative";
+            category: "judgment" | "assist";
             /** Enabled */
             enabled: boolean;
             /** Sort Order */
@@ -3129,22 +3605,18 @@ export interface components {
             default_endpoint_id?: string | null;
             /** Backup Endpoint Id */
             backup_endpoint_id?: string | null;
-            /** Max Tokens */
-            max_tokens?: number | null;
-            /** Temperature */
-            temperature?: number | null;
+            /** Model */
+            model?: string | null;
             /** Reasoning Model */
             reasoning_model?: boolean | null;
-            /** Media Candidates */
-            media_candidates?: components["schemas"]["MediaCandidate"][];
         };
         /**
          * AgentProfileUpdateRequest
-         * @description Every field is optional and `None` means "leave as is".
+         * @description Partial AgentProfile update.
          *
-         *     An **empty string** on either endpoint id is how the console clears a
-         *     model pin, and an **empty list** clears media candidates — otherwise an
-         *     agent could never go back to the shared pool once pinned.
+         *     Endpoint/model pins use an empty string to clear. `reasoning_model`
+         *     distinguishes omission (keep the current override) from explicit null
+         *     (inherit the role's default Agent).
          */
         AgentProfileUpdateRequest: {
             /** Display Name */
@@ -3161,14 +3633,10 @@ export interface components {
             default_endpoint_id?: string | null;
             /** Backup Endpoint Id */
             backup_endpoint_id?: string | null;
-            /** Max Tokens */
-            max_tokens?: number | null;
-            /** Temperature */
-            temperature?: number | null;
+            /** Model */
+            model?: string | null;
             /** Reasoning Model */
             reasoning_model?: boolean | null;
-            /** Media Candidates */
-            media_candidates?: components["schemas"]["MediaCandidate"][] | null;
         };
         /**
          * AgentProfileView
@@ -3196,7 +3664,7 @@ export interface components {
              * @default judgment
              * @enum {string}
              */
-            category: "judgment" | "creative";
+            category: "judgment" | "assist";
             /** Operations */
             operations?: string[];
             /** Is Default */
@@ -3207,14 +3675,14 @@ export interface components {
             default_endpoint_id?: string | null;
             /** Backup Endpoint Id */
             backup_endpoint_id?: string | null;
+            /** Model */
+            model?: string | null;
             /** Max Tokens */
             max_tokens?: number | null;
             /** Temperature */
             temperature?: number | null;
             /** Reasoning Model */
             reasoning_model?: boolean | null;
-            /** Media Candidates */
-            media_candidates?: components["schemas"]["MediaCandidate"][];
             /** Used By Operations */
             used_by_operations?: string[];
             /**
@@ -3231,6 +3699,8 @@ export interface components {
             agent_name: string;
             /** Agent Profile Id */
             agent_profile_id?: string | null;
+            /** Agent Display Name */
+            agent_display_name?: string | null;
             /** Prompt Slot */
             prompt_slot?: string | null;
             /** Model */
@@ -3251,6 +3721,8 @@ export interface components {
             error_message?: string | null;
             /** Job Id */
             job_id?: string | null;
+            /** Node Id */
+            node_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3274,6 +3746,14 @@ export interface components {
             prompt_template: string;
             /** Tool Grants */
             tool_grants?: string[];
+        };
+        /**
+         * AgentSkillToolView
+         * @description One tool a role's skill may be granted, from `app.agents.tools.AGENT_TOOL_GRANTS`.
+         */
+        AgentSkillToolView: {
+            /** Name */
+            name: string;
         };
         /** AgentSkillView */
         AgentSkillView: {
@@ -3400,6 +3880,37 @@ export interface components {
              * @default false
              */
             ai_generated: boolean;
+        };
+        /**
+         * AsyncProviderTaskView
+         * @description One in-flight external render, surfaced so an operator can see what a
+         *     `RUNNING` job with no Celery task in flight is actually waiting on.
+         */
+        AsyncProviderTaskView: {
+            /** Node Id */
+            node_id: string;
+            /** Capability Name */
+            capability_name: string;
+            /** Provider Label */
+            provider_label?: string | null;
+            /** External Task Id */
+            external_task_id: string;
+            /** Poll Count */
+            poll_count: number;
+            /**
+             * Next Poll At
+             * Format: date-time
+             */
+            next_poll_at: string;
+            /**
+             * Deadline At
+             * Format: date-time
+             */
+            deadline_at: string;
+            /** Claimed At */
+            claimed_at?: string | null;
+            /** Provider Attempt Id */
+            provider_attempt_id?: string | null;
         };
         /** AuditLogView */
         AuditLogView: {
@@ -3549,6 +4060,29 @@ export interface components {
             /** Currency */
             currency: string;
         };
+        /** ClarifyQuestionOption */
+        ClarifyQuestionOption: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** ClarifyQuestionResponse */
+        ClarifyQuestionResponse: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "single_choice" | "multi_choice" | "free_text";
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options?: components["schemas"]["ClarifyQuestionOption"][];
+            /** Required */
+            required: boolean;
+        };
         /** CollectionCreateRequest */
         CollectionCreateRequest: {
             /** Name */
@@ -3659,7 +4193,7 @@ export interface components {
                 [key: string]: unknown;
             };
             /** Note */
-            note?: string | null;
+            note: string;
         };
         /** ConfigValueResponse */
         ConfigValueResponse: {
@@ -4020,6 +4554,24 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * DynamicAgentBindingView
+         * @description Tells the editor that one config field selects an agent whose role is
+         *     chosen in a sibling field rather than fixed by the node type.
+         *
+         *     `custom_agent` is the only such node type: it exists to run a role that
+         *     was created in the console. The editor renders the three fields as
+         *     cascading dropdowns — role, then the agents having it, then that role's
+         *     prompt slots — instead of three free-text boxes.
+         */
+        DynamicAgentBindingView: {
+            /** Config Field */
+            config_field: string;
+            /** Role Field */
+            role_field: string;
+            /** Slot Field */
+            slot_field: string;
+        };
         /** FeatureFlagView */
         FeatureFlagView: {
             /** Name */
@@ -4118,6 +4670,8 @@ export interface components {
              * @default false
              */
             cancel_requested: boolean;
+            /** Promoted From Job Id */
+            promoted_from_job_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -4148,6 +4702,7 @@ export interface components {
             duration_seconds: number;
             /** Reference Asset Ids */
             reference_asset_ids?: string[];
+            video_options?: components["schemas"]["VideoGenerationOptions"] | null;
             /** Style Preset Id */
             style_preset_id?: string | null;
             /** Shortform Profile */
@@ -4165,6 +4720,18 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** JobAnswerItem */
+        JobAnswerItem: {
+            /** Question Id */
+            question_id: string;
+            /** Value */
+            value: string | string[];
+        };
+        /** JobAnswerRequest */
+        JobAnswerRequest: {
+            /** Answers */
+            answers?: components["schemas"]["JobAnswerItem"][];
         };
         /** JobEventResponse */
         JobEventResponse: {
@@ -4203,11 +4770,56 @@ export interface components {
             payload?: {
                 [key: string]: unknown;
             };
+            /** Node Id */
+            node_id?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+        };
+        /** JobInputQuestionOption */
+        JobInputQuestionOption: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** JobInputQuestionView */
+        JobInputQuestionView: {
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "single_choice" | "multi_choice" | "free_text";
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options?: components["schemas"]["JobInputQuestionOption"][];
+            /**
+             * Required
+             * @default false
+             */
+            required: boolean;
+        };
+        /**
+         * JobInputRequestResponse
+         * @description What `copy_generate` is waiting on, for the C-end question form.
+         */
+        JobInputRequestResponse: {
+            /** Job Id */
+            job_id: string;
+            /** Node Id */
+            node_id: string;
+            /** Questions */
+            questions: components["schemas"]["JobInputQuestionView"][];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
         };
         /**
          * JobStatsView
@@ -4241,7 +4853,7 @@ export interface components {
          * JobStatus
          * @enum {string}
          */
-        JobStatus: "created" | "queued" | "submitted" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
+        JobStatus: "created" | "queued" | "submitted" | "running" | "awaiting_input" | "succeeded" | "failed" | "cancelled" | "expired";
         /** JobTerminateRequest */
         JobTerminateRequest: {
             /** Reason */
@@ -4617,9 +5229,9 @@ export interface components {
          *     `api_key` itself never appears here — only whether one is set and a
          *     truncated preview — so a GET response is always safe to render or log.
          *
-         *     `role`/`backup_order` are endpoint-level for both `general` and `media`.
-         *     For media, `capabilities` is derived and read-only: it lists which tags
-         *     the declared `model` + `input_modalities`/`output_modalities` cover.
+         *     `role`/`backup_order` and concurrency are meaningful for `general` only.
+         *     For media, `capabilities` is derived and read-only from the declared
+         *     `model` + `input_modalities`/`output_modalities`.
          */
         LlmProviderEndpointView: {
             /** Id */
@@ -4691,6 +5303,38 @@ export interface components {
             /** Demoted Endpoint Ids */
             demoted_endpoint_ids?: string[];
         };
+        /** LlmProviderValidationResult */
+        LlmProviderValidationResult: {
+            /** Endpoint Id */
+            endpoint_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "general" | "media";
+            /** Target Model */
+            target_model?: string | null;
+            /** Probe Type */
+            probe_type: string;
+            /** Reachable */
+            reachable: boolean;
+            /** Usable */
+            usable: boolean;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Provider Status Code */
+            provider_status_code?: number | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Warning Code */
+            warning_code?: string | null;
+            /** Provider Error Code */
+            provider_error_code?: string | null;
+            /** Provider Error Message */
+            provider_error_message?: string | null;
+            /** External Task Id */
+            external_task_id?: string | null;
+        };
         /**
          * Locale
          * @enum {string}
@@ -4729,6 +5373,8 @@ export interface components {
             details?: {
                 [key: string]: unknown;
             };
+            /** Job Id */
+            job_id?: string | null;
             /**
              * Occurred At
              * Format: date-time
@@ -4776,30 +5422,26 @@ export interface components {
             reserved_credits: number;
         };
         /**
-         * MediaCandidate
-         * @description One media route a creative agent may use, with a cost preference.
-         *
-         *     `weight` is shown to the routing agent as operational context alongside
-         *     each candidate's observed success rate, latency and cost — it is not a
-         *     coefficient. Nothing in `app/agents/router.py` ranks by it; the routing
-         *     agent still makes the call.
-         */
-        MediaCandidate: {
-            /** Endpoint Id */
-            endpoint_id: string;
-            /** Capability */
-            capability: string;
-            /**
-             * Weight
-             * @default 100
-             */
-            weight: number;
-        };
-        /**
          * MediaType
          * @enum {string}
          */
         MediaType: "image" | "video" | "audio";
+        /**
+         * ModelSamplingDefaultView
+         * @description The fixed max_tokens/temperature one model resolves to.
+         *
+         *     The console reads this list to show what picking a model will fix
+         *     sampling to (`app.llm.model_defaults`) before the operator saves —
+         *     those two fields are never a free-text input anymore.
+         */
+        ModelSamplingDefaultView: {
+            /** Model */
+            model: string;
+            /** Max Tokens */
+            max_tokens: number;
+            /** Temperature */
+            temperature: number;
+        };
         /** ModerationDecisionRequest */
         ModerationDecisionRequest: {
             /**
@@ -4830,6 +5472,8 @@ export interface components {
             reviewer_user_id?: string | null;
             /** Reason Code */
             reason_code?: string | null;
+            /** Categories */
+            categories?: string[];
             /** Public Message */
             public_message?: string | null;
             /**
@@ -4882,6 +5526,11 @@ export interface components {
             history: components["schemas"]["ModerationHistoryEntry"][];
             work?: components["schemas"]["ModerationWorkDetailView"] | null;
             skill?: components["schemas"]["CreationSkillAdminView"] | null;
+            /**
+             * Open Report Count
+             * @default 0
+             */
+            open_report_count: number;
         };
         /** ModerationWorkDetailView */
         ModerationWorkDetailView: {
@@ -4946,6 +5595,10 @@ export interface components {
             label: string;
             /** Description */
             description: string;
+            /** Label Key */
+            label_key: string;
+            /** Description Key */
+            description_key: string;
             /** Output Ports */
             output_ports: string[];
             /** Is Agent */
@@ -4954,6 +5607,7 @@ export interface components {
             agent_role?: string | null;
             /** Agent Bindings */
             agent_bindings?: components["schemas"]["AgentBindingView"][];
+            dynamic_agent_binding?: components["schemas"]["DynamicAgentBindingView"] | null;
             /** Config Schema */
             config_schema: {
                 [key: string]: unknown;
@@ -5043,6 +5697,18 @@ export interface components {
         Page_AgentProfileView_: {
             /** Items */
             items: components["schemas"]["AgentProfileView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[AgentSkillToolView] */
+        Page_AgentSkillToolView_: {
+            /** Items */
+            items: components["schemas"]["AgentSkillToolView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -5327,6 +5993,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[ModelSamplingDefaultView] */
+        Page_ModelSamplingDefaultView_: {
+            /** Items */
+            items: components["schemas"]["ModelSamplingDefaultView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[ModerationQueueView] */
         Page_ModerationQueueView_: {
             /** Items */
@@ -5459,6 +6137,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[StyleGalleryEntryResponse] */
+        Page_StyleGalleryEntryResponse_: {
+            /** Items */
+            items: components["schemas"]["StyleGalleryEntryResponse"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[StylePresetResponse] */
         Page_StylePresetResponse_: {
             /** Items */
@@ -5565,6 +6255,26 @@ export interface components {
             /** Public Profile */
             public_profile?: boolean | null;
         };
+        /** PromoteJobRequest */
+        PromoteJobRequest: {
+            quality_tier: components["schemas"]["QualityTier"];
+            /** Max Credits */
+            max_credits?: number | null;
+        };
+        /** PromptClarifyRequest */
+        PromptClarifyRequest: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** PromptClarifyResponse */
+        PromptClarifyResponse: {
+            /** Needs Clarification */
+            needs_clarification: boolean;
+            /** Questions */
+            questions?: components["schemas"]["ClarifyQuestionResponse"][];
+            /** Degraded */
+            degraded: boolean;
+        };
         /** PromptEnhanceRequest */
         PromptEnhanceRequest: {
             /** Prompt */
@@ -5574,6 +6284,13 @@ export interface components {
         PromptEnhanceResponse: {
             /** Prompt */
             prompt: string;
+            /**
+             * Detail Level
+             * @enum {string}
+             */
+            detail_level: "sparse" | "adequate" | "detailed";
+            /** Feedback */
+            feedback: string;
             /** Degraded */
             degraded: boolean;
         };
@@ -6055,10 +6772,9 @@ export interface components {
          *
          *     A code-maintained catalogue rather than a table: a role only runs if some
          *     node type invokes it, so free-text roles would produce agents that never
-         *     execute. `category` drives which half of the create form applies —
-         *     `judgment` binds one LLM model, `creative` binds media endpoints with a
-         *     cost weight each — and `operations` is what the media-candidate picker
-         *     filters by.
+         *     execute. `category` drives which half of the create form applies only
+         *     semantically — both `judgment` and `assist` bind one LLM model the same
+         *     way.
          */
         RolePresetView: {
             /** Role */
@@ -6069,7 +6785,7 @@ export interface components {
              * Category
              * @enum {string}
              */
-            category: "judgment" | "creative";
+            category: "judgment" | "assist";
             /**
              * Description
              * @default
@@ -6265,6 +6981,12 @@ export interface components {
             default_profile: string;
             /** Profiles */
             profiles: components["schemas"]["ShortformProfileResponse"][];
+            /** Enable Clarifying Questions */
+            enable_clarifying_questions: boolean;
+            /** Enable Preview Picker */
+            enable_preview_picker: boolean;
+            /** Preview Candidate Count */
+            preview_candidate_count: number;
         };
         /**
          * SkillTemplateView
@@ -6288,7 +7010,7 @@ export interface components {
              * Category
              * @enum {string}
              */
-            category: "judgment" | "creative";
+            category: "judgment" | "assist";
             /** Prompt Template */
             prompt_template: string;
             /** Tool Grants */
@@ -6317,6 +7039,91 @@ export interface components {
             lifecycle_rules?: {
                 [key: string]: unknown;
             }[];
+        };
+        /** StyleGalleryEntryCreateRequest */
+        StyleGalleryEntryCreateRequest: {
+            /** Slug */
+            slug: string;
+            /** Label Zh */
+            label_zh: string;
+            /** Label En */
+            label_en: string;
+            /** Label Ja */
+            label_ja: string;
+            /** Description */
+            description?: string | null;
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** StyleGalleryEntryResponse */
+        StyleGalleryEntryResponse: {
+            /** Id */
+            id: string;
+            /** Slug */
+            slug: string;
+            /** Label Zh */
+            label_zh: string;
+            /** Label En */
+            label_en: string;
+            /** Label Ja */
+            label_ja: string;
+            /** Description */
+            description?: string | null;
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /** Sort Order */
+            sort_order: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Apply Count */
+            apply_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** StyleGalleryEntryUpdateRequest */
+        StyleGalleryEntryUpdateRequest: {
+            /** Label Zh */
+            label_zh: string;
+            /** Label En */
+            label_en: string;
+            /** Label Ja */
+            label_ja: string;
+            /** Description */
+            description?: string | null;
+            /** Cover Asset Id */
+            cover_asset_id?: string | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
         };
         /** StylePresetCreateRequest */
         StylePresetCreateRequest: {
@@ -6514,6 +7321,28 @@ export interface components {
             entries: components["schemas"]["VersionDiffEntry"][];
         };
         /**
+         * VideoGenerationOptions
+         * @description Typed H3 options; arbitrary provider JSON and webhooks are forbidden.
+         */
+        VideoGenerationOptions: {
+            /**
+             * Resolution
+             * @default 2K
+             * @constant
+             */
+            resolution: "2K";
+            /**
+             * Reference Mode
+             * @default input_references
+             * @enum {string}
+             */
+            reference_mode: "input_references" | "frame_images";
+            /** First Frame Asset Id */
+            first_frame_asset_id?: string | null;
+            /** Last Frame Asset Id */
+            last_frame_asset_id?: string | null;
+        };
+        /**
          * Visibility
          * @description Publication scope. `PUBLIC_VIEW_ONLY` is the mandated default.
          * @enum {string}
@@ -6671,6 +7500,10 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+            /** Graph */
+            graph?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** WorkflowDryRunResult */
         WorkflowDryRunResult: {
@@ -6692,6 +7525,10 @@ export interface components {
             port: string;
             /** Agent Run Id */
             agent_run_id?: string | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Summary */
+            summary?: string | null;
         };
         /** WorkflowTemplatePublishRequest */
         WorkflowTemplatePublishRequest: {
@@ -8328,6 +9165,114 @@ export interface operations {
             };
         };
     };
+    promote_job_v1_generation_jobs__job_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_input_request_v1_generation_jobs__job_id__input_request_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInputRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_job_input_v1_generation_jobs__job_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_events_v1_generation_jobs__job_id__events_get: {
         parameters: {
             query?: never;
@@ -8349,6 +9294,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enhance_generation_prompt_v1_generation_prompts_enhance_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptEnhanceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptEnhanceResponse"];
                 };
             };
             /** @description Validation Error */
@@ -8450,6 +9430,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PromptEnhanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clarify_prompt_v1_shortform_prompt_clarify_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptClarifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptClarifyResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9664,6 +10679,90 @@ export interface operations {
             };
         };
     };
+    list_style_gallery_v1_style_gallery_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_StyleGalleryEntryResponse_"];
+                };
+            };
+        };
+    };
+    get_style_gallery_entry_v1_style_gallery__entry_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StyleGalleryEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_style_gallery_entry_v1_style_gallery__entry_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StyleGalleryEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_my_data_requests_v1_me_data_requests_get: {
         parameters: {
             query?: never;
@@ -9981,6 +11080,7 @@ export interface operations {
         parameters: {
             query: {
                 operation: string;
+                template_id?: string | null;
             };
             header?: {
                 authorization?: string | null;
@@ -10048,8 +11148,8 @@ export interface operations {
     list_jobs_v1_admin_jobs_get: {
         parameters: {
             query?: {
-                status?: components["schemas"]["JobStatus"] | null;
-                user_id?: string | null;
+                status?: string | null;
+                user?: string | null;
                 provider?: string | null;
                 stuck_only?: boolean;
                 created_after?: string | null;
@@ -10256,10 +11356,12 @@ export interface operations {
             };
         };
     };
-    moderation_queue_v1_admin_moderation_queue_get: {
+    moderation_queue_list_v1_admin_moderation_queue_get: {
         parameters: {
             query?: {
                 status?: components["schemas"]["ModerationStatus"] | null;
+                subject_type?: string | null;
+                cursor?: string | null;
                 limit?: number;
             };
             header?: {
@@ -10397,6 +11499,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                cursor?: string | null;
                 limit?: number;
             };
             header?: {
@@ -11626,6 +12729,7 @@ export interface operations {
                 q?: string | null;
                 created_after?: string | null;
                 created_before?: string | null;
+                job_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -11762,6 +12866,39 @@ export interface operations {
             };
         };
     };
+    validate_llm_provider_v1_admin_llm_providers__endpoint_id__validate_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                endpoint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderValidationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_agent_node_presets_v1_admin_agent_node_presets_get: {
         parameters: {
             query?: never;
@@ -11780,6 +12917,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_RolePresetView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_model_sampling_defaults_v1_admin_model_sampling_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ModelSamplingDefaultView_"];
                 };
             };
             /** @description Validation Error */
@@ -11892,6 +13060,39 @@ export interface operations {
             };
         };
     };
+    list_agent_skill_tools_v1_admin_agent_skill_tools_get: {
+        parameters: {
+            query: {
+                role: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AgentSkillToolView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_agent_profile_v1_admin_agent_profiles__profile_id__patch: {
         parameters: {
             query?: never;
@@ -11953,6 +13154,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentProfileView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_profile_v1_admin_agent_profiles__profile_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    debug_chat_agent_profile_v1_admin_agent_profiles__profile_id__debug_chat_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDebugChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDebugChatResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12164,6 +13437,216 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreationSkillAdminView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_entries_v1_admin_style_gallery_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_StyleGalleryEntryResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_entry_v1_admin_style_gallery_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StyleGalleryEntryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StyleGalleryEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_entry_v1_admin_style_gallery__entry_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StyleGalleryEntryUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StyleGalleryEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_entry_v1_admin_style_gallery__entry_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DangerousAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_StyleGalleryEntryResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    presign_cover_upload_v1_admin_style_gallery_uploads_presign_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadPresignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPresignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_cover_upload_v1_admin_style_gallery_uploads_complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"];
                 };
             };
             /** @description Validation Error */

@@ -127,13 +127,16 @@ def append_event(
     progress: int = 0,
     internal_code: str | None = None,
     payload: dict[str, object] | None = None,
+    node_id: str | None = None,
     now: dt.datetime | None = None,
 ) -> JobEvent:
     """Appends the next event in the job's stream.
 
     `sequence` is derived from the current maximum and protected by a unique
     constraint, so a concurrent writer fails loudly rather than creating a hole
-    that would break SSE resumption.
+    that would break SSE resumption. `node_id` is the graph node that actually
+    emitted this event — callers outside a node (e.g. an async poll heartbeat)
+    pass the node they are resuming instead.
     """
     current_max = session.scalar(
         select(JobEvent.sequence)
@@ -150,6 +153,7 @@ def append_event(
         public_message=public_message,
         internal_code=internal_code,
         payload_json=payload or {},
+        node_id=node_id,
         created_at=now or utcnow(),
     )
     session.add(event)

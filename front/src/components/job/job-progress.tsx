@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
+import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { Button } from '@/components/ui/button';
@@ -225,6 +226,8 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
         {current.status === 'cancelled' ? (
           <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
         ) : null}
+
+        {current.status === 'awaiting_input' ? <AwaitingInputPanel jobId={jobId} /> : null}
 
         {/* Keeps the tail of the page clear of the fixed bar below. */}
         <div aria-hidden="true" className="safe-mb h-16 lg:hidden" />

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
@@ -23,6 +23,16 @@ from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
 # call. Not config-centre material: changing the provider's own voice ids
 # means a code change either way, so a constant is honest about that.
 AUDIO_VOICES: frozenset[str] = frozenset({"alloy", "echo", "fable", "onyx", "nova", "shimmer"})
+H3_VIDEO_ASPECT_RATIOS: frozenset[str] = frozenset({"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"})
+
+
+class VideoGenerationOptions(ApiModel):
+    """Typed H3 options; arbitrary provider JSON and webhooks are forbidden."""
+
+    resolution: Literal["2K"] = "2K"
+    reference_mode: Literal["input_references", "frame_images"] = "input_references"
+    first_frame_asset_id: str | None = Field(default=None, max_length=40)
+    last_frame_asset_id: str | None = Field(default=None, max_length=40)
 
 
 class GenerationParams(ApiModel):
@@ -31,7 +41,8 @@ class GenerationParams(ApiModel):
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     aspect_ratio: str = Field(default="16:9", pattern=r"^\d{1,2}:\d{1,2}$")
     duration_seconds: int = Field(default=0, ge=0, le=MAX_GENERATION_DURATION_SECONDS)
-    reference_asset_ids: list[str] = Field(default_factory=list, max_length=6)
+    reference_asset_ids: list[str] = Field(default_factory=list, max_length=9)
+    video_options: VideoGenerationOptions | None = None
     style_preset_id: str | None = None
     # Names a `shortform.profiles` entry. Absent for ordinary generation, which
     # is why every downstream check treats it as optional.
@@ -76,7 +87,29 @@ class GenerationJobCreateRequest(ApiModel):
         video_ops = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
         if self.operation in video_ops and self.params.duration_seconds <= 0:
             raise ValueError("视频生成必须指定时长。")
-        if self.operation == Operation.IMAGE_TO_VIDEO and not self.params.reference_asset_ids:
+        options = self.params.video_options
+        if self.operation not in video_ops and options is not None:
+            raise ValueError("video_options 仅适用于视频生成。")
+        if options is not None:
+            if not 4 <= self.params.duration_seconds <= 15:
+                raise ValueError("MiniMax H3 视频时长必须为 4-15 秒。")
+            if self.params.aspect_ratio not in H3_VIDEO_ASPECT_RATIOS:
+                raise ValueError(f"MiniMax H3 画幅必须为: {sorted(H3_VIDEO_ASPECT_RATIOS)}。")
+            if options.reference_mode == "frame_images":
+                if not options.first_frame_asset_id:
+                    raise ValueError("首尾帧模式必须提供首帧图片。")
+                if self.params.reference_asset_ids or self.params.character_ids:
+                    raise ValueError("首尾帧与普通参考素材、角色参考图互斥。")
+                if self.operation != Operation.IMAGE_TO_VIDEO:
+                    raise ValueError("首尾帧模式必须使用 image_to_video 操作。")
+            elif options.first_frame_asset_id or options.last_frame_asset_id:
+                raise ValueError("普通参考素材模式不能传入首帧或尾帧。")
+        has_frame_input = bool(options and options.first_frame_asset_id)
+        if (
+            self.operation == Operation.IMAGE_TO_VIDEO
+            and not self.params.reference_asset_ids
+            and not has_frame_input
+        ):
             raise ValueError("图生视频必须提供参考图。")
         if self.operation == Operation.IMAGE_TO_IMAGE and not self.params.reference_asset_ids:
             raise ValueError("图生图必须提供参考图。")
@@ -84,6 +117,52 @@ class GenerationJobCreateRequest(ApiModel):
             voice = self.params.extra.get("voice")
             if voice not in AUDIO_VOICES:
                 raise ValueError(f"音频生成必须指定音色，可选: {sorted(AUDIO_VOICES)}。")
+        return self
+
+
+class JobInputQuestionOption(ApiModel):
+    value: str
+    label: str
+
+
+class JobInputQuestionView(ApiModel):
+    id: str
+    kind: Literal["single_choice", "multi_choice", "free_text"]
+    prompt: str
+    options: list[JobInputQuestionOption] = Field(default_factory=list)
+    required: bool = False
+
+
+class JobInputRequestResponse(ApiModel):
+    """What `copy_generate` is waiting on, for the C-end question form."""
+
+    job_id: str
+    node_id: str
+    questions: list[JobInputQuestionView]
+    expires_at: dt.datetime
+
+
+class JobAnswerItem(ApiModel):
+    question_id: str = Field(min_length=1, max_length=64)
+    # `str` for `single_choice`/`free_text`, `list[str]` for `multi_choice` —
+    # mirrors `ClarifyPanel`'s own answer shape on the frontend.
+    value: str | list[str]
+
+
+class JobAnswerRequest(ApiModel):
+    answers: list[JobAnswerItem] = Field(default_factory=list, max_length=20)
+
+
+class PromoteJobRequest(ApiModel):
+    quality_tier: QualityTier
+    # Client-side ceiling on the promoted job, same semantics as
+    # `GenerationJobCreateRequest.max_credits`.
+    max_credits: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _cannot_promote_to_preview(self) -> PromoteJobRequest:
+        if self.quality_tier == QualityTier.PREVIEW:
+            raise ValueError("升级档位不能仍为 preview。")
         return self
 
 
@@ -132,6 +211,7 @@ class GenerationJobResponse(ApiModel):
     failure_code: str | None = None
     failure_message: str | None = None
     cancel_requested: bool = False
+    promoted_from_job_id: str | None = None
     created_at: dt.datetime
     finished_at: dt.datetime | None = None
     events: list[JobEventResponse] = Field(default_factory=list)
@@ -143,7 +223,10 @@ class UploadPresignRequest(ApiModel):
     size_bytes: int = Field(ge=1, le=512 * 1024 * 1024)
     checksum_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
     purpose: str = Field(
-        pattern=r"^(generation_reference|avatar|profile_cover|consent_evidence|learn_media)$"
+        pattern=(
+            r"^(generation_reference|avatar|profile_cover|consent_evidence|learn_media"
+            r"|style_gallery_cover)$"
+        )
     )
 
 

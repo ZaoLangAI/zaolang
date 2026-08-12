@@ -20,18 +20,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agents import base as agent_base
 from app.agents import copywriter, planner, quality, safety
 from app.agents.tools import build_toolkit
+from app.domain.agent_skills import service as agent_skills_service
 from app.llm import client as llm_client
 from app.llm import failover
 from app.models.enums import AgentName
 from app.platform_config import service as config_service
-from app.platform_config.schemas import (
-    AgentConfig,
-    AgentModelBinding,
-    LlmProviderConfig,
-    LlmProviderEndpoint,
-)
+from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +45,9 @@ TEAM_INSTRUCTIONS = """你是造浪生成网关的协调者，面向平台运营
 - 真正的生产任务由后台流水线按固定顺序执行，你的结论仅供人工参考。"""
 
 
-def _resolve_endpoint(provider_config: LlmProviderConfig) -> LlmProviderEndpoint:
+def _resolve_endpoint(
+    provider_config: LlmProviderConfig, binding: agent_base.EffectiveBinding
+) -> LlmProviderEndpoint:
     """Picks the same primary/backup candidate `app/llm/client.py` would use.
 
     Every agent role shares the same `kind="general"` pool now. Raises rather
@@ -56,13 +55,21 @@ def _resolve_endpoint(provider_config: LlmProviderConfig) -> LlmProviderEndpoint
     AgentOS console with an empty `llm_providers` pool needs a clear reason
     it failed to mount, not a confusing model error.
     """
-    candidates = failover.general_candidates(provider_config)
+    candidates = [
+        pair
+        for pair in failover.general_candidates(provider_config)
+        if binding.model in pair[1].models
+    ]
+    if binding.preferred_endpoint_ids:
+        rank = {value: index for index, value in enumerate(binding.preferred_endpoint_ids)}
+        candidates = [pair for pair in candidates if pair[0] in rank]
+        candidates.sort(key=lambda pair: rank[pair[0]])
     if not candidates:
         raise ValueError("未配置任何通用模型端点，无法构建 AgentOS 团队")
     return candidates[0][1]
 
 
-def _model_for(binding: AgentModelBinding, endpoint: LlmProviderEndpoint) -> Any:
+def _model_for(binding: agent_base.EffectiveBinding, endpoint: LlmProviderEndpoint) -> Any:
     from agno.models.openai.like import OpenAILike
 
     # `client_for_endpoint` already bakes base_url/api_key/timeout into the
@@ -84,14 +91,14 @@ def build_generation_gateway_team(session: Session) -> Any:
     from agno.agent import Agent
     from agno.team import Team
 
-    config = config_service.get_typed(session, "agents", AgentConfig)
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
 
     members: list[Any] = []
     for name, brief in MEMBER_BRIEFS.items():
-        binding = config.bindings[name]
+        profile = agent_skills_service.default_profile(session, name)
+        binding = agent_base.effective_binding(session, name, profile)
         toolkit = build_toolkit(session, name)
-        endpoint = _resolve_endpoint(provider_config)
+        endpoint = _resolve_endpoint(provider_config, binding)
         members.append(
             Agent(
                 name=name,
@@ -103,8 +110,12 @@ def build_generation_gateway_team(session: Session) -> Any:
             )
         )
 
-    planner_binding = config.bindings[AgentName.PLANNER]
-    planner_endpoint = _resolve_endpoint(provider_config)
+    planner_binding = agent_base.effective_binding(
+        session,
+        AgentName.PLANNER.value,
+        agent_skills_service.default_profile(session, AgentName.PLANNER.value),
+    )
+    planner_endpoint = _resolve_endpoint(provider_config, planner_binding)
     return Team(
         name="generation_gateway",
         members=members,

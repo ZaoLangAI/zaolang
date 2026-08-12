@@ -19,7 +19,14 @@ export interface GenerationQuoteInput {
 export interface GenerationSubmitInput extends GenerationQuoteInput {
   prompt: string;
   aspectRatio: string;
+  seed?: number;
   referenceAssetIds: string[];
+  videoOptions?: {
+    resolution: '2K';
+    reference_mode: 'input_references' | 'frame_images';
+    first_frame_asset_id?: string | null;
+    last_frame_asset_id?: string | null;
+  };
   /** Cast picked from the character library; merged server-side into the job's
    * reference images and voice hints (see `characters.service.apply_character_refs`). */
   characterIds?: string[];
@@ -142,6 +149,8 @@ export function useGenerationSubmit(
                 prompt: input.prompt,
                 aspect_ratio: input.aspectRatio,
                 duration_seconds: input.durationSeconds,
+                seed: input.seed,
+                video_options: input.videoOptions,
                 operation: input.operation,
                 quality_tier: input.qualityTier,
                 ...(input.shortformProfile
@@ -162,9 +171,11 @@ export function useGenerationSubmit(
               source_work_id: input.sourceWorkId,
               params: {
                 prompt: input.prompt,
+                seed: input.seed,
                 aspect_ratio: input.aspectRatio,
                 duration_seconds: input.durationSeconds,
                 reference_asset_ids: input.referenceAssetIds,
+                video_options: input.videoOptions,
                 character_ids: input.characterIds ?? [],
                 shortform_profile: input.shortformProfile,
                 skill_id: input.skillId ?? null,

@@ -26,6 +26,7 @@ from app.domain.errors import (
     NotFound,
 )
 from app.domain.jobs import state_machine as sm
+from app.domain.media import service as media_service
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, JobEvent
@@ -95,6 +96,9 @@ def submit(
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
     characters_service.apply_character_refs(session, user_id=user_id, params=params)
+    media_service.validate_generation_references(
+        session, user_id=user_id, operation=operation, params=params
+    )
     shortform_service.assert_params_consistent(session, params)
 
     priced = quote_for(

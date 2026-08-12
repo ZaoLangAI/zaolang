@@ -22,8 +22,10 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain import prompts
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.media import service as media_service
+from app.domain.shortform import clarify
 from app.models import Asset, Draft, PublicationIntent, Work, WorkVersion
 from app.models.enums import (
     LifecycleStatus,
@@ -155,21 +157,22 @@ def check_compliance(
     return report
 
 
-PROMPT_ENHANCE_MAX_LENGTH = 600  # 与前端 shortform-studio.tsx 的 PROMPT_MAX_LENGTH 对齐
+def enhance_prompt(session: Session, *, user_id: str, prompt: str) -> prompts.PromptEnhancement:
+    """Hands a scene description to the copy agent.
+
+    Thin wrapper kept for call-site stability — the actual logic is shared
+    with `GenerationStudio`'s polish button in `app.domain.prompts`.
+    """
+    return prompts.enhance(session, user_id=user_id, prompt=prompt)
 
 
-def enhance_prompt(session: Session, *, user_id: str, prompt: str) -> tuple[str, bool]:
-    """Hands a scene description to the copy agent and returns the polished text."""
-    text = prompt.strip()
-    if not text:
-        raise ValidationFailed("请先填写画面描述。", fields={"prompt": "不能为空"})
+def clarify_prompt(session: Session, *, user_id: str, prompt: str) -> clarify.ClarifyResult:
+    """Hands a scene description to the copy agent's clarify slot.
 
-    from app.agents import copywriter
-
-    outcome = copywriter.enhance_prompt(
-        session, prompt=text, max_length=PROMPT_ENHANCE_MAX_LENGTH, user_id=user_id
-    )
-    return str(outcome.data["prompt"]), outcome.degraded
+    Thin wrapper kept for call-site stability, same shape as `enhance_prompt`
+    — the actual logic is shortform-only, in `app.domain.shortform.clarify`.
+    """
+    return clarify.clarify(session, user_id=user_id, prompt=prompt)
 
 
 def create_publication_intent(

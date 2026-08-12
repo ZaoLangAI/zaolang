@@ -20,6 +20,7 @@ from app.models import (
     CreditLedgerEntry,
     Draft,
     LineageEdge,
+    ModerationQueueItem,
     Notification,
     User,
     Work,
@@ -30,12 +31,16 @@ from app.models.base import new_id
 from app.models.enums import (
     LedgerEntryType,
     LifecycleStatus,
+    ModerationStage,
+    ModerationStatus,
     NotificationType,
     Operation,
     QualityTier,
     Visibility,
 )
 from app.workers import pipeline
+
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
 
 def _fund(db: Session, user: User, amount: int = 5_000) -> None:
@@ -171,6 +176,34 @@ def test_an_unsafe_title_is_rejected_before_anything_is_written(db: Session, aut
 
     db.rollback()
     assert len(list(db.scalars(select(Work)))) == before
+
+
+def test_a_needs_review_title_still_publishes_but_opens_a_queue_item(
+    db: Session, author: User
+) -> None:
+    """`needs_review` is uncertainty, not a veto: the work goes live, but a
+    human now has a real row to look at instead of the verdict being
+    recorded and never followed up on (see the safety agent's own docstring:
+    "不确定时返回 needs_review，不要放行")."""
+    _fund(db, author)
+    draft = publishing.create_draft(db, user_id=author.id, source_work_id=None)
+    _generate_into_draft(db, author, draft)
+
+    outcome = _publish(db, author, draft, title="血腥暴力的战场场景")
+
+    assert outcome.work.lifecycle_status == LifecycleStatus.ACTIVE
+
+    item = db.scalar(
+        select(ModerationQueueItem).where(
+            ModerationQueueItem.subject_type == "work",
+            ModerationQueueItem.subject_id == outcome.work.id,
+            ModerationQueueItem.stage == ModerationStage.PRE_PUBLISH,
+        )
+    )
+    assert item is not None
+    assert item.status == ModerationStatus.NEEDS_REVIEW
+    assert item.reason_code == "SENSITIVE_CONTENT"
+    assert item.priority > 0
 
 
 def test_a_view_only_work_does_not_ship_its_parameters(db: Session, author: User) -> None:

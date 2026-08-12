@@ -49,9 +49,17 @@ def emit(
     user_id: str | None = None,
     request: Request | None = None,
     details: dict[str, Any] | None = None,
+    job_id: str | None = None,
 ) -> None:
     """Best-effort: swallows Redis and DB failures rather than letting an
-    observability write ever fail the request that triggered it."""
+    observability write ever fail the request that triggered it.
+
+    `job_id` callers (pipeline/workflow-engine/worker crash points) must fold
+    the job id into `dedup_key` themselves — it is not part of the dedup
+    identity here, so two different jobs hitting the same `event` in the same
+    window would otherwise collapse into one row and silently drop the
+    second job's `job_id`.
+    """
     dedup_key = dedup_key[:_DEDUP_KEY_MAX_LEN]
     window_seconds = max(window_seconds, 1)
     now = dt.datetime.now(dt.UTC)
@@ -88,6 +96,7 @@ def emit(
                         path=request.url.path if request else None,
                         request_id=get_request_id() or None,
                         details_json=details or {},
+                        job_id=job_id,
                     )
                 )
             else:
@@ -115,6 +124,7 @@ def search(
     since: dt.datetime | None = None,
     until: dt.datetime | None = None,
     before: dt.datetime | None = None,
+    job_id: str | None = None,
     limit: int = 50,
 ) -> list[SystemLog]:
     """Ordered by `updated_at`: a window that just recurred is more relevant to
@@ -137,4 +147,6 @@ def search(
         stmt = stmt.where(SystemLog.updated_at <= until)
     if before:
         stmt = stmt.where(SystemLog.updated_at < before)
+    if job_id:
+        stmt = stmt.where(SystemLog.job_id == job_id)
     return list(session.scalars(stmt.limit(limit)))

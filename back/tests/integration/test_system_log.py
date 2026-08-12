@@ -172,3 +172,85 @@ def test_insufficient_admin_role_is_recorded(client: TestClient, db: Session, vi
     assert row is not None
     assert row.source == "permission"
     assert row.user_id == viewer.id
+
+
+def test_a_pipeline_crash_is_recorded_with_the_job_id(db: Session, author: User) -> None:
+    """The scenario the whole `SystemLogSource.PIPELINE` extension exists
+    for: a top-level crash that `JobEvent` deliberately never sees (its
+    `public_message` is scrubbed for the C-end caller) must still leave one
+    durable, job-scoped row an operator can find afterwards."""
+    from app.domain.credits import service as credits_service
+    from app.domain.jobs import service as jobs_service
+    from app.models.enums import Operation, QualityTier
+    from app.workers import pipeline
+
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    job = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "崩溃用例", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+    ).job
+    db.commit()
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("synthetic pipeline crash")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(pipeline, "resolve_graph", _boom)
+        with pytest.raises(RuntimeError):
+            pipeline.run_generation_pipeline(db, job.id)
+    db.commit()
+
+    row = db.scalar(
+        select(SystemLog).where(SystemLog.event == "pipeline_crashed", SystemLog.job_id == job.id)
+    )
+    assert row is not None
+    assert row.source == "pipeline"
+    assert "synthetic pipeline crash" in row.message
+
+
+def test_a_worker_task_failure_is_recorded_with_the_original_exception(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`JobEvent.public_message` stays generic; the raw exception text this
+    test asserts on is what makes the row actually useful to an operator."""
+    from contextlib import contextmanager
+
+    from app.domain.credits import service as credits_service
+    from app.domain.jobs import service as jobs_service
+    from app.models.enums import Operation, QualityTier
+    from app.workers import tasks
+
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    job = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "worker 崩溃用例", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+    ).job
+    db.commit()
+
+    # Mirrors `test_generation_lifecycle.py`'s existing pattern for this same
+    # function: `_settle_worker_failure` opens its own `session_scope()`,
+    # which under the test fixture's savepoint-based isolation cannot see a
+    # row this test's own `db` session only ever released as a savepoint.
+    @contextmanager
+    def fake_session_scope():  # type: ignore[no-untyped-def]
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    tasks._settle_worker_failure(
+        job.id, task_id="celery_boom", exc=RuntimeError("celery worker boundary fault")
+    )
+
+    row = db.scalar(
+        select(SystemLog).where(SystemLog.event == "worker_task_failed", SystemLog.job_id == job.id)
+    )
+    assert row is not None
+    assert row.source == "pipeline"
+    assert "celery worker boundary fault" in row.message

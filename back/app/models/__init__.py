@@ -52,7 +52,9 @@ from app.models.platform import (
 )
 from app.models.search import EMBEDDING_DIM, WorkEmbedding
 from app.models.skill_library import CreationSkill
+from app.models.style_gallery import StyleGalleryEntry
 from app.models.system_log import SystemLog
+from app.models.workflow_input import WorkflowInputRequest
 from app.models.works import (
     Bookmark,
     Collection,
@@ -118,6 +120,7 @@ __all__ = [
     "RedemptionRecord",
     "ReportCase",
     "Series",
+    "StyleGalleryEntry",
     "StylePreset",
     "SystemLog",
     "Tag",
@@ -130,6 +133,7 @@ __all__ = [
     "WorkTag",
     "WorkVersion",
     "Workflow",
+    "WorkflowInputRequest",
     "WorkflowVersion",
     "new_id",
     "utcnow",

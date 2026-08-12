@@ -28,8 +28,10 @@ from app.api.v1 import (
     learning,
     privacy,
     profiles,
+    prompts,
     shortform,
     skills,
+    style_gallery,
     uploads,
     works,
 )
@@ -49,12 +51,14 @@ def build_router() -> APIRouter:
     router.include_router(skills.router)
     router.include_router(drafts.router)
     router.include_router(jobs.router)
+    router.include_router(prompts.router)
     router.include_router(shortform.router)
     router.include_router(characters.router)
     router.include_router(gateway.router)
     router.include_router(uploads.router)
     router.include_router(credits.router)
     router.include_router(community.router)
+    router.include_router(style_gallery.router)
     router.include_router(privacy.router)
     router.include_router(devices.router)
     router.include_router(admin.router)

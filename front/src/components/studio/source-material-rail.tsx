@@ -50,11 +50,13 @@ export function SourceMaterialRail({
           id: 'first-frame',
           label: t('firstFrame'),
           url: source.work.current_version?.cover_url ?? source.work.cover_url,
+          mediaType: 'image',
         },
         ...(source.params.style_tags ?? []).slice(0, 2).map((tag, index) => ({
           id: `style-${tag}`,
           label: index === 0 ? t('styleReference') : t('lightReference'),
           url: source.work.cover_url,
+          mediaType: 'image',
         })),
       ]
     : [];
@@ -75,20 +77,26 @@ export function SourceMaterialRail({
   };
 
   return (
-    <aside className="lg:border-r lg:border-border lg:pr-4">
-      <h2 className="text-sm font-semibold">{t('sourceMaterials', { count: total })}</h2>
+    <aside aria-labelledby="source-material-heading" className="lg:border-r lg:border-border lg:pr-4">
+      <h2 id="source-material-heading" className="text-sm font-semibold">
+        {t('sourceMaterials', { count: total })}
+      </h2>
       <p className="mt-1 text-[11px] text-muted">{t('sourceHint')}</p>
 
       <ul className="mt-4 flex gap-3 overflow-x-auto lg:flex-col lg:overflow-visible">
         {inherited.map((item) => (
           <li key={item.id} className="w-28 shrink-0 lg:w-full">
-            <Thumb url={item.url} label={item.label} />
+            <Thumb url={item.url} label={item.label} mediaType={item.mediaType} />
           </li>
         ))}
 
         {uploads.map((asset) => (
           <li key={asset.id} className="relative w-28 shrink-0 lg:w-full">
-            <Thumb url={asset.url} label={t('addMaterial')} />
+            <Thumb
+              url={asset.url}
+              label={asset.media_type === 'video' ? t('videoReference') : t('imageReference')}
+              mediaType={asset.media_type}
+            />
             <button
               type="button"
               aria-label={`${t('addMaterial')} ✕`}
@@ -104,16 +112,17 @@ export function SourceMaterialRail({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={busy}
+            disabled={busy || uploads.length >= 9}
             className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-border text-[11px] text-muted transition-colors hover:border-border-strong hover:text-text disabled:opacity-60"
           >
             {busy ? <Spinner className="size-4" /> : <IconUpload className="size-4" />}
-            {t('addMaterial')}
+            {uploads.length >= 9 ? t('materialLimit') : t('addMaterial')}
           </button>
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+            aria-label={t('addMaterial')}
             className="sr-only"
             onChange={(event) => void pick(event.target.files?.[0])}
           />
@@ -133,6 +142,7 @@ export function SourceMaterialRail({
             <Thumb
               url={reference.current_version?.cover_url ?? reference.cover_url}
               label={reference.title}
+              mediaType="image"
             />
           </div>
           <Link
@@ -147,11 +157,29 @@ export function SourceMaterialRail({
   );
 }
 
-function Thumb({ url, label }: { url?: string | null; label: string }) {
+function Thumb({
+  url,
+  label,
+  mediaType = 'image',
+}: {
+  url?: string | null;
+  label: string;
+  mediaType?: string;
+}) {
   return (
     <figure className="overflow-hidden rounded-[var(--radius-sm)] border border-border">
       <div className="relative aspect-[4/3] bg-surface-soft">
-        {url ? <Image src={url} alt="" fill sizes="160px" className="object-cover" /> : null}
+        {url && mediaType === 'video' ? (
+          <video
+            src={url}
+            muted
+            playsInline
+            preload="metadata"
+            className="size-full object-cover"
+          />
+        ) : url ? (
+          <Image src={url} alt="" fill sizes="160px" className="object-cover" />
+        ) : null}
       </div>
       <figcaption className="truncate bg-surface px-2 py-1.5 text-[11px] text-muted">
         {label}

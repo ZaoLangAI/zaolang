@@ -46,3 +46,53 @@ def test_image_to_image_does_not_require_a_duration() -> None:
         Operation.IMAGE_TO_IMAGE, reference_asset_ids=["asset-1"], duration_seconds=0
     )
     assert request.params.duration_seconds == 0
+
+
+def test_h3_video_options_accept_the_documented_range_and_aspects() -> None:
+    request = _request(
+        Operation.TEXT_TO_VIDEO,
+        duration_seconds=4,
+        aspect_ratio="21:9",
+        video_options={"resolution": "2K", "reference_mode": "input_references"},
+    )
+    assert request.params.video_options is not None
+    assert request.params.video_options.resolution == "2K"
+
+    with pytest.raises(ValidationError, match="4-15"):
+        _request(
+            Operation.TEXT_TO_VIDEO,
+            duration_seconds=16,
+            video_options={"resolution": "2K"},
+        )
+
+
+def test_h3_frame_images_require_a_first_frame_and_exclude_other_references() -> None:
+    request = _request(
+        Operation.IMAGE_TO_VIDEO,
+        duration_seconds=5,
+        video_options={
+            "reference_mode": "frame_images",
+            "first_frame_asset_id": "asset-first",
+            "last_frame_asset_id": "asset-last",
+        },
+    )
+    assert request.params.video_options is not None
+    assert request.params.video_options.last_frame_asset_id == "asset-last"
+
+    with pytest.raises(ValidationError, match="首尾帧与普通参考素材"):
+        _request(
+            Operation.IMAGE_TO_VIDEO,
+            duration_seconds=5,
+            reference_asset_ids=["asset-reference"],
+            video_options={
+                "reference_mode": "frame_images",
+                "first_frame_asset_id": "asset-first",
+            },
+        )
+
+    with pytest.raises(ValidationError, match="必须提供首帧"):
+        _request(
+            Operation.IMAGE_TO_VIDEO,
+            duration_seconds=5,
+            video_options={"reference_mode": "frame_images"},
+        )

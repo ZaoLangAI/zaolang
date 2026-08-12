@@ -6,12 +6,17 @@ import { useMemo, useState } from 'react';
 import { useSession } from '@/components/auth/session-provider';
 import { SourceMaterialRail } from '@/components/studio/source-material-rail';
 import { OptionGroup } from '@/components/studio/option-group';
+import { PromptPolish } from '@/components/studio/prompt-polish';
+import { StyleGalleryDialog } from '@/components/studio/style-gallery-dialog';
 import { Button } from '@/components/ui/button';
-import { Select, TextArea } from '@/components/ui/field';
+import { Select, TextArea, TextInput } from '@/components/ui/field';
 import {
+  IconChevronDown,
   IconClock,
   IconGear,
+  IconLandscape,
   IconMic,
+  IconPortrait,
   IconSparkle,
   IconVolume,
   IconVolumeOff,
@@ -28,9 +33,11 @@ import type {
   CreationSkillSummary,
   Page,
   ReusableParams,
+  StyleGalleryEntry,
   StylePreset,
   WorkDetail,
 } from '@/lib/api/types';
+import { cn } from '@/lib/cn';
 import { formatCount, formatDuration } from '@/lib/format';
 import { DEFAULT_DEVICE_ID } from '@/lib/devices';
 import type { Asset } from '@/lib/upload';
@@ -49,9 +56,15 @@ type Operation =
   | 'text_to_image'
   | 'image_to_image'
   | 'audio_generation';
+type ReferenceMode = 'input_references' | 'frame_images';
+type Orientation = 'landscape' | 'portrait';
 
-const ASPECTS = ['16:9', '9:16', '1:1'] as const;
-const DURATIONS = [8, 12, 20] as const;
+// No `1:1`: every framing the studio offers is either wider or taller than
+// square, so orientation is always a meaningful first choice.
+const LANDSCAPE_ASPECTS = ['16:9', '4:3', '21:9'] as const;
+const PORTRAIT_ASPECTS = ['9:16', '3:4'] as const;
+const ASPECTS = [...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS] as const;
+const DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
 // Fixed roster, mirrored by `AUDIO_VOICES` in `app/api/schemas/jobs.py` — these
 // are the provider's own voice ids, so they travel through untranslated.
 const AUDIO_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as const;
@@ -81,6 +94,7 @@ export function GenerationStudio({
   source,
   reference,
   initialPrompt,
+  initialStyleParams,
 }: {
   operation: Operation;
   /** A licensed remix source. Submitted as `source_work_id`. */
@@ -94,15 +108,22 @@ export function GenerationStudio({
    */
   reference?: WorkDetail;
   initialPrompt?: string;
+  /** A style gallery entry's `params`, applied once on mount (from `?styleId=`). */
+  initialStyleParams?: Record<string, unknown>;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
+  const tGallery = useTranslations('styleGallery');
   const locale = useLocale() as Locale;
   const router = useRouter();
 
   const [prompt, setPrompt] = useState(source?.params.prompt ?? initialPrompt ?? '');
   const [aspect, setAspect] = useState<string>('16:9');
   const [duration, setDuration] = useState<number>(8);
+  const [seed, setSeed] = useState('');
+  const [referenceMode, setReferenceMode] = useState<ReferenceMode>('input_references');
+  const [firstFrameAssetId, setFirstFrameAssetId] = useState('');
+  const [lastFrameAssetId, setLastFrameAssetId] = useState('');
   const [sound, setSound] = useState(true);
   const [voice, setVoice] = useState<string>(AUDIO_VOICES[0]);
   const [tier, setTier] = useState<Tier>('standard');
@@ -112,6 +133,8 @@ export function GenerationStudio({
   const [presetId, setPresetId] = useState('');
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
   const [skillId, setSkillId] = useState('');
+  const [styleGalleryOpen, setStyleGalleryOpen] = useState(false);
+  const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
   // Distinct from `skillId` above (which resets after each pick so the same
   // skill can be reapplied): this is what actually travels to the job, and
   // persists until prompt/params are edited enough that reapplying makes
@@ -165,6 +188,23 @@ export function GenerationStudio({
     void api.post(`/v1/style-presets/${preset.id}/apply`).catch(() => undefined);
   };
 
+  const applyStyleGalleryEntry = (entry: StyleGalleryEntry) => {
+    applyParams(entry.params);
+    setStyleGalleryOpen(false);
+    // Same best-effort shape as `applyPreset`: the usage counter is a nicety,
+    // not a precondition for the pick actually landing in the form.
+    void api.post(`/v1/style-gallery/${entry.id}/apply`).catch(() => undefined);
+  };
+
+  // Applied once: `initialStyleParams` is a mount-time seed from `?styleId=`,
+  // not a value the form keeps tracking, so a functional `useState` initializer
+  // (rather than an effect keyed on the prop) is what makes "once" precise.
+  const [styleParamsApplied, setStyleParamsApplied] = useState(false);
+  if (!styleParamsApplied && initialStyleParams) {
+    setStyleParamsApplied(true);
+    applyParams(initialStyleParams);
+  }
+
   const applySkill = (skill: CreationSkillSummary) => {
     // Unlike a preset, a skill's params never travel in the list payload —
     // `/apply` both records usage and is the only place that returns them.
@@ -177,20 +217,38 @@ export function GenerationStudio({
       .catch(() => undefined);
   };
 
-  const operation: Operation =
-    initialOperation === 'text_to_video' && (source || uploads.length > 0)
-      ? 'image_to_video'
-      : initialOperation;
+  const hasVideoReference = uploads.some((asset) => asset.media_type === 'video');
+  const hasImageReference = uploads.some((asset) => asset.media_type === 'image');
+  let operation: Operation = initialOperation;
+  if (initialOperation === 'text_to_video') {
+    if (referenceMode === 'frame_images' && firstFrameAssetId) operation = 'image_to_video';
+    else if (hasVideoReference) operation = 'video_to_video';
+    else if (source || hasImageReference) operation = 'image_to_video';
+  }
 
   // Neither operation is a video: no duration, no ambient-sound toggle, and
   // (for audio) no aspect ratio — the studio only asks for what the job
   // actually prices and validates on the backend.
   const isAudio = operation === 'audio_generation';
   const isImageEdit = operation === 'image_to_image';
+  const isVideo = ['text_to_video', 'image_to_video', 'video_to_video'].includes(operation);
   const showAspect = !isAudio;
-  const showDuration = !isAudio && !isImageEdit;
-  const showSound = !isAudio && !isImageEdit;
+  const showDuration = isVideo;
+  const showSound = isVideo;
   const effectiveDuration = showDuration ? duration : 0;
+  // Derived, not its own state: an independent `orientation` could disagree
+  // with `aspect` the moment a preset/skill/style applies one directly, and
+  // then the "adjust while rendering" fix for that disagreement would have to
+  // run every render. Deriving it removes the disagreement instead.
+  const orientation: Orientation = (LANDSCAPE_ASPECTS as readonly string[]).includes(aspect)
+    ? 'landscape'
+    : 'portrait';
+  const aspectOptions = orientation === 'landscape' ? LANDSCAPE_ASPECTS : PORTRAIT_ASPECTS;
+  const imageUploads = uploads.filter((asset) => asset.media_type === 'image');
+  const parsedSeed = seed.trim() ? Number(seed) : undefined;
+  const seedValid =
+    parsedSeed === undefined ||
+    (Number.isInteger(parsedSeed) && parsedSeed >= 0 && parsedSeed <= 2 ** 31 - 1);
 
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
     { operation, qualityTier: tier, durationSeconds: effectiveDuration },
@@ -212,8 +270,21 @@ export function GenerationStudio({
     [t],
   );
 
+  const frameSelectionValid =
+    !isVideo || referenceMode !== 'frame_images' || Boolean(firstFrameAssetId);
   const canSubmit =
-    prompt.trim().length > 0 && rightsConfirmed && !submitting && (quote?.sufficient ?? true);
+    prompt.trim().length > 0 &&
+    rightsConfirmed &&
+    frameSelectionValid &&
+    seedValid &&
+    !submitting &&
+    (quote?.sufficient ?? true);
+
+  const removeUpload = (assetId: string) => {
+    setUploads((current) => current.filter((asset) => asset.id !== assetId));
+    if (firstFrameAssetId === assetId) setFirstFrameAssetId('');
+    if (lastFrameAssetId === assetId) setLastFrameAssetId('');
+  };
 
   const runSubmit = () =>
     submit({
@@ -222,7 +293,18 @@ export function GenerationStudio({
       durationSeconds: effectiveDuration,
       prompt: prompt.trim(),
       aspectRatio: aspect,
-      referenceAssetIds: uploads.map((asset) => asset.id),
+      seed: parsedSeed,
+      referenceAssetIds:
+        isVideo && referenceMode === 'frame_images' ? [] : uploads.map((asset) => asset.id),
+      videoOptions: isVideo
+        ? {
+            resolution: '2K',
+            reference_mode: referenceMode,
+            first_frame_asset_id:
+              referenceMode === 'frame_images' ? firstFrameAssetId || null : null,
+            last_frame_asset_id: referenceMode === 'frame_images' ? lastFrameAssetId || null : null,
+          }
+        : undefined,
       extra: isAudio ? { voice, ...presetExtra } : { sound, ...presetExtra },
       skillId: appliedSkillId ?? undefined,
       sourceWorkId: source?.work.id,
@@ -239,6 +321,15 @@ export function GenerationStudio({
   // bound to a single piece of state either way.
   const paramsPanel = (
     <>
+      <Button
+        variant="secondary"
+        icon={<IconSparkle className="size-4" />}
+        onClick={() => setStyleGalleryOpen(true)}
+        className="w-full"
+      >
+        {tGallery('trigger')}
+      </Button>
+
       {presets.length > 0 ? (
         <Select
           label={t('stylePreset')}
@@ -290,17 +381,47 @@ export function GenerationStudio({
         <p className="tabular mt-1 text-right text-[11px] text-muted">
           {prompt.length}/{PROMPT_MAX_LENGTH}
         </p>
+        {isVideo ? (
+          <PromptPolish
+            className="mt-2"
+            endpoint="/v1/generation/prompts/enhance"
+            prompt={prompt}
+            onAccept={setPrompt}
+          />
+        ) : null}
       </div>
 
       {isImageEdit ? <p className="text-xs text-muted">{t('referenceRequiredHint')}</p> : null}
 
       {showAspect ? (
-        <OptionGroup
-          label={t('aspect')}
-          value={aspect}
-          onChange={setAspect}
-          options={ASPECTS.map((value) => ({ value, label: value }))}
-        />
+        <>
+          <OptionGroup
+            label={t('orientation')}
+            value={orientation}
+            onChange={(value) =>
+              setAspect(value === 'landscape' ? LANDSCAPE_ASPECTS[0] : PORTRAIT_ASPECTS[0])
+            }
+            columns={2}
+            options={[
+              {
+                value: 'landscape' as const,
+                label: t('orientationLandscape'),
+                icon: <IconLandscape className="size-4" />,
+              },
+              {
+                value: 'portrait' as const,
+                label: t('orientationPortrait'),
+                icon: <IconPortrait className="size-4" />,
+              },
+            ]}
+          />
+          <OptionGroup
+            label={t('aspect')}
+            value={aspect}
+            onChange={setAspect}
+            options={aspectOptions.map((value) => ({ value, label: value }))}
+          />
+        </>
       ) : null}
 
       {showDuration ? (
@@ -313,6 +434,92 @@ export function GenerationStudio({
             label: t('durationSeconds', { count: value }),
           }))}
         />
+      ) : null}
+
+      {isVideo ? (
+        <>
+          <div className="rounded-[var(--radius-sm)] border border-border">
+            <button
+              type="button"
+              onClick={() => setMoreSettingsOpen((current) => !current)}
+              aria-expanded={moreSettingsOpen}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium"
+            >
+              <span className="flex items-center gap-2">
+                <IconGear className="size-4 text-muted" />
+                {t('moreSettings')}
+              </span>
+              <IconChevronDown
+                className={cn(
+                  'size-4 text-muted transition-transform',
+                  moreSettingsOpen && 'rotate-180',
+                )}
+              />
+            </button>
+            {moreSettingsOpen ? (
+              <div className="flex flex-col gap-4 border-t border-border p-3">
+                <Select
+                  label={t('resolution')}
+                  hint={t('resolutionHint')}
+                  value="2K"
+                  disabled
+                  options={[{ value: '2K', label: '2K' }]}
+                />
+                <TextInput
+                  label={t('seed')}
+                  hint={t('seedHint')}
+                  error={seedValid ? undefined : t('seedInvalid')}
+                  type="number"
+                  min="0"
+                  max={String(2 ** 31 - 1)}
+                  value={seed}
+                  onChange={(event) => setSeed(event.target.value)}
+                />
+              </div>
+            ) : null}
+          </div>
+          <OptionGroup
+            label={t('referenceMode')}
+            value={referenceMode}
+            onChange={setReferenceMode}
+            columns={2}
+            options={[
+              { value: 'input_references', label: t('referenceModeInputs') },
+              { value: 'frame_images', label: t('referenceModeFrames') },
+            ]}
+          />
+          {referenceMode === 'frame_images' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Select
+                label={t('firstFrameSelect')}
+                hint={t('firstFrameRequired')}
+                value={firstFrameAssetId}
+                onChange={(event) => setFirstFrameAssetId(event.target.value)}
+                options={[
+                  { value: '', label: t('selectUploadedImage') },
+                  ...imageUploads.map((asset, index) => ({
+                    value: asset.id,
+                    label: t('uploadedImage', { index: index + 1 }),
+                  })),
+                ]}
+              />
+              <Select
+                label={t('lastFrameSelect')}
+                value={lastFrameAssetId}
+                onChange={(event) => setLastFrameAssetId(event.target.value)}
+                options={[
+                  { value: '', label: t('lastFrameNone') },
+                  ...imageUploads.map((asset, index) => ({
+                    value: asset.id,
+                    label: t('uploadedImage', { index: index + 1 }),
+                  })),
+                ]}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted">{t('inputReferencesHint')}</p>
+          )}
+        </>
       ) : null}
 
       {showSound ? (
@@ -399,7 +606,7 @@ export function GenerationStudio({
           reference={reference}
           uploads={uploads}
           onUploaded={(asset) => setUploads((current) => [...current, asset])}
-          onRemove={(id) => setUploads((current) => current.filter((asset) => asset.id !== id))}
+          onRemove={removeUpload}
         />
       </div>
 
@@ -451,8 +658,13 @@ export function GenerationStudio({
         </div>
       </div>
 
-      <aside className="order-3 hidden flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4 lg:flex">
-        <h2 className="text-sm font-semibold">{t('howToGenerate')}</h2>
+      <aside
+        aria-labelledby="generation-params-heading"
+        className="order-3 hidden flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4 lg:flex"
+      >
+        <h2 id="generation-params-heading" className="text-sm font-semibold">
+          {t('howToGenerate')}
+        </h2>
         {paramsPanel}
         <Button
           size="lg"
@@ -520,6 +732,12 @@ export function GenerationStudio({
       >
         {paramsPanel}
       </Sheet>
+
+      <StyleGalleryDialog
+        open={styleGalleryOpen}
+        onClose={() => setStyleGalleryOpen(false)}
+        onSelect={applyStyleGalleryEntry}
+      />
     </div>
   );
 }

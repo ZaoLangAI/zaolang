@@ -39,9 +39,17 @@ export type BackupRecord = S['BackupRecordView'];
 export type AuditLog = S['AuditLogView'];
 export type LogEntry = S['LogEntryView'];
 export type Announcement = S['AnnouncementView'];
-export type LlmProviderEndpoint = S['LlmProviderEndpointView'];
+type LlmProviderEndpointView = S['LlmProviderEndpointView'];
+export type GeneralLlmProviderEndpoint = Omit<LlmProviderEndpointView, 'kind'> & {
+  kind: 'general';
+};
+export type MediaLlmProviderEndpoint = Omit<LlmProviderEndpointView, 'kind'> & {
+  kind: 'media';
+};
+export type LlmProviderEndpoint = GeneralLlmProviderEndpoint | MediaLlmProviderEndpoint;
 export type LlmProviderCategory = S['LlmProviderCategoryView'];
 export type LlmProviderPool = S['LlmProviderPoolView'];
+export type LlmProviderValidationResult = S['LlmProviderValidationResult'];
 export type LlmProviderUpsertRequest = S['LlmProviderEndpointUpsertRequest'];
 export type LlmProviderKind = LlmProviderEndpoint['kind'];
 export type AgentNode = S['AgentNodeView'];
@@ -51,13 +59,16 @@ export type AgentProfileUpdateRequest = S['AgentProfileUpdateRequest'];
 export type AgentCategory = AgentProfile['category'];
 export type RolePreset = S['RolePresetView'];
 export type SkillTemplate = S['SkillTemplateView'];
-export type MediaCandidate = S['MediaCandidate'];
 export type PromptSlot = S['PromptSlotView'];
 export type AgentSkill = S['AgentSkillView'];
+export type AgentSkillTool = S['AgentSkillToolView'];
 export type CreationSkillAdminView = S['CreationSkillAdminView'];
 export type RedemptionCode = S['RedemptionCodeView'];
 export type RedemptionRecord = S['RedemptionRecordView'];
 export type RedemptionCodeKind = S['RedemptionCodeKind'];
+export type StyleGalleryAdminEntry = S['StyleGalleryEntryResponse'];
+export type StyleGalleryCreateRequest = S['StyleGalleryEntryCreateRequest'];
+export type StyleGalleryUpdateRequest = S['StyleGalleryEntryUpdateRequest'];
 export type Page<T> = { items: T[]; next_cursor?: string | null; has_more?: boolean };
 
 /**
@@ -78,6 +89,11 @@ export interface WorkflowShape {
   operation: string;
   name: string;
   version: number | null;
+  // `true` only when this describes the exact template the job pinned at
+  // submission/first run; `false` means it fell back to the operation's
+  // currently active template, which may have since diverged from what the
+  // job actually ran.
+  is_pinned: boolean;
   description: string;
   steps: WorkflowStep[];
 }
@@ -85,6 +101,7 @@ export interface WorkflowShape {
 // The configurable node-graph editor (`/admin/routing` → 工作流 tab).
 export type NodeTypeView = S['NodeTypeView'];
 export type AgentBinding = S['AgentBindingView'];
+export type DynamicAgentBinding = S['DynamicAgentBindingView'];
 export type WorkflowTemplateView = S['WorkflowTemplateView'];
 export type WorkflowTemplatePublishRequest = S['WorkflowTemplatePublishRequest'];
 export type WorkflowTemplateValidateResponse = S['WorkflowTemplateValidateResponse'];
@@ -100,6 +117,10 @@ export interface WorkflowGraphNode {
   type: string;
   config: Record<string, unknown>;
   position: { x: number; y: number };
+  /** Operator-supplied name for this instance, e.g. distinguishing two
+   * `provider_generate` nodes. Empty string (not `undefined`) when unset,
+   * matching `WorkflowNode.title`'s backend default. */
+  title?: string;
 }
 
 export type WorkflowEdgeKind = 'sequential' | 'parallel' | 'retry';

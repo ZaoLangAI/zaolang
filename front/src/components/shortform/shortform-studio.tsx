@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { DevicePreview } from '@/components/media/device-preview';
+import { ClarifyPanel } from '@/components/shortform/clarify-panel';
 import {
   CaptionComposer,
   EMPTY_CAPTION,
@@ -15,7 +16,9 @@ import {
   blockingChecks,
   usePreflightChecks,
 } from '@/components/shortform/compliance-panel';
+import { PreviewPickerDialog } from '@/components/shortform/preview-picker-dialog';
 import { OptionGroup } from '@/components/studio/option-group';
+import { PromptPolish } from '@/components/studio/prompt-polish';
 import { Button } from '@/components/ui/button';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { IconClock, IconSparkle, IconVolume, IconVolumeOff } from '@/components/ui/icons';
@@ -24,11 +27,19 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character, Series, SeriesDetail, ShortformProfiles } from '@/lib/api/types';
+import type {
+  Character,
+  GenerationJob,
+  Quote,
+  Series,
+  SeriesDetail,
+  ShortformProfiles,
+} from '@/lib/api/types';
 import { DEFAULT_DEVICE_ID } from '@/lib/devices';
 import { formatCount, formatDuration } from '@/lib/format';
 import { chromeOf, durationOptions, isPortrait } from '@/lib/shortform';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
+import { usePreviewGeneration } from '@/lib/use-preview-generation';
 
 type Tier = 'preview' | 'standard' | 'cinematic';
 
@@ -74,16 +85,33 @@ export function ShortformStudio({
   const durations = useMemo(() => durationOptions(profile), [profile]);
   const [duration, setDuration] = useState(() => durations[1] ?? durations[0]!);
   const [prompt, setPrompt] = useState('');
-  // Holds the pre-enhance text so a single "undo" can restore it; cleared as
-  // soon as the author edits the field themselves, since the offer to revert
-  // to a version they have since typed over would be misleading.
-  const [previousPrompt, setPreviousPrompt] = useState<string | null>(null);
-  const [enhancing, setEnhancing] = useState(false);
-  const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [sound, setSound] = useState(true);
   const [tier, setTier] = useState<Tier>('standard');
   const [caption, setCaption] = useState<Caption>(EMPTY_CAPTION);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [clarifyAnswers, setClarifyAnswers] = useState<Record<string, string | string[]>>({});
+
+  const clarifyEnabled = profiles.enable_clarifying_questions;
+  const previewEnabled = profiles.enable_preview_picker;
+  const previewCandidateCount = profiles.preview_candidate_count;
+  // The picker only ever promotes to a real quality tier, so `preview` is not
+  // a selectable destination once the picker is in charge of getting there.
+  const deepTier: Exclude<Tier, 'preview'> = tier === 'preview' ? 'standard' : tier;
+
+  const [previewQuote, setPreviewQuote] = useState<Quote | null>(null);
+  const [previewConfirming, setPreviewConfirming] = useState(false);
+  const [previewQuoting, setPreviewQuoting] = useState(false);
+  const [previewJobs, setPreviewJobs] = useState<GenerationJob[] | null>(null);
+  const [previewPartialFailure, setPreviewPartialFailure] = useState(0);
+  const {
+    ensureDraft,
+    submitPreviewBatch,
+    batchPending,
+    batchError,
+    promote,
+    promoting,
+    promoteError,
+  } = usePreviewGeneration();
 
   const [seriesList, setSeriesList] = useState<Series[]>(series ?? []);
   const [characterLibrary] = useState<Character[]>(characters ?? []);
@@ -142,8 +170,12 @@ export function ShortformStudio({
   // quote, and an effect would let it through for one paint.
   if (!durations.includes(duration)) setDuration(durations[0]!);
 
+  // When the preview picker is in charge, the price shown and eventually
+  // charged is the deep-generation tier's — the preview batch is quoted and
+  // billed separately, right before it fires.
+  const qualityTierForQuote = previewEnabled ? deepTier : tier;
   const { quote, quoteFailed, submitting, error, fieldErrors, submit } = useGenerationSubmit(
-    { operation: 'text_to_video', qualityTier: tier, durationSeconds: duration },
+    { operation: 'text_to_video', qualityTier: qualityTierForQuote, durationSeconds: duration },
     { label: t('submit') },
   );
 
@@ -164,6 +196,27 @@ export function ShortformStudio({
     !submitting &&
     (quote?.sufficient ?? true);
 
+  const canStartPreview =
+    prompt.trim().length > 0 &&
+    rightsConfirmed &&
+    blocking.length === 0 &&
+    !previewQuoting &&
+    !batchPending;
+
+  const extraWithClarifyAnswers = {
+    sound,
+    ...(Object.keys(clarifyAnswers).length > 0 ? { clarify_answers: clarifyAnswers } : undefined),
+  };
+
+  const draftParams = {
+    shortform_caption: {
+      title: caption.title.trim(),
+      description: caption.description.trim(),
+      hashtags: caption.hashtags,
+    },
+    ...(seriesId ? { series_id: seriesId, episode_number: episodeNumber } : undefined),
+  };
+
   const runSubmit = () =>
     submit({
       operation: 'text_to_video',
@@ -173,48 +226,67 @@ export function ShortformStudio({
       aspectRatio: profile.aspect_ratio,
       referenceAssetIds: [],
       characterIds: seriesId ? selectedCharacterIds : [],
-      extra: { sound },
+      extra: extraWithClarifyAnswers,
       maxCredits: quote?.credits,
       shortformProfile: profile.key,
       draftTitle: caption.title.trim() || null,
       // The caption outlives the job on the draft, so the export step after
       // publishing starts from what was written here instead of a blank form.
-      draftParams: {
-        shortform_caption: {
-          title: caption.title.trim(),
-          description: caption.description.trim(),
-          hashtags: caption.hashtags,
-        },
-        ...(seriesId ? { series_id: seriesId, episode_number: episodeNumber } : undefined),
-      },
+      draftParams,
     });
 
-  const handleEnhance = () =>
+  const requestPreviewQuote = () =>
     requireAuth({
-      label: t('promptEnhance'),
+      label: t('previewGenerate'),
       run: async () => {
-        setEnhancing(true);
-        setEnhanceError(null);
+        setPreviewConfirming(true);
+        setPreviewQuoting(true);
         try {
-          const result = await api.post<{ prompt: string; degraded: boolean }>(
-            '/v1/shortform/prompt/enhance',
-            { prompt: prompt.trim() },
-          );
-          setPreviousPrompt(prompt);
-          setPrompt(result.prompt);
-        } catch (caught) {
-          setEnhanceError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
+          const body = await api.post<Quote>('/v1/generation-jobs/quote', {
+            operation: 'text_to_video',
+            quality_tier: 'preview',
+            duration_seconds: duration,
+          });
+          setPreviewQuote(body);
+        } catch {
+          setPreviewQuote(null);
         } finally {
-          setEnhancing(false);
+          setPreviewQuoting(false);
         }
       },
     });
 
-  const handleUndoEnhance = () => {
-    if (previousPrompt === null) return;
-    setPrompt(previousPrompt);
-    setPreviousPrompt(null);
+  const confirmPreviewBatch = async () => {
+    setPreviewConfirming(false);
+    const input = {
+      operation: 'text_to_video' as const,
+      durationSeconds: duration,
+      prompt: prompt.trim(),
+      aspectRatio: profile.aspect_ratio,
+      referenceAssetIds: [],
+      characterIds: seriesId ? selectedCharacterIds : [],
+      extra: extraWithClarifyAnswers,
+      shortformProfile: profile.key,
+      draftTitle: caption.title.trim() || null,
+      draftParams,
+      maxCredits: previewQuote?.credits,
+    };
+    const draftId = await ensureDraft(input);
+    const outcome = await submitPreviewBatch(draftId, input, previewCandidateCount);
+    setPreviewJobs(outcome.jobs);
+    setPreviewPartialFailure(outcome.failed);
   };
+
+  const handlePickPreview = async (job: GenerationJob) => {
+    const promoted = await promote(job.id, deepTier, quote?.credits);
+    if (promoted) {
+      setPreviewJobs(null);
+      router.push(`/jobs/${promoted.id}`);
+    }
+  };
+
+  const previewBatchCost = previewQuote ? previewQuote.credits * previewCandidateCount : 0;
+  const canConfirmPreviewBatch = Boolean(previewQuote && previewQuote.available_credits > 0);
 
   const handleCreateSeries = () =>
     requireAuth({
@@ -269,7 +341,9 @@ export function ShortformStudio({
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
 
   const tierOptions = [
-    { value: 'preview' as const, label: tRemix('tierPreview'), hint: tRemix('tierPreviewDesc') },
+    ...(previewEnabled
+      ? []
+      : [{ value: 'preview' as const, label: tRemix('tierPreview'), hint: tRemix('tierPreviewDesc') }]),
     { value: 'standard' as const, label: tRemix('tierStandard'), hint: tRemix('tierStandardDesc') },
     {
       value: 'cinematic' as const,
@@ -419,37 +493,26 @@ export function ShortformStudio({
               placeholder={t('promptPlaceholder')}
               value={prompt}
               maxLength={PROMPT_MAX_LENGTH}
-              onChange={(event) => {
-                setPrompt(event.target.value);
-                setPreviousPrompt(null);
-              }}
+              onChange={(event) => setPrompt(event.target.value)}
             />
-            <div className="mt-1 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon={<IconSparkle className="size-4" />}
-                  disabled={prompt.trim().length === 0 || enhancing}
-                  loading={enhancing}
-                  onClick={handleEnhance}
-                >
-                  {enhancing ? t('promptEnhancing') : t('promptEnhance')}
-                </Button>
-                {previousPrompt !== null ? (
-                  <Button size="sm" variant="ghost" onClick={handleUndoEnhance}>
-                    {t('promptEnhanceUndo')}
-                  </Button>
-                ) : null}
-              </div>
-              <p className="tabular shrink-0 text-right text-[11px] text-muted">
-                {prompt.length}/{PROMPT_MAX_LENGTH}
-              </p>
-            </div>
-            {enhanceError ? (
-              <p role="alert" className="mt-1 text-xs text-danger">
-                {enhanceError}
-              </p>
+            <p className="tabular mt-1 text-right text-[11px] text-muted">
+              {prompt.length}/{PROMPT_MAX_LENGTH}
+            </p>
+            <PromptPolish
+              className="mt-2"
+              endpoint="/v1/shortform/prompt/enhance"
+              prompt={prompt}
+              onAccept={setPrompt}
+            />
+            {clarifyEnabled ? (
+              <ClarifyPanel
+                className="mt-2"
+                prompt={prompt}
+                onApply={({ updatedPrompt, answers }) => {
+                  setPrompt(updatedPrompt);
+                  setClarifyAnswers((current) => ({ ...current, ...answers }));
+                }}
+              />
             ) : null}
           </div>
 
@@ -585,16 +648,63 @@ export function ShortformStudio({
         ) : null}
 
         {error ? <ErrorNotice title={error} /> : null}
+        {batchError ? <ErrorNotice title={batchError} /> : null}
+        {previewJobs && previewPartialFailure > 0 ? (
+          <p className="text-xs text-danger">
+            {t('previewPartialFailure', { count: previewPartialFailure })}
+          </p>
+        ) : null}
+
+        {previewEnabled && previewConfirming ? (
+          <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border bg-surface-soft p-3">
+            {previewQuoting ? (
+              <p className="text-xs text-muted">{tStates('loading')}</p>
+            ) : previewQuote ? (
+              <>
+                <p className="text-sm text-text">
+                  {t('previewConfirmCost', {
+                    count: previewCandidateCount,
+                    credits: formatCount(previewBatchCost, locale),
+                  })}
+                </p>
+                {!canConfirmPreviewBatch ? (
+                  <p className="text-xs text-danger">{tCredits('insufficient')}</p>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!canConfirmPreviewBatch || batchPending}
+                    loading={batchPending}
+                    onClick={() => void confirmPreviewBatch()}
+                  >
+                    {t('previewConfirmAction')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setPreviewConfirming(false)}>
+                    {t('previewCancel')}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <ErrorNotice title={tStates('errorHint')} />
+            )}
+          </div>
+        ) : null}
 
         <Button
           size="lg"
-          onClick={runSubmit}
-          disabled={!canSubmit}
-          loading={submitting}
+          onClick={previewEnabled ? requestPreviewQuote : runSubmit}
+          disabled={previewEnabled ? !canStartPreview : !canSubmit}
+          loading={previewEnabled ? previewQuoting || batchPending : submitting}
           icon={<IconSparkle className="size-5" />}
           className="hidden lg:inline-flex"
         >
-          {submitting ? t('submitting') : t('submit')}
+          {previewEnabled
+            ? batchPending
+              ? t('previewGenerating')
+              : t('previewGenerate')
+            : submitting
+              ? t('submitting')
+              : t('submit')}
         </Button>
       </div>
 
@@ -612,15 +722,35 @@ export function ShortformStudio({
           </div>
           <Button
             fullWidth
-            onClick={runSubmit}
-            disabled={!canSubmit}
-            loading={submitting}
+            onClick={previewEnabled ? requestPreviewQuote : runSubmit}
+            disabled={previewEnabled ? !canStartPreview : !canSubmit}
+            loading={previewEnabled ? previewQuoting || batchPending : submitting}
             icon={<IconSparkle className="size-4" />}
           >
-            {submitting ? t('submitting') : t('submit')}
+            {previewEnabled
+              ? batchPending
+                ? t('previewGenerating')
+                : t('previewGenerate')
+              : submitting
+                ? t('submitting')
+                : t('submit')}
           </Button>
         </div>
       </div>
+
+      {previewEnabled ? (
+        <PreviewPickerDialog
+          open={previewJobs !== null}
+          jobs={previewJobs ?? []}
+          targetQualityTierLabel={
+            deepTier === 'cinematic' ? tRemix('tierCinematic') : tRemix('tierStandard')
+          }
+          promoting={promoting}
+          promoteError={promoteError}
+          onPick={(job) => void handlePickPreview(job)}
+          onClose={() => setPreviewJobs(null)}
+        />
+      ) : null}
     </div>
   );
 }

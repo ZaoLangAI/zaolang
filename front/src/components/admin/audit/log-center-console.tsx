@@ -136,9 +136,7 @@ export function LogCenterConsole() {
         {
           label: t('colActor'),
           value: (
-            <span className="font-mono text-xs">
-              {open.actor_user_id ?? tAdmin('actorSystem')}
-            </span>
+            <span className="font-mono text-xs">{open.actor_user_id ?? tAdmin('actorSystem')}</span>
           ),
         },
         { label: t('colTarget'), value: open.target ?? '—' },
@@ -171,6 +169,7 @@ export function LogCenterConsole() {
               { value: 'auth', label: t('source.auth') },
               { value: 'rate_limit', label: t('source.rate_limit') },
               { value: 'permission', label: t('source.permission') },
+              { value: 'pipeline', label: t('source.pipeline') },
             ],
           },
           {

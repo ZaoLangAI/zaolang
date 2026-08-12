@@ -2,11 +2,13 @@ import { getTranslations } from 'next-intl/server';
 
 import { CreateModeCards } from '@/components/create/create-mode-cards';
 import { GatewayBanner } from '@/components/create/gateway-banner';
+import { InspirationRecommendations } from '@/components/create/inspiration-recommendations';
 import { RecentDrafts } from '@/components/create/recent-drafts';
 import { CreditsTile } from '@/components/create/credits-tile';
+import { ShortformHeroBanner } from '@/components/create/shortform-hero-banner';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { Draft, GatewayStatus, Me, Page } from '@/lib/api/types';
+import type { Draft, GatewayStatus, Me, Page, StyleGalleryEntry } from '@/lib/api/types';
 
 export async function generateMetadata() {
   const t = await getTranslations('createPage');
@@ -16,12 +18,13 @@ export async function generateMetadata() {
 export default async function CreatePage() {
   const t = await getTranslations('createPage');
 
-  // All three are optional: an anonymous visitor still gets the full create
+  // All four are optional: an anonymous visitor still gets the full create
   // centre and only hits the login dialog when they choose a mode.
-  const [me, gateway, drafts] = await Promise.all([
+  const [me, gateway, drafts, styleGallery] = await Promise.all([
     serverFetchOrNull<Me>('/v1/auth/me', { authenticated: true }),
     serverFetchOrNull<GatewayStatus>('/v1/gateway/status', { revalidate: 30 }),
     serverFetchOrNull<Page<Draft>>('/v1/drafts', { authenticated: true, query: { limit: 6 } }),
+    serverFetchOrNull<Page<StyleGalleryEntry>>('/v1/style-gallery'),
   ]);
 
   return (
@@ -33,11 +36,15 @@ export default async function CreatePage() {
 
       <GatewayBanner status={gateway} />
 
+      <ShortformHeroBanner />
+
       <section>
         <h2 className="text-lg font-semibold">{t('startCreating')}</h2>
         <p className="mt-1 text-xs text-muted">{t('startHint')}</p>
         <CreateModeCards className="mt-5" />
       </section>
+
+      <InspirationRecommendations entries={styleGallery?.items ?? []} />
 
       <RecentDrafts drafts={drafts?.items ?? []} />
     </div>

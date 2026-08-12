@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
+from typing import Any
 
 from fastapi import APIRouter, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
+from app.agents import router as intent_router
 from app.api.deps import DbSession
 from app.api.request_utils import as_utc
 from app.api.schemas.admin import (
     AdminJobDetail,
     AdminJobSummary,
     AgentRunView,
+    AsyncProviderTaskView,
     JobEventView,
     JobStatsView,
     JobTerminateRequest,
@@ -28,17 +32,33 @@ from app.api.v1.admin.deps import (
     require_confirmation,
 )
 from app.domain.audit import service as audit
-from app.domain.errors import Conflict, NotFound
+from app.domain.errors import Conflict, NotFound, ValidationFailed
+from app.domain.jobs import async_tasks
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
-from app.models import AgentRun, GenerationJob, JobEvent, ProviderAttempt
+from app.domain.system_log import service as system_log
+from app.models import (
+    AgentProfile,
+    AgentRun,
+    AsyncProviderTask,
+    GenerationJob,
+    JobEvent,
+    Profile,
+    ProviderAttempt,
+)
 from app.models.base import utcnow
-from app.models.enums import JobEventType, JobStatus
+from app.models.enums import JobEventType, JobStatus, SystemLogLevel, SystemLogSource
+from app.platform_config import service as config_service
+from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
 router = APIRouter(tags=["admin:jobs"])
+logger = logging.getLogger(__name__)
 
 # A job stuck in a non-terminal state for longer than this is a candidate for
 # operator intervention; the pipeline's own expiry sweep uses the same window.
+# Also how far past its own `AsyncProviderTask.deadline_at` a task must be
+# before the list marks the job `stuck` — the same order of magnitude as "an
+# operator should look at this", not a second, independently-tuned knob.
 STUCK_AFTER_MINUTES = 30
 
 
@@ -47,8 +67,8 @@ def list_jobs(
     session: DbSession,
     user: Viewer,
     _: AdminRead,
-    status: JobStatus | None = None,
-    user_id: str | None = None,
+    status: str | None = None,
+    user_query: str | None = Query(default=None, alias="user"),
     provider: str | None = None,
     stuck_only: bool = False,
     created_after: dt.datetime | None = None,
@@ -58,13 +78,15 @@ def list_jobs(
 ) -> Page[AdminJobSummary]:
     stmt = select(GenerationJob).order_by(GenerationJob.created_at.desc(), GenerationJob.id.desc())
     if status:
-        stmt = stmt.where(GenerationJob.status == status)
-    if user_id:
-        stmt = stmt.where(GenerationJob.user_id == user_id)
+        stmt = stmt.where(GenerationJob.status.in_(_parse_statuses(status)))
+    if user_query:
+        stmt = stmt.where(_user_match(user_query))
     if provider:
         stmt = stmt.where(
             GenerationJob.id.in_(
-                select(ProviderAttempt.job_id).where(ProviderAttempt.provider == provider)
+                select(ProviderAttempt.job_id).where(
+                    _provider_match(session, provider, ProviderAttempt.provider)
+                )
             )
         )
     if created_after:
@@ -83,8 +105,26 @@ def list_jobs(
     rows = list(session.scalars(stmt.limit(limit + 1)))
     has_more = len(rows) > limit
     page = rows[:limit]
+
+    job_ids = [job.id for job in page]
+    profiles = _profiles_by_user(session, [job.user_id for job in page])
+    attempt_counts = _attempt_counts(session, job_ids)
+    stuck_ids = _stuck_job_ids(session, job_ids)
+    endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
+
     return Page(
-        items=[_summary(session, job) for job in page],
+        items=[
+            _build_summary(
+                job,
+                attempt_count=attempt_counts.get(job.id, 0),
+                profile=profiles.get(job.user_id),
+                provider_label=_provider_label(
+                    endpoints, job.selected_route_summary_json.get("provider")
+                ),
+                stuck=job.id in stuck_ids,
+            )
+            for job in page
+        ],
         next_cursor=page[-1].id if has_more and page else None,
         has_more=has_more,
     )
@@ -148,9 +188,16 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
         .where(ProviderAttempt.job_id == job.id)
         .order_by(ProviderAttempt.attempt_number)
     )
-    agent_runs = session.scalars(
-        select(AgentRun).where(AgentRun.job_id == job.id).order_by(AgentRun.created_at)
+    agent_runs = list(
+        session.scalars(
+            select(AgentRun).where(AgentRun.job_id == job.id).order_by(AgentRun.created_at)
+        )
     )
+    endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
+    agent_display_names = _agent_display_names(
+        session, [r.agent_profile_id for r in agent_runs if r.agent_profile_id]
+    )
+    task = async_tasks.find_for_job(session, job.id)
 
     return AdminJobDetail(
         **_summary(session, job).model_dump(),
@@ -165,6 +212,7 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
                 message=e.public_message,
                 internal_code=e.internal_code,
                 payload=e.payload_json,
+                node_id=e.node_id,
                 created_at=e.created_at,
             )
             for e in events
@@ -188,6 +236,9 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
                 id=r.id,
                 agent_name=r.agent_name,
                 agent_profile_id=r.agent_profile_id,
+                agent_display_name=(
+                    agent_display_names.get(r.agent_profile_id) if r.agent_profile_id else None
+                ),
                 prompt_slot=r.prompt_slot,
                 model=r.model or "",
                 mode=r.mode,
@@ -197,10 +248,26 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
                 latency_ms=r.latency_ms,
                 status=r.status,
                 job_id=r.job_id,
+                node_id=r.node_id,
                 created_at=r.created_at,
             )
             for r in agent_runs
         ],
+        async_task=(
+            AsyncProviderTaskView(
+                node_id=task.node_id,
+                capability_name=task.capability_name,
+                provider_label=_provider_label(endpoints, task.capability_name),
+                external_task_id=task.external_task_id,
+                poll_count=task.poll_count,
+                next_poll_at=task.next_poll_at,
+                deadline_at=task.deadline_at,
+                claimed_at=task.claimed_at,
+                provider_attempt_id=task.provider_attempt_id,
+            )
+            if task is not None
+            else None
+        ),
     )
 
 
@@ -225,6 +292,8 @@ def terminate(
         raise Conflict("任务已经处于终态。")
 
     before = {"status": job.status}
+    upstream_cancel_attempted, upstream_cancel_succeeded = _cancel_in_flight_task(session, job)
+
     job = sm.transition(
         session,
         job.id,
@@ -251,12 +320,75 @@ def terminate(
         target_type="generation_job",
         target_id=job.id,
         before=before,
-        after={"status": job.status, "released": payload.release_credits},
+        after={
+            "status": job.status,
+            "released": payload.release_credits,
+            "upstream_cancel_attempted": upstream_cancel_attempted,
+            "upstream_cancel_succeeded": upstream_cancel_succeeded,
+        },
         reason=payload.reason,
         request=request,
     )
     session.commit()
     return job_detail(job.id, session, user, None)
+
+
+def _cancel_in_flight_task(session, job: GenerationJob) -> tuple[bool, bool | None]:  # type: ignore[no-untyped-def]
+    """Best-effort upstream notification for `terminate`, synchronous with it.
+
+    Mirrors `async_polling.py::_cancel()`'s use of `cancel_upstream`, but
+    called from an admin request instead of a poll tick — an operator forcing
+    a job that is still rendering upstream must not leave the provider
+    unaware, waiting minutes for a poll that will never come because the job
+    is already terminal. Returns `(attempted, succeeded)`; `succeeded` is
+    `None` when there was nothing to attempt.
+    """
+    task = async_tasks.find_for_job(session, job.id)
+    if task is None:
+        return False, None
+
+    try:
+        capability = intent_router.build_catalog(session).get(task.capability_name)
+        if capability is None:
+            logger.warning(
+                "admin terminate: capability %s for job %s is no longer in the catalogue",
+                task.capability_name,
+                job.id,
+            )
+            system_log.emit(
+                source=SystemLogSource.PIPELINE,
+                event="admin_terminate_capability_missing",
+                message=(
+                    f"capability {task.capability_name} missing from catalogue at admin terminate"
+                ),
+                dedup_key=f"job:{job.id}",
+                level=SystemLogLevel.WARNING,
+                job_id=job.id,
+                details={"capability_name": task.capability_name},
+            )
+            return True, False
+        succeeded = async_tasks.cancel_upstream(session, task, capability.provider_factory())
+    except Exception as exc:
+        # `cancel_upstream` itself never raises past its own try/except; a
+        # raise here means the catalogue/factory call above did. Either way,
+        # termination must proceed — this is best-effort notification, not a
+        # precondition for the state transition below.
+        logger.exception("admin terminate: failed to cancel upstream task for job %s", job.id)
+        system_log.emit(
+            source=SystemLogSource.PIPELINE,
+            event="admin_terminate_cancel_failed",
+            message=f"upstream cancel failed at admin terminate: {exc}",
+            dedup_key=f"job:{job.id}",
+            level=SystemLogLevel.ERROR,
+            job_id=job.id,
+        )
+        return True, False
+    finally:
+        # The row must not outlive this request either way: the job is
+        # about to become terminal, and nothing will ever poll it again.
+        if async_tasks.find_for_job(session, job.id) is not None:
+            async_tasks.settle(session, task)
+    return True, succeeded
 
 
 @router.post("/jobs/{job_id}/requeue", response_model=AdminJobDetail)
@@ -322,6 +454,7 @@ def job_events(
                 message=e.public_message,
                 internal_code=e.internal_code,
                 payload=e.payload_json,
+                node_id=e.node_id,
                 created_at=e.created_at,
             )
             for e in events
@@ -337,21 +470,39 @@ def _load(session, job_id: str) -> GenerationJob:  # type: ignore[no-untyped-def
 
 
 def _summary(session, job: GenerationJob) -> AdminJobSummary:  # type: ignore[no-untyped-def]
-    attempt_count = int(
-        session.scalar(
-            select(func.count())
-            .select_from(ProviderAttempt)
-            .where(ProviderAttempt.job_id == job.id)
-        )
-        or 0
+    """Single-job path for `job_detail`/`terminate`/`requeue`.
+
+    `list_jobs` does not call this — it batches the same lookups across the
+    whole page instead of repeating them per row.
+    """
+    endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
+    return _build_summary(
+        job,
+        attempt_count=_attempt_counts(session, [job.id]).get(job.id, 0),
+        profile=_profiles_by_user(session, [job.user_id]).get(job.user_id),
+        provider_label=_provider_label(endpoints, job.selected_route_summary_json.get("provider")),
+        stuck=job.id in _stuck_job_ids(session, [job.id]),
     )
+
+
+def _build_summary(
+    job: GenerationJob,
+    *,
+    attempt_count: int,
+    profile: Profile | None,
+    provider_label: str | None,
+    stuck: bool,
+) -> AdminJobSummary:
     return AdminJobSummary(
         id=job.id,
         user_id=job.user_id,
+        user_display_name=profile.display_name if profile else None,
+        user_handle=profile.handle if profile else None,
         status=JobStatus(job.status),
         operation=job.operation,
         quality_tier=job.quality_tier,
         provider=job.selected_route_summary_json.get("provider"),
+        provider_label=provider_label,
         routing_reason=job.selected_route_summary_json.get("reason"),
         quoted_credits=job.quoted_credits,
         actual_credits=job.actual_credits,
@@ -359,4 +510,112 @@ def _summary(session, job: GenerationJob) -> AdminJobSummary:  # type: ignore[no
         failure_code=job.failure_code,
         created_at=job.created_at,
         finished_at=job.finished_at,
+        stuck=stuck,
+        workflow_template_id=job.workflow_template_id,
     )
+
+
+def _profiles_by_user(session, user_ids: list[str]) -> dict[str, Profile]:  # type: ignore[no-untyped-def]
+    if not user_ids:
+        return {}
+    rows = session.scalars(select(Profile).where(Profile.user_id.in_(set(user_ids))))
+    return {row.user_id: row for row in rows}
+
+
+def _attempt_counts(session, job_ids: list[str]) -> dict[str, int]:  # type: ignore[no-untyped-def]
+    if not job_ids:
+        return {}
+    rows = session.execute(
+        select(ProviderAttempt.job_id, func.count())
+        .where(ProviderAttempt.job_id.in_(job_ids))
+        .group_by(ProviderAttempt.job_id)
+    ).all()
+    return {job_id: int(count) for job_id, count in rows}
+
+
+def _stuck_job_ids(session, job_ids: list[str]) -> set[str]:  # type: ignore[no-untyped-def]
+    """Jobs whose live `AsyncProviderTask` is well past its own deadline.
+
+    Not "still rendering" (that is normal, expected latency) — this is the
+    poller having had a full `STUCK_AFTER_MINUTES`-sized window to give up
+    on it and apparently not having done so.
+    """
+    if not job_ids:
+        return set()
+    cutoff = utcnow() - dt.timedelta(minutes=STUCK_AFTER_MINUTES)
+    rows = session.scalars(
+        select(AsyncProviderTask.job_id).where(
+            AsyncProviderTask.job_id.in_(job_ids), AsyncProviderTask.deadline_at < cutoff
+        )
+    )
+    return set(rows)
+
+
+def _agent_display_names(session, agent_profile_ids: list[str]) -> dict[str, str]:  # type: ignore[no-untyped-def]
+    if not agent_profile_ids:
+        return {}
+    rows = session.scalars(select(AgentProfile).where(AgentProfile.id.in_(set(agent_profile_ids))))
+    return {row.id: row.display_name for row in rows}
+
+
+def _provider_label(endpoints: dict[str, LlmProviderEndpoint], provider: str | None) -> str | None:
+    """Turns `f"{endpoint_id}:{capability}"` into a human label.
+
+    Falls back to `None` (not the raw value) when the endpoint has since
+    been renamed away or deleted — the frontend keeps showing the raw
+    `provider`/`capability_name` field in that case rather than a stale name.
+    """
+    if not provider:
+        return None
+    endpoint_id, _, tag = provider.partition(":")
+    endpoint = endpoints.get(endpoint_id)
+    if endpoint is None:
+        return None
+    return f"{endpoint.name} · {tag}" if tag else endpoint.name
+
+
+def _parse_statuses(raw: str) -> list[str]:
+    """`status` filter: comma-separated so the multiselect in the console can
+    pass several values through one query param (`?status=queued,running`)
+    while staying a plain shareable string like every other filter here.
+    """
+    values = [part.strip() for part in raw.split(",") if part.strip()]
+    known = {s.value for s in JobStatus}
+    unknown = [v for v in values if v not in known]
+    if unknown:
+        raise ValidationFailed(f"未知的任务状态: {', '.join(unknown)}")
+    return values
+
+
+def _user_match(needle: str) -> Any:
+    """`user` filter: matches a pasted (partial) `user_id` as well as a
+    fuzzy hit on the profile's handle or display name — an operator may have
+    either on hand when they start looking for a job.
+    """
+    needle_like = f"%{needle}%"
+    return or_(
+        GenerationJob.user_id.ilike(needle_like),
+        GenerationJob.user_id.in_(
+            select(Profile.user_id).where(
+                or_(Profile.handle.ilike(needle_like), Profile.display_name.ilike(needle_like))
+            )
+        ),
+    )
+
+
+def _provider_match(session, needle: str, column):  # type: ignore[no-untyped-def]
+    """`provider` filter: substring on the raw routing key, OR'd with a
+    reverse lookup by the endpoint's human name — an operator typing the
+    name they see in the console should find the same jobs as one typing
+    the raw `endpoint_id:capability` key.
+    """
+    endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
+    needle_fold = needle.casefold()
+    matched_endpoint_ids = [
+        endpoint_id
+        for endpoint_id, endpoint in endpoints.items()
+        if needle_fold in endpoint.name.casefold()
+    ]
+    conditions = [column.ilike(f"%{needle}%")]
+    conditions.extend(column.startswith(f"{endpoint_id}:") for endpoint_id in matched_endpoint_ids)
+    return or_(*conditions)

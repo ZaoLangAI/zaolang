@@ -29,9 +29,16 @@ from app.agents import router
 from app.domain.jobs import async_tasks
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.system_log import service as system_log
 from app.models import AsyncProviderTask, GenerationJob, ProviderAttempt
 from app.models.base import utcnow
-from app.models.enums import JobEventType, JobStatus, ProviderAttemptStatus
+from app.models.enums import (
+    JobEventType,
+    JobStatus,
+    ProviderAttemptStatus,
+    SystemLogLevel,
+    SystemLogSource,
+)
 from app.providers.base import GenerationRequest, GenerationResult
 from app.realtime import publisher
 from app.workers.pipeline import resolve_graph
@@ -81,6 +88,15 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
             task.id,
             task.capability_name,
         )
+        system_log.emit(
+            source=SystemLogSource.PIPELINE,
+            event="async_task_capability_missing",
+            message=f"capability {task.capability_name} missing from catalogue while polling",
+            dedup_key=f"job:{job.id}",
+            level=SystemLogLevel.WARNING,
+            job_id=job.id,
+            details={"capability_name": task.capability_name, "async_task_id": task.id},
+        )
         _close_attempt(session, task, ProviderAttemptStatus.FAILED, None)
         _resume_failed(session, job, task, code="PROVIDER_TEMPORARY_FAILURE")
         return
@@ -102,6 +118,15 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
 
     if result.pending:
         logger.warning("async task %s exceeded its deadline; giving up", task.id)
+        system_log.emit(
+            source=SystemLogSource.PIPELINE,
+            event="async_task_deadline_exceeded",
+            message=f"async task {task.id} exceeded deadline {task.deadline_at}; giving up",
+            dedup_key=f"job:{job.id}",
+            level=SystemLogLevel.WARNING,
+            job_id=job.id,
+            details={"async_task_id": task.id, "poll_count": task.poll_count},
+        )
         provider.cancel(task.external_task_id)
         _close_attempt(session, task, ProviderAttemptStatus.TIMED_OUT, result)
         _resume_failed(session, job, task, code="PROVIDER_TIMEOUT")
@@ -134,11 +159,9 @@ def _cancel(session: Session, job: GenerationJob, task: AsyncProviderTask, provi
     upstream to stop is best effort: it may bill us anyway, and settlement
     follows what we actually reserved, not what they charge.
     """
-    provider.cancel(task.external_task_id)
-    _close_attempt(session, task, ProviderAttemptStatus.CANCELLED, None)
+    async_tasks.cancel_upstream(session, task, provider)
     jobs_service.settle_release(session, job, reason="cancelled_by_user")
     sm.transition(session, job.id, JobStatus.CANCELLED)
-    async_tasks.settle(session, task)
     _emit(
         session,
         job,
@@ -146,6 +169,7 @@ def _cancel(session: Session, job: GenerationJob, task: AsyncProviderTask, provi
         JobStatus.CANCELLED,
         "任务已取消，积分已退回",
         100,
+        node_id=task.node_id,
     )
     session.commit()
 
@@ -166,6 +190,7 @@ def _heartbeat(session: Session, job: GenerationJob, task: AsyncProviderTask) ->
         "正在渲染，请稍候",
         progress,
         payload={"external_task_id": task.external_task_id, "poll_count": task.poll_count},
+        node_id=task.node_id,
     )
 
 
@@ -209,6 +234,7 @@ def _resume_failed(
         "这条线路暂时不可用，正在尝试其他路线",
         45,
         internal_code=code,
+        node_id=node_id,
     )
     session.commit()
     runner = _runner(session, job)
@@ -272,6 +298,10 @@ def _close_attempt(
         attempt.latency_ms = result.latency_ms
         attempt.cost_minor = result.cost_minor
         attempt.failure_code = result.failure_code
+        attempt.raw_metadata_redacted_json = {
+            **(attempt.raw_metadata_redacted_json or {}),
+            **result.metadata,
+        }
     session.flush()
 
 
@@ -285,12 +315,14 @@ def _emit(
     *,
     internal_code: str | None = None,
     payload: dict[str, object] | None = None,
+    node_id: str | None = None,
 ) -> None:
     """Mirrors `workflows.nodes._emit` for events raised outside a node.
 
     Kept separate rather than shared because that one takes a
     `WorkflowContext` and commits on the caller's behalf; here the tick owns
-    the transaction boundary.
+    the transaction boundary. `node_id` is the suspended node the task is
+    resuming, known outright from `task.node_id` rather than guessed.
     """
     event = sm.append_event(
         session,
@@ -301,6 +333,7 @@ def _emit(
         progress=progress,
         internal_code=internal_code,
         payload=payload,
+        node_id=node_id,
     )
     session.flush()
     publisher.publish_job_event(

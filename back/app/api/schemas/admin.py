@@ -72,10 +72,21 @@ class SystemHealthResponse(ApiModel):
 class AdminJobSummary(ApiModel):
     id: str
     user_id: str
+    # Resolved from the user's `Profile`; `None` only if the profile row is
+    # somehow missing. The frontend falls back to `user_id` when both are
+    # `None`, and always keeps the raw id available in a tooltip.
+    user_display_name: str | None = None
+    user_handle: str | None = None
     status: JobStatus
     operation: str
     quality_tier: str
+    # Raw routing key (`f"{endpoint_id}:{capability}"` or a test fixture's
+    # provider name) — kept for filtering/replay comparison, but never shown
+    # as the primary label; see `provider_label`.
     provider: str | None = None
+    # Human-readable form of `provider` (`LlmProviderEndpoint.name`), when the
+    # endpoint it names still exists in the current `llm_providers` config.
+    provider_label: str | None = None
     routing_reason: str | None = None
     quoted_credits: int
     actual_credits: int | None = None
@@ -83,6 +94,16 @@ class AdminJobSummary(ApiModel):
     failure_code: str | None = None
     created_at: dt.datetime
     finished_at: dt.datetime | None = None
+    # `True` when a live `AsyncProviderTask` is well past its own deadline —
+    # the poller has not (yet) given up on it. Surfaced so an operator does
+    # not have to remember to check `stuck_only` to notice.
+    stuck: bool = False
+    # The workflow template this job actually pinned at submission/first run
+    # (see `workers/pipeline.py::resolve_graph`). `None` for a job that has
+    # not started running yet, or for a legacy row predating this column.
+    # The frontend uses it to ask `/v1/admin/workflow` for the exact graph
+    # this job ran, instead of whatever is active for the operation today.
+    workflow_template_id: str | None = None
 
 
 class JobStatsView(ApiModel):
@@ -116,6 +137,10 @@ class JobEventView(ApiModel):
     message: str
     internal_code: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+    # The graph node that emitted this event, or `None` for events recorded
+    # before this column existed. `workflow-steps.tsx` matches on this first
+    # and only falls back to guessing from `event_type` when it is absent.
+    node_id: str | None = None
     created_at: dt.datetime
 
 
@@ -125,6 +150,10 @@ class AgentRunView(ApiModel):
     # Which agent and prompt slot served this call. Null for runs recorded
     # before agent profiles existed.
     agent_profile_id: str | None = None
+    # Resolved `AgentProfile.display_name`. `None` when `agent_profile_id`
+    # is null or the profile was since deleted — the frontend falls back to
+    # `agent_name` (the role string) in that case.
+    agent_display_name: str | None = None
     prompt_slot: str | None = None
     model: str
     mode: str
@@ -135,7 +164,25 @@ class AgentRunView(ApiModel):
     status: str
     error_message: str | None = None
     job_id: str | None = None
+    # The graph node whose executor made this call, or `None` for runs
+    # predating this column or made outside a workflow run.
+    node_id: str | None = None
     created_at: dt.datetime
+
+
+class AsyncProviderTaskView(ApiModel):
+    """One in-flight external render, surfaced so an operator can see what a
+    `RUNNING` job with no Celery task in flight is actually waiting on."""
+
+    node_id: str
+    capability_name: str
+    provider_label: str | None = None
+    external_task_id: str
+    poll_count: int
+    next_poll_at: dt.datetime
+    deadline_at: dt.datetime
+    claimed_at: dt.datetime | None = None
+    provider_attempt_id: str | None = None
 
 
 class AdminJobDetail(AdminJobSummary):
@@ -146,6 +193,9 @@ class AdminJobDetail(AdminJobSummary):
     events: list[JobEventView] = Field(default_factory=list)
     attempts: list[ProviderAttemptView] = Field(default_factory=list)
     agent_runs: list[AgentRunView] = Field(default_factory=list)
+    # `None` once the render finishes (success, failure, timeout) or if the
+    # job never suspended on an external task at all.
+    async_task: AsyncProviderTaskView | None = None
 
 
 class JobTerminateRequest(DangerousAction):
@@ -209,6 +259,7 @@ class ModerationHistoryEntry(ApiModel):
     decided_by: str
     reviewer_user_id: str | None = None
     reason_code: str | None = None
+    categories: list[str] = Field(default_factory=list)
     public_message: str | None = None
     created_at: dt.datetime
 
@@ -236,6 +287,9 @@ class ModerationSubjectDetailView(ApiModel):
     history: list[ModerationHistoryEntry]
     work: ModerationWorkDetailView | None = None
     skill: CreationSkillAdminView | None = None
+    # Open reports naming the same subject — a reviewer acting purely off the
+    # agent's flag should still see whether users have separately complained.
+    open_report_count: int = 0
 
 
 class ReportCaseView(ApiModel):
@@ -410,7 +464,7 @@ class ConfigValueResponse(ApiModel):
 
 class ConfigUpdateRequest(ApiModel):
     value: dict[str, Any]
-    note: str | None = Field(default=None, max_length=300)
+    note: str = Field(min_length=1, max_length=300)
 
 
 class ConfigRollbackRequest(DangerousAction):
@@ -436,9 +490,9 @@ class LlmProviderEndpointView(ApiModel):
     `api_key` itself never appears here — only whether one is set and a
     truncated preview — so a GET response is always safe to render or log.
 
-    `role`/`backup_order` are endpoint-level for both `general` and `media`.
-    For media, `capabilities` is derived and read-only: it lists which tags
-    the declared `model` + `input_modalities`/`output_modalities` cover.
+    `role`/`backup_order` and concurrency are meaningful for `general` only.
+    For media, `capabilities` is derived and read-only from the declared
+    `model` + `input_modalities`/`output_modalities`.
     """
 
     id: str
@@ -484,6 +538,22 @@ class LlmProviderPoolView(ApiModel):
     demoted_endpoint_ids: list[str] = Field(default_factory=list)
 
 
+class LlmProviderValidationResult(ApiModel):
+    endpoint_id: str
+    kind: Literal["general", "media"]
+    target_model: str | None = None
+    probe_type: str
+    reachable: bool
+    usable: bool
+    latency_ms: int
+    provider_status_code: int | None = None
+    error_code: str | None = None
+    warning_code: str | None = None
+    provider_error_code: str | None = None
+    provider_error_message: str | None = None
+    external_task_id: str | None = None
+
+
 class LlmProviderEndpointUpsertRequest(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     base_url: str = Field(min_length=1, max_length=500)
@@ -522,15 +592,14 @@ class RolePresetView(ApiModel):
 
     A code-maintained catalogue rather than a table: a role only runs if some
     node type invokes it, so free-text roles would produce agents that never
-    execute. `category` drives which half of the create form applies —
-    `judgment` binds one LLM model, `creative` binds media endpoints with a
-    cost weight each — and `operations` is what the media-candidate picker
-    filters by.
+    execute. `category` drives which half of the create form applies only
+    semantically — both `judgment` and `assist` bind one LLM model the same
+    way.
     """
 
     role: str
     display_name: str
-    category: Literal["judgment", "creative"]
+    category: Literal["judgment", "assist"]
     description: str = ""
     operations: list[str] = Field(default_factory=list)
     default_template_key: str | None = None
@@ -553,28 +622,24 @@ class AgentNodeView(ApiModel):
     role: str
     display_name: str
     description: str
-    category: Literal["judgment", "creative"] = "judgment"
+    category: Literal["judgment", "assist"] = "judgment"
     enabled: bool
     sort_order: int
     candidate_endpoint_ids: list[str] = Field(default_factory=list)
     prompt_slots: list[PromptSlotView] = Field(default_factory=list)
 
 
-class MediaCandidate(ApiModel):
-    """One media route a creative agent may use, with a cost preference.
+class ModelSamplingDefaultView(ApiModel):
+    """The fixed max_tokens/temperature one model resolves to.
 
-    `weight` is shown to the routing agent as operational context alongside
-    each candidate's observed success rate, latency and cost — it is not a
-    coefficient. Nothing in `app/agents/router.py` ranks by it; the routing
-    agent still makes the call.
+    The console reads this list to show what picking a model will fix
+    sampling to (`app.llm.model_defaults`) before the operator saves —
+    those two fields are never a free-text input anymore.
     """
 
-    endpoint_id: str = Field(min_length=1, max_length=64)
-    # A capability tag the endpoint derives from its modalities, e.g.
-    # `text_to_video`. Together with `endpoint_id` this is the router's
-    # catalogue key (`"{endpoint_id}:{capability}"`).
-    capability: str = Field(min_length=1, max_length=40)
-    weight: int = Field(default=100, ge=1, le=1_000)
+    model: str
+    max_tokens: int
+    temperature: float
 
 
 class AgentProfileView(ApiModel):
@@ -592,20 +657,18 @@ class AgentProfileView(ApiModel):
     key: str
     display_name: str
     description: str
-    category: Literal["judgment", "creative"] = "judgment"
+    category: Literal["judgment", "assist"] = "judgment"
     operations: list[str] = Field(default_factory=list)
     is_default: bool
     enabled: bool
-    # `judgment` agents only. Null means the agent draws from the shared
-    # `kind="general"` pool, which is what every agent did before per-agent
-    # bindings existed.
+    # Null means the agent draws from the shared `kind="general"` pool,
+    # which is what every agent did before per-agent bindings existed.
     default_endpoint_id: str | None = None
     backup_endpoint_id: str | None = None
+    model: str | None = None
     max_tokens: int | None = None
     temperature: float | None = None
     reasoning_model: bool | None = None
-    # `creative` agents only.
-    media_candidates: list[MediaCandidate] = Field(default_factory=list)
     used_by_operations: list[str] = Field(default_factory=list)
     created_at: dt.datetime
 
@@ -624,18 +687,18 @@ class AgentProfileCreateRequest(ApiModel):
     operations: list[str] = Field(default_factory=list)
     default_endpoint_id: str | None = Field(default=None, max_length=64)
     backup_endpoint_id: str | None = Field(default=None, max_length=64)
-    max_tokens: int | None = Field(default=None, ge=0, le=32_768)
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    model: str | None = Field(default=None, max_length=160)
+    # No max_tokens/temperature here on purpose: they are fixed by whichever
+    # model is selected (`app.llm.model_defaults`), not an operator input.
     reasoning_model: bool | None = None
-    media_candidates: list[MediaCandidate] = Field(default_factory=list)
 
 
 class AgentProfileUpdateRequest(ApiModel):
-    """Every field is optional and `None` means "leave as is".
+    """Partial AgentProfile update.
 
-    An **empty string** on either endpoint id is how the console clears a
-    model pin, and an **empty list** clears media candidates — otherwise an
-    agent could never go back to the shared pool once pinned.
+    Endpoint/model pins use an empty string to clear. `reasoning_model`
+    distinguishes omission (keep the current override) from explicit null
+    (inherit the role's default Agent).
     """
 
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
@@ -645,10 +708,10 @@ class AgentProfileUpdateRequest(ApiModel):
     enabled: bool | None = None
     default_endpoint_id: str | None = Field(default=None, max_length=64)
     backup_endpoint_id: str | None = Field(default=None, max_length=64)
-    max_tokens: int | None = Field(default=None, ge=0, le=32_768)
-    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    model: str | None = Field(default=None, max_length=160)
+    # No max_tokens/temperature here on purpose: they are fixed by whichever
+    # model is selected (`app.llm.model_defaults`), not an operator input.
     reasoning_model: bool | None = None
-    media_candidates: list[MediaCandidate] | None = None
 
 
 class SkillTemplateView(ApiModel):
@@ -662,7 +725,7 @@ class SkillTemplateView(ApiModel):
     key: str
     label: str
     description: str = ""
-    category: Literal["judgment", "creative"]
+    category: Literal["judgment", "assist"]
     prompt_template: str
     tool_grants: list[str] = Field(default_factory=list)
     role: str | None = None
@@ -688,6 +751,45 @@ class AgentSkillPublishRequest(DangerousAction):
     slot: str = Field(min_length=1, max_length=40)
     prompt_template: str = Field(min_length=1, max_length=20_000)
     tool_grants: list[str] = Field(default_factory=list)
+
+
+class AgentDebugChatMessage(ApiModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class AgentDebugChatRequest(ApiModel):
+    """One turn of prompt-evaluation chat against a real model.
+
+    `prompt_template`, when given, is the skill editor's unsaved draft — the
+    whole point of "debug the draft" is trying a prompt before it is ever
+    published. Omitted, this debugs whatever is currently active for
+    `(profile, slot)`. `messages` is the whole conversation so far, not just
+    the newest turn: this is a stateless endpoint, so the console resends
+    history on every call the same way it already does for the shortform
+    clarify flow.
+    """
+
+    slot: str = Field(min_length=1, max_length=40)
+    prompt_template: str | None = Field(default=None, max_length=20_000)
+    messages: list[AgentDebugChatMessage] = Field(min_length=1, max_length=40)
+
+
+class AgentDebugChatResponse(ApiModel):
+    reply_text: str
+    parsed_json: dict[str, Any] | None = None
+    degraded: bool
+    model: str
+    latency_ms: int
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    agent_run_id: str
+
+
+class AgentSkillToolView(ApiModel):
+    """One tool a role's skill may be granted, from `app.agents.tools.AGENT_TOOL_GRANTS`."""
+
+    name: str
 
 
 class FeatureFlagView(ApiModel):
@@ -754,6 +856,10 @@ class LogEntryView(ApiModel):
     occurrence_count: int | None = None
     reason: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+    # The `generation_job` this row is about, for the jobs console's
+    # "related logs" section — an audit row's `target_id` when
+    # `target_type == "generation_job"`, or a system row's own `job_id`.
+    job_id: str | None = None
     occurred_at: dt.datetime
 
 
@@ -810,6 +916,21 @@ class AgentBindingView(ApiModel):
     slot: str
 
 
+class DynamicAgentBindingView(ApiModel):
+    """Tells the editor that one config field selects an agent whose role is
+    chosen in a sibling field rather than fixed by the node type.
+
+    `custom_agent` is the only such node type: it exists to run a role that
+    was created in the console. The editor renders the three fields as
+    cascading dropdowns — role, then the agents having it, then that role's
+    prompt slots — instead of three free-text boxes.
+    """
+
+    config_field: str
+    role_field: str
+    slot_field: str
+
+
 class NodeTypeView(ApiModel):
     """One entry in the admin-facing node palette.
 
@@ -820,12 +941,18 @@ class NodeTypeView(ApiModel):
 
     type: str
     category: str
+    # Chinese, from `registry.py`. The console prefers its own translation
+    # keyed by `label_key`/`description_key` and uses these only as a
+    # fallback for a node type shipped before the messages caught up.
     label: str
     description: str
+    label_key: str
+    description_key: str
     output_ports: list[str]
     is_agent: bool
     agent_role: str | None = None
     agent_bindings: list[AgentBindingView] = Field(default_factory=list)
+    dynamic_agent_binding: DynamicAgentBindingView | None = None
     config_schema: dict[str, Any]
 
 
@@ -865,6 +992,13 @@ class WorkflowDryRunRequest(ApiModel):
     prompt: str = Field(min_length=1, max_length=2000)
     quality_tier: str = "standard"
     params: dict[str, Any] = Field(default_factory=dict)
+    # The unpublished graph on the editor's canvas. Omitted means "run what
+    # is live", which is what an operator wants when checking the current
+    # behaviour rather than a change. Passing it is what makes the editor's
+    # edit -> run -> look loop possible without publishing to production
+    # first; it is validated exactly like a publish before it is executed,
+    # and never becomes a `GenerationWorkflowTemplate` row.
+    graph: dict[str, Any] | None = None
 
 
 class WorkflowDryRunStepView(ApiModel):
@@ -872,6 +1006,11 @@ class WorkflowDryRunStepView(ApiModel):
     node_type: str
     port: str
     agent_run_id: str | None = None
+    duration_ms: int | None = None
+    # One line of what this step actually decided — the safety verdict, the
+    # provider routing picked, and so on. What turns the trace from "which
+    # nodes ran" into something an operator can judge a prompt change by.
+    summary: str | None = None
 
 
 class WorkflowDryRunResult(ApiModel):

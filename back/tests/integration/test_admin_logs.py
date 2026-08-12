@@ -102,6 +102,53 @@ def test_unified_logs_pages_with_a_cursor(client: TestClient, db: Session, admin
     assert first_ids.isdisjoint(second_ids)
 
 
+def test_logs_can_be_filtered_by_job_id_across_both_sources(
+    client: TestClient, db: Session, admin: User
+) -> None:
+    """The jobs console's "related logs" section: one `job_id` filter must
+    surface both a deliberate audit action and a runtime crash signal about
+    the same job, and exclude another job's rows."""
+    job_id = new_id("job")
+    other_job_id = new_id("job")
+
+    audit.record(
+        db,
+        actor=admin,
+        action="job.force_terminate",
+        target_type="generation_job",
+        target_id=job_id,
+        after={"status": "cancelled"},
+        reason="测试用例",
+    )
+    audit.record(
+        db,
+        actor=admin,
+        action="job.force_terminate",
+        target_type="generation_job",
+        target_id=other_job_id,
+        after={"status": "cancelled"},
+        reason="测试用例",
+    )
+    system_log.emit(
+        source=SystemLogSource.PIPELINE,
+        event="test.job_crash",
+        message="pipeline crashed",
+        dedup_key=f"job:{job_id}",
+        job_id=job_id,
+    )
+    db.commit()
+
+    body = client.get(
+        "/v1/admin/logs", params={"job_id": job_id}, headers=admin_header(admin)
+    ).json()
+
+    assert body["items"]
+    assert all(item["job_id"] == job_id for item in body["items"])
+    sources = {item["source"] for item in body["items"]}
+    assert "audit" in sources
+    assert "pipeline" in sources
+
+
 def test_system_log_rows_surface_occurrence_count(
     client: TestClient, db: Session, admin: User
 ) -> None:

@@ -42,6 +42,12 @@ class SystemLog(Base, TimestampMixin):
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Set when this row is a runtime-error signal tied to one generation job
+    # (pipeline/workflow-engine crashes, worker task failures), so the admin
+    # jobs console can pull them alongside that job's `AuditLog` rows. Not a
+    # foreign key, matching `AuditLog.target_id`: a cleaned-up job must not
+    # take its error history down with it.
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Already-redacted context (rule bucket, rejected role, etc.); never a
     # password or token.
     details_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
@@ -52,4 +58,5 @@ class SystemLog(Base, TimestampMixin):
         ),
         Index("ix_system_logs_created_at", "created_at"),
         Index("ix_system_logs_source_event", "source", "event"),
+        Index("ix_system_logs_job_id", "job_id"),
     )

@@ -98,6 +98,14 @@ def test_the_catalogue_carries_the_limits_the_client_validates_against(
     assert vertical["require_ai_disclosure"] is True
 
 
+def test_the_catalogue_carries_the_clarify_and_preview_toggles(client: TestClient) -> None:
+    body = client.get("/v1/shortform/profiles").json()
+
+    assert body["enable_clarifying_questions"] is True
+    assert body["enable_preview_picker"] is True
+    assert 2 <= body["preview_candidate_count"] <= 3
+
+
 def test_reading_the_catalogue_is_rate_limited(client: TestClient, author: User) -> None:
     identity = f"user:{author.id}"
     for _ in range(rate_limit.RULES["public_read"].limit):
@@ -347,6 +355,83 @@ def test_the_studio_can_be_switched_off(
     response = client.post(
         "/v1/shortform/compliance-check",
         json={"draft_id": draft.id, **COMPLIANT_CAPTION},
+        headers=auth_header(author),
+    )
+
+    assert response.status_code == 422
+
+
+# --- POST /v1/shortform/prompt/clarify -----------------------------------
+
+
+def test_a_sparse_description_asks_a_structured_question(
+    client: TestClient, author: User
+) -> None:
+    response = client.post(
+        "/v1/shortform/prompt/clarify",
+        json={"prompt": "女孩在海边"},
+        headers=auth_header(author),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["needs_clarification"] is True
+    assert body["questions"]
+    question = body["questions"][0]
+    assert question["kind"] in ("single_choice", "multi_choice", "free_text")
+    assert question["prompt"]
+    if question["kind"] != "free_text":
+        assert len(question["options"]) >= 2
+
+
+def test_a_detailed_description_needs_no_clarification(client: TestClient, author: User) -> None:
+    text = (
+        "黄昏时分，一位穿着白色长裙的女孩独自站在海边礁石上，海风吹动她的裙摆，"
+        "镜头缓慢从远景推近到她的侧脸特写，逆光剪影，暖橙色调，长焦压缩景深"
+    )
+    response = client.post(
+        "/v1/shortform/prompt/clarify",
+        json={"prompt": text},
+        headers=auth_header(author),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["needs_clarification"] is False
+    assert body["questions"] == []
+
+
+def test_clarify_requires_login(client: TestClient) -> None:
+    response = client.post("/v1/shortform/prompt/clarify", json={"prompt": "女孩在海边"})
+    assert response.status_code == 401
+
+
+def test_clarify_is_rate_limited(client: TestClient, author: User) -> None:
+    identity = f"user:{author.id}"
+    for _ in range(rate_limit.RULES["authenticated_write"].limit):
+        rate_limit.enforce("authenticated_write", identity)
+
+    response = client.post(
+        "/v1/shortform/prompt/clarify",
+        json={"prompt": "女孩在海边"},
+        headers=auth_header(author),
+    )
+
+    assert response.status_code == 429
+    assert response.headers.get("retry-after")
+
+
+def test_clarify_is_gated_by_the_shortform_feature_flag(
+    client: TestClient, db: Session, admin: User, author: User
+) -> None:
+    flags = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
+    flags["shortform_studio"] = False
+    config_service.set_value(db, "feature_flags", flags, actor_user_id=admin.id)
+    db.commit()
+
+    response = client.post(
+        "/v1/shortform/prompt/clarify",
+        json={"prompt": "女孩在海边"},
         headers=auth_header(author),
     )
 

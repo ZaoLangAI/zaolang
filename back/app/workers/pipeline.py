@@ -7,8 +7,8 @@ around it. The actual step-by-step logic now lives in the configurable
 resolve *which* graph a job runs (its pinned template, the operation's active
 template, or the code-level default, in that order) and to keep the one
 top-level crash contract Celery depends on — release credits, mark the job
-failed, then re-raise so `tasks.run_generation`'s `self.retry` still fires for
-a genuine infrastructure fault.
+failed, then re-raise. Missing jobs raise ``JobNotFoundError`` (no retry);
+transient DB/network faults are retried by the Celery wrapper.
 """
 
 from __future__ import annotations
@@ -19,9 +19,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.system_log import service as system_log
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, GenerationWorkflowTemplate
-from app.models.enums import JobStatus
+from app.models.enums import JobStatus, SystemLogLevel, SystemLogSource
 from app.observability.context import set_job_id
 from app.workflows.configs import RouteScoreConfig
 from app.workflows.defaults import default_graph
@@ -31,6 +32,7 @@ from app.workflows.types import PipelineOutcome, WorkflowContext
 
 __all__ = [
     "MAX_PROVIDER_ATTEMPTS",
+    "JobNotFoundError",
     "PipelineOutcome",
     "resolve_graph",
     "run_generation_pipeline",
@@ -45,10 +47,18 @@ logger = logging.getLogger(__name__)
 MAX_PROVIDER_ATTEMPTS: int = RouteScoreConfig.model_fields["max_attempts"].default
 
 
+class JobNotFoundError(LookupError):
+    """Celery message references a ``generation_jobs`` row that no longer exists.
+
+    Distinct from other ``LookupError`` subclasses (e.g. unknown tools) so the
+    worker can drop orphan broker messages without retrying them.
+    """
+
+
 def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
     job = session.get(GenerationJob, job_id)
     if job is None:
-        raise LookupError(f"job {job_id} not found")
+        raise JobNotFoundError(f"job {job_id} not found")
     set_job_id(job.id)
 
     if JobStatus(job.status).is_terminal:
@@ -64,6 +74,21 @@ def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
         return WorkflowRunner(graph).run(ctx)
     except Exception as exc:
         logger.exception("pipeline crashed for job %s", job.id)
+        # The only durable record of what actually crashed: `JobEvent`
+        # deliberately gets a scrubbed `public_message` (see `_fail`) so it
+        # never leaks internals to the C-end caller, and this is not a retry
+        # Celery will re-raise into (this is the top-level catch-all, not
+        # `tasks.py`'s per-attempt boundary), so `logger.exception` alone
+        # would leave an operator with nothing to look up after the fact.
+        system_log.emit(
+            source=SystemLogSource.PIPELINE,
+            event="pipeline_crashed",
+            message=str(exc),
+            dedup_key=f"job:{job.id}",
+            level=SystemLogLevel.ERROR,
+            job_id=job.id,
+            details={"exception_type": type(exc).__name__},
+        )
         _fail(session, job, code="INTERNAL_ERROR", message="生成过程出现异常，积分已退回。")
         raise exc from None
 
@@ -97,7 +122,7 @@ def resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:
 
     if template is not None:
         return WorkflowGraph.from_dict(template.graph_json)
-    return WorkflowGraph.from_dict(default_graph())
+    return WorkflowGraph.from_dict(default_graph(session))
 
 
 def _fail(session: Session, job: GenerationJob, *, code: str, message: str) -> None:

@@ -22,8 +22,10 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db import rows_affected
-from app.models import AsyncProviderTask
+from app.models import AsyncProviderTask, ProviderAttempt
 from app.models.base import utcnow
+from app.models.enums import ProviderAttemptStatus
+from app.providers.base import GenerationProvider
 
 logger = logging.getLogger(__name__)
 
@@ -145,3 +147,39 @@ def settle(session: Session, task: AsyncProviderTask) -> None:
     """
     session.delete(task)
     session.flush()
+
+
+def cancel_upstream(
+    session: Session, task: AsyncProviderTask, provider: GenerationProvider
+) -> bool:
+    """Tells the provider a render is no longer wanted, then drops the row.
+
+    Shared by `async_polling.py::_cancel()` (the user-cancel path, discovered
+    on the next poll tick) and the admin `terminate` endpoint (which calls
+    this synchronously inside the same request instead of waiting for a
+    tick). Only the provider notification and the bookkeeping every caller
+    needs live here — releasing credits, transitioning the job, and emitting
+    a `JobEvent` differ enough between the two callers (one already knows
+    the job is `CANCELLED`, the other is mid state-machine transition to a
+    different terminal status) that duplicating them here would just move
+    the fork somewhere less visible.
+
+    `provider.cancel()` is best-effort by contract (see `GenerationProvider`'s
+    docstring): a `False` return or a raised exception both leave the task
+    genuinely unconfirmed upstream, but must never stop the caller's own
+    settlement, so both are swallowed here and reported back as `False`.
+    """
+    succeeded = False
+    try:
+        succeeded = bool(provider.cancel(task.external_task_id))
+    except Exception:
+        logger.exception("provider.cancel failed for async task %s (job %s)", task.id, task.job_id)
+
+    if task.provider_attempt_id:
+        attempt = session.get(ProviderAttempt, task.provider_attempt_id)
+        if attempt is not None:
+            attempt.status = ProviderAttemptStatus.CANCELLED
+            session.flush()
+
+    settle(session, task)
+    return succeeded

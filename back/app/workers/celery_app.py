@@ -1,13 +1,14 @@
 """Celery configuration.
 
 Queues are split by latency profile rather than by feature. A four-minute
-video render must never sit behind — or in front of — a two-second moderation
-check, so they get separate workers that can be scaled independently.
+video render must never sit behind — or in front of — a quick quality check,
+so they get separate workers that can be scaled independently.
 """
 
 from __future__ import annotations
 
 from celery import Celery
+from celery.signals import worker_process_init
 from kombu import Queue
 
 from app.config import get_settings
@@ -17,8 +18,20 @@ settings = get_settings()
 
 celery_app = Celery("zaolang", broker=settings.redis_url, backend=settings.redis_url)
 
+
+@worker_process_init.connect
+def _reset_db_engine_after_fork(**_kwargs: object) -> None:
+    """Drop any engine/pool the parent process may have opened before fork.
+
+    Prefork children that inherit live DB connections can hang on the next
+    checkout after an error; rebuilding the cache makes each child own a
+    fresh pool.
+    """
+    from app.db import reset_engine_cache
+
+    reset_engine_cache()
+
 QUEUE_NAMES = (
-    "moderation_short",
     "image_generation",
     "video_generation_long",
     "audio_generation",
@@ -48,19 +61,26 @@ celery_app.conf.update(
     result_expires=60 * 60 * 24,
     broker_connection_retry_on_startup=True,
     task_routes={
-        "app.workers.tasks.run_moderation": {"queue": "moderation_short"},
         "app.workers.tasks.run_generation": {"queue": "image_generation"},
         "app.workers.tasks.run_video_generation": {"queue": "video_generation_long"},
         "app.workers.tasks.run_audio_generation": {"queue": "audio_generation"},
         "app.workers.tasks.run_quality_check": {"queue": "quality_check"},
         "app.workers.tasks.reconcile_webhooks": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_jobs": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.expire_stale_input_requests": {"queue": "webhook_reconcile"},
         "app.workers.tasks.poll_async_provider_tasks": {"queue": "provider_task_polling"},
     },
     beat_schedule={
         "expire-stale-jobs": {
             "task": "app.workers.tasks.expire_stale_jobs",
             "schedule": 300.0,
+        },
+        "expire-stale-input-requests": {
+            "task": "app.workers.tasks.expire_stale_input_requests",
+            # An author's own deadline (`input_requests.INPUT_TIMEOUT_SECONDS`)
+            # is hours away, unlike a provider render's; there is no benefit
+            # to checking for it as often as the 5-minute job sweep.
+            "schedule": 900.0,
         },
         "poll-async-provider-tasks": {
             "task": "app.workers.tasks.poll_async_provider_tasks",

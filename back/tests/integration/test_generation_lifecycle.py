@@ -8,20 +8,39 @@ ledger and the event stream in the same transaction.
 from __future__ import annotations
 
 import datetime as dt
+from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents import router
 from app.domain.credits import service as credits_service
 from app.domain.errors import CreditsExceedBudget, InsufficientCredits
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
-from app.models import CreditLedgerEntry, GenerationJob, JobEvent, ProviderAttempt, User
+from app.models import (
+    CreditLedgerEntry,
+    GenerationJob,
+    GenerationWorkflowTemplate,
+    JobEvent,
+    ProviderAttempt,
+    User,
+)
 from app.models.base import new_id, utcnow
 from app.models.enums import JobStatus, LedgerEntryType, Operation, QualityTier
-from app.providers.fake import FORCE_FAILURE_MARKER
 from app.workers import pipeline, tasks
+from tests.conftest import auth_header
+from tests.fake_provider_catalog import build_fake_catalog
+from tests.fake_providers import FORCE_FAILURE_MARKER
+
+
+@pytest.fixture(autouse=True)
+def _inject_test_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generation tests opt into fake providers; production never registers them."""
+    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
 
 
 @pytest.fixture
@@ -176,6 +195,33 @@ def test_a_rejected_prompt_never_reaches_a_provider(db: Session, funded: User) -
     assert not _ledger(db, funded, LedgerEntryType.CAPTURE)
 
 
+def test_a_needs_review_prompt_still_generates_but_opens_a_queue_item(
+    db: Session, funded: User
+) -> None:
+    """`needs_review` is uncertainty, not a veto: generation still runs, but a
+    human now has a real row to look at instead of the verdict being
+    recorded and never followed up on."""
+    from app.models import ModerationQueueItem
+    from app.models.enums import ModerationStage, ModerationStatus
+
+    job = _submit(db, funded, prompt="血腥暴力的战场场景")
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status != JobStatus.FAILED
+
+    item = db.scalar(
+        select(ModerationQueueItem).where(
+            ModerationQueueItem.subject_type == "generation_job",
+            ModerationQueueItem.subject_id == job.id,
+            ModerationQueueItem.stage == ModerationStage.PRE_GENERATION,
+        )
+    )
+    assert item is not None
+    assert item.status == ModerationStatus.NEEDS_REVIEW
+    assert item.reason_code == "SENSITIVE_CONTENT"
+
+
 def test_a_provider_failure_releases_the_full_reservation(db: Session, funded: User) -> None:
     job = _submit(db, funded, prompt=f"海边黄昏 {FORCE_FAILURE_MARKER}")
     account = credits_service.get_or_create_account(db, funded.id)
@@ -258,24 +304,141 @@ def test_a_terminal_job_is_not_run_again(db: Session, funded: User) -> None:
     assert len(_ledger(db, funded, LedgerEntryType.CAPTURE)) == captures_before
 
 
-def test_a_stale_job_is_expired_and_its_credits_returned(db: Session, funded: User) -> None:
+def test_a_stale_job_is_expired_and_its_credits_returned(
+    db: Session, funded: User, monkeypatch
+) -> None:
     """A worker that dies mid-flight would otherwise strand the reservation
     forever."""
     job = _submit(db, funded)
-    job.created_at = utcnow() - tasks.STALE_JOB_TIMEOUT - dt.timedelta(minutes=1)
+    job.updated_at = utcnow() - tasks.STALE_JOB_TIMEOUT - dt.timedelta(minutes=1)
     db.flush()
 
     account = credits_service.get_or_create_account(db, funded.id)
     before = account.available_balance + job.reserved_credits
 
-    jobs_service.settle_release(db, job, reason="expired")
-    sm.transition(db, job.id, JobStatus.EXPIRED, failure_code="JOB_EXPIRED")
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    assert tasks.expire_stale_jobs.run() == 1
 
     db.refresh(job)
     db.refresh(account)
     assert job.status == JobStatus.EXPIRED
     assert account.reserved_balance == 0
     assert account.available_balance == before
+
+
+def test_stale_sweeper_does_not_expire_a_live_external_task(
+    db: Session, funded: User, monkeypatch
+) -> None:
+    from app.domain.jobs import async_tasks
+
+    job = _submit(db, funded, operation=Operation.TEXT_TO_VIDEO)
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+    async_tasks.suspend(
+        db,
+        job_id=job.id,
+        node_id="provider_generate",
+        checkpoint={
+            "capability_name": "ep_h3:text_to_video",
+            "external_task_id": "task_live",
+            "request": {},
+            "state": {},
+        },
+    )
+    job.updated_at = utcnow() - tasks.STALE_JOB_TIMEOUT - dt.timedelta(minutes=1)
+    db.flush()
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    assert tasks.expire_stale_jobs.run() == 0
+    db.refresh(job)
+    assert job.status == JobStatus.RUNNING
+
+
+def test_stale_sweeper_does_not_expire_a_live_input_request(
+    db: Session, funded: User, monkeypatch
+) -> None:
+    """The `copy_generate` counterpart: `expire_stale_input_requests` owns
+    this deadline, not the general sweeper — same exclusion as the external
+    task above, via `WorkflowInputRequest` instead of `AsyncProviderTask`."""
+    from app.domain.jobs import input_requests
+
+    job = _submit(db, funded)
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+    sm.transition(db, job.id, JobStatus.AWAITING_INPUT)
+    input_requests.suspend(
+        db,
+        job_id=job.id,
+        node_id="copy",
+        checkpoint={
+            "kind": "input_request",
+            "output_key": "copy_suggestion",
+            "questions": [{"id": "scene", "kind": "free_text", "prompt": "?", "options": []}],
+            "state": {},
+        },
+    )
+    job.updated_at = utcnow() - tasks.STALE_JOB_TIMEOUT - dt.timedelta(minutes=1)
+    db.flush()
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    assert tasks.expire_stale_jobs.run() == 0
+    db.refresh(job)
+    assert job.status == JobStatus.AWAITING_INPUT
+
+
+def test_expire_stale_input_requests_releases_credits_for_an_unanswered_question(
+    db: Session, funded: User, monkeypatch
+) -> None:
+    """Nobody answered in time: the job expires and the reservation comes back,
+    same governance `expire_stale_jobs` gives an abandoned provider task."""
+    from app.domain.jobs import input_requests
+
+    job = _submit(db, funded)
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+    sm.transition(db, job.id, JobStatus.AWAITING_INPUT)
+    account = credits_service.get_or_create_account(db, funded.id)
+    before = account.available_balance + job.reserved_credits
+
+    request = input_requests.suspend(
+        db,
+        job_id=job.id,
+        node_id="copy",
+        checkpoint={
+            "kind": "input_request",
+            "output_key": "copy_suggestion",
+            "questions": [{"id": "scene", "kind": "free_text", "prompt": "?", "options": []}],
+            "state": {},
+        },
+        now=utcnow() - dt.timedelta(seconds=input_requests.INPUT_TIMEOUT_SECONDS + 60),
+    )
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    assert tasks.expire_stale_input_requests.run() == 1
+
+    db.refresh(job)
+    db.refresh(account)
+    assert job.status == JobStatus.EXPIRED
+    assert job.failure_code == "INPUT_REQUEST_EXPIRED"
+    assert account.reserved_balance == 0
+    assert account.available_balance == before
+    assert input_requests.find_for_job(db, request.job_id) is None
 
 
 def test_releasing_twice_does_not_return_the_credits_twice(db: Session, funded: User) -> None:
@@ -302,7 +465,6 @@ def test_an_externally_rendered_video_reports_progress_before_it_finishes(
     from app.domain.jobs import async_tasks
     from app.models.base import new_id as _new_id
     from app.models.enums import ProviderKind
-    from app.platform_config import service as config_service
     from app.providers.base import GenerationRequest, GenerationResult, ProviderCapability
     from app.storage.s3 import put_object
     from app.workers import async_polling
@@ -341,8 +503,8 @@ def test_an_externally_rendered_video_reports_progress_before_it_finishes(
     upstream = _SlowUpstream()
     monkeypatch.setattr(
         router,
-        "PROVIDER_CATALOG",
-        {
+        "build_catalog",
+        lambda session: {
             "slow_video": ProviderCapability(
                 name="slow_video",
                 kind=ProviderKind.COMMERCIAL_API,
@@ -356,14 +518,6 @@ def test_an_externally_rendered_video_reports_progress_before_it_finishes(
             )
         },
     )
-    config_service.set_value(
-        db,
-        "providers",
-        {"providers": {"slow_video": {"enabled": True}}},
-        actor_user_id=None,
-        note="test bootstrap",
-    )
-
     job = jobs_service.submit(
         db,
         user_id=funded.id,
@@ -411,6 +565,162 @@ def test_video_work_is_dispatched_to_the_long_queue(monkeypatch) -> None:
     tasks.dispatch_generation(GenerationJob(id="job_y", operation=Operation.TEXT_TO_IMAGE.value))
 
     assert routed == ["video", "image"]
+
+
+def test_latency_specific_celery_tasks_do_not_double_bind(monkeypatch) -> None:
+    """Bound task wrappers must call an undecorated body, not another task."""
+
+    calls: list[str] = []
+
+    @contextmanager
+    def fake_session_scope():
+        yield object()
+
+    def fake_pipeline(_session, job_id: str):  # type: ignore[no-untyped-def]
+        calls.append(job_id)
+        return SimpleNamespace(status=JobStatus.SUCCEEDED)
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    monkeypatch.setattr(tasks, "run_generation_pipeline", fake_pipeline)
+
+    assert tasks.run_video_generation.apply(args=["job_video"], throw=True).get() == "succeeded"
+    assert tasks.run_audio_generation.apply(args=["job_audio"], throw=True).get() == "succeeded"
+    assert calls == ["job_video", "job_audio"]
+
+
+def test_missing_job_does_not_retry_celery_task(monkeypatch) -> None:
+    """Orphan broker messages after a DB truncate must not burn retry slots."""
+
+    retries: list[BaseException] = []
+
+    @contextmanager
+    def fake_session_scope():
+        yield object()
+
+    def fake_pipeline(_session, job_id: str):  # type: ignore[no-untyped-def]
+        raise pipeline.JobNotFoundError(f"job {job_id} not found")
+
+    class _Task:
+        def retry(self, *, exc: BaseException, countdown: int) -> BaseException:
+            retries.append(exc)
+            raise RuntimeError("retry must not be called for a missing job")
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    monkeypatch.setattr(tasks, "run_generation_pipeline", fake_pipeline)
+    monkeypatch.setattr(tasks.system_log, "emit", lambda **_kwargs: None)
+
+    assert tasks._run_generation_task(_Task(), "job_ghost") == "missing"
+    assert retries == []
+
+
+def test_worker_process_init_resets_db_engine_cache(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def _reset() -> None:
+        calls.append("reset")
+
+    monkeypatch.setattr("app.db.reset_engine_cache", _reset)
+    from app.workers.celery_app import _reset_db_engine_after_fork
+
+    _reset_db_engine_after_fork()
+    assert calls == ["reset"]
+
+
+def test_final_celery_failure_marks_job_failed_and_releases_reservation(
+    db: Session, funded: User, monkeypatch
+) -> None:
+    job = _submit(db, funded, operation=Operation.TEXT_TO_VIDEO)
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    tasks._settle_worker_failure(job.id, task_id="celery_failed")
+
+    db.refresh(job)
+    assert job.status == JobStatus.FAILED
+    assert job.failure_code == "WORKER_TASK_FAILED"
+    assert [entry.type for entry in _ledger(db, funded, LedgerEntryType.RELEASE)] == [
+        LedgerEntryType.RELEASE
+    ]
+    assert sm.events_since(db, job.id, 0)[-1].internal_code == "WORKER_TASK_FAILED"
+
+
+def _copy_generate_template_graph() -> dict:
+    """A minimal published template: `copy_generate` (follow-ups on) then `fail`.
+
+    `fail` rather than `settle_success` for the same reason as the unit-test
+    equivalent in `tests/unit/test_workflow_engine.py`: this graph only exists
+    to observe the suspend/resume handoff through the real HTTP surface, and
+    `fail` needs no generated asset to reach a terminal state.
+    """
+    return {
+        "nodes": [
+            {
+                "id": "copy",
+                "type": "copy_generate",
+                "config": {"output_key": "copy_suggestion", "allow_followup_question": True},
+            },
+            {"id": "fail", "type": "fail", "config": {}},
+        ],
+        "edges": [{"id": "e1", "from": "copy", "from_port": "ok", "to": "fail"}],
+    }
+
+
+def test_answering_a_copy_generate_follow_up_resumes_the_job_through_the_api(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """End-to-end through the real HTTP surface: a sparse prompt makes the
+    stub copy agent ask a follow-up, `GET .../input-request` exposes it, and
+    `POST .../answer` resumes the graph to its next node — the point of the
+    whole HITL suspend/resume design (`app.domain.jobs.input_requests`)."""
+    template = GenerationWorkflowTemplate(
+        operation=Operation.TEXT_TO_IMAGE.value,
+        version=1,
+        name="copy_generate follow-up test",
+        graph_json=_copy_generate_template_graph(),
+        is_active=True,
+        created_at=utcnow(),
+    )
+    db.add(template)
+    db.flush()
+
+    job = _submit(db, funded, prompt="一只猫")
+    assert job.workflow_template_id == template.id
+    # `copy_generate` only ever suspends a job that is already `RUNNING` in a
+    # real template (a `provider_generate` node upstream would have made this
+    # transition); done by hand here since this graph has none.
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+    assert outcome.status == JobStatus.AWAITING_INPUT
+    db.refresh(job)
+    assert job.status == JobStatus.AWAITING_INPUT
+
+    headers = auth_header(funded)
+    pending = client.get(f"/v1/generation-jobs/{job.id}/input-request", headers=headers)
+    assert pending.status_code == 200
+    body = pending.json()
+    assert body["node_id"] == "copy"
+    assert [q["id"] for q in body["questions"]] == ["scene", "action"]
+
+    answered = client.post(
+        f"/v1/generation-jobs/{job.id}/answer",
+        headers=headers,
+        json={"answers": [{"question_id": "scene", "value": "indoor"}]},
+    )
+    assert answered.status_code == 200
+    assert answered.json()["status"] == JobStatus.FAILED
+
+    db.refresh(job)
+    assert job.status == JobStatus.FAILED
+    # The question is settled: nothing is left for a second GET to return.
+    assert (
+        client.get(f"/v1/generation-jobs/{job.id}/input-request", headers=headers).status_code
+        == 404
+    )
 
 
 def test_every_queue_named_in_the_routes_actually_exists() -> None:

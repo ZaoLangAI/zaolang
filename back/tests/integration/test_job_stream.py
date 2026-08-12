@@ -14,6 +14,8 @@ from app.models.enums import Operation, QualityTier
 from app.workers import pipeline
 from tests.conftest import auth_header
 
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
+
 
 @pytest.fixture
 def finished_job(db: Session, author: User) -> GenerationJob:

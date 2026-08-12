@@ -8,6 +8,7 @@ import time
 from fastapi import APIRouter, Query
 from sqlalchemy import Integer, func, select, text
 
+from app.agents.router import build_catalog
 from app.api.deps import DbSession
 from app.api.schemas.admin import (
     AgentUsageSummary,
@@ -23,8 +24,6 @@ from app.config import get_settings
 from app.domain.errors import NotFound
 from app.models import AgentRun, GenerationJob, ProviderStat
 from app.models.base import utcnow
-from app.platform_config import service as config_service
-from app.platform_config.schemas import ProviderConfig
 from app.workers.celery_app import QUEUE_NAMES
 
 router = APIRouter(tags=["admin:observability"])
@@ -57,8 +56,7 @@ def system_health(session: DbSession, user: Viewer, _: AdminRead) -> SystemHealt
 @router.get("/providers/stats", response_model=Page[ProviderStatView])
 def provider_stats(session: DbSession, user: Viewer, _: AdminRead) -> Page[ProviderStatView]:
     """What the router actually sees when it scores candidates."""
-    config = config_service.get_typed(session, "providers", ProviderConfig)
-    disabled = {name for name, setting in config.providers.items() if not setting.enabled}
+    enabled = set(build_catalog(session))
 
     items = []
     for stat in session.scalars(select(ProviderStat).order_by(ProviderStat.provider)):
@@ -78,7 +76,7 @@ def provider_stats(session: DbSession, user: Viewer, _: AdminRead) -> Page[Provi
                 # labels it as an estimate rather than a measured percentile.
                 p95_latency_ms=int(avg_latency * 1.8),
                 effective_cost=effective_cost,
-                enabled=stat.provider not in disabled,
+                enabled=stat.provider in enabled,
             )
         )
     return Page(items=items)
@@ -101,13 +99,21 @@ def routing_replay(
 
 @router.get("/workflow", response_model=dict)
 def workflow_shape(
-    session: DbSession, user: Viewer, _: AdminRead, operation: str = Query(...)
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    operation: str = Query(...),
+    template_id: str | None = Query(default=None),
 ) -> dict:
     """The declared pipeline for one operation, used to render a timeline
-    even for a job that failed before emitting its later steps."""
+    even for a job that failed before emitting its later steps.
+
+    Pass a job's own `workflow_template_id` as `template_id` to describe
+    exactly what that job ran rather than the operation's current template.
+    """
     from app.workflows import describe_workflow
 
-    return describe_workflow(session, operation)
+    return describe_workflow(session, operation, template_id=template_id)
 
 
 @router.get("/agent-runs/usage", response_model=Page[AgentUsageSummary])

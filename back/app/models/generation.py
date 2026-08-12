@@ -142,6 +142,11 @@ class GenerationJob(Base, TimestampMixin):
     started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_of_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Set only by `POST /generation-jobs/{id}/promote`: the succeeded preview
+    # job this one was upgraded from. Kept distinct from `retry_of_job_id`
+    # (a resubmission after failure at the same tier) so cost/funnel analytics
+    # can tell "retried after failure" apart from "promoted from a preview".
+    promoted_from_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_generation_jobs_idempotency"),
@@ -168,6 +173,11 @@ class JobEvent(Base):
     public_message: Mapped[str] = mapped_column(Text, nullable=False)
     # Searchable code for support; safe to show alongside the friendly message.
     internal_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The graph node that actually emitted this event. Nullable for events
+    # predating this column and for the few emitters outside a node (e.g.
+    # async polling's heartbeat, which passes the suspended node's own id).
+    # Not a foreign key: nodes are graph-config entries, not rows.
+    node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -251,6 +261,10 @@ class AgentRun(Base):
     # key so deleting an agent never erases the record of what it did.
     agent_profile_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     prompt_slot: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The graph node whose executor made this call, stamped by
+    # `WorkflowRunner._tag_agent_run_node` right after the executor returns.
+    # Null for calls outside a workflow run (e.g. a direct admin preview).
+    node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False)

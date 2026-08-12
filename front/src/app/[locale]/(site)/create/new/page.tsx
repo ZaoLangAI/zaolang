@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { GenerationStudio } from '@/components/studio/generation-studio';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { WorkDetail } from '@/lib/api/types';
+import type { StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
 
 const MODES = ['text_to_video', 'image_to_video', 'image_to_image', 'audio_generation'] as const;
 type Mode = (typeof MODES)[number];
@@ -32,9 +32,9 @@ export async function generateMetadata() {
 export default async function NewCreationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; prompt?: string; ref?: string }>;
+  searchParams: Promise<{ mode?: string; prompt?: string; ref?: string; styleId?: string }>;
 }) {
-  const { mode, prompt, ref } = await searchParams;
+  const { mode, prompt, ref, styleId } = await searchParams;
   const t = await getTranslations('createPage');
 
   const operation: Mode = MODES.includes(mode as Mode) ? (mode as Mode) : 'text_to_video';
@@ -46,6 +46,13 @@ export default async function NewCreationPage({
   // still has to go through `/remix/[workId]`, which checks the authorisation.
   const reference = ref ? await serverFetchOrNull<WorkDetail>(`/v1/works/${ref}`) : null;
 
+  // `styleId` comes from the style gallery — either the studio's own picker
+  // dialog or the create page's inspiration wall, which link here with the
+  // same query param instead of duplicating the apply logic server-side.
+  const style = styleId
+    ? await serverFetchOrNull<StyleGalleryEntry>(`/v1/style-gallery/${styleId}`)
+    : null;
+
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
       <PageHeading eyebrow={t('eyebrow')} title={title} description={description} />
@@ -53,6 +60,7 @@ export default async function NewCreationPage({
         operation={operation}
         initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
         reference={reference ?? undefined}
+        initialStyleParams={style?.params}
       />
     </div>
   );

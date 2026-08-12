@@ -131,6 +131,11 @@ class JobStatus(StrEnum):
     QUEUED = "queued"
     SUBMITTED = "submitted"
     RUNNING = "running"
+    # Parked on a `copy_generate` node's follow-up questions — see
+    # `app.domain.jobs.input_requests`. Distinct from `RUNNING` so the C-end
+    # client knows to render a question form instead of a spinner, and so the
+    # stale-job sweeper does not mistake "waiting on the author" for "stuck".
+    AWAITING_INPUT = "awaiting_input"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -171,7 +176,19 @@ JOB_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
         }
     ),
     JobStatus.RUNNING: frozenset(
-        {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.EXPIRED}
+        {
+            JobStatus.AWAITING_INPUT,
+            JobStatus.SUCCEEDED,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+            JobStatus.EXPIRED,
+        }
+    ),
+    # Answering resumes the same walk, so the only way out is back to
+    # `RUNNING` — or one of the terminal states an abandoned question times
+    # out or gets cancelled into.
+    JobStatus.AWAITING_INPUT: frozenset(
+        {JobStatus.RUNNING, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.EXPIRED}
     ),
     JobStatus.SUCCEEDED: frozenset(),
     JobStatus.FAILED: frozenset(),
@@ -182,7 +199,13 @@ JOB_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
 # Cancelling after submission is a *request*: the provider may still finish and
 # bill us, so settlement follows the provider's actual result.
 CANCELLABLE_JOB_STATUSES: frozenset[JobStatus] = frozenset(
-    {JobStatus.CREATED, JobStatus.QUEUED, JobStatus.SUBMITTED, JobStatus.RUNNING}
+    {
+        JobStatus.CREATED,
+        JobStatus.QUEUED,
+        JobStatus.SUBMITTED,
+        JobStatus.RUNNING,
+        JobStatus.AWAITING_INPUT,
+    }
 )
 
 
@@ -200,6 +223,8 @@ class JobEventType(StrEnum):
     AUDIO = "audio"
     QUALITY_CHECK = "quality_check"
     PROGRESS = "progress"
+    # A `copy_generate` node suspended the job on a follow-up question.
+    AWAITING_INPUT = "awaiting_input"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -398,6 +423,11 @@ class SystemLogSource(StrEnum):
     AUTH = "auth"
     RATE_LIMIT = "rate_limit"
     PERMISSION = "permission"
+    MODERATION = "moderation"
+    # Runtime crashes in the generation pipeline/workflow engine/workers —
+    # deliberately not "high frequency", but the only durable record of a
+    # `job_id`-scoped exception the public `JobEvent` stream must not repeat.
+    PIPELINE = "pipeline"
 
 
 class SystemLogLevel(StrEnum):

@@ -2881,6 +2881,219 @@
         }
       }
     },
+    "/v1/generation-jobs/{job_id}/promote": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Promote Job",
+        "description": "Upgrades a succeeded preview-tier job to a full deep-generation job.\n\nA new job (rather than reopening the preview) keeps the ledger honest, same\nreasoning as `retry_job` — the preview's reservation and the deep job's\nreservation stay separate records.",
+        "operationId": "promote_job_v1_generation_jobs__job_id__promote_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/generation-jobs/{job_id}/input-request": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Get Input Request",
+        "description": "The follow-up questions a `copy_generate` node is waiting on.\n\n404 both when the job has no pending request and when it belongs to\nsomeone else — `get_owned_job` already refuses to reveal the latter.",
+        "operationId": "get_input_request_v1_generation_jobs__job_id__input_request_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInputRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/generation-jobs/{job_id}/answer": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Answer Job Input",
+        "description": "Answers a `copy_generate` node's follow-up questions and resumes the job.\n\nMirrors `app.workers.async_polling._resume_succeeded`'s rebuild-context-\nthen-resume shape, but runs inline in the request rather than off a\nscheduler tick: unlike a provider render, nothing else is going to come\nback and finish this for the user.",
+        "operationId": "answer_job_input_v1_generation_jobs__job_id__answer_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/generation-jobs/{job_id}/events": {
       "get": {
         "tags": [
@@ -2938,6 +3151,65 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/generation/prompts/enhance": {
+      "post": {
+        "tags": [
+          "prompts"
+        ],
+        "summary": "Enhance Generation Prompt",
+        "operationId": "enhance_generation_prompt_v1_generation_prompts_enhance_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptEnhanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptEnhanceResponse"
+                }
               }
             }
           },
@@ -3070,7 +3342,7 @@
           "shortform"
         ],
         "summary": "Enhance Prompt",
-        "description": "把画面描述交给文案 Agent 润色，保留用户核心意图。",
+        "description": "把画面描述交给文案 Agent 评估详细度并润色，保留用户核心意图。",
         "operationId": "enhance_prompt_v1_shortform_prompt_enhance_post",
         "parameters": [
           {
@@ -3107,6 +3379,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PromptEnhanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shortform/prompt/clarify": {
+      "post": {
+        "tags": [
+          "shortform"
+        ],
+        "summary": "Clarify Prompt",
+        "description": "判断画面描述是否需要用户补充信息，生成前给出结构化问题。",
+        "operationId": "clarify_prompt_v1_shortform_prompt_clarify_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptClarifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptClarifyResponse"
                 }
               }
             }
@@ -5281,6 +5613,127 @@
         }
       }
     },
+    "/v1/style-gallery": {
+      "get": {
+        "tags": [
+          "style-gallery"
+        ],
+        "summary": "List Style Gallery",
+        "operationId": "list_style_gallery_v1_style_gallery_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_StyleGalleryEntryResponse_"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/style-gallery/{entry_id}": {
+      "get": {
+        "tags": [
+          "style-gallery"
+        ],
+        "summary": "Get Style Gallery Entry",
+        "operationId": "get_style_gallery_entry_v1_style_gallery__entry_id__get",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StyleGalleryEntryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/style-gallery/{entry_id}/apply": {
+      "post": {
+        "tags": [
+          "style-gallery"
+        ],
+        "summary": "Apply Style Gallery Entry",
+        "operationId": "apply_style_gallery_entry_v1_style_gallery__entry_id__apply_post",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StyleGalleryEntryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/me/data-requests": {
       "post": {
         "tags": [
@@ -5781,7 +6234,7 @@
           "admin:observability"
         ],
         "summary": "Workflow Shape",
-        "description": "The declared pipeline for one operation, used to render a timeline\neven for a job that failed before emitting its later steps.",
+        "description": "The declared pipeline for one operation, used to render a timeline\neven for a job that failed before emitting its later steps.\n\nPass a job's own `workflow_template_id` as `template_id` to describe\nexactly what that job ran rather than the operation's current template.",
         "operationId": "workflow_shape_v1_admin_workflow_get",
         "parameters": [
           {
@@ -5791,6 +6244,22 @@
             "schema": {
               "type": "string",
               "title": "Operation"
+            }
+          },
+          {
+            "name": "template_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
             }
           },
           {
@@ -5912,7 +6381,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/JobStatus"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -5922,7 +6391,7 @@
             }
           },
           {
-            "name": "user_id",
+            "name": "user",
             "in": "query",
             "required": false,
             "schema": {
@@ -5934,7 +6403,7 @@
                   "type": "null"
                 }
               ],
-              "title": "User Id"
+              "title": "User"
             }
           },
           {
@@ -6388,9 +6857,9 @@
         "tags": [
           "admin:content"
         ],
-        "summary": "Moderation Queue",
-        "description": "Highest priority first; ties broken by age so nothing starves.",
-        "operationId": "moderation_queue_v1_admin_moderation_queue_get",
+        "summary": "Moderation Queue List",
+        "description": "Highest priority first; ties broken by id (which sorts with creation\ntime), so nothing at the back of the queue starves.\n\nThe cursor is `\"{priority}:{id}\"`: `priority` alone cannot order a page\nboundary because many rows share a value, so the id breaks the tie the\nsame way the query itself does.",
+        "operationId": "moderation_queue_list_v1_admin_moderation_queue_get",
         "parameters": [
           {
             "name": "status",
@@ -6406,6 +6875,38 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "subject_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Type"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -6654,6 +7155,7 @@
           "admin:content"
         ],
         "summary": "List Reports",
+        "description": "Oldest first, so a report cannot age out of view behind newer ones.\n\n`id` alone is enough of a cursor: ids are lexically time-ordered, so it\nsorts consistently with `created_at` without needing a composite key.",
         "operationId": "list_reports_v1_admin_reports_get",
         "parameters": [
           {
@@ -6670,6 +7172,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           },
           {
@@ -9140,6 +9658,7 @@
           "admin:logs"
         ],
         "summary": "List Logs",
+        "description": "`job_id` is a convenience filter for the jobs console's \"related logs\"\nsection: an audit row about `job_id` (`target_type=\"generation_job\"`)\nOR'd with a `SystemLog` row carrying that same `job_id`, so an operator\nsees both \"what was deliberately done to this job\" and \"what crashed\nwhile running it\" in one list without knowing which table either lives\nin.",
         "operationId": "list_logs_v1_admin_logs_get",
         "parameters": [
           {
@@ -9238,6 +9757,22 @@
                 }
               ],
               "title": "Created Before"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Id"
             }
           },
           {
@@ -9364,7 +9899,7 @@
           "admin:llm-providers"
         ],
         "summary": "Upsert Llm Provider",
-        "description": "Creates or replaces one endpoint. `api_key=None` keeps the stored secret.\n\nDemotion happens automatically rather than being rejected, because each\n`kind` has exactly one primary node by definition: saving with\n`role=\"primary\"` demotes whichever other endpoint of the same `kind`\ncurrently holds it. The demotion is recorded on the same audit entry so\nit stays traceable.",
+        "description": "Creates or replaces one endpoint. `api_key=None` keeps the stored secret.\n\nGeneral endpoints have one primary: saving one as primary demotes the\nprevious primary and records that relation change in the same audit entry.\nMedia endpoints have no primary/backup semantics.",
         "operationId": "upsert_llm_provider_v1_admin_llm_providers__endpoint_id__put",
         "parameters": [
           {
@@ -9496,6 +10031,65 @@
         }
       }
     },
+    "/v1/admin/llm-providers/{endpoint_id}/validate": {
+      "post": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "Validate Llm Provider",
+        "description": "Send one real request directly to a saved endpoint.\n\nThis intentionally bypasses enabled state, failover, breaker state, and\nprovider statistics: the result must describe this endpoint alone.",
+        "operationId": "validate_llm_provider_v1_admin_llm_providers__endpoint_id__validate_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderValidationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/agent-node-presets": {
       "get": {
         "tags": [
@@ -9529,6 +10123,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_RolePresetView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/model-sampling-defaults": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Model Sampling Defaults",
+        "description": "The fixed max_tokens/temperature each known model resolves to.\n\nThe console reads this to preview what picking a model will fix sampling\nto (`app.llm.model_defaults`) — those two fields are no longer typed in\nby hand, so this is the only place their numbers are visible pre-save.",
+        "operationId": "list_model_sampling_defaults_v1_admin_model_sampling_defaults_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_ModelSamplingDefaultView_"
                 }
               }
             }
@@ -9718,6 +10362,65 @@
         }
       }
     },
+    "/v1/admin/agent-skill-tools": {
+      "get": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "List Agent Skill Tools",
+        "description": "The tools a role's skill may be granted, from `AGENT_TOOL_GRANTS`.\n\nA role missing from the grant table has no tools of its own yet, not an\nerror — the console shows an empty picker.",
+        "operationId": "list_agent_skill_tools_v1_admin_agent_skill_tools_get",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Role"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AgentSkillToolView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/agent-profiles/{profile_id}": {
       "patch": {
         "tags": [
@@ -9839,6 +10542,137 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentProfileView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-profiles/{profile_id}/delete": {
+      "post": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Delete Agent Profile",
+        "description": "Hard-deletes an agent.\n\nDangerous for the same reason `disable` is — a graph that still binds it\nfalls back to the role's default agent — but irreversible where disable\nis not, so the console shows the same \"used by\" list before asking for\nthe confirmation reason.",
+        "operationId": "delete_agent_profile_v1_admin_agent_profiles__profile_id__delete_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/agent-profiles/{profile_id}/debug-chat": {
+      "post": {
+        "tags": [
+          "admin:agent-skills"
+        ],
+        "summary": "Debug Chat Agent Profile",
+        "description": "Evaluates a skill prompt — draft or published — with a real model call.\n\n`AdminWrite`'s rate limit is what keeps this bounded, the same way it is\nfor the workflow dry-run endpoint this mirrors: no `DangerousAction`\nconfirmation, because nothing here is written to any workflow or made\nlive, but real enough to cost real tokens.",
+        "operationId": "debug_chat_agent_profile_v1_admin_agent_profiles__profile_id__debug_chat_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentDebugChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDebugChatResponse"
                 }
               }
             }
@@ -10284,6 +11118,367 @@
         }
       }
     },
+    "/v1/admin/style-gallery": {
+      "get": {
+        "tags": [
+          "admin:style-gallery"
+        ],
+        "summary": "List Entries",
+        "operationId": "list_entries_v1_admin_style_gallery_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_StyleGalleryEntryResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin:style-gallery"
+        ],
+        "summary": "Create Entry",
+        "operationId": "create_entry_v1_admin_style_gallery_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StyleGalleryEntryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StyleGalleryEntryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/style-gallery/{entry_id}": {
+      "put": {
+        "tags": [
+          "admin:style-gallery"
+        ],
+        "summary": "Update Entry",
+        "operationId": "update_entry_v1_admin_style_gallery__entry_id__put",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StyleGalleryEntryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StyleGalleryEntryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/style-gallery/{entry_id}/delete": {
+      "post": {
+        "tags": [
+          "admin:style-gallery"
+        ],
+        "summary": "Delete Entry",
+        "description": "Permanent removal — turning an entry off without deleting it is\n`update(is_active=False)`, which is the reversible everyday action.",
+        "operationId": "delete_entry_v1_admin_style_gallery__entry_id__delete_post",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DangerousAction"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_StyleGalleryEntryResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/style-gallery/uploads/presign": {
+      "post": {
+        "tags": [
+          "admin:style-gallery"
+        ],
+        "summary": "Presign Cover Upload",
+        "operationId": "presign_cover_upload_v1_admin_style_gallery_uploads_presign_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadPresignRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadPresignResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/style-gallery/uploads/complete": {
+      "post": {
+        "tags": [
+          "admin:style-gallery"
+        ],
+        "summary": "Complete Cover Upload",
+        "operationId": "complete_cover_upload_v1_admin_style_gallery_uploads_complete_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadCompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/workflow-templates/node-types": {
       "get": {
         "tags": [
@@ -10657,7 +11852,7 @@
           "admin:workflow-templates"
         ],
         "summary": "Dry Run Workflow Template",
-        "description": "Simulates a job through the operation's *active* published graph.\n\nNever creates a `GenerationJob` row, reserves credits, or hits a paid\nprovider — see `WorkflowContext.dry_run` and every node executor's own\n`if ctx.dry_run` branch for the specifics. The four agent nodes\n(safety/planning/intent_router/quality) still call the real LLM gateway\non purpose: that is the one thing worth spending a little real cost on to\nactually validate a prompt change before publishing it.",
+        "description": "Simulates a job through a graph — the editor's unpublished draft when\n`payload.graph` is given, otherwise the operation's active published one.\n\nNever creates a `GenerationJob` row, reserves credits, or hits a paid\nprovider — see `WorkflowContext.dry_run` and every node executor's own\n`if ctx.dry_run` branch for the specifics. The four agent nodes\n(safety/planning/intent_router/quality) still call the real LLM gateway\non purpose: that is the one thing worth spending a little real cost on to\nactually validate a prompt change before publishing it. `AdminWrite`'s\nrate limit is what keeps that cost bounded.\n\nA draft is held to exactly the same validation as a publish, because a\ngraph that fails it cannot be walked safely; but it is never written\nanywhere, so trying one out has no effect on live traffic. This is the\nwhole point of the endpoint: without it, checking an edit would mean\npublishing it to every job first.",
         "operationId": "dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post",
         "parameters": [
           {
@@ -11081,6 +12276,28 @@
             "type": "string",
             "title": "User Id"
           },
+          "user_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Display Name"
+          },
+          "user_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Handle"
+          },
           "status": {
             "$ref": "#/components/schemas/JobStatus"
           },
@@ -11102,6 +12319,17 @@
               }
             ],
             "title": "Provider"
+          },
+          "provider_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Label"
           },
           "routing_reason": {
             "anyOf": [
@@ -11161,6 +12389,22 @@
               }
             ],
             "title": "Finished At"
+          },
+          "stuck": {
+            "type": "boolean",
+            "title": "Stuck",
+            "default": false
+          },
+          "workflow_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Template Id"
           },
           "params": {
             "additionalProperties": true,
@@ -11195,6 +12439,16 @@
             },
             "type": "array",
             "title": "Agent Runs"
+          },
+          "async_task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AsyncProviderTaskView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -11220,6 +12474,28 @@
             "type": "string",
             "title": "User Id"
           },
+          "user_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Display Name"
+          },
+          "user_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Handle"
+          },
           "status": {
             "$ref": "#/components/schemas/JobStatus"
           },
@@ -11241,6 +12517,17 @@
               }
             ],
             "title": "Provider"
+          },
+          "provider_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Label"
           },
           "routing_reason": {
             "anyOf": [
@@ -11300,6 +12587,22 @@
               }
             ],
             "title": "Finished At"
+          },
+          "stuck": {
+            "type": "boolean",
+            "title": "Stuck",
+            "default": false
+          },
+          "workflow_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Template Id"
           }
         },
         "type": "object",
@@ -11494,6 +12797,135 @@
         "title": "AgentBindingView",
         "description": "Tells the editor that one config field selects an agent.\n\nWithout this the schema-driven form would render `agent_id` as a\nfree-text box; with it the editor can offer the agents that actually\nexist for `role`, which is also the only role this field accepts."
       },
+      "AgentDebugChatMessage": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "AgentDebugChatMessage"
+      },
+      "AgentDebugChatRequest": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Slot"
+          },
+          "prompt_template": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Template"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/AgentDebugChatMessage"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "slot",
+          "messages"
+        ],
+        "title": "AgentDebugChatRequest",
+        "description": "One turn of prompt-evaluation chat against a real model.\n\n`prompt_template`, when given, is the skill editor's unsaved draft — the\nwhole point of \"debug the draft\" is trying a prompt before it is ever\npublished. Omitted, this debugs whatever is currently active for\n`(profile, slot)`. `messages` is the whole conversation so far, not just\nthe newest turn: this is a stateless endpoint, so the console resends\nhistory on every call the same way it already does for the shortform\nclarify flow."
+      },
+      "AgentDebugChatResponse": {
+        "properties": {
+          "reply_text": {
+            "type": "string",
+            "title": "Reply Text"
+          },
+          "parsed_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsed Json"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "agent_run_id": {
+            "type": "string",
+            "title": "Agent Run Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reply_text",
+          "degraded",
+          "model",
+          "latency_ms",
+          "agent_run_id"
+        ],
+        "title": "AgentDebugChatResponse"
+      },
       "AgentNodeView": {
         "properties": {
           "id": {
@@ -11516,7 +12948,7 @@
             "type": "string",
             "enum": [
               "judgment",
-              "creative"
+              "assist"
             ],
             "title": "Category",
             "default": "judgment"
@@ -11614,31 +13046,17 @@
             ],
             "title": "Backup Endpoint Id"
           },
-          "max_tokens": {
+          "model": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 32768.0,
-                "minimum": 0.0
+                "type": "string",
+                "maxLength": 160
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Max Tokens"
-          },
-          "temperature": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 2.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Temperature"
+            "title": "Model"
           },
           "reasoning_model": {
             "anyOf": [
@@ -11650,13 +13068,6 @@
               }
             ],
             "title": "Reasoning Model"
-          },
-          "media_candidates": {
-            "items": {
-              "$ref": "#/components/schemas/MediaCandidate"
-            },
-            "type": "array",
-            "title": "Media Candidates"
           }
         },
         "type": "object",
@@ -11754,31 +13165,17 @@
             ],
             "title": "Backup Endpoint Id"
           },
-          "max_tokens": {
+          "model": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 32768.0,
-                "minimum": 0.0
+                "type": "string",
+                "maxLength": 160
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Max Tokens"
-          },
-          "temperature": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 2.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Temperature"
+            "title": "Model"
           },
           "reasoning_model": {
             "anyOf": [
@@ -11790,25 +13187,11 @@
               }
             ],
             "title": "Reasoning Model"
-          },
-          "media_candidates": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/MediaCandidate"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Media Candidates"
           }
         },
         "type": "object",
         "title": "AgentProfileUpdateRequest",
-        "description": "Every field is optional and `None` means \"leave as is\".\n\nAn **empty string** on either endpoint id is how the console clears a\nmodel pin, and an **empty list** clears media candidates — otherwise an\nagent could never go back to the shared pool once pinned."
+        "description": "Partial AgentProfile update.\n\nEndpoint/model pins use an empty string to clear. `reasoning_model`\ndistinguishes omission (keep the current override) from explicit null\n(inherit the role's default Agent)."
       },
       "AgentProfileView": {
         "properties": {
@@ -11836,7 +13219,7 @@
             "type": "string",
             "enum": [
               "judgment",
-              "creative"
+              "assist"
             ],
             "title": "Category",
             "default": "judgment"
@@ -11878,6 +13261,17 @@
             ],
             "title": "Backup Endpoint Id"
           },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
           "max_tokens": {
             "anyOf": [
               {
@@ -11910,13 +13304,6 @@
               }
             ],
             "title": "Reasoning Model"
-          },
-          "media_candidates": {
-            "items": {
-              "$ref": "#/components/schemas/MediaCandidate"
-            },
-            "type": "array",
-            "title": "Media Candidates"
           },
           "used_by_operations": {
             "items": {
@@ -11965,6 +13352,17 @@
               }
             ],
             "title": "Agent Profile Id"
+          },
+          "agent_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Display Name"
           },
           "prompt_slot": {
             "anyOf": [
@@ -12048,6 +13446,17 @@
             ],
             "title": "Job Id"
           },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -12113,6 +13522,20 @@
           "prompt_template"
         ],
         "title": "AgentSkillPublishRequest"
+      },
+      "AgentSkillToolView": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AgentSkillToolView",
+        "description": "One tool a role's skill may be granted, from `app.agents.tools.AGENT_TOOL_GRANTS`."
       },
       "AgentSkillView": {
         "properties": {
@@ -12449,6 +13872,81 @@
           "moderation_status"
         ],
         "title": "AssetResponse"
+      },
+      "AsyncProviderTaskView": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "capability_name": {
+            "type": "string",
+            "title": "Capability Name"
+          },
+          "provider_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Label"
+          },
+          "external_task_id": {
+            "type": "string",
+            "title": "External Task Id"
+          },
+          "poll_count": {
+            "type": "integer",
+            "title": "Poll Count"
+          },
+          "next_poll_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Next Poll At"
+          },
+          "deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline At"
+          },
+          "claimed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claimed At"
+          },
+          "provider_attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Attempt Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "capability_name",
+          "external_task_id",
+          "poll_count",
+          "next_poll_at",
+          "deadline_at"
+        ],
+        "title": "AsyncProviderTaskView",
+        "description": "One in-flight external render, surfaced so an operator can see what a\n`RUNNING` job with no Celery task in flight is actually waiting on."
       },
       "AuditLogView": {
         "properties": {
@@ -12908,6 +14406,64 @@
         ],
         "title": "CheckoutResponse"
       },
+      "ClarifyQuestionOption": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ClarifyQuestionOption"
+      },
+      "ClarifyQuestionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "single_choice",
+              "multi_choice",
+              "free_text"
+            ],
+            "title": "Kind"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/ClarifyQuestionOption"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "prompt",
+          "required"
+        ],
+        "title": "ClarifyQuestionResponse"
+      },
       "CollectionCreateRequest": {
         "properties": {
           "name": {
@@ -13182,21 +14738,16 @@
             "title": "Value"
           },
           "note": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 300
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
             "title": "Note"
           }
         },
         "type": "object",
         "required": [
-          "value"
+          "value",
+          "note"
         ],
         "title": "ConfigUpdateRequest"
       },
@@ -14087,6 +15638,30 @@
         ],
         "title": "DraftResponse"
       },
+      "DynamicAgentBindingView": {
+        "properties": {
+          "config_field": {
+            "type": "string",
+            "title": "Config Field"
+          },
+          "role_field": {
+            "type": "string",
+            "title": "Role Field"
+          },
+          "slot_field": {
+            "type": "string",
+            "title": "Slot Field"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_field",
+          "role_field",
+          "slot_field"
+        ],
+        "title": "DynamicAgentBindingView",
+        "description": "Tells the editor that one config field selects an agent whose role is\nchosen in a sibling field rather than fixed by the node type.\n\n`custom_agent` is the only such node type: it exists to run a role that\nwas created in the console. The editor renders the three fields as\ncascading dropdowns — role, then the agents having it, then that role's\nprompt slots — instead of three free-text boxes."
+      },
       "FeatureFlagView": {
         "properties": {
           "name": {
@@ -14352,6 +15927,17 @@
             "title": "Cancel Requested",
             "default": false
           },
+          "promoted_from_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted From Job Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -14440,8 +16026,18 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 6,
+            "maxItems": 9,
             "title": "Reference Asset Ids"
+          },
+          "video_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoGenerationOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "style_preset_id": {
             "anyOf": [
@@ -14510,6 +16106,50 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "JobAnswerItem": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Question Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id",
+          "value"
+        ],
+        "title": "JobAnswerItem"
+      },
+      "JobAnswerRequest": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/JobAnswerItem"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Answers"
+          }
+        },
+        "type": "object",
+        "title": "JobAnswerRequest"
       },
       "JobEventResponse": {
         "properties": {
@@ -14598,6 +16238,17 @@
             "type": "object",
             "title": "Payload"
           },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -14614,6 +16265,97 @@
           "created_at"
         ],
         "title": "JobEventView"
+      },
+      "JobInputQuestionOption": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "JobInputQuestionOption"
+      },
+      "JobInputQuestionView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "single_choice",
+              "multi_choice",
+              "free_text"
+            ],
+            "title": "Kind"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/JobInputQuestionOption"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "prompt"
+        ],
+        "title": "JobInputQuestionView"
+      },
+      "JobInputRequestResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/JobInputQuestionView"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "node_id",
+          "questions",
+          "expires_at"
+        ],
+        "title": "JobInputRequestResponse",
+        "description": "What `copy_generate` is waiting on, for the C-end question form."
       },
       "JobStatsView": {
         "properties": {
@@ -14672,6 +16414,7 @@
           "queued",
           "submitted",
           "running",
+          "awaiting_input",
           "succeeded",
           "failed",
           "cancelled",
@@ -15688,7 +17431,7 @@
           "enabled"
         ],
         "title": "LlmProviderEndpointView",
-        "description": "Read model for one model-provider endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log.\n\n`role`/`backup_order` are endpoint-level for both `general` and `media`.\nFor media, `capabilities` is derived and read-only: it lists which tags\nthe declared `model` + `input_modalities`/`output_modalities` cover."
+        "description": "Read model for one model-provider endpoint.\n\n`api_key` itself never appears here — only whether one is set and a\ntruncated preview — so a GET response is always safe to render or log.\n\n`role`/`backup_order` and concurrency are meaningful for `general` only.\nFor media, `capabilities` is derived and read-only from the declared\n`model` + `input_modalities`/`output_modalities`."
       },
       "LlmProviderPoolView": {
         "properties": {
@@ -15716,6 +17459,125 @@
         },
         "type": "object",
         "title": "LlmProviderPoolView"
+      },
+      "LlmProviderValidationResult": {
+        "properties": {
+          "endpoint_id": {
+            "type": "string",
+            "title": "Endpoint Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "media"
+            ],
+            "title": "Kind"
+          },
+          "target_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Model"
+          },
+          "probe_type": {
+            "type": "string",
+            "title": "Probe Type"
+          },
+          "reachable": {
+            "type": "boolean",
+            "title": "Reachable"
+          },
+          "usable": {
+            "type": "boolean",
+            "title": "Usable"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms"
+          },
+          "provider_status_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Status Code"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "warning_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning Code"
+          },
+          "provider_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Error Code"
+          },
+          "provider_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Error Message"
+          },
+          "external_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Task Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint_id",
+          "kind",
+          "probe_type",
+          "reachable",
+          "usable",
+          "latency_ms"
+        ],
+        "title": "LlmProviderValidationResult"
       },
       "Locale": {
         "type": "string",
@@ -15818,6 +17680,17 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Details"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
           },
           "occurred_at": {
             "type": "string",
@@ -15925,36 +17798,6 @@
         ],
         "title": "MeResponse"
       },
-      "MediaCandidate": {
-        "properties": {
-          "endpoint_id": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Endpoint Id"
-          },
-          "capability": {
-            "type": "string",
-            "maxLength": 40,
-            "minLength": 1,
-            "title": "Capability"
-          },
-          "weight": {
-            "type": "integer",
-            "maximum": 1000.0,
-            "minimum": 1.0,
-            "title": "Weight",
-            "default": 100
-          }
-        },
-        "type": "object",
-        "required": [
-          "endpoint_id",
-          "capability"
-        ],
-        "title": "MediaCandidate",
-        "description": "One media route a creative agent may use, with a cost preference.\n\n`weight` is shown to the routing agent as operational context alongside\neach candidate's observed success rate, latency and cost — it is not a\ncoefficient. Nothing in `app/agents/router.py` ranks by it; the routing\nagent still makes the call."
-      },
       "MediaType": {
         "type": "string",
         "enum": [
@@ -15963,6 +17806,30 @@
           "audio"
         ],
         "title": "MediaType"
+      },
+      "ModelSamplingDefaultView": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "title": "Max Tokens"
+          },
+          "temperature": {
+            "type": "number",
+            "title": "Temperature"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "max_tokens",
+          "temperature"
+        ],
+        "title": "ModelSamplingDefaultView",
+        "description": "The fixed max_tokens/temperature one model resolves to.\n\nThe console reads this list to show what picking a model will fix\nsampling to (`app.llm.model_defaults`) before the operator saves —\nthose two fields are never a free-text input anymore."
       },
       "ModerationDecisionRequest": {
         "properties": {
@@ -16056,6 +17923,13 @@
               }
             ],
             "title": "Reason Code"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
           },
           "public_message": {
             "anyOf": [
@@ -16213,6 +18087,11 @@
                 "type": "null"
               }
             ]
+          },
+          "open_report_count": {
+            "type": "integer",
+            "title": "Open Report Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -16396,6 +18275,14 @@
             "type": "string",
             "title": "Description"
           },
+          "label_key": {
+            "type": "string",
+            "title": "Label Key"
+          },
+          "description_key": {
+            "type": "string",
+            "title": "Description Key"
+          },
           "output_ports": {
             "items": {
               "type": "string"
@@ -16425,6 +18312,16 @@
             "type": "array",
             "title": "Agent Bindings"
           },
+          "dynamic_agent_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DynamicAgentBindingView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "config_schema": {
             "additionalProperties": true,
             "type": "object",
@@ -16437,6 +18334,8 @@
           "category",
           "label",
           "description",
+          "label_key",
+          "description_key",
           "output_ports",
           "is_agent",
           "config_schema"
@@ -16669,6 +18568,38 @@
           "items"
         ],
         "title": "Page[AgentProfileView]"
+      },
+      "Page_AgentSkillToolView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSkillToolView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[AgentSkillToolView]"
       },
       "Page_AgentSkillView_": {
         "properties": {
@@ -17406,6 +19337,38 @@
         ],
         "title": "Page[LogEntryView]"
       },
+      "Page_ModelSamplingDefaultView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ModelSamplingDefaultView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[ModelSamplingDefaultView]"
+      },
       "Page_ModerationQueueView_": {
         "properties": {
           "items": {
@@ -17758,6 +19721,38 @@
         ],
         "title": "Page[SkillTemplateView]"
       },
+      "Page_StyleGalleryEntryResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StyleGalleryEntryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[StyleGalleryEntryResponse]"
+      },
       "Page_StylePresetResponse_": {
         "properties": {
           "items": {
@@ -18098,6 +20093,70 @@
         "type": "object",
         "title": "ProfileUpdateRequest"
       },
+      "PromoteJobRequest": {
+        "properties": {
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier"
+          },
+          "max_credits": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "quality_tier"
+        ],
+        "title": "PromoteJobRequest"
+      },
+      "PromptClarifyRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "PromptClarifyRequest"
+      },
+      "PromptClarifyResponse": {
+        "properties": {
+          "needs_clarification": {
+            "type": "boolean",
+            "title": "Needs Clarification"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ClarifyQuestionResponse"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "degraded": {
+            "type": "boolean",
+            "title": "Degraded"
+          }
+        },
+        "type": "object",
+        "required": [
+          "needs_clarification",
+          "degraded"
+        ],
+        "title": "PromptClarifyResponse"
+      },
       "PromptEnhanceRequest": {
         "properties": {
           "prompt": {
@@ -18119,6 +20178,19 @@
             "type": "string",
             "title": "Prompt"
           },
+          "detail_level": {
+            "type": "string",
+            "enum": [
+              "sparse",
+              "adequate",
+              "detailed"
+            ],
+            "title": "Detail Level"
+          },
+          "feedback": {
+            "type": "string",
+            "title": "Feedback"
+          },
           "degraded": {
             "type": "boolean",
             "title": "Degraded"
@@ -18127,6 +20199,8 @@
         "type": "object",
         "required": [
           "prompt",
+          "detail_level",
+          "feedback",
           "degraded"
         ],
         "title": "PromptEnhanceResponse"
@@ -19316,7 +21390,7 @@
             "type": "string",
             "enum": [
               "judgment",
-              "creative"
+              "assist"
             ],
             "title": "Category"
           },
@@ -19361,7 +21435,7 @@
           "category"
         ],
         "title": "RolePresetView",
-        "description": "One role an operator may create an agent for.\n\nA code-maintained catalogue rather than a table: a role only runs if some\nnode type invokes it, so free-text roles would produce agents that never\nexecute. `category` drives which half of the create form applies —\n`judgment` binds one LLM model, `creative` binds media endpoints with a\ncost weight each — and `operations` is what the media-candidate picker\nfilters by."
+        "description": "One role an operator may create an agent for.\n\nA code-maintained catalogue rather than a table: a role only runs if some\nnode type invokes it, so free-text roles would produce agents that never\nexecute. `category` drives which half of the create form applies only\nsemantically — both `judgment` and `assist` bind one LLM model the same\nway."
       },
       "RouteSummary": {
         "properties": {
@@ -19804,12 +21878,27 @@
             },
             "type": "array",
             "title": "Profiles"
+          },
+          "enable_clarifying_questions": {
+            "type": "boolean",
+            "title": "Enable Clarifying Questions"
+          },
+          "enable_preview_picker": {
+            "type": "boolean",
+            "title": "Enable Preview Picker"
+          },
+          "preview_candidate_count": {
+            "type": "integer",
+            "title": "Preview Candidate Count"
           }
         },
         "type": "object",
         "required": [
           "default_profile",
-          "profiles"
+          "profiles",
+          "enable_clarifying_questions",
+          "enable_preview_picker",
+          "preview_candidate_count"
         ],
         "title": "ShortformProfilesResponse"
       },
@@ -19832,7 +21921,7 @@
             "type": "string",
             "enum": [
               "judgment",
-              "creative"
+              "assist"
             ],
             "title": "Category"
           },
@@ -19911,6 +22000,240 @@
           "total_bytes"
         ],
         "title": "StorageUsageResponse"
+      },
+      "StyleGalleryEntryCreateRequest": {
+        "properties": {
+          "slug": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "title": "Slug"
+          },
+          "label_zh": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label Zh"
+          },
+          "label_en": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label En"
+          },
+          "label_ja": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label Ja"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "slug",
+          "label_zh",
+          "label_en",
+          "label_ja"
+        ],
+        "title": "StyleGalleryEntryCreateRequest"
+      },
+      "StyleGalleryEntryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "label_zh": {
+            "type": "string",
+            "title": "Label Zh"
+          },
+          "label_en": {
+            "type": "string",
+            "title": "Label En"
+          },
+          "label_ja": {
+            "type": "string",
+            "title": "Label Ja"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "apply_count": {
+            "type": "integer",
+            "title": "Apply Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "label_zh",
+          "label_en",
+          "label_ja",
+          "params",
+          "sort_order",
+          "is_active",
+          "apply_count",
+          "created_at"
+        ],
+        "title": "StyleGalleryEntryResponse"
+      },
+      "StyleGalleryEntryUpdateRequest": {
+        "properties": {
+          "label_zh": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label Zh"
+          },
+          "label_en": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label En"
+          },
+          "label_ja": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Label Ja"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "cover_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Asset Id"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 0
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "label_zh",
+          "label_en",
+          "label_ja"
+        ],
+        "title": "StyleGalleryEntryUpdateRequest"
       },
       "StylePresetCreateRequest": {
         "properties": {
@@ -20227,7 +22550,7 @@
           },
           "purpose": {
             "type": "string",
-            "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media)$",
+            "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media|style_gallery_cover)$",
             "title": "Purpose"
           }
         },
@@ -20375,6 +22698,52 @@
           "entries"
         ],
         "title": "VersionDiffResponse"
+      },
+      "VideoGenerationOptions": {
+        "properties": {
+          "resolution": {
+            "type": "string",
+            "const": "2K",
+            "title": "Resolution",
+            "default": "2K"
+          },
+          "reference_mode": {
+            "type": "string",
+            "enum": [
+              "input_references",
+              "frame_images"
+            ],
+            "title": "Reference Mode",
+            "default": "input_references"
+          },
+          "first_frame_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Frame Asset Id"
+          },
+          "last_frame_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Frame Asset Id"
+          }
+        },
+        "type": "object",
+        "title": "VideoGenerationOptions",
+        "description": "Typed H3 options; arbitrary provider JSON and webhooks are forbidden."
       },
       "Visibility": {
         "type": "string",
@@ -20800,6 +23169,18 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Params"
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph"
           }
         },
         "type": "object",
@@ -20873,6 +23254,28 @@
               }
             ],
             "title": "Agent Run Id"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
           }
         },
         "type": "object",
