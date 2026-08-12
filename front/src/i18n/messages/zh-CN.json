@@ -60,8 +60,8 @@
     "navHealth": "系统健康",
     "navJobs": "任务运维",
     "navProviders": "模型管理",
-    "navRouting": "工作流编排",
-    "navAgents": "智能体运维",
+    "navRouting": "工作流",
+    "navAgents": "智能体",
     "navStatistics": "数据统计",
     "navModeration": "内容审核",
     "navLearnPosts": "学习内容审核",
@@ -147,7 +147,7 @@
     "detailDescription": "描述"
   },
   "adminAgents": {
-    "title": "智能体运维",
+    "title": "智能体",
     "subtitle": "智能体变体与提示词维护，附 token 用量与降级次数。",
     "colTokens": "token",
     "colLatency": "延迟",
@@ -598,7 +598,7 @@
     "modelEnabledNotice": "模型已启用"
   },
   "adminRouting": {
-    "title": "工作流编排",
+    "title": "工作流",
     "subtitle": "编辑各产品类型的生成工作流图：节点、连线与重试/并行策略。供应商实际选型现在由智能体在运行时判定。"
   },
   "adminStatistics": {

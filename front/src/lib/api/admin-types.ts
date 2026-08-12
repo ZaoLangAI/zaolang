@@ -82,7 +82,7 @@ export interface WorkflowShape {
   steps: WorkflowStep[];
 }
 
-// The configurable node-graph editor (`/admin/routing` → 工作流编排 tab).
+// The configurable node-graph editor (`/admin/routing` → 工作流 tab).
 export type NodeTypeView = S['NodeTypeView'];
 export type AgentBinding = S['AgentBindingView'];
 export type WorkflowTemplateView = S['WorkflowTemplateView'];

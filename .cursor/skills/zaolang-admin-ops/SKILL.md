@@ -1,6 +1,6 @@
 ---
 name: zaolang-admin-ops
-description: 造浪后台运维域的接口与页面：系统健康、任务运维、生成供应商与工作流编排、数据统计中心、智能体运维（AgentSkill）、内容审核与举报、技能库、用户与权限、积分与兑换码、配置中心、数据运维、日志中心与公告。
+description: 造浪后台运维域的接口与页面：系统健康、任务运维、生成供应商与工作流、数据统计中心、智能体（AgentSkill）、内容审核与举报、技能库、用户与权限、积分与兑换码、配置中心、数据运维、日志中心与公告。
 disable-model-invocation: true
 ---
 
@@ -14,9 +14,9 @@ disable-model-invocation: true
 | --- | --- | --- |
 | 系统健康 | `admin/observability.py: /health` | `components/admin/health/health-cards.tsx` |
 | 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`）、`/jobs/stats`（按状态/操作分组计数 + 平均完成耗时，声明在 `/jobs/{job_id}` 之前避免路径冲突） | `admin/jobs/jobs-console.tsx`（含 `stepper` / `duration-bars` / 路由候选对比与 LLM `reason` 说明） |
-| 供应商与工作流编排 | `admin/llm_providers.py`: 模型管理目录（端点级主/备；`media` 的 `capabilities` 仅 model+enabled，可编辑）；`admin/workflow_templates.py`: 工作流模板 DAG；`observability.py`: `/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（扁平主备列表）、`routing-replay-table.tsx`（LLM 选型理由 + 候选成功率/延迟/成本）、`/admin/routing` 页只剩 `WorkflowEditor`（无权重面板，选谁由 `intent_router` 判定，见 `zaolang-agent-gateway`） |
+| 智能体 | `admin/agent_skills.py`: 节点与 Prompt 版本；`observability.py`: `/agent-runs`、`/agent-runs/usage`、`/workflow` | `admin/agents/agent-node-graph.tsx`、`agent-skill-editor.tsx`、`agent-runs-table.tsx` |
+| 供应商与工作流 | `admin/llm_providers.py`: 模型管理目录（端点级主/备；`media` 的 `capabilities` 仅 model+enabled，可编辑）；`admin/workflow_templates.py`: 工作流模板 DAG；`observability.py`: `/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（扁平主备列表）、`routing-replay-table.tsx`（LLM 选型理由 + 候选成功率/延迟/成本）、`/admin/routing` 页只剩 `WorkflowEditor`（无权重面板，选谁由 `intent_router` 判定，见 `zaolang-agent-gateway`） |
 | 数据统计中心 | `observability.py`: `/providers/stats`（供应商统计）、`/agent-runs/usage`（智能体用量）；`admin/jobs.py`: `/jobs/stats`（任务吞吐）；`admin/ledger.py`: `/credits/reconciliation`（积分对账） | `/admin/statistics` 页，一站式聚合以上四类现有指标，不新增数据源 |
-| 智能体运维 | `admin/agent_skills.py`: 节点与 Prompt 版本；`observability.py`: `/agent-runs`、`/agent-runs/usage`、`/workflow` | `admin/agents/agent-node-graph.tsx`、`agent-skill-editor.tsx`、`agent-runs-table.tsx` |
 | 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`/`detail`/`history`)、`/reports`、`/works/{id}/tombstone|hide|restore` | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
 | 技能库运维 | `admin/skill_library.py`: 全局技能列表/下架/精选 | `admin/skill-library/skill-library-console.tsx` |
 | 用户与权限 | `admin/users.py`: `/users`、`/suspend`、`/unsuspend`、`/roles`、`/data-requests` | `admin/users/*` |

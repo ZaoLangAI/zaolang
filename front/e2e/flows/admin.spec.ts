@@ -114,7 +114,7 @@ test.describe('operations screens', () => {
 
   test('the agent console reports token spend and degradations', async ({ page }) => {
     await page.goto('/zh-CN/admin/agents', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: '智能体运维', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '智能体', level: 1 })).toBeVisible();
     // Among the seeded runs is a Copy Agent call that fell back to the stub.
     await expect(page.getByText('copy').first()).toBeVisible();
   });
@@ -142,7 +142,7 @@ test.describe('operations screens', () => {
     page,
   }) => {
     await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: '工作流编排', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '工作流', level: 1 })).toBeVisible();
     // The operation switcher is the workflow editor's own tablist; the old
     // "workflow / providers & weights" console tabs are gone entirely.
     await expect(page.getByRole('tab', { name: '供应商与权重' })).toHaveCount(0);

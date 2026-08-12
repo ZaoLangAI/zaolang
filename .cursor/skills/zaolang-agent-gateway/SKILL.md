@@ -41,7 +41,7 @@ disable-model-invocation: true
 4. **每个候选的淘汰理由都要落 `ProviderAttempt` / 决策记录**，后台「决策逐候选回放」依赖它。
 5. **Agent 输出不是事实，落库才是**。Agent 只能通过 `tools.py` 白名单调领域服务；不要给 Agent 直接的 session 或任意 SQL。
 6. **测试与 CI 强制 `LLM_MODE=stub`**。三档模式：`openai_compatible`（只走真实网关，失败即报错）、`stub`（确定性假响应）、`auto`（网关失败自动降级到 stub）。降级必须写入 `AgentRun` 的降级标记与原因，并在界面明确标识。
-7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级。后台智能体运维完全建立在这张表上。
+7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级。后台智能体完全建立在这张表上。
 8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
 9. **密钥只从环境变量读**，不进日志、不进 prompt、不回显。
 10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频/音频生成的 `router.py` 选型路由并行，不要混用同一套候选选择逻辑——两者共享同一个配置段 `llm_providers`（按 `kind` 区分 `general`/`media`），但端点一旦落到 `kind="media"`，就只服务 `router.py` 的候选目录，绝不会被 failover 池选中，反之亦然。**除非绑定的 `AgentProfile` 显式钉了模型**：填了 `default_endpoint_id`（可选再加 `backup_endpoint_id`）时，这两个端点会被排到 failover 池的最前面优先尝试，池里其余端点仍作为后续兜底，顺序不变——这是优先级调整，不是把池换掉。

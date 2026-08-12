@@ -60,8 +60,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/admin', labelKey: 'navHealth', requires: 'viewer', icon: 'health' },
       { href: '/admin/jobs', labelKey: 'navJobs', requires: 'viewer', icon: 'jobs' },
       { href: '/admin/models', labelKey: 'navProviders', requires: 'viewer', icon: 'providers' },
-      { href: '/admin/routing', labelKey: 'navRouting', requires: 'viewer', icon: 'routing' },
       { href: '/admin/agents', labelKey: 'navAgents', requires: 'viewer', icon: 'agents' },
+      { href: '/admin/routing', labelKey: 'navRouting', requires: 'viewer', icon: 'routing' },
       {
         href: '/admin/statistics',
         labelKey: 'navStatistics',

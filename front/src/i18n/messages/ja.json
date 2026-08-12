@@ -60,7 +60,7 @@
     "navHealth": "System health",
     "navJobs": "Jobs",
     "navProviders": "モデル管理",
-    "navRouting": "Workflow orchestration",
+    "navRouting": "Workflow",
     "navAgents": "Agents",
     "navStatistics": "Statistics",
     "navModeration": "Moderation",
@@ -598,7 +598,7 @@
     "modelEnabledNotice": "モデルを有効化しました"
   },
   "adminRouting": {
-    "title": "Workflow orchestration",
+    "title": "Workflow",
     "subtitle": "Edit the generation workflow graph for each product type: nodes, edges and retry/parallel strategy. Which provider actually gets used is now decided by an agent at runtime."
   },
   "adminStatistics": {

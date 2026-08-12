@@ -20,7 +20,7 @@
       "navHealth": "系统健康",
       "navJobs": "任务运维",
       "navProviders": "模型管理",
-      "navAgents": "智能体运维",
+      "navAgents": "智能体",
       "navModeration": "内容审核",
       "navReports": "举报与申诉",
       "navUsers": "用户与权限",
@@ -124,7 +124,7 @@
       "disabled": "已停用"
     },
     "adminAgents": {
-      "title": "智能体运维",
+      "title": "智能体",
       "subtitle": "AgentRun 检索、token 用量与降级次数。",
       "colAgent": "智能体",
       "colModel": "模型",
