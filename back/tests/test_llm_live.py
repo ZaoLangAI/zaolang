@@ -49,6 +49,7 @@ def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
                     "base_url": os.getenv("LLM_BASE_URL", "https://aihubmix.com/v1"),
                     "api_key": key,
                     "kind": "general",
+                    "models": MODELS,
                     "role": "primary",
                 }
             }

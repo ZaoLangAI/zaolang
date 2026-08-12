@@ -1,5 +1,4 @@
-"""Dynamic router catalog: database-configured media endpoints join the
-built-in fakes and are dispatched through `AiHubMixMediaProvider`."""
+"""Dynamic router catalog and explicitly injected test providers."""
 
 from __future__ import annotations
 
@@ -101,77 +100,45 @@ def test_one_endpoint_can_serve_two_independent_capabilities(db: Session) -> Non
     assert catalog["media-ep:audio_generation"].model_or_workflow == "multi-modal-1"
 
 
-def test_the_static_fakes_are_still_present_alongside_dynamic_routes(db: Session) -> None:
+def test_production_catalog_contains_only_dynamic_routes(db: Session) -> None:
     _seed_media_endpoint(db)
     catalog = router.build_catalog(db)
-    assert "fake_open_workflow" in catalog
-    assert "fake_paid_api" in catalog
+    assert "fake_open_workflow" not in catalog
+    assert "fake_paid_api" not in catalog
     assert "media-ep:image_to_image" in catalog
 
 
-def test_a_creative_agents_shortlist_filters_out_every_other_route(db: Session) -> None:
-    """A route the operator did not put on the agent's list is as unusable as
-    one that cannot serve the operation at all."""
-    decision = router.route(
+def test_h3_is_hard_filtered_when_video_parameters_exceed_its_contract(db: Session) -> None:
+    _seed_media_endpoint(
         db,
-        operation=Operation.TEXT_TO_IMAGE,
-        quality_tier=QualityTier.PREVIEW,
-        allowed_providers={"fake_open_workflow": 100},
+        model="minimax-h3",
+        input_modalities=["text", "image", "video"],
+        output_modalities=["video"],
     )
-    assert decision.selected is not None
-    assert decision.selected.provider == "fake_open_workflow"
-
-    rejected = {c.provider: c.filter_reason for c in decision.candidates if not c.eligible}
-    assert rejected["fake_paid_api"] == "not_in_agent_candidates"
-
-
-def test_a_shortlist_that_excludes_every_capable_route_selects_nothing(db: Session) -> None:
-    _seed_media_endpoint(db)
-    decision = router.route(
+    provider_name = "media-ep:text_to_video"
+    rejected = router.route(
         db,
-        operation=Operation.IMAGE_TO_IMAGE,
+        operation=Operation.TEXT_TO_VIDEO,
         quality_tier=QualityTier.STANDARD,
-        allowed_providers={"some-other-endpoint:image_to_image": 100},
+        request_params={
+            "duration_seconds": 16,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "2K", "reference_mode": "input_references"},
+        },
     )
-    assert decision.selected is None
-    assert "not_in_agent_candidates" in decision.reason
+    candidate = next(item for item in rejected.candidates if item.provider == provider_name)
+    assert candidate.eligible is False
+    assert candidate.filter_reason == "duration_above_provider_maximum"
 
-
-def test_the_configured_weight_reaches_the_agent_without_deciding_anything(
-    db: Session, monkeypatch
-) -> None:
-    """The weight is context the selecting agent reads. Nothing in `route()`
-    may rank by it — the deterministic stub picks the same provider whichever
-    way the weights point."""
-    seen: list[list[dict]] = []
-    real_select = router.intent_router.select_provider
-
-    def capture(session, **kwargs):
-        seen.append(kwargs["candidates"])
-        return real_select(session, **kwargs)
-
-    monkeypatch.setattr(router.intent_router, "select_provider", capture)
-
-    cheap_first = router.route(
+    accepted = router.route(
         db,
-        operation=Operation.TEXT_TO_IMAGE,
-        quality_tier=QualityTier.PREVIEW,
-        allowed_providers={"fake_open_workflow": 10, "fake_paid_api": 900},
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 15,
+            "aspect_ratio": "21:9",
+            "video_options": {"resolution": "2K", "reference_mode": "frame_images"},
+        },
     )
-    cheap_last = router.route(
-        db,
-        operation=Operation.TEXT_TO_IMAGE,
-        quality_tier=QualityTier.PREVIEW,
-        allowed_providers={"fake_open_workflow": 900, "fake_paid_api": 10},
-    )
-
-    weights = {c["provider"]: c["configured_weight"] for c in seen[0]}
-    assert weights == {"fake_open_workflow": 10, "fake_paid_api": 900}
-    assert cheap_first.selected is not None
-    assert cheap_last.selected is not None
-    assert cheap_first.selected.provider == cheap_last.selected.provider
-
-
-def test_routes_carry_no_configured_weight_when_no_creative_agent_is_bound(db: Session) -> None:
-    decision = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.PREVIEW)
-    assert all(candidate.configured_weight is None for candidate in decision.candidates)
+    assert accepted.selected is not None
+    assert accepted.selected.provider == provider_name

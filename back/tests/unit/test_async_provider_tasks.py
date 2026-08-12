@@ -30,7 +30,6 @@ from app.models.enums import (
     ProviderKind,
     QualityTier,
 )
-from app.platform_config import service as config_service
 from app.providers.base import GenerationRequest, GenerationResult, ProviderCapability
 from app.storage.s3 import put_object
 from app.workers import async_polling, pipeline
@@ -80,8 +79,8 @@ def provider(monkeypatch: pytest.MonkeyPatch, db: Session) -> _AsyncProvider:
     instance = _AsyncProvider()
     monkeypatch.setattr(
         router,
-        "PROVIDER_CATALOG",
-        {
+        "build_catalog",
+        lambda session: {
             CAPABILITY_NAME: ProviderCapability(
                 name=CAPABILITY_NAME,
                 kind=ProviderKind.COMMERCIAL_API,
@@ -94,13 +93,6 @@ def provider(monkeypatch: pytest.MonkeyPatch, db: Session) -> _AsyncProvider:
                 provider_factory=lambda: instance,
             )
         },
-    )
-    config_service.set_value(
-        db,
-        "providers",
-        {"providers": {CAPABILITY_NAME: {"enabled": True}}},
-        actor_user_id=None,
-        note="test bootstrap",
     )
     return instance
 
@@ -242,6 +234,23 @@ def test_a_completed_render_resumes_the_workflow_through_to_settlement(
     assert attempt is not None and attempt.status == ProviderAttemptStatus.SUCCEEDED
 
 
+def test_a_partial_provider_output_still_enters_quality_and_keeps_its_marker(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    job = _suspended(db, funded)
+    provider.outcomes = [_finished(metadata={"partial_output": True, "upstream_status": "failed"})]
+    _due(db, job.id)
+
+    async_polling.poll_once(db)
+
+    db.refresh(job)
+    assert job.status == JobStatus.SUCCEEDED
+    attempt = db.scalar(select(ProviderAttempt).where(ProviderAttempt.job_id == job.id))
+    assert attempt is not None
+    assert attempt.raw_metadata_redacted_json["partial_output"] is True
+    assert attempt.raw_metadata_redacted_json["upstream_status"] == "failed"
+
+
 def test_a_failed_render_releases_the_reservation_rather_than_stranding_it(
     db: Session, funded: User, provider: _AsyncProvider
 ) -> None:
@@ -288,6 +297,49 @@ def test_a_cancel_during_the_render_is_honoured_on_the_next_tick(
     assert account.reserved_balance == 0
     # Cancelling must not have waited for the upstream to answer first.
     assert provider.polls == []
+
+
+def test_cancel_upstream_notifies_closes_the_attempt_and_drops_the_task_row(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    """The shared helper `admin/jobs.py::terminate` and `_cancel()` both call.
+
+    Deliberately does not touch the job's own status/reservation — those
+    differ per caller and are asserted by the callers' own tests
+    (`test_a_cancel_during_the_render_is_honoured_on_the_next_tick` here,
+    the admin termination integration test for the other caller).
+    """
+    job = _suspended(db, funded)
+    task = async_tasks.find_for_job(db, job.id)
+    assert task is not None
+    attempt_id = task.provider_attempt_id
+
+    succeeded = async_tasks.cancel_upstream(db, task, provider)
+
+    assert succeeded is True
+    assert provider.cancelled == ["ext_1"]
+    assert async_tasks.find_for_job(db, job.id) is None
+    attempt = db.get(ProviderAttempt, attempt_id)
+    assert attempt is not None and attempt.status == ProviderAttemptStatus.CANCELLED
+
+
+def test_cancel_upstream_settles_even_when_the_provider_call_raises(
+    db: Session, funded: User, provider: _AsyncProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider timing out on cancel must not strand the task row."""
+    job = _suspended(db, funded)
+    task = async_tasks.find_for_job(db, job.id)
+    assert task is not None
+
+    def _raise(_external_task_id: str) -> bool:
+        raise TimeoutError("upstream unreachable")
+
+    monkeypatch.setattr(provider, "cancel", _raise)
+
+    succeeded = async_tasks.cancel_upstream(db, task, provider)
+
+    assert succeeded is False
+    assert async_tasks.find_for_job(db, job.id) is None
 
 
 def test_a_render_past_its_deadline_is_given_up_on(
@@ -356,7 +408,7 @@ def test_a_capability_deleted_mid_render_fails_the_job_rather_than_hanging(
     db: Session, funded: User, provider: _AsyncProvider, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     job = _suspended(db, funded)
-    monkeypatch.setattr(router, "PROVIDER_CATALOG", {})
+    monkeypatch.setattr(router, "build_catalog", lambda session: {})
     _due(db, job.id)
 
     async_polling.poll_once(db)
@@ -374,3 +426,28 @@ def test_the_poll_timeout_stays_under_the_stale_job_sweep(db: Session) -> None:
     from app.workers import tasks
 
     assert dt.timedelta(seconds=async_tasks.TASK_TIMEOUT_SECONDS) < tasks.STALE_JOB_TIMEOUT
+
+
+def test_old_and_new_reference_checkpoint_shapes_both_resume() -> None:
+    legacy = async_polling._request_from(  # type: ignore[attr-defined]
+        {
+            "job_id": "job-old",
+            "operation": "image_to_video",
+            "quality_tier": "standard",
+            "prompt": "legacy",
+            "reference_object_keys": ["legacy.png"],
+        }
+    )
+    assert legacy.reference_object_keys == ["legacy.png"]
+
+    current = async_polling._request_from(  # type: ignore[attr-defined]
+        {
+            "job_id": "job-new",
+            "operation": "video_to_video",
+            "quality_tier": "standard",
+            "prompt": "current",
+            "references": [{"object_key": "motion.mp4", "media_type": "video", "frame_type": None}],
+        }
+    )
+    assert current.references[0].object_key == "motion.mp4"
+    assert current.references[0].media_type == "video"

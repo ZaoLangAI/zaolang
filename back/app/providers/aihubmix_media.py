@@ -23,7 +23,12 @@ import httpx
 from PIL import Image, UnidentifiedImageError
 
 from app.models.enums import Operation
-from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
+from app.providers.base import (
+    GenerationProvider,
+    GenerationRequest,
+    GenerationResult,
+    ProviderReference,
+)
 from app.storage import s3
 
 logger = logging.getLogger(__name__)
@@ -31,6 +36,12 @@ logger = logging.getLogger(__name__)
 _VIDEO_OPERATIONS = frozenset(
     {Operation.TEXT_TO_VIDEO.value, Operation.IMAGE_TO_VIDEO.value, Operation.VIDEO_TO_VIDEO.value}
 )
+
+MINIMAX_H3_MODEL = "minimax-h3"
+H3_RESOLUTION = "2K"
+H3_MIN_DURATION_SECONDS = 4
+H3_MAX_DURATION_SECONDS = 15
+H3_ASPECT_RATIOS = frozenset({"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"})
 
 # AiHubMix accepts at most nine reference images per task and rejects the
 # whole request if given more.
@@ -166,27 +177,25 @@ class AiHubMixMediaProvider(GenerationProvider):
         jumped to done. `app.workers.tasks.poll_async_provider_tasks` takes it
         from here, writing a heartbeat on every check.
         """
-        body: dict[str, object] = {
-            "model": self._model,
-            "prompt": request.prompt,
-            "duration": request.duration_seconds,
-            "aspect_ratio": request.aspect_ratio,
-        }
-        if request.seed is not None:
-            body["seed"] = request.seed
-        if request.reference_object_keys:
-            body["input_references"] = [
-                {
-                    "type": "image_url",
-                    "url": s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS),
-                }
-                for key in request.reference_object_keys[:_MAX_INPUT_REFERENCES]
+        references = list(request.references)
+        if not references and request.reference_object_keys:
+            references = [
+                ProviderReference(object_key=key, media_type="image")
+                for key in request.reference_object_keys
             ]
+        body = build_video_payload(
+            model=self._model,
+            prompt=request.prompt,
+            duration_seconds=request.duration_seconds,
+            aspect_ratio=request.aspect_ratio,
+            seed=request.seed,
+            references=references,
+        )
 
         with self._client() as client:
             create = client.post("/ai/v1/videos", json=body)
             create.raise_for_status()
-            task_id = create.json().get("task_id")
+            task_id = create.json().get("id")
 
         if not task_id:
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_task_id")
@@ -216,19 +225,25 @@ class AiHubMixMediaProvider(GenerationProvider):
                 status_response = client.get(f"/ai/v1/tasks/{external_task_id}")
                 status_response.raise_for_status()
                 payload = status_response.json()
-                status = str(payload.get("status") or "")
+                status = str(payload.get("status") or "").lower()
+                outputs = payload.get("output")
 
-                if status in _TASK_FAILED_STATUSES:
-                    return self._failure(
-                        started, "PROVIDER_TASK_FAILED", str(payload.get("error") or status)
-                    )
-                if status != "completed":
+                if status != "completed" and status not in _TASK_FAILED_STATUSES:
                     return GenerationResult(
                         succeeded=False,
                         pending=True,
                         external_task_id=external_task_id,
                         latency_ms=self._elapsed_ms(started),
                         metadata={"provider": self.name, "status": status},
+                    )
+
+                if not isinstance(outputs, list) or not outputs:
+                    if status in _TASK_FAILED_STATUSES:
+                        return self._failure(
+                            started, "PROVIDER_TASK_FAILED", str(payload.get("error") or status)
+                        )
+                    return self._failure(
+                        started, "PROVIDER_INVALID_RESPONSE", "completed_without_output"
                     )
 
                 content = client.get(_content_path(external_task_id, payload))
@@ -247,6 +262,9 @@ class AiHubMixMediaProvider(GenerationProvider):
                 metadata={"provider": self.name, "detail": type(exc).__name__},
             )
 
+        if not video_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "empty_video_content")
+
         object_key = f"generated/{request.job_id}/output.mp4"
         s3.put_object(object_key, video_bytes, content_type="video/mp4")
 
@@ -257,10 +275,20 @@ class AiHubMixMediaProvider(GenerationProvider):
             duration_ms=request.duration_seconds * 1000,
             latency_ms=self._elapsed_ms(started),
             external_task_id=external_task_id,
-            metadata={"provider": self.name, "model": self._model},
+            metadata={
+                "provider": self.name,
+                "model": self._model,
+                "partial_output": status != "completed",
+                "upstream_status": status,
+            },
         )
 
     def cancel(self, external_task_id: str) -> bool:
+        # The supplied H3 contract documents create/status/content only.  Do
+        # not invent a paid-task cancellation endpoint: a 404 here would give
+        # operators false confidence that the render had stopped.
+        if self._model.strip().lower() == MINIMAX_H3_MODEL:
+            return False
         try:
             with self._client() as client:
                 response = client.post(f"/ai/v1/tasks/{external_task_id}/cancel")
@@ -295,13 +323,72 @@ def _content_path(task_id: str, payload: dict[str, object]) -> str:
     `400 result_id_required`, so the first result's id is appended when the
     status response reports more than one.
     """
-    results = payload.get("results")
-    if isinstance(results, list) and len(results) > 1:
-        first = results[0]
-        result_id = first.get("id") if isinstance(first, dict) else None
+    outputs = payload.get("output")
+    if isinstance(outputs, list) and len(outputs) > 1:
+        first = outputs[0]
+        result_id = first.get("result_id") if isinstance(first, dict) else None
         if result_id:
             return f"/ai/v1/tasks/{task_id}/content/{result_id}"
     return f"/ai/v1/tasks/{task_id}/content"
+
+
+def build_video_payload(
+    *,
+    model: str,
+    prompt: str,
+    duration_seconds: int,
+    aspect_ratio: str,
+    seed: int | None = None,
+    references: list[ProviderReference] | None = None,
+) -> dict[str, object]:
+    """Build the one H3 request shape shared by validation and production.
+
+    Keeping the probe on the production builder prevents the exact regression
+    that caused this incident: the button used a request which omitted a
+    provider-required field while the worker used another hand-written shape.
+    """
+
+    if model.strip().lower() == MINIMAX_H3_MODEL:
+        if not H3_MIN_DURATION_SECONDS <= duration_seconds <= H3_MAX_DURATION_SECONDS:
+            raise ValueError("minimax-h3 duration must be between 4 and 15 seconds")
+        if aspect_ratio not in H3_ASPECT_RATIOS:
+            raise ValueError(f"minimax-h3 aspect ratio is unsupported: {aspect_ratio}")
+
+    body: dict[str, object] = {
+        "model": model,
+        "prompt": prompt,
+        "duration": duration_seconds,
+        "aspect_ratio": aspect_ratio,
+    }
+    if model.strip().lower() == MINIMAX_H3_MODEL:
+        body["resolution"] = H3_RESOLUTION
+    if seed is not None:
+        body["seed"] = seed
+
+    refs = list(references or [])
+    frame_refs = [ref for ref in refs if ref.frame_type]
+    input_refs = [ref for ref in refs if not ref.frame_type]
+    if frame_refs and input_refs:
+        raise ValueError("frame_images and input_references are mutually exclusive")
+    if frame_refs:
+        body["frame_images"] = [
+            {
+                "image_url": {
+                    "url": s3.presign_get(ref.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+                },
+                "frame_type": ref.frame_type,
+            }
+            for ref in frame_refs
+        ]
+    elif input_refs:
+        body["input_references"] = [
+            {
+                "type": "video_url" if ref.media_type == "video" else "image_url",
+                "url": s3.presign_get(ref.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS),
+            }
+            for ref in input_refs[:_MAX_INPUT_REFERENCES]
+        ]
+    return body
 
 
 def _size_for(aspect_ratio: str, quality_tier: str) -> str:

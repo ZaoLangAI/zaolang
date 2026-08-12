@@ -59,6 +59,15 @@ def db(engine: Engine) -> Iterator[Session]:
         connection.close()
 
 
+@pytest.fixture
+def fake_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt-in test routes; production never registers fake media providers."""
+    from app.agents import router
+    from tests.fake_provider_catalog import build_fake_catalog
+
+    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
+
+
 def truncate_all(engine: Engine) -> None:
     """Empties every table. For tests that commit for real."""
     names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)

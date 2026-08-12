@@ -1,10 +1,4 @@
-"""Deterministic stand-in providers.
-
-They render a real image or video file so the whole pipeline — upload, probe,
-fingerprint, thumbnail, playback — is exercised end to end. Behaviour is keyed
-by a hash of the job id, so a given job always behaves the same way and tests
-can pick an id that reproduces a failure.
-"""
+"""Deterministic media providers used only by tests."""
 
 from __future__ import annotations
 
@@ -18,7 +12,6 @@ from PIL import Image, ImageDraw
 from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
 from app.storage.s3 import put_object
 
-# Trip codes let a test force a specific outcome without monkeypatching.
 FORCE_FAILURE_MARKER = "force_provider_failure"
 FORCE_SLOW_MARKER = "force_provider_slow"
 
@@ -45,12 +38,6 @@ def _dimensions(aspect_ratio: str, tier: str) -> tuple[int, int]:
 
 
 def _reference_metadata(request: GenerationRequest) -> dict[str, Any]:
-    """Surfaces that character references/voice hints reached the provider.
-
-    Fakes cannot make the placeholder look or sound like the reference — that
-    needs a real provider — but recording the count here makes the pipeline
-    wiring observable in `ProviderAttempt` instead of silently dropping it.
-    """
     voice_profiles = request.extra.get("character_voice_profiles")
     return {
         "reference_count": len(request.reference_object_keys),
@@ -59,12 +46,9 @@ def _reference_metadata(request: GenerationRequest) -> dict[str, Any]:
 
 
 def _render_placeholder(request: GenerationRequest) -> bytes:
-    """Draws a labelled gradient so prototype output is never mistaken for a
-    real generation."""
     seed = _seeded(request.job_id, "visual")
     width, height = _dimensions(request.aspect_ratio, request.quality_tier)
     top, bottom = _palette(seed)
-
     image = Image.new("RGB", (width, height), top)
     draw = ImageDraw.Draw(image)
     for y in range(height):
@@ -73,20 +57,16 @@ def _render_placeholder(request: GenerationRequest) -> bytes:
             [(0, y), (width, y)],
             fill=tuple(int(top[i] + (bottom[i] - top[i]) * blend) for i in range(3)),
         )
-
     label = f"PROTOTYPE · {request.operation} · {request.quality_tier}"
     draw.rectangle([(0, height - 44), (width, height)], fill=(0, 0, 0))
     draw.text((16, height - 30), label, fill=(240, 240, 240))
     draw.text((16, 16), request.prompt[:60], fill=(255, 255, 255))
-
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
 
 
 class FakeOpenWorkflowProvider(GenerationProvider):
-    """Stands in for a self-hosted ComfyUI route: cheap, slower, image-first."""
-
     name = "fake_open_workflow"
     kind = "open_workflow"
     base_latency_ms = 900
@@ -101,12 +81,10 @@ class FakeOpenWorkflowProvider(GenerationProvider):
                 latency_ms=int((time.perf_counter() - started) * 1000),
                 metadata={"provider": self.name, "simulated": True},
             )
-
         payload = _render_placeholder(request)
         object_key = f"generated/{request.job_id}/output.png"
         put_object(object_key, payload, content_type="image/png")
         width, height = _dimensions(request.aspect_ratio, request.quality_tier)
-
         return GenerationResult(
             succeeded=True,
             object_key=object_key,
@@ -125,8 +103,6 @@ class FakeOpenWorkflowProvider(GenerationProvider):
 
 
 class FakePaidApiProvider(GenerationProvider):
-    """Stands in for a commercial API: pricier, higher quality, does video."""
-
     name = "fake_paid_api"
     kind = "commercial_api"
     base_latency_ms = 2_200
@@ -141,14 +117,12 @@ class FakePaidApiProvider(GenerationProvider):
                 latency_ms=int((time.perf_counter() - started) * 1000),
                 metadata={"provider": self.name, "simulated": True},
             )
-
         is_video = request.operation in {"text_to_video", "image_to_video", "video_to_video"}
         payload = _render_placeholder(request)
         suffix = "poster.png" if is_video else "output.png"
         object_key = f"generated/{request.job_id}/{suffix}"
         put_object(object_key, payload, content_type="image/png")
         width, height = _dimensions(request.aspect_ratio, request.quality_tier)
-
         return GenerationResult(
             succeeded=True,
             object_key=object_key,
@@ -176,5 +150,5 @@ REGISTRY: dict[str, GenerationProvider] = {
 def get_provider(name: str) -> GenerationProvider:
     provider = REGISTRY.get(name)
     if provider is None:
-        raise KeyError(f"未注册的供应商: {name}")
+        raise KeyError(f"未注册的测试供应商: {name}")
     return provider

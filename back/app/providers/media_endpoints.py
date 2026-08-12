@@ -17,7 +17,14 @@ from sqlalchemy.orm import Session
 from app.models.enums import ProviderKind
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
-from app.providers.aihubmix_media import AiHubMixMediaProvider
+from app.providers.aihubmix_media import (
+    H3_ASPECT_RATIOS,
+    H3_MAX_DURATION_SECONDS,
+    H3_MIN_DURATION_SECONDS,
+    H3_RESOLUTION,
+    MINIMAX_H3_MODEL,
+    AiHubMixMediaProvider,
+)
 from app.providers.base import GenerationProvider, ProviderCapability
 
 # Conservative defaults for a capability with no `ProviderStat` history yet.
@@ -60,6 +67,11 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
             continue
         for tag in endpoint.capabilities:
             catalog_key = f"{endpoint_id}:{tag}"
+            is_h3_video = endpoint.model.strip().lower() == MINIMAX_H3_MODEL and tag in {
+                "text_to_video",
+                "image_to_video",
+                "video_to_video",
+            }
             catalog[catalog_key] = ProviderCapability(
                 name=catalog_key,
                 kind=ProviderKind.COMMERCIAL_API,
@@ -69,6 +81,13 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 typical_latency_ms=_TYPICAL_LATENCY_MS.get(tag, 30_000),
                 unit_cost_minor=_UNIT_COST_MINOR.get(tag, 20),
                 model_or_workflow=endpoint.model,
+                min_duration_seconds=H3_MIN_DURATION_SECONDS if is_h3_video else None,
+                max_duration_seconds=H3_MAX_DURATION_SECONDS if is_h3_video else None,
+                aspect_ratios=H3_ASPECT_RATIOS if is_h3_video else None,
+                resolutions=frozenset({H3_RESOLUTION}) if is_h3_video else None,
+                reference_modes=(
+                    frozenset({"input_references", "frame_images"}) if is_h3_video else None
+                ),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,

@@ -11,8 +11,15 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, Forbidden, ValidationFailed
 from app.domain.media import service as media_service
-from app.models import User
-from app.models.enums import ModerationStatus, Visibility
+from app.models import Asset, User
+from app.models.base import new_id
+from app.models.enums import (
+    AssetRole,
+    MediaType,
+    ModerationStatus,
+    Operation,
+    Visibility,
+)
 from app.storage import s3
 
 
@@ -32,6 +39,80 @@ def _presign(session: Session, user: User, payload: bytes, purpose: str = "gener
         checksum_sha256=hashlib.sha256(payload).hexdigest(),
         purpose=purpose,
     )
+
+
+def _reference_asset(session: Session, owner: User, media_type: MediaType) -> Asset:
+    extension = "mp4" if media_type == MediaType.VIDEO else "png"
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.{extension}",
+        media_type=media_type,
+        mime_type=f"{'video/mp4' if media_type == MediaType.VIDEO else 'image/png'}",
+        size_bytes=128,
+        checksum_sha256="a" * 64,
+        role=AssetRole.GENERATION_REFERENCE,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+def test_generation_references_enforce_ownership_and_frame_media_type(
+    db: Session, author: User, admin: User
+) -> None:
+    another_users_image = _reference_asset(db, admin, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="不属于当前用户"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.TEXT_TO_VIDEO,
+            params={"reference_asset_ids": [another_users_image.id]},
+        )
+
+    video = _reference_asset(db, author, MediaType.VIDEO)
+    media_service.validate_generation_references(
+        db,
+        user_id=author.id,
+        operation=Operation.VIDEO_TO_VIDEO,
+        params={"reference_asset_ids": [video.id]},
+    )
+    with pytest.raises(ValidationFailed, match="首帧和尾帧必须是图片"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.IMAGE_TO_VIDEO,
+            params={
+                "video_options": {
+                    "reference_mode": "frame_images",
+                    "first_frame_asset_id": video.id,
+                }
+            },
+        )
+
+
+def test_provider_references_preserve_media_and_frame_roles(db: Session, author: User) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    video = _reference_asset(db, author, MediaType.VIDEO)
+    inputs = media_service.provider_references_for(
+        db, user_id=author.id, asset_ids=[image.id, video.id]
+    )
+    assert [(item.media_type, item.frame_type) for item in inputs] == [
+        ("image", None),
+        ("video", None),
+    ]
+
+    frames = media_service.provider_references_for(
+        db,
+        user_id=author.id,
+        asset_ids=[],
+        video_options={
+            "first_frame_asset_id": image.id,
+            "last_frame_asset_id": image.id,
+        },
+    )
+    assert [item.frame_type for item in frames] == ["first_frame", "last_frame"]
 
 
 def test_an_unsupported_type_is_refused_before_a_url_is_issued(db: Session, author: User) -> None:

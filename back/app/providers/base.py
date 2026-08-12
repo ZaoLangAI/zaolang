@@ -15,6 +15,20 @@ from app.models.enums import ProviderKind
 
 
 @dataclass(slots=True)
+class ProviderReference:
+    """One already-authorised private asset passed to a media provider.
+
+    ``media_type`` is deliberately the small platform enum value (``image`` or
+    ``video``), not a user supplied MIME string.  ``frame_type`` is populated
+    only for MiniMax-style first/last-frame requests.
+    """
+
+    object_key: str
+    media_type: str
+    frame_type: str | None = None
+
+
+@dataclass(slots=True)
 class GenerationRequest:
     job_id: str
     operation: str
@@ -24,8 +38,21 @@ class GenerationRequest:
     seed: int | None = None
     aspect_ratio: str = "16:9"
     duration_seconds: int = 0
+    references: list[ProviderReference] = field(default_factory=list)
+    # Compatibility for checkpoints created before typed references existed.
+    # They were image-only in the old UI, so the H3 adapter may safely migrate
+    # them to ``ProviderReference(media_type="image")`` at call time.
     reference_object_keys: list[str] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # JSON checkpoints turn nested dataclasses back into dictionaries.
+        # Normalise them here so old and new in-flight tasks resume through the
+        # exact same provider code without a data migration.
+        self.references = [
+            item if isinstance(item, ProviderReference) else ProviderReference(**item)
+            for item in self.references
+        ]
 
 
 @dataclass(slots=True)
@@ -112,3 +139,8 @@ class ProviderCapability:
     # therefore never opens a client/connection) for a route that ends up
     # not winning.
     provider_factory: Callable[[], GenerationProvider]
+    min_duration_seconds: int | None = None
+    max_duration_seconds: int | None = None
+    aspect_ratios: frozenset[str] | None = None
+    resolutions: frozenset[str] | None = None
+    reference_modes: frozenset[str] | None = None

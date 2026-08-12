@@ -11,7 +11,7 @@ from PIL import Image
 
 from app.models.enums import Operation
 from app.providers.aihubmix_media import AiHubMixMediaProvider
-from app.providers.base import GenerationRequest
+from app.providers.base import GenerationRequest, ProviderReference
 from app.storage import s3
 
 
@@ -128,7 +128,8 @@ def test_video_submit_returns_pending_without_waiting_for_the_render(
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
         assert url == "/ai/v1/videos"
-        return _FakeResponse(json_body={"task_id": "task-123"})
+        assert kwargs["json"]["resolution"] == "2K"
+        return _FakeResponse(json_body={"id": "task-123"})
 
     def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
         gets.append(url)
@@ -136,13 +137,77 @@ def test_video_submit_returns_pending_without_waiting_for_the_render(
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(httpx.Client, "get", fake_get)
-    provider = _provider(Operation.TEXT_TO_VIDEO.value)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="minimax-h3")
     result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=6))
 
     assert result.pending is True
     assert result.succeeded is False
     assert result.external_task_id == "task-123"
     assert gets == []
+
+
+def test_h3_video_payload_types_input_references_and_frame_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[dict] = []
+
+    monkeypatch.setattr(
+        s3,
+        "presign_get",
+        lambda key, **kwargs: f"https://signed.invalid/{key}",
+    )
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": f"task-{len(payloads)}"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.IMAGE_TO_VIDEO.value, model="minimax-h3")
+    provider.submit(
+        _request(
+            Operation.IMAGE_TO_VIDEO.value,
+            duration_seconds=5,
+            references=[
+                ProviderReference(object_key="image.png", media_type="image"),
+                ProviderReference(object_key="motion.mp4", media_type="video"),
+            ],
+        )
+    )
+    provider.submit(
+        _request(
+            Operation.IMAGE_TO_VIDEO.value,
+            duration_seconds=5,
+            references=[
+                ProviderReference(
+                    object_key="first.png", media_type="image", frame_type="first_frame"
+                ),
+                ProviderReference(
+                    object_key="last.png", media_type="image", frame_type="last_frame"
+                ),
+            ],
+        )
+    )
+
+    assert [item["type"] for item in payloads[0]["input_references"]] == [
+        "image_url",
+        "video_url",
+    ]
+    assert "frame_images" not in payloads[0]
+    assert [item["frame_type"] for item in payloads[1]["frame_images"]] == [
+        "first_frame",
+        "last_frame",
+    ]
+    assert "input_references" not in payloads[1]
+
+
+def test_h3_cancel_does_not_call_an_undocumented_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not call cancel")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    assert _provider(Operation.TEXT_TO_VIDEO.value, model="minimax-h3").cancel("task-1") is False
 
 
 def test_polling_a_finished_video_downloads_and_stores_it(
@@ -153,7 +218,7 @@ def test_polling_a_finished_video_downloads_and_stores_it(
     def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
         if url.endswith("/content"):
             return _FakeResponse(content=video_bytes)
-        return _FakeResponse(json_body={"status": "completed"})
+        return _FakeResponse(json_body={"status": "completed", "output": [{}]})
 
     monkeypatch.setattr(httpx.Client, "get", fake_get)
     provider = _provider(Operation.TEXT_TO_VIDEO.value)
@@ -179,7 +244,10 @@ def test_polling_a_multi_output_task_asks_for_a_specific_result(
         if "/content" in url:
             return _FakeResponse(content=b"mp4")
         return _FakeResponse(
-            json_body={"status": "completed", "results": [{"id": "res-1"}, {"id": "res-2"}]}
+            json_body={
+                "status": "completed",
+                "output": [{"result_id": "res-1"}, {"result_id": "res-2"}],
+            }
         )
 
     monkeypatch.setattr(httpx.Client, "get", fake_get)
@@ -212,6 +280,30 @@ def test_a_failed_video_task_is_reported_as_a_failure(monkeypatch: pytest.Monkey
     assert result.pending is False
     assert result.succeeded is False
     assert result.failure_code == "PROVIDER_TASK_FAILED"
+
+
+def test_failed_task_with_output_is_downloaded_for_quality_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        if "/content" in url:
+            return _FakeResponse(content=b"partial-mp4")
+        return _FakeResponse(
+            json_body={
+                "status": "failed",
+                "error": "render_incomplete",
+                "output": [{"result_id": "partial-1"}],
+            }
+        )
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value)
+    result = provider.poll("task-partial", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.succeeded is True
+    assert result.metadata["partial_output"] is True
+    assert result.metadata["upstream_status"] == "failed"
+    assert s3.get_object(result.object_key) == b"partial-mp4"
 
 
 def test_a_transport_error_while_polling_keeps_the_task_pending(

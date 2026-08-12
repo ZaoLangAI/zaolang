@@ -4,8 +4,11 @@ redaction."""
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.models import User
+from app.models import AuditLog, User
+from app.providers.connectivity import ConnectivityResult
 from tests.conftest import admin_header
 
 
@@ -80,7 +83,9 @@ def test_a_new_general_primary_demotes_the_previous_one(client: TestClient, admi
     assert by_id["ep-b"]["role"] == "primary"
 
 
-def test_media_primary_demotes_other_media_not_general(client: TestClient, admin: User) -> None:
+def test_media_endpoints_have_no_primary_or_concurrency_semantics(
+    client: TestClient, admin: User
+) -> None:
     _upsert(client, admin, "ep-general", _general_payload(role="primary"))
     _upsert(
         client,
@@ -105,10 +110,11 @@ def test_media_primary_demotes_other_media_not_general(client: TestClient, admin
         ),
     )
 
-    assert body["demoted_endpoint_ids"] == ["ep-a"]
+    assert body["demoted_endpoint_ids"] == []
     by_id = {e["id"]: e for e in body["endpoints"]}
     assert by_id["ep-a"]["role"] == "backup"
-    assert by_id["ep-b"]["role"] == "primary"
+    assert by_id["ep-b"]["role"] == "backup"
+    assert by_id["ep-b"]["max_concurrency"] == 1
     assert by_id["ep-general"]["role"] == "primary"
     assert set(by_id["ep-a"]["capabilities"]) == {"text_to_image", "audio_generation"}
     assert by_id["ep-b"]["capabilities"] == ["text_to_image"]
@@ -159,3 +165,68 @@ def test_removing_an_endpoint_requires_confirmation(client: TestClient, admin: U
     )
     assert response.status_code == 200
     assert all(e["id"] != "ep-remove" for e in response.json()["endpoints"])
+
+
+def test_admin_can_validate_one_exact_endpoint_and_the_result_is_audited(
+    client: TestClient,
+    admin: User,
+    db: Session,
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    _upsert(client, admin, "ep-validate", _general_payload(api_key="sk-never-return-this"))
+    seen: list[str] = []
+
+    def fake_validate(endpoint):  # type: ignore[no-untyped-def]
+        seen.append(endpoint.base_url)
+        return ConnectivityResult(
+            target_model="kimi-k3",
+            probe_type="chat_completion",
+            reachable=True,
+            usable=True,
+            latency_ms=17,
+            provider_status_code=200,
+            provider_error_code=None,
+            provider_error_message=None,
+            external_task_id="task-validation-1",
+        )
+
+    monkeypatch.setattr(
+        "app.api.v1.admin.llm_providers.connectivity.validate_endpoint", fake_validate
+    )
+    response = client.post(
+        "/v1/admin/llm-providers/ep-validate/validate", headers=admin_header(admin)
+    )
+
+    assert response.status_code == 200
+    assert seen == ["https://gateway.invalid/v1"]
+    body = response.json()
+    assert body["usable"] is True
+    assert body["target_model"] == "kimi-k3"
+    assert body["external_task_id"] == "task-validation-1"
+    assert "sk-never-return-this" not in response.text
+
+    entry = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "llm_provider.validate",
+            AuditLog.target_id == "ep-validate",
+        )
+    )
+    assert entry is not None
+    assert entry.after_json["usable"] is True
+    assert entry.after_json["external_task_id"] == "task-validation-1"
+    assert "api_key" not in str(entry.after_json)
+
+
+def test_non_admin_cannot_validate_an_endpoint(
+    client: TestClient, admin: User, reviewer: User
+) -> None:
+    _upsert(client, admin, "ep-protected", _general_payload())
+    response = client.post(
+        "/v1/admin/llm-providers/ep-protected/validate", headers=admin_header(reviewer)
+    )
+    assert response.status_code == 403
+
+
+def test_validating_a_missing_endpoint_returns_not_found(client: TestClient, admin: User) -> None:
+    response = client.post("/v1/admin/llm-providers/missing/validate", headers=admin_header(admin))
+    assert response.status_code == 404

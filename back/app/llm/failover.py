@@ -56,25 +56,25 @@ def _role_sort_key(endpoint: LlmProviderEndpoint, endpoint_id: str) -> tuple[int
 
 
 def eligible_candidates(
-    config: LlmProviderConfig, *, preferred_ids: Sequence[str] = ()
+    config: LlmProviderConfig, *, preferred_ids: Sequence[str] = (), model: str | None = None
 ) -> list[tuple[str, LlmProviderEndpoint]]:
     """Candidates with a free concurrency slot and a closed circuit breaker.
 
     `client.complete()` walks this list in order, trying the next endpoint on
     failure — the list is the fallback order, not just the top pick.
 
-    `preferred_ids` moves an agent agent's explicitly bound endpoints
-    (default first, then its backup) to the front. The rest of the shared
-    pool stays behind them rather than being dropped: a pin expresses "use
-    this one when you can", and failing an agent call outright because a
-    preferred endpoint is briefly at capacity would trade a working
-    degradation for an outage.
+    `preferred_ids` is an AgentProfile's explicit provider binding (default,
+    then backup). When present it restricts routing to those providers; only
+    an unbound profile draws from the whole compatible shared pool.
     """
     client = get_redis()
-    ordered = general_candidates(config)
+    ordered = [
+        pair for pair in general_candidates(config) if model is None or model in pair[1].models
+    ]
     if preferred_ids:
         rank = {endpoint_id: index for index, endpoint_id in enumerate(preferred_ids)}
-        ordered.sort(key=lambda pair: rank.get(pair[0], len(rank)))
+        ordered = [pair for pair in ordered if pair[0] in rank]
+        ordered.sort(key=lambda pair: rank[pair[0]])
     return [
         (endpoint_id, endpoint)
         for endpoint_id, endpoint in ordered

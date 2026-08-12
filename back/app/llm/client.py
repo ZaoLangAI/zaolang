@@ -24,7 +24,7 @@ from app.llm import capabilities, failover
 from app.llm.normalize import NormalizedResponse, normalize_completion
 from app.llm.stub import stub_completion
 from app.platform_config import service as config_service
-from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint, LlmReliabilityConfig
+from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,13 @@ REASONING_TOKEN_FLOOR = 2048
 # Recorded on `AgentRun` / returned to callers when nothing in `llm_providers`
 # matched — there is no per-endpoint id to report in that case.
 NO_ENDPOINT_ID = "none"
+
+# Endpoint timeout and concurrency remain model-level settings. These bounded
+# gateway safeguards are deliberately code constants, not a second global
+# reliability configuration surface.
+MAX_TRANSPORT_RETRIES = 1
+CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
+CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60
 
 
 @dataclass(slots=True)
@@ -90,10 +97,9 @@ def complete(
     `agent_name` is kept only because `stub_completion` uses it to vary its
     deterministic output.
 
-    `preferred_endpoint_ids` is the endpoint order an `AgentProfile` pinned
-    (its default model, then its backup). They are tried first; the rest of
-    the shared pool remains as a last resort — see
-    `failover.eligible_candidates`.
+    `preferred_endpoint_ids` is the provider order an `AgentProfile` pinned
+    (default, then backup). When present, no unselected provider may serve
+    the call; an unbound profile uses the compatible shared pool.
     """
     settings = get_settings()
     mode = settings.llm_mode
@@ -111,8 +117,9 @@ def complete(
 
     budget = max(max_tokens, REASONING_TOKEN_FLOOR) if reasoning_model else max_tokens
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
-    reliability = config_service.get_typed(session, "llm_reliability", LlmReliabilityConfig)
-    endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
+    endpoints = failover.eligible_candidates(
+        provider_config, preferred_ids=preferred_endpoint_ids, model=model
+    )
 
     last_error: Exception | None = None
     tried_endpoint = False
@@ -122,7 +129,7 @@ def complete(
         with failover.lease(endpoint_id):
             response, budget, error = _attempt_endpoint(
                 client=client_for_endpoint(endpoint),
-                max_retries=reliability.max_retries,
+                max_retries=MAX_TRANSPORT_RETRIES,
                 model=model,
                 messages=messages,
                 budget=budget,
@@ -132,8 +139,8 @@ def complete(
         failover.record_outcome(
             endpoint_id,
             success=response is not None,
-            failure_threshold=reliability.circuit_breaker_failure_threshold,
-            cooldown_s=reliability.circuit_breaker_cooldown_s,
+            failure_threshold=CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+            cooldown_s=CIRCUIT_BREAKER_COOLDOWN_SECONDS,
         )
         if response is not None:
             return LlmCallResult(
@@ -195,12 +202,13 @@ def _attempt_endpoint(
 ) -> tuple[NormalizedResponse | None, int, Exception | None]:
     """One endpoint's full retry loop, isolated so `complete()` can move on to
     the next failover candidate without repeating this logic."""
-    # Two extra slots beyond the configured retries so that discovering a
-    # parameter incompatibility does not consume a real retry.
-    attempts = max_retries + 3
+    transport_limit = max_retries + 1
+    transport_attempt = 0
+    compatibility_adjusted = False
+    truncation_expanded = False
     last_error: Exception | None = None
 
-    for attempt in range(attempts):
+    while transport_attempt < transport_limit:
         try:
             raw = _call_gateway(
                 client=client,
@@ -218,27 +226,54 @@ def _attempt_endpoint(
                 expect_json
                 and response.data is None
                 and response.truncated
-                and attempt + 1 < attempts
+                and not truncation_expanded
             ):
+                truncation_expanded = True
                 budget = min(budget * 2, 32_768)
                 continue
 
             return response, budget, None
         except BadRequestError as exc:
             # A rejected parameter is a capability signal, not an outage.
-            if capabilities.learn_from_error(model, str(exc)):
+            if not compatibility_adjusted and capabilities.learn_from_error(model, str(exc)):
+                compatibility_adjusted = True
                 logger.info("adjusted request shape for %s: %s", model, capabilities.get(model))
                 continue
             last_error = exc
             logger.warning("llm gateway rejected request for %s: %s", model, exc)
             break
         except (OpenAIError, TimeoutError, ConnectionError) as exc:
+            transport_attempt += 1
             last_error = exc
             logger.warning(
-                "llm gateway attempt %s/%s failed for %s: %s", attempt + 1, attempts, model, exc
+                "llm gateway transport attempt %s/%s failed for %s: %s",
+                transport_attempt,
+                transport_limit,
+                model,
+                exc,
             )
 
     return None, budget, last_error
+
+
+def call_gateway_once(
+    *,
+    client: OpenAI,
+    model: str,
+    messages: list[dict[str, str]],
+    max_tokens: int,
+    temperature: float,
+    expect_json: bool,
+) -> Any:
+    """Send one production-shaped request without failover, retry, or stub."""
+    return _call_gateway(
+        client=client,
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        expect_json=expect_json,
+    )
 
 
 def _call_gateway(

@@ -44,6 +44,11 @@ def seed_endpoint(db: Session):  # type: ignore[no-untyped-def]
                         "base_url": "https://example.invalid/v1",
                         "api_key": "test-key",
                         "kind": "general",
+                        "models": [
+                            "doubao-seed-2-1-pro",
+                            "kimi-k3",
+                            "ling-3.0-flash-free",
+                        ],
                         "role": "primary",
                     }
                 }
