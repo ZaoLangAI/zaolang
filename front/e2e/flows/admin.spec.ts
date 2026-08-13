@@ -1,6 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { ACCOUNTS, SEED_PASSWORD, STATE_FILES, watchForPageErrors } from '../support/session';
+
+/** Consumer refresh must never fire on console routes. */
+function watchConsumerRefresh(page: Page): () => string[] {
+  const urls: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/v1/auth/refresh')) urls.push(request.url());
+  });
+  return () => [...urls];
+}
 
 /**
  * The operations console walkthrough: the separate admin session, then the
@@ -31,6 +40,16 @@ test.describe('session boundary', () => {
     // access, so the form cannot be used to enumerate operators.
     await expect(page.getByRole('alert').filter({ hasText: '邮箱或密码不正确' })).toBeVisible();
   });
+
+  test('console login never redeems a consumer refresh cookie', async ({ page }) => {
+    const refreshCalls = watchConsumerRefresh(page);
+    await page.goto('/zh-CN/admin/login', { waitUntil: 'networkidle' });
+    await page.getByLabel('邮箱').fill(ACCOUNTS.admin);
+    await page.getByLabel('密码').fill(SEED_PASSWORD);
+    await page.getByRole('button', { name: '进入运维台' }).click();
+    await expect(page).toHaveURL(/\/admin\/?$/);
+    expect(refreshCalls(), 'consumer /v1/auth/refresh during console login').toEqual([]);
+  });
 });
 
 test.describe('a consumer session is not a console session', () => {
@@ -48,12 +67,14 @@ test.describe('operations screens', () => {
 
   test('system health reports every dependency', async ({ page }) => {
     const problems = watchForPageErrors(page);
+    const refreshCalls = watchConsumerRefresh(page);
     await page.goto('/zh-CN/admin', { waitUntil: 'networkidle' });
 
     for (const service of ['postgres', 'redis', 'minio', 'celery']) {
       await expect(page.getByText(service, { exact: true })).toBeVisible();
     }
     expect(problems(), 'console errors on the health page').toEqual([]);
+    expect(refreshCalls(), 'consumer /v1/auth/refresh on the health page').toEqual([]);
   });
 
   test('the job console lists the seeded jobs', async ({ page }) => {
@@ -220,30 +241,26 @@ test.describe('operations screens', () => {
     expect(stroke).not.toBe('none');
   });
 
-  test('a sandbox dry run of the canvas draft returns a trace', async ({ page }) => {
-    // Real agent calls go through the stub LLM provider in this environment
-    // (see the agent console test above), so this exercises the whole
-    // `dry_run_workflow_template` path deterministically without a live key.
+  test('a sandbox dialog submits a real job and shows live progress', async ({ page }) => {
+    // The worker may not be running in this environment, so this only
+    // asserts the dialog opens, the right-hand stream pane is present, and
+    // submit returns 202 — not that the graph finishes walking.
     await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '沙盒试跑' }).click();
 
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: '沙盒试跑' })).toBeVisible();
-    // "画布上的草稿" is the default source — running it, unpublished, is the
-    // whole point of the dry run existing.
     await expect(dialog.getByLabel('试跑对象')).toHaveValue('draft');
-    await expect(dialog.getByRole('switch', { name: '真实调用已配置模型' })).not.toBeChecked();
+    await expect(dialog.getByText('实时流转')).toBeVisible();
     await dialog.getByLabel('提示词').fill('一只在雨中奔跑的猫');
 
-    const dryRun = page.waitForResponse(
-      (response) => response.request().method() === 'POST' && response.url().includes('/dry-run'),
+    const sandboxRun = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && response.url().includes('/sandbox-run'),
     );
     await dialog.getByRole('button', { name: '开始试跑' }).click();
-    await dryRun;
-
-    // Only rendered once a run comes back with at least one trace step —
-    // this is also the signal the canvas has something to highlight.
-    await expect(dialog.getByText('画布上已高亮本次试跑走过的路径。')).toBeVisible();
+    const response = await sandboxRun;
+    expect(response.status()).toBe(202);
   });
 
   test('a graph that fails validation cannot be published', async ({ page }) => {
