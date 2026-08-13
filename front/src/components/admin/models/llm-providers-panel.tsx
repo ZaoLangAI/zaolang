@@ -15,12 +15,16 @@ import { cn } from '@/lib/cn';
 import {
   MEDIA_INPUT_MODALITIES,
   MEDIA_OUTPUT_MODALITIES,
+  MEDIA_PROTOCOLS,
+  IMPLEMENTED_MEDIA_PROTOCOLS,
   MODALITY_LABEL_KEYS,
   OPERATION_LABEL_KEYS,
+  PROTOCOL_LABEL_KEYS,
   capabilitiesForModalities,
+  constrainModalities,
   operationLabelKey,
 } from '@/lib/admin/operations';
-import type { MediaInputModality, MediaOutputModality } from '@/lib/admin/operations';
+import type { MediaInputModality, MediaOutputModality, MediaProtocol } from '@/lib/admin/operations';
 import { atLeast } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
@@ -42,6 +46,7 @@ interface EndpointFormState {
   model: string;
   input_modalities: MediaInputModality[];
   output_modalities: MediaOutputModality[];
+  protocol: MediaProtocol;
   role: 'primary' | 'backup';
   backup_order: string;
   max_concurrency: string;
@@ -93,10 +98,11 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     model: '',
     input_modalities: [],
     output_modalities: [],
+    protocol: 'openai',
     role: !hasPrimary ? 'primary' : 'backup',
     backup_order: '100',
     max_concurrency: '4',
-    timeout_ms: '30000',
+    timeout_ms: kind === 'media' ? '90000' : '30000',
     enabled: true,
   };
 }
@@ -112,6 +118,7 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     model: endpoint.model ?? '',
     input_modalities: (endpoint.input_modalities ?? []) as MediaInputModality[],
     output_modalities: (endpoint.output_modalities ?? []) as MediaOutputModality[],
+    protocol: endpoint.kind === 'media' && endpoint.protocol ? endpoint.protocol : 'openai',
     role: endpoint.role,
     backup_order: String(endpoint.backup_order),
     max_concurrency: String(endpoint.max_concurrency),
@@ -142,6 +149,7 @@ function buildUpsertPayload(form: EndpointFormState) {
     model: form.kind === 'media' ? form.model.trim() : '',
     input_modalities: form.kind === 'media' ? form.input_modalities : [],
     output_modalities: form.kind === 'media' ? form.output_modalities : [],
+    protocol: form.kind === 'media' ? form.protocol : null,
     max_concurrency: Number(form.max_concurrency),
     timeout_ms: Number(form.timeout_ms),
     enabled: form.enabled,
@@ -431,6 +439,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                   return {
                     ...current,
                     kind,
+                    protocol: kind === 'media' ? current.protocol || 'openai' : current.protocol,
                     role: hasPrimaryOfKind(kind) ? current.role : 'primary',
                   };
                 })
@@ -457,6 +466,32 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                   onChange={(event) =>
                     setEditing((current) => current && { ...current, model: event.target.value })
                   }
+                />
+                <Select
+                  layout="inline"
+                  label={t('mediaProtocol')}
+                  hint={t('mediaProtocolHint')}
+                  value={editing.protocol}
+                  options={MEDIA_PROTOCOLS.map((protocol) => ({
+                    value: protocol,
+                    label: t(PROTOCOL_LABEL_KEYS[protocol]),
+                    disabled: !IMPLEMENTED_MEDIA_PROTOCOLS.has(protocol),
+                  }))}
+                  onChange={(event) => {
+                    const protocol = event.target.value as MediaProtocol;
+                    setEditing(
+                      (current) =>
+                        current && {
+                          ...current,
+                          protocol,
+                          ...constrainModalities(
+                            protocol,
+                            current.input_modalities,
+                            current.output_modalities,
+                          ),
+                        },
+                    );
+                  }}
                 />
                 <ModalitySelector
                   inputModalities={editing.input_modalities}
@@ -518,6 +553,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                 label={t('timeoutMs')}
                 type="number"
                 min="1000"
+                max="120000"
                 value={editing.timeout_ms}
                 onChange={(event) =>
                   setEditing((current) => current && { ...current, timeout_ms: event.target.value })
@@ -767,6 +803,13 @@ function NodeRow({
           <Badge tone="neutral">
             {endpoint.kind === 'general' ? t('modelTypeGeneral') : t('modelTypeMedia')}
           </Badge>
+          {endpoint.kind === 'media' && endpoint.protocol ? (
+            <Badge tone="neutral">
+              {PROTOCOL_LABEL_KEYS[endpoint.protocol as MediaProtocol]
+                ? t(PROTOCOL_LABEL_KEYS[endpoint.protocol as MediaProtocol])
+                : endpoint.protocol}
+            </Badge>
+          ) : null}
           <Badge tone={endpoint.enabled ? 'success' : 'neutral'}>
             {endpoint.enabled ? t('enabled') : t('disabled')}
           </Badge>

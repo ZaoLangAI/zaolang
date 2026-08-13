@@ -104,13 +104,20 @@ export function WorkflowNode({ data, selected }: NodeProps & { data: WorkflowNod
                 type="source"
                 position={Position.Right}
                 id={port}
-                className="!size-2.5 !border-border !bg-surface"
-                style={{ top: '50%' }}
+                className="!static !size-2.5 !translate-x-1.5 !transform-none !border-border !bg-surface"
               />
             </span>
           ))}
         </div>
-      ) : null}
+      ) : (
+        // Terminal nodes have no output ports, but the canvas-only "结束"
+        // anchor still needs a source handle to draw its incoming edge.
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!size-2.5 !border-border !bg-surface"
+        />
+      )}
     </div>
   );
 }

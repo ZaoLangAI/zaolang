@@ -9,6 +9,7 @@ write here — a sandbox execution that never creates a real `GenerationJob`.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -48,6 +49,8 @@ from app.workflows.defaults import default_graph
 from app.workflows.graph import WorkflowGraph
 from app.workflows.runner import WorkflowRunner
 from app.workflows.types import WorkflowContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin:workflow-templates"])
 
@@ -215,13 +218,18 @@ def dry_run_workflow_template(
     """Simulates a job through a graph — the editor's unpublished draft when
     `payload.graph` is given, otherwise the operation's active published one.
 
-    Never creates a `GenerationJob` row, reserves credits, or hits a paid
-    provider — see `WorkflowContext.dry_run` and every node executor's own
-    `if ctx.dry_run` branch for the specifics. The four agent nodes
-    (safety/planning/intent_router/quality) still call the real LLM gateway
-    on purpose: that is the one thing worth spending a little real cost on to
-    actually validate a prompt change before publishing it. `AdminWrite`'s
-    rate limit is what keeps that cost bounded.
+    Never creates a `GenerationJob` row, reserves credits, or writes a
+    `ProviderAttempt`. The four agent nodes (safety/planning/intent_router/
+    quality) still call the real LLM gateway on purpose: that is the one
+    thing worth spending a little real cost on to actually validate a prompt
+    change before publishing it. `AdminWrite`'s rate limit is what keeps
+    that cost bounded.
+
+    With `live_provider=False` (the default) the media provider is stubbed.
+    With `live_provider=True` the selected configured model is called for
+    real and a short-lived `preview_url` is returned — still without a job
+    row or a credit reservation. Video pending results are polled in this
+    request rather than suspended for Beat.
 
     A draft is held to exactly the same validation as a publish, because a
     graph that fails it cannot be walked safely; but it is never written
@@ -239,9 +247,7 @@ def dry_run_workflow_template(
         # show exactly what a real job would run right now, including before
         # anything has ever been published for this operation.
         template = workflow_templates_service.get_active(session, operation.value)
-        graph = WorkflowGraph.from_dict(
-            template.graph_json if template else default_graph(session)
-        )
+        graph = WorkflowGraph.from_dict(template.graph_json if template else default_graph(session))
 
     params: dict[str, Any] = {"prompt": payload.prompt, **payload.params}
     fake_job = GenerationJob(
@@ -257,28 +263,42 @@ def dry_run_workflow_template(
         estimated_seconds=0,
     )
     ctx = WorkflowContext(
-        session=session, job=fake_job, prompt=payload.prompt, params=params, dry_run=True
+        session=session,
+        job=fake_job,
+        prompt=payload.prompt,
+        params=params,
+        dry_run=True,
+        live_provider=payload.live_provider,
     )
 
     try:
         outcome = WorkflowRunner(graph).run(ctx)
         session.commit()
-    except Exception:
+    except Exception as exc:
         # A genuine crash (e.g. a mis-set LLM endpoint) must not 500 the
         # editor's try-it panel — surface it as a failed dry run with
         # whatever trace was collected before the crash, and roll back any
         # half-written agent-run rows from this attempt.
+        logger.exception("workflow dry-run crashed for %s", operation.value)
         session.rollback()
         return WorkflowDryRunResult(
             status=JobStatus.FAILED,
             failure_code="DRY_RUN_CRASHED",
+            error_detail=f"{type(exc).__name__}: {exc}",
             trace=_trace_view(ctx),
         )
+
+    error_detail = ctx.state.get("error_detail")
+    if outcome.status == JobStatus.FAILED and not error_detail:
+        error_detail = ctx.state.get("failure_message")
 
     return WorkflowDryRunResult(
         status=outcome.status,
         failure_code=outcome.failure_code,
         asset_id=outcome.asset_id,
+        error_detail=error_detail,
+        preview_url=ctx.state.get("_preview_url"),
+        mime_type=ctx.state.get("_preview_mime_type"),
         trace=_trace_view(ctx),
     )
 

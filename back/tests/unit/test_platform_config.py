@@ -10,12 +10,16 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import PlatformConfig, User
+from app.models.enums import Operation
 from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     DEFAULT_CONFIGS,
     MAX_GENERATION_DURATION_SECONDS,
+    PROTOCOL_CAPABILITIES,
     ContentModerationConfig,
     FeatureFlags,
+    LlmProviderConfig,
+    LlmProviderEndpoint,
     PricingConfig,
     ShortformConfig,
 )
@@ -304,3 +308,130 @@ def test_defaults_satisfy_their_own_schemas() -> None:
     for key in config_service.all_keys():
         config_service.validate(key, DEFAULT_CONFIGS[key])
     FeatureFlags.model_validate(DEFAULT_CONFIGS["feature_flags"])
+
+
+def test_a_media_endpoint_without_protocol_infers_openai_for_images() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "图",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "qianfan/qwen-image-3.0",
+            "input_modalities": ["text", "image"],
+            "output_modalities": ["image"],
+        }
+    )
+    assert endpoint.protocol == "openai"
+
+
+def test_a_media_endpoint_without_protocol_infers_minimax_for_video_only() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "视频",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "minimax-h3",
+            "input_modalities": ["text", "image", "video"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.protocol == "minimax"
+
+
+def test_unimplemented_and_mismatched_protocols_are_rejected() -> None:
+    with pytest.raises(Exception, match="尚未接入"):
+        LlmProviderEndpoint.model_validate(
+            {
+                "name": "Comfy",
+                "base_url": "https://comfy.invalid",
+                "kind": "media",
+                "model": "sdxl",
+                "protocol": "comfyui",
+                "input_modalities": ["text"],
+                "output_modalities": ["image"],
+            }
+        )
+    with pytest.raises(Exception, match="不匹配"):
+        LlmProviderEndpoint.model_validate(
+            {
+                "name": "错配",
+                "base_url": "https://media.invalid",
+                "kind": "media",
+                "model": "gpt-image-1",
+                "protocol": "openai",
+                "input_modalities": ["text"],
+                "output_modalities": ["video"],
+            }
+        )
+
+
+def test_a_mixed_media_endpoint_is_dropped_without_emptying_the_pool() -> None:
+    """`get_typed` must not fall back to the empty default because one
+    leftover endpoint spans image and video capabilities."""
+    parsed = LlmProviderConfig.model_validate(
+        {
+            "endpoints": {
+                "good": {
+                    "name": "图",
+                    "base_url": "https://image.invalid",
+                    "kind": "media",
+                    "model": "gpt-image-1",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["image"],
+                },
+                "mixed": {
+                    "name": "混合",
+                    "base_url": "https://mixed.invalid",
+                    "kind": "media",
+                    "model": "multi",
+                    "input_modalities": ["text", "image"],
+                    "output_modalities": ["image", "video"],
+                },
+            }
+        }
+    )
+    assert set(parsed.endpoints) == {"good"}
+    assert parsed.endpoints["good"].protocol == "openai"
+
+
+def test_legacy_media_json_without_protocol_still_loads_via_get_typed(db: Session) -> None:
+    """A stored pre-protocol endpoint must not trip `get_typed` into the empty
+    default pool — that would silently unroute every media job."""
+    from app.models import PlatformConfig
+    from app.models.base import utcnow
+
+    config_service.invalidate("llm_providers")
+    db.add(
+        PlatformConfig(
+            key="llm_providers",
+            version=1,
+            is_active=True,
+            value_json={
+                "endpoints": {
+                    "legacy-image": {
+                        "name": "图",
+                        "base_url": "https://image.invalid",
+                        "api_key": "k",
+                        "kind": "media",
+                        "model": "gpt-image-1",
+                        "input_modalities": ["text"],
+                        "output_modalities": ["image"],
+                    }
+                }
+            },
+            created_at=utcnow(),
+        )
+    )
+    db.flush()
+    config_service.invalidate("llm_providers")
+    config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+    assert "legacy-image" in config.endpoints
+    assert config.endpoints["legacy-image"].protocol == "openai"
+
+
+def test_comfyui_protocol_capabilities_exclude_audio() -> None:
+    """Union-then-subtract; `|` binds looser than `-`, so parentheses matter."""
+    caps = PROTOCOL_CAPABILITIES["comfyui"]
+    assert Operation.AUDIO_GENERATION.value not in caps
+    assert Operation.TEXT_TO_IMAGE.value in caps
+    assert Operation.TEXT_TO_VIDEO.value in caps

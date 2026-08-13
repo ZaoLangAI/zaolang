@@ -96,6 +96,7 @@ def upsert_llm_provider(
             model=payload.model if payload.kind == "media" else "",
             input_modalities=list(payload.input_modalities) if payload.kind == "media" else [],
             output_modalities=list(payload.output_modalities) if payload.kind == "media" else [],
+            protocol=payload.protocol if payload.kind == "media" else None,
             max_concurrency=payload.max_concurrency if payload.kind == "general" else 1,
             timeout_ms=payload.timeout_ms,
             enabled=payload.enabled,
@@ -121,6 +122,7 @@ def upsert_llm_provider(
             "kind": payload.kind,
             "role": payload.role,
             "model": payload.model if payload.kind == "media" else None,
+            "protocol": endpoint.protocol if payload.kind == "media" else None,
             "input_modalities": sorted(payload.input_modalities) if payload.kind == "media" else [],
             "output_modalities": sorted(payload.output_modalities)
             if payload.kind == "media"
@@ -249,6 +251,7 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         model=endpoint.model,
         input_modalities=list(endpoint.input_modalities),
         output_modalities=list(endpoint.output_modalities),
+        protocol=endpoint.protocol,
         capabilities=sorted(endpoint.capabilities),
         max_concurrency=endpoint.max_concurrency,
         role=endpoint.role,

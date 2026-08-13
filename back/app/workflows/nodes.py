@@ -11,12 +11,14 @@ Keep every executor's shape close to the step it replaces in the old
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import asdict
 from typing import Any
 
 from app.agents import copywriter, planner, quality, router, safety
 from app.agents import custom as custom_agent
 from app.agents import intent_router as intent_router_agent
+from app.config import get_settings
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound
 from app.domain.jobs import service as jobs_service
@@ -33,11 +35,13 @@ from app.models.enums import (
     ModerationStage,
     ModerationStatus,
     NotificationType,
+    Operation,
     ProviderAttemptStatus,
     QualityTier,
 )
-from app.providers.base import GenerationRequest, GenerationResult
+from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
 from app.realtime import publisher
+from app.storage import s3
 from app.workflows.configs import (
     CopyGenerateConfig,
     CustomAgentStepConfig,
@@ -61,6 +65,23 @@ _TIER_RANK: dict[str, int] = {
     QualityTier.STANDARD.value: 1,
     QualityTier.CINEMATIC.value: 2,
 }
+
+_VIDEO_OPERATIONS = frozenset(
+    {
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }
+)
+_REFERENCE_REQUIRED = frozenset(
+    {
+        Operation.IMAGE_TO_IMAGE.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }
+)
+_SANDBOX_POLL_INTERVAL_SECONDS = 2.0
+_SANDBOX_POLL_CAP_MS = 120_000
 
 
 def _emit(
@@ -142,10 +163,11 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
         ctx.state["failure_code"] = "MODERATION_REJECTED"
         ctx.state["failure_message"] = verdict.public_message or "内容未通过安全检查。"
         return NodeResult(port="reject", summary=f"拒绝：{verdict.public_message or '未通过'}")
-    if verdict.status == ModerationStatus.NEEDS_REVIEW:
+    if verdict.status == ModerationStatus.NEEDS_REVIEW and not ctx.dry_run:
         # Uncertain, not unsafe enough to hard-block: the job still runs, but
         # a human now has something to look at instead of the verdict being
-        # recorded and never followed up on.
+        # recorded and never followed up on. A sandbox run has no real job
+        # to review, so enqueuing would pollute the ops queue with fake ids.
         moderation_queue.enqueue_for_review(
             ctx.session,
             subject_type="generation_job",
@@ -546,6 +568,142 @@ def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
     return prompt, negative_prompt
 
 
+def _stub_generation_result(operation: str) -> GenerationResult:
+    """A settled fake artifact whose mime matches the operation.
+
+    Quality and the sandbox dialog both inspect mime type; a video dry-run
+    that claims to have produced `image/png` looks like a broken provider.
+    """
+    if operation == Operation.AUDIO_GENERATION.value:
+        return GenerationResult(
+            succeeded=True,
+            object_key="dry-run/stub.mp3",
+            mime_type="audio/mpeg",
+            duration_ms=1000,
+            metadata={"dry_run": True},
+        )
+    if operation in _VIDEO_OPERATIONS:
+        return GenerationResult(
+            succeeded=True,
+            object_key="dry-run/stub.mp4",
+            mime_type="video/mp4",
+            width=1024,
+            height=576,
+            duration_ms=4000,
+            metadata={"dry_run": True},
+        )
+    return GenerationResult(
+        succeeded=True,
+        object_key="dry-run/stub.png",
+        mime_type="image/png",
+        width=1024,
+        height=576,
+        duration_ms=0,
+        metadata={"dry_run": True},
+    )
+
+
+def _preview_url_for(object_key: str) -> str:
+    return s3.presign_get(object_key, expires_in=get_settings().download_url_ttl_seconds)
+
+
+def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationResult:
+    """Calls the selected provider without writing job/attempt/ledger rows.
+
+    Video providers return `pending` and normally suspend for Beat. A sandbox
+    request has no Beat, so this polls in-process up to the endpoint's
+    `timeout_ms` (capped) and never sets `suspend`.
+    """
+    provider: GenerationProvider | None = decision.provider
+    if provider is None:
+        return GenerationResult(
+            succeeded=False,
+            failure_code="PROVIDER_TEMPORARY_FAILURE",
+            metadata={"detail": "no provider factory for the selected route"},
+        )
+
+    operation = ctx.job.operation
+    duration = int(ctx.params.get("duration_seconds") or 0)
+    if operation in _VIDEO_OPERATIONS and duration < 4:
+        duration = 4
+
+    references = media_service.provider_references_for(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        asset_ids=ctx.params.get("reference_asset_ids") or [],
+        video_options=ctx.params.get("video_options"),
+    )
+    if operation in _REFERENCE_REQUIRED and not references:
+        return GenerationResult(
+            succeeded=False,
+            failure_code="MISSING_REFERENCE",
+            metadata={"detail": "reference_asset_ids is required for this operation"},
+        )
+
+    effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
+    request = GenerationRequest(
+        job_id=ctx.job.id,
+        operation=operation,
+        quality_tier=ctx.job.quality_tier,
+        prompt=effective_prompt,
+        negative_prompt=effective_negative_prompt,
+        seed=ctx.params.get("seed"),
+        aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
+        duration_seconds=duration,
+        references=references,
+        extra=dict(ctx.params.get("extra") or {}),
+    )
+    result = provider.submit(request)
+    if result.pending and result.external_task_id:
+        timeout_ms = _sandbox_poll_budget_ms(provider, decision)
+        result = _poll_sandbox_pending(provider, request, result.external_task_id, timeout_ms)
+    return result
+
+
+def _sandbox_poll_budget_ms(provider: GenerationProvider, decision: Any) -> int:
+    """Cap in-request video polling at the endpoint timeout, then 120s.
+
+    `typical_latency_ms` is only a fallback for test doubles that are not
+    bound to a configured endpoint.
+    """
+    creds = getattr(provider, "_creds", None)
+    endpoint_ms = int(float(getattr(creds, "timeout_s", 0) or 0) * 1000)
+    typical = int(getattr(decision.capability, "typical_latency_ms", 90_000) or 90_000)
+    return min(endpoint_ms or typical, _SANDBOX_POLL_CAP_MS)
+
+
+def _poll_sandbox_pending(
+    provider: GenerationProvider,
+    request: GenerationRequest,
+    external_task_id: str,
+    timeout_ms: int,
+) -> GenerationResult:
+    deadline = time.monotonic() + timeout_ms / 1000
+    last = GenerationResult(
+        succeeded=False,
+        pending=True,
+        external_task_id=external_task_id,
+        failure_code="PROVIDER_TIMEOUT",
+        metadata={"detail": "sandbox poll timed out before the provider finished"},
+    )
+    while time.monotonic() < deadline:
+        last = provider.poll(external_task_id, request)
+        if not last.pending:
+            return last
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(_SANDBOX_POLL_INTERVAL_SECONDS, remaining))
+    if last.pending:
+        return GenerationResult(
+            succeeded=False,
+            external_task_id=external_task_id,
+            failure_code="PROVIDER_TIMEOUT",
+            metadata={"detail": "sandbox poll timed out before the provider finished"},
+        )
+    return last
+
+
 def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConfig) -> NodeResult:
     decision = ctx.state.get("decision")
     if decision is None or decision.capability is None:
@@ -561,17 +719,10 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
 
     if ctx.dry_run:
         _emit(ctx, JobEventType.GENERATING, JobStatus.SUBMITTED, "正在生成", 40)
-        result = GenerationResult(
-            succeeded=True,
-            object_key="dry-run/stub.png",
-            mime_type="image/png",
-            width=1024,
-            height=576,
-            duration_ms=0,
-            cost_minor=0,
-            latency_ms=0,
-            metadata={"dry_run": True},
-        )
+        if ctx.live_provider:
+            result = _sandbox_live_generate(ctx, decision)
+        else:
+            result = _stub_generation_result(ctx.job.operation)
     else:
         # A retry re-enters with the job already `running`; the state
         # machine rightly refuses running -> running.
@@ -664,6 +815,9 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
 
     if not result.succeeded or result.object_key is None:
         ctx.state["failure_code"] = result.failure_code or "PROVIDER_TEMPORARY_FAILURE"
+        detail = result.metadata.get("detail") if isinstance(result.metadata, dict) else None
+        if detail:
+            ctx.state["error_detail"] = str(detail)
         _emit(
             ctx,
             JobEventType.PROGRESS,
@@ -673,13 +827,23 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             internal_code=ctx.state["failure_code"],
         )
         failure_summary = f"{capability.name} 失败：{ctx.state['failure_code']}"
-        if not config.retry_on_failure:
+        skip_retry = (
+            (ctx.dry_run and ctx.live_provider)
+            or result.failure_code in {"MISSING_REFERENCE", "PROVIDER_TIMEOUT"}
+            or not config.retry_on_failure
+        )
+        if skip_retry:
+            # `error_detail` is admin-sandbox only; C-end `failure_message`
+            # must stay a public sentence (no HTTP bodies / timeouts).
             ctx.state["failure_message"] = "生成失败，积分已退回。"
             return NodeResult(port="failed", summary=failure_summary)
         return NodeResult(port="retry", summary=failure_summary)
 
     ctx.state["result"] = result
     ctx.state["capability"] = capability
+    if ctx.dry_run and ctx.live_provider and result.object_key:
+        ctx.state["_preview_url"] = _preview_url_for(result.object_key)
+        ctx.state["_preview_mime_type"] = result.mime_type
     return NodeResult(port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功")
 
 
@@ -709,7 +873,7 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
 
     if outcome.data.get("verdict") == "fail":
         ctx.state["failure_code"] = "QUALITY_REJECTED"
-        if outcome.data.get("should_retry"):
+        if outcome.data.get("should_retry") and not (ctx.dry_run and ctx.live_provider):
             _emit(
                 ctx,
                 JobEventType.PROGRESS,

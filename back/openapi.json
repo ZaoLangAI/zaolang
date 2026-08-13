@@ -11852,7 +11852,7 @@
           "admin:workflow-templates"
         ],
         "summary": "Dry Run Workflow Template",
-        "description": "Simulates a job through a graph — the editor's unpublished draft when\n`payload.graph` is given, otherwise the operation's active published one.\n\nNever creates a `GenerationJob` row, reserves credits, or hits a paid\nprovider — see `WorkflowContext.dry_run` and every node executor's own\n`if ctx.dry_run` branch for the specifics. The four agent nodes\n(safety/planning/intent_router/quality) still call the real LLM gateway\non purpose: that is the one thing worth spending a little real cost on to\nactually validate a prompt change before publishing it. `AdminWrite`'s\nrate limit is what keeps that cost bounded.\n\nA draft is held to exactly the same validation as a publish, because a\ngraph that fails it cannot be walked safely; but it is never written\nanywhere, so trying one out has no effect on live traffic. This is the\nwhole point of the endpoint: without it, checking an edit would mean\npublishing it to every job first.",
+        "description": "Simulates a job through a graph — the editor's unpublished draft when\n`payload.graph` is given, otherwise the operation's active published one.\n\nNever creates a `GenerationJob` row, reserves credits, or writes a\n`ProviderAttempt`. The four agent nodes (safety/planning/intent_router/\nquality) still call the real LLM gateway on purpose: that is the one\nthing worth spending a little real cost on to actually validate a prompt\nchange before publishing it. `AdminWrite`'s rate limit is what keeps\nthat cost bounded.\n\nWith `live_provider=False` (the default) the media provider is stubbed.\nWith `live_provider=True` the selected configured model is called for\nreal and a short-lived `preview_url` is returned — still without a job\nrow or a credit reservation. Video pending results are polled in this\nrequest rather than suspended for Beat.\n\nA draft is held to exactly the same validation as a publish, because a\ngraph that fails it cannot be walked safely; but it is never written\nanywhere, so trying one out has no effect on live traffic. This is the\nwhole point of the endpoint: without it, checking an edit would mean\npublishing it to every job first.",
         "operationId": "dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post",
         "parameters": [
           {
@@ -15889,6 +15889,16 @@
             ],
             "title": "Output Url"
           },
+          "output_media_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "draft_id": {
             "anyOf": [
               {
@@ -17269,6 +17279,26 @@
             "type": "array",
             "title": "Output Modalities"
           },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "minimax",
+                  "comfyui",
+                  "google",
+                  "dashscope",
+                  "ark",
+                  "kling"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
           "max_concurrency": {
             "type": "integer",
             "maximum": 256.0,
@@ -17359,6 +17389,26 @@
             },
             "type": "array",
             "title": "Output Modalities"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "minimax",
+                  "comfyui",
+                  "google",
+                  "dashscope",
+                  "ark",
+                  "kling"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
           },
           "capabilities": {
             "items": {
@@ -23181,6 +23231,11 @@
               }
             ],
             "title": "Graph"
+          },
+          "live_provider": {
+            "type": "boolean",
+            "title": "Live Provider",
+            "default": false
           }
         },
         "type": "object",
@@ -23215,6 +23270,39 @@
               }
             ],
             "title": "Asset Id"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
           },
           "trace": {
             "items": {

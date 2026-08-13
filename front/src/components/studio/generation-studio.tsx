@@ -230,9 +230,10 @@ export function GenerationStudio({
   // (for audio) no aspect ratio — the studio only asks for what the job
   // actually prices and validates on the backend.
   const isAudio = operation === 'audio_generation';
+  const isImage = operation === 'text_to_image' || operation === 'image_to_image';
   const isImageEdit = operation === 'image_to_image';
   const isVideo = ['text_to_video', 'image_to_video', 'video_to_video'].includes(operation);
-  const showAspect = !isAudio;
+  const showAspect = isImage || isVideo;
   const showDuration = isVideo;
   const showSound = isVideo;
   const effectiveDuration = showDuration ? duration : 0;

@@ -211,6 +211,13 @@ test.describe('operations screens', () => {
     // "workflow / providers & weights" console tabs are gone entirely.
     await expect(page.getByRole('tab', { name: '供应商与权重' })).toHaveCount(0);
     await expect(page.getByText('路由权重')).toHaveCount(0);
+
+    const edgePaths = page.locator('.react-flow__edge-path');
+    await expect(edgePaths.first()).toBeVisible();
+    expect(await edgePaths.count()).toBeGreaterThanOrEqual(14);
+    const stroke = await edgePaths.first().evaluate((el) => getComputedStyle(el).stroke);
+    expect(stroke).not.toBe('');
+    expect(stroke).not.toBe('none');
   });
 
   test('a sandbox dry run of the canvas draft returns a trace', async ({ page }) => {
@@ -225,6 +232,7 @@ test.describe('operations screens', () => {
     // "画布上的草稿" is the default source — running it, unpublished, is the
     // whole point of the dry run existing.
     await expect(dialog.getByLabel('试跑对象')).toHaveValue('draft');
+    await expect(dialog.getByRole('switch', { name: '真实调用已配置模型' })).not.toBeChecked();
     await dialog.getByLabel('提示词').fill('一只在雨中奔跑的猫');
 
     const dryRun = page.waitForResponse(
@@ -303,6 +311,12 @@ test.describe('operations screens', () => {
     // per-capability checklist.
     await page.getByLabel('模型类型').selectOption('media');
     await expect(page.getByText('支持的输入类型', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('接口协议')).toBeVisible();
+    const protocolSelect = page.getByLabel('接口协议');
+    await expect(protocolSelect.locator('option[value="openai"]')).toHaveText('OpenAI');
+    await expect(protocolSelect.locator('option[value="minimax"]')).toHaveText('MiniMax');
+    await expect(protocolSelect.locator('option[value="comfyui"]')).toHaveText('ComfyUI');
+    await expect(protocolSelect.locator('option[value="comfyui"]')).toBeDisabled();
     const editorDialog = page.getByRole('dialog');
     await editorDialog.press('Escape');
     await expect(editorDialog).toBeHidden();

@@ -38,6 +38,10 @@ class WorkflowContext:
     prompt: str
     params: dict[str, Any]
     dry_run: bool = False
+    # When set with `dry_run`, `provider_generate` calls the real media
+    # provider instead of stubbing. Still never creates a `GenerationJob`,
+    # reserves credits, or writes a `ProviderAttempt`.
+    live_provider: bool = False
     state: dict[str, Any] = field(default_factory=dict)
 
     @property

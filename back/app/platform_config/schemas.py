@@ -7,12 +7,15 @@ against a malformed value.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import Operation, QualityTier
+
+logger = logging.getLogger(__name__)
 
 # The longest clip a generation request may ask for. Config that promises more
 # than this would be unreachable, so every duration setting is capped by it.
@@ -239,6 +242,60 @@ def capabilities_for_modalities(
     }
 
 
+# HTTP contract names shown in the admin dropdown — not vendor names.
+# AiHubMix's image/audio paths are OpenAI-compatible, so they display as OpenAI.
+MediaProtocol = Literal["openai", "minimax", "comfyui", "google", "dashscope", "ark", "kling"]
+MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
+    "openai",
+    "minimax",
+    "comfyui",
+    "google",
+    "dashscope",
+    "ark",
+    "kling",
+)
+IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset({"openai", "minimax"})
+_OPENAI_CAPABILITIES = frozenset(
+    {
+        Operation.TEXT_TO_IMAGE.value,
+        Operation.IMAGE_TO_IMAGE.value,
+        Operation.AUDIO_GENERATION.value,
+    }
+)
+_MINIMAX_CAPABILITIES = frozenset(
+    {
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }
+)
+_COMFYUI_CAPABILITIES = (_OPENAI_CAPABILITIES | _MINIMAX_CAPABILITIES) - {
+    Operation.AUDIO_GENERATION.value
+}
+PROTOCOL_CAPABILITIES: dict[str, frozenset[str]] = {
+    "openai": _OPENAI_CAPABILITIES,
+    "minimax": _MINIMAX_CAPABILITIES,
+    "comfyui": _COMFYUI_CAPABILITIES,
+    "google": frozenset(),
+    "dashscope": frozenset(),
+    "ark": frozenset(),
+    "kling": frozenset(),
+}
+
+
+def infer_media_protocol(capabilities: Iterable[str]) -> MediaProtocol:
+    """Guess the contract for a pre-protocol media endpoint.
+
+    Video-only → MiniMax (the only implemented video path). Anything else,
+    including mixed image+video leftovers, → OpenAI so the after-validator
+    can reject the mismatch instead of silently picking a vendor.
+    """
+    caps = set(capabilities)
+    if caps and caps <= _MINIMAX_CAPABILITIES:
+        return "minimax"
+    return "openai"
+
+
 class LlmProviderEndpoint(ConfigSection):
     """One OpenAI/AiHubMix-compatible model provider endpoint.
 
@@ -272,6 +329,9 @@ class LlmProviderEndpoint(ConfigSection):
     # `kind="media"` only: subsets of `MEDIA_INPUT_MODALITIES`/`_OUTPUT_MODALITIES`.
     input_modalities: list[str] = Field(default_factory=list)
     output_modalities: list[str] = Field(default_factory=list)
+    # `kind="media"` only: which HTTP contract this endpoint speaks. Missing
+    # values are inferred from modalities so pre-protocol JSON still parses.
+    protocol: MediaProtocol | None = None
     max_concurrency: int = Field(default=4, ge=1, le=256)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
@@ -299,6 +359,7 @@ class LlmProviderEndpoint(ConfigSection):
             )
             if not self.models:
                 raise ValueError("通用模型端点至少需要声明一个模型。")
+            self.protocol = None
             return self
         if not self.model.strip():
             raise ValueError("媒体模型必须填写模型名称。")
@@ -308,6 +369,13 @@ class LlmProviderEndpoint(ConfigSection):
             raise ValueError(f"不支持的模态: {sorted(bad_inputs | bad_outputs)}")
         if not capabilities_for_modalities(self.input_modalities, self.output_modalities):
             raise ValueError("所选输入/输出类型组合未对应任何生成能力，请重新选择。")
+        if self.protocol is None:
+            self.protocol = infer_media_protocol(self.capabilities)
+        if self.protocol not in IMPLEMENTED_MEDIA_PROTOCOLS:
+            raise ValueError(f"接口协议尚未接入: {self.protocol}")
+        allowed = PROTOCOL_CAPABILITIES.get(self.protocol, frozenset())
+        if not self.capabilities <= allowed:
+            raise ValueError("接口协议与所选输入/输出类型不匹配。")
         # Media routes are selected by capability and the intent router, not
         # by the LLM pool's primary/backup or concurrency lease semantics.
         self.role = "backup"
@@ -341,11 +409,46 @@ class LlmProviderEndpoint(ConfigSection):
             legacy_priority = migrated.pop("priority")
             migrated.setdefault("role", "primary" if legacy_priority <= 1 else "backup")
             migrated.setdefault("backup_order", max(1, min(1000, legacy_priority)))
+        kind = migrated.get("kind", "general")
+        protocol = migrated.get("protocol")
+        if kind != "media":
+            migrated["protocol"] = None
+        elif not (isinstance(protocol, str) and protocol.strip()):
+            caps = capabilities_for_modalities(
+                migrated.get("input_modalities") or [],
+                migrated.get("output_modalities") or [],
+            )
+            migrated["protocol"] = infer_media_protocol(caps)
         return migrated
 
 
 class LlmProviderConfig(ConfigSection):
     endpoints: dict[str, LlmProviderEndpoint] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_invalid_endpoints(cls, data: Any) -> Any:
+        """One bad media endpoint must not empty the whole pool.
+
+        `get_typed` falls back to `DEFAULT_CONFIGS` (no endpoints) when this
+        model fails to parse. Skipping the offender keeps the rest routable.
+        """
+        if not isinstance(data, dict):
+            return data
+        raw_endpoints = data.get("endpoints")
+        if not isinstance(raw_endpoints, dict):
+            return data
+        kept: dict[str, Any] = {}
+        for endpoint_id, raw in raw_endpoints.items():
+            try:
+                LlmProviderEndpoint.model_validate(raw)
+            except Exception:
+                logger.warning(
+                    "dropping invalid llm_providers endpoint %s", endpoint_id, exc_info=True
+                )
+                continue
+            kept[endpoint_id] = raw
+        return {**data, "endpoints": kept}
 
 
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {

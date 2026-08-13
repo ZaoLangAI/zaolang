@@ -130,10 +130,23 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <div className="flex flex-col gap-5">
         {current.output_url ? (
-          // The result is the first thing an author checks against the phone
-          // they will publish from, so the frames are offered here rather than
-          // one page later.
-          <DevicePreview src={current.output_url} title={t('title')} />
+          current.output_media_type === 'image' ? (
+            // Native img: job output URLs are short-lived object signatures.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={current.output_url}
+              alt={t('title')}
+              className="w-full rounded-[var(--radius-md)] border border-border object-contain"
+            />
+          ) : current.output_media_type === 'audio' ? (
+            <audio
+              src={current.output_url}
+              controls
+              className="w-full rounded-[var(--radius-md)] border border-border p-4"
+            />
+          ) : (
+            <DevicePreview src={current.output_url} title={t('title')} />
+          )
         ) : (
           <Poster src={null} alt={t('waiting')} aspect="video" className="border border-border">
             <div className="absolute inset-0 grid place-items-center">

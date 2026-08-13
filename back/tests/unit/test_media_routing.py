@@ -44,8 +44,8 @@ def _seed_media_endpoint(
 def test_a_configured_media_endpoint_can_serve_an_operation_the_fakes_cannot(
     db: Session,
 ) -> None:
-    """Neither fake provider declares `image_to_image`: without a configured
-    endpoint the job would have nowhere to route."""
+    """Production catalogues never include the test fakes, so `image_to_image`
+    is only routable once a media endpoint is configured."""
     decision = router.route(
         db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )

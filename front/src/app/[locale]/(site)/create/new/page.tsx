@@ -5,10 +5,17 @@ import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
 
-const MODES = ['text_to_video', 'image_to_video', 'image_to_image', 'audio_generation'] as const;
+const MODES = [
+  'text_to_image',
+  'text_to_video',
+  'image_to_video',
+  'image_to_image',
+  'audio_generation',
+] as const;
 type Mode = (typeof MODES)[number];
 
 const TITLE_KEYS: Record<Mode, string> = {
+  text_to_image: 'modeTextToImageTitle',
   text_to_video: 'modeTextToVideoTitle',
   image_to_video: 'modeImageToVideoTitle',
   image_to_image: 'modeImageToImageTitle',
@@ -16,6 +23,7 @@ const TITLE_KEYS: Record<Mode, string> = {
 };
 
 const DESCRIPTION_KEYS: Record<Mode, string> = {
+  text_to_image: 'modeTextToImageDesc',
   text_to_video: 'modeTextToVideoDesc',
   image_to_video: 'modeImageToVideoDesc',
   image_to_image: 'modeImageToImageDesc',

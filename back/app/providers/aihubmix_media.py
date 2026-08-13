@@ -54,6 +54,47 @@ _TASK_FAILED_STATUSES = frozenset({"failed", "cancelled", "canceled", "expired"}
 # still legitimately running would fail the task for the wrong reason.
 _REFERENCE_URL_TTL_SECONDS = 900
 
+# OpenAI-compatible gateways (and AiHubMix's Qwen list) reject sizes below a
+# 512px floor. Preview used to emit `512x288` for 16:9, which is not a legal
+# generations size.
+_IMAGE_SIZE_BY_ASPECT = {
+    "16:9": "1024x576",
+    "9:16": "576x1024",
+    "1:1": "1024x1024",
+    "4:3": "1024x768",
+    "3:4": "768x1024",
+    "21:9": "1024x576",
+}
+
+
+def join_media_url(base_url: str, path: str) -> str:
+    """Join a rooted media path onto a gateway base without doubling `/v1`.
+
+    Operators often save chat-compatible bases as `https://host/v1`. httpx
+    then turns `POST /v1/images/generations` into `/v1/v1/images/generations`
+    (404). MiniMax bases are the host root and paths start with `/ai/v1/…`.
+    """
+    base = httpx.URL(base_url)
+    path = "/" + path.lstrip("/")
+    base_path = (base.path or "").rstrip("/")
+    if path.startswith("/v1/") and base_path.endswith("/v1"):
+        merged = base_path + path[3:]
+    elif not base_path or base_path == "/":
+        merged = path
+    else:
+        merged = base_path + path
+    return str(base.copy_with(path=merged, query=None, fragment=None))
+
+
+def media_client_base(base_url: str) -> str:
+    """Origin only, so rooted paths are joined against the host, not `/v1`."""
+    url = httpx.URL(base_url)
+    return str(url.copy_with(path="/", query=None, fragment=None)).rstrip("/")
+
+
+def media_request_path(base_url: str, path: str) -> str:
+    return httpx.URL(join_media_url(base_url, path)).path or path
+
 
 @dataclass(frozen=True, slots=True)
 class _EndpointCredentials:
@@ -95,6 +136,29 @@ class AiHubMixMediaProvider(GenerationProvider):
             }:
                 return self._submit_image(request, started)
             return self._submit_video(request, started)
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "aihubmix %s call timed out for job %s after %.0fs: %s",
+                self._capability_tag,
+                request.job_id,
+                self._creds.timeout_s,
+                type(exc).__name__,
+            )
+            return self._failure(
+                started,
+                "PROVIDER_TEMPORARY_FAILURE",
+                f"{type(exc).__name__} after {int(self._creds.timeout_s)}s",
+            )
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "aihubmix %s call failed for job %s: HTTP %s",
+                self._capability_tag,
+                request.job_id,
+                exc.response.status_code,
+            )
+            status = exc.response.status_code
+            code = "PROVIDER_INVALID_RESPONSE" if status < 500 else "PROVIDER_TEMPORARY_FAILURE"
+            return self._failure(started, code, _http_error_detail(exc, self._creds.api_key))
         except httpx.HTTPError as exc:
             logger.warning(
                 "aihubmix %s call failed for job %s: %s", self._capability_tag, request.job_id, exc
@@ -105,25 +169,27 @@ class AiHubMixMediaProvider(GenerationProvider):
 
     def _submit_image(self, request: GenerationRequest, started: float) -> GenerationResult:
         size = _size_for(request.aspect_ratio, request.quality_tier)
+        body: dict[str, object] = {
+            "model": self._model,
+            "prompt": request.prompt,
+            "size": size,
+            "n": 1,
+        }
+        image_refs = _image_reference_urls(request)
+        if image_refs:
+            body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
+
         with self._client() as client:
-            if request.reference_object_keys:
-                reference = s3.get_object(request.reference_object_keys[0])
-                files = {"image": ("reference.png", reference, "image/png")}
-                data = {"model": self._model, "prompt": request.prompt, "size": size, "n": "1"}
-                response = client.post("/v1/images/edits", data=data, files=files)
-            else:
-                response = client.post(
-                    "/v1/images/generations",
-                    json={"model": self._model, "prompt": request.prompt, "size": size, "n": 1},
-                )
+            response = client.post(
+                media_request_path(self._creds.base_url, "/v1/images/generations"), json=body
+            )
             response.raise_for_status()
             payload = response.json()
+            image_bytes = _image_bytes_from_payload(payload, client)
 
-        entries = payload.get("data") or []
-        if not entries or "b64_json" not in entries[0]:
-            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_b64_json")
+        if not image_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
 
-        image_bytes = base64.b64decode(entries[0]["b64_json"])
         width, height = _probe_image_size(image_bytes)
         object_key = f"generated/{request.job_id}/output.png"
         s3.put_object(object_key, image_bytes, content_type="image/png")
@@ -144,7 +210,7 @@ class AiHubMixMediaProvider(GenerationProvider):
         voice = request.extra.get("voice", "alloy")
         with self._client() as client:
             response = client.post(
-                "/v1/audio/speech",
+                media_request_path(self._creds.base_url, "/v1/audio/speech"),
                 json={
                     "model": self._model,
                     "input": request.prompt,
@@ -193,7 +259,9 @@ class AiHubMixMediaProvider(GenerationProvider):
         )
 
         with self._client() as client:
-            create = client.post("/ai/v1/videos", json=body)
+            create = client.post(
+                media_request_path(self._creds.base_url, "/ai/v1/videos"), json=body
+            )
             create.raise_for_status()
             task_id = create.json().get("id")
 
@@ -222,7 +290,9 @@ class AiHubMixMediaProvider(GenerationProvider):
         started = time.perf_counter()
         try:
             with self._client() as client:
-                status_response = client.get(f"/ai/v1/tasks/{external_task_id}")
+                status_response = client.get(
+                    media_request_path(self._creds.base_url, f"/ai/v1/tasks/{external_task_id}")
+                )
                 status_response.raise_for_status()
                 payload = status_response.json()
                 status = str(payload.get("status") or "").lower()
@@ -246,7 +316,11 @@ class AiHubMixMediaProvider(GenerationProvider):
                         started, "PROVIDER_INVALID_RESPONSE", "completed_without_output"
                     )
 
-                content = client.get(_content_path(external_task_id, payload))
+                content = client.get(
+                    media_request_path(
+                        self._creds.base_url, _content_path(external_task_id, payload)
+                    )
+                )
                 content.raise_for_status()
                 video_bytes = content.content
         except httpx.HTTPError as exc:
@@ -291,14 +365,18 @@ class AiHubMixMediaProvider(GenerationProvider):
             return False
         try:
             with self._client() as client:
-                response = client.post(f"/ai/v1/tasks/{external_task_id}/cancel")
+                response = client.post(
+                    media_request_path(
+                        self._creds.base_url, f"/ai/v1/tasks/{external_task_id}/cancel"
+                    )
+                )
                 return response.status_code < 400
         except httpx.HTTPError:
             return False
 
     def _client(self) -> httpx.Client:
         return httpx.Client(
-            base_url=self._creds.base_url,
+            base_url=media_client_base(self._creds.base_url),
             headers={"Authorization": f"Bearer {self._creds.api_key}"},
             timeout=self._creds.timeout_s,
         )
@@ -391,17 +469,62 @@ def build_video_payload(
     return body
 
 
+def _image_reference_urls(request: GenerationRequest) -> list[str]:
+    """Signed GET URLs for image-to-image references.
+
+    Text-to-image leaves this empty. Image-to-image sends the same OpenAI
+    `/v1/images/generations` JSON with an extra `image` field rather than
+    switching to the multipart `/v1/images/edits` path.
+    """
+    keys: list[str] = []
+    for ref in request.references:
+        if ref.media_type == "image" and ref.object_key:
+            keys.append(ref.object_key)
+    for key in request.reference_object_keys:
+        if key not in keys:
+            keys.append(key)
+    return [
+        s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+        for key in keys[:_MAX_INPUT_REFERENCES]
+    ]
+
+
+def _image_bytes_from_payload(payload: object, client: httpx.Client) -> bytes | None:
+    """OpenAI-compatible image responses carry either `b64_json` or a `url`."""
+    if not isinstance(payload, dict):
+        return None
+    entries = payload.get("data") or []
+    if not isinstance(entries, list) or not entries or not isinstance(entries[0], dict):
+        return None
+    entry = entries[0]
+    encoded = entry.get("b64_json")
+    if isinstance(encoded, str) and encoded:
+        try:
+            return base64.b64decode(encoded)
+        except (ValueError, TypeError):
+            return None
+    url = entry.get("url")
+    if isinstance(url, str) and url:
+        download = client.get(url)
+        download.raise_for_status()
+        return download.content or None
+    return None
+
+
+def _http_error_detail(exc: httpx.HTTPStatusError, api_key: str) -> str:
+    status = exc.response.status_code
+    text = (exc.response.text or "").replace(api_key, "[redacted]")[:300]
+    return f"HTTP {status}: {text}" if text else f"HTTP {status}"
+
+
 def _size_for(aspect_ratio: str, quality_tier: str) -> str:
-    base = {"preview": 512, "standard": 896, "cinematic": 1280}.get(quality_tier, 896)
-    try:
-        w_ratio, h_ratio = (int(part) for part in aspect_ratio.split(":"))
-    except ValueError:
-        w_ratio, h_ratio = 16, 9
-    if w_ratio >= h_ratio:
-        width, height = base, max(64, base * h_ratio // w_ratio)
-    else:
-        width, height = max(64, base * w_ratio // h_ratio), base
-    return f"{width}x{height}"
+    """Map aspect ratio onto a gateway-legal OpenAI size.
+
+    `quality_tier` stays in the signature so call sites are unchanged; this
+    protocol's allowed grid does not vary by preview/standard/cinematic.
+    """
+    _ = quality_tier
+    return _IMAGE_SIZE_BY_ASPECT.get(aspect_ratio, "1024x1024")
 
 
 def _probe_image_size(payload: bytes) -> tuple[int | None, int | None]:

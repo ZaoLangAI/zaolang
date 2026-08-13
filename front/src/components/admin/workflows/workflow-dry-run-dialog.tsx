@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Select, TextArea } from '@/components/ui/field';
+import { Select, Switch, TextArea } from '@/components/ui/field';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
@@ -18,6 +18,8 @@ import { ApiError } from '@/lib/api/errors';
 const TIERS = ['preview', 'standard', 'cinematic'] as const;
 type Source = 'draft' | 'published';
 
+const REFERENCE_OPS = new Set(['image_to_image', 'image_to_video', 'video_to_video']);
+
 /**
  * Sandbox try-it: runs a graph through `WorkflowRunner` with `dry_run=True`.
  *
@@ -29,8 +31,8 @@ type Source = 'draft' | 'published';
  * graph is validated exactly like a publish before it runs (see
  * `dry_run_workflow_template`'s docstring), and never becomes a
  * `GenerationWorkflowTemplate` row — see its docstring for exactly what
- * stays real (the four agent nodes) versus stubbed (billing, the paid
- * provider call).
+ * stays real (the four agent nodes) versus stubbed (billing, and the paid
+ * provider call unless the operator opts into `live_provider`).
  */
 export function WorkflowDryRunDialog({
   open,
@@ -53,6 +55,7 @@ export function WorkflowDryRunDialog({
   const [qualityTier, setQualityTier] = useState<string>('standard');
   const [paramsText, setParamsText] = useState('');
   const [paramsError, setParamsError] = useState<string | null>(null);
+  const [liveProvider, setLiveProvider] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WorkflowDryRunResult | null>(null);
@@ -83,6 +86,7 @@ export function WorkflowDryRunDialog({
           prompt,
           quality_tier: qualityTier,
           params,
+          live_provider: liveProvider,
           graph: source === 'draft' ? draftGraph : undefined,
         },
       );
@@ -134,7 +138,9 @@ export function WorkflowDryRunDialog({
         />
         <TextArea
           label={t('dryRunParams')}
-          hint={t('dryRunParamsHint')}
+          hint={
+            REFERENCE_OPS.has(operation) ? t('dryRunParamsHintReference') : t('dryRunParamsHint')
+          }
           value={paramsText}
           maxLength={2000}
           className="min-h-20 font-mono text-xs"
@@ -143,6 +149,12 @@ export function WorkflowDryRunDialog({
             setParamsText(event.target.value);
             setParamsError(null);
           }}
+        />
+        <Switch
+          checked={liveProvider}
+          onChange={setLiveProvider}
+          label={t('dryRunLiveProvider')}
+          description={t('dryRunLiveProviderHint')}
         />
 
         {error ? <ErrorNotice title={error} /> : null}
@@ -160,6 +172,29 @@ export function WorkflowDryRunDialog({
                 <span className="text-xs text-muted">{t('dryRunReplayHint')}</span>
               ) : null}
             </div>
+
+            {result.error_detail ? (
+              <ErrorNotice title={t('dryRunErrorDetail')} detail={result.error_detail} />
+            ) : null}
+
+            {result.preview_url ? (
+              <div className="overflow-hidden rounded-[var(--radius-sm)] border border-border">
+                {result.mime_type?.startsWith('audio/') ? (
+                  <audio src={result.preview_url} controls className="w-full p-3" />
+                ) : result.mime_type?.startsWith('video/') ? (
+                  <video src={result.preview_url} controls className="w-full bg-black" />
+                ) : (
+                  // Native img: sandbox preview URLs are short-lived MinIO
+                  // signatures, not the Next image optimizer's allowlist.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={result.preview_url}
+                    alt={t('dryRunPreview')}
+                    className="max-h-80 w-full object-contain"
+                  />
+                )}
+              </div>
+            ) : null}
 
             <ol className="flex flex-col gap-1.5">
               {(result.trace ?? []).map((step, index) => (

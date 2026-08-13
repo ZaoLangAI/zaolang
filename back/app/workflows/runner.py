@@ -154,6 +154,11 @@ class WorkflowRunner:
             input_requests.suspend(
                 ctx.session, job_id=ctx.job.id, node_id=node_id, checkpoint=checkpoint
             )
+            # Planning/copy can suspend before `provider_generate` has moved
+            # the job out of `queued`. `AWAITING_INPUT` is only reachable
+            # from `RUNNING` — the worker has already picked the job up.
+            if ctx.job.status == JobStatus.QUEUED:
+                ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.RUNNING)
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.AWAITING_INPUT)
             ctx.session.commit()
             logger.info(

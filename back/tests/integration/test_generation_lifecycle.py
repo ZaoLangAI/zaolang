@@ -22,6 +22,7 @@ from app.domain.errors import CreditsExceedBudget, InsufficientCredits
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.models import (
+    Asset,
     CreditLedgerEntry,
     GenerationJob,
     GenerationWorkflowTemplate,
@@ -30,9 +31,19 @@ from app.models import (
     User,
 )
 from app.models.base import new_id, utcnow
-from app.models.enums import JobStatus, LedgerEntryType, Operation, QualityTier
+from app.models.enums import (
+    AssetRole,
+    JobStatus,
+    LedgerEntryType,
+    MediaType,
+    ModerationStatus,
+    Operation,
+    QualityTier,
+    Visibility,
+)
 from app.workers import pipeline, tasks
 from tests.conftest import auth_header
+from tests.factories import make_job
 from tests.fake_provider_catalog import build_fake_catalog
 from tests.fake_providers import FORCE_FAILURE_MARKER
 
@@ -730,3 +741,43 @@ def test_every_queue_named_in_the_routes_actually_exists() -> None:
     routed = {route["queue"] for route in celery_app.conf.task_routes.values()}
     assert routed <= set(QUEUE_NAMES)
     assert celery_app.conf.task_default_queue in QUEUE_NAMES
+
+
+@pytest.mark.parametrize(
+    ("media_type", "mime_type"),
+    [
+        (MediaType.IMAGE, "image/png"),
+        (MediaType.AUDIO, "audio/mpeg"),
+        (MediaType.VIDEO, "video/mp4"),
+    ],
+)
+def test_job_response_exposes_output_media_type(
+    client: TestClient,
+    db: Session,
+    author: User,
+    media_type: MediaType,
+    mime_type: str,
+) -> None:
+    asset = Asset(
+        owner_user_id=author.id,
+        object_key=f"test/{new_id('obj')}",
+        media_type=media_type,
+        mime_type=mime_type,
+        size_bytes=128,
+        checksum_sha256="b" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    db.add(asset)
+    db.flush()
+    job = make_job(db, author, status=JobStatus.SUCCEEDED)
+    job.output_asset_id = asset.id
+    db.flush()
+
+    response = client.get(f"/v1/generation-jobs/{job.id}", headers=auth_header(author))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["output_media_type"] == media_type.value
+    assert body["output_asset_id"] == asset.id
+    assert body["output_url"]

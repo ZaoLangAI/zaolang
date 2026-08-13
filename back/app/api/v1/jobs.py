@@ -492,6 +492,7 @@ def _job_response(
         route=RouteSummary(**route) if route else None,
         output_asset_id=job.output_asset_id,
         output_url=media_urls.asset_url(session, job.output_asset_id),
+        output_media_type=media_urls.media_type_of(session, job.output_asset_id),
         draft_id=job.draft_id,
         failure_code=job.failure_code,
         failure_message=job.failure_message,

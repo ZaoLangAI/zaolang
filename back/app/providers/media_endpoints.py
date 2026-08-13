@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.enums import ProviderKind
 from app.platform_config import service as config_service
-from app.platform_config.schemas import LlmProviderConfig
+from app.platform_config.schemas import IMPLEMENTED_MEDIA_PROTOCOLS, LlmProviderConfig
 from app.providers.aihubmix_media import (
     H3_ASPECT_RATIOS,
     H3_MAX_DURATION_SECONDS,
@@ -64,6 +64,8 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
     catalog: dict[str, ProviderCapability] = {}
     for endpoint_id, endpoint in config.endpoints.items():
         if not endpoint.enabled or endpoint.kind != "media":
+            continue
+        if endpoint.protocol not in IMPLEMENTED_MEDIA_PROTOCOLS:
             continue
         for tag in endpoint.capabilities:
             catalog_key = f"{endpoint_id}:{tag}"

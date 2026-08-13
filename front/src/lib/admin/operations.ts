@@ -81,3 +81,63 @@ export function capabilitiesForModalities(
     return inputs.has(input) && outputs.has(output);
   });
 }
+
+/** HTTP contract names for `kind="media"` endpoints. Mirrors
+ * `MEDIA_PROTOCOLS` in `app/platform_config/schemas.py`. Display names are
+ * the standard, not the gateway vendor — AiHubMix image/audio is OpenAI. */
+export const MEDIA_PROTOCOLS = [
+  'openai',
+  'minimax',
+  'comfyui',
+  'google',
+  'dashscope',
+  'ark',
+  'kling',
+] as const;
+export type MediaProtocol = (typeof MEDIA_PROTOCOLS)[number];
+
+export const IMPLEMENTED_MEDIA_PROTOCOLS: ReadonlySet<MediaProtocol> = new Set(['openai', 'minimax']);
+
+export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
+  openai: 'protocolOpenAI',
+  minimax: 'protocolMiniMax',
+  comfyui: 'protocolComfyUI',
+  google: 'protocolGoogle',
+  dashscope: 'protocolDashScope',
+  ark: 'protocolArk',
+  kling: 'protocolKling',
+};
+
+const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
+  openai: ['text_to_image', 'image_to_image', 'audio_generation'],
+  minimax: ['text_to_video', 'image_to_video', 'video_to_video'],
+  comfyui: [
+    'text_to_image',
+    'image_to_image',
+    'text_to_video',
+    'image_to_video',
+    'video_to_video',
+  ],
+  google: [],
+  dashscope: [],
+  ark: [],
+  kling: [],
+};
+
+/** Drop modality ticks that the newly selected protocol cannot serve. */
+export function constrainModalities(
+  protocol: MediaProtocol,
+  inputModalities: readonly MediaInputModality[],
+  outputModalities: readonly MediaOutputModality[],
+): { input_modalities: MediaInputModality[]; output_modalities: MediaOutputModality[] } {
+  const allowed = new Set(PROTOCOL_OPERATIONS[protocol] ?? []);
+  const pairs = OPERATIONS.filter((operation) => allowed.has(operation)).map(
+    (operation) => OPERATION_MODALITY_MAP[operation],
+  );
+  const allowedInputs = new Set(pairs.map(([input]) => input));
+  const allowedOutputs = new Set(pairs.map(([, output]) => output));
+  return {
+    input_modalities: inputModalities.filter((item) => allowedInputs.has(item)),
+    output_modalities: outputModalities.filter((item) => allowedOutputs.has(item)),
+  };
+}

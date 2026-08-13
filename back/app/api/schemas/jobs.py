@@ -207,6 +207,7 @@ class GenerationJobResponse(ApiModel):
     route: RouteSummary | None = None
     output_asset_id: str | None = None
     output_url: str | None = None
+    output_media_type: MediaType | None = None
     draft_id: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None

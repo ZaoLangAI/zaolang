@@ -26,9 +26,11 @@ def build_fake_catalog() -> dict[str, ProviderCapability]:
             operations=frozenset(
                 {
                     Operation.TEXT_TO_IMAGE,
+                    Operation.IMAGE_TO_IMAGE,
                     Operation.TEXT_TO_VIDEO,
                     Operation.IMAGE_TO_VIDEO,
                     Operation.VIDEO_TO_VIDEO,
+                    Operation.AUDIO_GENERATION,
                 }
             ),
             tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),

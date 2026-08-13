@@ -61,4 +61,5 @@ back/celerybeat-schedule.db
 .DS_Store
 Thumbs.db
 .idea/
+.claude/
 *.swp

@@ -175,9 +175,7 @@ def test_a_second_sequential_edge_off_one_port_is_rejected(db: Session) -> None:
     but never executed — the graph an operator sees would not be the graph
     that runs. Parallel edges are exempt; fan-out is exactly what they mean."""
     graph = default_graph(db)
-    graph["edges"].append(
-        {"id": "second", "from": "planning", "from_port": "ok", "to": "fail"}
-    )
+    graph["edges"].append({"id": "second", "from": "planning", "from_port": "ok", "to": "fail"})
     errors = _validate(graph)
     assert any("有 2 条非并行连线" in e for e in errors)
 
@@ -595,6 +593,32 @@ def test_planning_with_the_clarify_marker_suspends_the_job_awaiting_input(
         )
     )
     assert len(awaiting_events) == 1
+
+
+def test_planning_clarify_from_created_reaches_awaiting_input(db: Session, author: User) -> None:
+    """The default graph's planner sits before `provider_generate`.
+
+    A live clarify therefore fires while the job is still `queued` (the
+    worker has only taken CREATED → QUEUED). `AWAITING_INPUT` is only a
+    legal successor of `RUNNING`, so the engine must promote first.
+    """
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    job = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": f"{PLANNER_CLARIFY_MARKER}：香港街头斗殴", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+    ).job
+    params = dict(job.request_json)
+    ctx = WorkflowContext(session=db, job=job, prompt=str(params.get("prompt", "")), params=params)
+    outcome = WorkflowRunner(_planning_graph()).run(ctx)
+
+    assert outcome.status == JobStatus.AWAITING_INPUT
+    db.refresh(job)
+    assert job.status == JobStatus.AWAITING_INPUT
+    assert input_requests.find_for_job(db, job.id) is not None
 
 
 def test_planning_without_the_clarify_marker_does_not_suspend_by_default(

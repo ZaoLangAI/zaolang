@@ -77,17 +77,22 @@ def test_text_to_image_generates_and_stores_output(monkeypatch: pytest.MonkeyPat
     assert s3.get_object(result.object_key) == base64.b64decode(b64)
 
 
-def test_image_to_image_calls_the_edits_endpoint_with_the_reference(
+def test_image_to_image_calls_generations_with_a_signed_reference(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reference_key = "test/reference-for-edit.png"
     s3.put_object(reference_key, base64.b64decode(_png_b64((90, 5, 5))), content_type="image/png")
     b64 = _png_b64()
-    calls: list[str] = []
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(
+        s3,
+        "presign_get",
+        lambda key, **kwargs: f"https://signed.invalid/{key}",
+    )
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
-        calls.append(url)
-        assert "files" in kwargs
+        calls.append((url, kwargs))
         return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
@@ -97,7 +102,29 @@ def test_image_to_image_calls_the_edits_endpoint_with_the_reference(
     )
 
     assert result.succeeded is True
-    assert calls == ["/v1/images/edits"]
+    assert [url for url, _ in calls] == ["/v1/images/generations"]
+    assert calls[0][1]["json"]["image"] == f"https://signed.invalid/{reference_key}"
+    assert "files" not in calls[0][1]
+
+
+def test_text_to_image_downloads_a_url_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    png = base64.b64decode(_png_b64())
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={"data": [{"url": "https://cdn.invalid/out.png"}]})
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "https://cdn.invalid/out.png"
+        return _FakeResponse(content=png)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_IMAGE.value)
+    result = provider.submit(_request(Operation.TEXT_TO_IMAGE.value))
+
+    assert result.succeeded is True
+    assert result.object_key is not None
+    assert s3.get_object(result.object_key) == png
 
 
 def test_audio_generation_stores_the_raw_response_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -333,3 +360,89 @@ def test_a_transport_error_degrades_to_a_temporary_failure(monkeypatch: pytest.M
 
     assert result.succeeded is False
     assert result.failure_code == "PROVIDER_TEMPORARY_FAILURE"
+
+
+def test_a_read_timeout_reports_how_long_we_waited(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("POST", "https://aihubmix.invalid/v1/images/generations")
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _provider(Operation.TEXT_TO_IMAGE.value).submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_TEMPORARY_FAILURE"
+    assert result.metadata["detail"] == "ReadTimeout after 5s"
+
+
+def test_join_media_url_does_not_double_v1() -> None:
+    from app.providers.aihubmix_media import join_media_url, media_client_base, media_request_path
+
+    assert (
+        join_media_url("https://aihubmix.com/v1", "/v1/images/generations")
+        == "https://aihubmix.com/v1/images/generations"
+    )
+    assert media_client_base("https://aihubmix.com/v1") == "https://aihubmix.com"
+    assert media_request_path("https://aihubmix.com/v1", "/v1/images/generations") == (
+        "/v1/images/generations"
+    )
+    assert (
+        join_media_url("https://aihubmix.com", "/ai/v1/videos") == "https://aihubmix.com/ai/v1/videos"
+    )
+    assert media_request_path("https://proxy.example/openai/v1", "/v1/images/generations") == (
+        "/openai/v1/images/generations"
+    )
+
+
+def test_image_submit_strips_v1_from_client_base(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, str] = {}
+    b64 = _png_b64()
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        captured["base"] = str(self.base_url).rstrip("/")
+        captured["url"] = url
+        captured["size"] = kwargs["json"]["size"]
+        return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = AiHubMixMediaProvider(
+        endpoint_id="ep-test",
+        capability_tag=Operation.TEXT_TO_IMAGE.value,
+        model="qwen-image-3.0",
+        base_url="https://aihubmix.com/v1",
+        api_key="test-key",
+        timeout_ms=5_000,
+    )
+    result = provider.submit(_request(Operation.TEXT_TO_IMAGE.value, quality_tier="preview"))
+
+    assert result.succeeded is True
+    assert captured["base"] == "https://aihubmix.com"
+    assert captured["url"] == "/v1/images/generations"
+    assert captured["size"] == "1024x576"
+
+
+def test_http_status_error_includes_status_and_redacted_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("POST", "https://aihubmix.invalid/v1/images/generations")
+        return httpx.Response(
+            404,
+            text='{"error":{"code":"endpoint_not_found","message":"Bearer test-key missing"}}',
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = _provider(Operation.TEXT_TO_IMAGE.value).submit(
+        _request(Operation.TEXT_TO_IMAGE.value)
+    )
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+    detail = result.metadata["detail"]
+    assert "HTTP 404" in detail
+    assert "endpoint_not_found" in detail
+    assert "test-key" not in detail
+    assert "[redacted]" in detail

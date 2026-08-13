@@ -23,6 +23,7 @@ from app.models.enums import (
     RedemptionCodeKind,
     UserStatus,
 )
+from app.platform_config.schemas import MediaProtocol
 
 
 class DangerousAction(ApiModel):
@@ -506,6 +507,8 @@ class LlmProviderEndpointView(ApiModel):
     model: str = ""
     input_modalities: list[str] = Field(default_factory=list)
     output_modalities: list[str] = Field(default_factory=list)
+    # `kind="media"` only: HTTP contract name (openai / minimax / …).
+    protocol: MediaProtocol | None = None
     # Derived from the modalities above; read-only.
     capabilities: list[str] = Field(default_factory=list)
     max_concurrency: int
@@ -569,6 +572,8 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     model: str = Field(default="", max_length=200)
     input_modalities: list[str] = Field(default_factory=list)
     output_modalities: list[str] = Field(default_factory=list)
+    # `kind="media"` only. Null lets the domain schema infer from modalities.
+    protocol: MediaProtocol | None = None
     max_concurrency: int = Field(default=4, ge=1, le=256)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
@@ -999,6 +1004,11 @@ class WorkflowDryRunRequest(ApiModel):
     # first; it is validated exactly like a publish before it is executed,
     # and never becomes a `GenerationWorkflowTemplate` row.
     graph: dict[str, Any] | None = None
+    # When true, `provider_generate` calls the configured media model instead
+    # of stubbing. Still never creates a `GenerationJob`, reserves credits,
+    # or writes a `ProviderAttempt`. Default off so CI and accidental clicks
+    # do not hit a paid upstream.
+    live_provider: bool = False
 
 
 class WorkflowDryRunStepView(ApiModel):
@@ -1017,4 +1027,7 @@ class WorkflowDryRunResult(ApiModel):
     status: JobStatus
     failure_code: str | None = None
     asset_id: str | None = None
+    error_detail: str | None = None
+    preview_url: str | None = None
+    mime_type: str | None = None
     trace: list[WorkflowDryRunStepView] = Field(default_factory=list)

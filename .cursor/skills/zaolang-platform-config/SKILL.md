@@ -22,7 +22,7 @@ disable-model-invocation: true
 
 八个 key：`pricing`、`royalty`、`feature_flags`、`shortform`、`llm_providers`、`content_moderation`、`learning_moderation`、`skill_moderation`。旧 `providers`、`agents`、`moderation`、`llm_reliability` 只保留失活历史，不能读取或回滚。
 
-`llm_providers` 里每个端点用 `kind` 二选一：`general`（文字与图片理解）或 `media`（图片/视频/音频生成）。判断类与辅助生成类 `AgentProfile` 手动选择默认供应商端点、兼容模型和可选备用端点；未显式绑定的非默认 Agent 才继承角色默认 Agent。`media` 端点只声明一个模型 id（`model`）+ 输入/输出模态，能力 tag 由 `capabilities_for_modalities` 推导，进入 `router.py` 的动态候选目录由 `intent_router` 的 LLM 选型挑选。媒体端点没有主备顺序和并发调度语义。
+`llm_providers` 里每个端点用 `kind` 二选一：`general`（文字与图片理解）或 `media`（图片/视频/音频生成）。判断类与辅助生成类 `AgentProfile` 手动选择默认供应商端点、兼容模型和可选备用端点；未显式绑定的非默认 Agent 才继承角色默认 Agent。`media` 端点声明一个模型 id（`model`）+ 输入/输出模态 + **`protocol`（HTTP 契约标准名，不是网关供应商）**；能力 tag 由 `capabilities_for_modalities` 推导，进入 `router.py` 的动态候选目录由 `intent_router` 的 LLM 选型挑选。媒体端点没有主备顺序和并发调度语义。`protocol` 落在这份 JSON 里，不改 SQLAlchemy / Alembic。
 
 ## 不可破坏的不变量
 
@@ -33,6 +33,7 @@ disable-model-invocation: true
 5. **缓存失效不能靠 TTL 兜底**：`set_value` 与 `rollback` 都要 `invalidate(key)`。Redis 不可用时 service 退化为直读数据库（探测包在 `begin_nested` 里，不污染事务）。
 6. **默认值必须能让空库正常工作**：`DEFAULT_CONFIGS` 是 `get_typed` 在数据库无该 key 时的回退，测试与全新部署都依赖它。
 7. **不要再加回路由评分权重类的配置段**。供应商之间选谁由 `intent_router` 的 LLM 判断决定（`zaolang-agent-gateway` 不变量 #1），不是可调数值；这里只负责供应商目录本身「存不存在、开不开、限额多少」这类硬性开关。
+8. **`get_typed` 校验失败会回退整份 `DEFAULT_CONFIGS["llm_providers"]`（空 `endpoints`）**，一次坏端点就能把路由目录清空。因此 `LlmProviderEndpoint.protocol` 必须可缺省（`None`）；缺字段时 `_migrate_legacy_fields` 按能力推断（仅视频 → `minimax`，否则 → `openai`）。`kind=general` 清空 `protocol`。Admin upsert 显式传入时严格匹配：未实现协议、`openai`+视频、`minimax`+图片/音频 → `ValidationFailed`（HTTP 422），禁止静默回退。存量跨协议混合端点在 `LlmProviderConfig` 上逐端点跳过并记 warning，不要让整份 config 挂掉。
 
 ## 改造切入点
 

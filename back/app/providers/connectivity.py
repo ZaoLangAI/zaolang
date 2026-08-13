@@ -7,6 +7,7 @@ records, so an operator can tell whether that endpoint itself is usable.
 
 from __future__ import annotations
 
+import base64
 import io
 import re
 import time
@@ -20,7 +21,11 @@ from PIL import Image
 from app.llm import client as llm_client
 from app.models.enums import Operation
 from app.platform_config.schemas import LlmProviderEndpoint
-from app.providers.aihubmix_media import build_video_payload
+from app.providers.aihubmix_media import (
+    build_video_payload,
+    media_client_base,
+    media_request_path,
+)
 
 _MEDIA_PROBE_PRIORITY = (
     Operation.AUDIO_GENERATION.value,
@@ -133,13 +138,13 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
 
     try:
         with httpx.Client(
-            base_url=endpoint.base_url.rstrip("/"),
+            base_url=media_client_base(endpoint.base_url),
             headers={"Authorization": f"Bearer {endpoint.api_key}"},
             timeout=endpoint.timeout_ms / 1000,
         ) as client:
             if probe_type == Operation.AUDIO_GENERATION.value:
                 response = client.post(
-                    "/v1/audio/speech",
+                    media_request_path(endpoint.base_url, "/v1/audio/speech"),
                     json={
                         "model": endpoint.model,
                         "input": "Connectivity check.",
@@ -160,27 +165,18 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                 Operation.TEXT_TO_IMAGE.value,
                 Operation.IMAGE_TO_IMAGE.value,
             }:
+                body: dict[str, object] = {
+                    "model": endpoint.model,
+                    "prompt": "A plain blue square, connectivity test.",
+                    "size": "1024x1024",
+                    "n": 1,
+                }
                 if probe_type == Operation.IMAGE_TO_IMAGE.value:
-                    response = client.post(
-                        "/v1/images/edits",
-                        data={
-                            "model": endpoint.model,
-                            "prompt": "Return this simple connectivity test image.",
-                            "size": "512x512",
-                            "n": "1",
-                        },
-                        files={"image": ("connectivity.png", _probe_png(), "image/png")},
-                    )
-                else:
-                    response = client.post(
-                        "/v1/images/generations",
-                        json={
-                            "model": endpoint.model,
-                            "prompt": "A plain blue square, connectivity test.",
-                            "size": "512x512",
-                            "n": 1,
-                        },
-                    )
+                    body["prompt"] = "Return this simple connectivity test image."
+                    body["image"] = _probe_png_data_uri()
+                response = client.post(
+                    media_request_path(endpoint.base_url, "/v1/images/generations"), json=body
+                )
                 return _media_response(
                     started,
                     endpoint.model,
@@ -191,7 +187,7 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                 )
 
             response = client.post(
-                "/ai/v1/videos",
+                media_request_path(endpoint.base_url, "/ai/v1/videos"),
                 json=build_video_payload(
                     model=endpoint.model,
                     prompt="A static blue square, connectivity test.",
@@ -300,6 +296,12 @@ def _probe_png() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (512, 512), (20, 80, 180)).save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def _probe_png_data_uri() -> str:
+    """A connectivity probe has no user asset to presign, so the reference
+    travels inline. Production image-to-image uses a signed object URL."""
+    return f"data:image/png;base64,{base64.b64encode(_probe_png()).decode()}"
 
 
 def _status_code(exc: BaseException) -> int | None:

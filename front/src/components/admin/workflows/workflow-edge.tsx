@@ -13,7 +13,10 @@ export interface WorkflowEdgeData {
 }
 
 const KIND_STYLE: Record<WorkflowEdgeKind, React.CSSProperties> = {
-  sequential: { stroke: 'var(--muted)', strokeWidth: 1.5 },
+  // `--muted` is not a CSS variable — Tailwind's `text-muted` maps through
+  // `--color-muted` to `--text-muted`. An undefined stroke makes every
+  // sequential edge (almost the whole default graph) invisible.
+  sequential: { stroke: 'var(--text-muted)', strokeWidth: 1.5 },
   retry: { stroke: 'var(--amber)', strokeWidth: 1.5, strokeDasharray: '6 4' },
   parallel: { stroke: 'var(--primary)', strokeWidth: 2 },
 };

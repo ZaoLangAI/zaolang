@@ -28,7 +28,7 @@ disable-model-invocation: true
 | `back/app/workflows/runner.py` / `nodes.py` / `registry.py` / `configs.py` | 可发布 DAG 的执行器、代码审核节点白名单、节点配置 schema 与 agent/profile 绑定；`defaults.py` 提供默认图 |
 | `back/app/providers/base.py` | `ProviderCapability`（含 `provider_factory`）；测试 fake 只在测试中注入 |
 | `back/app/providers/media_endpoints.py` | `dynamic_capabilities(session)`：把数据库里 `kind="media"` 的启用端点按能力展开成 `ProviderCapability`，供 `router.build_catalog` 合并 |
-| `back/app/providers/aihubmix_media.py` | `AiHubMixMediaProvider`：图片/语音同步调用 + 视频建任务/轮询/下载 |
+| `back/app/providers/aihubmix_media.py` | `AiHubMixMediaProvider`：`protocol=openai` 时文生图/图生图都走 `POST /v1/images/generations`（图生图 JSON 加 `image` 签名 URL，不再走 `/v1/images/edits`），音频走 `/v1/audio/speech`；`protocol=minimax` 时视频走 MiniMax H3（`/ai/v1/videos` 建任务再轮询）。本轮不按 protocol 拆成两个类 |
 | `back/app/llm/client.py` | `complete()` / `probe()`，三档模式与降级 |
 | `back/app/llm/failover.py` | LLM 网关独立 failover 池：并发占用、熔断、按主/备角色 + 优先级选端点（单一通用池，四个 Agent 角色共用，不再分场景） |
 | `back/app/llm/normalize.py` | `strip_thinking` / `extract_json` / `normalize_completion` |
@@ -49,9 +49,10 @@ disable-model-invocation: true
 10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频/音频生成的 `router.py` 选型路由并行，不要混用同一套候选选择逻辑。两者共享 `llm_providers` 存储但按 `kind` 严格隔离。绑一个模型的 `AgentProfile`（判断类或辅助生成类）填了默认/备用端点时，failover 只在这两个手动选择的供应商之间进行；没有端点绑定时才使用支持目标模型的通用共享池。
 11. **角色只能来自 `ROLE_PRESETS`。** 管理台建智能体时角色是下拉不是自由文本：工作流节点类型是代码白名单，没有任何节点类型认识的角色建出来也永远不会被执行。要让一个新的判断类角色能跑，要么给它加专属节点类型，要么用通用的 `custom_agent` 节点（角色由 `config.agent_role` 在运行时给出）。
 12. **工作流按智能体 id 绑定，且绑定的智能体必须是该节点要求的角色。** 一个角色下可以有多个智能体（管理台按角色分组，但分组只是标题，可操作的对象只有智能体）；节点配置里的 `agent_id` / `selector_agent_id` 存的是 `AgentProfile.id`，不是名称也不是 key——名称随时可改，已发布的图必须一直指向同一个智能体。角色不匹配在发布时报错（`workflow_templates.service._binding_errors`），运行时也会拒绝并回落到角色默认智能体（`resolve_prompt`），因为拿文案智能体跑安全审核会把它产出的任何东西当成放行结论。留空表示该角色的默认智能体。
-13. **媒体端点没有 LLM 主备/并发语义**：它只声明一个模型、输入/输出模态、超时与启停；通用端点才有主备顺序和并发租约。
-14. **MiniMax H3 走官方异步契约**：创建请求固定 `resolution="2K"`，时长 4–15 秒，创建响应读 `id`，状态产物读 `output[].result_id`。图片/视频参考使用平台私有素材生成短时签名 URL，`input_references` 与 `frame_images` 必须互斥；物理参数不兼容时在路由硬过滤阶段淘汰，不能等供应商报错。
-15. **`AgentRun.node_id` 由工作流引擎回写，不是 Agent 自己填的。** `WorkflowRunner._execute_node` 在调 executor 前记下 `ctx.state["_last_agent_run_id"]` 的旧值，executor 跑完后如果这个值变了（说明本节点新产生了一条 `AgentRun`）且非 dry-run，就对那一行做一次 `UPDATE ... SET node_id = :node_id`——任何 agent 函数都不需要、也不应该新增 `node_id` 参数。`RoutingDecision.agent_run_id` 同理：`select_provider()` 的 `AgentOutcome.agent_run_id` 透传进 `RoutingDecision`，`nodes.py::execute_route_score` 把它塞进 `ctx.state["_last_agent_run_id"]`，让路由打分这次 LLM 调用也能挂上 `route_score` 节点——不改 `intent_router.select_provider()` 本身的调用契约。
+13. **媒体端点没有 LLM 主备/并发语义**：它只声明一个模型、接口协议、输入/输出模态、超时与启停；通用端点才有主备顺序和并发租约。
+14. **MiniMax H3 走官方异步契约**：创建请求固定 `resolution="2K"`，时长 4–15 秒，创建响应读 `id`，状态产物读 `output[].result_id`。图片/视频参考使用平台私有素材生成短时签名 URL，`input_references` 与 `frame_images` 必须互斥；物理参数不兼容时在路由硬过滤阶段淘汰，不能等供应商报错。H3 硬过滤仍看**模型名** `minimax-h3`，不要改成只看 `protocol`。
+15. **媒体 `protocol` 是 HTTP 契约标准名，不是网关供应商名。** 下拉显示 OpenAI / MiniMax / ComfyUI 等；AiHubMix 的图/音频符合 OpenAI 兼容，显示 **OpenAI**。已实现：`openai`（文生图、图生图、音频）、`minimax`（文生视频、图生视频、视频生视频）。`comfyui` / `google` / `dashscope` / `ark` / `kling` 只占目录，未实现协议不得进 `dynamic_capabilities` catalog，也禁止静默回退到 OpenAI。`openai` 与 `minimax` 都继续实例化现有 `AiHubMixMediaProvider`。
+16. **`AgentRun.node_id` 由工作流引擎回写，不是 Agent 自己填的。** `WorkflowRunner._execute_node` 在调 executor 前记下 `ctx.state["_last_agent_run_id"]` 的旧值，executor 跑完后如果这个值变了（说明本节点新产生了一条 `AgentRun`）且非 dry-run，就对那一行做一次 `UPDATE ... SET node_id = :node_id`——任何 agent 函数都不需要、也不应该新增 `node_id` 参数。`RoutingDecision.agent_run_id` 同理：`select_provider()` 的 `AgentOutcome.agent_run_id` 透传进 `RoutingDecision`，`nodes.py::execute_route_score` 把它塞进 `ctx.state["_last_agent_run_id"]`，让路由打分这次 LLM 调用也能挂上 `route_score` 节点——不改 `intent_router.select_provider()` 本身的调用契约。
 
 ## Prompt 与模型绑定
 
@@ -74,7 +75,7 @@ disable-model-invocation: true
 - **加一个角色预设**：往 `presets.py` 的 `ROLE_PRESETS` 加一项（`judgment`/`assist` 二选一，绑定方式相同，只是语义不同：会不会产出通过/拒绝式判断）→ 顺手在 `templates.py` 补一个起始模板 → 确认它能被某个节点类型调用（专属节点类型或 `custom_agent`），否则建出来的智能体不会执行。预设是代码目录不是表，加预设仍是一次工程改动，这正是"角色只能从预设选"想要的效果。
 - **给 Agent 加工具**：只加进 `tools.py`，函数签名保持窄（明确的参数、明确的返回），不要暴露 session。
 - **加测试假供应商**：只在 `back/tests` 构造 `ProviderCapability` 并 monkeypatch `build_catalog`；生产 `router.py` 不登记 fake。
-- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/models` 新增一个 `kind="media"` 端点，填它的模型 id，再勾选它支持的输入模态（文本/图片/视频）与输出模态（图片/视频/音频）；能力 tag 由 `capabilities_for_modalities` 自动推导，`router.build_catalog(session)` 会在下一次路由时把它按能力展开进候选目录，交给 `intent_router.select_provider()` 挑选。同一凭证要用不同模型服务不同能力就配多个端点。只有当目标供应商的 HTTP 契约与 `aihubmix_media.py` 不同时才需要新写一个 `GenerationProvider` 实现。
+- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/models` 新增一个 `kind="media"` 端点，选 **接口协议**（已实现的 OpenAI / MiniMax；其余 option 禁用），填模型 id，再勾选它支持的输入/输出模态；能力 tag 由 `capabilities_for_modalities` 自动推导，`router.build_catalog(session)` 会在下一次路由时把它按能力展开进候选目录。未实现 protocol 不会进 catalog。同一凭证要用不同模型服务不同能力就配多个端点。只有当目标供应商的 HTTP 契约既不是 OpenAI 兼容 generations/speech、也不是现有 MiniMax H3 视频路径时，才需要新写一个 `GenerationProvider` 实现（例如后续独立的 ComfyUI `POST /prompt` + `GET /history` 适配器）。
 - **改选型逻辑**：不要在 `router.py` 里加任何排序/加权代码——那是刻意留白的（不变量 #1）。要改"选哪个供应商"的判断标准，去改 `intent_router.py` 的 `SELECT_PROVIDER_SYSTEM_PROMPT`（或后台可发布的 `AgentSkill` 版本），并同步 `llm/stub.py` 里 `_intent_router` 的确定性分支，否则 `LLM_MODE=stub` 下的路由测试会全部改变行为。
 
 ## 验证

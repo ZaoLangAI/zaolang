@@ -230,3 +230,81 @@ def test_non_admin_cannot_validate_an_endpoint(
 def test_validating_a_missing_endpoint_returns_not_found(client: TestClient, admin: User) -> None:
     response = client.post("/v1/admin/llm-providers/missing/validate", headers=admin_header(admin))
     assert response.status_code == 404
+
+
+def test_media_upsert_infers_protocol_when_omitted(
+    client: TestClient, admin: User, db: Session
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-image",
+        _media_payload(model="gpt-image-1", input_modalities=["text"], output_modalities=["image"]),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-image")
+    assert endpoint["protocol"] == "openai"
+    entry = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "llm_provider.upsert",
+            AuditLog.target_id == "ep-image",
+        )
+    )
+    assert entry is not None
+    assert entry.after_json["protocol"] == "openai"
+
+
+def test_media_upsert_persists_an_explicit_protocol(client: TestClient, admin: User) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-video",
+        _media_payload(
+            model="minimax-h3",
+            input_modalities=["text"],
+            output_modalities=["video"],
+            protocol="minimax",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-video")
+    assert endpoint["protocol"] == "minimax"
+
+
+def test_unimplemented_media_protocol_is_rejected(client: TestClient, admin: User) -> None:
+    for protocol in ("comfyui", "google"):
+        response = client.put(
+            "/v1/admin/llm-providers/ep-future",
+            json=_media_payload(
+                model="future",
+                input_modalities=["text"],
+                output_modalities=["image"],
+                protocol=protocol,
+            ),
+            headers=admin_header(admin),
+        )
+        assert response.status_code == 422, protocol
+
+
+def test_protocol_must_match_modalities(client: TestClient, admin: User) -> None:
+    openai_video = client.put(
+        "/v1/admin/llm-providers/ep-bad",
+        json=_media_payload(
+            model="gpt-image-1",
+            input_modalities=["text"],
+            output_modalities=["video"],
+            protocol="openai",
+        ),
+        headers=admin_header(admin),
+    )
+    assert openai_video.status_code == 422
+
+    minimax_image = client.put(
+        "/v1/admin/llm-providers/ep-bad",
+        json=_media_payload(
+            model="minimax-h3",
+            input_modalities=["text"],
+            output_modalities=["image"],
+            protocol="minimax",
+        ),
+        headers=admin_header(admin),
+    )
+    assert minimax_image.status_code == 422

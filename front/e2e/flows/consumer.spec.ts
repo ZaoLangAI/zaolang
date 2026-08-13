@@ -126,6 +126,12 @@ test.describe('creation', () => {
     await expect(page.getByRole('button', { name: '生成我的版本' })).toBeEnabled();
   });
 
+  test('a signed-in user can open the text-to-image studio', async ({ page }) => {
+    await page.goto('/zh-CN/create/new?mode=text_to_image', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '文字生成图片' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '生成我的版本' })).toBeVisible();
+  });
+
   test('the library shows the seeded draft awaiting publication', async ({ page }) => {
     await page.goto('/zh-CN/collection', { waitUntil: 'networkidle' });
     await expect(page.getByText('潮汐之上 · 未完成').first()).toBeVisible();

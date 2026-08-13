@@ -3146,13 +3146,18 @@ export interface paths {
          * @description Simulates a job through a graph — the editor's unpublished draft when
          *     `payload.graph` is given, otherwise the operation's active published one.
          *
-         *     Never creates a `GenerationJob` row, reserves credits, or hits a paid
-         *     provider — see `WorkflowContext.dry_run` and every node executor's own
-         *     `if ctx.dry_run` branch for the specifics. The four agent nodes
-         *     (safety/planning/intent_router/quality) still call the real LLM gateway
-         *     on purpose: that is the one thing worth spending a little real cost on to
-         *     actually validate a prompt change before publishing it. `AdminWrite`'s
-         *     rate limit is what keeps that cost bounded.
+         *     Never creates a `GenerationJob` row, reserves credits, or writes a
+         *     `ProviderAttempt`. The four agent nodes (safety/planning/intent_router/
+         *     quality) still call the real LLM gateway on purpose: that is the one
+         *     thing worth spending a little real cost on to actually validate a prompt
+         *     change before publishing it. `AdminWrite`'s rate limit is what keeps
+         *     that cost bounded.
+         *
+         *     With `live_provider=False` (the default) the media provider is stubbed.
+         *     With `live_provider=True` the selected configured model is called for
+         *     real and a short-lived `preview_url` is returned — still without a job
+         *     row or a credit reservation. Video pending results are polled in this
+         *     request rather than suspended for Beat.
          *
          *     A draft is held to exactly the same validation as a publish, because a
          *     graph that fails it cannot be walked safely; but it is never written
@@ -4659,6 +4664,7 @@ export interface components {
             output_asset_id?: string | null;
             /** Output Url */
             output_url?: string | null;
+            output_media_type?: components["schemas"]["MediaType"] | null;
             /** Draft Id */
             draft_id?: string | null;
             /** Failure Code */
@@ -5206,6 +5212,8 @@ export interface components {
             input_modalities?: string[];
             /** Output Modalities */
             output_modalities?: string[];
+            /** Protocol */
+            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling") | null;
             /**
              * Max Concurrency
              * @default 4
@@ -5261,6 +5269,8 @@ export interface components {
             input_modalities?: string[];
             /** Output Modalities */
             output_modalities?: string[];
+            /** Protocol */
+            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling") | null;
             /** Capabilities */
             capabilities?: string[];
             /** Max Concurrency */
@@ -7504,6 +7514,11 @@ export interface components {
             graph?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Live Provider
+             * @default false
+             */
+            live_provider: boolean;
         };
         /** WorkflowDryRunResult */
         WorkflowDryRunResult: {
@@ -7512,6 +7527,12 @@ export interface components {
             failure_code?: string | null;
             /** Asset Id */
             asset_id?: string | null;
+            /** Error Detail */
+            error_detail?: string | null;
+            /** Preview Url */
+            preview_url?: string | null;
+            /** Mime Type */
+            mime_type?: string | null;
             /** Trace */
             trace?: components["schemas"]["WorkflowDryRunStepView"][];
         };

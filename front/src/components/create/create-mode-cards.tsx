@@ -9,6 +9,7 @@ import {
   IconMic,
   IconPhone,
   IconRemix,
+  IconSparkle,
   IconVideo,
   IconWand,
 } from '@/components/ui/icons';
@@ -16,6 +17,7 @@ import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
 
 type ModeId =
+  | 'text_to_image'
   | 'text_to_video'
   | 'image_to_video'
   | 'image_to_image'
@@ -24,6 +26,12 @@ type ModeId =
   | 'remix';
 
 const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: string }> = [
+  {
+    id: 'text_to_image',
+    icon: <IconSparkle className="size-5" />,
+    href: '/create/new?mode=text_to_image',
+    tone: 'bg-primary/15 text-primary',
+  },
   {
     id: 'text_to_video',
     icon: <IconVideo className="size-5" />,
@@ -63,7 +71,7 @@ const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: stri
 ];
 
 /**
- * The four entry points from the design.
+ * Entry points from the create page: stills, video, audio, shortform, remix.
  *
  * Choosing a mode is a protected action: it goes through `requireAuth` so an
  * anonymous visitor lands back on the same mode after signing in rather than
@@ -75,6 +83,11 @@ export function CreateModeCards({ className }: { className?: string }) {
   const { requireAuth } = useSession();
 
   const labels: Record<ModeId, { title: string; desc: string; tag: string }> = {
+    text_to_image: {
+      title: t('modeTextToImageTitle'),
+      desc: t('modeTextToImageDesc'),
+      tag: t('modeTextToImageTag'),
+    },
     text_to_video: {
       title: t('modeTextToVideoTitle'),
       desc: t('modeTextToVideoDesc'),
@@ -127,7 +140,9 @@ export function CreateModeCards({ className }: { className?: string }) {
               <p
                 className={cn(
                   'text-[11px]',
-                  mode.id === 'text_to_video' ? 'text-muted' : 'text-amber',
+                  mode.id === 'text_to_video' || mode.id === 'text_to_image'
+                    ? 'text-muted'
+                    : 'text-amber',
                 )}
               >
                 {label.tag}
