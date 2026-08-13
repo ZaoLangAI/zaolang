@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { DangerConfirm } from '@/components/admin/danger-confirm';
@@ -31,6 +31,7 @@ import type {
   LlmProviderEndpoint,
   LlmProviderKind,
   LlmProviderPool,
+  LlmProviderValidationJob,
   LlmProviderValidationResult,
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
@@ -52,6 +53,37 @@ interface EndpointFormState {
   max_concurrency: string;
   timeout_ms: string;
   enabled: boolean;
+}
+
+type ValidationInFlight = {
+  validationId: string;
+  startedAt: number;
+  timeoutMs: number;
+};
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = window.setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        window.clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
+}
+
+function isAbortError(caught: unknown): boolean {
+  return (
+    (caught instanceof DOMException && caught.name === 'AbortError') ||
+    (caught instanceof Error && caught.name === 'AbortError')
+  );
 }
 
 /**
@@ -197,7 +229,10 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [validatingIds, setValidatingIds] = useState<Set<string>>(() => new Set());
+  const [inFlight, setInFlight] = useState<Record<string, ValidationInFlight>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const inFlightIds = useRef(new Set<string>());
+  const abortRef = useRef(new AbortController());
   const [confirmingValidation, setConfirmingValidation] = useState<LlmProviderEndpoint | null>(
     null,
   );
@@ -205,6 +240,17 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
     Record<string, LlmProviderValidationResult>
   >({});
   const knownIds = new Set(endpoints.map((e) => e.id));
+
+  useEffect(() => {
+    const controller = abortRef.current;
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (Object.keys(inFlight).length === 0) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [inFlight]);
 
   const hasPrimaryOfKind = (kind: LlmProviderKind) =>
     endpoints.some((endpoint) => endpoint.kind === kind && endpoint.role === 'primary');
@@ -304,22 +350,55 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   };
 
   const validateEndpoint = async (endpoint: LlmProviderEndpoint) => {
-    setValidatingIds((current) => new Set(current).add(endpoint.id));
+    if (inFlightIds.current.has(endpoint.id)) return;
+    inFlightIds.current.add(endpoint.id);
+    const startedAt = Date.now();
+    setNowMs(startedAt);
+    setInFlight((current) => ({
+      ...current,
+      [endpoint.id]: {
+        validationId: '',
+        startedAt,
+        timeoutMs: endpoint.timeout_ms,
+      },
+    }));
     try {
-      const result = await adminApi.post<LlmProviderValidationResult>(
+      const job = await adminApi.post<LlmProviderValidationJob>(
         `/v1/admin/llm-providers/${endpoint.id}/validate`,
       );
-      setValidationResults((current) => ({ ...current, [endpoint.id]: result }));
-      notify(
-        result.usable ? t('validationSucceeded') : t('validationFailed'),
-        result.usable ? 'success' : 'error',
-      );
+      setInFlight((current) => ({
+        ...current,
+        [endpoint.id]: {
+          validationId: job.validation_id,
+          startedAt,
+          timeoutMs: job.timeout_ms,
+        },
+      }));
+      const deadline = Date.now() + job.timeout_ms + 15_000;
+      while (Date.now() < deadline) {
+        const latest = await adminApi.get<LlmProviderValidationJob>(
+          `/v1/admin/llm-providers/${endpoint.id}/validate/${job.validation_id}`,
+          { signal: abortRef.current.signal },
+        );
+        if (latest.status === 'completed' && latest.result) {
+          setValidationResults((current) => ({ ...current, [endpoint.id]: latest.result! }));
+          notify(
+            latest.result.usable ? t('validationSucceeded') : t('validationFailed'),
+            latest.result.usable ? 'success' : 'error',
+          );
+          return;
+        }
+        await delay(1000, abortRef.current.signal);
+      }
+      notify(t('validationErrorTimeout'), 'error');
     } catch (caught) {
+      if (isAbortError(caught) || abortRef.current.signal.aborted) return;
       notify(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'), 'error');
     } finally {
-      setValidatingIds((current) => {
-        const next = new Set(current);
-        next.delete(endpoint.id);
+      inFlightIds.current.delete(endpoint.id);
+      setInFlight((current) => {
+        const next = { ...current };
+        delete next[endpoint.id];
         return next;
       });
     }
@@ -364,20 +443,25 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               {group.kind === 'general' ? t('modelTypeGeneral') : t('modelTypeMedia')}
             </h3>
             <div className="flex flex-col gap-2">
-              {group.endpoints.map((endpoint) => (
-                <NodeRow
-                  key={endpoint.id}
-                  endpoint={endpoint}
-                  editable={editable}
-                  toggling={togglingId === endpoint.id}
-                  validating={validatingIds.has(endpoint.id)}
-                  validationResult={validationResults[endpoint.id]}
-                  onEdit={openEdit}
-                  onRemove={(item) => setRemoving(item)}
-                  onToggleEnabled={toggleEnabled}
-                  onValidate={requestValidation}
-                />
-              ))}
+              {group.endpoints.map((endpoint) => {
+                const flight = inFlight[endpoint.id];
+                return (
+                  <NodeRow
+                    key={endpoint.id}
+                    endpoint={endpoint}
+                    editable={editable}
+                    toggling={togglingId === endpoint.id}
+                    validating={flight != null}
+                    validatingElapsedMs={flight ? Math.max(0, nowMs - flight.startedAt) : 0}
+                    validatingTimeoutMs={flight?.timeoutMs ?? endpoint.timeout_ms}
+                    validationResult={flight ? undefined : validationResults[endpoint.id]}
+                    onEdit={openEdit}
+                    onRemove={(item) => setRemoving(item)}
+                    onToggleEnabled={toggleEnabled}
+                    onValidate={requestValidation}
+                  />
+                );
+              })}
             </div>
           </div>
         ))
@@ -754,6 +838,8 @@ function NodeRow({
   editable,
   toggling,
   validating,
+  validatingElapsedMs,
+  validatingTimeoutMs,
   validationResult,
   onEdit,
   onRemove,
@@ -764,6 +850,8 @@ function NodeRow({
   editable: boolean;
   toggling: boolean;
   validating: boolean;
+  validatingElapsedMs: number;
+  validatingTimeoutMs: number;
   validationResult?: LlmProviderValidationResult;
   onEdit: (endpoint: LlmProviderEndpoint) => void;
   onRemove: (endpoint: LlmProviderEndpoint) => void;
@@ -849,7 +937,20 @@ function NodeRow({
               : `${(endpoint.recent_success_rate * 100).toFixed(1)}% (${endpoint.recent_attempts})`}
           </span>
         </div>
-        {validationResult ? (
+        {validating ? (
+          <div
+            className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-2 text-[11px]"
+            role="status"
+          >
+            <Badge tone="neutral">{t('validationInProgress')}</Badge>
+            <span className="text-muted">
+              {t('validationElapsed', { seconds: Math.floor(validatingElapsedMs / 1000) })}
+            </span>
+            <span className="text-muted">
+              {t('validationTimeoutHint', { seconds: Math.ceil(validatingTimeoutMs / 1000) })}
+            </span>
+          </div>
+        ) : validationResult ? (
           <div
             className="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface px-2.5 py-2 text-[11px]"
             role="status"

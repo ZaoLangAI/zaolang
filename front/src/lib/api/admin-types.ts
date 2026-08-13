@@ -50,6 +50,7 @@ export type LlmProviderEndpoint = GeneralLlmProviderEndpoint | MediaLlmProviderE
 export type LlmProviderCategory = S['LlmProviderCategoryView'];
 export type LlmProviderPool = S['LlmProviderPoolView'];
 export type LlmProviderValidationResult = S['LlmProviderValidationResult'];
+export type LlmProviderValidationJob = S['LlmProviderValidationJob'];
 export type LlmProviderUpsertRequest = S['LlmProviderEndpointUpsertRequest'];
 export type LlmProviderKind = LlmProviderEndpoint['kind'];
 export type AgentNode = S['AgentNodeView'];

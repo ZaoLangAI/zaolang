@@ -15,17 +15,21 @@ are code defaults rather than a second global runtime-config surface.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Request
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbSession
+from app.api.request_utils import client_ip
 from app.api.schemas.admin import (
     DangerousAction,
     LlmProviderEndpointUpsertRequest,
     LlmProviderEndpointView,
     LlmProviderPoolView,
+    LlmProviderValidationJob,
     LlmProviderValidationResult,
 )
 from app.api.v1.admin.deps import (
@@ -39,13 +43,16 @@ from app.api.v1.admin.deps import (
 from app.domain.audit import service as audit
 from app.domain.errors import NotFound, ValidationFailed
 from app.llm import failover
-from app.models import AgentProfile
+from app.models import AgentProfile, User
+from app.observability.context import get_request_id, set_request_id
 from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     LlmProviderConfig,
     LlmProviderEndpoint,
 )
-from app.providers import connectivity
+from app.providers import connectivity, validation_jobs
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin:llm-providers"])
 
@@ -171,17 +178,20 @@ def remove_llm_provider(
     return _pool_view(LlmProviderConfig.model_validate(row.value_json))
 
 
-@router.post("/llm-providers/{endpoint_id}/validate", response_model=LlmProviderValidationResult)
+@router.post("/llm-providers/{endpoint_id}/validate", response_model=LlmProviderValidationJob)
 def validate_llm_provider(
     endpoint_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     session: DbSession,
     user: Admin,
     _: AdminWrite,
-) -> LlmProviderValidationResult:
-    """Send one real request directly to a saved endpoint.
+) -> LlmProviderValidationJob:
+    """Start one real request directly to a saved endpoint.
 
-    This intentionally bypasses enabled state, failover, breaker state, and
+    Image and audio probes can take tens of seconds. This returns a running
+    job immediately; poll `GET .../validate/{validation_id}` for the result.
+    The probe still bypasses enabled state, failover, breaker state, and
     provider statistics: the result must describe this endpoint alone.
     """
     config = config_service.get_typed(session, CONFIG_KEY, LlmProviderConfig)
@@ -189,8 +199,87 @@ def validate_llm_provider(
     if endpoint is None:
         raise NotFound(f"端点 {endpoint_id} 不存在。")
 
-    outcome = connectivity.validate_endpoint(endpoint)
-    result = LlmProviderValidationResult(
+    job = validation_jobs.create_running(endpoint_id=endpoint_id, timeout_ms=endpoint.timeout_ms)
+    background_tasks.add_task(
+        _run_validation,
+        validation_id=job.validation_id,
+        endpoint_id=endpoint_id,
+        endpoint=endpoint,
+        actor_user_id=user.id,
+        request_id=get_request_id(),
+        ip_address=client_ip(request),
+        user_agent=(request.headers.get("user-agent", "")[:255] or None),
+        session=session,
+    )
+    return job
+
+
+@router.get(
+    "/llm-providers/{endpoint_id}/validate/{validation_id}",
+    response_model=LlmProviderValidationJob,
+)
+def get_llm_provider_validation(
+    endpoint_id: str,
+    validation_id: str,
+    user: Viewer,
+    _: AdminRead,
+) -> LlmProviderValidationJob:
+    job = validation_jobs.get(endpoint_id, validation_id)
+    if job is None:
+        raise NotFound(f"验证任务 {validation_id} 不存在。")
+    return job
+
+
+def _run_validation(
+    *,
+    validation_id: str,
+    endpoint_id: str,
+    endpoint: LlmProviderEndpoint,
+    actor_user_id: str,
+    request_id: str,
+    ip_address: str | None,
+    user_agent: str | None,
+    session: Session,
+) -> None:
+    try:
+        outcome = connectivity.validate_endpoint(endpoint)
+        result = _validation_result(endpoint_id, endpoint, outcome)
+    except Exception:
+        logger.exception("endpoint %s validation probe failed", endpoint_id)
+        result = LlmProviderValidationResult(
+            endpoint_id=endpoint_id,
+            kind=endpoint.kind,
+            target_model=endpoint.model or (endpoint.models[0] if endpoint.models else None),
+            probe_type="media_generation" if endpoint.kind == "media" else "chat_completion",
+            reachable=False,
+            usable=False,
+            latency_ms=0,
+            error_code="provider_error",
+        )
+    validation_jobs.complete(validation_id, result)
+    set_request_id(request_id)
+    actor = session.get(User, actor_user_id)
+    entry = audit.record(
+        session,
+        actor=actor,
+        action="llm_provider.validate",
+        target_type="llm_provider_endpoint",
+        target_id=endpoint_id,
+        after=result.model_dump(mode="json"),
+    )
+    if ip_address:
+        entry.ip_address = ip_address
+    if user_agent:
+        entry.user_agent = user_agent
+    session.commit()
+
+
+def _validation_result(
+    endpoint_id: str,
+    endpoint: LlmProviderEndpoint,
+    outcome: connectivity.ConnectivityResult,
+) -> LlmProviderValidationResult:
+    return LlmProviderValidationResult(
         endpoint_id=endpoint_id,
         kind=endpoint.kind,
         target_model=outcome.target_model,
@@ -205,17 +294,6 @@ def validate_llm_provider(
         provider_error_message=outcome.provider_error_message,
         external_task_id=outcome.external_task_id,
     )
-    audit.record(
-        session,
-        actor=user,
-        action="llm_provider.validate",
-        target_type="llm_provider_endpoint",
-        target_id=endpoint_id,
-        after=result.model_dump(mode="json"),
-        request=request,
-    )
-    session.commit()
-    return result
 
 
 def _save(session, config: LlmProviderConfig, *, user_id: str, note: str):  # type: ignore[no-untyped-def]

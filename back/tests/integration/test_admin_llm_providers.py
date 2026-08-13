@@ -198,12 +198,24 @@ def test_admin_can_validate_one_exact_endpoint_and_the_result_is_audited(
     )
 
     assert response.status_code == 200
-    assert seen == ["https://gateway.invalid/v1"]
     body = response.json()
-    assert body["usable"] is True
-    assert body["target_model"] == "kimi-k3"
-    assert body["external_task_id"] == "task-validation-1"
+    assert body["status"] == "running"
+    assert body["result"] is None
+    assert body["validation_id"].startswith("val_")
     assert "sk-never-return-this" not in response.text
+    assert seen == ["https://gateway.invalid/v1"]
+
+    polled = client.get(
+        f"/v1/admin/llm-providers/ep-validate/validate/{body['validation_id']}",
+        headers=admin_header(admin),
+    )
+    assert polled.status_code == 200
+    result = polled.json()
+    assert result["status"] == "completed"
+    assert result["result"]["usable"] is True
+    assert result["result"]["target_model"] == "kimi-k3"
+    assert result["result"]["external_task_id"] == "task-validation-1"
+    assert "sk-never-return-this" not in polled.text
 
     entry = db.scalar(
         select(AuditLog).where(
@@ -225,6 +237,51 @@ def test_non_admin_cannot_validate_an_endpoint(
         "/v1/admin/llm-providers/ep-protected/validate", headers=admin_header(reviewer)
     )
     assert response.status_code == 403
+
+
+def test_a_viewer_can_poll_a_validation_job(
+    client: TestClient, admin: User, db: Session, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    from app.models.enums import UserRole
+    from tests.conftest import make_user
+
+    viewer = make_user(
+        db,
+        email="viewer-validate@example.com",
+        handle="viewer-validate",
+        display_name="观察者",
+        roles=[UserRole.USER.value, UserRole.VIEWER.value],
+    )
+    _upsert(client, admin, "ep-poll", _general_payload())
+    monkeypatch.setattr(
+        "app.api.v1.admin.llm_providers.connectivity.validate_endpoint",
+        lambda endpoint: ConnectivityResult(  # type: ignore[misc]
+            target_model="kimi-k3",
+            probe_type="chat_completion",
+            reachable=True,
+            usable=True,
+            latency_ms=9,
+        ),
+    )
+    started = client.post(
+        "/v1/admin/llm-providers/ep-poll/validate", headers=admin_header(admin)
+    )
+    assert started.status_code == 200
+    validation_id = started.json()["validation_id"]
+    polled = client.get(
+        f"/v1/admin/llm-providers/ep-poll/validate/{validation_id}",
+        headers=admin_header(viewer),
+    )
+    assert polled.status_code == 200
+    assert polled.json()["status"] == "completed"
+
+
+def test_polling_an_unknown_validation_returns_not_found(client: TestClient, admin: User) -> None:
+    response = client.get(
+        "/v1/admin/llm-providers/ep-missing/validate/val_doesnotexist",
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 404
 
 
 def test_validating_a_missing_endpoint_returns_not_found(client: TestClient, admin: User) -> None:

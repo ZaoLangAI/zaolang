@@ -580,6 +580,21 @@ class LlmProviderValidationResult(ApiModel):
     external_task_id: str | None = None
 
 
+class LlmProviderValidationJob(ApiModel):
+    """A connectivity probe that outlives the HTTP request that started it.
+
+    Image and audio checks can take tens of seconds; the console starts this
+    job, then polls until `status` is `completed` rather than holding one
+    request open for the whole upstream generation.
+    """
+
+    validation_id: str
+    status: Literal["running", "completed"]
+    elapsed_ms: int
+    timeout_ms: int
+    result: LlmProviderValidationResult | None = None
+
+
 class LlmProviderEndpointUpsertRequest(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     base_url: str = Field(min_length=1, max_length=500)

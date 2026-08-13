@@ -2682,12 +2682,31 @@ export interface paths {
         put?: never;
         /**
          * Validate Llm Provider
-         * @description Send one real request directly to a saved endpoint.
+         * @description Start one real request directly to a saved endpoint.
          *
-         *     This intentionally bypasses enabled state, failover, breaker state, and
+         *     Image and audio probes can take tens of seconds. This returns a running
+         *     job immediately; poll `GET .../validate/{validation_id}` for the result.
+         *     The probe still bypasses enabled state, failover, breaker state, and
          *     provider statistics: the result must describe this endpoint alone.
          */
         post: operations["validate_llm_provider_v1_admin_llm_providers__endpoint_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/llm-providers/{endpoint_id}/validate/{validation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Llm Provider Validation */
+        get: operations["get_llm_provider_validation_v1_admin_llm_providers__endpoint_id__validate__validation_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5393,6 +5412,28 @@ export interface components {
             categories?: components["schemas"]["LlmProviderCategoryView"][];
             /** Demoted Endpoint Ids */
             demoted_endpoint_ids?: string[];
+        };
+        /**
+         * LlmProviderValidationJob
+         * @description A connectivity probe that outlives the HTTP request that started it.
+         *
+         *     Image and audio checks can take tens of seconds; the console starts this
+         *     job, then polls until `status` is `completed` rather than holding one
+         *     request open for the whole upstream generation.
+         */
+        LlmProviderValidationJob: {
+            /** Validation Id */
+            validation_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "completed";
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Timeout Ms */
+            timeout_ms: number;
+            result?: components["schemas"]["LlmProviderValidationResult"] | null;
         };
         /** LlmProviderValidationResult */
         LlmProviderValidationResult: {
@@ -13087,7 +13128,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["LlmProviderValidationResult"];
+                    "application/json": components["schemas"]["LlmProviderValidationJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_llm_provider_validation_v1_admin_llm_providers__endpoint_id__validate__validation_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                endpoint_id: string;
+                validation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LlmProviderValidationJob"];
                 };
             };
             /** @description Validation Error */

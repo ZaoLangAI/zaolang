@@ -10254,7 +10254,7 @@
           "admin:llm-providers"
         ],
         "summary": "Validate Llm Provider",
-        "description": "Send one real request directly to a saved endpoint.\n\nThis intentionally bypasses enabled state, failover, breaker state, and\nprovider statistics: the result must describe this endpoint alone.",
+        "description": "Start one real request directly to a saved endpoint.\n\nImage and audio probes can take tens of seconds. This returns a running\njob immediately; poll `GET .../validate/{validation_id}` for the result.\nThe probe still bypasses enabled state, failover, breaker state, and\nprovider statistics: the result must describe this endpoint alone.",
         "operationId": "validate_llm_provider_v1_admin_llm_providers__endpoint_id__validate_post",
         "parameters": [
           {
@@ -10289,7 +10289,74 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LlmProviderValidationResult"
+                  "$ref": "#/components/schemas/LlmProviderValidationJob"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/llm-providers/{endpoint_id}/validate/{validation_id}": {
+      "get": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "Get Llm Provider Validation",
+        "operationId": "get_llm_provider_validation_v1_admin_llm_providers__endpoint_id__validate__validation_id__get",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "validation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Validation Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmProviderValidationJob"
                 }
               }
             }
@@ -17798,6 +17865,49 @@
         },
         "type": "object",
         "title": "LlmProviderPoolView"
+      },
+      "LlmProviderValidationJob": {
+        "properties": {
+          "validation_id": {
+            "type": "string",
+            "title": "Validation Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "title": "Elapsed Ms"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "title": "Timeout Ms"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmProviderValidationResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "validation_id",
+          "status",
+          "elapsed_ms",
+          "timeout_ms"
+        ],
+        "title": "LlmProviderValidationJob",
+        "description": "A connectivity probe that outlives the HTTP request that started it.\n\nImage and audio checks can take tens of seconds; the console starts this\njob, then polls until `status` is `completed` rather than holding one\nrequest open for the whole upstream generation."
       },
       "LlmProviderValidationResult": {
         "properties": {

@@ -287,24 +287,47 @@ test.describe('operations screens', () => {
   });
 
   test('the models console renders primary/backup lists', async ({ page }) => {
-    await page.route('**/v1/admin/llm-providers/*/validate', async (route) => {
+    await page.route('**/v1/admin/llm-providers/*/validate/*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          endpoint_id: 'ep_e6a55be6a06d',
-          kind: 'media',
-          target_model: 'minimax-h3',
-          probe_type: 'text_to_video',
-          reachable: true,
-          usable: true,
-          latency_ms: 42,
-          provider_status_code: 200,
-          error_code: null,
-          warning_code: null,
-          provider_error_code: null,
-          provider_error_message: null,
-          external_task_id: 'task-live-1',
+          validation_id: 'val_e2e_probe',
+          status: 'completed',
+          elapsed_ms: 42,
+          timeout_ms: 90_000,
+          result: {
+            endpoint_id: 'ep_e6a55be6a06d',
+            kind: 'media',
+            target_model: 'minimax-h3',
+            probe_type: 'text_to_video',
+            reachable: true,
+            usable: true,
+            latency_ms: 42,
+            provider_status_code: 200,
+            error_code: null,
+            warning_code: null,
+            provider_error_code: null,
+            provider_error_message: null,
+            external_task_id: 'task-live-1',
+          },
+        }),
+      });
+    });
+    await page.route('**/v1/admin/llm-providers/*/validate', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          validation_id: 'val_e2e_probe',
+          status: 'running',
+          elapsed_ms: 0,
+          timeout_ms: 90_000,
+          result: null,
         }),
       });
     });
