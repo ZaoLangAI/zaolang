@@ -30,6 +30,7 @@ from app.models import (
 from app.models.enums import JobOrigin, JobStatus, ModerationStage, Operation
 from app.workers import pipeline
 from tests.conftest import admin_header, auth_header
+from tests.factories import make_job
 
 pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
@@ -302,3 +303,88 @@ def test_a_sandbox_planning_follow_up_is_answerable_through_admin_api(
         ).status_code
         == 404
     )
+
+
+def test_sandbox_run_history_lists_this_operation_only(
+    client: TestClient, db: Session, operator: User, author: User
+) -> None:
+    image_id = _sandbox_run(client, operator, prompt="雨后的东京街头")
+    other_id = _sandbox_run(
+        client, operator, operation=Operation.TEXT_TO_VIDEO.value, prompt="海边的黄昏"
+    )
+    consumer = make_job(db, author)
+
+    response = client.get(
+        "/v1/admin/workflow-templates/text_to_image/sandbox-runs",
+        headers=admin_header(operator),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    ids = [row["job_id"] for row in body["items"]]
+    assert image_id in ids
+    assert other_id not in ids
+    assert consumer.id not in ids
+    match = next(row for row in body["items"] if row["job_id"] == image_id)
+    assert match["prompt_excerpt"] == "雨后的东京街头"
+    assert match["used_draft"] is False
+    assert match["user_display_name"] == "运营"
+    assert "preview_url" not in match
+
+
+def test_sandbox_run_history_marks_a_draft_try_it(
+    client: TestClient, db: Session, operator: User
+) -> None:
+    from app.workflows.defaults import default_graph
+
+    draft = default_graph(db)
+    draft["nodes"] = [node for node in draft["nodes"] if node["id"] != "skill_context"]
+    draft["edges"] = [
+        edge for edge in draft["edges"] if "skill_context" not in (edge["from"], edge["to"])
+    ]
+    draft["edges"].append({"id": "draft", "from": "safety", "from_port": "pass", "to": "planning"})
+
+    job_id = _sandbox_run(client, operator, graph=draft)
+    body = client.get(
+        "/v1/admin/workflow-templates/text_to_image/sandbox-runs",
+        headers=admin_header(operator),
+    ).json()
+    match = next(row for row in body["items"] if row["job_id"] == job_id)
+    assert match["used_draft"] is True
+
+
+def test_sandbox_run_history_truncates_a_long_prompt(client: TestClient, operator: User) -> None:
+    prompt = "猫" * 150
+    job_id = _sandbox_run(client, operator, prompt=prompt)
+    body = client.get(
+        "/v1/admin/workflow-templates/text_to_image/sandbox-runs",
+        headers=admin_header(operator),
+    ).json()
+    match = next(row for row in body["items"] if row["job_id"] == job_id)
+    assert match["prompt_excerpt"] == prompt[:120]
+
+
+def test_sandbox_run_history_pages_by_cursor(client: TestClient, operator: User) -> None:
+    oldest = _sandbox_run(client, operator, prompt="历史-1")
+    _sandbox_run(client, operator, prompt="历史-2")
+    newest = _sandbox_run(client, operator, prompt="历史-3")
+
+    page = client.get(
+        "/v1/admin/workflow-templates/text_to_image/sandbox-runs",
+        params={"limit": 2},
+        headers=admin_header(operator),
+    )
+    assert page.status_code == 200, page.text
+    body = page.json()
+    assert len(body["items"]) == 2
+    assert body["has_more"] is True
+    assert body["next_cursor"]
+    assert body["items"][0]["job_id"] == newest
+
+    rest = client.get(
+        "/v1/admin/workflow-templates/text_to_image/sandbox-runs",
+        params={"limit": 2, "cursor": body["next_cursor"]},
+        headers=admin_header(operator),
+    ).json()
+    rest_ids = [row["job_id"] for row in rest["items"]]
+    assert oldest in rest_ids
+    assert newest not in rest_ids

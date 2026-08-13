@@ -6,12 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { AgentSkillEditorDialog } from '@/components/admin/agents/agent-skills-panel';
 import { useAgentCatalog } from '@/components/admin/workflows/agent-catalog';
+import type { SandboxTraceStep } from '@/components/admin/workflows/sandbox-run-inspector';
 import { groupErrorsByNode } from '@/components/admin/workflows/validation-errors';
 import { WorkflowCanvas } from '@/components/admin/workflows/workflow-canvas';
 import { WorkflowCopyDialog } from '@/components/admin/workflows/workflow-copy-dialog';
 import { WorkflowPublishDialog } from '@/components/admin/workflows/workflow-publish-dialog';
 import { WorkflowSandboxDialog } from '@/components/admin/workflows/workflow-sandbox-dialog';
-import type { SandboxTraceStep } from '@/components/admin/workflows/workflow-sandbox-dialog';
+import { WorkflowSandboxHistoryPanel } from '@/components/admin/workflows/workflow-sandbox-history-panel';
 import { WorkflowVersionsDialog } from '@/components/admin/workflows/workflow-versions-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -263,6 +264,7 @@ function WorkflowOperationTab({
   const [publishOpen, setPublishOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -373,6 +375,20 @@ function WorkflowOperationTab({
               {t('copyToOperations')}
             </Button>
           ) : null}
+          <Button
+            size="sm"
+            variant={historyOpen ? 'secondary' : 'ghost'}
+            onClick={() => {
+              if (historyOpen) {
+                setSandboxTrace(null);
+                setHistoryOpen(false);
+              } else {
+                setHistoryOpen(true);
+              }
+            }}
+          >
+            {t('sandboxHistory')}
+          </Button>
           {canDryRun ? (
             <Button size="sm" variant="secondary" onClick={() => setSandboxOpen(true)}>
               {t('dryRun')}
@@ -388,36 +404,50 @@ function WorkflowOperationTab({
 
       {loadError ? <ErrorNotice title={loadError} /> : null}
 
-      {template === undefined ? (
-        <div className="flex h-40 items-center justify-center">
-          <Spinner />
+      <div className="flex items-stretch gap-3">
+        <div className="min-w-0 flex-1">
+          {template === undefined ? (
+            <div className="flex h-40 items-center justify-center">
+              <Spinner />
+            </div>
+          ) : template === null && !loadError ? (
+            <EmptyState
+              title={t('noActiveTemplate')}
+              description={t('noActiveTemplateDesc')}
+              action={
+                canEdit ? (
+                  <Button size="sm" variant="secondary" onClick={() => setPublishOpen(true)}>
+                    {t('publish')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <WorkflowCanvas
+              key={reloadToken}
+              initialGraph={currentGraph}
+              nodeTypeCatalog={nodeTypeCatalog}
+              readOnly={!canEdit}
+              invalidNodeErrors={invalidNodeErrors}
+              hotspotCounts={hotspotCounts}
+              trace={sandboxTrace}
+              onChange={setWorkingGraph}
+              onDirty={() => onDirtyChange(true)}
+              onEditPrompt={onEditPrompt}
+            />
+          )}
         </div>
-      ) : template === null && !loadError ? (
-        <EmptyState
-          title={t('noActiveTemplate')}
-          description={t('noActiveTemplateDesc')}
-          action={
-            canEdit ? (
-              <Button size="sm" variant="secondary" onClick={() => setPublishOpen(true)}>
-                {t('publish')}
-              </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <WorkflowCanvas
-          key={reloadToken}
-          initialGraph={currentGraph}
-          nodeTypeCatalog={nodeTypeCatalog}
-          readOnly={!canEdit}
-          invalidNodeErrors={invalidNodeErrors}
-          hotspotCounts={hotspotCounts}
-          trace={sandboxTrace}
-          onChange={setWorkingGraph}
-          onDirty={() => onDirtyChange(true)}
-          onEditPrompt={onEditPrompt}
-        />
-      )}
+        {historyOpen ? (
+          <WorkflowSandboxHistoryPanel
+            operation={operation}
+            onClose={() => {
+              setSandboxTrace(null);
+              setHistoryOpen(false);
+            }}
+            onTrace={setSandboxTrace}
+          />
+        ) : null}
+      </div>
 
       {canDryRun ? (
         <WorkflowSandboxDialog

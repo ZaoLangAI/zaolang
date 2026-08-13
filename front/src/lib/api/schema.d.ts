@@ -1886,12 +1886,11 @@ export interface paths {
         };
         /**
          * Moderation Queue List
-         * @description Highest priority first; ties broken by id (which sorts with creation
-         *     time), so nothing at the back of the queue starves.
+         * @description Published creative works, newest first.
          *
-         *     The cursor is `"{priority}:{id}"`: `priority` alone cannot order a page
-         *     boundary because many rows share a value, so the id breaks the tie the
-         *     same way the query itself does.
+         *     The cursor is the work id, same shape as the jobs console: ids are
+         *     lexically time-ordered, so `id < cursor` pages without skipping when
+         *     something is inserted above the current page.
          */
         get: operations["moderation_queue_list_v1_admin_moderation_queue_get"];
         put?: never;
@@ -1913,6 +1912,9 @@ export interface paths {
          * Moderation Detail
          * @description The queue row plus its full verdict trail, so a reviewer can see what
          *     already happened to this subject before deciding whether to reverse it.
+         *
+         *     `item_id` may be a queue row or a published work id (works Safety
+         *     auto-approved never got a queue row).
          */
         get: operations["moderation_detail_v1_admin_moderation_queue__item_id__detail_get"];
         put?: never;
@@ -3213,6 +3215,29 @@ export interface paths {
          * @description Rolls back by re-publishing an earlier version's graph as a new one.
          */
         post: operations["activate_workflow_template_v1_admin_workflow_templates__operation__activate__template_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/workflow-templates/{operation}/sandbox-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sandbox Runs
+         * @description Past product-sandbox try-its for this operation, newest first.
+         *
+         *     Detail (events, signed preview) stays on `GET /v1/admin/jobs/{id}` so
+         *     this list never signs object-storage URLs per row.
+         */
+        get: operations["list_sandbox_runs_v1_admin_workflow_templates__operation__sandbox_runs_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5673,6 +5698,12 @@ export interface components {
             preview_title?: string | null;
             /** Preview Url */
             preview_url?: string | null;
+            /** Preview Media Type */
+            preview_media_type?: string | null;
+            /** Owner Display Name */
+            owner_display_name?: string | null;
+            /** Owner Handle */
+            owner_handle?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -5717,8 +5748,14 @@ export interface components {
             cover_url?: string | null;
             /** Media Url */
             media_url?: string | null;
+            /** Media Type */
+            media_type?: string | null;
             /** Owner User Id */
             owner_user_id: string;
+            /** Owner Display Name */
+            owner_display_name?: string | null;
+            /** Owner Handle */
+            owner_handle?: string | null;
             /** Visibility */
             visibility: string;
             /** Lifecycle Status */
@@ -6348,6 +6385,18 @@ export interface components {
         Page_WorkSummary_: {
             /** Items */
             items: components["schemas"]["WorkSummary"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[WorkflowSandboxRunSummary] */
+        Page_WorkflowSandboxRunSummary_: {
+            /** Items */
+            items: components["schemas"]["WorkflowSandboxRunSummary"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -7680,6 +7729,39 @@ export interface components {
         WorkflowSandboxRunResult: {
             /** Job Id */
             job_id: string;
+        };
+        /**
+         * WorkflowSandboxRunSummary
+         * @description One past product-sandbox try-it, for the workflow editor's history.
+         *
+         *     Detail (events, signed preview) stays on `GET /v1/admin/jobs/{id}` so
+         *     this list never hits object storage per row.
+         */
+        WorkflowSandboxRunSummary: {
+            /** Job Id */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /** Quality Tier */
+            quality_tier: string;
+            /** Prompt Excerpt */
+            prompt_excerpt: string;
+            /** Used Draft */
+            used_draft: boolean;
+            /** User Display Name */
+            user_display_name?: string | null;
+            /** User Handle */
+            user_handle?: string | null;
+            /** Quoted Credits */
+            quoted_credits: number;
+            /** Failure Code */
+            failure_code?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at?: string | null;
         };
         /** WorkflowTemplatePublishRequest */
         WorkflowTemplatePublishRequest: {
@@ -11615,8 +11697,12 @@ export interface operations {
     moderation_queue_list_v1_admin_moderation_queue_get: {
         parameters: {
             query?: {
-                status?: components["schemas"]["ModerationStatus"] | null;
-                subject_type?: string | null;
+                status?: string | null;
+                creator?: string | null;
+                title?: string | null;
+                media_type?: string | null;
+                created_after?: string | null;
+                created_before?: string | null;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -14144,6 +14230,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sandbox_runs_v1_admin_workflow_templates__operation__sandbox_runs_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                operation: components["schemas"]["Operation"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_WorkflowSandboxRunSummary_"];
                 };
             };
             /** @description Validation Error */

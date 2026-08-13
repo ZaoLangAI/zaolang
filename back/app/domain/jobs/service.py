@@ -143,8 +143,8 @@ def submit(
     # the code-level default graph for those. A sandbox draft snapshot must
     # not pin (or later backfill) the live template, or a publish mid-run
     # would change what the try-it walked.
-    active_template = None if graph_override_json else workflow_templates_service.get_active(
-        session, operation
+    active_template = (
+        None if graph_override_json else workflow_templates_service.get_active(session, operation)
     )
 
     job = GenerationJob(
@@ -205,6 +205,43 @@ def settle_release(session: Session, job: GenerationJob, *, reason: str) -> None
         credits_service.release(session, job.user_id, job_id=job.id, reason=reason)
     except Conflict:
         logger.info("job %s reservation already settled", job.id)
+
+
+SANDBOX_PROMPT_EXCERPT_MAX = 120
+
+
+def list_sandbox_runs(
+    session: Session,
+    *,
+    operation: str,
+    cursor: str | None = None,
+    limit: int = 50,
+) -> tuple[list[GenerationJob], bool]:
+    """Newest-first sandbox try-its for one operation.
+
+    C-end jobs and other operations are out of scope — the editor's history
+    is "what did we try against this graph", not the ops job console.
+    """
+    stmt = (
+        select(GenerationJob)
+        .where(
+            GenerationJob.origin == JobOrigin.SANDBOX,
+            GenerationJob.operation == operation,
+        )
+        .order_by(GenerationJob.created_at.desc(), GenerationJob.id.desc())
+    )
+    if cursor:
+        stmt = stmt.where(GenerationJob.id < cursor)
+    rows = list(session.scalars(stmt.limit(limit + 1)))
+    has_more = len(rows) > limit
+    return rows[:limit], has_more
+
+
+def sandbox_prompt_excerpt(job: GenerationJob, *, max_len: int = SANDBOX_PROMPT_EXCERPT_MAX) -> str:
+    raw = job.request_json.get("prompt") if isinstance(job.request_json, dict) else None
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip()[:max_len]
 
 
 def get_owned_job(session: Session, job_id: str, user_id: str) -> GenerationJob:

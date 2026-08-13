@@ -24,7 +24,7 @@ disable-model-invocation: true
 | `back/app/domain/jobs/async_tasks.py` | `AsyncProviderTask` 的 `suspend` / `claim_due` / `reschedule` / `settle`，以及轮询间隔与超时策略；`cancel_upstream(session, task, provider)` 是唯一的取消入口——调 `provider.cancel()` → 关闭对应 `ProviderAttempt` 为 `CANCELLED` → `settle(task)`，`async_polling.py::_cancel()` 与后台 `admin/jobs.py::terminate()` 都调它，避免两处取消逻辑分叉 |
 | `back/app/realtime/publisher.py` | Redis pubsub 实时推送 |
 | `back/app/api/v1/jobs.py` | 提交、查询、取消、重试（`retry`，同档位重投）、升级（`promote`，`preview` 档成功后升级到正式档位）、SSE `/v1/generation-jobs/{id}/events`。列表与 `get_owned_job` 过滤 `origin=sandbox` |
-| `back/app/api/v1/admin/workflow_templates.py` | 产品沙盒：`POST .../sandbox-run` → 真实 `GenerationJob`（`origin=sandbox`）+ 202 `{job_id}`；草稿图写入 `graph_override_json`，不发布、不 pin live 模板 |
+| `back/app/api/v1/admin/workflow_templates.py` | 产品沙盒：`POST .../sandbox-run` → 真实 `GenerationJob`（`origin=sandbox`）+ 202 `{job_id}`；草稿图写入 `graph_override_json`，不发布、不 pin live 模板。`GET .../sandbox-runs` 只读列出该 operation 的沙盒任务（游标分页，`prompt_excerpt` / `used_draft`）；详情仍走 `GET /v1/admin/jobs/{id}` |
 | `back/app/api/v1/admin/jobs.py` | 后台任务运维；`GET/POST /jobs/{id}/input-request`、`/answer` 供沙盒与运维台回答 `AWAITING_INPUT` |
 | `front/src/lib/use-job-stream.ts`、`front/src/lib/use-admin-job-stream.ts`、`front/src/components/job/job-progress.tsx` | C 端 / 后台消费 SSE；后台流额外带 `node_id` |
 

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models import GenerationJob, User, Work, WorkVersion
 from app.models.base import new_id, utcnow
-from app.models.enums import JobStatus, Operation, QualityTier, Visibility
+from app.models.enums import JobOrigin, JobStatus, Operation, QualityTier, Visibility
 
 
 def make_work(
@@ -56,6 +56,7 @@ def make_job(
     reserved: int = 12,
     operation: str = Operation.TEXT_TO_IMAGE,
     quality_tier: str = QualityTier.STANDARD,
+    origin: str = JobOrigin.USER,
 ) -> GenerationJob:
     job = GenerationJob(
         user_id=user.id,
@@ -63,6 +64,7 @@ def make_job(
         request_json={"prompt": "测试"},
         quality_tier=quality_tier,
         status=status,
+        origin=origin,
         quoted_credits=quoted,
         reserved_credits=reserved,
         idempotency_key=new_id("idk"),

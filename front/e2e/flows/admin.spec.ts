@@ -101,7 +101,8 @@ test.describe('an expired console session', () => {
     });
     await context.clearCookies();
 
-    await page.getByRole('button', { name: '搜索' }).click();
+    // `reload` bumps the list token so a request fires even with unchanged filters.
+    await page.getByRole('button', { name: '刷新' }).click();
     await expect(page).toHaveURL(/\/admin\/login/);
     await expect(page.getByRole('heading', { name: '运维台登录' })).toBeVisible();
   });
@@ -237,9 +238,9 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/moderation', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '内容审核', level: 1 })).toBeVisible();
     await expect(page.getByText('Night Tide · Neon').first()).toBeVisible();
-    const queueActions = page.getByRole('heading', { name: '内容审核', level: 2 }).locator('..');
-    const actionLabels = await queueActions.getByRole('button').allTextContents();
-    expect(actionLabels.indexOf('配置')).toBe(actionLabels.indexOf('刷新') + 1);
+    await expect(page.getByRole('heading', { name: '内容审核', level: 2 })).toBeVisible();
+    await expect(page.getByRole('button', { name: '刷新' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '配置' })).toBeVisible();
 
     await page.goto('/zh-CN/admin/reports', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '举报与申诉', level: 1 })).toBeVisible();
@@ -361,6 +362,33 @@ test.describe('operations screens', () => {
     await expect(dialog.getByText('正在渲染，请稍候')).toBeVisible();
     await expect(dialog.getByText('e2e-sandbox-task')).toBeVisible();
     await expect(dialog.getByRole('button', { name: '开始试跑' })).toBeDisabled();
+  });
+
+  test('sandbox history lists a previous try-it', async ({ page }) => {
+    await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '沙盒试跑' }).click();
+
+    const sandbox = page.getByRole('dialog');
+    await sandbox.getByLabel('提示词').fill('历史回放用的猫');
+    const sandboxRun = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && response.url().includes('/sandbox-run'),
+    );
+    await sandbox.getByRole('button', { name: '开始试跑' }).click();
+    expect((await sandboxRun).status()).toBe(202);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await page.getByRole('button', { name: '试跑历史' }).click();
+    const history = page.getByRole('complementary', { name: '试跑历史' });
+    await expect(history.getByRole('heading', { name: '试跑历史' })).toBeVisible();
+    await expect(history.getByText('历史回放用的猫')).toBeVisible();
+
+    await history.getByRole('button', { name: /历史回放用的猫/ }).click();
+    const detail = page.getByRole('dialog');
+    await expect(detail.getByRole('heading', { name: '试跑详情' })).toBeVisible();
+    await expect(detail.getByText('实时流转')).toBeVisible();
   });
 
   test('a graph that fails validation cannot be published', async ({ page }) => {

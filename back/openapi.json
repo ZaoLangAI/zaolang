@@ -7075,27 +7075,11 @@
           "admin:content"
         ],
         "summary": "Moderation Queue List",
-        "description": "Highest priority first; ties broken by id (which sorts with creation\ntime), so nothing at the back of the queue starves.\n\nThe cursor is `\"{priority}:{id}\"`: `priority` alone cannot order a page\nboundary because many rows share a value, so the id breaks the tie the\nsame way the query itself does.",
+        "description": "Published creative works, newest first.\n\nThe cursor is the work id, same shape as the jobs console: ids are\nlexically time-ordered, so `id < cursor` pages without skipping when\nsomething is inserted above the current page.",
         "operationId": "moderation_queue_list_v1_admin_moderation_queue_get",
         "parameters": [
           {
             "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/ModerationStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
-          {
-            "name": "subject_type",
             "in": "query",
             "required": false,
             "schema": {
@@ -7107,7 +7091,89 @@
                   "type": "null"
                 }
               ],
-              "title": "Subject Type"
+              "title": "Status"
+            }
+          },
+          {
+            "name": "creator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator"
+            }
+          },
+          {
+            "name": "title",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Title"
+            }
+          },
+          {
+            "name": "media_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Media Type"
+            }
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
             }
           },
           {
@@ -7185,7 +7251,7 @@
           "admin:content"
         ],
         "summary": "Moderation Detail",
-        "description": "The queue row plus its full verdict trail, so a reviewer can see what\nalready happened to this subject before deciding whether to reverse it.",
+        "description": "The queue row plus its full verdict trail, so a reviewer can see what\nalready happened to this subject before deciding whether to reverse it.\n\n`item_id` may be a queue row or a published work id (works Safety\nauto-approved never got a queue row).",
         "operationId": "moderation_detail_v1_admin_moderation_queue__item_id__detail_get",
         "parameters": [
           {
@@ -12113,6 +12179,92 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/WorkflowTemplateView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/workflow-templates/{operation}/sandbox-runs": {
+      "get": {
+        "tags": [
+          "admin:workflow-templates"
+        ],
+        "summary": "List Sandbox Runs",
+        "description": "Past product-sandbox try-its for this operation, newest first.\n\nDetail (events, signed preview) stays on `GET /v1/admin/jobs/{id}` so\nthis list never signs object-storage URLs per row.",
+        "operationId": "list_sandbox_runs_v1_admin_workflow_templates__operation__sandbox_runs_get",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_WorkflowSandboxRunSummary_"
                 }
               }
             }
@@ -18609,6 +18761,39 @@
             ],
             "title": "Preview Url"
           },
+          "preview_media_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Media Type"
+          },
+          "owner_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Display Name"
+          },
+          "owner_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Handle"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -18747,9 +18932,42 @@
             ],
             "title": "Media Url"
           },
+          "media_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Media Type"
+          },
           "owner_user_id": {
             "type": "string",
             "title": "Owner User Id"
+          },
+          "owner_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Display Name"
+          },
+          "owner_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Handle"
           },
           "visibility": {
             "type": "string",
@@ -20439,6 +20657,38 @@
           "items"
         ],
         "title": "Page[WorkSummary]"
+      },
+      "Page_WorkflowSandboxRunSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowSandboxRunSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[WorkflowSandboxRunSummary]"
       },
       "Page_WorkflowTemplateView_": {
         "properties": {
@@ -23792,6 +24042,95 @@
           "job_id"
         ],
         "title": "WorkflowSandboxRunResult"
+      },
+      "WorkflowSandboxRunSummary": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "quality_tier": {
+            "type": "string",
+            "title": "Quality Tier"
+          },
+          "prompt_excerpt": {
+            "type": "string",
+            "title": "Prompt Excerpt"
+          },
+          "used_draft": {
+            "type": "boolean",
+            "title": "Used Draft"
+          },
+          "user_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Display Name"
+          },
+          "user_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Handle"
+          },
+          "quoted_credits": {
+            "type": "integer",
+            "title": "Quoted Credits"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "quality_tier",
+          "prompt_excerpt",
+          "used_draft",
+          "quoted_credits",
+          "created_at"
+        ],
+        "title": "WorkflowSandboxRunSummary",
+        "description": "One past product-sandbox try-it, for the workflow editor's history.\n\nDetail (events, signed preview) stays on `GET /v1/admin/jobs/{id}` so\nthis list never hits object storage per row."
       },
       "WorkflowTemplatePublishRequest": {
         "properties": {

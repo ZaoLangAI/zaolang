@@ -108,6 +108,7 @@ export type WorkflowTemplatePublishRequest = S['WorkflowTemplatePublishRequest']
 export type WorkflowTemplateValidateResponse = S['WorkflowTemplateValidateResponse'];
 export type WorkflowSandboxRunRequest = S['WorkflowSandboxRunRequest'];
 export type WorkflowSandboxRunResult = S['WorkflowSandboxRunResult'];
+export type WorkflowSandboxRunSummary = S['WorkflowSandboxRunSummary'];
 
 /** One node in `WorkflowTemplateView.graph` — the backend keeps this as an
  * untyped `dict` (`app.workflows.graph.WorkflowGraph.to_dict`), so the shape

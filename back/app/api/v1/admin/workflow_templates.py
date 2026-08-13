@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
+from sqlalchemy import select
 
 from app.api.deps import DbSession, IdempotencyKey
 from app.api.schemas import jobs as jobs_schemas
@@ -23,6 +24,7 @@ from app.api.schemas.admin import (
     NodeTypeView,
     WorkflowSandboxRunRequest,
     WorkflowSandboxRunResult,
+    WorkflowSandboxRunSummary,
     WorkflowTemplatePublishRequest,
     WorkflowTemplateValidateRequest,
     WorkflowTemplateValidateResponse,
@@ -42,8 +44,9 @@ from app.domain.audit import service as audit
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.jobs import service as jobs_service
 from app.domain.workflow_templates import service as workflow_templates_service
+from app.models import Profile
 from app.models.base import new_id
-from app.models.enums import JobOrigin, Operation
+from app.models.enums import JobOrigin, JobStatus, Operation
 from app.workflows import registry
 
 router = APIRouter(tags=["admin:workflow-templates"])
@@ -201,6 +204,34 @@ def activate_workflow_template(
     return _template_view(row)
 
 
+@router.get(
+    "/workflow-templates/{operation}/sandbox-runs",
+    response_model=Page[WorkflowSandboxRunSummary],
+)
+def list_sandbox_runs(
+    operation: Operation,
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    cursor: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> Page[WorkflowSandboxRunSummary]:
+    """Past product-sandbox try-its for this operation, newest first.
+
+    Detail (events, signed preview) stays on `GET /v1/admin/jobs/{id}` so
+    this list never signs object-storage URLs per row.
+    """
+    page, has_more = jobs_service.list_sandbox_runs(
+        session, operation=operation.value, cursor=cursor, limit=limit
+    )
+    profiles = _profiles_by_user(session, [job.user_id for job in page])
+    return Page(
+        items=[_sandbox_run_view(job, profiles.get(job.user_id)) for job in page],
+        next_cursor=page[-1].id if has_more and page else None,
+        has_more=has_more,
+    )
+
+
 @router.post(
     "/workflow-templates/{operation}/sandbox-run",
     response_model=WorkflowSandboxRunResult,
@@ -264,6 +295,29 @@ def sandbox_run_workflow_template(
 
         tasks.dispatch_generation(result.job)
     return WorkflowSandboxRunResult(job_id=result.job.id)
+
+
+def _sandbox_run_view(job, profile: Profile | None) -> WorkflowSandboxRunSummary:  # type: ignore[no-untyped-def]
+    return WorkflowSandboxRunSummary(
+        job_id=job.id,
+        status=JobStatus(job.status),
+        quality_tier=job.quality_tier,
+        prompt_excerpt=jobs_service.sandbox_prompt_excerpt(job),
+        used_draft=job.graph_override_json is not None,
+        user_display_name=profile.display_name if profile else None,
+        user_handle=profile.handle if profile else None,
+        quoted_credits=job.quoted_credits,
+        failure_code=job.failure_code,
+        created_at=job.created_at,
+        finished_at=job.finished_at,
+    )
+
+
+def _profiles_by_user(session, user_ids: list[str]) -> dict[str, Profile]:  # type: ignore[no-untyped-def]
+    if not user_ids:
+        return {}
+    rows = session.scalars(select(Profile).where(Profile.user_id.in_(set(user_ids))))
+    return {row.user_id: row for row in rows}
 
 
 def _template_view(row) -> WorkflowTemplateView:  # type: ignore[no-untyped-def]

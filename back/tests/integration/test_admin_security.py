@@ -529,6 +529,18 @@ def test_a_viewer_cannot_sandbox_run_a_workflow_template(client: TestClient, vie
     assert response.status_code == 403
 
 
+def test_a_viewer_can_list_sandbox_run_history(client: TestClient, viewer: User) -> None:
+    response = client.get(
+        "/v1/admin/workflow-templates/text_to_image/sandbox-runs",
+        headers=admin_header(viewer),
+    )
+    assert response.status_code == 200
+
+
+def test_an_anonymous_caller_cannot_list_sandbox_run_history(client: TestClient) -> None:
+    assert client.get("/v1/admin/workflow-templates/text_to_image/sandbox-runs").status_code == 401
+
+
 def test_a_viewer_cannot_answer_a_job_follow_up(client: TestClient, viewer: User) -> None:
     """Answering resumes the graph; that is an operator write, not a read."""
     response = client.post(

@@ -250,6 +250,9 @@ class ModerationQueueView(ApiModel):
     claimed_by_user_id: str | None = None
     preview_title: str | None = None
     preview_url: str | None = None
+    preview_media_type: str | None = None
+    owner_display_name: str | None = None
+    owner_handle: str | None = None
     created_at: dt.datetime
 
 
@@ -281,7 +284,10 @@ class ModerationWorkDetailView(ApiModel):
     prompt: str | None = None
     cover_url: str | None = None
     media_url: str | None = None
+    media_type: str | None = None
     owner_user_id: str
+    owner_display_name: str | None = None
+    owner_handle: str | None = None
     visibility: str
     lifecycle_status: str
     tombstone_reason: str | None = None
@@ -1048,3 +1054,23 @@ class WorkflowSandboxRunRequest(ApiModel):
 
 class WorkflowSandboxRunResult(ApiModel):
     job_id: str
+
+
+class WorkflowSandboxRunSummary(ApiModel):
+    """One past product-sandbox try-it, for the workflow editor's history.
+
+    Detail (events, signed preview) stays on `GET /v1/admin/jobs/{id}` so
+    this list never hits object storage per row.
+    """
+
+    job_id: str
+    status: JobStatus
+    quality_tier: str
+    prompt_excerpt: str
+    used_draft: bool
+    user_display_name: str | None = None
+    user_handle: str | None = None
+    quoted_credits: int
+    failure_code: str | None = None
+    created_at: dt.datetime
+    finished_at: dt.datetime | None = None
