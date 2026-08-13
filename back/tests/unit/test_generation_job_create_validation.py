@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.api.schemas.jobs import GenerationJobCreateRequest, GenerationParams
+from app.api.schemas.jobs import (
+    DEFAULT_SANDBOX_VIDEO_DURATION_SECONDS,
+    GenerationJobCreateRequest,
+    GenerationParams,
+    VideoGenerationOptions,
+    apply_sandbox_generation_defaults,
+    prepare_sandbox_generation_params,
+    validate_generation_params,
+)
 from app.models.enums import Operation, QualityTier
 
 
@@ -95,4 +103,47 @@ def test_h3_frame_images_require_a_first_frame_and_exclude_other_references() ->
             Operation.IMAGE_TO_VIDEO,
             duration_seconds=5,
             video_options={"reference_mode": "frame_images"},
+        )
+
+
+def test_validate_generation_params_rejects_a_zero_video_duration() -> None:
+    with pytest.raises(ValueError, match="视频生成必须指定时长"):
+        validate_generation_params(Operation.TEXT_TO_VIDEO, duration_seconds=0)
+
+
+def test_validate_generation_params_rejects_h3_duration_out_of_range() -> None:
+    with pytest.raises(ValueError, match="4-15"):
+        validate_generation_params(
+            Operation.TEXT_TO_VIDEO,
+            duration_seconds=16,
+            video_options=VideoGenerationOptions(),
+        )
+
+
+def test_sandbox_defaults_fill_an_omitted_video_duration_then_pass_validation() -> None:
+    filled = apply_sandbox_generation_defaults(Operation.TEXT_TO_VIDEO, {"prompt": "香港街道"})
+    assert filled["duration_seconds"] == DEFAULT_SANDBOX_VIDEO_DURATION_SECONDS
+    validate_generation_params(Operation.TEXT_TO_VIDEO, duration_seconds=filled["duration_seconds"])
+
+    prepared = prepare_sandbox_generation_params(Operation.TEXT_TO_VIDEO, {"prompt": "香港街道"})
+    assert prepared["duration_seconds"] == DEFAULT_SANDBOX_VIDEO_DURATION_SECONDS
+    assert prepared["prompt"] == "香港街道"
+
+
+def test_sandbox_defaults_keep_an_explicit_video_duration() -> None:
+    filled = apply_sandbox_generation_defaults(
+        Operation.TEXT_TO_VIDEO, {"prompt": "香港街道", "duration_seconds": 6}
+    )
+    assert filled["duration_seconds"] == 6
+
+
+def test_sandbox_prepare_rejects_an_illegal_h3_duration() -> None:
+    with pytest.raises(ValueError, match="4-15"):
+        prepare_sandbox_generation_params(
+            Operation.TEXT_TO_VIDEO,
+            {
+                "prompt": "香港街道",
+                "duration_seconds": 16,
+                "video_options": {"resolution": "2K"},
+            },
         )

@@ -78,10 +78,11 @@ restore: ## 从备份恢复，用法 make restore f=.backups/xxx.dump
 # --- development ---------------------------------------------------------
 
 .PHONY: dev
-dev: ## 同时启动 API、Worker 与 Web
+dev: ## 同时启动 API、Worker、轮询 poller、Beat 与 Web
 	@trap 'kill 0' EXIT INT TERM; \
 	$(MAKE) dev-api & \
 	$(MAKE) dev-worker & \
+	$(MAKE) dev-poller & \
 	$(MAKE) dev-beat & \
 	$(MAKE) dev-web & \
 	wait
@@ -91,9 +92,15 @@ dev-api: ## 启动 FastAPI（含 AgentOS）
 	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port 8000
 
 .PHONY: dev-worker
-dev-worker: ## 启动 Celery worker（订阅全部队列）
+dev-worker: ## 启动 Celery worker（生成与质检队列，不含供应商轮询）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,provider_task_polling \
+		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile \
+		--loglevel=info
+
+.PHONY: dev-poller
+dev-poller: ## 启动供应商异步轮询 worker（独占 provider_task_polling）
+	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
+		-Q provider_task_polling --concurrency=1 \
 		--loglevel=info
 
 .PHONY: dev-purge-queues

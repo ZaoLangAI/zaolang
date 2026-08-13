@@ -8,7 +8,7 @@ Live path with a real key is manual — not CI:
 
 1. `make dev-api` and `make dev-worker` (including Beat).
 2. `/admin/routing` → each Operation tab → 沙盒试跑. Reference ops need
-   `{"reference_asset_ids":["ast_..."]}` (video: also `duration_seconds` 4–15).
+   `{"reference_asset_ids":["ast_..."]}` (video duration defaults to 8s, range 4–15).
 3. The right-hand panel streams node progress; a successful output lands in
    任务运维 and 内容审核 (POST_GENERATION). Credits are not charged.
 """
@@ -85,6 +85,37 @@ def test_sandbox_run_submits_a_real_job_for_every_non_reference_operation(
         )
         or 0
     ) == 0
+
+
+def test_text_to_video_sandbox_run_defaults_duration_to_eight_seconds(
+    client: TestClient, operator: User, db: Session
+) -> None:
+    """A prompt-only try-it must still be H3-routable; missing duration used
+    to hard-filter every video provider as `duration_below_provider_minimum`."""
+    job_id = _sandbox_run(client, operator, operation=Operation.TEXT_TO_VIDEO.value)
+    job = db.get(GenerationJob, job_id)
+    assert job is not None
+    assert job.request_json["duration_seconds"] == 8
+
+
+def test_text_to_video_sandbox_run_rejects_an_illegal_h3_duration(
+    client: TestClient, operator: User
+) -> None:
+    response = client.post(
+        "/v1/admin/workflow-templates/text_to_video/sandbox-run",
+        json={
+            "prompt": "创作香港街道视频",
+            "params": {
+                "duration_seconds": 16,
+                "video_options": {"resolution": "2K"},
+            },
+        },
+        headers=admin_header(operator),
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "VALIDATION_FAILED"
+    assert "4-15" in body["error"]["message"]
 
 
 def test_a_sandbox_run_walks_the_pipeline_without_touching_the_ledger(
@@ -240,9 +271,7 @@ def test_a_sandbox_planning_follow_up_is_answerable_through_admin_api(
     """
     from app.llm.stub import PLANNER_CLARIFY_MARKER
 
-    job_id = _sandbox_run(
-        client, operator, prompt=f"{PLANNER_CLARIFY_MARKER}：雨后的东京街头"
-    )
+    job_id = _sandbox_run(client, operator, prompt=f"{PLANNER_CLARIFY_MARKER}：雨后的东京街头")
     outcome = pipeline.run_generation_pipeline(db, job_id)
     assert outcome.status == JobStatus.AWAITING_INPUT
 
@@ -251,9 +280,7 @@ def test_a_sandbox_planning_follow_up_is_answerable_through_admin_api(
     )
     assert hidden.status_code == 404
 
-    pending = client.get(
-        f"/v1/admin/jobs/{job_id}/input-request", headers=admin_header(operator)
-    )
+    pending = client.get(f"/v1/admin/jobs/{job_id}/input-request", headers=admin_header(operator))
     assert pending.status_code == 200, pending.text
     body = pending.json()
     assert body["node_id"] == "planning"

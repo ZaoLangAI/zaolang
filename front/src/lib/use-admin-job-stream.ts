@@ -8,6 +8,7 @@ import type { AdminJobDetail } from '@/lib/api/admin-types';
 import { buildUrl } from '@/lib/api/client';
 
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled', 'expired'] as const;
+const DETAIL_POLL_MS = 5_000;
 
 function isTerminal(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
@@ -33,8 +34,10 @@ export interface AdminJobStreamState {
  * Live progress for one admin-visible generation job (sandbox try-it or ops).
  *
  * Mirrors `useJobStream` but talks to `/v1/admin/jobs/{id}/stream` with the
- * console bearer token. Prompt bodies are not on the wire — `detail` is
- * re-fetched on terminal so the inspector can show I/O and the preview.
+ * console bearer token. GET detail is the source of truth for both in-flight
+ * `async_task` and the terminal record (`preview_url`, settled events): SSE
+ * can miss a Redis pub/sub frame while the connection stays open, so we also
+ * poll the detail every 5s until the job finishes.
  */
 export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
   const [events, setEvents] = useState<AdminStreamedEvent[]>([]);
@@ -54,15 +57,40 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
     let stopped = false;
     lastEventId.current = 0;
 
+    const applyDetail = (latest: AdminJobDetail) => {
+      setDetail(latest);
+      if (!latest.events?.length) return;
+      const incoming = latest.events.map(toStreamedEvent);
+      setEvents((current) => mergeEvents(current, incoming));
+      lastEventId.current = Math.max(
+        lastEventId.current,
+        ...incoming.map((event) => event.sequence),
+      );
+    };
+
     const refreshDetail = async () => {
       try {
         const latest = await adminApi.get<AdminJobDetail>(`/v1/admin/jobs/${jobId}`);
-        setDetail(latest);
+        applyDetail(latest);
         return latest;
       } catch {
         return null;
       }
     };
+
+    const halt = () => {
+      stopped = true;
+      window.clearInterval(pollTimer);
+      controller.abort();
+    };
+
+    const pollTimer = window.setInterval(() => {
+      if (stopped) return;
+      void (async () => {
+        const latest = await refreshDetail();
+        if (latest && isTerminal(latest.status)) halt();
+      })();
+    }, DETAIL_POLL_MS);
 
     const run = async () => {
       // Yield so the reset is not a synchronous setState inside the effect.
@@ -72,6 +100,14 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
       setDetail(null);
       setConnected(false);
       setReconnecting(false);
+
+      const initial = await refreshDetail();
+      if (initial && isTerminal(initial.status)) {
+        halt();
+        setConnected(false);
+        setReconnecting(false);
+        return;
+      }
 
       while (!stopped) {
         try {
@@ -112,15 +148,24 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
                   : [...current, payload],
               );
               if (isTerminal(payload.status)) {
-                stopped = true;
+                halt();
                 await refreshDetail();
-              } else if (payload.status === 'awaiting_input') {
+              } else if (
+                payload.status === 'awaiting_input' ||
+                payload.event_type === 'generating' ||
+                payload.event_type === 'progress'
+              ) {
                 await refreshDetail();
               }
             }
           }
         } catch (error) {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted) {
+            setConnected(false);
+            setReconnecting(false);
+            window.clearInterval(pollTimer);
+            return;
+          }
           void error;
         }
 
@@ -131,8 +176,12 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
         const delay = Math.min(1000 * 2 ** (attempt - 1), 15_000);
         await new Promise((resolve) => setTimeout(resolve, delay));
         const latest = await refreshDetail();
-        if (latest && isTerminal(latest.status)) break;
+        if (latest && isTerminal(latest.status)) {
+          halt();
+          break;
+        }
       }
+      window.clearInterval(pollTimer);
       setConnected(false);
       setReconnecting(false);
     };
@@ -141,6 +190,7 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
     return () => {
       stopped = true;
       controller.abort();
+      window.clearInterval(pollTimer);
     };
   }, [jobId]);
 
@@ -148,6 +198,34 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
     return { events: [], detail: null, connected: false, reconnecting: false };
   }
   return { events, detail, connected, reconnecting };
+}
+
+function toStreamedEvent(event: {
+  sequence: number;
+  event_type: string;
+  status: string;
+  progress: number;
+  message: string;
+  node_id?: string | null;
+}): AdminStreamedEvent {
+  return {
+    sequence: event.sequence,
+    event_type: event.event_type,
+    status: event.status,
+    progress: event.progress,
+    message: event.message,
+    node_id: event.node_id,
+  };
+}
+
+function mergeEvents(
+  current: AdminStreamedEvent[],
+  incoming: AdminStreamedEvent[],
+): AdminStreamedEvent[] {
+  const bySequence = new Map<number, AdminStreamedEvent>();
+  for (const event of current) bySequence.set(event.sequence, event);
+  for (const event of incoming) bySequence.set(event.sequence, event);
+  return [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
 }
 
 function parseFrame(frame: string): AdminStreamedEvent | null {

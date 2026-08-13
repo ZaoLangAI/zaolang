@@ -4344,6 +4344,9 @@ export interface components {
             category: components["schemas"]["CreationSkillCategory"];
             /** Cover Url */
             cover_url?: string | null;
+            cover_media_type?: components["schemas"]["MediaType"] | null;
+            /** Applicable Operations */
+            applicable_operations?: components["schemas"]["Operation"][];
             visibility: components["schemas"]["CreationSkillVisibility"];
             status: components["schemas"]["CreationSkillStatus"];
             /** Usage Count */
@@ -4378,6 +4381,8 @@ export interface components {
             };
             /** Cover Asset Id */
             cover_asset_id?: string | null;
+            /** Applicable Operations */
+            applicable_operations?: components["schemas"]["Operation"][];
         };
         /** CreationSkillDetail */
         CreationSkillDetail: {
@@ -4390,6 +4395,9 @@ export interface components {
             category: components["schemas"]["CreationSkillCategory"];
             /** Cover Url */
             cover_url?: string | null;
+            cover_media_type?: components["schemas"]["MediaType"] | null;
+            /** Applicable Operations */
+            applicable_operations?: components["schemas"]["Operation"][];
             author: components["schemas"]["AuthorSummary"];
             visibility: components["schemas"]["CreationSkillVisibility"];
             status: components["schemas"]["CreationSkillStatus"];
@@ -4428,6 +4436,9 @@ export interface components {
             category: components["schemas"]["CreationSkillCategory"];
             /** Cover Url */
             cover_url?: string | null;
+            cover_media_type?: components["schemas"]["MediaType"] | null;
+            /** Applicable Operations */
+            applicable_operations?: components["schemas"]["Operation"][];
             author: components["schemas"]["AuthorSummary"];
             visibility: components["schemas"]["CreationSkillVisibility"];
             status: components["schemas"]["CreationSkillStatus"];
@@ -4456,6 +4467,8 @@ export interface components {
             };
             /** Cover Asset Id */
             cover_asset_id?: string | null;
+            /** Applicable Operations */
+            applicable_operations?: components["schemas"]["Operation"][];
         };
         /**
          * CreationSkillVisibility
@@ -4808,8 +4821,8 @@ export interface components {
             shortform_profile?: string | null;
             /** Character Ids */
             character_ids?: string[];
-            /** Skill Id */
-            skill_id?: string | null;
+            /** Skill Ids */
+            skill_ids?: string[];
             /** Extra */
             extra?: {
                 [key: string]: unknown;

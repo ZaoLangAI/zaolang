@@ -6,11 +6,12 @@ that all three end with the job either progressing or settled — never left
 `RUNNING` with nobody responsible for it:
 
 * still rendering — write a heartbeat event so the user's stream and the ops
-  console keep moving, then book the next check;
+  console keep moving, then book the next check (the upstream always returns
+  succeeded or failed; the platform does not invent a timeout while pending);
 * finished — record the attempt, hand the result to the suspended workflow
   and let it run on to quality check and settlement;
-* failed or timed out — resume down the node's failure port, which is the
-  same retry/fail wiring a synchronous provider failure takes.
+* failed — resume down the node's failure port, which is the same retry/fail
+  wiring a synchronous provider failure takes.
 
 Cancellation is checked first on every tick. The synchronous path only checks
 before calling `submit()`, which leaves the whole render window — minutes —
@@ -31,7 +32,6 @@ from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
 from app.models import AsyncProviderTask, GenerationJob, ProviderAttempt
-from app.models.base import utcnow
 from app.models.enums import (
     JobEventType,
     JobStatus,
@@ -110,26 +110,10 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
     request = _request_from(task.request_json)
     result = provider.poll(task.external_task_id, request)
 
-    if result.pending and utcnow() < task.deadline_at:
+    if result.pending:
         _heartbeat(session, job, task)
         async_tasks.reschedule(session, task)
         session.commit()
-        return
-
-    if result.pending:
-        logger.warning("async task %s exceeded its deadline; giving up", task.id)
-        system_log.emit(
-            source=SystemLogSource.PIPELINE,
-            event="async_task_deadline_exceeded",
-            message=f"async task {task.id} exceeded deadline {task.deadline_at}; giving up",
-            dedup_key=f"job:{job.id}",
-            level=SystemLogLevel.WARNING,
-            job_id=job.id,
-            details={"async_task_id": task.id, "poll_count": task.poll_count},
-        )
-        provider.cancel(task.external_task_id)
-        _close_attempt(session, task, ProviderAttemptStatus.TIMED_OUT, result)
-        _resume_failed(session, job, task, code="PROVIDER_TIMEOUT")
         return
 
     router.record_attempt_outcome(

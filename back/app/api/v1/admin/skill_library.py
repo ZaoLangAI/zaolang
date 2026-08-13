@@ -19,7 +19,7 @@ from app.domain.errors import NotFound
 from app.domain.notifications import push as notifications
 from app.domain.skill_library import service as skill_library
 from app.models import CreationSkill
-from app.models.enums import CreationSkillStatus, NotificationType
+from app.models.enums import CreationSkillStatus, NotificationType, Operation
 from app.presenters import media_urls
 
 router = APIRouter(tags=["admin:skill-library"])
@@ -85,6 +85,8 @@ def _view(session: DbSession, skill: CreationSkill) -> CreationSkillAdminView:
         description=skill.description,
         category=skill.category,
         cover_url=media_urls.asset_url(session, skill.cover_asset_id),
+        cover_media_type=media_urls.media_type_of(session, skill.cover_asset_id),
+        applicable_operations=[Operation(value) for value in skill.applicable_operations_json],
         visibility=skill.visibility,
         status=skill.status,
         usage_count=skill.usage_count,

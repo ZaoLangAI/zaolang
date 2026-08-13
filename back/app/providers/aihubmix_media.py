@@ -283,9 +283,9 @@ class AiHubMixMediaProvider(GenerationProvider):
 
         Deliberately a single round trip with no sleeping: the caller is a
         scheduler tick that must stay short, and how often to come back is
-        its decision, not this method's. The overall deadline is enforced by
-        the caller too, which is the only side that knows when the task was
-        created.
+        its decision, not this method's. The caller keeps polling while this
+        returns `pending`; it does not invent a timeout on the provider's
+        behalf.
         """
         started = time.perf_counter()
         try:

@@ -13,6 +13,7 @@ import { Select, TextArea, TextInput } from '@/components/ui/field';
 import {
   IconChevronDown,
   IconClock,
+  IconClose,
   IconGear,
   IconLandscape,
   IconMic,
@@ -132,14 +133,14 @@ export function GenerationStudio({
   const [paramsRequested, setParamsRequested] = useState(false);
   const [presetId, setPresetId] = useState('');
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
-  const [skillId, setSkillId] = useState('');
+  const [skillPickerValue, setSkillPickerValue] = useState('');
   const [styleGalleryOpen, setStyleGalleryOpen] = useState(false);
   const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
-  // Distinct from `skillId` above (which resets after each pick so the same
-  // skill can be reapplied): this is what actually travels to the job, and
-  // persists until prompt/params are edited enough that reapplying makes
-  // sense, or another skill is chosen.
-  const [appliedSkillId, setAppliedSkillId] = useState<string | null>(null);
+  // Distinct from `skillPickerValue` above (which resets after each pick so
+  // the picker is ready for the next one): this is the ordered set that
+  // actually travels to the job. Up to 5 skills can be combined (mirrors
+  // `GenerationParams.skill_ids` server-side cap).
+  const [appliedSkillIds, setAppliedSkillIds] = useState<string[]>([]);
 
   const { status: sessionStatus } = useSession();
   const publicPresets = useResource<Page<StylePreset>>('/v1/style-presets');
@@ -205,16 +206,23 @@ export function GenerationStudio({
     applyParams(initialStyleParams);
   }
 
+  const MAX_APPLIED_SKILLS = 5;
+
   const applySkill = (skill: CreationSkillSummary) => {
+    if (appliedSkillIds.includes(skill.id) || appliedSkillIds.length >= MAX_APPLIED_SKILLS) return;
     // Unlike a preset, a skill's params never travel in the list payload —
     // `/apply` both records usage and is the only place that returns them.
     void api
       .post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`)
       .then((detail) => {
         applyParams(detail.params ?? {});
-        setAppliedSkillId(skill.id);
+        setAppliedSkillIds((current) => [...current, skill.id]);
       })
       .catch(() => undefined);
+  };
+
+  const removeSkill = (skillId: string) => {
+    setAppliedSkillIds((current) => current.filter((id) => id !== skillId));
   };
 
   const hasVideoReference = uploads.some((asset) => asset.media_type === 'video');
@@ -307,7 +315,7 @@ export function GenerationStudio({
           }
         : undefined,
       extra: isAudio ? { voice, ...presetExtra } : { sound, ...presetExtra },
-      skillId: appliedSkillId ?? undefined,
+      skillIds: appliedSkillIds,
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -353,22 +361,63 @@ export function GenerationStudio({
       ) : null}
 
       {skills.length > 0 ? (
-        <Select
-          label={t('skillPreset')}
-          hint={t('skillPresetHint')}
-          value={skillId}
-          onChange={(event) => {
-            const value = event.target.value;
-            const skill = skills.find((item) => item.id === value);
-            if (skill) applySkill(skill);
-            // Transient, same reasoning as the style preset select above.
-            setSkillId('');
-          }}
-          options={[
-            { value: '', label: t('skillPresetNone') },
-            ...skills.map((skill) => ({ value: skill.id, label: skill.title })),
-          ]}
-        />
+        <div>
+          <Select
+            label={t('skillPreset')}
+            hint={t('skillPresetHint')}
+            value={skillPickerValue}
+            onChange={(event) => {
+              const value = event.target.value;
+              const skill = skills.find((item) => item.id === value);
+              if (skill) applySkill(skill);
+              // Transient, same reasoning as the style preset select above.
+              setSkillPickerValue('');
+            }}
+            options={[
+              { value: '', label: t('skillPresetNone') },
+              // Already-applied skills and ones not built for this operation
+              // (e.g. a video-only skill while composing an image) don't
+              // clutter the picker — `applicable_operations` empty means any.
+              ...skills
+                .filter(
+                  (skill) =>
+                    !appliedSkillIds.includes(skill.id) &&
+                    (!skill.applicable_operations || skill.applicable_operations.length === 0 ||
+                      skill.applicable_operations.includes(operation)),
+                )
+                .map((skill) => ({ value: skill.id, label: skill.title })),
+            ]}
+          />
+          {appliedSkillIds.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {appliedSkillIds.flatMap((id) => {
+                const skill = skills.find((item) => item.id === id);
+                if (!skill) return [];
+                return [
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => removeSkill(id)}
+                    className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/12 py-0.5 pl-0.5 pr-2 text-xs font-medium text-primary"
+                  >
+                    {/* A real preview, not just a label, so picking a skill shows
+                        what it actually does before the job even runs — and a
+                        video-based skill plays instead of a broken frame. */}
+                    <Poster
+                      src={skill.cover_url}
+                      alt=""
+                      aspect="square"
+                      mediaType={skill.cover_media_type}
+                      className="h-6 w-6 shrink-0 rounded"
+                    />
+                    {skill.title}
+                    <IconClose className="h-3 w-3" />
+                  </button>,
+                ];
+              })}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <div>

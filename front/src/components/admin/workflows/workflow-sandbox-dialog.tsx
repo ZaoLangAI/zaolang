@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
@@ -9,16 +9,22 @@ import { Dialog } from '@/components/ui/dialog';
 import { Select, TextArea } from '@/components/ui/field';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
+import type { Locale } from '@/i18n/routing';
 import { adminApi } from '@/lib/api/admin-client';
 import type { AdminJobDetail, WorkflowGraphJson } from '@/lib/api/admin-types';
 import { newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
+import type { JobStatus } from '@/lib/api/types';
+import { formatDateTime, formatNumber } from '@/lib/format';
 import { useAdminJobStream, type AdminStreamedEvent } from '@/lib/use-admin-job-stream';
 
 const TIERS = ['preview', 'standard', 'cinematic'] as const;
 type Source = 'draft' | 'published';
 
 const REFERENCE_OPS = new Set(['image_to_image', 'image_to_video', 'video_to_video']);
+const VIDEO_OPS = new Set(['text_to_video', 'image_to_video', 'video_to_video']);
+const VIDEO_DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
+const DEFAULT_VIDEO_DURATION = 8;
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
 
 export type SandboxTraceStep = { node_id: string; port?: string | null };
@@ -42,9 +48,13 @@ export function WorkflowSandboxDialog({
 }) {
   const t = useTranslations('adminWorkflows');
   const tAdmin = useTranslations('admin');
+  const tJob = useTranslations('job');
+  const tJobs = useTranslations('adminJobs');
+  const locale = useLocale() as Locale;
   const [source, setSource] = useState<Source>('draft');
   const [prompt, setPrompt] = useState('');
   const [qualityTier, setQualityTier] = useState<string>('standard');
+  const [durationSeconds, setDurationSeconds] = useState(DEFAULT_VIDEO_DURATION);
   const [paramsText, setParamsText] = useState('');
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,6 +112,9 @@ export function WorkflowSandboxDialog({
         return;
       }
     }
+    if (VIDEO_OPS.has(operation)) {
+      params = { ...params, duration_seconds: durationSeconds };
+    }
 
     setBusy(true);
     setError(null);
@@ -129,9 +142,12 @@ export function WorkflowSandboxDialog({
   };
 
   const inspect = selectedNodeId ? inspectNode(selectedNodeId, detail, stream.events) : null;
-  const previewUrl = detail?.preview_url ?? stream.detail?.preview_url ?? null;
-  const mimeType = detail?.mime_type ?? stream.detail?.mime_type ?? null;
-  const jobStatus = stream.events.at(-1)?.status ?? detail?.status ?? stream.detail?.status ?? null;
+  const previewUrl = stream.detail?.preview_url ?? detail?.preview_url ?? null;
+  const mimeType = stream.detail?.mime_type ?? detail?.mime_type ?? null;
+  const latestEvent = stream.events.at(-1);
+  const jobStatus = (stream.detail?.status ?? latestEvent?.status ?? null) as JobStatus | null;
+  const inFlight = Boolean(jobId) && (jobStatus == null || !TERMINAL.has(jobStatus));
+  const asyncTask = inFlight ? (stream.detail?.async_task ?? null) : null;
 
   return (
     <Dialog
@@ -141,7 +157,11 @@ export function WorkflowSandboxDialog({
       title={t('dryRun')}
       description={t('dryRunDesc')}
       footer={
-        <Button loading={busy} disabled={prompt.trim().length === 0} onClick={() => void run()}>
+        <Button
+          loading={busy}
+          disabled={prompt.trim().length === 0 || inFlight}
+          onClick={() => void run()}
+        >
           {t('runDryRun')}
         </Button>
       }
@@ -171,10 +191,26 @@ export function WorkflowSandboxDialog({
             onChange={(event) => setQualityTier(event.target.value)}
             options={TIERS.map((tier) => ({ value: tier, label: tier }))}
           />
+          {VIDEO_OPS.has(operation) ? (
+            <Select
+              label={t('dryRunDuration')}
+              hint={t('dryRunDurationHint')}
+              value={String(durationSeconds)}
+              onChange={(event) => setDurationSeconds(Number(event.target.value))}
+              options={VIDEO_DURATIONS.map((value) => ({
+                value: String(value),
+                label: t('dryRunDurationSeconds', { count: value }),
+              }))}
+            />
+          ) : null}
           <TextArea
             label={t('dryRunParams')}
             hint={
-              REFERENCE_OPS.has(operation) ? t('dryRunParamsHintReference') : t('dryRunParamsHint')
+              REFERENCE_OPS.has(operation)
+                ? t('dryRunParamsHintReference')
+                : VIDEO_OPS.has(operation)
+                  ? t('dryRunParamsHintVideo')
+                  : t('dryRunParamsHint')
             }
             value={paramsText}
             maxLength={2000}
@@ -206,7 +242,7 @@ export function WorkflowSandboxDialog({
                         : 'primary'
                 }
               >
-                {jobStatus}
+                {tJob(jobStatus)}
               </Badge>
             ) : null}
           </div>
@@ -247,6 +283,40 @@ export function WorkflowSandboxDialog({
               })}
             </ol>
           )}
+
+          {inFlight && latestEvent ? (
+            <div className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border p-3 text-xs">
+              <div className="flex items-center gap-2 text-muted">
+                <Spinner />
+                {t('dryRunWaitingRender')}
+              </div>
+              <p>
+                <span className="text-muted">{t('dryRunLatest')}</span> {latestEvent.message}
+              </p>
+              <p className="tabular text-muted">
+                {tJob('progress', { percent: latestEvent.progress })}
+              </p>
+            </div>
+          ) : null}
+
+          {asyncTask ? (
+            <div className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 p-3 text-xs">
+              <p className="font-medium">{tJobs('asyncTask')}</p>
+              <p className="text-muted">{tJobs('asyncTaskHint')}</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                <dt className="text-muted">{tJobs('asyncTaskNode')}</dt>
+                <dd>{asyncTask.node_id}</dd>
+                <dt className="text-muted">{tJobs('asyncTaskProvider')}</dt>
+                <dd>{asyncTask.provider_label ?? asyncTask.capability_name}</dd>
+                <dt className="text-muted">{tJobs('asyncTaskExternalId')}</dt>
+                <dd className="font-mono">{asyncTask.external_task_id}</dd>
+                <dt className="text-muted">{tJobs('asyncTaskPolls')}</dt>
+                <dd>{formatNumber(asyncTask.poll_count, locale)}</dd>
+                <dt className="text-muted">{tJobs('asyncTaskDeadline')}</dt>
+                <dd>{formatDateTime(asyncTask.deadline_at, locale)}</dd>
+              </dl>
+            </div>
+          ) : null}
 
           {jobId && jobStatus === 'awaiting_input' ? (
             <AwaitingInputPanel jobId={jobId} client={adminApi} basePath="/v1/admin/jobs" />

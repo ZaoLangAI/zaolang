@@ -118,7 +118,26 @@ services:
       - app.workers.celery_app
       - worker
       - -Q
-      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,provider_task_polling
+      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile
+      - --loglevel=info
+
+  # Dedicated to provider_task_polling so a busy render/quality-check queue
+  # never starves the tick that resumes suspended async video jobs — mirrors
+  # `make dev-poller`.
+  poller:
+    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - worker
+      - -Q
+      - provider_task_polling
+      - --concurrency=1
       - --loglevel=info
 
   beat:

@@ -28,6 +28,7 @@ from app.models.enums import (
     CreationSkillVisibility,
     ModerationStage,
     ModerationStatus,
+    Operation,
 )
 
 MAX_DESCRIPTION_LENGTH = 300
@@ -51,6 +52,7 @@ def create(
     category: CreationSkillCategory,
     params_json: dict[str, Any],
     cover_asset_id: str | None,
+    applicable_operations: list[Operation] | None = None,
 ) -> CreationSkill:
     _assert_cover_owned(session, owner_user_id=owner_user_id, cover_asset_id=cover_asset_id)
     skill = CreationSkill(
@@ -59,6 +61,7 @@ def create(
         description=description,
         category=category,
         params_json=params_json,
+        applicable_operations_json=_deduped_operations(applicable_operations),
         cover_asset_id=cover_asset_id,
         visibility=CreationSkillVisibility.PRIVATE,
         status=CreationSkillStatus.DRAFT,
@@ -78,6 +81,7 @@ def update(
     category: CreationSkillCategory,
     params_json: dict[str, Any],
     cover_asset_id: str | None,
+    applicable_operations: list[Operation] | None = None,
 ) -> CreationSkill:
     if skill.owner_user_id != actor_user_id:
         raise Forbidden("只能编辑自己创建的技能。")
@@ -88,6 +92,7 @@ def update(
     skill.description = description
     skill.category = category
     skill.params_json = params_json
+    skill.applicable_operations_json = _deduped_operations(applicable_operations)
     skill.cover_asset_id = cover_asset_id
 
     # 已公开或正在审核的技能一旦改动内容，视为撤回分享——必须重新走 publish()。
@@ -297,6 +302,10 @@ def _resolve_open_queue_item(session: Session, skill: CreationSkill) -> None:
         item.status = ModerationStatus.REJECTED
         item.resolved_at = utcnow()
         item.reason_code = "withdrawn_by_owner"
+
+
+def _deduped_operations(operations: list[Operation] | None) -> list[str]:
+    return list(dict.fromkeys(op.value for op in (operations or [])))
 
 
 def _assert_cover_owned(

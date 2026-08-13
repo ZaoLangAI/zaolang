@@ -31,6 +31,7 @@ def _reset_db_engine_after_fork(**_kwargs: object) -> None:
 
     reset_engine_cache()
 
+
 QUEUE_NAMES = (
     "image_generation",
     "video_generation_long",
@@ -85,9 +86,10 @@ celery_app.conf.update(
         "poll-async-provider-tasks": {
             "task": "app.workers.tasks.poll_async_provider_tasks",
             "schedule": float(async_tasks.POLL_INTERVAL_SECONDS),
-            # A tick that has not finished before the next one is due is a
-            # sign of a stuck provider, not a reason to pile up.
-            "options": {"expires": async_tasks.POLL_INTERVAL_SECONDS},
+            # Long enough that a tick downloading a finished render does not
+            # drop every subsequent beat fire. `claim_due` still makes two
+            # overlapping ticks safe.
+            "options": {"expires": int(async_tasks.CLAIM_LEASE.total_seconds())},
         },
         "reconcile-credits": {
             "task": "app.workers.tasks.reconcile_credits",

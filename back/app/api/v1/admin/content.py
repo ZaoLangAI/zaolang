@@ -55,6 +55,7 @@ from app.models.enums import (
     LifecycleStatus,
     ModerationStatus,
     NotificationType,
+    Operation,
     ReportStatus,
 )
 from app.presenters import media_urls
@@ -154,6 +155,10 @@ def moderation_detail(
                 description=skill.description,
                 category=skill.category,
                 cover_url=media_urls.asset_url(session, skill.cover_asset_id),
+                cover_media_type=media_urls.media_type_of(session, skill.cover_asset_id),
+                applicable_operations=[
+                    Operation(value) for value in skill.applicable_operations_json
+                ],
                 visibility=skill.visibility,
                 status=skill.status,
                 usage_count=skill.usage_count,

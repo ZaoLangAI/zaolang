@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -13,7 +15,7 @@ from app.domain.jobs import async_tasks
 from app.domain.jobs import service as jobs_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import AuditLog, GenerationJob, User
-from app.models.base import new_id
+from app.models.base import new_id, utcnow
 from app.models.enums import JobStatus, Operation, ProviderKind, QualityTier
 from app.providers.base import GenerationRequest, GenerationResult, ProviderCapability
 from app.workers import pipeline
@@ -130,7 +132,13 @@ def suspended_video_job(
 
 def test_health_reports_every_dependency(client: TestClient, admin: User) -> None:
     body = client.get("/v1/admin/health", headers=admin_header(admin)).json()
-    assert {s["name"] for s in body["services"]} == {"postgres", "redis", "minio", "celery"}
+    assert {s["name"] for s in body["services"]} == {
+        "postgres",
+        "redis",
+        "minio",
+        "celery",
+        "async_provider_polling",
+    }
 
 
 def test_health_reports_the_running_llm_mode(client: TestClient, admin: User) -> None:
@@ -184,6 +192,41 @@ def test_a_failing_probe_does_not_break_the_rest_of_the_report(
     body = client.get("/v1/admin/health", headers=admin_header(admin)).json()
     postgres = next(s for s in body["services"] if s["name"] == "postgres")
     assert postgres["healthy"] is True
+
+
+def test_health_does_not_flag_a_task_still_within_its_poll_window(
+    client: TestClient,
+    admin: User,
+    suspended_video_job: tuple[GenerationJob, _PendingAdminTestProvider],
+) -> None:
+    """A task suspended moments ago is not evidence of a dead Beat."""
+    body = client.get("/v1/admin/health", headers=admin_header(admin)).json()
+    probe = next(s for s in body["services"] if s["name"] == "async_provider_polling")
+    assert probe["healthy"] is True
+
+
+def test_health_flags_an_async_task_nobody_has_polled_in_a_while(
+    client: TestClient,
+    db: Session,
+    admin: User,
+    suspended_video_job: tuple[GenerationJob, _PendingAdminTestProvider],
+) -> None:
+    """`_ping_celery` only proves the broker is reachable and an empty queue
+    looks identical whether Beat is idle or dead. This probe has to catch the
+    case a stopped Beat actually causes: real suspended work with nobody
+    coming back for it — the exact shape of `job_01kzwxrzb20h8gdqhavns763ww`."""
+    job, _provider = suspended_video_job
+    task = async_tasks.find_for_job(db, job.id)
+    assert task is not None
+    task.next_poll_at = utcnow() - dt.timedelta(
+        seconds=async_tasks.POLL_INTERVAL_SECONDS * 10
+    )
+    db.commit()
+
+    body = client.get("/v1/admin/health", headers=admin_header(admin)).json()
+    probe = next(s for s in body["services"] if s["name"] == "async_provider_polling")
+    assert probe["healthy"] is False
+    assert "1 个异步供应商任务" in probe["detail"]
 
 
 def test_the_declared_workflow_is_available_for_the_timeline(

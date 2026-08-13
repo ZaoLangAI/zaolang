@@ -29,6 +29,18 @@ test.describe('session boundary', () => {
     await expect(page.getByRole('heading', { name: '运维台登录' })).toBeVisible();
   });
 
+  test('a page that server-fetches console data still redirects instead of throwing', async ({
+    page,
+  }) => {
+    // `/admin/config` calls `adminFetch` in the page RSC. Layout and page
+    // render in parallel, so a 401 must redirect rather than surface as a
+    // Runtime ApiError overlay.
+    await page.goto('/zh-CN/admin/config', { waitUntil: 'networkidle' });
+    await expect(page).toHaveURL(/\/admin\/login/);
+    await expect(page.getByRole('heading', { name: '运维台登录' })).toBeVisible();
+    await expect(page.getByText('Runtime ApiError')).toHaveCount(0);
+  });
+
   test('a wrong password is rejected', async ({ page }) => {
     await page.goto('/zh-CN/admin/login', { waitUntil: 'networkidle' });
     await page.getByLabel('邮箱').fill(ACCOUNTS.admin);
@@ -49,6 +61,49 @@ test.describe('session boundary', () => {
     await page.getByRole('button', { name: '进入运维台' }).click();
     await expect(page).toHaveURL(/\/admin\/?$/);
     expect(refreshCalls(), 'consumer /v1/auth/refresh during console login').toEqual([]);
+  });
+});
+
+test.describe('an expired console session', () => {
+  test.use({ storageState: STATE_FILES.admin });
+
+  test('a reload after the cookie is gone lands on the console login', async ({ page, context }) => {
+    await page.goto('/zh-CN/admin/config', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '配置中心', level: 1 })).toBeVisible();
+
+    await context.clearCookies();
+    await page.reload({ waitUntil: 'networkidle' });
+
+    await expect(page).toHaveURL(/\/admin\/login/);
+    await expect(page.getByRole('heading', { name: '运维台登录' })).toBeVisible();
+    await expect(page.getByText('Runtime ApiError')).toHaveCount(0);
+  });
+
+  test('an expired token on a client request returns to login', async ({ page, context }) => {
+    await page.goto('/zh-CN/admin/jobs', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '任务运维', level: 1 })).toBeVisible();
+
+    // Cookie gone (browser would stop sending it) plus a 401 on the in-memory
+    // bearer (same TTL as the cookie). Clearing cookies also stops the login
+    // page from bouncing a still-valid server session back into the console.
+    await page.route('**/v1/admin/**', async (route) => {
+      if (route.request().url().includes('/v1/admin/auth/login')) {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: { code: 'AUTH_REQUIRED', message: '请先登录后台。' },
+        }),
+      });
+    });
+    await context.clearCookies();
+
+    await page.getByRole('button', { name: '搜索' }).click();
+    await expect(page).toHaveURL(/\/admin\/login/);
+    await expect(page.getByRole('heading', { name: '运维台登录' })).toBeVisible();
   });
 });
 
@@ -242,9 +297,9 @@ test.describe('operations screens', () => {
   });
 
   test('a sandbox dialog submits a real job and shows live progress', async ({ page }) => {
-    // The worker may not be running in this environment, so this only
-    // asserts the dialog opens, the right-hand stream pane is present, and
-    // submit returns 202 — not that the graph finishes walking.
+    // The worker / beat may not be running here, so this does not wait for a
+    // real render to finish. GET detail is mocked as `running` so the dialog
+    // must show the localised in-flight status rather than a raw enum.
     await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '沙盒试跑' }).click();
 
@@ -258,9 +313,54 @@ test.describe('operations screens', () => {
       (response) =>
         response.request().method() === 'POST' && response.url().includes('/sandbox-run'),
     );
+    await page.route('**/v1/admin/jobs/job_*', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      const events = Array.isArray(body.events) ? body.events : [];
+      await route.fulfill({
+        response,
+        body: JSON.stringify({
+          ...body,
+          status: 'running',
+          events: events.length
+            ? events
+            : [
+                {
+                  sequence: 1,
+                  event_type: 'generating',
+                  status: 'running',
+                  progress: 45,
+                  message: '已提交生成任务，正在渲染',
+                  node_id: 'provider_generate',
+                  created_at: new Date().toISOString(),
+                },
+              ],
+          async_task: {
+            node_id: 'provider_generate',
+            capability_name: 'ep_e2e:text_to_video',
+            provider_label: null,
+            external_task_id: 'e2e-sandbox-task',
+            poll_count: 0,
+            next_poll_at: new Date().toISOString(),
+            deadline_at: new Date().toISOString(),
+            claimed_at: null,
+            provider_attempt_id: null,
+          },
+        }),
+      });
+    });
+
     await dialog.getByRole('button', { name: '开始试跑' }).click();
     const response = await sandboxRun;
     expect(response.status()).toBe(202);
+    await expect(dialog.getByText('生成中')).toBeVisible();
+    await expect(dialog.getByText('正在渲染，请稍候')).toBeVisible();
+    await expect(dialog.getByText('e2e-sandbox-task')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '开始试跑' })).toBeDisabled();
   });
 
   test('a graph that fails validation cannot be published', async ({ page }) => {

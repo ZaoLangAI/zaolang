@@ -36,18 +36,19 @@ make logs                                    # 跟容器日志
 
 ## 2. 队列积压 { #queue-backlog }
 
-六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`provider_task_polling`。
+六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`provider_task_polling`。最后一个由独占的 poller 进程消费，不与前五个共享 worker 池——图片/视频这类重任务一旦挤占了同一个池子，异步供应商轮询会被饿死，卡在 `RUNNING` 的视频任务全靠它按时认领。
 
-**确认**：健康页的积压数与消费速率。积压高但速率为 0 → worker 没在消费；两者都高 → 容量不足。
+**确认**：健康页的积压数与消费速率；健康页 `async_provider_polling` 探针专门测"是否存在早已到期却没人认领的轮询任务"——积压为 0 不代表健康，Beat 完全没在跑时队列同样是空的，这个探针才是真正测到症状的信号。
 
 **处理**
 
 ```bash
-make dev-worker      # 本地：确认 -Q 列表包含全部七个队列
+make dev-worker      # 本地：确认 -Q 列表包含前五个生成/质检类队列
+make dev-poller       # 本地：独占 provider_task_polling，绝不能漏起
 make dev-beat        # 本地：异步轮询与超时回收必须有 Beat 调度
 ```
 
-worker 起来了但某个队列不动，先确认它有没有在 `-Q` 列表里——**新增队列忘了加进 `Makefile` 与部署参数**是最常见的原因。
+worker 起来了但某个队列不动，先确认它有没有在对应的 `-Q` 列表里——**新增队列忘了加进 `Makefile` 与 `infra/docker-compose.release.yml` 的部署命令**是最常见的原因。`provider_task_polling` 不动尤其要查 `make dev-poller` / 发布环境的 `poller` 服务是不是真的起了，而不是只看 `dev-worker`。
 
 **收尾**：积压回落；被拖到超时的任务走 [§3](#stuck-jobs)。
 

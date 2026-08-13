@@ -1,6 +1,8 @@
 import 'server-only';
 
 import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { getLocale } from 'next-intl/server';
 
 import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
 
@@ -20,12 +22,11 @@ interface AdminRequestOptions {
 }
 
 /**
- * Reads an admin endpoint during a server render.
- *
- * Console data is never cached: it is per-operator, it is the basis for
- * privileged decisions, and a stale queue is worse than a slow one.
+ * The raw console request. Callers decide whether a 401 is "no session yet"
+ * (`adminFetchOrNull` on the login page) or "send the operator back to login"
+ * (`adminFetch` on every protected render).
  */
-export async function adminFetch<T>(path: string, options: AdminRequestOptions = {}): Promise<T> {
+async function adminRequest<T>(path: string, options: AdminRequestOptions = {}): Promise<T> {
   const jar = await cookies();
   const session = jar.get(ADMIN_COOKIE);
 
@@ -57,12 +58,33 @@ export async function adminFetch<T>(path: string, options: AdminRequestOptions =
   return payload as T;
 }
 
+/**
+ * Reads an admin endpoint during a server render.
+ *
+ * Console data is never cached: it is per-operator, it is the basis for
+ * privileged decisions, and a stale queue is worse than a slow one.
+ *
+ * A 401 here means the cookie is gone or the JWT has expired. Layout and page
+ * render in parallel, so throwing would surface as a Runtime ApiError overlay
+ * and race the layout's own redirect; send the operator to the console login
+ * instead.
+ */
+export async function adminFetch<T>(path: string, options: AdminRequestOptions = {}): Promise<T> {
+  try {
+    return await adminRequest<T>(path, options);
+  } catch (error) {
+    if (!(error instanceof ApiError && error.isAuthRequired)) throw error;
+  }
+  const locale = await getLocale();
+  redirect(`/${locale}/admin/login`);
+}
+
 export async function adminFetchOrNull<T>(
   path: string,
   options: AdminRequestOptions = {},
 ): Promise<T | null> {
   try {
-    return await adminFetch<T>(path, options);
+    return await adminRequest<T>(path, options);
   } catch (error) {
     if (
       error instanceof ApiError &&

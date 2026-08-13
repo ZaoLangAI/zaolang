@@ -22,7 +22,8 @@ from app.api.schemas.common import Page
 from app.api.v1.admin.deps import AdminRead, Viewer
 from app.config import get_settings
 from app.domain.errors import NotFound
-from app.models import AgentRun, GenerationJob, ProviderStat
+from app.domain.jobs import async_tasks
+from app.models import AgentRun, AsyncProviderTask, GenerationJob, ProviderStat
 from app.models.base import utcnow
 from app.workers.celery_app import QUEUE_NAMES
 
@@ -31,6 +32,11 @@ router = APIRouter(tags=["admin:observability"])
 # Below this many attempts the measured rate is noise, so the router uses a
 # conservative prior instead. The console shows the same threshold.
 MIN_ATTEMPTS_FOR_CONFIDENCE = 20
+
+# A task this many poll intervals overdue and still unclaimed is not "about
+# to be picked up" — it means nobody is ticking. Multiplied rather than a
+# fixed number of seconds so it scales if `POLL_INTERVAL_SECONDS` ever changes.
+_STALE_POLL_MULTIPLIER = 4
 
 
 @router.get("/health", response_model=SystemHealthResponse)
@@ -41,6 +47,7 @@ def system_health(session: DbSession, user: Viewer, _: AdminRead) -> SystemHealt
         _probe("redis", _ping_redis),
         _probe("minio", _ping_storage),
         _probe("celery", _ping_celery),
+        _probe("async_provider_polling", lambda: _ping_async_polling(session)),
     ]
     return SystemHealthResponse(
         services=services,
@@ -177,6 +184,35 @@ def _ping_celery() -> None:
 
     with celery_app.connection_for_read() as connection:
         connection.ensure_connection(max_retries=1)
+
+
+def _ping_async_polling(session) -> None:  # type: ignore[no-untyped-def]
+    """Tests the actual symptom of a dead Beat/poller, not a connectivity proxy.
+
+    `_ping_celery` only proves the broker is reachable, and `_queue_depths()`
+    reads Redis list lengths — both look perfectly healthy while Beat is
+    down, because a Beat that never ticks never enqueues anything either.
+    An `AsyncProviderTask` overdue by several poll intervals and still
+    unclaimed means the opposite of "queue empty": there is real work
+    (a suspended video/image job) with nobody coming back for it.
+    """
+    stale_cutoff = utcnow() - dt.timedelta(
+        seconds=async_tasks.POLL_INTERVAL_SECONDS * _STALE_POLL_MULTIPLIER
+    )
+    stale = session.scalar(
+        select(func.count())
+        .select_from(AsyncProviderTask)
+        .where(
+            AsyncProviderTask.next_poll_at < stale_cutoff,
+            AsyncProviderTask.claimed_at.is_(None),
+        )
+    )
+    if stale:
+        raise RuntimeError(
+            f"{stale} 个异步供应商任务已逾期超过 "
+            f"{async_tasks.POLL_INTERVAL_SECONDS * _STALE_POLL_MULTIPLIER} 秒仍未被认领，"
+            "Beat 或 provider_task_polling 的 worker 可能已停跑"
+        )
 
 
 def _queue_depths() -> list[QueueDepth]:

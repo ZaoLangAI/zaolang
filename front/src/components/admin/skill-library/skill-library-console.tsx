@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
@@ -8,6 +7,7 @@ import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { DataTable, type Column } from '@/components/admin/data-table';
 import { DetailDrawer, DetailList } from '@/components/admin/detail-drawer';
 import { FilterBar } from '@/components/admin/filter-bar';
+import { Poster } from '@/components/media/poster';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -154,9 +154,14 @@ export function SkillLibraryConsole({ configAction }: { configAction?: React.Rea
             {open.cover_url ? (
               <div>
                 <p className="mb-1.5 text-xs text-muted">{t('detailCover')}</p>
-                <span className="relative block aspect-video w-full overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
-                  <Image src={open.cover_url} alt="" fill sizes="480px" className="object-cover" />
-                </span>
+                <Poster
+                  src={open.cover_url}
+                  alt=""
+                  aspect="video"
+                  sizes="480px"
+                  mediaType={open.cover_media_type}
+                  className="rounded-[var(--radius-sm)]"
+                />
               </div>
             ) : null}
 

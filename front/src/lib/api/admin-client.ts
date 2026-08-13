@@ -12,12 +12,20 @@ import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
  */
 let adminToken: string | null = null;
 
+const ADMIN_LOGIN_PATH = '/v1/admin/auth/login';
+
 export function setAdminToken(token: string | null): void {
   adminToken = token;
 }
 
 export function getAdminToken(): string | null {
   return adminToken;
+}
+
+/** Full navigation so the console layout re-reads the cookie from scratch. */
+function redirectToAdminLogin(): void {
+  setAdminToken(null);
+  window.location.assign(`${window.location.pathname.split('/admin')[0]}/admin/login`);
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -47,7 +55,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const payload = text ? (JSON.parse(text) as unknown) : undefined;
 
   if (!response.ok) {
-    throw new ApiError(response.status, payload as ApiErrorBody | undefined, response.statusText);
+    const error = new ApiError(
+      response.status,
+      payload as ApiErrorBody | undefined,
+      response.statusText,
+    );
+    // Wrong password is also 401; kicking the login form would hide the error.
+    if (error.isAuthRequired && path !== ADMIN_LOGIN_PATH) {
+      redirectToAdminLogin();
+    }
+    throw error;
   }
   return payload as T;
 }

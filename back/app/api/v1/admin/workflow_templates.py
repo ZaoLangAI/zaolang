@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.api.deps import DbSession, IdempotencyKey
+from app.api.schemas import jobs as jobs_schemas
 from app.api.schemas.admin import (
     AgentBindingView,
     DangerousAction,
@@ -234,6 +235,10 @@ def sandbox_run_workflow_template(
         graph_override = payload.graph
 
     params: dict[str, Any] = {"prompt": payload.prompt, **payload.params}
+    try:
+        params = jobs_schemas.prepare_sandbox_generation_params(operation, params)
+    except ValueError as exc:
+        raise ValidationFailed(str(exc)) from exc
     result = jobs_service.submit(
         session,
         user_id=user.id,

@@ -195,13 +195,18 @@ def expire_stale_jobs() -> int:
     """
     moment = utcnow()
     cutoff = moment - STALE_JOB_TIMEOUT
+    # Existence, not `deadline_at > moment`: the lease is renewed by the
+    # *poller*, so exactly when Beat has been down for a while — the one
+    # time this sweep matters most — the lease looks exactly as stale as a
+    # genuinely abandoned task. Racing `expire_stale_jobs` against the first
+    # `poll_async_provider_tasks` tick after Beat comes back had settled real
+    # upstream successes as `expired` purely because the sweep's own queue
+    # happened to drain first. A parked row is proof of life the same way an
+    # `AWAITING_INPUT` row below is: only the poller — which never gives up on
+    # a pending render (see `async_polling._advance`) — gets to decide this
+    # job's fate.
     active_external_task = (
-        select(AsyncProviderTask.id)
-        .where(
-            AsyncProviderTask.job_id == GenerationJob.id,
-            AsyncProviderTask.deadline_at > moment,
-        )
-        .exists()
+        select(AsyncProviderTask.id).where(AsyncProviderTask.job_id == GenerationJob.id).exists()
     )
     # A job legitimately `AWAITING_INPUT` always has a row here — its own,
     # much longer, deadline is `expire_stale_input_requests`'s job. Without

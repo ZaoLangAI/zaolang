@@ -57,7 +57,13 @@ export function SkillCard({
 
   const body = (
     <>
-      <Poster src={skill.cover_url} alt={skill.title} aspect="video" className="rounded-none" />
+      <Poster
+        src={skill.cover_url}
+        alt={skill.title}
+        aspect="video"
+        className="rounded-none"
+        mediaType={skill.cover_media_type}
+      />
       <div className="p-4">
         <div className="flex items-center gap-1.5">
           <Badge tone="amber">{t(CATEGORY_LABEL_KEY[skill.category])}</Badge>

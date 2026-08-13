@@ -35,6 +35,12 @@ class CreationSkill(Base, TimestampMixin):
     # Same shape as `StylePreset.params_json` / `ReusableParams` — a generation
     # parameter template, not free-form data.
     params_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    # `Operation` values this skill's template is meant for. Empty means "any
+    # operation" — same convention as `AgentProfile.operations_json`
+    # (`app/models/agent_skills.py`). A skill built around `duration_seconds`/
+    # `video_options` should declare the video operations so it never gets
+    # silently applied to a `text_to_image` job it was never written for.
+    applicable_operations_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
     cover_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )

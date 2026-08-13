@@ -182,8 +182,25 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
     return NodeResult(port="pass", summary="通过")
 
 
+def _fold_skill_prompt(prompt: str, params_json: dict[str, Any]) -> str:
+    """Applies a skill's prompt template the same way the studio's local
+    `applyParams` does (`front/src/components/studio/generation-studio.tsx`):
+    `prompt` is the skill's full directive text, `prompt_suffix` is a
+    fragment meant to be tacked on. Appending only when the text is not
+    already present keeps the normal path (client already merged it via
+    `/apply`, possibly user-edited) from getting it duplicated, while a bare
+    API call that never merged locally still ends up with it in the final
+    prompt sent to the provider.
+    """
+    for key in ("prompt", "prompt_suffix"):
+        value = params_json.get(key)
+        if isinstance(value, str) and value.strip() and value not in prompt:
+            return f"{prompt}，{value}" if prompt else value
+    return prompt
+
+
 def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> NodeResult:
-    """Makes a `CreationSkill`'s params authoritative server-side.
+    """Makes every applied `CreationSkill`'s params authoritative server-side.
 
     The studio already merges a skill's params into the form locally and
     counts the usage the moment a user picks it (`POST /v1/skills/{id}/apply`
@@ -192,22 +209,50 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
     node does not call `record_usage` again (that would double-count every
     submission); its job is only to not trust the client's merge: a request
     built without ever calling `/apply` (a future API-only client, a replay)
-    still gets the skill's real params rather than silently skipping them.
+    still gets each skill's real params rather than silently skipping them —
+    including its prompt template, which lives on `ctx.prompt` rather than
+    `ctx.params` and so needs its own fold (see `_fold_skill_prompt`).
+
+    `skill_ids` is applied in pick order: each skill's prompt/`prompt_suffix`
+    is folded into `ctx.prompt` in turn, and its other params are shallow-
+    merged with later skills winning over earlier ones on conflicting keys —
+    the same "last write wins" rule a single skill always had, extended
+    across more than one. A skill whose `applicable_operations` doesn't
+    include this job's operation (e.g. a video-only skill on a
+    `text_to_image` job) is skipped, same as an unusable/missing skill.
     """
-    skill_id = ctx.params.get("skill_id")
-    if not skill_id or ctx.dry_run:
-        return NodeResult(port="ok")
-    try:
-        skill = skill_library_service.get_usable(
-            ctx.session, skill_id=str(skill_id), viewer_id=ctx.job.user_id
-        )
-    except NotFound:
-        logger.warning("job %s referenced an unusable skill %s; ignoring", ctx.job.id, skill_id)
+    skill_ids = ctx.params.get("skill_ids") or []
+    if not skill_ids or ctx.dry_run:
         return NodeResult(port="ok")
 
-    # The user's own explicit params always win over the skill's template.
-    merged = dict(skill.params_json)
-    merged.update({k: v for k, v in ctx.params.items() if k != "skill_id"})
+    template_params: dict[str, Any] = {}
+    for skill_id in skill_ids:
+        try:
+            skill = skill_library_service.get_usable(
+                ctx.session, skill_id=str(skill_id), viewer_id=ctx.job.user_id
+            )
+        except NotFound:
+            logger.warning("job %s referenced an unusable skill %s; ignoring", ctx.job.id, skill_id)
+            continue
+        declared = skill.applicable_operations_json
+        if declared and ctx.job.operation not in declared:
+            logger.warning(
+                "job %s skill %s does not apply to operation %s; ignoring",
+                ctx.job.id,
+                skill_id,
+                ctx.job.operation,
+            )
+            continue
+        ctx.prompt = _fold_skill_prompt(ctx.prompt, skill.params_json)
+        template_params.update(skill.params_json)
+
+    if not template_params:
+        return NodeResult(port="ok")
+
+    # The user's own explicit params always win over every skill's template.
+    merged = template_params
+    merged.update({k: v for k, v in ctx.params.items() if k != "skill_ids"})
+    merged["prompt"] = ctx.prompt
     ctx.params = merged
     return NodeResult(port="ok")
 

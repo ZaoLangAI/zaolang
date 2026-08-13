@@ -15230,6 +15230,23 @@
             ],
             "title": "Cover Url"
           },
+          "cover_media_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "applicable_operations": {
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            },
+            "type": "array",
+            "title": "Applicable Operations"
+          },
           "visibility": {
             "$ref": "#/components/schemas/CreationSkillVisibility"
           },
@@ -15314,6 +15331,13 @@
               }
             ],
             "title": "Cover Asset Id"
+          },
+          "applicable_operations": {
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            },
+            "type": "array",
+            "title": "Applicable Operations"
           }
         },
         "type": "object",
@@ -15349,6 +15373,23 @@
               }
             ],
             "title": "Cover Url"
+          },
+          "cover_media_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "applicable_operations": {
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            },
+            "type": "array",
+            "title": "Applicable Operations"
           },
           "author": {
             "$ref": "#/components/schemas/AuthorSummary"
@@ -15448,6 +15489,23 @@
             ],
             "title": "Cover Url"
           },
+          "cover_media_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "applicable_operations": {
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            },
+            "type": "array",
+            "title": "Applicable Operations"
+          },
           "author": {
             "$ref": "#/components/schemas/AuthorSummary"
           },
@@ -15515,6 +15573,13 @@
               }
             ],
             "title": "Cover Asset Id"
+          },
+          "applicable_operations": {
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            },
+            "type": "array",
+            "title": "Applicable Operations"
           }
         },
         "type": "object",
@@ -16427,17 +16492,13 @@
             "maxItems": 4,
             "title": "Character Ids"
           },
-          "skill_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 40
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Skill Id"
+          "skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Skill Ids"
           },
           "extra": {
             "additionalProperties": true,

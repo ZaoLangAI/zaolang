@@ -33,11 +33,11 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   /** Free-form provider hints, e.g. `{ sound: true }`. */
   extra?: Record<string, unknown>;
   /**
-   * The `CreationSkill` applied to this request, if any. The studio already
-   * merged its params into `prompt`/`extra` locally; this lets the
+   * The `CreationSkill`s applied to this request, in pick order. The studio
+   * already merged their params into `prompt`/`extra` locally; this lets the
    * `skill_context` workflow node re-apply them authoritatively server-side.
    */
-  skillId?: string;
+  skillIds?: string[];
   /** A licensed remix source. Carried by both the draft and the job. */
   sourceWorkId?: string;
   /** Ceiling sent to the API; the job is refused rather than trimmed. */
@@ -178,7 +178,7 @@ export function useGenerationSubmit(
                 video_options: input.videoOptions,
                 character_ids: input.characterIds ?? [],
                 shortform_profile: input.shortformProfile,
-                skill_id: input.skillId ?? null,
+                skill_ids: input.skillIds ?? [],
                 extra: input.extra ?? {},
               },
               max_credits: input.maxCredits,

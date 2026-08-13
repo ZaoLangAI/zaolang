@@ -29,10 +29,12 @@ from app.providers.base import GenerationProvider
 
 logger = logging.getLogger(__name__)
 
-# Platform policy, not a provider's: how often to check on an external render,
-# and when to call it stuck rather than merely slow. The timeout must stay
-# well under `app.workers.tasks.STALE_JOB_TIMEOUT`, or the stale-job sweeper
-# would expire a job that is still legitimately rendering.
+# Platform policy, not a provider's: how often to check on an external render.
+# `TASK_TIMEOUT_SECONDS` is the lease `expire_stale_jobs` uses to tell a live
+# poll apart from a dead Beat — `reschedule` renews it. The poller itself
+# keeps asking until the upstream returns succeeded or failed. The lease must
+# stay well under `app.workers.tasks.STALE_JOB_TIMEOUT`, or the sweeper would
+# expire a job that is still legitimately rendering.
 POLL_INTERVAL_SECONDS = 15
 TASK_TIMEOUT_SECONDS = 480
 
@@ -130,10 +132,11 @@ def claim_due(
 def reschedule(
     session: Session, task: AsyncProviderTask, *, now: dt.datetime | None = None
 ) -> None:
-    """Releases the claim and books the next check."""
+    """Releases the claim, books the next check, and renews the sweeper lease."""
     moment = now or utcnow()
     task.poll_count += 1
     task.next_poll_at = moment + dt.timedelta(seconds=POLL_INTERVAL_SECONDS)
+    task.deadline_at = moment + dt.timedelta(seconds=TASK_TIMEOUT_SECONDS)
     task.claimed_at = None
     session.flush()
 

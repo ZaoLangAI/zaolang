@@ -427,6 +427,50 @@ def test_stale_sweeper_does_not_expire_a_live_external_task(
     assert job.status == JobStatus.RUNNING
 
 
+def test_stale_sweeper_does_not_expire_a_task_whose_own_lease_has_also_gone_stale(
+    db: Session, funded: User, monkeypatch
+) -> None:
+    """A dead Beat starves both this sweep and the poller alike, so when Beat
+    finally comes back the task's own `deadline_at` lease is just as overdue
+    as `job.updated_at` — that staleness is evidence Beat was down, not that
+    the render died. `expire_stale_jobs` used to key its exclusion on
+    `deadline_at > moment`, so this exact shape used to race the first
+    `poll_async_provider_tasks` tick after recovery and could settle an
+    upstream that had actually already succeeded as `expired` instead —
+    exactly what happened to a real job."""
+    from app.domain.jobs import async_tasks
+
+    job = _submit(db, funded, operation=Operation.TEXT_TO_VIDEO)
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+    async_tasks.suspend(
+        db,
+        job_id=job.id,
+        node_id="provider_generate",
+        checkpoint={
+            "capability_name": "ep_h3:text_to_video",
+            "external_task_id": "task_live",
+            "request": {},
+            "state": {},
+        },
+    )
+    task = async_tasks.find_for_job(db, job.id)
+    assert task is not None
+    task.deadline_at = utcnow() - dt.timedelta(hours=6)
+    job.updated_at = utcnow() - tasks.STALE_JOB_TIMEOUT - dt.timedelta(minutes=1)
+    db.flush()
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    assert tasks.expire_stale_jobs.run() == 0
+    db.refresh(job)
+    assert job.status == JobStatus.RUNNING
+    assert async_tasks.find_for_job(db, job.id) is not None
+
+
 def test_stale_sweeper_does_not_expire_a_live_input_request(
     db: Session, funded: User, monkeypatch
 ) -> None:

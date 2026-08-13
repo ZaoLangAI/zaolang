@@ -17,6 +17,7 @@ export function Poster({
   sizes = '(max-width: 760px) 100vw, 33vw',
   className,
   children,
+  mediaType,
 }: {
   src?: string | null;
   alt: string;
@@ -28,6 +29,9 @@ export function Poster({
   sizes?: string;
   className?: string;
   children?: React.ReactNode;
+  /** `'video'` renders `src` as a looping, muted `<video>` instead of an
+   * `<Image>` — omit (or any other value) to keep the default image path. */
+  mediaType?: 'image' | 'video' | 'audio' | null;
 }) {
   const preset =
     aspect === 'fill'
@@ -48,14 +52,26 @@ export function Poster({
       )}
     >
       {src ? (
-        <Image
-          src={src}
-          alt={alt}
-          fill
-          sizes={sizes}
-          priority={priority}
-          className="object-cover"
-        />
+        mediaType === 'video' ? (
+          <video
+            src={src}
+            aria-label={alt}
+            muted
+            loop
+            playsInline
+            autoPlay
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <Image
+            src={src}
+            alt={alt}
+            fill
+            sizes={sizes}
+            priority={priority}
+            className="object-cover"
+          />
+        )
       ) : (
         <div className="absolute inset-0 grid place-items-center px-4 text-center text-xs text-muted">
           {alt}

@@ -19,6 +19,7 @@ from app.models.enums import (
     JobOrigin,
     JobStatus,
     LearnPostStatus,
+    MediaType,
     ModerationStatus,
     Operation,
     RedemptionCodeKind,
@@ -363,6 +364,8 @@ class CreationSkillAdminView(ApiModel):
     description: str
     category: CreationSkillCategory
     cover_url: str | None = None
+    cover_media_type: MediaType | None = None
+    applicable_operations: list[Operation] = Field(default_factory=list)
     visibility: CreationSkillVisibility
     status: CreationSkillStatus
     usage_count: int

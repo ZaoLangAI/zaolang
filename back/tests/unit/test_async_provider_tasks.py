@@ -186,6 +186,7 @@ def test_a_render_still_running_produces_a_heartbeat_and_books_the_next_check(
     assert task.poll_count == 1
     assert task.claimed_at is None
     assert task.next_poll_at > utcnow()
+    assert task.deadline_at > utcnow()
 
     db.refresh(job)
     assert job.status == JobStatus.RUNNING
@@ -342,21 +343,49 @@ def test_cancel_upstream_settles_even_when_the_provider_call_raises(
     assert async_tasks.find_for_job(db, job.id) is None
 
 
-def test_a_render_past_its_deadline_is_given_up_on(
+def test_a_render_past_its_deadline_keeps_polling(
     db: Session, funded: User, provider: _AsyncProvider
 ) -> None:
-    """An upstream that never answers would otherwise hold the reservation
-    until the stale-job sweeper notices, hours later."""
+    """The upstream always answers succeeded or failed. A slow render must
+    not be cancelled just because the sweeper lease elapsed."""
     job = _suspended(db, funded)
+    task = _due(db, job.id)
+    expired = utcnow() - dt.timedelta(seconds=1)
+    task.deadline_at = expired
+    db.flush()
+
+    async_polling.poll_once(db)
+
+    assert provider.cancelled == []
+    assert provider.polls == ["ext_1"]
+    attempts = list(db.scalars(select(ProviderAttempt).where(ProviderAttempt.job_id == job.id)))
+    assert attempts[0].status == ProviderAttemptStatus.RUNNING
+    task = async_tasks.find_for_job(db, job.id)
+    assert task is not None
+    assert task.poll_count == 1
+    assert task.claimed_at is None
+    assert task.deadline_at > utcnow()
+    db.refresh(job)
+    assert job.status == JobStatus.RUNNING
+
+
+def test_a_render_past_its_deadline_still_settles_when_upstream_finishes(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    job = _suspended(db, funded)
+    provider.outcomes = [_finished()]
     task = _due(db, job.id)
     task.deadline_at = utcnow() - dt.timedelta(seconds=1)
     db.flush()
 
     async_polling.poll_once(db)
 
-    assert provider.cancelled == ["ext_1"]
-    attempts = list(db.scalars(select(ProviderAttempt).where(ProviderAttempt.job_id == job.id)))
-    assert attempts[0].status == ProviderAttemptStatus.TIMED_OUT
+    db.refresh(job)
+    assert job.status == JobStatus.SUCCEEDED
+    assert async_tasks.find_for_job(db, job.id) is None
+    assert provider.cancelled == []
+    attempt = db.scalar(select(ProviderAttempt).where(ProviderAttempt.job_id == job.id))
+    assert attempt is not None and attempt.status == ProviderAttemptStatus.SUCCEEDED
 
 
 def test_two_ticks_racing_for_one_task_produce_exactly_one_winner(

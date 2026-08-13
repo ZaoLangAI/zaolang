@@ -19,7 +19,12 @@ from app.api.schemas.skill_library import (
 from app.api.schemas.works import AuthorSummary
 from app.domain.skill_library import service as skill_library
 from app.models import CreationSkill, Profile
-from app.models.enums import CreationSkillCategory, CreationSkillStatus, CreationSkillVisibility
+from app.models.enums import (
+    CreationSkillCategory,
+    CreationSkillStatus,
+    CreationSkillVisibility,
+    Operation,
+)
 from app.presenters import media_urls
 
 router = APIRouter(tags=["skills"])
@@ -95,6 +100,7 @@ def create_skill(
         category=payload.category,
         params_json=payload.params,
         cover_asset_id=payload.cover_asset_id,
+        applicable_operations=payload.applicable_operations,
     )
     response = _detail(session, skill)
 
@@ -130,6 +136,7 @@ def update_skill(
         category=payload.category,
         params_json=payload.params,
         cover_asset_id=payload.cover_asset_id,
+        applicable_operations=payload.applicable_operations,
     )
     session.commit()
     return _detail(session, skill)
@@ -185,6 +192,8 @@ def _summary(session: DbSession, skill: CreationSkill) -> CreationSkillSummary:
         description=skill.description,
         category=CreationSkillCategory(skill.category),
         cover_url=media_urls.asset_url(session, skill.cover_asset_id),
+        cover_media_type=media_urls.media_type_of(session, skill.cover_asset_id),
+        applicable_operations=[Operation(value) for value in skill.applicable_operations_json],
         author=_author(session, skill.owner_user_id),
         visibility=CreationSkillVisibility(skill.visibility),
         status=CreationSkillStatus(skill.status),
