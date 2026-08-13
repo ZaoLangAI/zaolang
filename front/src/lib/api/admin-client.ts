@@ -16,6 +16,10 @@ export function setAdminToken(token: string | null): void {
   adminToken = token;
 }
 
+export function getAdminToken(): string | null {
+  return adminToken;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
   if (options.body !== undefined) headers['content-type'] = 'application/json';

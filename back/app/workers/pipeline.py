@@ -35,6 +35,7 @@ __all__ = [
     "JobNotFoundError",
     "PipelineOutcome",
     "resolve_graph",
+    "resume_after_input",
     "run_generation_pipeline",
 ]
 
@@ -93,6 +94,19 @@ def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
         raise exc from None
 
 
+def resume_after_input(
+    job: GenerationJob, ctx: WorkflowContext, *, node_id: str
+) -> PipelineOutcome:
+    """Continues the graph from the node that parked on `AWAITING_INPUT`.
+
+    Shared by the C-end and admin answer endpoints so a sandbox try-it
+    resumes the same way a C-end job does, including `graph_override_json`.
+    """
+    return WorkflowRunner(resolve_graph(ctx.session, job)).resume(
+        ctx, node_id=node_id, port="ok"
+    )
+
+
 def resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:
     """Which graph this job runs, in order of precedence.
 
@@ -100,16 +114,22 @@ def resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:
     to land in the very same graph the earlier run was walking, which the
     precedence below already guarantees by preferring the pinned template.
 
-    1. The template already pinned on the job (set at submission, or by a
+    1. A sandbox try-it's unpublished canvas snapshot (`graph_override_json`)
+       — never pins or backfills the live template, so a publish mid-run
+       cannot change what the try-it walked.
+    2. The template already pinned on the job (set at submission, or by a
        previous call to this function for a legacy row) — never changes
        mid-flight even if an admin publishes a new version.
-    2. The operation's current active template, backfilled onto the job so a
+    3. The operation's current active template, backfilled onto the job so a
        retry/resume of the same job keeps using it — covers rows created
        before `workflow_template_id` existed.
-    3. The code-level default shape, used only when no template has ever been
+    4. The code-level default shape, used only when no template has ever been
        published for this operation (a fresh deploy before `make seed`, or a
        test that builds a job without going through the seed script).
     """
+    if job.graph_override_json:
+        return WorkflowGraph.from_dict(job.graph_override_json)
+
     template: GenerationWorkflowTemplate | None = None
     if job.workflow_template_id:
         template = session.get(GenerationWorkflowTemplate, job.workflow_template_id)

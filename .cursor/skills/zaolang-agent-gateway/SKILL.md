@@ -43,7 +43,7 @@ disable-model-invocation: true
 4. **每个候选的淘汰理由都要落 `ProviderAttempt` / 决策记录**，后台「决策逐候选回放」依赖它。
 5. **Agent 输出不是事实，落库才是**。Agent 只能通过 `tools.py` 白名单调领域服务；不要给 Agent 直接的 session 或任意 SQL。
 6. **测试与 CI 强制 `LLM_MODE=stub`**。三档模式：`openai_compatible`（只走真实网关，失败即报错）、`stub`（确定性假响应）、`auto`（网关失败自动降级到 stub）。降级必须写入 `AgentRun` 的降级标记与原因，并在界面明确标识。
-7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级。后台智能体完全建立在这张表上。
+7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级，以及 `input_json`（`{system_prompt, user_prompt}`，后台点节点回放用）。后台智能体完全建立在这张表上。
 8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
 9. **密钥只通过 `/admin/models` 专用掩码 API 管理**，不进通用配置 API、JSON 编辑器、日志或 prompt；环境变量只用于本地 seed 首次引导。
 10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频/音频生成的 `router.py` 选型路由并行，不要混用同一套候选选择逻辑。两者共享 `llm_providers` 存储但按 `kind` 严格隔离。绑一个模型的 `AgentProfile`（判断类或辅助生成类）填了默认/备用端点时，failover 只在这两个手动选择的供应商之间进行；没有端点绑定时才使用支持目标模型的通用共享池。
@@ -52,7 +52,8 @@ disable-model-invocation: true
 13. **媒体端点没有 LLM 主备/并发语义**：它只声明一个模型、接口协议、输入/输出模态、超时与启停；通用端点才有主备顺序和并发租约。
 14. **MiniMax H3 走官方异步契约**：创建请求固定 `resolution="2K"`，时长 4–15 秒，创建响应读 `id`，状态产物读 `output[].result_id`。图片/视频参考使用平台私有素材生成短时签名 URL，`input_references` 与 `frame_images` 必须互斥；物理参数不兼容时在路由硬过滤阶段淘汰，不能等供应商报错。H3 硬过滤仍看**模型名** `minimax-h3`，不要改成只看 `protocol`。
 15. **媒体 `protocol` 是 HTTP 契约标准名，不是网关供应商名。** 下拉显示 OpenAI / MiniMax / ComfyUI 等；AiHubMix 的图/音频符合 OpenAI 兼容，显示 **OpenAI**。已实现：`openai`（文生图、图生图、音频）、`minimax`（文生视频、图生视频、视频生视频）。`comfyui` / `google` / `dashscope` / `ark` / `kling` 只占目录，未实现协议不得进 `dynamic_capabilities` catalog，也禁止静默回退到 OpenAI。`openai` 与 `minimax` 都继续实例化现有 `AiHubMixMediaProvider`。
-16. **`AgentRun.node_id` 由工作流引擎回写，不是 Agent 自己填的。** `WorkflowRunner._execute_node` 在调 executor 前记下 `ctx.state["_last_agent_run_id"]` 的旧值，executor 跑完后如果这个值变了（说明本节点新产生了一条 `AgentRun`）且非 dry-run，就对那一行做一次 `UPDATE ... SET node_id = :node_id`——任何 agent 函数都不需要、也不应该新增 `node_id` 参数。`RoutingDecision.agent_run_id` 同理：`select_provider()` 的 `AgentOutcome.agent_run_id` 透传进 `RoutingDecision`，`nodes.py::execute_route_score` 把它塞进 `ctx.state["_last_agent_run_id"]`，让路由打分这次 LLM 调用也能挂上 `route_score` 节点——不改 `intent_router.select_provider()` 本身的调用契约。
+16. **`AgentRun.node_id` 由工作流引擎回写，不是 Agent 自己填的。** `WorkflowRunner._execute_node` 在调 executor 前记下 `ctx.state["_last_agent_run_id"]` 的旧值，executor 跑完后如果这个值变了（说明本节点新产生了一条 `AgentRun`）且非 `dry_run`，就对那一行做一次 `UPDATE ... SET node_id = :node_id`——任何 agent 函数都不需要、也不应该新增 `node_id` 参数。产品沙盒是真实 job（`dry_run=False`），这条回写照常发生。`RoutingDecision.agent_run_id` 同理：`select_provider()` 的 `AgentOutcome.agent_run_id` 透传进 `RoutingDecision`，`nodes.py::execute_route_score` 把它塞进 `ctx.state["_last_agent_run_id"]`，让路由打分这次 LLM 调用也能挂上 `route_score` 节点——不改 `intent_router.select_provider()` 本身的调用契约。
+17. **产品沙盒走真实媒体供应商，与 C 端相同。** 编辑器试跑不再有 `live_provider` 开关；`WorkflowContext.dry_run` 只留给单测隔离走图。不要把完整 prompt 推上 C 端公开 SSE，后台检视从 `AgentRun.input_json` / `JobEvent.payload` 读。
 
 ## Prompt 与模型绑定
 

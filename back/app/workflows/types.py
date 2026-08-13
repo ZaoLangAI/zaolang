@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import GenerationJob
-from app.models.enums import JobStatus
+from app.models.enums import JobOrigin, JobStatus
 
 
 @dataclass(slots=True)
@@ -54,6 +54,11 @@ class WorkflowContext:
         """
         return None if self.dry_run else self.job.id
 
+    @property
+    def is_sandbox(self) -> bool:
+        """A real persisted try-it from the workflow editor (not a unit-test dry run)."""
+        return (not self.dry_run) and self.job.origin == JobOrigin.SANDBOX
+
 
 @dataclass(slots=True)
 class NodeResult:
@@ -71,7 +76,7 @@ class NodeResult:
     only in `ctx.state`, and must be JSON-safe — it goes to the database.
 
     `summary` is one human-readable line about what this step decided, shown
-    in the editor's dry-run trace. Purely diagnostic: nothing branches on it,
+    in the ops console and the sandbox inspector. Purely diagnostic: nothing branches on it,
     and a node with nothing worth saying leaves it `None`. It must never
     carry anything the C-end user is not allowed to see, since the ops
     console renders it verbatim.

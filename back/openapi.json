@@ -2972,7 +2972,7 @@
           "generation"
         ],
         "summary": "Get Input Request",
-        "description": "The follow-up questions a `copy_generate` node is waiting on.\n\n404 both when the job has no pending request and when it belongs to\nsomeone else — `get_owned_job` already refuses to reveal the latter.",
+        "description": "The follow-up questions a planning/`copy_generate` node is waiting on.\n\n404 both when the job has no pending request and when it belongs to\nsomeone else — `get_owned_job` already refuses to reveal the latter,\nincluding every `origin=sandbox` try-it (those answer through admin).",
         "operationId": "get_input_request_v1_generation_jobs__job_id__input_request_get",
         "parameters": [
           {
@@ -3031,7 +3031,7 @@
           "generation"
         ],
         "summary": "Answer Job Input",
-        "description": "Answers a `copy_generate` node's follow-up questions and resumes the job.\n\nMirrors `app.workers.async_polling._resume_succeeded`'s rebuild-context-\nthen-resume shape, but runs inline in the request rather than off a\nscheduler tick: unlike a provider render, nothing else is going to come\nback and finish this for the user.",
+        "description": "Answers a planning/`copy_generate` node's follow-up and resumes the job.\n\nMirrors `app.workers.async_polling._resume_succeeded`'s rebuild-context-\nthen-resume shape, but runs inline in the request rather than off a\nscheduler tick: unlike a provider render, nothing else is going to come\nback and finish this for the user.",
         "operationId": "answer_job_input_v1_generation_jobs__job_id__answer_post",
         "parameters": [
           {
@@ -6467,6 +6467,22 @@
             }
           },
           {
+            "name": "origin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Origin"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -6836,6 +6852,207 @@
                 "schema": {
                   "$ref": "#/components/schemas/Page_JobEventView_"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/jobs/{job_id}/input-request": {
+      "get": {
+        "tags": [
+          "admin:jobs"
+        ],
+        "summary": "Get Input Request",
+        "description": "Follow-up questions a planning/`copy_generate` node is waiting on.\n\nSandbox try-its cannot use the C-end `/generation-jobs/{id}/input-request`\n(`get_owned_job` hides `origin=sandbox`), so the editor and the jobs\nconsole both read through this admin path.",
+        "operationId": "get_input_request_v1_admin_jobs__job_id__input_request_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInputRequestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/jobs/{job_id}/answer": {
+      "post": {
+        "tags": [
+          "admin:jobs"
+        ],
+        "summary": "Answer Job Input",
+        "description": "Answers a parked follow-up and resumes the graph, including sandbox jobs.",
+        "operationId": "answer_job_input_v1_admin_jobs__job_id__answer_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminJobDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/jobs/{job_id}/stream": {
+      "get": {
+        "tags": [
+          "admin:jobs"
+        ],
+        "summary": "Stream Job Events",
+        "description": "Admin SSE: same resume contract as the C-end stream, plus `node_id`.\n\nDoes not carry prompt bodies — those stay on `AgentRun.input_json` /\n`JobEvent.payload_json` and are fetched with the job detail on click.",
+        "operationId": "stream_job_events_v1_admin_jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -10627,7 +10844,7 @@
           "admin:agent-skills"
         ],
         "summary": "Debug Chat Agent Profile",
-        "description": "Evaluates a skill prompt — draft or published — with a real model call.\n\n`AdminWrite`'s rate limit is what keeps this bounded, the same way it is\nfor the workflow dry-run endpoint this mirrors: no `DangerousAction`\nconfirmation, because nothing here is written to any workflow or made\nlive, but real enough to cost real tokens.",
+        "description": "Evaluates a skill prompt — draft or published — with a real model call.\n\n`AdminWrite`'s rate limit is what keeps this bounded, the same way it is\nfor the workflow sandbox-run endpoint this mirrors: no `DangerousAction`\nconfirmation, because nothing here is written to any workflow or made\nlive, but real enough to cost real tokens.",
         "operationId": "debug_chat_agent_profile_v1_admin_agent_profiles__profile_id__debug_chat_post",
         "parameters": [
           {
@@ -11846,14 +12063,14 @@
         }
       }
     },
-    "/v1/admin/workflow-templates/{operation}/dry-run": {
+    "/v1/admin/workflow-templates/{operation}/sandbox-run": {
       "post": {
         "tags": [
           "admin:workflow-templates"
         ],
-        "summary": "Dry Run Workflow Template",
-        "description": "Simulates a job through a graph — the editor's unpublished draft when\n`payload.graph` is given, otherwise the operation's active published one.\n\nNever creates a `GenerationJob` row, reserves credits, or writes a\n`ProviderAttempt`. The four agent nodes (safety/planning/intent_router/\nquality) still call the real LLM gateway on purpose: that is the one\nthing worth spending a little real cost on to actually validate a prompt\nchange before publishing it. `AdminWrite`'s rate limit is what keeps\nthat cost bounded.\n\nWith `live_provider=False` (the default) the media provider is stubbed.\nWith `live_provider=True` the selected configured model is called for\nreal and a short-lived `preview_url` is returned — still without a job\nrow or a credit reservation. Video pending results are polled in this\nrequest rather than suspended for Beat.\n\nA draft is held to exactly the same validation as a publish, because a\ngraph that fails it cannot be walked safely; but it is never written\nanywhere, so trying one out has no effect on live traffic. This is the\nwhole point of the endpoint: without it, checking an edit would mean\npublishing it to every job first.",
-        "operationId": "dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post",
+        "summary": "Sandbox Run Workflow Template",
+        "description": "Submits a real generation job that walks this operation's graph.\n\nThe editor's unpublished draft when `payload.graph` is given, otherwise\nthe operation's active published template (pinned like a C-end submit).\nCredits are quoted but never reserved. Everything else — JobEvent, SSE,\nProviderAttempt, asset registration, PRE_GENERATION moderation on\nNEEDS_REVIEW, POST_GENERATION on success — matches a consumer request.\n\nA draft is held to exactly the same validation as a publish, because a\ngraph that fails it cannot be walked safely; it is stored on the job as\n`graph_override_json` and never becomes a `GenerationWorkflowTemplate`.",
+        "operationId": "sandbox_run_workflow_template_v1_admin_workflow_templates__operation__sandbox_run_post",
         "parameters": [
           {
             "name": "operation",
@@ -11878,6 +12095,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -11885,18 +12118,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WorkflowDryRunRequest"
+                "$ref": "#/components/schemas/WorkflowSandboxRunRequest"
               }
             }
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkflowDryRunResult"
+                  "$ref": "#/components/schemas/WorkflowSandboxRunResult"
                 }
               }
             }
@@ -12309,6 +12542,10 @@
             "type": "string",
             "title": "Quality Tier"
           },
+          "origin": {
+            "$ref": "#/components/schemas/JobOrigin",
+            "default": "user"
+          },
           "provider": {
             "anyOf": [
               {
@@ -12449,6 +12686,28 @@
                 "type": "null"
               }
             ]
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
           }
         },
         "type": "object",
@@ -12506,6 +12765,10 @@
           "quality_tier": {
             "type": "string",
             "title": "Quality Tier"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/JobOrigin",
+            "default": "user"
           },
           "provider": {
             "anyOf": [
@@ -13456,6 +13719,23 @@
               }
             ],
             "title": "Node Id"
+          },
+          "input_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Json"
+          },
+          "output_json": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Output Json"
           },
           "created_at": {
             "type": "string",
@@ -16365,7 +16645,16 @@
           "expires_at"
         ],
         "title": "JobInputRequestResponse",
-        "description": "What `copy_generate` is waiting on, for the C-end question form."
+        "description": "What a planning/`copy_generate` node is waiting on, for the question form."
+      },
+      "JobOrigin": {
+        "type": "string",
+        "enum": [
+          "user",
+          "sandbox"
+        ],
+        "title": "JobOrigin",
+        "description": "Who submitted the job. Sandbox runs skip the credit ledger but still\npersist a real `GenerationJob` so ops and moderation can replay them."
       },
       "JobStatsView": {
         "properties": {
@@ -18009,6 +18298,77 @@
         "title": "ModerationHistoryEntry",
         "description": "One row from the append-only verdict trail for a subject."
       },
+      "ModerationJobDetailView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/JobOrigin"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "quality_tier": {
+            "type": "string",
+            "title": "Quality Tier"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "origin",
+          "operation",
+          "quality_tier",
+          "status",
+          "created_at"
+        ],
+        "title": "ModerationJobDetailView",
+        "description": "A generation_job queue subject: prompt, sandbox origin, and output."
+      },
       "ModerationQueueView": {
         "properties": {
           "id": {
@@ -18132,6 +18492,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/CreationSkillAdminView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModerationJobDetailView"
               },
               {
                 "type": "null"
@@ -23202,7 +23572,7 @@
         ],
         "title": "WorkVersionSummary"
       },
-      "WorkflowDryRunRequest": {
+      "WorkflowSandboxRunRequest": {
         "properties": {
           "prompt": {
             "type": "string",
@@ -23231,148 +23601,26 @@
               }
             ],
             "title": "Graph"
-          },
-          "live_provider": {
-            "type": "boolean",
-            "title": "Live Provider",
-            "default": false
           }
         },
         "type": "object",
         "required": [
           "prompt"
         ],
-        "title": "WorkflowDryRunRequest"
+        "title": "WorkflowSandboxRunRequest"
       },
-      "WorkflowDryRunResult": {
+      "WorkflowSandboxRunResult": {
         "properties": {
-          "status": {
-            "$ref": "#/components/schemas/JobStatus"
-          },
-          "failure_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure Code"
-          },
-          "asset_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Asset Id"
-          },
-          "error_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Detail"
-          },
-          "preview_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preview Url"
-          },
-          "mime_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mime Type"
-          },
-          "trace": {
-            "items": {
-              "$ref": "#/components/schemas/WorkflowDryRunStepView"
-            },
-            "type": "array",
-            "title": "Trace"
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
           }
         },
         "type": "object",
         "required": [
-          "status"
+          "job_id"
         ],
-        "title": "WorkflowDryRunResult"
-      },
-      "WorkflowDryRunStepView": {
-        "properties": {
-          "node_id": {
-            "type": "string",
-            "title": "Node Id"
-          },
-          "node_type": {
-            "type": "string",
-            "title": "Node Type"
-          },
-          "port": {
-            "type": "string",
-            "title": "Port"
-          },
-          "agent_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Run Id"
-          },
-          "duration_ms": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Duration Ms"
-          },
-          "summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Summary"
-          }
-        },
-        "type": "object",
-        "required": [
-          "node_id",
-          "node_type",
-          "port"
-        ],
-        "title": "WorkflowDryRunStepView"
+        "title": "WorkflowSandboxRunResult"
       },
       "WorkflowTemplatePublishRequest": {
         "properties": {

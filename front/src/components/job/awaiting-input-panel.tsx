@@ -10,19 +10,29 @@ import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { JobInputRequest } from '@/lib/api/types';
 
+type JobHttp = {
+  get: <T>(path: string) => Promise<T>;
+  post: <T>(path: string, body?: unknown) => Promise<T>;
+};
+
 /**
- * The C-end half of the `copy_generate` HITL flow: while a job sits at
- * `awaiting_input`, this fetches the pending questions
- * (`GET /v1/generation-jobs/{id}/input-request`) and posts the answers
- * (`POST .../answer`) to resume it.
+ * HITL follow-up form while a job sits at `awaiting_input`.
  *
- * Deliberately does not poll or update `job` itself — `JobProgress` already
- * holds a live SSE connection (`useJobStream`) that will carry the resumed
- * job's next events, so this only needs to stop asking once that connection
- * reports a different status, which happens by simply un-rendering: the
- * parent only renders this while `status === 'awaiting_input'`.
+ * C-end (`/v1/generation-jobs/{id}`) and admin (`/v1/admin/jobs/{id}`) share
+ * the same question shapes; they only differ in which client and path prefix
+ * they talk to. The parent un-renders this once SSE reports a different status.
  */
-export function AwaitingInputPanel({ jobId }: { jobId: string }) {
+export function AwaitingInputPanel({
+  jobId,
+  client = api,
+  basePath = '/v1/generation-jobs',
+  onSubmitted,
+}: {
+  jobId: string;
+  client?: JobHttp;
+  basePath?: string;
+  onSubmitted?: () => void;
+}) {
   const t = useTranslations('jobPage');
 
   const [request, setRequest] = useState<JobInputRequest | null>(null);
@@ -34,8 +44,12 @@ export function AwaitingInputPanel({ jobId }: { jobId: string }) {
 
   useEffect(() => {
     let active = true;
-    api
-      .get<JobInputRequest>(`/v1/generation-jobs/${jobId}/input-request`)
+    setLoading(true);
+    setSubmitted(false);
+    setError(null);
+    setRequest(null);
+    client
+      .get<JobInputRequest>(`${basePath}/${jobId}/input-request`)
       .then((body) => {
         if (!active) return;
         setRequest(body);
@@ -55,7 +69,7 @@ export function AwaitingInputPanel({ jobId }: { jobId: string }) {
     return () => {
       active = false;
     };
-  }, [jobId, t]);
+  }, [jobId, client, basePath, t]);
 
   if (loading) return null;
   if (!request) return error ? <p className="text-xs text-danger">{error}</p> : null;
@@ -66,10 +80,11 @@ export function AwaitingInputPanel({ jobId }: { jobId: string }) {
     setSubmitting(true);
     setError(null);
     try {
-      await api.post(`/v1/generation-jobs/${jobId}/answer`, {
+      await client.post(`${basePath}/${jobId}/answer`, {
         answers: Object.entries(answers).map(([question_id, value]) => ({ question_id, value })),
       });
       setSubmitted(true);
+      onSubmitted?.();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : t('awaitingInputSubmitError'));
     } finally {

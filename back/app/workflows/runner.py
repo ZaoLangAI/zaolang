@@ -146,8 +146,9 @@ class WorkflowRunner:
         """
         checkpoint = result.checkpoint or {}
         if ctx.dry_run:
-            # A sandbox run has no real job to attach a task row to, and no
-            # scheduler or author will ever come back for it.
+            # Unit-test isolation: no persisted job, so nothing to park and
+            # nobody will resume. Product sandbox is a real job (`is_sandbox`)
+            # and takes the branches below, including `AWAITING_INPUT`.
             return PipelineOutcome(status=JobStatus.RUNNING)
 
         if checkpoint.get("kind") == "input_request":

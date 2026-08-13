@@ -741,10 +741,11 @@ export interface paths {
         };
         /**
          * Get Input Request
-         * @description The follow-up questions a `copy_generate` node is waiting on.
+         * @description The follow-up questions a planning/`copy_generate` node is waiting on.
          *
          *     404 both when the job has no pending request and when it belongs to
-         *     someone else — `get_owned_job` already refuses to reveal the latter.
+         *     someone else — `get_owned_job` already refuses to reveal the latter,
+         *     including every `origin=sandbox` try-it (those answer through admin).
          */
         get: operations["get_input_request_v1_generation_jobs__job_id__input_request_get"];
         put?: never;
@@ -766,7 +767,7 @@ export interface paths {
         put?: never;
         /**
          * Answer Job Input
-         * @description Answers a `copy_generate` node's follow-up questions and resumes the job.
+         * @description Answers a planning/`copy_generate` node's follow-up and resumes the job.
          *
          *     Mirrors `app.workers.async_polling._resume_succeeded`'s rebuild-context-
          *     then-resume shape, but runs inline in the request rather than off a
@@ -1809,6 +1810,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/jobs/{job_id}/input-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Input Request
+         * @description Follow-up questions a planning/`copy_generate` node is waiting on.
+         *
+         *     Sandbox try-its cannot use the C-end `/generation-jobs/{id}/input-request`
+         *     (`get_owned_job` hides `origin=sandbox`), so the editor and the jobs
+         *     console both read through this admin path.
+         */
+        get: operations["get_input_request_v1_admin_jobs__job_id__input_request_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs/{job_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Job Input
+         * @description Answers a parked follow-up and resumes the graph, including sandbox jobs.
+         */
+        post: operations["answer_job_input_v1_admin_jobs__job_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs/{job_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Job Events
+         * @description Admin SSE: same resume contract as the C-end stream, plus `node_id`.
+         *
+         *     Does not carry prompt bodies — those stay on `AgentRun.input_json` /
+         *     `JobEvent.payload_json` and are fetched with the job detail on click.
+         */
+        get: operations["stream_job_events_v1_admin_jobs__job_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/moderation/queue": {
         parameters: {
             query?: never;
@@ -2824,7 +2892,7 @@ export interface paths {
          * @description Evaluates a skill prompt — draft or published — with a real model call.
          *
          *     `AdminWrite`'s rate limit is what keeps this bounded, the same way it is
-         *     for the workflow dry-run endpoint this mirrors: no `DangerousAction`
+         *     for the workflow sandbox-run endpoint this mirrors: no `DangerousAction`
          *     confirmation, because nothing here is written to any workflow or made
          *     live, but real enough to cost real tokens.
          */
@@ -3132,7 +3200,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/workflow-templates/{operation}/dry-run": {
+    "/v1/admin/workflow-templates/{operation}/sandbox-run": {
         parameters: {
             query?: never;
             header?: never;
@@ -3142,30 +3210,20 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Dry Run Workflow Template
-         * @description Simulates a job through a graph — the editor's unpublished draft when
-         *     `payload.graph` is given, otherwise the operation's active published one.
+         * Sandbox Run Workflow Template
+         * @description Submits a real generation job that walks this operation's graph.
          *
-         *     Never creates a `GenerationJob` row, reserves credits, or writes a
-         *     `ProviderAttempt`. The four agent nodes (safety/planning/intent_router/
-         *     quality) still call the real LLM gateway on purpose: that is the one
-         *     thing worth spending a little real cost on to actually validate a prompt
-         *     change before publishing it. `AdminWrite`'s rate limit is what keeps
-         *     that cost bounded.
-         *
-         *     With `live_provider=False` (the default) the media provider is stubbed.
-         *     With `live_provider=True` the selected configured model is called for
-         *     real and a short-lived `preview_url` is returned — still without a job
-         *     row or a credit reservation. Video pending results are polled in this
-         *     request rather than suspended for Beat.
+         *     The editor's unpublished draft when `payload.graph` is given, otherwise
+         *     the operation's active published template (pinned like a C-end submit).
+         *     Credits are quoted but never reserved. Everything else — JobEvent, SSE,
+         *     ProviderAttempt, asset registration, PRE_GENERATION moderation on
+         *     NEEDS_REVIEW, POST_GENERATION on success — matches a consumer request.
          *
          *     A draft is held to exactly the same validation as a publish, because a
-         *     graph that fails it cannot be walked safely; but it is never written
-         *     anywhere, so trying one out has no effect on live traffic. This is the
-         *     whole point of the endpoint: without it, checking an edit would mean
-         *     publishing it to every job first.
+         *     graph that fails it cannot be walked safely; it is stored on the job as
+         *     `graph_override_json` and never becomes a `GenerationWorkflowTemplate`.
          */
-        post: operations["dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post"];
+        post: operations["sandbox_run_workflow_template_v1_admin_workflow_templates__operation__sandbox_run_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3326,6 +3384,8 @@ export interface components {
             operation: string;
             /** Quality Tier */
             quality_tier: string;
+            /** @default user */
+            origin: components["schemas"]["JobOrigin"];
             /** Provider */
             provider?: string | null;
             /** Provider Label */
@@ -3372,6 +3432,10 @@ export interface components {
             /** Agent Runs */
             agent_runs?: components["schemas"]["AgentRunView"][];
             async_task?: components["schemas"]["AsyncProviderTaskView"] | null;
+            /** Preview Url */
+            preview_url?: string | null;
+            /** Mime Type */
+            mime_type?: string | null;
         };
         /** AdminJobSummary */
         AdminJobSummary: {
@@ -3388,6 +3452,8 @@ export interface components {
             operation: string;
             /** Quality Tier */
             quality_tier: string;
+            /** @default user */
+            origin: components["schemas"]["JobOrigin"];
             /** Provider */
             provider?: string | null;
             /** Provider Label */
@@ -3728,6 +3794,14 @@ export interface components {
             job_id?: string | null;
             /** Node Id */
             node_id?: string | null;
+            /** Input Json */
+            input_json?: {
+                [key: string]: unknown;
+            } | null;
+            /** Output Json */
+            output_json?: {
+                [key: string]: unknown;
+            };
             /**
              * Created At
              * Format: date-time
@@ -4812,7 +4886,7 @@ export interface components {
         };
         /**
          * JobInputRequestResponse
-         * @description What `copy_generate` is waiting on, for the C-end question form.
+         * @description What a planning/`copy_generate` node is waiting on, for the question form.
          */
         JobInputRequestResponse: {
             /** Job Id */
@@ -4827,6 +4901,13 @@ export interface components {
              */
             expires_at: string;
         };
+        /**
+         * JobOrigin
+         * @description Who submitted the job. Sandbox runs skip the credit ledger but still
+         *     persist a real `GenerationJob` so ops and moderation can replay them.
+         * @enum {string}
+         */
+        JobOrigin: "user" | "sandbox";
         /**
          * JobStatsView
          * @description Aggregate job throughput for the statistics hub — not one job's detail.
@@ -5492,6 +5573,31 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * ModerationJobDetailView
+         * @description A generation_job queue subject: prompt, sandbox origin, and output.
+         */
+        ModerationJobDetailView: {
+            /** Id */
+            id: string;
+            origin: components["schemas"]["JobOrigin"];
+            /** Operation */
+            operation: string;
+            /** Quality Tier */
+            quality_tier: string;
+            status: components["schemas"]["JobStatus"];
+            /** Prompt */
+            prompt?: string | null;
+            /** Preview Url */
+            preview_url?: string | null;
+            /** Mime Type */
+            mime_type?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** ModerationQueueView */
         ModerationQueueView: {
             /** Id */
@@ -5536,6 +5642,7 @@ export interface components {
             history: components["schemas"]["ModerationHistoryEntry"][];
             work?: components["schemas"]["ModerationWorkDetailView"] | null;
             skill?: components["schemas"]["CreationSkillAdminView"] | null;
+            job?: components["schemas"]["ModerationJobDetailView"] | null;
             /**
              * Open Report Count
              * @default 0
@@ -7497,8 +7604,8 @@ export interface components {
              */
             created_at: string;
         };
-        /** WorkflowDryRunRequest */
-        WorkflowDryRunRequest: {
+        /** WorkflowSandboxRunRequest */
+        WorkflowSandboxRunRequest: {
             /** Prompt */
             prompt: string;
             /**
@@ -7514,42 +7621,11 @@ export interface components {
             graph?: {
                 [key: string]: unknown;
             } | null;
-            /**
-             * Live Provider
-             * @default false
-             */
-            live_provider: boolean;
         };
-        /** WorkflowDryRunResult */
-        WorkflowDryRunResult: {
-            status: components["schemas"]["JobStatus"];
-            /** Failure Code */
-            failure_code?: string | null;
-            /** Asset Id */
-            asset_id?: string | null;
-            /** Error Detail */
-            error_detail?: string | null;
-            /** Preview Url */
-            preview_url?: string | null;
-            /** Mime Type */
-            mime_type?: string | null;
-            /** Trace */
-            trace?: components["schemas"]["WorkflowDryRunStepView"][];
-        };
-        /** WorkflowDryRunStepView */
-        WorkflowDryRunStepView: {
-            /** Node Id */
-            node_id: string;
-            /** Node Type */
-            node_type: string;
-            /** Port */
-            port: string;
-            /** Agent Run Id */
-            agent_run_id?: string | null;
-            /** Duration Ms */
-            duration_ms?: number | null;
-            /** Summary */
-            summary?: string | null;
+        /** WorkflowSandboxRunResult */
+        WorkflowSandboxRunResult: {
+            /** Job Id */
+            job_id: string;
         };
         /** WorkflowTemplatePublishRequest */
         WorkflowTemplatePublishRequest: {
@@ -11175,6 +11251,7 @@ export interface operations {
                 stuck_only?: boolean;
                 created_after?: string | null;
                 created_before?: string | null;
+                origin?: string | null;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -11364,6 +11441,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_JobEventView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_input_request_v1_admin_jobs__job_id__input_request_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobInputRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_job_input_v1_admin_jobs__job_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminJobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_job_events_v1_admin_jobs__job_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Last-Event-ID"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -13888,11 +14069,12 @@ export interface operations {
             };
         };
     };
-    dry_run_workflow_template_v1_admin_workflow_templates__operation__dry_run_post: {
+    sandbox_run_workflow_template_v1_admin_workflow_templates__operation__sandbox_run_post: {
         parameters: {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "Idempotency-Key"?: string | null;
             };
             path: {
                 operation: components["schemas"]["Operation"];
@@ -13901,17 +14083,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WorkflowDryRunRequest"];
+                "application/json": components["schemas"]["WorkflowSandboxRunRequest"];
             };
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkflowDryRunResult"];
+                    "application/json": components["schemas"]["WorkflowSandboxRunResult"];
                 };
             };
             /** @description Validation Error */

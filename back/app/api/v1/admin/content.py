@@ -13,6 +13,7 @@ from app.api.schemas.admin import (
     FingerprintDuplicateGroup,
     ModerationDecisionRequest,
     ModerationHistoryEntry,
+    ModerationJobDetailView,
     ModerationQueueView,
     ModerationSubjectDetailView,
     ModerationWorkDetailView,
@@ -40,6 +41,7 @@ from app.models import (
     Asset,
     ContentFingerprint,
     CreationSkill,
+    GenerationJob,
     ModerationQueueItem,
     ModerationResult,
     ReportCase,
@@ -48,6 +50,8 @@ from app.models import (
 )
 from app.models.base import utcnow
 from app.models.enums import (
+    JobOrigin,
+    JobStatus,
     LifecycleStatus,
     ModerationStatus,
     NotificationType,
@@ -137,6 +141,7 @@ def moderation_detail(
 
     work_detail = None
     skill_detail = None
+    job_detail = None
     if item.subject_type == "work":
         work_detail = _work_detail_view(session, item.subject_id)
     elif item.subject_type == "skill":
@@ -155,12 +160,15 @@ def moderation_detail(
                 reject_reason=skill.reject_reason,
                 created_at=skill.created_at,
             )
+    elif item.subject_type == "generation_job":
+        job_detail = _job_detail_view(session, item.subject_id)
 
     return ModerationSubjectDetailView(
         queue_item=_queue_view(session, item),
         history=history,
         work=work_detail,
         skill=skill_detail,
+        job=job_detail,
         open_report_count=moderation_queue.open_report_count(
             session, subject_type=item.subject_type, subject_id=item.subject_id
         ),
@@ -488,6 +496,12 @@ def _queue_view(session, item: ModerationQueueItem) -> ModerationQueueView:  # t
         if skill is not None:
             title = skill.title
             preview = media_urls.asset_url(session, skill.cover_asset_id)
+    elif item.subject_type == "generation_job":
+        job = session.get(GenerationJob, item.subject_id)
+        if job is not None:
+            prompt = str((job.request_json or {}).get("prompt") or "")
+            title = prompt[:80] or job.id
+            preview = media_urls.asset_url(session, job.output_asset_id)
 
     return ModerationQueueView(
         id=item.id,
@@ -523,6 +537,24 @@ def _work_detail_view(session, work_id: str) -> ModerationWorkDetailView | None:
         lifecycle_status=work.lifecycle_status,
         tombstone_reason=work.tombstone_reason,
         created_at=work.created_at,
+    )
+
+
+def _job_detail_view(session, job_id: str) -> ModerationJobDetailView | None:  # type: ignore[no-untyped-def]
+    job = session.get(GenerationJob, job_id)
+    if job is None:
+        return None
+    asset = session.get(Asset, job.output_asset_id) if job.output_asset_id else None
+    return ModerationJobDetailView(
+        id=job.id,
+        origin=JobOrigin(job.origin) if job.origin else JobOrigin.USER,
+        operation=job.operation,
+        quality_tier=job.quality_tier,
+        status=JobStatus(job.status),
+        prompt=str((job.request_json or {}).get("prompt") or "") or None,
+        preview_url=media_urls.asset_url(session, job.output_asset_id),
+        mime_type=asset.mime_type if asset is not None else None,
+        created_at=job.created_at,
     )
 
 

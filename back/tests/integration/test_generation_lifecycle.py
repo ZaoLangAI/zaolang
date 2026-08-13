@@ -33,6 +33,7 @@ from app.models import (
 from app.models.base import new_id, utcnow
 from app.models.enums import (
     AssetRole,
+    JobOrigin,
     JobStatus,
     LedgerEntryType,
     MediaType,
@@ -127,6 +128,59 @@ def test_a_budget_cap_is_enforced_before_reserving(db: Session, funded: User) ->
 
     account = credits_service.get_or_create_account(db, funded.id)
     assert account.reserved_balance == 0
+
+
+def test_a_sandbox_submit_quotes_but_does_not_reserve(db: Session, author: User) -> None:
+    """Product sandbox still records what the run would have cost, but never
+    touches the ledger — even when the operator has a zero balance."""
+    result = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "海边的黄昏，长镜头", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+        origin=JobOrigin.SANDBOX,
+    )
+    job = result.job
+    assert job.origin == JobOrigin.SANDBOX
+    assert job.quoted_credits > 0
+    assert job.reserved_credits == 0
+    assert not _ledger(db, author, LedgerEntryType.RESERVE)
+
+    jobs_service.settle_success(db, job, actual_credits=job.quoted_credits)
+    assert job.actual_credits == 0
+    assert not _ledger(db, author, LedgerEntryType.CAPTURE)
+
+    jobs_service.settle_release(db, job, reason="failed")
+    assert not _ledger(db, author, LedgerEntryType.RELEASE)
+
+
+def test_the_consumer_job_list_hides_sandbox_runs_but_keeps_user_jobs(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """A C-end list must keep showing the caller's own submissions after the
+    sandbox origin filter landed — hiding everything would be a silent
+    product break."""
+    user_job = _submit(db, funded)
+    sandbox = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "沙盒不应出现在 C 端列表", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+        origin=JobOrigin.SANDBOX,
+    ).job
+
+    listed = client.get("/v1/generation-jobs", headers=auth_header(funded)).json()
+    ids = {item["id"] for item in listed["items"]}
+    assert user_job.id in ids
+    assert sandbox.id not in ids
+    own = client.get(f"/v1/generation-jobs/{user_job.id}", headers=auth_header(funded))
+    hidden = client.get(f"/v1/generation-jobs/{sandbox.id}", headers=auth_header(funded))
+    assert own.status_code == 200
+    assert hidden.status_code == 404
 
 
 def test_the_same_idempotency_key_produces_one_job_and_one_reservation(

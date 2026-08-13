@@ -13,11 +13,11 @@ disable-model-invocation: true
 | 域 | 后端 | 前端 |
 | --- | --- | --- |
 | 系统健康 | `admin/observability.py: /health` | `components/admin/health/health-cards.tsx` |
-| 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`）、`/jobs/stats`（按状态/操作分组计数 + 平均完成耗时，声明在 `/jobs/{job_id}` 之前避免路径冲突）。列表/详情不再吐裸 id：`AdminJobSummary` 带 `user_display_name`/`user_handle`/`provider_label`/`stuck`，`AgentRunView` 带 `agent_display_name`，`JobEventView`/`AgentRunView` 带 `node_id`（真正执行的图节点，见 `zaolang-generation-jobs` 不变量 #13），`AdminJobDetail` 带 `async_task: AsyncProviderTaskView | None`（在途外部供应商任务的节点/供应商/轮询次数/截止时间）；`admin/logs.py::/logs` 新增可选 `job_id` 参数，命中时对审计与 SystemLog 两路都按该任务过滤，合并返回 | `admin/jobs/jobs-console.tsx`（含 `stepper` / `duration-bars` / 路由候选对比与 LLM `reason` 说明、异步供应商任务小节、关联日志小节） |
+| 任务运维 | `admin/jobs.py`: `/jobs`、`/jobs/{id}`、`/jobs/{id}/stream`（后台 SSE，payload 带 `node_id`）、`/jobs/{id}/input-request`、`/jobs/{id}/answer`（沙盒与 C 端共用的规划/`copy_generate` 追问，C 端路径对 `origin=sandbox` 404）、`/terminate`、`/requeue`、`/events`（支持 `created_after`/`created_before`）、`/jobs/stats`（按状态/操作分组计数 + 平均完成耗时，声明在 `/jobs/{job_id}` 之前避免路径冲突）。列表可按 `origin` 筛沙盒试跑。列表/详情不再吐裸 id：`AdminJobSummary` 带 `user_display_name`/`user_handle`/`provider_label`/`stuck`/`origin`，`AgentRunView` 带 `agent_display_name` 与 `input_json`/`output_json`，`JobEventView`/`AgentRunView` 带 `node_id`（真正执行的图节点，见 `zaolang-generation-jobs` 不变量 #13），`AdminJobDetail` 带 `async_task: AsyncProviderTaskView | None`（在途外部供应商任务的节点/供应商/轮询次数/截止时间）以及产出 `preview_url`/`mime_type`；`admin/logs.py::/logs` 新增可选 `job_id` 参数，命中时对审计与 SystemLog 两路都按该任务过滤，合并返回 | `admin/jobs/jobs-console.tsx`（含 origin 徽章、「仅沙盒」筛选、`awaiting_input` 追问表单、`stepper` / `duration-bars` 与路由候选对比与 LLM `reason` 说明、异步供应商任务小节、关联日志小节） |
 | 智能体 | `admin/agent_skills.py`: AgentProfile 手动供应商/模型绑定、采样参数、Prompt 版本 | `/admin/agents`；模型关系不在配置中心或模型页维护 |
-| 供应商与工作流 | `admin/llm_providers.py`: 模型管理目录（`general` 有模型列表/主备/并发；`media` 有单模型/接口协议/模态/超时）。`protocol` 是 HTTP 契约标准名：已实现 OpenAI（图/音频）与 MiniMax（视频），ComfyUI / Google Gemini / DashScope / 火山方舟 / 可灵在目录里但 option 禁用，upsert 422，禁止静默回退 OpenAI。构造 `LlmProviderEndpoint(...)` 必须显式传 `protocol` 并写入 view / audit。`admin/workflow_templates.py`: 工作流模板 DAG；`observability.py`: `/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（通用与媒体分区；媒体编辑器「接口协议」下拉，切协议时清掉不兼容模态）、`routing-replay-table.tsx`（LLM 选型理由 + 候选成功率/延迟/成本）、`/admin/routing` 页只剩 `WorkflowEditor`（无权重面板，选谁由 `intent_router` 判定，见 `zaolang-agent-gateway`） |
+| 供应商与工作流 | `admin/llm_providers.py`: 模型管理目录（`general` 有模型列表/主备/并发；`media` 有单模型/接口协议/模态/超时）。`protocol` 是 HTTP 契约标准名：已实现 OpenAI（图/音频）与 MiniMax（视频），ComfyUI / Google Gemini / DashScope / 火山方舟 / 可灵在目录里但 option 禁用，upsert 422，禁止静默回退 OpenAI。构造 `LlmProviderEndpoint(...)` 必须显式传 `protocol` 并写入 view / audit。`admin/workflow_templates.py`: 工作流模板 DAG；`POST .../sandbox-run` 提交真实 `GenerationJob(origin=sandbox)`（跳过积分，草稿图走 `graph_override_json`），202 `{job_id}`；沙盒试跑是弹窗，右侧流式消费 `/jobs/{id}/stream`（节点日志 + 最终预览）；`awaiting_input` 时右侧呈现规划/`copy_generate` 追问并 `POST /jobs/{id}/answer` 续跑。`observability.py`: `/jobs/{id}/routing` | `admin/models/llm-providers-panel.tsx`（通用与媒体分区；媒体编辑器「接口协议」下拉，切协议时清掉不兼容模态）、`routing-replay-table.tsx`（LLM 选型理由 + 候选成功率/延迟/成本）、`/admin/routing` 页只剩 `WorkflowEditor`（无权重面板，选谁由 `intent_router` 判定，见 `zaolang-agent-gateway`）；`workflow-sandbox-dialog.tsx` 是试跑弹窗 |
 | 数据统计中心 | `observability.py`: `/providers/stats`（供应商统计）、`/agent-runs/usage`（智能体用量）；`admin/jobs.py`: `/jobs/stats`（任务吞吐）；`admin/ledger.py`: `/credits/reconciliation`（积分对账） | `/admin/statistics` 页，一站式聚合以上四类现有指标，不新增数据源 |
-| 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`/`detail`/`history`)、`/reports`、`/works/{id}/tombstone|hide|restore` | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
+| 内容运维 | `admin/content.py`: `/moderation/queue`(+`claim`/`decide`/`detail`/`history`)、`/reports`、`/works/{id}/tombstone|hide|restore`。`generation_job` 队列项列表用 prompt 截断作标题、产出签名图作预览；详情 `ModerationJobDetailView`。对 `generation_job` 的 `decide` 只记 `ModerationResult`，不做 hide/tombstone（产出未发布） | `admin/moderation/*`、`admin/reports/reports-console.tsx` |
 | 技能库运维 | `admin/skill_library.py`: 全局技能列表/下架/精选 | `admin/skill-library/skill-library-console.tsx` |
 | 用户与权限 | `admin/users.py`: `/users`、`/suspend`、`/unsuspend`、`/roles`、`/data-requests` | `admin/users/*` |
 | 积分运维 | `admin/ledger.py` + `admin/redemption.py`: 账本/对账/调账/兑换码 CRUD | `admin/credits/*`（含 `redemption-codes-panel.tsx`） |
@@ -32,12 +32,13 @@ disable-model-invocation: true
 3. **卡死重放不制造第二次扣费**：`requeue` 复用原任务与原预扣，不新建 job、不重新 reserve。
 4. **全链路回放是只读的**：`JobEvent` + `ProviderAttempt` + 路由候选决策，展示即可，不允许「顺手改一下」。
 5. **`ProviderStat` 是累计计数器**，新建行必须显式初始化为 0（`attempts` / `successes` / `total_latency_ms` / `total_cost_minor`）——依赖列默认值会在 flush 前拿到 `None` 并在 `+=` 时炸。
-6. **审核决定要留人工痕迹**：`claim` 再 `decide`，决定人、时间、理由都记。**拒绝 = hide（可撤销），tombstone 是单独的高危终态操作**，不要混为一谈。
+6. **审核决定要留人工痕迹**：`claim` 再 `decide`，决定人、时间、理由都记。**拒绝 = hide（可撤销），tombstone 是单独的高危终态操作**，不要混为一谈。**`generation_job` 主体（含沙盒试跑）例外**：产出未发布，`decide` 只追加 `ModerationResult`，不要 hide/tombstone。
 7. **墓碑/隐藏/恢复三态语义固定**：隐藏可 `restore`，墓碑是终态（见 `zaolang-domain-licensing-lineage`）。
 8. **人工调账只追加**，强制理由 + 二次确认 + 审计（见 `zaolang-credits-billing`）。
 9. **对账与悬挂预扣是两个不同指标**，数字不一致是设计使然，不要「对齐」。
 10. **seed / reset 在生产环境必须拒绝**，有专门用例守着。备份恢复要留 `BackupRecord`。
 11. **公告分站内与维护两类**，维护公告要能在 C 端顶部醒目展示。
+12. **产品沙盒记入任务运维与内容审核，但不扣积分。** 见 `zaolang-generation-jobs` 不变量 #14。不要把产品沙盒改回进程内 `dry_run`。
 
 ## 改造切入点
 

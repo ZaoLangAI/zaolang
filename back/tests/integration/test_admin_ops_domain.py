@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.credits import service as credits_service
 from app.domain.errors import NotFound
+from app.domain.jobs import service as jobs_service
 from app.models import (
     AuditLog,
     CreationSkill,
@@ -25,11 +26,15 @@ from app.models import (
 from app.models.base import new_id, utcnow
 from app.models.enums import (
     CreationSkillStatus,
+    JobOrigin,
+    JobStatus,
     LedgerEntryType,
     LifecycleStatus,
     ModerationStage,
     ModerationStatus,
     NotificationType,
+    Operation,
+    QualityTier,
     UserStatus,
     Visibility,
 )
@@ -389,6 +394,73 @@ def test_rejecting_a_skill_notifies_its_owner(
     assert note is not None
     assert note.payload_json["title"] == skill.title
     assert note.payload_json["reason"] == "示例效果不达标。"
+
+
+def test_moderation_detail_exposes_a_generation_job_and_decide_does_not_hide(
+    client: TestClient, db: Session, reviewer: User, admin: User, author: User
+) -> None:
+    """Sandbox (and other) generation_job queue items show prompt/origin;
+    rejecting them only records a verdict — the output was never published."""
+    result = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "雨后的东京街头", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+        origin=JobOrigin.SANDBOX,
+    )
+    job = result.job
+    item = ModerationQueueItem(
+        stage=ModerationStage.POST_GENERATION,
+        subject_type="generation_job",
+        subject_id=job.id,
+        status=ModerationStatus.NEEDS_REVIEW,
+        priority=5,
+        reason_code="SANDBOX_OUTPUT",
+    )
+    db.add(item)
+    db.commit()
+
+    listed = client.get(
+        "/v1/admin/moderation/queue",
+        params={"subject_type": "generation_job"},
+        headers=admin_header(admin),
+    ).json()
+    row = next(entry for entry in listed["items"] if entry["id"] == item.id)
+    assert row["preview_title"] == "雨后的东京街头"
+
+    body = client.get(
+        f"/v1/admin/moderation/queue/{item.id}/detail", headers=admin_header(admin)
+    ).json()
+    assert body["job"]["id"] == job.id
+    assert body["job"]["origin"] == JobOrigin.SANDBOX.value
+    assert body["job"]["prompt"] == "雨后的东京街头"
+    assert body["work"] is None
+    assert body["skill"] is None
+
+    client.post(f"/v1/admin/moderation/queue/{item.id}/claim", headers=admin_header(reviewer))
+    decided = client.post(
+        f"/v1/admin/moderation/queue/{item.id}/decide",
+        json={
+            "decision": ModerationStatus.REJECTED.value,
+            "reason_code": "quality",
+            "public_message": None,
+        },
+        headers=admin_header(reviewer),
+    )
+    assert decided.status_code == 200, decided.text
+    db.refresh(job)
+    assert job.status == JobStatus.CREATED
+    verdict = db.scalar(
+        select(ModerationResult).where(
+            ModerationResult.subject_type == "generation_job",
+            ModerationResult.subject_id == job.id,
+            ModerationResult.decided_by == "human",
+        )
+    )
+    assert verdict is not None
+    assert verdict.status == ModerationStatus.REJECTED
 
 
 def test_taking_down_a_published_skill_notifies_its_owner(

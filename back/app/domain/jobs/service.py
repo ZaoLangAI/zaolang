@@ -30,7 +30,7 @@ from app.domain.media import service as media_service
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, JobEvent
-from app.models.enums import JobEventType, JobStatus
+from app.models.enums import JobEventType, JobOrigin, JobStatus
 from app.platform_config import service as config_service
 from app.platform_config.schemas import PricingConfig
 
@@ -59,6 +59,11 @@ def quote_for(
     )
 
 
+def skips_credits(job: GenerationJob) -> bool:
+    """Sandbox try-its persist a real job but never touch the credit ledger."""
+    return job.origin == JobOrigin.SANDBOX
+
+
 def submit(
     session: Session,
     *,
@@ -70,11 +75,18 @@ def submit(
     draft_id: str | None = None,
     source_work_version_id: str | None = None,
     max_credits: int | None = None,
+    origin: str = JobOrigin.USER,
+    graph_override_json: dict[str, Any] | None = None,
 ) -> SubmissionResult:
     """Creates a job and reserves its credits.
 
     The unique `(user_id, idempotency_key)` index is what makes a double-tapped
     submit button produce one job rather than two reservations.
+
+    `origin=sandbox` still quotes (so ops can see what the run would have
+    cost) but skips the balance check and the reservation. `graph_override_json`
+    is the unpublished canvas snapshot a sandbox try-it walks — it is stored
+    on the job and must not pin the live template.
     """
     existing = session.scalar(
         select(GenerationJob).where(
@@ -107,27 +119,33 @@ def submit(
         quality_tier=quality_tier,
         duration_seconds=int(params.get("duration_seconds") or 0),
     )
-    if max_credits is not None and priced.credits > max_credits:
+    sandbox = origin == JobOrigin.SANDBOX
+    if not sandbox and max_credits is not None and priced.credits > max_credits:
         raise CreditsExceedBudget(
             f"预计消耗 {priced.credits} 积分，超过你设置的 {max_credits} 上限。",
             quoted=priced.credits,
             max_credits=max_credits,
         )
 
-    account = credits_service.get_or_create_account(session, user_id)
-    if account.available_balance < priced.credits:
-        raise InsufficientCredits(
-            f"需要 {priced.credits} 积分，当前可用 {account.available_balance}。",
-            required=priced.credits,
-            available=account.available_balance,
-        )
+    if not sandbox:
+        account = credits_service.get_or_create_account(session, user_id)
+        if account.available_balance < priced.credits:
+            raise InsufficientCredits(
+                f"需要 {priced.credits} 积分，当前可用 {account.available_balance}。",
+                required=priced.credits,
+                available=account.available_balance,
+            )
 
     # Pinned now, not resolved lazily at run time: a template published while
     # this job sits in the queue must not change what it runs. Left `None`
     # when nothing has ever been published for the operation yet (fresh
     # deploy before `make seed`) — `pipeline._resolve_graph` falls back to
-    # the code-level default graph for those.
-    active_template = workflow_templates_service.get_active(session, operation)
+    # the code-level default graph for those. A sandbox draft snapshot must
+    # not pin (or later backfill) the live template, or a publish mid-run
+    # would change what the try-it walked.
+    active_template = None if graph_override_json else workflow_templates_service.get_active(
+        session, operation
+    )
 
     job = GenerationJob(
         user_id=user_id,
@@ -137,12 +155,14 @@ def submit(
         request_json=params,
         quality_tier=quality_tier,
         status=JobStatus.CREATED,
+        origin=origin,
         quoted_credits=priced.credits,
-        reserved_credits=priced.credits,
+        reserved_credits=0 if sandbox else priced.credits,
         max_credits=max_credits,
         idempotency_key=idempotency_key,
         estimated_seconds=priced.estimated_seconds,
         workflow_template_id=active_template.id if active_template else None,
+        graph_override_json=graph_override_json,
     )
     session.add(job)
     try:
@@ -151,7 +171,8 @@ def submit(
         session.rollback()
         raise Conflict("相同请求正在处理中。") from exc
 
-    credits_service.reserve(session, user_id, priced.credits, job_id=job.id)
+    if not sandbox:
+        credits_service.reserve(session, user_id, priced.credits, job_id=job.id)
     sm.append_event(
         session,
         job.id,
@@ -165,6 +186,9 @@ def submit(
 
 def settle_success(session: Session, job: GenerationJob, *, actual_credits: int) -> None:
     """Captures the reservation and returns any unused portion."""
+    if skips_credits(job):
+        job.actual_credits = 0
+        return
     credits_service.capture(session, job.user_id, job_id=job.id, actual_amount=actual_credits)
 
 
@@ -175,6 +199,8 @@ def settle_release(session: Session, job: GenerationJob, *, reason: str) -> None
     rather than raising, because the retry paths that call this cannot always
     know whether an earlier attempt got that far.
     """
+    if skips_credits(job):
+        return
     try:
         credits_service.release(session, job.user_id, job_id=job.id, reason=reason)
     except Conflict:
@@ -183,7 +209,9 @@ def settle_release(session: Session, job: GenerationJob, *, reason: str) -> None
 
 def get_owned_job(session: Session, job_id: str, user_id: str) -> GenerationJob:
     job = session.get(GenerationJob, job_id)
-    if job is None or job.user_id != user_id:
+    # Sandbox try-its belong to the operator but must not surface on the
+    # C-end job list or be cancelled/retried through consumer endpoints.
+    if job is None or job.user_id != user_id or job.origin == JobOrigin.SANDBOX:
         # Not "forbidden": revealing that another user's job exists is a leak.
         raise NotFound("任务不存在。")
     return job

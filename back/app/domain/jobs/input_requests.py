@@ -4,7 +4,8 @@
 description is worth a follow-up question (`app.workflows.nodes`). Unlike
 `app.domain.jobs.async_tasks` (which a scheduler polls on a fixed cadence),
 nothing here is claimed or ticked: the job simply waits at `AWAITING_INPUT`
-until `POST /v1/generation-jobs/{id}/answer` calls `answer()`, or the beat
+until `POST /v1/generation-jobs/{id}/answer` (or the admin equivalent
+`POST /v1/admin/jobs/{id}/answer`) calls `answer()`, or the beat
 task `expire_stale_input_requests` (`app.workers.tasks`) decides nobody is
 coming back and calls `expire()`.
 """
@@ -12,14 +13,20 @@ coming back and calls `expire()`.
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.errors import ValidationFailed
-from app.models import WorkflowInputRequest
+from app.domain.errors import NotFound, ValidationFailed
+from app.domain.jobs import service as jobs_service
+from app.domain.jobs import state_machine as sm
+from app.models import GenerationJob, JobEvent, WorkflowInputRequest
 from app.models.base import utcnow
+from app.models.enums import JobEventType, JobStatus
+from app.realtime import publisher
+from app.workflows.types import WorkflowContext
 
 # An author is not a provider SLA: this is generous compared to
 # `async_tasks.TASK_TIMEOUT_SECONDS` (8 minutes) on purpose — abandoning a
@@ -129,3 +136,97 @@ def settle(session: Session, request: WorkflowInputRequest) -> None:
     """
     session.delete(request)
     session.flush()
+
+
+@dataclass(slots=True)
+class _AcceptedAnswers:
+    job: GenerationJob
+    ctx: WorkflowContext
+    node_id: str
+    event: JobEvent
+
+
+def resume_context(
+    session: Session, job: GenerationJob, request: WorkflowInputRequest
+) -> WorkflowContext:
+    """Rebuilds the workflow state a planning/`copy_generate` suspension had.
+
+    Only the JSON-safe slice written by `_input_checkpoint` is restored; a
+    live routing decision, if any ran before this node, was never part of it
+    and stays whatever `route_score` would recompute on its own next visit.
+    """
+    params = dict(job.request_json)
+    ctx = WorkflowContext(
+        session=session, job=job, prompt=str(params.get("prompt", "")), params=params
+    )
+    checkpoint = dict(request.state_checkpoint_json or {})
+    ctx.state[request.output_key] = dict(checkpoint.get("output_value") or {})
+    ctx.state["attempt_number"] = int(checkpoint.get("attempt_number") or 1)
+    ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 1)
+    ctx.state["tried_providers"] = set(checkpoint.get("tried_providers") or ())
+    ctx.state["intent_hint"] = dict(checkpoint.get("intent_hint") or {})
+    return ctx
+
+
+def _accept(
+    session: Session, job: GenerationJob, raw_answers: dict[str, str | list[str]]
+) -> _AcceptedAnswers:
+    if JobStatus(job.status) != JobStatus.AWAITING_INPUT:
+        raise ValidationFailed("当前任务不在等待回答的状态。")
+    request = find_for_job(session, job.id)
+    if request is None:
+        raise NotFound("没有待回答的问题。")
+
+    answers = validate_answers(request.questions_json, raw_answers)
+    ctx = resume_context(session, job, request)
+    output = dict(ctx.state.get(request.output_key) or {})
+    output["clarify_answers"] = answers
+    ctx.state[request.output_key] = output
+    node_id = request.node_id
+
+    settle(session, request)
+    job = sm.transition(session, job.id, JobStatus.RUNNING)
+    ctx.job = job
+    event = sm.append_event(
+        session,
+        job.id,
+        event_type=JobEventType.PROGRESS,
+        status=JobStatus.RUNNING,
+        public_message="已收到你的回答，正在继续生成",
+        progress=jobs_service.progress_for(session, job),
+        node_id=node_id,
+    )
+    return _AcceptedAnswers(job=job, ctx=ctx, node_id=node_id, event=event)
+
+
+def answer(
+    session: Session, job: GenerationJob, raw_answers: dict[str, str | list[str]]
+) -> GenerationJob:
+    """Folds the author's answers in and resumes the graph from the parked node.
+
+    Shared by the C-end `/generation-jobs/{id}/answer` and the admin
+    `/admin/jobs/{id}/answer` (sandbox try-it uses the latter because
+    `get_owned_job` hides `origin=sandbox` from the C-end). Resume runs
+    inline, same as the C-end path: nothing else will come back and finish
+    this the way a provider poll would.
+    """
+    from app.workers.pipeline import resume_after_input
+
+    accepted = _accept(session, job, raw_answers)
+    session.commit()
+    publisher.publish_job_event(
+        accepted.job.id,
+        {
+            "sequence": accepted.event.sequence,
+            "event_type": accepted.event.event_type,
+            "status": accepted.event.status,
+            "progress": accepted.event.progress,
+            "message": accepted.event.public_message,
+            "node_id": accepted.event.node_id,
+        },
+    )
+    resume_after_input(accepted.job, accepted.ctx, node_id=accepted.node_id)
+    session.commit()
+    session.refresh(accepted.job)
+    return accepted.job
+

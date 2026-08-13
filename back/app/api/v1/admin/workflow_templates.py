@@ -3,26 +3,25 @@
 Mirrors `agent_skills.py`'s shape (append-only versions, `DangerousAction`
 confirmation + audit on every write) since publishing a graph and publishing
 a prompt are the same kind of decision: both take effect on the very next
-job, and both need a reason on record. `dry-run` is the one non-dangerous
-write here — a sandbox execution that never creates a real `GenerationJob`.
+job, and both need a reason on record. `sandbox-run` is the one non-dangerous
+write here — it creates a real `GenerationJob` (visible in ops and
+moderation) but skips the credit ledger.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, IdempotencyKey
 from app.api.schemas.admin import (
     AgentBindingView,
     DangerousAction,
     DynamicAgentBindingView,
     NodeTypeView,
-    WorkflowDryRunRequest,
-    WorkflowDryRunResult,
-    WorkflowDryRunStepView,
+    WorkflowSandboxRunRequest,
+    WorkflowSandboxRunResult,
     WorkflowTemplatePublishRequest,
     WorkflowTemplateValidateRequest,
     WorkflowTemplateValidateResponse,
@@ -40,17 +39,11 @@ from app.api.v1.admin.deps import (
 )
 from app.domain.audit import service as audit
 from app.domain.errors import NotFound, ValidationFailed
+from app.domain.jobs import service as jobs_service
 from app.domain.workflow_templates import service as workflow_templates_service
-from app.models import GenerationJob
 from app.models.base import new_id
-from app.models.enums import JobStatus, Operation
+from app.models.enums import JobOrigin, Operation
 from app.workflows import registry
-from app.workflows.defaults import default_graph
-from app.workflows.graph import WorkflowGraph
-from app.workflows.runner import WorkflowRunner
-from app.workflows.types import WorkflowContext
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin:workflow-templates"])
 
@@ -207,115 +200,65 @@ def activate_workflow_template(
     return _template_view(row)
 
 
-@router.post("/workflow-templates/{operation}/dry-run", response_model=WorkflowDryRunResult)
-def dry_run_workflow_template(
+@router.post(
+    "/workflow-templates/{operation}/sandbox-run",
+    response_model=WorkflowSandboxRunResult,
+    status_code=202,
+)
+def sandbox_run_workflow_template(
     operation: Operation,
-    payload: WorkflowDryRunRequest,
+    payload: WorkflowSandboxRunRequest,
+    request: Request,
     session: DbSession,
     user: Operator,
     _: AdminWrite,
-) -> WorkflowDryRunResult:
-    """Simulates a job through a graph — the editor's unpublished draft when
-    `payload.graph` is given, otherwise the operation's active published one.
+    idempotency_key: IdempotencyKey,
+) -> WorkflowSandboxRunResult:
+    """Submits a real generation job that walks this operation's graph.
 
-    Never creates a `GenerationJob` row, reserves credits, or writes a
-    `ProviderAttempt`. The four agent nodes (safety/planning/intent_router/
-    quality) still call the real LLM gateway on purpose: that is the one
-    thing worth spending a little real cost on to actually validate a prompt
-    change before publishing it. `AdminWrite`'s rate limit is what keeps
-    that cost bounded.
-
-    With `live_provider=False` (the default) the media provider is stubbed.
-    With `live_provider=True` the selected configured model is called for
-    real and a short-lived `preview_url` is returned — still without a job
-    row or a credit reservation. Video pending results are polled in this
-    request rather than suspended for Beat.
+    The editor's unpublished draft when `payload.graph` is given, otherwise
+    the operation's active published template (pinned like a C-end submit).
+    Credits are quoted but never reserved. Everything else — JobEvent, SSE,
+    ProviderAttempt, asset registration, PRE_GENERATION moderation on
+    NEEDS_REVIEW, POST_GENERATION on success — matches a consumer request.
 
     A draft is held to exactly the same validation as a publish, because a
-    graph that fails it cannot be walked safely; but it is never written
-    anywhere, so trying one out has no effect on live traffic. This is the
-    whole point of the endpoint: without it, checking an edit would mean
-    publishing it to every job first.
+    graph that fails it cannot be walked safely; it is stored on the job as
+    `graph_override_json` and never becomes a `GenerationWorkflowTemplate`.
     """
+    graph_override: dict[str, Any] | None = None
     if payload.graph is not None:
         errors = workflow_templates_service.validate_graph_json(payload.graph, session=session)
         if errors:
             raise ValidationFailed("草稿工作流图校验未通过，无法试跑。", errors=errors)
-        graph = WorkflowGraph.from_dict(payload.graph)
-    else:
-        # Mirrors `pipeline._resolve_graph`'s fallback: dry-running should
-        # show exactly what a real job would run right now, including before
-        # anything has ever been published for this operation.
-        template = workflow_templates_service.get_active(session, operation.value)
-        graph = WorkflowGraph.from_dict(template.graph_json if template else default_graph(session))
+        graph_override = payload.graph
 
     params: dict[str, Any] = {"prompt": payload.prompt, **payload.params}
-    fake_job = GenerationJob(
-        id=new_id("dry"),
+    result = jobs_service.submit(
+        session,
         user_id=user.id,
         operation=operation.value,
-        request_json=params,
         quality_tier=payload.quality_tier,
-        status=JobStatus.CREATED.value,
-        quoted_credits=0,
-        reserved_credits=0,
-        idempotency_key=new_id("idk"),
-        estimated_seconds=0,
-    )
-    ctx = WorkflowContext(
-        session=session,
-        job=fake_job,
-        prompt=payload.prompt,
         params=params,
-        dry_run=True,
-        live_provider=payload.live_provider,
+        idempotency_key=idempotency_key or new_id("idk"),
+        origin=JobOrigin.SANDBOX,
+        graph_override_json=graph_override,
     )
-
-    try:
-        outcome = WorkflowRunner(graph).run(ctx)
-        session.commit()
-    except Exception as exc:
-        # A genuine crash (e.g. a mis-set LLM endpoint) must not 500 the
-        # editor's try-it panel — surface it as a failed dry run with
-        # whatever trace was collected before the crash, and roll back any
-        # half-written agent-run rows from this attempt.
-        logger.exception("workflow dry-run crashed for %s", operation.value)
-        session.rollback()
-        return WorkflowDryRunResult(
-            status=JobStatus.FAILED,
-            failure_code="DRY_RUN_CRASHED",
-            error_detail=f"{type(exc).__name__}: {exc}",
-            trace=_trace_view(ctx),
-        )
-
-    error_detail = ctx.state.get("error_detail")
-    if outcome.status == JobStatus.FAILED and not error_detail:
-        error_detail = ctx.state.get("failure_message")
-
-    return WorkflowDryRunResult(
-        status=outcome.status,
-        failure_code=outcome.failure_code,
-        asset_id=outcome.asset_id,
-        error_detail=error_detail,
-        preview_url=ctx.state.get("_preview_url"),
-        mime_type=ctx.state.get("_preview_mime_type"),
-        trace=_trace_view(ctx),
+    audit.record(
+        session,
+        actor=user,
+        action="workflow_template.sandbox_run",
+        target_type="generation_job",
+        target_id=result.job.id,
+        after={"operation": operation.value, "origin": JobOrigin.SANDBOX.value},
+        request=request,
     )
+    session.commit()
+    if not result.replayed:
+        from app.workers import tasks
 
-
-def _trace_view(ctx: WorkflowContext) -> list[WorkflowDryRunStepView]:
-    trace: list[dict[str, Any]] = ctx.state.get("_trace") or []
-    return [
-        WorkflowDryRunStepView(
-            node_id=entry["node_id"],
-            node_type=entry["node_type"],
-            port=entry["port"],
-            agent_run_id=entry.get("agent_run_id"),
-            duration_ms=entry.get("duration_ms"),
-            summary=entry.get("summary"),
-        )
-        for entry in trace
-    ]
+        tasks.dispatch_generation(result.job)
+    return WorkflowSandboxRunResult(job_id=result.job.id)
 
 
 def _template_view(row) -> WorkflowTemplateView:  # type: ignore[no-untyped-def]

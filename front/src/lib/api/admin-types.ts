@@ -105,9 +105,8 @@ export type DynamicAgentBinding = S['DynamicAgentBindingView'];
 export type WorkflowTemplateView = S['WorkflowTemplateView'];
 export type WorkflowTemplatePublishRequest = S['WorkflowTemplatePublishRequest'];
 export type WorkflowTemplateValidateResponse = S['WorkflowTemplateValidateResponse'];
-export type WorkflowDryRunRequest = S['WorkflowDryRunRequest'];
-export type WorkflowDryRunResult = S['WorkflowDryRunResult'];
-export type WorkflowDryRunStepView = S['WorkflowDryRunStepView'];
+export type WorkflowSandboxRunRequest = S['WorkflowSandboxRunRequest'];
+export type WorkflowSandboxRunResult = S['WorkflowSandboxRunResult'];
 
 /** One node in `WorkflowTemplateView.graph` — the backend keeps this as an
  * untyped `dict` (`app.workflows.graph.WorkflowGraph.to_dict`), so the shape

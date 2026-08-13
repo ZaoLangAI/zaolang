@@ -134,7 +134,7 @@ class JobInputQuestionView(ApiModel):
 
 
 class JobInputRequestResponse(ApiModel):
-    """What `copy_generate` is waiting on, for the C-end question form."""
+    """What a planning/`copy_generate` node is waiting on, for the question form."""
 
     job_id: str
     node_id: str

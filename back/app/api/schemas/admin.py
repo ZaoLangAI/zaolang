@@ -16,6 +16,7 @@ from app.models.enums import (
     CreationSkillCategory,
     CreationSkillStatus,
     CreationSkillVisibility,
+    JobOrigin,
     JobStatus,
     LearnPostStatus,
     ModerationStatus,
@@ -81,6 +82,7 @@ class AdminJobSummary(ApiModel):
     status: JobStatus
     operation: str
     quality_tier: str
+    origin: JobOrigin = JobOrigin.USER
     # Raw routing key (`f"{endpoint_id}:{capability}"` or a test fixture's
     # provider name) — kept for filtering/replay comparison, but never shown
     # as the primary label; see `provider_label`.
@@ -168,6 +170,8 @@ class AgentRunView(ApiModel):
     # The graph node whose executor made this call, or `None` for runs
     # predating this column or made outside a workflow run.
     node_id: str | None = None
+    input_json: dict[str, Any] | None = None
+    output_json: dict[str, Any] = Field(default_factory=dict)
     created_at: dt.datetime
 
 
@@ -197,6 +201,10 @@ class AdminJobDetail(AdminJobSummary):
     # `None` once the render finishes (success, failure, timeout) or if the
     # job never suspended on an external task at all.
     async_task: AsyncProviderTaskView | None = None
+    # Short-lived signed URL of `output_asset_id`, for the sandbox inspector
+    # and the jobs-console replay. `None` until quality registers an asset.
+    preview_url: str | None = None
+    mime_type: str | None = None
 
 
 class JobTerminateRequest(DangerousAction):
@@ -288,9 +296,24 @@ class ModerationSubjectDetailView(ApiModel):
     history: list[ModerationHistoryEntry]
     work: ModerationWorkDetailView | None = None
     skill: CreationSkillAdminView | None = None
+    job: ModerationJobDetailView | None = None
     # Open reports naming the same subject — a reviewer acting purely off the
     # agent's flag should still see whether users have separately complained.
     open_report_count: int = 0
+
+
+class ModerationJobDetailView(ApiModel):
+    """A generation_job queue subject: prompt, sandbox origin, and output."""
+
+    id: str
+    origin: JobOrigin
+    operation: str
+    quality_tier: str
+    status: JobStatus
+    prompt: str | None = None
+    preview_url: str | None = None
+    mime_type: str | None = None
+    created_at: dt.datetime
 
 
 class ReportCaseView(ApiModel):
@@ -993,41 +1016,17 @@ class WorkflowTemplateValidateResponse(ApiModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class WorkflowDryRunRequest(ApiModel):
+class WorkflowSandboxRunRequest(ApiModel):
     prompt: str = Field(min_length=1, max_length=2000)
     quality_tier: str = "standard"
     params: dict[str, Any] = Field(default_factory=dict)
     # The unpublished graph on the editor's canvas. Omitted means "run what
-    # is live", which is what an operator wants when checking the current
-    # behaviour rather than a change. Passing it is what makes the editor's
-    # edit -> run -> look loop possible without publishing to production
-    # first; it is validated exactly like a publish before it is executed,
-    # and never becomes a `GenerationWorkflowTemplate` row.
+    # is live". Passing it is what makes the editor's edit -> run -> look
+    # loop possible without publishing to production first; it is validated
+    # exactly like a publish before it is executed, and stored on the job as
+    # `graph_override_json` rather than becoming a template row.
     graph: dict[str, Any] | None = None
-    # When true, `provider_generate` calls the configured media model instead
-    # of stubbing. Still never creates a `GenerationJob`, reserves credits,
-    # or writes a `ProviderAttempt`. Default off so CI and accidental clicks
-    # do not hit a paid upstream.
-    live_provider: bool = False
 
 
-class WorkflowDryRunStepView(ApiModel):
-    node_id: str
-    node_type: str
-    port: str
-    agent_run_id: str | None = None
-    duration_ms: int | None = None
-    # One line of what this step actually decided — the safety verdict, the
-    # provider routing picked, and so on. What turns the trace from "which
-    # nodes ran" into something an operator can judge a prompt change by.
-    summary: str | None = None
-
-
-class WorkflowDryRunResult(ApiModel):
-    status: JobStatus
-    failure_code: str | None = None
-    asset_id: str | None = None
-    error_detail: str | None = None
-    preview_url: str | None = None
-    mime_type: str | None = None
-    trace: list[WorkflowDryRunStepView] = Field(default_factory=list)
+class WorkflowSandboxRunResult(ApiModel):
+    job_id: str

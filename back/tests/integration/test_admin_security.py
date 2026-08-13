@@ -450,35 +450,36 @@ def test_rolling_back_to_an_earlier_version_republishes_its_graph(
     assert body["is_active"] is True
 
 
-def test_an_operator_can_dry_run_a_workflow_template(client: TestClient, operator: User) -> None:
+def test_an_operator_can_sandbox_run_a_workflow_template(
+    client: TestClient, db: Session, operator: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A sandbox execution is not dangerous, so the operator rank suffices."""
+    monkeypatch.setattr("app.workers.tasks.dispatch_generation", lambda job: None)
     response = client.post(
-        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        "/v1/admin/workflow-templates/text_to_image/sandbox-run",
         json={"prompt": "雨后的东京街头"},
         headers=admin_header(operator),
     )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] in ("succeeded", "failed")
-    assert body["trace"]
-    assert body["trace"][0]["node_type"] == "safety_check"
+    assert response.status_code == 202, response.text
+    job_id = response.json()["job_id"]
+    assert job_id
+    audit = db.scalar(select(AuditLog).where(AuditLog.action == "workflow_template.sandbox_run"))
+    assert audit is not None
+    assert audit.target_id == job_id
 
 
-def test_dry_running_an_unpublished_draft_graph_leaves_the_live_template_alone(
-    client: TestClient, db: Session, operator: User
+def test_sandbox_running_an_unpublished_draft_graph_leaves_the_live_template_alone(
+    client: TestClient, db: Session, operator: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The editor's edit -> run -> look loop: an operator must be able to try
     a canvas edit without first publishing it to every job."""
+    monkeypatch.setattr("app.workers.tasks.dispatch_generation", lambda job: None)
     draft = _sample_graph(db)
     draft["nodes"] = [node for node in draft["nodes"] if node["id"] != "skill_context"]
     draft["edges"] = [
-        edge
-        for edge in draft["edges"]
-        if "skill_context" not in (edge["from"], edge["to"])
+        edge for edge in draft["edges"] if "skill_context" not in (edge["from"], edge["to"])
     ]
-    draft["edges"].append(
-        {"id": "draft", "from": "safety", "from_port": "pass", "to": "planning"}
-    )
+    draft["edges"].append({"id": "draft", "from": "safety", "from_port": "pass", "to": "planning"})
 
     before = db.scalar(
         select(GenerationWorkflowTemplate).where(
@@ -487,12 +488,11 @@ def test_dry_running_an_unpublished_draft_graph_leaves_the_live_template_alone(
         )
     )
     response = client.post(
-        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        "/v1/admin/workflow-templates/text_to_image/sandbox-run",
         json={"prompt": "雨后的东京街头", "graph": draft},
         headers=admin_header(operator),
     )
-    assert response.status_code == 200, response.text
-    assert not any(step["node_type"] == "skill_context" for step in response.json()["trace"])
+    assert response.status_code == 202, response.text
 
     after = db.scalar(
         select(GenerationWorkflowTemplate).where(
@@ -504,13 +504,13 @@ def test_dry_running_an_unpublished_draft_graph_leaves_the_live_template_alone(
     assert (before.id if before else None) == (after.id if after else None)
 
 
-def test_dry_running_a_structurally_broken_draft_is_refused(
+def test_sandbox_running_a_structurally_broken_draft_is_refused(
     client: TestClient, operator: User
 ) -> None:
     """Held to the same validation as a publish — the runner cannot walk a
     graph that fails it, and a 500 in the try-it panel teaches nothing."""
     response = client.post(
-        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        "/v1/admin/workflow-templates/text_to_image/sandbox-run",
         json={
             "prompt": "雨后的东京街头",
             "graph": {"nodes": [{"id": "a", "type": "safety_check", "config": {}}], "edges": []},
@@ -520,10 +520,20 @@ def test_dry_running_a_structurally_broken_draft_is_refused(
     assert response.status_code == 422
 
 
-def test_a_viewer_cannot_dry_run_a_workflow_template(client: TestClient, viewer: User) -> None:
+def test_a_viewer_cannot_sandbox_run_a_workflow_template(client: TestClient, viewer: User) -> None:
     response = client.post(
-        "/v1/admin/workflow-templates/text_to_image/dry-run",
+        "/v1/admin/workflow-templates/text_to_image/sandbox-run",
         json={"prompt": "雨后的东京街头"},
+        headers=admin_header(viewer),
+    )
+    assert response.status_code == 403
+
+
+def test_a_viewer_cannot_answer_a_job_follow_up(client: TestClient, viewer: User) -> None:
+    """Answering resumes the graph; that is an operator write, not a read."""
+    response = client.post(
+        "/v1/admin/jobs/job_does_not_exist/answer",
+        json={"answers": []},
         headers=admin_header(viewer),
     )
     assert response.status_code == 403

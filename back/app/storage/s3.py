@@ -65,9 +65,11 @@ def get_client() -> Any:
 def get_public_client() -> Any:
     """Signs URLs against the browser-reachable endpoint.
 
-    Inside Docker the API talks to `minio:9000` while the browser needs
+    Inside Docker the API talks to `minio:9000` while the local browser needs
     `localhost:9000`; signing with the wrong host produces a signature the
-    browser cannot use.
+    browser cannot use. Local `S3_PUBLIC_ENDPOINT_URL` must stay on localhost
+    (not a NIC IP): SigV4 binds the Host header, and a DHCP change would
+    invalidate every outstanding URL plus Next's image optimiser allowlist.
     """
     settings = get_settings()
     if settings.s3_public_endpoint_url == settings.s3_endpoint_url:

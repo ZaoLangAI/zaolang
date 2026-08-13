@@ -1,4 +1,9 @@
-"""`live_provider` sandbox generation: real `submit`/`poll`, no job rows."""
+"""Isolated `provider_generate` walks with `WorkflowContext.dry_run=True`.
+
+Product sandbox try-its no longer use this path — they submit a real
+`GenerationJob`. These tests keep `dry_run` so the node can be exercised
+without a job row, a ledger, or Celery.
+"""
 
 from __future__ import annotations
 

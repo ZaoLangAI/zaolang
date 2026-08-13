@@ -32,12 +32,11 @@ from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.licensing import service as licensing
-from app.models import Draft, GenerationJob, Work, WorkflowInputRequest, WorkVersion
+from app.models import Draft, GenerationJob, Work, WorkVersion
 from app.models.base import new_id
-from app.models.enums import JobEventType, JobStatus, Operation, QualityTier
+from app.models.enums import JobOrigin, JobStatus, Operation, QualityTier
 from app.presenters import media_urls
 from app.realtime import publisher
-from app.workflows.types import WorkflowContext
 
 router = APIRouter(tags=["generation"])
 
@@ -119,7 +118,10 @@ def list_jobs(
 ) -> Page[GenerationJobResponse]:
     stmt = (
         select(GenerationJob)
-        .where(GenerationJob.user_id == user.id)
+        .where(
+            GenerationJob.user_id == user.id,
+            GenerationJob.origin != JobOrigin.SANDBOX,
+        )
         .order_by(GenerationJob.created_at.desc())
         .limit(limit)
     )
@@ -234,11 +236,14 @@ def promote_job(
 @router.get(
     "/generation-jobs/{job_id}/input-request", response_model=JobInputRequestResponse
 )
-def get_input_request(job_id: str, user: CurrentUser, session: DbSession) -> JobInputRequestResponse:
-    """The follow-up questions a `copy_generate` node is waiting on.
+def get_input_request(
+    job_id: str, user: CurrentUser, session: DbSession
+) -> JobInputRequestResponse:
+    """The follow-up questions a planning/`copy_generate` node is waiting on.
 
     404 both when the job has no pending request and when it belongs to
-    someone else — `get_owned_job` already refuses to reveal the latter.
+    someone else — `get_owned_job` already refuses to reveal the latter,
+    including every `origin=sandbox` try-it (those answer through admin).
     """
     job = jobs_service.get_owned_job(session, job_id, user.id)
     request = input_requests.find_for_job(session, job.id)
@@ -259,7 +264,7 @@ def answer_job_input(
     user: CurrentUser,
     session: DbSession,
 ) -> GenerationJobResponse:
-    """Answers a `copy_generate` node's follow-up questions and resumes the job.
+    """Answers a planning/`copy_generate` node's follow-up and resumes the job.
 
     Mirrors `app.workers.async_polling._resume_succeeded`'s rebuild-context-
     then-resume shape, but runs inline in the request rather than off a
@@ -267,48 +272,8 @@ def answer_job_input(
     back and finish this for the user.
     """
     job = jobs_service.get_owned_job(session, job_id, user.id)
-    if JobStatus(job.status) != JobStatus.AWAITING_INPUT:
-        raise ValidationFailed("当前任务不在等待回答的状态。")
-    request = input_requests.find_for_job(session, job.id)
-    if request is None:
-        raise NotFound("没有待回答的问题。")
-
     raw_answers = {item.question_id: item.value for item in payload.answers}
-    answers = input_requests.validate_answers(request.questions_json, raw_answers)
-
-    ctx = _resume_context(session, job, request)
-    output = dict(ctx.state.get(request.output_key) or {})
-    output["clarify_answers"] = answers
-    ctx.state[request.output_key] = output
-    node_id = request.node_id
-
-    input_requests.settle(session, request)
-    job = sm.transition(session, job.id, JobStatus.RUNNING)
-    ctx.job = job
-    event = sm.append_event(
-        session,
-        job.id,
-        event_type=JobEventType.PROGRESS,
-        status=JobStatus.RUNNING,
-        public_message="已收到你的回答，正在继续生成",
-        progress=jobs_service.progress_for(session, job),
-        node_id=node_id,
-    )
-    session.commit()
-    publisher.publish_job_event(
-        job.id,
-        {
-            "sequence": event.sequence,
-            "event_type": event.event_type,
-            "status": event.status,
-            "progress": event.progress,
-            "message": event.public_message,
-        },
-    )
-
-    _resume(job, ctx, node_id=node_id)
-    session.commit()
-    session.refresh(job)
+    job = input_requests.answer(session, job, raw_answers)
     return _job_response(session, job, include_events=True)
 
 
@@ -423,41 +388,6 @@ def _enqueue(job: GenerationJob) -> None:
     from app.workers import tasks
 
     tasks.dispatch_generation(job)
-
-
-def _resume_context(
-    session: Session, job: GenerationJob, request: WorkflowInputRequest
-) -> WorkflowContext:
-    """Rebuilds the workflow state a `copy_generate` suspension had.
-
-    Only the JSON-safe slice written by `_input_checkpoint` is restored; a
-    live routing decision, if any ran before this node, was never part of it
-    and stays whatever `route_score` would recompute on its own next visit.
-    """
-    params = dict(job.request_json)
-    ctx = WorkflowContext(
-        session=session, job=job, prompt=str(params.get("prompt", "")), params=params
-    )
-    checkpoint = dict(request.state_checkpoint_json or {})
-    ctx.state[request.output_key] = dict(checkpoint.get("output_value") or {})
-    ctx.state["attempt_number"] = int(checkpoint.get("attempt_number") or 1)
-    ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 1)
-    ctx.state["tried_providers"] = set(checkpoint.get("tried_providers") or ())
-    ctx.state["intent_hint"] = dict(checkpoint.get("intent_hint") or {})
-    return ctx
-
-
-def _resume(job: GenerationJob, ctx: WorkflowContext, *, node_id: str) -> None:
-    """Continues the graph from where `copy_generate` left off.
-
-    A local import, same reasoning as `_enqueue`: `app.workers.pipeline`
-    pulls in the workflow engine and domain services this module must not
-    import at module load time to avoid a cycle with `app.workers.tasks`.
-    """
-    from app.workers.pipeline import resolve_graph
-    from app.workflows.runner import WorkflowRunner
-
-    WorkflowRunner(resolve_graph(ctx.session, job)).resume(ctx, node_id=node_id, port="ok")
 
 
 def _job_response(

@@ -12,6 +12,7 @@ import { FilterBar, Pager } from '@/components/admin/filter-bar';
 import { RoutingReplayTable } from '@/components/admin/jobs/routing-replay-table';
 import { WorkflowSteps } from '@/components/admin/jobs/workflow-steps';
 import { Timeline, type TimelineEntry } from '@/components/admin/timeline';
+import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -34,6 +35,7 @@ const STATUSES = [
   'queued',
   'submitted',
   'running',
+  'awaiting_input',
   'succeeded',
   'failed',
   'cancelled',
@@ -72,6 +74,7 @@ export function JobsConsole() {
   const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [danger, setDanger] = useState<'terminate' | null>(null);
+  const [followUpAnswered, setFollowUpAnswered] = useState(false);
 
   const canOperate = atLeast(role, 'operator');
 
@@ -100,16 +103,19 @@ export function JobsConsole() {
             tone={
               row.status === 'succeeded'
                 ? 'success'
-                : row.status === 'failed' || row.status === 'expired'
-                  ? 'danger'
-                  : row.status === 'cancelled'
-                    ? 'neutral'
-                    : 'primary'
+                : row.status === 'awaiting_input'
+                  ? 'amber'
+                  : row.status === 'failed' || row.status === 'expired'
+                    ? 'danger'
+                    : row.status === 'cancelled'
+                      ? 'neutral'
+                      : 'primary'
             }
           >
             {tJob(row.status)}
           </Badge>
           {row.stuck ? <Badge tone="danger">{t('stuckBadge')}</Badge> : null}
+          {row.origin === 'sandbox' ? <Badge tone="amber">{t('originSandbox')}</Badge> : null}
         </span>
       ),
     },
@@ -254,6 +260,12 @@ export function JobsConsole() {
             kind: 'select',
             options: [{ value: 'true', label: t('stuckBadge') }],
           },
+          {
+            id: 'origin',
+            label: t('filterOrigin'),
+            kind: 'select',
+            options: [{ value: 'sandbox', label: t('originSandboxOnly') }],
+          },
         ]}
         values={draftFilters}
         onChange={(id, value) => setDraftFilters((current) => ({ ...current, [id]: value }))}
@@ -277,7 +289,10 @@ export function JobsConsole() {
           loading={list.loading}
           failed={list.failed}
           activeKey={openId ?? undefined}
-          onRowClick={(row) => setOpenId(row.id)}
+          onRowClick={(row) => {
+            setFollowUpAnswered(false);
+            setOpenId(row.id);
+          }}
         />
       </div>
 
@@ -314,6 +329,17 @@ export function JobsConsole() {
       >
         {job ? (
           <div className="flex flex-col gap-6">
+            {job.status === 'awaiting_input' && !followUpAnswered && canOperate ? (
+              <AwaitingInputPanel
+                jobId={job.id}
+                client={adminApi}
+                basePath="/v1/admin/jobs"
+                onSubmitted={() => {
+                  setFollowUpAnswered(true);
+                  list.reload();
+                }}
+              />
+            ) : null}
             <DetailList
               items={[
                 {

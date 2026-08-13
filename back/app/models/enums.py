@@ -126,6 +126,14 @@ class QualityTier(StrEnum):
     CINEMATIC = "cinematic"
 
 
+class JobOrigin(StrEnum):
+    """Who submitted the job. Sandbox runs skip the credit ledger but still
+    persist a real `GenerationJob` so ops and moderation can replay them."""
+
+    USER = "user"
+    SANDBOX = "sandbox"
+
+
 class JobStatus(StrEnum):
     CREATED = "created"
     QUEUED = "queued"

@@ -42,14 +42,15 @@ make dev-purge-queues  # 清空 Celery 队列（先停 worker）
 - API 文档：<http://localhost:8000/docs>
 - MinIO 控制台：<http://localhost:9001>
 
+本地开发的页面入口和媒体签名一律走 `localhost`，不要用机器网卡 IP 打开前端或写入 `S3_PUBLIC_ENDPOINT_URL` / `LOCAL_MEDIA_HOST`。网卡 IP 会随 DHCP / 换网变化：SigV4 签的是 `Host` 头，Next `/_next/image` 的 allowlist 也只认 `localhost:9000` 与 `127.0.0.1:9000`，写成 `192.168.*` 后封面和沙盒预览会 403 或约 5s 后 500。
+
 ### 受信任局域网访问
 
-`make dev` 默认让 Web 与 API 只监听 `localhost`（本机回环）。要让同一局域网内的其他主机完整使用登录、SSE、上传和媒体预览，需要把 Web/API 改绑到 `0.0.0.0`，并把以下地址统一为运行主机的固定局域网 IP（示例为 `192.168.1.10`）：
+`make dev` 默认让 Web 与 API 只监听 `localhost`。这是本机开发的正确形态。
 
-- `back/.env`：`API_BASE_URL=http://192.168.1.10:8000`、`WEB_BASE_URL=http://192.168.1.10:3000`、`S3_PUBLIC_ENDPOINT_URL=http://192.168.1.10:9000`，并把 `http://192.168.1.10:3000` 加入 `CORS_ORIGINS`；
-- `front/.env.local`：`NEXT_PUBLIC_API_URL=http://192.168.1.10:8000`、`NEXT_ALLOWED_DEV_ORIGINS=192.168.1.10`、`LOCAL_MEDIA_HOST=192.168.1.10`、`ALLOW_LOCAL_IMAGE_HOSTS=1`；`API_INTERNAL_URL` 仍保留 `http://localhost:8000`。`NEXT_ALLOWED_DEV_ORIGINS` 只填写主机名或 IP，多个值用逗号分隔，不带协议与端口。
+跨设备用局域网 IP 打开页面**不能**靠把 `S3_PUBLIC_ENDPOINT_URL` 或 `LOCAL_MEDIA_HOST` 改成当前网卡 IP 来凑：地址一变就要改配置、重启服务，签名与图片优化器会一起挂。媒体签名在本地必须保持 `http://localhost:9000`；`LOCAL_MEDIA_HOST` 保持空。需要给其他设备看时，用稳定的主机名或反向代理，而不是会变的 DHCP 地址。
 
-重启 `make dev` 后，其他主机从 `http://192.168.1.10:3000/zh-CN/discover` 进入。不要把开发默认密钥、MinIO 凭据或 HTTP 服务直接暴露到公网；公网部署必须更换密钥并使用 HTTPS/反向代理。
+不要把开发默认密钥、MinIO 凭据或 HTTP 服务直接暴露到公网；公网部署必须更换密钥并使用 HTTPS/反向代理。
 
 !!! note "端口刻意错开"
     Postgres 用 `5433`、Redis 用 `6380`，避免和你机器上已有的本地服务抢端口。改端口时同时改 `infra/.env.example` 与 `back/.env`。
@@ -140,6 +141,8 @@ Playwright 的 `baseURL` 用 `localhost:3100` 而不是 `127.0.0.1:3100`：后�
 **测试报「current transaction is aborted」。** 通常是探针类查询在测试 schema 里失败污染了事务。领域代码里所有可能失败的探测都要包在 `session.begin_nested()` 里。
 
 **登录测试忽然返回 429。** 限流计数器在 Redis 里，事务回滚不会撤销它。`tests/conftest.py` 的 `_clear_redis_state` fixture 负责清理，新增限流桶时要一并加进去。
+
+**封面或沙盒预览 `/_next/image` 报 500。** 媒体 URL 被签成了机器网卡 IP（`http://192.168.*:9000/...`）而不是 `http://localhost:9000`。把 `S3_PUBLIC_ENDPOINT_URL` 拉回 `http://localhost:9000`，`LOCAL_MEDIA_HOST` 留空，用 <http://localhost:3000> 打开页面，然后重启 API 与 Next（`get_public_client()` 有缓存）。不要把查询串剥掉再打开对象路径：桶是私有的，无签名会 403。
 
 **素材是占位图。** 真实媒体没到位前，链路里跑的是标记为 `PROTOTYPE` 的极少量临时媒体。素材包到位后：
 

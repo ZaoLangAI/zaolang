@@ -20,7 +20,7 @@ from app.domain.jobs import state_machine as sm
 from app.llm.stub import PLANNER_CLARIFY_MARKER
 from app.models import AgentRun, JobEvent, User
 from app.models.base import new_id
-from app.models.enums import JobEventType, JobStatus, Operation, QualityTier
+from app.models.enums import JobEventType, JobOrigin, JobStatus, Operation, QualityTier
 from app.workflows import registry
 from app.workflows.configs import (
     JoinConfig,
@@ -548,7 +548,9 @@ def _planning_graph(*, allow_followup_question: bool = True) -> WorkflowGraph:
     return WorkflowGraph.from_dict({"nodes": nodes, "edges": edges})
 
 
-def _running_job(db: Session, author: User, *, prompt: str) -> WorkflowContext:
+def _running_job(
+    db: Session, author: User, *, prompt: str, origin: str = JobOrigin.USER
+) -> WorkflowContext:
     credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
     job = jobs_service.submit(
         db,
@@ -557,6 +559,7 @@ def _running_job(db: Session, author: User, *, prompt: str) -> WorkflowContext:
         quality_tier=QualityTier.STANDARD,
         params={"prompt": prompt, "aspect_ratio": "16:9"},
         idempotency_key=new_id("idk"),
+        origin=origin,
     ).job
     sm.transition(db, job.id, JobStatus.QUEUED)
     job = sm.transition(db, job.id, JobStatus.RUNNING)
@@ -593,6 +596,29 @@ def test_planning_with_the_clarify_marker_suspends_the_job_awaiting_input(
         )
     )
     assert len(awaiting_events) == 1
+
+
+def test_sandbox_planning_clarify_still_suspends_awaiting_input(
+    db: Session, author: User
+) -> None:
+    """Product sandbox is a real job: the planner's follow-up must park it
+    the same way a C-end request does, so the editor can render the questions.
+    `WorkflowContext.dry_run` is the only path that skips clarify."""
+    ctx = _running_job(
+        db,
+        author,
+        prompt=f"{PLANNER_CLARIFY_MARKER}：雨后的东京街头",
+        origin=JobOrigin.SANDBOX,
+    )
+    assert ctx.is_sandbox
+    outcome = WorkflowRunner(_planning_graph()).run(ctx)
+
+    assert outcome.status == JobStatus.AWAITING_INPUT
+    db.refresh(ctx.job)
+    assert ctx.job.status == JobStatus.AWAITING_INPUT
+    request = input_requests.find_for_job(db, ctx.job.id)
+    assert request is not None
+    assert [q["id"] for q in request.questions_json] == ["subject_count", "camera"]
 
 
 def test_planning_clarify_from_created_reaches_awaiting_input(db: Session, author: User) -> None:

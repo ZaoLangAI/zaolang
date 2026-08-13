@@ -9,8 +9,9 @@ import { useAgentCatalog } from '@/components/admin/workflows/agent-catalog';
 import { groupErrorsByNode } from '@/components/admin/workflows/validation-errors';
 import { WorkflowCanvas } from '@/components/admin/workflows/workflow-canvas';
 import { WorkflowCopyDialog } from '@/components/admin/workflows/workflow-copy-dialog';
-import { WorkflowDryRunDialog } from '@/components/admin/workflows/workflow-dry-run-dialog';
 import { WorkflowPublishDialog } from '@/components/admin/workflows/workflow-publish-dialog';
+import { WorkflowSandboxDialog } from '@/components/admin/workflows/workflow-sandbox-dialog';
+import type { SandboxTraceStep } from '@/components/admin/workflows/workflow-sandbox-dialog';
 import { WorkflowVersionsDialog } from '@/components/admin/workflows/workflow-versions-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -26,7 +27,6 @@ import type {
   LogEntry,
   NodeTypeView,
   Page,
-  WorkflowDryRunStepView,
   WorkflowGraphJson,
   WorkflowTemplateView,
 } from '@/lib/api/admin-types';
@@ -262,14 +262,14 @@ function WorkflowOperationTab({
 
   const [publishOpen, setPublishOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const [dryRunOpen, setDryRunOpen] = useState(false);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const invalidNodeErrors = useMemo(() => groupErrorsByNode(validationErrors), [validationErrors]);
 
   const [hotspotCounts, setHotspotCounts] = useState<Map<string, number>>(new Map());
-  const [dryRunTrace, setDryRunTrace] = useState<WorkflowDryRunStepView[] | null>(null);
+  const [sandboxTrace, setSandboxTrace] = useState<SandboxTraceStep[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -342,7 +342,7 @@ function WorkflowOperationTab({
   const reload = () => {
     setReloadToken((token) => token + 1);
     setValidationErrors([]);
-    setDryRunTrace(null);
+    setSandboxTrace(null);
     onDirtyChange(false);
   };
 
@@ -374,7 +374,7 @@ function WorkflowOperationTab({
             </Button>
           ) : null}
           {canDryRun ? (
-            <Button size="sm" variant="secondary" onClick={() => setDryRunOpen(true)}>
+            <Button size="sm" variant="secondary" onClick={() => setSandboxOpen(true)}>
               {t('dryRun')}
             </Button>
           ) : null}
@@ -412,12 +412,22 @@ function WorkflowOperationTab({
           readOnly={!canEdit}
           invalidNodeErrors={invalidNodeErrors}
           hotspotCounts={hotspotCounts}
-          trace={dryRunTrace}
+          trace={sandboxTrace}
           onChange={setWorkingGraph}
           onDirty={() => onDirtyChange(true)}
           onEditPrompt={onEditPrompt}
         />
       )}
+
+      {canDryRun ? (
+        <WorkflowSandboxDialog
+          open={sandboxOpen}
+          operation={operation}
+          draftGraph={workingGraph}
+          onClose={() => setSandboxOpen(false)}
+          onTrace={setSandboxTrace}
+        />
+      ) : null}
 
       {canEdit ? (
         <WorkflowPublishDialog
@@ -446,16 +456,6 @@ function WorkflowOperationTab({
           reload();
         }}
       />
-
-      {canDryRun ? (
-          <WorkflowDryRunDialog
-            open={dryRunOpen}
-            operation={operation}
-            draftGraph={workingGraph}
-            onClose={() => setDryRunOpen(false)}
-            onTrace={setDryRunTrace}
-          />
-      ) : null}
 
       {canEdit ? (
         <WorkflowCopyDialog

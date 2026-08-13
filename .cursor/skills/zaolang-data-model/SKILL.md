@@ -15,10 +15,10 @@ disable-model-invocation: true
 | 文件 | 内容 |
 | --- | --- |
 | `back/app/models/base.py` | `Base`、`TimestampMixin`、`new_id()`、命名约定 |
-| `back/app/models/enums.py` | 全部枚举 + `JOB_TRANSITIONS` 状态迁移表 + `JobStatus.is_terminal` |
+| `back/app/models/enums.py` | 全部枚举 + `JOB_TRANSITIONS` 状态迁移表 + `JobStatus.is_terminal` + `JobOrigin`（`user` / `sandbox`） |
 | `back/app/models/identity.py` | `User` / `Profile`（偏好字段 `theme` / `locale` / `region` 在这里） / `Follow` |
 | `back/app/models/works.py` | `Work` / `WorkVersion` / `LicenseSnapshot` / `LineageEdge` / `Draft` / `Like` / `Bookmark` / `Collection` / `Tag` / `StylePreset` |
-| `back/app/models/generation.py` | `Workflow(Version)` / `GenerationJob` / `JobEvent` / `ProviderAttempt` / `ProviderStat` / `AgentRun` |
+| `back/app/models/generation.py` | `Workflow(Version)` / `GenerationJob`（`origin`、`graph_override_json`） / `JobEvent` / `ProviderAttempt` / `ProviderStat` / `AgentRun`（`input_json`） |
 | `back/app/models/credits.py` | `CreditAccount` / `CreditLedgerEntry` / `CreditPackage` / `PaymentIntent` / `WebhookEvent` |
 | `back/app/models/media.py` | `Asset` / `UploadSession` / `AssetConsent` / `ContentFingerprint` / `ProvenanceManifest` |
 | `back/app/models/platform.py` | `ModerationResult` / `ReportCase` / `Notification` / `PlatformConfig` / `AuditLog` / `IdempotencyRecord` / `Announcement` / `DataRequest` / `BackupRecord` / `ReconciliationReport` |
@@ -47,7 +47,7 @@ disable-model-invocation: true
 4. `make migrate` 在空库上验证：`make reset` 是最干净的检验。
 5. 如果是业务表，加进 `back/app/scripts/seed.py` 的 `RESET_TABLES`，否则 `make seed --reset` 会留下脏数据。
 
-**加一列**：可空或带 `server_default` 才能对存量数据安全升级；要求非空就分两步（先加可空并回填，再改非空）。**纯关联/追溯用的列（例如 `JobEvent.node_id`、`AgentRun.node_id`、`SystemLog.job_id`）可以只加可空列、不回填历史数据、不设外键**——同 `AuditLog.target_id` 一样，允许被引用的那一行先被清理，日志/追溯记录仍要能存在；这类列的目的是让后台能查到"是谁/哪个节点"，不是维护关系完整性。
+**加一列**：可空或带 `server_default` 才能对存量数据安全升级；要求非空就分两步（先加可空并回填，再改非空）。**纯关联/追溯用的列（例如 `JobEvent.node_id`、`AgentRun.node_id`、`AgentRun.input_json`、`GenerationJob.graph_override_json`、`SystemLog.job_id`）可以只加可空列、不回填历史数据、不设外键**——同 `AuditLog.target_id` 一样，允许被引用的那一行先被清理，日志/追溯记录仍要能存在；这类列的目的是让后台能查到"是谁/哪个节点"，不是维护关系完整性。`GenerationJob.origin` 带 `server_default=user`，存量行即 C 端任务。
 
 **加枚举值**：只加不改，并检查所有 `match` 分支与前端 `front/src/lib/api/types.ts` 的联合类型。
 

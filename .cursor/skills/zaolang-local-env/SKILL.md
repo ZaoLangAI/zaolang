@@ -30,7 +30,7 @@ disable-model-invocation: true
 - **两条工具链不混用**：后端命令一律 `conda run -n zaolang`，前端一律先 `fnm use`。Makefile 里的 `CONDA_RUN` / `FNM_ENV` 已经封好。
 - **`make seed ARGS=--reset` 会 TRUNCATE 业务表**（默认 `make seed` 幂等补齐、不清表），只在本地与测试环境用；后台的 seed 面板在生产环境直接拒绝。清库后必须 `make dev-purge-queues`（先停 worker），否则 Redis 残留的旧 `job_id` 会让 worker 报 `job not found`。
 - Alembic 只有一条线性迁移链，`make migrate` 必须能在空库上一路升到 head。
-- `make dev` 的 Web 与 API 默认监听 `localhost`（本机回环）。若要局域网访问，需改绑 `0.0.0.0`，且客户端地址必须通过 `NEXT_PUBLIC_API_URL`、`NEXT_ALLOWED_DEV_ORIGINS`、`CORS_ORIGINS`、`S3_PUBLIC_ENDPOINT_URL` 与 `LOCAL_MEDIA_HOST` 精确配置；不要用 `*` 代替凭据请求的 CORS 来源。`NEXT_ALLOWED_DEV_ORIGINS` 只填主机名或 IP，用于 Next.js 开发资源与 HMR WebSocket 的来源校验。
+- `make dev` 的 Web 与 API 默认监听 `localhost`（本机回环）。本地媒体签名固定 `S3_PUBLIC_ENDPOINT_URL=http://localhost:9000`，`LOCAL_MEDIA_HOST` 保持空；不要把会变的网卡 IP 写进这两项，否则 DHCP/换网后 SigV4 与 `/_next/image` allowlist 一起失效。跨设备用 IP 打开页面不能靠改签名 host 来凑。`NEXT_ALLOWED_DEV_ORIGINS` 只填主机名，用于 Next.js 开发资源与 HMR WebSocket 的来源校验；不要用 `*` 代替凭据请求的 CORS 来源。
 
 ## 常用目标
 

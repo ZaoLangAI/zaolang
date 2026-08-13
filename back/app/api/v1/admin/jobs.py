@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
-from typing import Any
+import time
+from collections.abc import Iterator
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 
 from app.agents import router as intent_router
@@ -23,6 +27,11 @@ from app.api.schemas.admin import (
     ProviderAttemptView,
 )
 from app.api.schemas.common import Page
+from app.api.schemas.jobs import (
+    JobAnswerRequest,
+    JobInputQuestionView,
+    JobInputRequestResponse,
+)
 from app.api.v1.admin.deps import (
     AdminDangerous,
     AdminRead,
@@ -33,13 +42,14 @@ from app.api.v1.admin.deps import (
 )
 from app.domain.audit import service as audit
 from app.domain.errors import Conflict, NotFound, ValidationFailed
-from app.domain.jobs import async_tasks
+from app.domain.jobs import async_tasks, input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
 from app.models import (
     AgentProfile,
     AgentRun,
+    Asset,
     AsyncProviderTask,
     GenerationJob,
     JobEvent,
@@ -47,9 +57,11 @@ from app.models import (
     ProviderAttempt,
 )
 from app.models.base import utcnow
-from app.models.enums import JobEventType, JobStatus, SystemLogLevel, SystemLogSource
+from app.models.enums import JobEventType, JobOrigin, JobStatus, SystemLogLevel, SystemLogSource
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
+from app.presenters import media_urls
+from app.realtime import publisher
 
 router = APIRouter(tags=["admin:jobs"])
 logger = logging.getLogger(__name__)
@@ -60,6 +72,8 @@ logger = logging.getLogger(__name__)
 # before the list marks the job `stuck` — the same order of magnitude as "an
 # operator should look at this", not a second, independently-tuned knob.
 STUCK_AFTER_MINUTES = 30
+SSE_HEARTBEAT_SECONDS = 15
+SSE_MAX_DURATION_SECONDS = 600
 
 
 @router.get("/jobs", response_model=Page[AdminJobSummary])
@@ -73,6 +87,7 @@ def list_jobs(
     stuck_only: bool = False,
     created_after: dt.datetime | None = None,
     created_before: dt.datetime | None = None,
+    origin: str | None = None,
     cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[AdminJobSummary]:
@@ -93,6 +108,8 @@ def list_jobs(
         stmt = stmt.where(GenerationJob.created_at >= as_utc(created_after))
     if created_before:
         stmt = stmt.where(GenerationJob.created_at <= as_utc(created_before))
+    if origin:
+        stmt = stmt.where(GenerationJob.origin == origin)
     if stuck_only:
         cutoff = utcnow() - dt.timedelta(minutes=STUCK_AFTER_MINUTES)
         stmt = stmt.where(
@@ -249,6 +266,8 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
                 status=r.status,
                 job_id=r.job_id,
                 node_id=r.node_id,
+                input_json=r.input_json,
+                output_json=r.output_json or {},
                 created_at=r.created_at,
             )
             for r in agent_runs
@@ -268,6 +287,8 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
             if task is not None
             else None
         ),
+        preview_url=media_urls.asset_url(session, job.output_asset_id),
+        mime_type=_asset_mime(session, job.output_asset_id),
     )
 
 
@@ -462,6 +483,131 @@ def job_events(
     )
 
 
+@router.get("/jobs/{job_id}/input-request", response_model=JobInputRequestResponse)
+def get_input_request(
+    job_id: str, session: DbSession, user: Viewer, _: AdminRead
+) -> JobInputRequestResponse:
+    """Follow-up questions a planning/`copy_generate` node is waiting on.
+
+    Sandbox try-its cannot use the C-end `/generation-jobs/{id}/input-request`
+    (`get_owned_job` hides `origin=sandbox`), so the editor and the jobs
+    console both read through this admin path.
+    """
+    job = _load(session, job_id)
+    request = input_requests.find_for_job(session, job.id)
+    if request is None:
+        raise NotFound("没有待回答的问题。")
+    return JobInputRequestResponse(
+        job_id=job.id,
+        node_id=request.node_id,
+        questions=[JobInputQuestionView(**q) for q in request.questions_json],
+        expires_at=request.expires_at,
+    )
+
+
+@router.post("/jobs/{job_id}/answer", response_model=AdminJobDetail)
+def answer_job_input(
+    job_id: str,
+    payload: JobAnswerRequest,
+    session: DbSession,
+    user: Operator,
+    _: AdminWrite,
+) -> AdminJobDetail:
+    """Answers a parked follow-up and resumes the graph, including sandbox jobs."""
+    job = _load(session, job_id)
+    raw_answers = {item.question_id: item.value for item in payload.answers}
+    job = input_requests.answer(session, job, raw_answers)
+    return job_detail(job.id, session, user, None)
+
+
+@router.get("/jobs/{job_id}/stream")
+def stream_job_events(
+    job_id: str,
+    request: Request,
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """Admin SSE: same resume contract as the C-end stream, plus `node_id`.
+
+    Does not carry prompt bodies — those stay on `AgentRun.input_json` /
+    `JobEvent.payload_json` and are fetched with the job detail on click.
+    """
+    _load(session, job_id)
+    after = _parse_last_event_id(last_event_id)
+    backfill: list[dict[str, Any]] = [
+        {
+            "sequence": event.sequence,
+            "event_type": event.event_type,
+            "status": event.status,
+            "progress": event.progress,
+            "message": event.public_message,
+            "node_id": event.node_id,
+        }
+        for event in sm.events_since(session, job_id, after)
+    ]
+
+    def generate() -> Iterator[str]:
+        started = time.monotonic()
+        last_sequence = after
+
+        for payload in backfill:
+            last_sequence = int(payload["sequence"])
+            yield _sse(last_sequence, payload)
+
+        if backfill and JobStatus(str(backfill[-1]["status"])).is_terminal:
+            return
+
+        last_heartbeat = time.monotonic()
+        for payload in publisher.subscribe(job_id):
+            if time.monotonic() - started > SSE_MAX_DURATION_SECONDS:
+                break
+            if not payload:
+                if time.monotonic() - last_heartbeat > SSE_HEARTBEAT_SECONDS:
+                    last_heartbeat = time.monotonic()
+                    yield ": heartbeat\n\n"
+                continue
+
+            sequence = int(payload.get("sequence", 0))
+            if sequence <= last_sequence:
+                continue
+            last_sequence = sequence
+            yield _sse(sequence, payload)
+            if payload.get("status") in {s.value for s in JobStatus if s.is_terminal}:
+                break
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "cache-control": "no-cache",
+            "connection": "keep-alive",
+            "x-accel-buffering": "no",
+        },
+    )
+
+
+def _sse(event_id: int, payload: dict[str, object]) -> str:
+    return f"id: {event_id}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _parse_last_event_id(value: str | None) -> int:
+    if not value:
+        return 0
+    try:
+        return max(0, int(value))
+    except ValueError:
+        return 0
+
+
+def _asset_mime(session, asset_id: str | None) -> str | None:  # type: ignore[no-untyped-def]
+    if not asset_id:
+        return None
+    asset = session.get(Asset, asset_id)
+    return asset.mime_type if asset is not None else None
+
+
 def _load(session, job_id: str) -> GenerationJob:  # type: ignore[no-untyped-def]
     job = session.get(GenerationJob, job_id)
     if job is None:
@@ -512,6 +658,7 @@ def _build_summary(
         finished_at=job.finished_at,
         stuck=stuck,
         workflow_template_id=job.workflow_template_id,
+        origin=JobOrigin(job.origin) if job.origin else JobOrigin.USER,
     )
 
 

@@ -429,7 +429,29 @@ export function ModerationQueue({ configAction }: { configAction?: React.ReactNo
               </div>
             ) : null}
 
-            {!detail.work && !detail.skill ? (
+            {detail.job ? (
+              <div className="flex flex-col gap-3 border-t border-border pt-4">
+                {detail.job.preview_url ? (
+                  detail.job.mime_type?.startsWith('video/') ? (
+                    <video src={detail.job.preview_url} controls className="w-full bg-black" />
+                  ) : detail.job.mime_type?.startsWith('audio/') ? (
+                    <audio src={detail.job.preview_url} controls className="w-full" />
+                  ) : (
+                    <Poster src={detail.job.preview_url} alt={detail.job.prompt ?? ''} aspect="video" />
+                  )
+                ) : null}
+                <DetailList
+                  items={[
+                    { label: t('fieldPrompt'), value: detail.job.prompt ?? '—' },
+                    { label: t('fieldOperation'), value: detail.job.operation },
+                    { label: t('fieldOrigin'), value: detail.job.origin },
+                    { label: t('colStatus'), value: detail.job.status },
+                  ]}
+                />
+              </div>
+            ) : null}
+
+            {!detail.work && !detail.skill && !detail.job ? (
               <p className="text-xs text-muted">{t('noSubjectDetail')}</p>
             ) : null}
 

@@ -300,7 +300,7 @@ def debug_chat_agent_profile(
     """Evaluates a skill prompt — draft or published — with a real model call.
 
     `AdminWrite`'s rate limit is what keeps this bounded, the same way it is
-    for the workflow dry-run endpoint this mirrors: no `DangerousAction`
+    for the workflow sandbox-run endpoint this mirrors: no `DangerousAction`
     confirmation, because nothing here is written to any workflow or made
     live, but real enough to cost real tokens.
     """

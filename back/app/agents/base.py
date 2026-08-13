@@ -205,6 +205,7 @@ def run_agent(
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
         endpoint_id=result.endpoint_id,
+        input_json={"system_prompt": resolved.text, "user_prompt": user_prompt},
         output_json=data,
         request_id=get_request_id() or None,
         created_at=utcnow(),
@@ -244,13 +245,13 @@ def run_agent_debug(
     """Runs one turn of prompt-evaluation chat against a real model, with no
     job behind it.
 
-    Mirrors the workflow dry-run's own precedent
-    (`workflow_templates_service` + its `dry-run` endpoint): a draft prompt
-    can be tried before it is ever published, the call is real (never
+    Mirrors the workflow sandbox-run's own precedent
+    (`workflow_templates_service` + its `sandbox-run` endpoint): a draft
+    prompt can be tried before it is ever published, the call is real (never
     stubbed unless `LLM_MODE=stub`), and an `AgentRun` is written with
     `job_id=None` so the "agent invocations" console list still shows what a
-    debug session cost — the same way a dry run's `AgentRun` rows are real
-    despite backing no job.
+    debug session cost — unlike a sandbox job, this debug path still has no
+    `GenerationJob` behind it.
 
     `prompt_override` is the skill editor's unsaved draft when given;
     otherwise this resolves whatever is currently active for
@@ -297,6 +298,10 @@ def run_agent_debug(
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
         endpoint_id=result.endpoint_id,
+        input_json={
+            "system_prompt": system_prompt,
+            "user_prompt": history[-1]["content"] if history else "",
+        },
         output_json=result.response.data or {},
         request_id=get_request_id() or None,
         created_at=utcnow(),

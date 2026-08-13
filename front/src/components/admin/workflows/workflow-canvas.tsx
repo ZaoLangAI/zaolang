@@ -50,7 +50,6 @@ import { Badge } from '@/components/ui/primitives';
 import type { PromptEditTarget } from '@/components/admin/workflows/workflow-editor';
 import type {
   NodeTypeView,
-  WorkflowDryRunStepView,
   WorkflowEdgeKind,
   WorkflowGraphJson,
 } from '@/lib/api/admin-types';
@@ -167,8 +166,8 @@ export interface WorkflowCanvasProps {
   /** Node id → how many `workflow_engine_failure` `SystemLog` rows named it
    * in the last 7 days — structurally valid, but has actually blown up. */
   hotspotCounts?: Map<string, number>;
-  /** The last dry run's step list, for highlighting the path it walked. */
-  trace?: WorkflowDryRunStepView[] | null;
+  /** Walked node ids from a live sandbox run, for highlighting the path. */
+  trace?: Array<{ node_id: string; port?: string | null }> | null;
   onChange: (graph: WorkflowGraphJson) => void;
   /** Fired once per *committed* edit — never on a drag's intermediate
    * frames or on the initial mount sync — so the editor can show an
@@ -497,8 +496,8 @@ function WorkflowCanvasInner({
     : [];
 
   const tracedPortByNode = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const step of trace ?? []) map.set(step.node_id, step.port);
+    const map = new Map<string, string | null>();
+    for (const step of trace ?? []) map.set(step.node_id, step.port ?? null);
     return map;
   }, [trace]);
   const tracedEdgeIds = useMemo(() => {
@@ -508,11 +507,8 @@ function WorkflowCanvasInner({
       const from = steps[index]!;
       const to = steps[index + 1]!;
       for (const edge of edges) {
-        if (
-          edge.source === from.node_id &&
-          (edge.sourceHandle ?? 'ok') === from.port &&
-          edge.target === to.node_id
-        ) {
+        if (edge.source === from.node_id && edge.target === to.node_id) {
+          if (from.port && (edge.sourceHandle ?? 'ok') !== from.port) continue;
           ids.add(edge.id);
         }
       }

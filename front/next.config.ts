@@ -25,6 +25,8 @@ const config: NextConfig = {
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost', port: '9000', pathname: '/**' },
       { protocol: 'http', hostname: '127.0.0.1', port: '9000', pathname: '/**' },
+      // LOCAL_MEDIA_HOST is an escape hatch, not for DHCP-assigned NIC IPs —
+      // those change and then signed URLs plus this allowlist both break.
       ...(localMediaHost
         ? [{ protocol: 'http' as const, hostname: localMediaHost, port: '9000', pathname: '/**' }]
         : []),

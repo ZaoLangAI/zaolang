@@ -16,10 +16,11 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
-from app.models.enums import JobStatus, ProviderAttemptStatus, ProviderKind
+from app.models.enums import JobOrigin, JobStatus, ProviderAttemptStatus, ProviderKind
 
 
 class Workflow(Base, TimestampMixin):
@@ -108,6 +109,11 @@ class GenerationJob(Base, TimestampMixin):
     request_json: Mapped[dict[str, Any]] = mapped_column(nullable=False)
     quality_tier: Mapped[str] = mapped_column(String(24), nullable=False)
     status: Mapped[str] = mapped_column(String(24), default=JobStatus.CREATED, nullable=False)
+    # `user` is a C-end request; `sandbox` is an operator try-it from the
+    # workflow editor. Existing rows predate the column and are C-end jobs.
+    origin: Mapped[str] = mapped_column(
+        String(24), default=JobOrigin.USER, server_default=JobOrigin.USER.value, nullable=False
+    )
 
     quoted_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reserved_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -122,6 +128,9 @@ class GenerationJob(Base, TimestampMixin):
     workflow_template_id: Mapped[str | None] = mapped_column(
         ForeignKey("generation_workflow_templates.id", ondelete="SET NULL"), nullable=True
     )
+    # Unpublished canvas graph for a sandbox try-it. When set, the pipeline
+    # walks this snapshot instead of pinning (or mutating) the live template.
+    graph_override_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     selected_route_summary_json: Mapped[dict[str, Any]] = mapped_column(
         default=dict, nullable=False
     )
@@ -277,6 +286,9 @@ class AgentRun(Base):
     # literal "legacy" when the failover pool was empty. Not a foreign key:
     # endpoints are config entries, not rows, and can be renamed or removed.
     endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The system + user prompts actually sent. Nullable for runs recorded
+    # before this column existed; new rows always write both keys.
+    input_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     output_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

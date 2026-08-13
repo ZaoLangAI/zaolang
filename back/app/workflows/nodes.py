@@ -96,8 +96,8 @@ def _emit(
 ) -> None:
     """Writes a real `JobEvent` and publishes it.
 
-    A no-op during a sandbox dry-run: by design that mode never touches a
-    real job's event stream (there is no real job to attach one to).
+    A no-op when `ctx.dry_run` is set: unit tests walk a graph without a
+    persisted job, so there is no event stream to attach one to.
     """
     if ctx.dry_run:
         return
@@ -112,8 +112,9 @@ def _emit(
         payload=payload,
         node_id=ctx.state.get("_current_node_id"),
     )
-    if status in (JobStatus.SUCCEEDED, JobStatus.FAILED):
-        # 只在终态发通知：进度事件太吵，用户只关心结果。
+    if status in (JobStatus.SUCCEEDED, JobStatus.FAILED) and not ctx.is_sandbox:
+        # 只在终态发通知：进度事件太吵，用户只关心结果。沙盒试跑的操作员
+        # 正在看右侧面板，不要再往 C 端通知箱塞一条。
         notifications.notify(
             ctx.session,
             user_id=ctx.job.user_id,
@@ -140,6 +141,7 @@ def _emit(
             "status": event.status,
             "progress": event.progress,
             "message": event.public_message,
+            "node_id": event.node_id,
         },
     )
 
@@ -166,8 +168,9 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
     if verdict.status == ModerationStatus.NEEDS_REVIEW and not ctx.dry_run:
         # Uncertain, not unsafe enough to hard-block: the job still runs, but
         # a human now has something to look at instead of the verdict being
-        # recorded and never followed up on. A sandbox run has no real job
-        # to review, so enqueuing would pollute the ops queue with fake ids.
+        # recorded and never followed up on. Unit-test dry-runs still skip
+        # this because they have no persisted job id; a product sandbox job
+        # is a real row and must enqueue like a C-end request.
         moderation_queue.enqueue_for_review(
             ctx.session,
             subject_type="generation_job",
@@ -320,7 +323,8 @@ def _input_checkpoint(
     """The slice of `ctx.state` a resumed run cannot rebuild for itself.
 
     Mirrors `_provider_checkpoint`'s shape (same four routing-progress keys)
-    so `POST /v1/generation-jobs/{id}/answer` can rebuild a `WorkflowContext`
+    so `POST /v1/generation-jobs/{id}/answer` (and the admin
+    `POST /v1/admin/jobs/{id}/answer`) can rebuild a `WorkflowContext`
     the same way `async_polling._context` does, whichever kind of suspension
     it is resuming from. `output_value` additionally carries this node's own
     first-pass output, since unlike a provider render there is nothing to
@@ -728,7 +732,18 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
         # machine rightly refuses running -> running.
         if ctx.job.status == JobStatus.QUEUED:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.SUBMITTED)
-        _emit(ctx, JobEventType.GENERATING, JobStatus.SUBMITTED, "正在生成", 40)
+        effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
+        _emit(
+            ctx,
+            JobEventType.GENERATING,
+            JobStatus.SUBMITTED,
+            "正在生成",
+            40,
+            payload={
+                "prompt": effective_prompt,
+                "negative_prompt": effective_negative_prompt,
+            },
+        )
         if ctx.job.status != JobStatus.RUNNING:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.RUNNING)
 
@@ -741,7 +756,6 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
                 port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
             )
 
-        effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
         request = GenerationRequest(
             job_id=ctx.job.id,
             operation=ctx.job.operation,
@@ -788,7 +802,11 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
                 JobStatus.RUNNING,
                 "已提交生成任务，正在渲染",
                 45,
-                payload={"external_task_id": result.external_task_id},
+                payload={
+                    "external_task_id": result.external_task_id,
+                    "prompt": effective_prompt,
+                    "negative_prompt": effective_negative_prompt,
+                },
             )
             return NodeResult(
                 port="succeeded",
@@ -920,6 +938,17 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
         requested_duration_seconds=int(ctx.params.get("duration_seconds") or 0),
         delivered_duration_ms=result.duration_ms,
     )
+    if ctx.is_sandbox:
+        # Product sandbox is a real job; successful output still needs a
+        # human look in the moderation queue even though Safety already
+        # passed. C-end jobs do not take this path.
+        moderation_queue.enqueue_for_review(
+            ctx.session,
+            subject_type="generation_job",
+            subject_id=ctx.job.id,
+            stage=ModerationStage.POST_GENERATION,
+            reason_code="SANDBOX_OUTPUT",
+        )
     return NodeResult(port="pass", summary=f"达标，结算 {ctx.state['actual_credits']} 积分")
 
 

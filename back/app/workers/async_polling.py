@@ -344,5 +344,6 @@ def _emit(
             "status": event.status,
             "progress": event.progress,
             "message": event.public_message,
+            "node_id": event.node_id,
         },
     )
