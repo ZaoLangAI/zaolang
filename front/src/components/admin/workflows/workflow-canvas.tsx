@@ -1,5 +1,6 @@
 'use client';
 
+import * as dagre from '@dagrejs/dagre';
 import {
   Background,
   Controls,
@@ -19,7 +20,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { Link } from '@/i18n/navigation';
 import {
@@ -45,9 +46,9 @@ import {
   computeAnchors,
 } from '@/components/admin/workflows/workflow-anchors';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { Select, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/primitives';
-import type { PromptEditTarget } from '@/components/admin/workflows/workflow-editor';
 import type {
   NodeTypeView,
   WorkflowEdgeKind,
@@ -71,6 +72,30 @@ const CATEGORY_ORDER = [
   'control',
   'terminal',
 ] as const;
+
+// A rough card footprint (the 256px node body plus its port column) used only
+// to space `dagre`'s layout out — not pixel-exact, since the operator can
+// still drag a node afterwards; it only has to be big enough that laid-out
+// cards don't overlap.
+const AUTO_LAYOUT_NODE_WIDTH = 320;
+const AUTO_LAYOUT_NODE_HEIGHT = 130;
+
+/**
+ * Bridges `@xyflow/react`'s own theming variables to our semantic tokens.
+ *
+ * The library ships a light palette by default and only offers a dark one
+ * through its `.dark` class (`colorMode` prop) — a separate, un-branded grey
+ * scale. Setting these variables here instead makes the zoom controls follow
+ * whichever tokens `[data-theme]` currently resolves to, the same as every
+ * other themed surface in the console, with no theme-aware JS branch needed.
+ */
+const CONTROLS_THEME_STYLE = {
+  '--xy-controls-button-background-color': 'var(--surface)',
+  '--xy-controls-button-background-color-hover': 'var(--surface-soft)',
+  '--xy-controls-button-color': 'var(--text)',
+  '--xy-controls-button-color-hover': 'var(--primary)',
+  '--xy-controls-button-border-color': 'var(--border)',
+} as CSSProperties;
 
 let localIdCounter = 0;
 function nextNodeId(type: string): string {
@@ -173,12 +198,11 @@ export interface WorkflowCanvasProps {
    * frames or on the initial mount sync — so the editor can show an
    * "unpublished changes" badge and guard navigation. */
   onDirty?: () => void;
-  onEditPrompt: (target: PromptEditTarget) => void;
 }
 
 /**
  * The actual `@xyflow/react` canvas: node palette, drag-to-add, connect,
- * per-node config panel, per-edge kind panel, undo/redo, copy/paste.
+ * double-click-to-edit dialogs, undo/redo, copy/paste.
  *
  * Keyed by the caller on `(operation, templateId)` so switching operations
  * or reloading after a publish/rollback remounts this with a fresh initial
@@ -201,7 +225,6 @@ function WorkflowCanvasInner({
   trace,
   onChange,
   onDirty,
-  onEditPrompt,
 }: WorkflowCanvasProps) {
   const t = useTranslations('adminWorkflows');
   const catalog = useAgentCatalog();
@@ -221,8 +244,11 @@ function WorkflowCanvasInner({
   const [edges, setEdges, onEdgesChangeInternal] = useEdgesState<Edge<WorkflowEdgeData>>(
     initial.edges,
   );
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  // Which node/edge the operator double-clicked into — drives the edit
+  // dialogs below. Independent of `@xyflow/react`'s own click/box-select
+  // state (`node.selected`), which `copySelected` still reads directly.
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
   const [paletteQuery, setPaletteQuery] = useState('');
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -303,6 +329,43 @@ function WorkflowCanvasInner({
     onChange(flowToGraph(next.nodes, next.edges));
     onDirty?.();
   }, [history, nodes, edges, setNodes, setEdges, onChange, onDirty]);
+
+  /**
+   * Runs `dagre` over the graph as it stands (real nodes/edges only — the
+   * canvas-only start/end anchors are derived, never part of this state) and
+   * writes the result back as ordinary node positions, through `commit` like
+   * any other edit. That is what makes it undoable and what makes the new
+   * positions reach `WorkflowNode.position` the next time the graph is
+   * published — no separate persistence path needed.
+   */
+  const autoLayout = useCallback(() => {
+    if (nodes.length === 0) return;
+    const layoutGraph = new dagre.graphlib.Graph();
+    layoutGraph.setGraph({ rankdir: 'LR', nodesep: 56, ranksep: 96, marginx: 24, marginy: 24 });
+    layoutGraph.setDefaultEdgeLabel(() => ({}));
+    for (const node of nodes) {
+      layoutGraph.setNode(node.id, {
+        width: AUTO_LAYOUT_NODE_WIDTH,
+        height: AUTO_LAYOUT_NODE_HEIGHT,
+      });
+    }
+    for (const edge of edges) {
+      layoutGraph.setEdge(edge.source, edge.target);
+    }
+    dagre.layout(layoutGraph);
+    const nextNodes = nodes.map((node) => {
+      const positioned = layoutGraph.node(node.id);
+      if (!positioned) return node;
+      return {
+        ...node,
+        position: {
+          x: positioned.x - AUTO_LAYOUT_NODE_WIDTH / 2,
+          y: positioned.y - AUTO_LAYOUT_NODE_HEIGHT / 2,
+        },
+      };
+    });
+    commit(nextNodes, edges);
+  }, [nodes, edges, commit]);
 
   // Only a drag's *end* is a committed change — every frame in between is
   // `onNodesChangeInternal` moving the node, which must stay cheap.
@@ -397,15 +460,11 @@ function WorkflowCanvasInner({
           !nodeIds.includes(edge.target),
       );
       commit(nextNodes, nextEdges);
-      if (selectedNodeId && nodeIds.includes(selectedNodeId)) setSelectedNodeId(null);
-      if (selectedEdgeId && edgeIds.includes(selectedEdgeId)) setSelectedEdgeId(null);
+      if (editingNodeId && nodeIds.includes(editingNodeId)) setEditingNodeId(null);
+      if (editingEdgeId && edgeIds.includes(editingEdgeId)) setEditingEdgeId(null);
     },
-    [nodes, edges, commit, selectedNodeId, selectedEdgeId],
+    [nodes, edges, commit, editingNodeId, editingEdgeId],
   );
-
-  const deleteSelected = useCallback(() => {
-    deleteByIds(selectedNodeId ? [selectedNodeId] : [], selectedEdgeId ? [selectedEdgeId] : []);
-  }, [deleteByIds, selectedNodeId, selectedEdgeId]);
 
   // Ctrl/Cmd+C copies every currently-selected node (box-select or
   // shift-click); Ctrl/Cmd+V drops them back in with new ids, an offset
@@ -454,45 +513,55 @@ function WorkflowCanvasInner({
     return () => document.removeEventListener('keydown', handler);
   }, [readOnly, undo, redo, copySelected, pasteClipboard]);
 
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null;
+  const editingNode = nodes.find((node) => node.id === editingNodeId) ?? null;
+  const editingEdge = edges.find((edge) => edge.id === editingEdgeId) ?? null;
 
   const updateNodeConfig = (config: Record<string, unknown>) => {
-    if (!selectedNode) return;
+    if (!editingNode) return;
     commitDebounced(
       nodes.map((node) =>
-        node.id === selectedNode.id ? { ...node, data: { ...node.data, config } } : node,
+        node.id === editingNode.id ? { ...node, data: { ...node.data, config } } : node,
       ),
       edges,
     );
   };
 
   const updateNodeTitle = (title: string) => {
-    if (!selectedNode) return;
+    if (!editingNode) return;
     commitDebounced(
       nodes.map((node) =>
-        node.id === selectedNode.id ? { ...node, data: { ...node.data, title } } : node,
+        node.id === editingNode.id ? { ...node, data: { ...node.data, title } } : node,
       ),
       edges,
     );
   };
 
   const updateEdgeKind = (kind: WorkflowEdgeKind) => {
-    if (!selectedEdge) return;
+    if (!editingEdge) return;
     commit(
       nodes,
       edges.map((edge) =>
-        edge.id === selectedEdge.id ? { ...edge, data: { ...edge.data, kind } } : edge,
+        edge.id === editingEdge.id ? { ...edge, data: { ...edge.data, kind } } : edge,
       ),
     );
+  };
+
+  const deleteEditingNode = () => {
+    if (!editingNode) return;
+    deleteByIds([editingNode.id], []);
+  };
+
+  const deleteEditingEdge = () => {
+    if (!editingEdge) return;
+    deleteByIds([], [editingEdge.id]);
   };
 
   const nodeTypeById = useMemo(
     () => new Map(nodes.map((node) => [node.id, node.data.nodeType])),
     [nodes],
   );
-  const availablePorts = selectedNode
-    ? upstreamPorts(selectedNode.id, edges, nodeTypesByType, nodeTypeById)
+  const availablePorts = editingNode
+    ? upstreamPorts(editingNode.id, edges, nodeTypesByType, nodeTypeById)
     : [];
 
   const tracedPortByNode = useMemo(() => {
@@ -577,21 +646,29 @@ function WorkflowCanvasInner({
     return order.map((category) => ({ category, specs: byCategory.get(category) ?? [] }));
   }, [nodeTypeCatalog, paletteQuery, t]);
 
-  const selectedNodeErrors = selectedNode ? (invalidNodeErrors?.get(selectedNode.id) ?? []) : [];
-  const selectedNodeHotspot = selectedNode ? (hotspotCounts?.get(selectedNode.id) ?? 0) : 0;
+  const editingNodeErrors = editingNode ? (invalidNodeErrors?.get(editingNode.id) ?? []) : [];
+  const editingNodeHotspot = editingNode ? (hotspotCounts?.get(editingNode.id) ?? 0) : 0;
 
   return (
     <div className="flex flex-col gap-2">
-      {!readOnly ? (
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" disabled={!history.canUndo} onClick={undo}>
-            ↶ {t('undo')}
-          </Button>
-          <Button size="sm" variant="ghost" disabled={!history.canRedo} onClick={redo}>
-            ↷ {t('redo')}
-          </Button>
-        </div>
-      ) : null}
+      <div className="flex items-center justify-between gap-2">
+        {!readOnly ? (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" disabled={!history.canUndo} onClick={undo}>
+              ↶ {t('undo')}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={!history.canRedo} onClick={redo}>
+              ↷ {t('redo')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={autoLayout}>
+              {t('autoLayout')}
+            </Button>
+          </div>
+        ) : (
+          <div />
+        )}
+        <p className="text-xs text-muted">{t('doubleClickHint')}</p>
+      </div>
 
       <div className="flex h-[70vh] min-h-[520px] gap-3">
         {!readOnly ? (
@@ -674,223 +751,137 @@ function WorkflowCanvasInner({
             nodesDraggable={!readOnly}
             nodesConnectable={!readOnly}
             elementsSelectable
-            // Delete is handled by our own keydown listener (`deleteByIds`),
-            // which also drives undo history — the built-in handler would
-            // remove nodes/edges without ever telling us it happened.
+            // Deletion only happens from the node/edge dialogs below
+            // (`deleteEditingNode` / `deleteEditingEdge`) — deliberately no
+            // Delete/Backspace shortcut, so a stray keypress while typing in
+            // a config field can never remove the node out from under it.
             deleteKeyCode={[]}
-            onNodeClick={(_, node) => {
-              setSelectedNodeId(node.id);
-              setSelectedEdgeId(null);
-            }}
-            onEdgeClick={(_, edge) => {
-              setSelectedEdgeId(edge.id);
-              setSelectedNodeId(null);
-            }}
-            onPaneClick={() => {
-              setSelectedNodeId(null);
-              setSelectedEdgeId(null);
-            }}
+            onNodeDoubleClick={(_, node) => setEditingNodeId(node.id)}
+            onEdgeDoubleClick={(_, edge) => setEditingEdgeId(edge.id)}
             fitView
             proOptions={{ hideAttribution: true }}
+            style={CONTROLS_THEME_STYLE}
           >
             <Background />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable className="!bg-surface" />
           </ReactFlow>
         </div>
-
-        <aside className="w-72 shrink-0 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface p-3">
-          {selectedNode ? (
-            <div className="flex flex-col gap-3">
-              <div>
-                <p className="text-sm font-semibold">
-                  {selectedNode.data.title || selectedNode.data.label}
-                </p>
-                <p className="font-mono text-[11px] text-muted" title={selectedNode.id}>
-                  {selectedNode.data.nodeType}
-                </p>
-                {selectedNode.data.spec ? (
-                  <p className="mt-1 text-xs text-muted">
-                    {tOr(
-                      t,
-                      selectedNode.data.spec.description_key,
-                      selectedNode.data.spec.description,
-                    )}
-                  </p>
-                ) : (
-                  <Badge tone="danger" className="mt-1">
-                    {t('unknownNodeType')}
-                  </Badge>
-                )}
-              </div>
-
-              <TextInput
-                label={t('nodeTitle')}
-                hint={t('nodeTitleHint')}
-                disabled={readOnly}
-                value={selectedNode.data.title ?? ''}
-                maxLength={60}
-                onChange={(event) => updateNodeTitle(event.target.value)}
-              />
-
-              {selectedNodeErrors.length > 0 ? (
-                <div className="rounded-[var(--radius-sm)] border border-danger/40 bg-danger/8 p-2.5">
-                  <p className="text-xs font-medium text-danger">{t('nodeProblems')}</p>
-                  <ul className="mt-1 list-disc pl-4 text-[11px] text-muted">
-                    {selectedNodeErrors.map((message, index) => (
-                      <li key={index}>{message}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : selectedNodeHotspot > 0 ? (
-                <div className="rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 p-2.5">
-                  <p className="text-xs font-medium text-amber">
-                    {t('engineFailureHotspot')} · {selectedNodeHotspot}
-                  </p>
-                  <p className="mt-1 text-[11px] text-muted">{t('engineFailureHotspotHint')}</p>
-                  <Link
-                    href="/admin/audit"
-                    className="mt-1.5 inline-block text-[11px] text-primary underline"
-                  >
-                    {t('viewEngineFailures')}
-                  </Link>
-                </div>
-              ) : null}
-
-              {selectedNode.data.spec?.dynamic_agent_binding ? (
-                <PromptButton
-                  binding={{
-                    role:
-                      typeof selectedNode.data.config[
-                        selectedNode.data.spec.dynamic_agent_binding.role_field
-                      ] === 'string'
-                        ? String(
-                            selectedNode.data.config[
-                              selectedNode.data.spec.dynamic_agent_binding.role_field
-                            ],
-                          )
-                        : '',
-                    agentId:
-                      typeof selectedNode.data.config[
-                        selectedNode.data.spec.dynamic_agent_binding.config_field
-                      ] === 'string'
-                        ? String(
-                            selectedNode.data.config[
-                              selectedNode.data.spec.dynamic_agent_binding.config_field
-                            ],
-                          )
-                        : null,
-                    slot:
-                      typeof selectedNode.data.config[
-                        selectedNode.data.spec.dynamic_agent_binding.slot_field
-                      ] === 'string'
-                        ? String(
-                            selectedNode.data.config[
-                              selectedNode.data.spec.dynamic_agent_binding.slot_field
-                            ],
-                          )
-                        : null,
-                  }}
-                  catalog={catalog}
-                  onEditPrompt={onEditPrompt}
-                />
-              ) : (
-                (selectedNode.data.spec?.agent_bindings ?? []).map((binding) => (
-                  <PromptButton
-                    key={binding.config_field}
-                    binding={{
-                      role: binding.role,
-                      agentId:
-                        typeof selectedNode.data.config[binding.config_field] === 'string'
-                          ? String(selectedNode.data.config[binding.config_field])
-                          : null,
-                      slot: binding.slot,
-                    }}
-                    catalog={catalog}
-                    onEditPrompt={onEditPrompt}
-                  />
-                ))
-              )}
-
-              {selectedNode.data.spec ? (
-                <div className="border-t border-border pt-3">
-                  <p className="mb-2 text-xs font-semibold text-muted">{t('nodeConfig')}</p>
-                  <NodeConfigForm
-                    spec={selectedNode.data.spec}
-                    value={selectedNode.data.config}
-                    disabled={readOnly}
-                    availablePorts={
-                      selectedNode.data.nodeType === 'join' ? availablePorts : undefined
-                    }
-                    onChange={updateNodeConfig}
-                  />
-                </div>
-              ) : null}
-
-              {!readOnly ? (
-                <Button variant="danger" size="sm" onClick={deleteSelected} className="mt-2">
-                  {t('deleteNode')}
-                </Button>
-              ) : null}
-            </div>
-          ) : selectedEdge ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-semibold">{t('edgeProperties')}</p>
-              <p className="text-xs text-muted">
-                {selectedEdge.source}{' '}
-                <span className="font-mono">:{selectedEdge.sourceHandle}</span> →{' '}
-                {selectedEdge.target}
-              </p>
-              <Select
-                label={t('edgeKind')}
-                disabled={readOnly}
-                value={selectedEdge.data?.kind ?? 'sequential'}
-                onChange={(event) => updateEdgeKind(event.target.value as WorkflowEdgeKind)}
-                options={EDGE_KINDS.map((kind) => ({ value: kind, label: t(`edgeKind_${kind}`) }))}
-              />
-              {!readOnly ? (
-                <Button variant="danger" size="sm" onClick={deleteSelected}>
-                  {t('deleteEdge')}
-                </Button>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-xs text-muted">{t('selectHint')}</p>
-          )}
-        </aside>
       </div>
+
+      <Dialog
+        open={editingNode !== null}
+        onClose={() => setEditingNodeId(null)}
+        title={editingNode?.data.label ?? t('nodeConfig')}
+        size="lg"
+        footer={
+          <>
+            {!readOnly ? (
+              <Button variant="danger" onClick={deleteEditingNode}>
+                {t('deleteNode')}
+              </Button>
+            ) : null}
+            <Button variant="ghost" onClick={() => setEditingNodeId(null)}>
+              {t('close')}
+            </Button>
+          </>
+        }
+      >
+        {editingNode ? (
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="font-mono text-[11px] text-muted" title={editingNode.id}>
+                {editingNode.data.nodeType}
+              </p>
+              {!editingNode.data.spec ? (
+                <Badge tone="danger" className="mt-1">
+                  {t('unknownNodeType')}
+                </Badge>
+              ) : null}
+            </div>
+
+            <TextInput
+              label={t('nodeTitle')}
+              disabled={readOnly}
+              value={editingNode.data.title ?? ''}
+              maxLength={60}
+              onChange={(event) => updateNodeTitle(event.target.value)}
+            />
+
+            {editingNodeErrors.length > 0 ? (
+              <div className="rounded-[var(--radius-sm)] border border-danger/40 bg-danger/8 p-2.5">
+                <p className="text-xs font-medium text-danger">{t('nodeProblems')}</p>
+                <ul className="mt-1 list-disc pl-4 text-[11px] text-muted">
+                  {editingNodeErrors.map((message, index) => (
+                    <li key={index}>{message}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : editingNodeHotspot > 0 ? (
+              <div className="rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 p-2.5">
+                <p className="text-xs font-medium text-amber">
+                  {t('engineFailureHotspot')} · {editingNodeHotspot}
+                </p>
+                <p className="mt-1 text-[11px] text-muted">{t('engineFailureHotspotHint')}</p>
+                <Link
+                  href="/admin/audit"
+                  className="mt-1.5 inline-block text-[11px] text-primary underline"
+                >
+                  {t('viewEngineFailures')}
+                </Link>
+              </div>
+            ) : null}
+
+            {editingNode.data.spec ? (
+              <div className="border-t border-border pt-3">
+                <p className="mb-2 text-xs font-semibold text-muted">{t('nodeConfig')}</p>
+                <NodeConfigForm
+                  spec={editingNode.data.spec}
+                  value={editingNode.data.config}
+                  disabled={readOnly}
+                  availablePorts={
+                    editingNode.data.nodeType === 'join' ? availablePorts : undefined
+                  }
+                  onChange={updateNodeConfig}
+                />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={editingEdge !== null}
+        onClose={() => setEditingEdgeId(null)}
+        title={t('edgeProperties')}
+        description={
+          editingEdge
+            ? `${editingEdge.source} :${editingEdge.sourceHandle} → ${editingEdge.target}`
+            : undefined
+        }
+        footer={
+          <>
+            {!readOnly ? (
+              <Button variant="danger" onClick={deleteEditingEdge}>
+                {t('deleteEdge')}
+              </Button>
+            ) : null}
+            <Button variant="ghost" onClick={() => setEditingEdgeId(null)}>
+              {t('close')}
+            </Button>
+          </>
+        }
+      >
+        {editingEdge ? (
+          <Select
+            label={t('edgeKind')}
+            disabled={readOnly}
+            value={editingEdge.data?.kind ?? 'sequential'}
+            onChange={(event) => updateEdgeKind(event.target.value as WorkflowEdgeKind)}
+            options={EDGE_KINDS.map((kind) => ({ value: kind, label: t(`edgeKind_${kind}`) }))}
+          />
+        ) : null}
+      </Dialog>
     </div>
-  );
-}
-
-/** One "编辑 Prompt" button, labelled with the role (and slot, when there is
- * more than one prompt for that role) rather than always the same generic
- * text — the point of the fix being that a multi-binding node's buttons no
- * longer look identical. */
-function PromptButton({
-  binding,
-  catalog,
-  onEditPrompt,
-}: {
-  binding: PromptEditTarget;
-  catalog: AgentCatalog;
-  onEditPrompt: (target: PromptEditTarget) => void;
-}) {
-  const t = useTranslations('adminWorkflows');
-  if (!binding.role) return null;
-  const roleLabel =
-    catalog.nodes.find((node) => node.role === binding.role)?.display_name ?? binding.role;
-  const slots = catalog.slotsOf(binding.role);
-  const label =
-    slots.length > 1 && binding.slot
-      ? `${t('editPromptFor', { role: roleLabel })} · ${
-          slots.find((candidate) => candidate.key === binding.slot)?.label ?? binding.slot
-        }`
-      : t('editPromptFor', { role: roleLabel });
-
-  return (
-    <Button variant="secondary" size="sm" onClick={() => onEditPrompt(binding)}>
-      {label}
-    </Button>
   );
 }

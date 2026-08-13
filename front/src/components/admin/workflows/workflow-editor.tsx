@@ -4,12 +4,9 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAdminSession } from '@/components/admin/admin-session-provider';
-import { AgentSkillEditorDialog } from '@/components/admin/agents/agent-skills-panel';
-import { useAgentCatalog } from '@/components/admin/workflows/agent-catalog';
 import type { SandboxTraceStep } from '@/components/admin/workflows/sandbox-run-inspector';
 import { groupErrorsByNode } from '@/components/admin/workflows/validation-errors';
 import { WorkflowCanvas } from '@/components/admin/workflows/workflow-canvas';
-import { WorkflowCopyDialog } from '@/components/admin/workflows/workflow-copy-dialog';
 import { WorkflowPublishDialog } from '@/components/admin/workflows/workflow-publish-dialog';
 import { WorkflowSandboxDialog } from '@/components/admin/workflows/workflow-sandbox-dialog';
 import { WorkflowSandboxHistoryPanel } from '@/components/admin/workflows/workflow-sandbox-history-panel';
@@ -18,13 +15,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
-import { useToast } from '@/components/ui/toast';
 import { OPERATION_LABEL_KEYS, OPERATIONS, type OperationValue } from '@/lib/admin/operations';
 import { atLeast, type AdminRole } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
-  AgentNode,
-  AgentProfile,
   LogEntry,
   NodeTypeView,
   Page,
@@ -39,81 +33,32 @@ const EMPTY_GRAPH: WorkflowGraphJson = { nodes: [], edges: [] };
 // fixed-and-republished node stops being flagged within a week.
 const HOTSPOT_WINDOW_DAYS = 7;
 
-/** Which agent a canvas node wants edited: the one it binds, or the role's
- * default when it binds nothing. `slot` is display-only here — which of the
- * role's prompts this node actually runs, for the button label; the dialog
- * itself still opens on `node.prompt_slots[0]` and lets the operator switch
- * tabs, per `AgentSkillEditorDialog`'s own contract. */
-export interface PromptEditTarget {
-  role: string;
-  agentId: string | null;
-  slot: string | null;
-}
-
 /**
  * The Coze/ComfyUI-style node editor for `GenerationWorkflowTemplate`.
  *
  * One independent version history per `Operation` (backend: `UniqueConstraint
- * (operation, version)`). The prompt-editing dialog and the "unpublished
- * changes" guard live here rather than per-tab since both are global
- * overlays; everything specific to one operation's data lives in
- * `WorkflowOperationTab`, remounted (via `key`) whenever the operation or
- * the reload token changes — the React-recommended way to reset a whole
- * subtree's state on a prop change, instead of resetting it by hand inside
- * an effect.
+ * (operation, version)`). The "unpublished changes" guard lives here rather
+ * than per-tab since it is a global overlay; everything specific to one
+ * operation's data lives in `WorkflowOperationTab`, remounted (via `key`)
+ * whenever the operation or the reload token changes — the React-recommended
+ * way to reset a whole subtree's state on a prop change, instead of
+ * resetting it by hand inside an effect.
+ *
+ * Editing a node's own Prompt is deliberately out of scope here: agent-bound
+ * nodes only pick *which* agent/role/slot to run (`NodeConfigForm`, backed by
+ * `graph_json`) — the Prompt content itself belongs to the agent module and
+ * is only editable from `/admin/agents`.
  */
 export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeView[] }) {
   const t = useTranslations('adminWorkflows');
   const tProviders = useTranslations('adminProviders');
   const { role } = useAdminSession();
-  const catalog = useAgentCatalog();
-  const { notify } = useToast();
 
   const [operation, setOperationState] = useState<OperationValue>(OPERATIONS[0]);
-  const [promptTarget, setPromptTarget] = useState<PromptEditTarget | null>(null);
-  const [resolved, setResolved] = useState<{ node: AgentNode; profile: AgentProfile } | null>(null);
   const [dirty, setDirty] = useState(false);
   // A navigation the operator asked for while the canvas has unpublished
   // edits — held here until they confirm discarding or cancel.
   const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
-
-  // The canvas knows a role, (maybe) an agent id, and a slot; the prompt
-  // editor needs the actual node and agent rows, so resolve both before
-  // opening. A role with no agent at all (not even the default — e.g. one
-  // that was disabled) used to leave the button silently doing nothing;
-  // now it toasts and never opens an empty dialog.
-  useEffect(() => {
-    if (!promptTarget) return;
-    let cancelled = false;
-    Promise.all([
-      adminApi.get<{ items: AgentNode[] }>('/v1/admin/agent-nodes'),
-      adminApi.get<{ items: AgentProfile[] }>('/v1/admin/agent-profiles', {
-        query: { role: promptTarget.role },
-      }),
-    ])
-      .then(([nodePage, profilePage]) => {
-        if (cancelled) return;
-        const node = nodePage.items.find((item) => item.role === promptTarget.role);
-        const profile =
-          profilePage.items.find((item) => item.id === promptTarget.agentId) ??
-          profilePage.items.find((item) => item.is_default);
-        if (node && profile) {
-          setResolved({ node, profile });
-        } else {
-          setResolved(null);
-          setPromptTarget(null);
-          notify(t('noAgentForRole', { role: node?.display_name ?? promptTarget.role }), 'error');
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setResolved(null);
-        setPromptTarget(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [promptTarget, notify, t]);
 
   // A page navigation loses nothing server-side (nothing is autosaved), but
   // a tab switch or reload inside this SPA-like editor would silently drop
@@ -181,30 +126,7 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
         role={role}
         onDirtyChange={setDirty}
         guardNavigation={guardNavigation}
-        onEditPrompt={(target) => {
-          setResolved(null);
-          setPromptTarget(target);
-        }}
       />
-
-      {promptTarget && resolved ? (
-        <AgentSkillEditorDialog
-          node={resolved.node}
-          profile={resolved.profile}
-          editable={atLeast(role, 'admin')}
-          onClose={() => {
-            setPromptTarget(null);
-            setResolved(null);
-          }}
-          onPublished={() => {
-            // Node cards read the agent's name/model out of this catalogue;
-            // publishing a new prompt version does not change either, but
-            // creating the very first version for a role that had none does
-            // change whether the button below even shows a real agent.
-            void catalog.refresh();
-          }}
-        />
-      ) : null}
 
       <Dialog
         open={pendingNavigation !== null}
@@ -241,14 +163,12 @@ function WorkflowOperationTab({
   role,
   onDirtyChange,
   guardNavigation,
-  onEditPrompt,
 }: {
   operation: OperationValue;
   nodeTypeCatalog: NodeTypeView[];
   role: AdminRole;
   onDirtyChange: (dirty: boolean) => void;
   guardNavigation: (action: () => void) => void;
-  onEditPrompt: (target: PromptEditTarget) => void;
 }) {
   const t = useTranslations('adminWorkflows');
   const tAdmin = useTranslations('admin');
@@ -265,7 +185,6 @@ function WorkflowOperationTab({
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [sandboxOpen, setSandboxOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [copyOpen, setCopyOpen] = useState(false);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const invalidNodeErrors = useMemo(() => groupErrorsByNode(validationErrors), [validationErrors]);
@@ -370,11 +289,6 @@ function WorkflowOperationTab({
           <Button size="sm" variant="ghost" onClick={() => guardNavigation(() => setVersionsOpen(true))}>
             {t('versionHistory')}
           </Button>
-          {canEdit ? (
-            <Button size="sm" variant="ghost" onClick={() => setCopyOpen(true)}>
-              {t('copyToOperations')}
-            </Button>
-          ) : null}
           <Button
             size="sm"
             variant={historyOpen ? 'secondary' : 'ghost'}
@@ -433,7 +347,6 @@ function WorkflowOperationTab({
               trace={sandboxTrace}
               onChange={setWorkingGraph}
               onDirty={() => onDirtyChange(true)}
-              onEditPrompt={onEditPrompt}
             />
           )}
         </div>
@@ -486,15 +399,6 @@ function WorkflowOperationTab({
           reload();
         }}
       />
-
-      {canEdit ? (
-        <WorkflowCopyDialog
-          open={copyOpen}
-          sourceOperation={operation}
-          graph={currentGraph}
-          onClose={() => setCopyOpen(false)}
-        />
-      ) : null}
     </>
   );
 }
