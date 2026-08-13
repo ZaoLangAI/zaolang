@@ -24,9 +24,9 @@ export async function generateMetadata() {
 export default async function ShortformPage({
   searchParams,
 }: {
-  searchParams: Promise<{ draftId?: string }>;
+  searchParams: Promise<{ draftId?: string; seriesId?: string }>;
 }) {
-  const { draftId } = await searchParams;
+  const { draftId, seriesId } = await searchParams;
   const t = await getTranslations('shortform');
 
   // Public and shared by every visitor, so it is cached rather than fetched per
@@ -51,9 +51,17 @@ export default async function ShortformPage({
     const characters = await serverFetchOrNull<Character[]>('/v1/characters', {
       authenticated: true,
     });
+    // Ignores a stale or foreign id instead of handing the studio something
+    // that would only surface as a confusing 404 once it fetches the detail.
+    const validSeriesId = series?.some((item) => item.id === seriesId) ? seriesId : undefined;
     return (
       <Shell title={t('title')} subtitle={t('subtitle')} eyebrow={t('eyebrow')}>
-        <ShortformStudio profiles={profiles} series={series} characters={characters} />
+        <ShortformStudio
+          profiles={profiles}
+          series={series}
+          characters={characters}
+          initialSeriesId={validSeriesId}
+        />
       </Shell>
     );
   }

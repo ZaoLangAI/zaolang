@@ -4,6 +4,15 @@ import { useTranslations } from 'next-intl';
 
 import { useSession } from '@/components/auth/session-provider';
 import {
+  AudioGenerationIllustration,
+  ImageToImageIllustration,
+  ImageToVideoIllustration,
+  RemixIllustration,
+  ShortformIllustration,
+  TextToImageIllustration,
+  TextToVideoIllustration,
+} from '@/components/create/mode-illustrations';
+import {
   IconArrowRight,
   IconImage,
   IconMic,
@@ -25,48 +34,69 @@ type ModeId =
   | 'shortform'
   | 'remix';
 
-const MODES: Array<{ id: ModeId; icon: React.ReactNode; href: string; tone: string }> = [
+const MODES: Array<{
+  id: ModeId;
+  icon: React.ReactNode;
+  illustration: React.ReactNode;
+  href: string;
+  tone: string;
+  accent: string;
+}> = [
   {
     id: 'text_to_image',
     icon: <IconSparkle className="size-5" />,
+    illustration: <TextToImageIllustration className="size-full" />,
     href: '/create/new?mode=text_to_image',
     tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
   },
   {
     id: 'text_to_video',
     icon: <IconVideo className="size-5" />,
+    illustration: <TextToVideoIllustration className="size-full" />,
     href: '/create/new?mode=text_to_video',
     tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
   },
   {
     id: 'image_to_video',
     icon: <IconImage className="size-5" />,
+    illustration: <ImageToVideoIllustration className="size-full" />,
     href: '/create/new?mode=image_to_video',
     tone: 'bg-amber/15 text-amber',
+    accent: 'text-amber',
   },
   {
     id: 'image_to_image',
     icon: <IconWand className="size-5" />,
+    illustration: <ImageToImageIllustration className="size-full" />,
     href: '/create/new?mode=image_to_image',
     tone: 'bg-amber/15 text-amber',
+    accent: 'text-amber',
   },
   {
     id: 'audio_generation',
     icon: <IconMic className="size-5" />,
+    illustration: <AudioGenerationIllustration className="size-full" />,
     href: '/create/new?mode=audio_generation',
     tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
   },
   {
     id: 'shortform',
     icon: <IconPhone className="size-5" />,
+    illustration: <ShortformIllustration className="size-full" />,
     href: '/create/short',
     tone: 'bg-amber/15 text-amber',
+    accent: 'text-amber',
   },
   {
     id: 'remix',
     icon: <IconRemix className="size-5" />,
+    illustration: <RemixIllustration className="size-full" />,
     href: '/discover',
     tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
   },
 ];
 
@@ -117,15 +147,16 @@ export function CreateModeCards({ className }: { className?: string }) {
   };
 
   return (
-    <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-3', className)}>
+    <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
       {MODES.map((mode) => {
         const label = labels[mode.id];
         return (
           <li
             key={mode.id}
-            className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface"
+            className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow hover:shadow-raised"
           >
-            <div className="relative aspect-[16/10] bg-surface-soft">
+            <div className={cn('relative aspect-[16/10] overflow-hidden bg-surface-soft', mode.accent)}>
+              <div className="absolute inset-0 p-3 opacity-90">{mode.illustration}</div>
               <span
                 className={cn(
                   'absolute bottom-3 left-3 grid size-9 place-items-center rounded-[10px]',

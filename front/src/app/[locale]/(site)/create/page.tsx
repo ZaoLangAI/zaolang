@@ -1,14 +1,14 @@
 import { getTranslations } from 'next-intl/server';
 
 import { CreateModeCards } from '@/components/create/create-mode-cards';
-import { GatewayBanner } from '@/components/create/gateway-banner';
+import { CreditsTile } from '@/components/create/credits-tile';
 import { InspirationRecommendations } from '@/components/create/inspiration-recommendations';
 import { RecentDrafts } from '@/components/create/recent-drafts';
-import { CreditsTile } from '@/components/create/credits-tile';
+import { RecentSeries } from '@/components/create/recent-series';
 import { ShortformHeroBanner } from '@/components/create/shortform-hero-banner';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { Draft, GatewayStatus, Me, Page, StyleGalleryEntry } from '@/lib/api/types';
+import type { Draft, Me, Page, Series, StyleGalleryEntry } from '@/lib/api/types';
 
 export async function generateMetadata() {
   const t = await getTranslations('createPage');
@@ -18,11 +18,11 @@ export async function generateMetadata() {
 export default async function CreatePage() {
   const t = await getTranslations('createPage');
 
-  // All four are optional: an anonymous visitor still gets the full create
+  // All five are optional: an anonymous visitor still gets the full create
   // centre and only hits the login dialog when they choose a mode.
-  const [me, gateway, drafts, styleGallery] = await Promise.all([
+  const [me, series, drafts, styleGallery] = await Promise.all([
     serverFetchOrNull<Me>('/v1/auth/me', { authenticated: true }),
-    serverFetchOrNull<GatewayStatus>('/v1/gateway/status', { revalidate: 30 }),
+    serverFetchOrNull<Series[]>('/v1/series', { authenticated: true }),
     serverFetchOrNull<Page<Draft>>('/v1/drafts', { authenticated: true, query: { limit: 6 } }),
     serverFetchOrNull<Page<StyleGalleryEntry>>('/v1/style-gallery'),
   ]);
@@ -34,9 +34,11 @@ export default async function CreatePage() {
         <CreditsTile available={me?.available_credits ?? null} />
       </div>
 
-      <GatewayBanner status={gateway} />
+      <RecentSeries series={series} />
 
       <ShortformHeroBanner />
+
+      <RecentDrafts drafts={drafts?.items ?? []} />
 
       <section>
         <h2 className="text-lg font-semibold">{t('startCreating')}</h2>
@@ -45,8 +47,6 @@ export default async function CreatePage() {
       </section>
 
       <InspirationRecommendations entries={styleGallery?.items ?? []} />
-
-      <RecentDrafts drafts={drafts?.items ?? []} />
     </div>
   );
 }

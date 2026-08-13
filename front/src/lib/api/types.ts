@@ -70,7 +70,6 @@ export type CreationSkillVisibility = S['CreationSkillVisibility'];
 export type Tag = S['TagResponse'];
 export type RedeemCodeRequest = S['RedeemCodeRequest'];
 export type RedeemCodeResponse = S['RedeemCodeResponse'];
-export type GatewayStatus = S['GatewayStatusResponse'];
 export type CountResponseLike = S['CountResponse'];
 
 export type Visibility = S['Visibility'];

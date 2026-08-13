@@ -59,11 +59,14 @@ export function ShortformStudio({
   profiles,
   series,
   characters,
+  initialSeriesId,
 }: {
   profiles: ShortformProfiles;
   /** `null` means the visitor is signed out — the whole section stays hidden. */
   series: Series[] | null;
   characters: Character[] | null;
+  /** From the create page's "continue episode N" deep link (`?seriesId=`). */
+  initialSeriesId?: string;
 }) {
   const t = useTranslations('shortform');
   const tRemix = useTranslations('remixPage');
@@ -115,7 +118,7 @@ export function ShortformStudio({
 
   const [seriesList, setSeriesList] = useState<Series[]>(series ?? []);
   const [characterLibrary] = useState<Character[]>(characters ?? []);
-  const [seriesId, setSeriesId] = useState('');
+  const [seriesId, setSeriesId] = useState(() => initialSeriesId ?? '');
   const [episodeNumber, setEpisodeNumber] = useState<number | null>(null);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
   const [newSeriesTitle, setNewSeriesTitle] = useState('');

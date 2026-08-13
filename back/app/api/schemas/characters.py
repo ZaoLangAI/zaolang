@@ -42,20 +42,25 @@ class SeriesAddCharacterRequest(ApiModel):
     character_id: str
 
 
-class SeriesResponse(Timestamped):
-    id: str
-    title: str
-    description: str | None = None
-    shortform_profile_key: str | None = None
-    character_ids: list[str] = Field(default_factory=list)
-
-
 class SeriesEpisodeSummary(ApiModel):
     work_id: str
     episode_number: int | None = None
     title: str
     cover_url: str | None = None
     published_at: dt.datetime | None = None
+
+
+class SeriesResponse(Timestamped):
+    id: str
+    title: str
+    description: str | None = None
+    shortform_profile_key: str | None = None
+    character_ids: list[str] = Field(default_factory=list)
+    # Populated only by the list endpoint (the create page's "recent series"
+    # rail); the detail endpoint already carries the full `episodes` list
+    # below and leaves these at their defaults instead of duplicating it.
+    episode_count: int = 0
+    latest_episode: SeriesEpisodeSummary | None = None
 
 
 class SeriesDetailResponse(SeriesResponse):

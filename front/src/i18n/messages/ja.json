@@ -1125,6 +1125,12 @@
     "autoSaved": "{when} に自動保存",
     "noDrafts": "下書きはまだありません",
     "noDraftsHint": "どの方法でも始めれば、下書きが自動で並びます。",
+    "recentSeriesTitle": "最近のシリーズ",
+    "recentSeriesHint": "既存のシリーズから次のエピソードを撮影。キャストとエピソード番号は自動で引き継がれます。",
+    "noSeries": "まだシリーズがありません",
+    "noSeriesHint": "短編動画の作成から始めましょう。最初のシリーズを作れば、以降のエピソードも続けて追加できます。",
+    "episodeCount": "{count} 話",
+    "continueEpisode": "続きを作成 · 第 {number} 話",
     "modeTextToImageTitle": "テキストから画像",
     "modeTextToImageDesc": "被写体・スタイル・構図を描写し、ゼロから一枚の画像を生成します。",
     "modeTextToImageTag": "テキストから画像 · 8+ クレジット",
@@ -1220,18 +1226,6 @@
     "license": "AGPL-3.0",
     "docs": "ドキュメント",
     "learn": "学習センター"
-  },
-  "gateway": {
-    "title": "スマートゲートウェイが稼働中",
-    "eyebrow": "SMART GATEWAY",
-    "description": "オープンモデルを優先し、品質や納期が足りないときだけ有料 API を使います。安全・計画・生成・品質のエージェントがタスクグラフで協調します。",
-    "routes": "利用可能な経路",
-    "savings": "デモ節約率",
-    "status": "ゲートウェイ状態",
-    "healthy": "正常",
-    "degraded": "縮退",
-    "down": "利用不可",
-    "degradedNotice": "ゲートウェイはローカル推論に縮退しています。結果は利用できますが説明は簡略です。"
   },
   "iosOnboarding": {
     "page1Title": "リミックスのたびに創作の系譜が残る",

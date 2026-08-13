@@ -1125,6 +1125,12 @@
     "autoSaved": "自动保存于 {when}",
     "noDrafts": "还没有草稿",
     "noDraftsHint": "任意一种方式开始，草稿会自动出现在这里。",
+    "recentSeriesTitle": "最近短剧",
+    "recentSeriesHint": "接着已有系列继续拍下一集，角色阵容和分集号会自动带上。",
+    "noSeries": "还没有短剧系列",
+    "noSeriesHint": "从短视频创作开始，创建第一个系列后即可持续更新分集。",
+    "episodeCount": "共 {count} 集",
+    "continueEpisode": "继续创作 · 第 {number} 集",
     "modeTextToImageTitle": "文字生成图片",
     "modeTextToImageDesc": "描述主体、风格与构图，从零生成一张新图。",
     "modeTextToImageTag": "文生图 · 8+ 积分",
@@ -1220,18 +1226,6 @@
     "license": "AGPL-3.0",
     "docs": "文档",
     "learn": "学习中心"
-  },
-  "gateway": {
-    "title": "智能网关体正在工作",
-    "eyebrow": "SMART GATEWAY",
-    "description": "开源模型优先，质量与时限不足时使用付费 API；安全、规划、生成和质检子 Agent 按任务图协作。",
-    "routes": "可用路线",
-    "savings": "演示节省",
-    "status": "网关状态",
-    "healthy": "正常",
-    "degraded": "降级",
-    "down": "不可用",
-    "degradedNotice": "智能网关暂时降级到本地推理，结果仍可用但解释会更简略。"
   },
   "iosOnboarding": {
     "page1Title": "每一次二创都留下创作链",

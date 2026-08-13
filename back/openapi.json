@@ -22464,6 +22464,21 @@
             "type": "array",
             "title": "Character Ids"
           },
+          "episode_count": {
+            "type": "integer",
+            "title": "Episode Count",
+            "default": 0
+          },
+          "latest_episode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeriesEpisodeSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "characters": {
             "items": {
               "$ref": "#/components/schemas/CharacterResponse"
@@ -22593,6 +22608,21 @@
             },
             "type": "array",
             "title": "Character Ids"
+          },
+          "episode_count": {
+            "type": "integer",
+            "title": "Episode Count",
+            "default": 0
+          },
+          "latest_episode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeriesEpisodeSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

@@ -170,6 +170,43 @@ def list_series(session: Session, *, user_id: str) -> list[Series]:
 
 
 @dataclass(slots=True)
+class SeriesRecency:
+    episode_count: int
+    latest_work: Work | None
+
+
+def series_recency(session: Session, *, series_ids: list[str]) -> dict[str, SeriesRecency]:
+    """Per-series episode count and most recent episode, in one query.
+
+    Ordering within each `series_id` group puts the highest episode number
+    (ties broken by publish time) first, so the first row seen per group is
+    the "latest episode" the create page's recent-series rail links into.
+    """
+    if not series_ids:
+        return {}
+    works = session.scalars(
+        select(Work)
+        .where(Work.series_id.in_(series_ids))
+        .order_by(
+            Work.series_id,
+            Work.episode_number.desc().nulls_last(),
+            Work.published_at.desc().nulls_last(),
+        )
+    )
+    result: dict[str, SeriesRecency] = {}
+    for work in works:
+        series_id = work.series_id
+        if series_id is None:
+            continue
+        info = result.get(series_id)
+        if info is None:
+            result[series_id] = SeriesRecency(episode_count=1, latest_work=work)
+        else:
+            info.episode_count += 1
+    return result
+
+
+@dataclass(slots=True)
 class SeriesDetail:
     series: Series
     characters: list[Character]

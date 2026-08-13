@@ -1125,6 +1125,12 @@
     "autoSaved": "Auto-saved {when}",
     "noDrafts": "No drafts yet",
     "noDraftsHint": "Start any way you like and drafts appear here automatically.",
+    "recentSeriesTitle": "Recent series",
+    "recentSeriesHint": "Pick up a series and shoot the next episode — cast and episode number carry over automatically.",
+    "noSeries": "No series yet",
+    "noSeriesHint": "Start from short-video creation. Once you create your first series, you can keep adding episodes.",
+    "episodeCount": "{count} episodes",
+    "continueEpisode": "Continue · Episode {number}",
     "modeTextToImageTitle": "Text to image",
     "modeTextToImageDesc": "Describe the subject, style and framing to generate a still from nothing.",
     "modeTextToImageTag": "Text to image · 8+ credits",
@@ -1220,18 +1226,6 @@
     "license": "AGPL-3.0",
     "docs": "Docs",
     "learn": "Learn"
-  },
-  "gateway": {
-    "title": "The smart gateway is at work",
-    "eyebrow": "SMART GATEWAY",
-    "description": "Open models first, paid APIs when quality or deadline demands it. Safety, planning, generation and review agents collaborate over a task graph.",
-    "routes": "Routes available",
-    "savings": "Demo savings",
-    "status": "Gateway status",
-    "healthy": "Healthy",
-    "degraded": "Degraded",
-    "down": "Unavailable",
-    "degradedNotice": "The gateway fell back to local inference. Results still work, but explanations are terser."
   },
   "iosOnboarding": {
     "page1Title": "Every remix keeps its lineage",

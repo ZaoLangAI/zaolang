@@ -7102,6 +7102,12 @@ export interface components {
             shortform_profile_key?: string | null;
             /** Character Ids */
             character_ids?: string[];
+            /**
+             * Episode Count
+             * @default 0
+             */
+            episode_count: number;
+            latest_episode?: components["schemas"]["SeriesEpisodeSummary"] | null;
             /** Characters */
             characters?: components["schemas"]["CharacterResponse"][];
             /** Episodes */
@@ -7147,6 +7153,12 @@ export interface components {
             shortform_profile_key?: string | null;
             /** Character Ids */
             character_ids?: string[];
+            /**
+             * Episode Count
+             * @default 0
+             */
+            episode_count: number;
+            latest_episode?: components["schemas"]["SeriesEpisodeSummary"] | null;
         };
         /** ServiceHealth */
         ServiceHealth: {
