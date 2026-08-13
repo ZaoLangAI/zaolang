@@ -44,7 +44,7 @@ make dev-purge-queues  # 清空 Celery 队列（先停 worker）
 
 ### 受信任局域网访问
 
-`make dev` 默认让 Web 与 API 监听 `0.0.0.0`。要让同一局域网内的其他主机完整使用登录、SSE、上传和媒体预览，还需要把以下地址统一为运行主机的固定局域网 IP（示例为 `192.168.1.10`）：
+`make dev` 默认让 Web 与 API 只监听 `localhost`（本机回环）。要让同一局域网内的其他主机完整使用登录、SSE、上传和媒体预览，需要把 Web/API 改绑到 `0.0.0.0`，并把以下地址统一为运行主机的固定局域网 IP（示例为 `192.168.1.10`）：
 
 - `back/.env`：`API_BASE_URL=http://192.168.1.10:8000`、`WEB_BASE_URL=http://192.168.1.10:3000`、`S3_PUBLIC_ENDPOINT_URL=http://192.168.1.10:9000`，并把 `http://192.168.1.10:3000` 加入 `CORS_ORIGINS`；
 - `front/.env.local`：`NEXT_PUBLIC_API_URL=http://192.168.1.10:8000`、`NEXT_ALLOWED_DEV_ORIGINS=192.168.1.10`、`LOCAL_MEDIA_HOST=192.168.1.10`、`ALLOW_LOCAL_IMAGE_HOSTS=1`；`API_INTERNAL_URL` 仍保留 `http://localhost:8000`。`NEXT_ALLOWED_DEV_ORIGINS` 只填写主机名或 IP，多个值用逗号分隔，不带协议与端口。

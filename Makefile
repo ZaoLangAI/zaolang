@@ -88,7 +88,7 @@ dev: ## 同时启动 API、Worker 与 Web
 
 .PHONY: dev-api
 dev-api: ## 启动 FastAPI（含 AgentOS）
-	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port 8000
 
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（订阅全部队列）
@@ -106,7 +106,7 @@ dev-beat: ## 启动 Celery Beat（异步供应商轮询与超时回收）
 
 .PHONY: dev-web
 dev-web: ## 启动 Next.js
-	cd front && $(FNM_ENV) && npm run dev -- --hostname 0.0.0.0
+	cd front && $(FNM_ENV) && npm run dev -- --hostname localhost
 
 # --- quality gates -------------------------------------------------------
 
