@@ -80,7 +80,7 @@ make dev-purge-queues  # 清空 Celery 队列（先停 worker）
 `back/.env` 里的 `LLM_MODE` 有三档：
 
 - `openai_compatible`：只走真实网关，失败就报错。
-- `stub`：只走确定性 stub，不需要密钥、不产生费用。**pytest 与 CI 强制这一档。**
+- `stub`：只走确定性 stub，不需要密钥、不产生费用。**pytest 与 `make check` 强制这一档。**
 - `auto`（默认）：优先真实网关，超时或报错自动降级到 stub，降级次数与原因写入 `AgentRun`，界面上明确标出「降级中」。
 
 本地想跑真实模型，把 AIHubMix 的 key 放进 `back/.env` 的 `LLM_API_KEY`，然后：
@@ -106,7 +106,7 @@ make test-a11y      # axe 扫描，深浅两套主题
 make qa-visual      # 双主题 × 三视口截图
 ```
 
-E2E、无障碍与类型漂移检查**不进 CI**：它们需要真实数据库与种子数据，跑在本地更快也更可控。代价是「本地没跑就合并」的风险，因此 `make check` 被 pre-commit 钩子挂住了大部分。
+E2E 与无障碍是额外的本地套件：它们需要真实数据库与种子数据，不进 `make check`。代价是「本地没跑就合并」的风险，因此提交前应跑 `make check`，pre-commit 钩子会拦住大部分静态问题。
 
 ### 后端测试分层
 

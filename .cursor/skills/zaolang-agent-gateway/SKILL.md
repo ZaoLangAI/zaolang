@@ -14,12 +14,12 @@ disable-model-invocation: true
 
 | 文件 | 内容 |
 | --- | --- |
-| `back/app/agents/safety.py` / `planner.py` / `quality.py` | 三个判断类 Agent（模块内常量作 fallback） |
+| `back/app/agents/safety.py` / `planner.py` / `quality.py` / `editor_planner.py` | 三个判断类 Agent + 短剧时间线规划器（模块内常量作 fallback）。`editor_planner` 只记 `AgentRun`，不建 `GenerationJob`，不进生成 DAG；工具白名单与产品路径见 `zaolang-editor-drama` |
 | `back/app/agents/copywriter.py` | 辅助生成类（`assist`）Agent：只生成/润色文案，不产出通过/拒绝式判断，`copy_generate` 节点只有一个 `ok` 输出端口，不参与门禁 |
 | `back/app/agents/intent_router.py` | `classify()`（档位建议，只降不升）与 `select_provider()`（LLM 路由选型，见不变量 #1） |
 | `back/app/domain/agent_skills/service.py` | `AgentNode`（角色）/ `AgentProfile`（智能体本体）/ `AgentSkill` 版本化 Prompt，`resolve_prompt(role, agent_id, slot)` |
 | `back/app/domain/agent_skills/presets.py` | `ROLE_PRESETS`：管理台建智能体时角色下拉的**唯一**来源（代码维护的目录，不是表） |
-| `back/app/domain/agent_skills/templates.py` | `SKILL_TEMPLATES`：技能编辑器「从模板填充」的起始提示词，内置五角色的模板直接引用各模块的 `SYSTEM_PROMPT` 常量 |
+| `back/app/domain/agent_skills/templates.py` | `SKILL_TEMPLATES`：技能编辑器「从模板填充」的起始提示词，内置角色的模板直接引用各模块的 `SYSTEM_PROMPT` 常量 |
 | `back/app/agents/custom.py` | `custom_agent` 节点用的通用判断执行器，角色在运行时由节点配置给出 |
 | `back/app/agents/router.py` | 硬过滤 + LLM 选型编排：`ProviderCapability` / `Candidate` / `RoutingDecision` / `route()`，不含打分公式 |
 | `back/app/agents/tools.py` | **受控工具白名单**，Agent 唯一能碰领域服务的入口 |
@@ -33,7 +33,7 @@ disable-model-invocation: true
 | `back/app/llm/failover.py` | LLM 网关独立 failover 池：并发占用、熔断、按主/备角色 + 优先级选端点（单一通用池，四个 Agent 角色共用，不再分场景） |
 | `back/app/llm/normalize.py` | `strip_thinking` / `extract_json` / `normalize_completion` |
 | `back/app/llm/capabilities.py` | 按错误反馈学习模型能力（温度、JSON 模式等） |
-| `back/app/llm/stub.py` | 确定性 stub，测试与 CI 用 |
+| `back/app/llm/stub.py` | 确定性 stub，测试与 `make check` 用 |
 
 ## 不可破坏的不变量
 
@@ -42,7 +42,7 @@ disable-model-invocation: true
 3. **`effective_cost` 包含固定 1.2 的失败重试放大**；少于 20 个样本用 0.8 保守先验。
 4. **每个候选的淘汰理由都要落 `ProviderAttempt` / 决策记录**，后台「决策逐候选回放」依赖它。
 5. **Agent 输出不是事实，落库才是**。Agent 只能通过 `tools.py` 白名单调领域服务；不要给 Agent 直接的 session 或任意 SQL。
-6. **测试与 CI 强制 `LLM_MODE=stub`**。三档模式：`openai_compatible`（只走真实网关，失败即报错）、`stub`（确定性假响应）、`auto`（网关失败自动降级到 stub）。降级必须写入 `AgentRun` 的降级标记与原因，并在界面明确标识。
+6. **测试与 `make check` 强制 `LLM_MODE=stub`**。三档模式：`openai_compatible`（只走真实网关，失败即报错）、`stub`（确定性假响应）、`auto`（网关失败自动降级到 stub）。降级必须写入 `AgentRun` 的降级标记与原因，并在界面明确标识。
 7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级，以及 `input_json`（`{system_prompt, user_prompt}`，后台点节点回放用）。后台智能体完全建立在这张表上。
 8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
 9. **密钥只通过 `/admin/models` 专用掩码 API 管理**，不进通用配置 API、JSON 编辑器、日志或 prompt；环境变量只用于本地 seed 首次引导。
@@ -83,5 +83,5 @@ disable-model-invocation: true
 
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_agent_gateway.py tests/unit/test_llm_normalize.py tests/unit/test_llm_gateway_modes.py tests/unit/test_llm_capabilities.py -v
-make test-llm    # @pytest.mark.live 连通性冒烟，只在本地有密钥时跑，不进 CI
+make test-llm    # @pytest.mark.live 连通性冒烟，只在本地有密钥时跑，不进 make check
 ```

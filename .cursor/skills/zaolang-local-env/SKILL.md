@@ -50,8 +50,9 @@ make logs
 ## 改造切入点
 
 - **新增外部依赖**：先加进 `infra/docker-compose.yml` 并带健康检查（`make up` 用 `--wait`），再在 `back/app/config.py` 加配置项与默认值，最后进 `back/app/api/health.py` 的探针，否则后台系统健康页看不到它。
-- **新增环境变量**：`config.py` 加字段 → `back/.env.example` 加占位符 → 如果 CI 需要，改 `.github/workflows/backend.yml` 的 env。三处缺一，别人 clone 下来就跑不起来。
-- **新增 Celery 队列**：`back/app/workers/celery_app.py` 注册路由后，务必同步 `Makefile` 的 `dev-worker` 的 `-Q` 列表与后台健康页的队列清单。
+- **新增环境变量**：`config.py` 加字段 → `back/.env.example` 加占位符。两处缺一，别人 clone 下来就跑不起来。
+- **新增 Celery 队列**：`back/app/workers/celery_app.py` 注册路由后，务必同步 `Makefile` 的 `dev-worker` 的 `-Q` 列表与后台健康页的队列清单。剪辑分析队列是 `media_analysis`，已在 `dev-worker -Q` 里；漏掉它，上传源素材后分析会一直挂起。
+- **本地打开短剧剪辑**：`make seed` 的 `_seed_editor_flags` 会把五枚 editor flag 写成 true，并给 `linhai` 一条 `kind=drama` 演示项目。`DEFAULT_CONFIGS` 仍是 false——空库/生产默认关。不要把本地 seed 的 true 写回 schema 默认值。
 
 ## 验证
 

@@ -66,7 +66,7 @@ docs/         文档站源码与运维手册
 
 ### 参与贡献
 
-提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/)，版本号与 CHANGELOG 由 release-please 自动生成。提交前请运行 `make check`。
+提交信息建议遵循 [Conventional Commits](https://www.conventionalcommits.org/)。发版时手改 `front/package.json` 的 `version` 与 `APP_VERSION`。提交前请运行 `make check`。
 
 ### 许可
 

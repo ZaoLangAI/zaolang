@@ -1,6 +1,6 @@
 ---
 name: zaolang-overview
-description: 造浪（zaolang）仓库的总索引与路由表：说明 front/back/ios/infra 的分工、20 个模块 skill 的边界，以及按修改意图该显式加载哪一个。Use when working anywhere in the zaolang repository, or when the user mentions 造浪 / zaolang, 作品与创作链 (works, lineage), 积分账本 (credits ledger), 生成任务 (generation jobs), 智能网关 (agent gateway), 后台运维台 (admin console), iOS 客户端, or asks where a feature lives in this codebase.
+description: 造浪（zaolang）仓库的总索引与路由表：说明 front/back/ios/infra 的分工、22 个模块 skill 的边界，以及按修改意图该显式加载哪一个。Use when working anywhere in the zaolang repository, or when the user mentions 造浪 / zaolang, 作品与创作链 (works, lineage), 积分账本 (credits ledger), 生成任务 (generation jobs), 智能网关 (agent gateway), 后台运维台 (admin console), 后台数据统计 (admin statistics), iOS 客户端, 短剧剪辑 (drama editor), or asks where a feature lives in this codebase.
 ---
 
 # 造浪（zaolang）总览
@@ -40,10 +40,12 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | 三语文案、locale 与 region、货币日期格式 | `zaolang-i18n-region` |
 | 创作链 DAG 图谱、版本参数 diff | `zaolang-lineage-graph` |
 | 后台外壳、独立登录、RBAC 导航、表格与危险操作组件 | `zaolang-admin-console` |
-| 后台运维域的接口与页面（含技能库、兑换码、日志中心） | `zaolang-admin-ops` |
+| 后台运维域的接口与页面（含技能库、画风库、兑换码、日志中心） | `zaolang-admin-ops` |
+| 后台数据统计中心、日趋势 timeseries、空日补零 | `zaolang-admin-statistics` |
 | iOS 客户端（SwiftUI 界面、ZaolangKit、XcodeGen、色板/文案生成脚本） | `zaolang-ios-client` |
-| GitHub Actions、Docker 镜像、release-please、文档站 | `zaolang-ci-release` |
+| 本地门禁、Docker 镜像、文档站 | `zaolang-ci-release` |
 | 写测试、跑 E2E、无障碍与视觉 QA | `zaolang-testing-qa` |
+| 短剧时间线、EditCommand、租约、浏览器导出、editor_planner、Remote MCP | `zaolang-editor-drama` |
 
 跨模块改动按依赖方向加载：`data-model` → `domain/*` → `api-contract` → 前端。
 

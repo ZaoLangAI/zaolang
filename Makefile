@@ -45,6 +45,10 @@ reset: ## 销毁容器与数据卷后重建
 logs: ## 跟踪容器日志
 	$(COMPOSE) logs -f
 
+.PHONY: release-up
+release-up: ## 本地构建镜像并启动一键体验编排
+	docker compose -f infra/docker-compose.release.yml up -d --build
+
 # --- database ------------------------------------------------------------
 
 .PHONY: migrate
@@ -94,7 +98,7 @@ dev-api: ## 启动 FastAPI（含 AgentOS）
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（生成与质检队列，不含供应商轮询）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile \
+		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis \
 		--loglevel=info
 
 .PHONY: dev-poller
@@ -152,7 +156,7 @@ test-back: ## 后端测试（强制 stub 模式保证确定性）
 	cd back && LLM_MODE=stub $(CONDA_RUN) pytest -m "not live" --cov=app --cov-report=term-missing
 
 .PHONY: test-llm
-test-llm: ## LLM 网关连通性冒烟（需要真实密钥，不进 CI）
+test-llm: ## LLM 网关连通性冒烟（需要真实密钥，不进 make check）
 	cd back && $(CONDA_RUN) pytest -m live -v
 
 .PHONY: test-front
