@@ -5,7 +5,7 @@ import { DiscoverHeroSkeleton } from '@/components/discover/hero-skeleton';
 import { HeroCarousel } from '@/components/discover/hero-carousel';
 import { InspirationMasonry } from '@/components/discover/inspiration-masonry';
 import { InspirationSkeleton } from '@/components/discover/inspiration-skeleton';
-import { TagFilter } from '@/components/discover/tag-filter';
+import { DiscoverSort, TagFilter } from '@/components/discover/tag-filter';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Page, Tag, WorkDetail, WorkSummary } from '@/lib/api/types';
@@ -53,8 +53,10 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
 
 async function DiscoverHero({ filters }: { filters: Filters }) {
   const t = await getTranslations('discover');
+  // Featured stays popularity-ranked so "本期精选" does not become "newest"
+  // when the wall below is sorted by time or remix count.
   const feed = (await serverFetchOrNull<Page<WorkSummary>>('/v1/works', {
-    query: { ...filters, limit: HERO_SLIDES },
+    query: { q: filters.q, tag: filters.tag, sort: 'popular', limit: HERO_SLIDES },
   })) ?? { items: [] };
 
   // The carousel shows several prominent works in full. Fetching each detail
@@ -88,15 +90,19 @@ async function InspirationSection({ filters }: { filters: Filters }) {
   const works = feed ?? { items: [] };
   const tagPage = tags ?? { items: [] };
 
-  // The hero runs the same query with `limit: HERO_SLIDES`, so those items are
-  // already on screen above the wall. The cursor still points at the last item
-  // of the full page, so dropping them here leaves no gap.
-  const tiles = works.items.slice(HERO_SLIDES);
+  // Hero is pinned to `popular`. Only drop its leading tiles when this page
+  // is the same effective query — a keyword search ignores sort on both
+  // sides, and an unfiltered / tagged popular wall is the same browse.
+  const wallMatchesHero = Boolean(filters.q) || filters.sort === 'popular';
+  const tiles = wallMatchesHero ? works.items.slice(HERO_SLIDES) : works.items;
 
   return (
     <section>
       <SectionHeading title={t('inspiration')} description={t('inspirationHint')} />
-      <TagFilter tags={tagPage.items} active={filters.tag} q={filters.q} sort={filters.sort} />
+      <div className="mt-4 flex flex-col gap-2">
+        <TagFilter tags={tagPage.items} active={filters.tag} q={filters.q} sort={filters.sort} />
+        <DiscoverSort q={filters.q} tag={filters.tag} sort={filters.sort} />
+      </div>
       <div className="mt-5">
         {tiles.length > 0 ? (
           <InspirationMasonry

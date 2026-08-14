@@ -14,7 +14,8 @@ disable-model-invocation: true
 
 | 路径 | 内容 |
 | --- | --- |
-| `front/src/app/[locale]/(site)/` | 首页、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
+| `front/src/app/[locale]/(site)/` | 首页（重定向到 `discover`）、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
+| `front/src/components/discover/` | 灵感墙：`tag-filter`（`TagFilter` + `DiscoverSort`）、`inspiration-masonry`、hero 轮播；排序/标签走 URL，见 `zaolang-discovery-search` |
 | `front/src/components/ui/` | `button` / `dialog` / `field` / `primitives` / `spinner` / `toast` / `icons` |
 | `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer` / `brand` |
 | `front/src/components/auth/` | `login-dialog` / `session-provider` / `sign-in-prompt` |
@@ -42,6 +43,7 @@ disable-model-invocation: true
 ## 改造切入点
 
 - **加一个页面**：在 `(site)/` 下建目录（RSC 默认服务端渲染，数据用 `lib/api/server.ts` 取）→ 交互部分拆成 `'use client'` 组件 → 三语文案进 `src/i18n/messages/*.json`（三份都要）→ 加进命令面板的可跳转项 → 视觉与无障碍套件的页面清单（`e2e/visual.spec.ts`、`e2e/a11y.spec.ts`）。
+- **改发现页筛选/排序**：`TagFilter` / `DiscoverSort` 用 `Link` 写 `q`/`tag`/`sort`，缺省 `popular` 不进 query；Hero 固定 popular。契约见 `zaolang-discovery-search`。
 - **加一个共享组件**：放 `components/ui/`，用 `lib/cn.ts` 合并类名，状态齐全，键盘可达。
 - **调 API client**：错误一律 `ApiError`（带后端错误码），不要在组件里解析响应体。
 - **加一个表单**：用 `components/ui/field.tsx`，把后端 422 的字段路径映射到内联错误，而不是弹一个通用横幅。

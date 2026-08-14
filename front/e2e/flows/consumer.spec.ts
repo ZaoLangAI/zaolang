@@ -50,6 +50,13 @@ test.describe('anonymous browsing', () => {
     expect(problems(), 'console errors while browsing').toEqual([]);
   });
 
+  test('the inspiration wall can be sorted by recency', async ({ page }) => {
+    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.getByRole('navigation', { name: '排序' }).getByRole('link', { name: '最新' }).click();
+    await expect(page).toHaveURL(/sort=recent/);
+    await expect(page.getByRole('list', { name: '灵感推荐' })).toBeVisible();
+  });
+
   test('the withdrawn work is not in the feed', async ({ page }) => {
     // Searched by name, so a leak would show up rather than being buried under
     // the popular sort. The title still appears as the tombstone in its remix's

@@ -70,6 +70,7 @@ APNs 之外更进一步的推送场景（静默推送刷新角标等）、StoreK
 
 ## 改造切入点
 
+- **发现页排序与 Web 对齐三档**（`recent`/`popular`/`remixed`）：iOS 墙默认 `recent`、Web 默认 `popular`；两边 Hero 都固定 `popular`。加第四档要同时改 `browse`、`DiscoverSort`、`WorksSort` 与三语 `discover.sort*`。
 - **加一个新的读操作端点**：`ZaolangKit/Networking/APIClient+*.swift` 加方法 → 需要新 DTO 就加进 `Models/` → `cd ios/Packages/ZaolangKit && swift build` 自验 → 界面层调用。
 - **加一个新的写操作/新屏幕**：新建 `App/Sources/<Feature>/` 目录，参照 `Create/`（`*View` + `*ViewModel`）的分法；写操作入口套 `environment.requireAuth`（见上方"登录与写操作"）；在 `Shell/Routes.swift` 加对应 Tab 的 Route case，在 `RootTabView` 的 `discoverDestination`/`createDestination`/`libraryDestination`/`learnDestination` 之类的 `@ViewBuilder` 函数里接线。
 - **加一处文案**：先确认 key 在 `front/src/i18n/messages/{zh-CN,en,ja}.json` 里已存在且三语齐全；如果 iOS 要用的命名空间还没导出，去 `ios/tools/gen-strings.py` 的命名空间列表里加，再重跑脚本；代码里用 `L10n.t("namespace.key")`。

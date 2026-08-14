@@ -33,7 +33,7 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | 任务提交、状态机、SSE、Celery 队列、取消与重试 | `zaolang-generation-jobs` |
 | Safety/Planner/Quality/Copy/Intent Router Agent、供应商硬过滤与 LLM 选型、LLM 网关与响应规范化 | `zaolang-agent-gateway` |
 | 上传预签名、私密对象下载、pHash 指纹、AI 溯源清单 | `zaolang-media-assets` |
-| 检索、标签、pgvector 相似作品、风格预设 | `zaolang-discovery-search` |
+| 检索、标签、灵感墙排序、pgvector 相似作品、风格预设 | `zaolang-discovery-search` |
 | 审计日志、SystemLog 安全信号、数据导出与删除、备份与生命周期 | `zaolang-compliance-audit` |
 | C 端页面、共享组件、登录弹窗与动作恢复、命令面板 | `zaolang-frontend-ui` |
 | 颜色令牌、深浅主题、SSR 无闪烁 | `zaolang-theming` |
