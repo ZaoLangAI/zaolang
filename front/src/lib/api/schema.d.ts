@@ -166,6 +166,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Trash */
+        get: operations["my_trash_v1_me_trash_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/bookmarks": {
         parameters: {
             query?: never;
@@ -213,11 +230,9 @@ export interface paths {
         post?: never;
         /**
          * Delete Work
-         * @description Author-initiated removal: tombstones the work, same as the admin path.
+         * @description Author-initiated removal: moves the work into the recycle bin.
          *
-         *     Descendants must still resolve their ancestry, so this never hard-deletes
-         *     the row — it only reaches `publishing.tombstone`, which the admin console
-         *     also uses, after confirming the caller is the owner.
+         *     Hard-delete (and tombstone-when-referenced) happens later via `/purge`.
          */
         delete: operations["delete_work_v1_works__work_id__delete"];
         options?: never;
@@ -337,6 +352,40 @@ export interface paths {
         head?: never;
         /** Update Visibility */
         patch: operations["update_visibility_v1_works__work_id__visibility_patch"];
+        trace?: never;
+    };
+    "/v1/works/{work_id}/untrash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Untrash Work */
+        post: operations["untrash_work_v1_works__work_id__untrash_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/works/{work_id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Purge Work */
+        delete: operations["purge_work_v1_works__work_id__purge_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/works/{work_id}/appeal": {
@@ -705,8 +754,9 @@ export interface paths {
          * Cancel Job
          * @description Requests cancellation.
          *
-         *     A job already at the provider may still complete; settlement follows the
-         *     real outcome rather than the request.
+         *     Parked jobs (never started, waiting on the author, or waiting on an
+         *     upstream render) stop in this request. A worker that is mid-node only
+         *     records the request; the runner honours it at the next boundary.
          */
         post: operations["cancel_job_v1_generation_jobs__job_id__cancel_post"];
         delete?: never;
@@ -5643,6 +5693,13 @@ export interface components {
             output_asset_id?: string | null;
             /** Output Url */
             output_url?: string | null;
+            output_media_type?: components["schemas"]["MediaType"] | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
             /** Published Work Id */
             published_work_id?: string | null;
             /**
@@ -6498,10 +6555,12 @@ export interface components {
         LicenseType: "cc_by_4.0" | "cc_by_sa_4.0" | "cc_by_nc_4.0" | "all_rights_reserved";
         /**
          * LifecycleStatus
-         * @description A work is never hard-deleted; descendants must stay resolvable.
+         * @description A work is never hard-deleted while descendants must stay resolvable.
+         *
+         *     `TRASHED` is the owner's recycle bin (restorable). `TOMBSTONE` is terminal.
          * @enum {string}
          */
-        LifecycleStatus: "active" | "hidden" | "tombstone";
+        LifecycleStatus: "active" | "hidden" | "trashed" | "tombstone";
         /** LineageAncestor */
         LineageAncestor: {
             /** Work Version Id */
@@ -7695,6 +7754,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[TrashWorkSummary] */
+        Page_TrashWorkSummary_: {
+            /** Items */
+            items: components["schemas"]["TrashWorkSummary"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[WorkSummary] */
         Page_WorkSummary_: {
             /** Items */
@@ -8859,6 +8930,41 @@ export interface components {
              */
             confirm: boolean;
         };
+        /**
+         * TrashWorkSummary
+         * @description Owner recycle-bin card. `referenced` chooses the purge confirmation copy.
+         */
+        TrashWorkSummary: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            visibility: components["schemas"]["Visibility"];
+            lifecycle_status: components["schemas"]["LifecycleStatus"];
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Cover Width */
+            cover_width?: number | null;
+            /** Cover Height */
+            cover_height?: number | null;
+            media_type?: components["schemas"]["MediaType"] | null;
+            author: components["schemas"]["AuthorSummary"];
+            stats: components["schemas"]["WorkStats"];
+            /** Tags */
+            tags?: string[];
+            /**
+             * Remixable
+             * @default false
+             */
+            remixable: boolean;
+            /** Published At */
+            published_at?: string | null;
+            /**
+             * Referenced
+             * @default false
+             */
+            referenced: boolean;
+        };
         /** UploadCompleteRequest */
         UploadCompleteRequest: {
             /** Upload Session Id */
@@ -9592,6 +9698,39 @@ export interface operations {
             };
         };
     };
+    my_trash_v1_me_trash_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_TrashWorkSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     my_bookmarks_v1_me_bookmarks_get: {
         parameters: {
             query?: {
@@ -9986,6 +10125,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WorkSummary"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    untrash_work_v1_works__work_id__untrash_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_work_v1_works__work_id__purge_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

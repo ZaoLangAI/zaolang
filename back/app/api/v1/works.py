@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
@@ -255,7 +255,11 @@ def unbookmark(work_id: str, user: CurrentUser, session: DbSession) -> OkRespons
 
 @router.patch("/works/{work_id}/visibility", response_model=WorkSummary)
 def update_visibility(
-    work_id: str, payload: VisibilityUpdateRequest, user: CurrentUser, session: DbSession
+    work_id: str,
+    payload: VisibilityUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> WorkSummary:
     work = publishing.change_visibility(
         session, user_id=user.id, work_id=work_id, visibility=payload.visibility
@@ -268,21 +272,45 @@ def update_visibility(
 
 
 @router.delete("/works/{work_id}", status_code=204)
-def delete_work(work_id: str, user: CurrentUser, session: DbSession) -> None:
-    """Author-initiated removal: tombstones the work, same as the admin path.
+def delete_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> None:
+    """Author-initiated removal: moves the work into the recycle bin.
 
-    Descendants must still resolve their ancestry, so this never hard-deletes
-    the row — it only reaches `publishing.tombstone`, which the admin console
-    also uses, after confirming the caller is the owner.
+    Hard-delete (and tombstone-when-referenced) happens later via `/purge`.
     """
-    work = session.get(Work, work_id)
-    if work is None:
-        raise NotFound("作品不存在。")
-    if work.owner_user_id != user.id:
-        raise Forbidden("不能删除他人的作品。")
-
-    publishing.tombstone(session, work_id=work_id, reason="author_deleted", actor_user_id=user.id)
+    publishing.trash(session, user_id=user.id, work_id=work_id)
     session.commit()
+
+
+@router.post("/works/{work_id}/untrash", response_model=WorkSummary)
+def untrash_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> WorkSummary:
+    work = publishing.untrash(session, user_id=user.id, work_id=work_id)
+    session.commit()
+    version = session.get(WorkVersion, work.current_version_id or "")
+    if version is None:
+        raise Conflict("作品没有可用版本。")
+    return _summary(session, work, version, user)
+
+
+@router.delete("/works/{work_id}/purge", status_code=204)
+def purge_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> Response:
+    publishing.purge(session, user_id=user.id, work_id=work_id)
+    session.commit()
+    return Response(status_code=204)
 
 
 @router.post("/works/{work_id}/appeal", response_model=WorkAppealView, status_code=201)

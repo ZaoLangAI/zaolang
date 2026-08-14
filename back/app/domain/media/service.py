@@ -19,13 +19,23 @@ from dataclasses import dataclass
 from typing import Any
 
 import imagehash
+from botocore.exceptions import ClientError
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
-from app.models import Asset, ContentFingerprint, ProvenanceManifest, UploadSession
+from app.models import (
+    Asset,
+    ContentFingerprint,
+    Draft,
+    LineageEdge,
+    Profile,
+    ProvenanceManifest,
+    UploadSession,
+    WorkVersion,
+)
 from app.models.base import new_id, utcnow
 from app.models.enums import AssetRole, MediaType, ModerationStatus, Operation, Visibility
 from app.providers.base import ProviderReference
@@ -480,6 +490,76 @@ def publish_asset(session: Session, asset: Asset) -> None:
     """Makes an asset readable by anyone who can see its work."""
     asset.visibility = Visibility.PUBLIC_VIEW_ONLY
     session.flush()
+
+
+def delete_exclusive_assets(
+    session: Session, *, asset_ids: Sequence[str], except_work_id: str
+) -> list[str]:
+    """Deletes objects that no other work, draft or profile still displays.
+
+    Shared files stay: a descendant that reused the cover must keep resolving
+    it. Fingerprints and provenance cascade with the asset row.
+    """
+    deleted: list[str] = []
+    for asset_id in {item for item in asset_ids if item}:
+        if _is_shared(session, asset_id, except_work_id):
+            continue
+        if _delete_asset(session, asset_id):
+            deleted.append(asset_id)
+    return deleted
+
+
+def _is_shared(session: Session, asset_id: str, except_work_id: str) -> bool:
+    other_version = session.scalar(
+        select(WorkVersion.id)
+        .where(
+            WorkVersion.work_id != except_work_id,
+            or_(
+                WorkVersion.cover_asset_id == asset_id,
+                WorkVersion.primary_output_asset_id == asset_id,
+            ),
+        )
+        .limit(1)
+    )
+    if other_version is not None:
+        return True
+
+    other_draft = session.scalar(
+        select(Draft.id)
+        .where(
+            Draft.output_asset_id == asset_id,
+            or_(Draft.published_work_id.is_(None), Draft.published_work_id != except_work_id),
+        )
+        .limit(1)
+    )
+    if other_draft is not None:
+        return True
+
+    profile = session.scalar(
+        select(Profile.user_id)
+        .where(or_(Profile.avatar_asset_id == asset_id, Profile.cover_asset_id == asset_id))
+        .limit(1)
+    )
+    if profile is not None:
+        return True
+
+    for reused in session.scalars(select(LineageEdge.reused_asset_ids_json)):
+        if asset_id in (reused or []):
+            return True
+    return False
+
+
+def _delete_asset(session: Session, asset_id: str) -> bool:
+    asset = session.get(Asset, asset_id)
+    if asset is None:
+        return False
+    try:
+        s3.delete_object(asset.object_key)
+    except ClientError:
+        logger.warning("object %s already gone while purging asset %s", asset.object_key, asset_id)
+    session.delete(asset)
+    session.flush()
+    return True
 
 
 def _probe(payload: bytes, mime_type: str) -> tuple[int | None, int | None, MediaType]:

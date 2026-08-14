@@ -27,10 +27,14 @@ class Visibility(StrEnum):
 
 
 class LifecycleStatus(StrEnum):
-    """A work is never hard-deleted; descendants must stay resolvable."""
+    """A work is never hard-deleted while descendants must stay resolvable.
+
+    `TRASHED` is the owner's recycle bin (restorable). `TOMBSTONE` is terminal.
+    """
 
     ACTIVE = "active"
     HIDDEN = "hidden"
+    TRASHED = "trashed"
     TOMBSTONE = "tombstone"
 
 

@@ -87,7 +87,18 @@ def test_no_whitelisted_tool_can_move_credits_or_publish() -> None:
     read-only or advisory."""
     import inspect
 
-    forbidden = ("reserve", "capture", "release", "publish", "tombstone", "grant", "adjust")
+    forbidden = (
+        "reserve",
+        "capture",
+        "release",
+        "publish",
+        "tombstone",
+        "trash",
+        "untrash",
+        "purge",
+        "grant",
+        "adjust",
+    )
     for name, func in tools.TOOL_REGISTRY.items():
         source = inspect.getsource(func)
         for marker in forbidden:

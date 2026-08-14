@@ -57,6 +57,12 @@ class WorkSummary(ApiModel):
     published_at: dt.datetime | None = None
 
 
+class TrashWorkSummary(WorkSummary):
+    """Owner recycle-bin card. `referenced` chooses the purge confirmation copy."""
+
+    referenced: bool = False
+
+
 class ReusableParams(ApiModel):
     """What a remixer can carry over.
 
@@ -173,6 +179,10 @@ class DraftResponse(ApiModel):
     latest_job_id: str | None = None
     output_asset_id: str | None = None
     output_url: str | None = None
+    output_media_type: MediaType | None = None
+    duration_ms: int | None = None
+    width: int | None = None
+    height: int | None = None
     published_work_id: str | None = None
     created_at: dt.datetime
 

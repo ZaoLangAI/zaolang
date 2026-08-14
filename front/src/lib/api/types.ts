@@ -22,6 +22,7 @@ export type LearnPostStatus = S['LearnPostStatus'];
 export type LearnPost = LearnPostDetail;
 
 export type WorkSummary = S['WorkSummary'];
+export type TrashWorkSummary = S['TrashWorkSummary'];
 export type WorkDetail = S['WorkDetail'];
 export type WorkVersionSummary = S['WorkVersionSummary'];
 export type ReusableParams = S['ReusableParams'];

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.domain.credits import service as credits_service
 from app.domain.jobs import service as jobs_service
 from app.domain.publishing import service as publishing
-from app.models import Follow, Notification, ReportCase, User, Work, WorkAppeal
+from app.models import Follow, Notification, ReportCase, User, Work, WorkAppeal, WorkVersion
 from app.models.base import new_id
 from app.models.enums import LifecycleStatus, NotificationType, Operation, QualityTier, Visibility
 from app.workers import pipeline
@@ -257,12 +257,76 @@ def test_you_cannot_add_to_someone_elses_collection(
 def test_the_author_can_delete_their_own_work(
     client: TestClient, db: Session, work: Work, author: User
 ) -> None:
+    before = client.get("/v1/profiles/author", headers=auth_header(author)).json()["work_count"]
     response = client.delete(f"/v1/works/{work.id}", headers=auth_header(author))
     assert response.status_code == 204, response.text
 
     db.refresh(work)
-    assert work.lifecycle_status == LifecycleStatus.TOMBSTONE
+    assert work.lifecycle_status == LifecycleStatus.TRASHED
     assert work.visibility == Visibility.PRIVATE
+    assert work.visibility_before_trash == Visibility.PUBLIC_REMIXABLE
+
+    listed = client.get("/v1/profiles/author/works", headers=auth_header(author)).json()["items"]
+    assert work.id not in [item["id"] for item in listed]
+    after = client.get("/v1/profiles/author", headers=auth_header(author)).json()["work_count"]
+    assert after == before - 1
+
+    trash = client.get("/v1/me/trash", headers=auth_header(author)).json()["items"]
+    assert work.id in [item["id"] for item in trash]
+    assert trash[0]["referenced"] is False
+
+
+def test_the_author_can_restore_a_trashed_work(
+    client: TestClient, db: Session, work: Work, author: User
+) -> None:
+    client.delete(f"/v1/works/{work.id}", headers=auth_header(author))
+    response = client.post(f"/v1/works/{work.id}/untrash", headers=auth_header(author))
+    assert response.status_code == 200, response.text
+    assert response.json()["visibility"] == Visibility.PUBLIC_REMIXABLE
+    assert response.json()["lifecycle_status"] == LifecycleStatus.ACTIVE
+
+    db.refresh(work)
+    assert work.lifecycle_status == LifecycleStatus.ACTIVE
+    assert work.visibility == Visibility.PUBLIC_REMIXABLE
+    assert work.trashed_at is None
+
+    listed = client.get("/v1/profiles/author/works", headers=auth_header(author)).json()["items"]
+    assert work.id in [item["id"] for item in listed]
+    trash = client.get("/v1/me/trash", headers=auth_header(author)).json()["items"]
+    assert trash == []
+
+
+def test_purging_an_unreferenced_work_deletes_the_row(
+    client: TestClient, db: Session, work: Work, author: User
+) -> None:
+    work_id = work.id
+    client.delete(f"/v1/works/{work_id}", headers=auth_header(author))
+    response = client.delete(f"/v1/works/{work_id}/purge", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+
+    assert db.get(Work, work_id) is None
+    assert client.get(f"/v1/works/{work_id}", headers=auth_header(author)).status_code == 404
+    trash = client.get("/v1/me/trash", headers=auth_header(author)).json()["items"]
+    assert trash == []
+
+
+def test_purging_a_referenced_work_tombstones_it(
+    client: TestClient, db: Session, work: Work, author: User, remixer: User
+) -> None:
+    publishing.create_draft(db, user_id=remixer.id, source_work_id=work.id)
+    db.commit()
+
+    client.delete(f"/v1/works/{work.id}", headers=auth_header(author))
+    trash = client.get("/v1/me/trash", headers=auth_header(author)).json()["items"]
+    assert trash[0]["referenced"] is True
+
+    response = client.delete(f"/v1/works/{work.id}/purge", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+
+    db.refresh(work)
+    assert work.lifecycle_status == LifecycleStatus.TOMBSTONE
+    assert work.tombstone_reason == "author_purged"
+    assert db.get(WorkVersion, work.current_version_id or "") is not None
 
 
 def test_you_cannot_delete_someone_elses_work(
@@ -273,6 +337,13 @@ def test_you_cannot_delete_someone_elses_work(
 
     db.refresh(work)
     assert work.lifecycle_status == LifecycleStatus.ACTIVE
+
+    assert (
+        client.post(f"/v1/works/{work.id}/untrash", headers=auth_header(remixer)).status_code == 403
+    )
+    assert (
+        client.delete(f"/v1/works/{work.id}/purge", headers=auth_header(remixer)).status_code == 403
+    )
 
 
 def test_following_creates_the_edge_and_notifies(

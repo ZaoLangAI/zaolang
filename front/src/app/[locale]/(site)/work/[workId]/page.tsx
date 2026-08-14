@@ -58,6 +58,15 @@ export default async function WorkPage({ params }: Params) {
           </div>
         </div>
       ) : null}
+      {work.lifecycle_status === 'trashed' ? (
+        <div className="mx-4 flex items-center gap-3 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-4 py-3 sm:mx-0">
+          <IconTombstone className="size-5 shrink-0 text-muted" />
+          <div>
+            <p className="text-sm font-medium">{t('trashed')}</p>
+            <p className="text-xs text-muted">{t('trashedHint')}</p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.72fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">

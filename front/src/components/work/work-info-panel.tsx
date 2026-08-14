@@ -7,7 +7,9 @@ import { useSession } from '@/components/auth/session-provider';
 import { AddToCollectionDialog } from '@/components/work/add-to-collection-dialog';
 import { AppealDialog } from '@/components/work/appeal-dialog';
 import { Avatar } from '@/components/work/avatar';
+import { DeleteWorkDialog } from '@/components/work/delete-work-dialog';
 import { LineageStrip } from '@/components/work/lineage-strip';
+import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
 import { ReportDialog } from '@/components/work/report-dialog';
 import { ReusableParamsList } from '@/components/work/reusable-params';
 import { Button } from '@/components/ui/button';
@@ -17,8 +19,10 @@ import {
   IconBookmarkFilled,
   IconGrid,
   IconHeart,
+  IconRefresh,
   IconRemix,
   IconSparkle,
+  IconTrash,
 } from '@/components/ui/icons';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -54,6 +58,7 @@ export function WorkInfoPanel({
 }) {
   const t = useTranslations('work');
   const tPage = useTranslations('workPage');
+  const tLibrary = useTranslations('collectionPage');
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { user, requireAuth } = useSession();
@@ -66,9 +71,14 @@ export function WorkInfoPanel({
   const [collectionOpen, setCollectionOpen] = useState(false);
   const [appealOpen, setAppealOpen] = useState(false);
   const [appealStatus, setAppealStatus] = useState(work.appeal?.status ?? null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
 
   const isOwner = user !== null && user.id === work.author.user_id;
   const isHidden = work.lifecycle_status === 'hidden';
+  const isTrashed = work.lifecycle_status === 'trashed';
+  const canTrash = isOwner && !compact && (work.lifecycle_status === 'active' || isHidden);
 
   const toggleLike = () =>
     requireAuth({
@@ -121,8 +131,49 @@ export function WorkInfoPanel({
 
   const isOriginal = work.ancestors === undefined || work.ancestors.length === 0;
 
+  const restoreWork = async () => {
+    setRestoreBusy(true);
+    try {
+      await api.post(`/v1/works/${work.id}/untrash`);
+      notify(tLibrary('restoreWorkDone'), 'success');
+      router.refresh();
+    } catch {
+      notify(tLibrary('restoreWorkFailed'), 'error');
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5">
+      {!compact && isTrashed && isOwner ? (
+        <ErrorNotice
+          title={t('trashed')}
+          detail={t('trashedHint')}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<IconRefresh className="size-4" />}
+                loading={restoreBusy}
+                onClick={() => void restoreWork()}
+              >
+                {tLibrary('restoreWork')}
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                icon={<IconTrash className="size-4" />}
+                onClick={() => setPurgeOpen(true)}
+              >
+                {tLibrary('purgeWork')}
+              </Button>
+            </div>
+          }
+        />
+      ) : null}
+
       {!compact && isHidden && isOwner ? (
         <ErrorNotice
           title={appealStatus === 'denied' ? tPage('appealDenied') : tPage('appealBanner')}
@@ -255,6 +306,16 @@ export function WorkInfoPanel({
           >
             {liked ? t('liked') : t('like')}
           </Button>
+          {canTrash ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<IconTrash className="size-4" />}
+              onClick={() => setTrashOpen(true)}
+            >
+              {tLibrary('deleteWork')}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
@@ -282,6 +343,25 @@ export function WorkInfoPanel({
         workId={work.id}
         open={collectionOpen}
         onClose={() => setCollectionOpen(false)}
+      />
+      <DeleteWorkDialog
+        workId={work.id}
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onDeleted={() => {
+          setTrashOpen(false);
+          router.replace('/collection?tab=trash');
+        }}
+      />
+      <PurgeWorkDialog
+        workId={work.id}
+        referenced={work.descendant_count > 0}
+        open={purgeOpen}
+        onClose={() => setPurgeOpen(false)}
+        onPurged={() => {
+          setPurgeOpen(false);
+          router.replace('/collection');
+        }}
       />
     </div>
   );

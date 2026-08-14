@@ -58,6 +58,12 @@ class Work(Base, TimestampMixin):
     # `tombstone_reason` this is meant to be transient, so an owner never sees
     # a stale reason once the work is visible again.
     hide_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Owner recycle bin. `visibility` is forced private while trashed;
+    # `visibility_before_trash` is restored by `publishing.untrash`.
+    trashed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    visibility_before_trash: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
     view_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     like_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)

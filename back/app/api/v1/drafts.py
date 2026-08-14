@@ -16,8 +16,8 @@ from app.api.schemas.works import (
 )
 from app.domain.errors import Forbidden, NotFound, ValidationFailed
 from app.domain.publishing import service as publishing
-from app.models import Draft, LicenseSnapshot
-from app.models.enums import Visibility
+from app.models import Asset, Draft, LicenseSnapshot
+from app.models.enums import MediaType, Visibility
 from app.presenters import media_urls
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
@@ -121,6 +121,7 @@ def _response(session, draft: Draft) -> DraftResponse:  # type: ignore[no-untype
                 captured_at=snapshot.captured_at,
             )
 
+    asset = session.get(Asset, draft.output_asset_id) if draft.output_asset_id else None
     return DraftResponse(
         id=draft.id,
         source_work_version_id=draft.source_work_version_id,
@@ -131,6 +132,10 @@ def _response(session, draft: Draft) -> DraftResponse:  # type: ignore[no-untype
         latest_job_id=draft.latest_job_id,
         output_asset_id=draft.output_asset_id,
         output_url=media_urls.asset_url(session, draft.output_asset_id),
+        output_media_type=MediaType(asset.media_type) if asset else None,
+        duration_ms=asset.duration_ms if asset else None,
+        width=asset.width if asset else None,
+        height=asset.height if asset else None,
         published_work_id=draft.published_work_id,
         created_at=draft.created_at,
     )

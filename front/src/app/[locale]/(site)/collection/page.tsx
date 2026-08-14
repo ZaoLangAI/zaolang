@@ -7,7 +7,15 @@ import { PageHeading, StatRow, StatTile } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { Collection, CreationSkillSummary, Draft, Me, Page, WorkSummary } from '@/lib/api/types';
+import type {
+  Collection,
+  CreationSkillSummary,
+  Draft,
+  Me,
+  Page,
+  TrashWorkSummary,
+  WorkSummary,
+} from '@/lib/api/types';
 import { formatCount } from '@/lib/format';
 
 export async function generateMetadata() {
@@ -27,13 +35,17 @@ export default async function CollectionPage({
   const me = await serverFetchOrNull<Me>('/v1/auth/me', { authenticated: true });
   if (!me?.profile) return <SignInPrompt />;
 
-  const [works, drafts, bookmarks, collections, skills] = await Promise.all([
+  const [works, drafts, bookmarks, trash, collections, skills] = await Promise.all([
     serverFetchOrNull<Page<WorkSummary>>(`/v1/profiles/${me.profile.handle}/works`, {
       authenticated: true,
       query: { limit: 60 },
     }),
     serverFetchOrNull<Page<Draft>>('/v1/drafts', { authenticated: true }),
     serverFetchOrNull<Page<WorkSummary>>('/v1/me/bookmarks', {
+      authenticated: true,
+      query: { limit: 60 },
+    }),
+    serverFetchOrNull<Page<TrashWorkSummary>>('/v1/me/trash', {
       authenticated: true,
       query: { limit: 60 },
     }),
@@ -74,6 +86,7 @@ export default async function CollectionPage({
         privateWorks={isPrivate}
         drafts={drafts?.items ?? []}
         bookmarks={bookmarks?.items ?? []}
+        trash={trash?.items ?? []}
         collections={collections?.items ?? []}
         skills={skills?.items ?? []}
       />

@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.audit import service as audit
 from app.domain.characters import service as characters_service
 from app.domain.credits.royalty import RoyaltyRule, distribute
 from app.domain.errors import (
@@ -37,10 +38,14 @@ from app.domain.search import service as search_service
 from app.models import (
     Asset,
     Draft,
+    GenerationJob,
+    LicenseSnapshot,
     LineageEdge,
     Profile,
     Tag,
+    User,
     Work,
+    WorkAppeal,
     WorkTag,
     WorkVersion,
 )
@@ -263,6 +268,8 @@ def change_visibility(session: Session, *, user_id: str, work_id: str, visibilit
         raise NotFound("作品不存在。")
     if work.owner_user_id != user_id:
         raise Forbidden("不能修改他人的作品。")
+    if work.lifecycle_status in {LifecycleStatus.TRASHED, LifecycleStatus.TOMBSTONE}:
+        raise Conflict("回收站或墓碑作品不能修改可见性。")
 
     work.visibility = visibility
     session.flush()
@@ -285,6 +292,8 @@ def tombstone(
     work.tombstoned_at = utcnow()
     work.tombstone_reason = reason
     work.visibility = Visibility.PRIVATE
+    work.trashed_at = None
+    work.visibility_before_trash = None
     session.flush()
     logger.info("work %s tombstoned by %s", work_id, actor_user_id or "system")
     return work
@@ -314,13 +323,158 @@ def restore(session: Session, *, work_id: str) -> Work:
     work = session.get(Work, work_id)
     if work is None:
         raise NotFound("作品不存在。")
-    if work.lifecycle_status == LifecycleStatus.TOMBSTONE:
-        raise Conflict("墓碑作品不可恢复。")
+    if work.lifecycle_status in {LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED}:
+        raise Conflict("墓碑或回收站作品不能从这里恢复。")
 
     work.lifecycle_status = LifecycleStatus.ACTIVE
     work.hide_reason = None
     session.flush()
     return work
+
+
+def trash(session: Session, *, user_id: str, work_id: str) -> Work:
+    """Moves a published work into the owner's recycle bin."""
+    work = _owned_work(session, user_id=user_id, work_id=work_id)
+    if work.lifecycle_status == LifecycleStatus.TOMBSTONE:
+        raise Conflict("墓碑作品不能移入回收站。")
+    if work.lifecycle_status == LifecycleStatus.TRASHED:
+        raise Conflict("作品已在回收站中。")
+
+    work.visibility_before_trash = work.visibility
+    work.visibility = Visibility.PRIVATE
+    work.lifecycle_status = LifecycleStatus.TRASHED
+    work.trashed_at = utcnow()
+    session.flush()
+    logger.info("work %s moved to trash by %s", work_id, user_id)
+    return work
+
+
+def untrash(session: Session, *, user_id: str, work_id: str) -> Work:
+    """Restores a trashed work to active with its previous visibility."""
+    work = _owned_work(session, user_id=user_id, work_id=work_id)
+    if work.lifecycle_status != LifecycleStatus.TRASHED:
+        raise Conflict("只有回收站中的作品可以恢复。")
+
+    work.lifecycle_status = LifecycleStatus.ACTIVE
+    work.visibility = work.visibility_before_trash or Visibility.PUBLIC_VIEW_ONLY
+    work.visibility_before_trash = None
+    work.trashed_at = None
+    work.hide_reason = None
+    session.flush()
+    logger.info("work %s restored from trash by %s", work_id, user_id)
+    return work
+
+
+def purge(session: Session, *, user_id: str, work_id: str) -> str:
+    """Permanently removes a trashed work.
+
+    Unreferenced works are hard-deleted with their exclusive media. Referenced
+    works become tombstones so descendants keep a lineage slot, but exclusive
+    cover/output files are still purged.
+    """
+    work = _owned_work(session, user_id=user_id, work_id=work_id)
+    if work.lifecycle_status != LifecycleStatus.TRASHED:
+        raise Conflict("只有回收站中的作品可以彻底删除。")
+
+    referenced = _is_referenced(session, work)
+    asset_ids = _version_media_ids(session, work.id)
+    actor = session.get(User, user_id)
+
+    if referenced:
+        _detach_version_media(session, work.id)
+        tombstone(session, work_id=work_id, reason="author_purged", actor_user_id=user_id)
+        media_service.delete_exclusive_assets(
+            session, asset_ids=asset_ids, except_work_id=work_id
+        )
+        audit.record(
+            session,
+            actor=actor,
+            action="work.purge",
+            target_type="work",
+            target_id=work_id,
+            before={"lifecycle_status": LifecycleStatus.TRASHED, "referenced": True},
+            after={"lifecycle_status": LifecycleStatus.TOMBSTONE},
+            reason="author_purged",
+        )
+        logger.info("work %s purged to tombstone by %s", work_id, user_id)
+        return "tombstone"
+
+    for appeal in session.scalars(select(WorkAppeal).where(WorkAppeal.work_id == work_id)):
+        session.delete(appeal)
+    for draft in session.scalars(select(Draft).where(Draft.published_work_id == work_id)):
+        session.delete(draft)
+    work.current_version_id = None
+    session.flush()
+    for version in list(session.scalars(select(WorkVersion).where(WorkVersion.work_id == work_id))):
+        session.delete(version)
+    session.flush()
+
+    media_service.delete_exclusive_assets(session, asset_ids=asset_ids, except_work_id=work_id)
+    session.delete(work)
+    session.flush()
+    audit.record(
+        session,
+        actor=actor,
+        action="work.purge",
+        target_type="work",
+        target_id=work_id,
+        before={"lifecycle_status": LifecycleStatus.TRASHED, "referenced": False},
+        after={"deleted": True},
+        reason="author_purged",
+    )
+    logger.info("work %s hard-deleted by %s", work_id, user_id)
+    return "deleted"
+
+
+def work_is_referenced(session: Session, work: Work) -> bool:
+    return _is_referenced(session, work)
+
+
+def _owned_work(session: Session, *, user_id: str, work_id: str) -> Work:
+    work = session.get(Work, work_id)
+    if work is None:
+        raise NotFound("作品不存在。")
+    if work.owner_user_id != user_id:
+        raise Forbidden("不能操作他人的作品。")
+    return work
+
+
+def _is_referenced(session: Session, work: Work) -> bool:
+    version_ids = list(
+        session.scalars(select(WorkVersion.id).where(WorkVersion.work_id == work.id))
+    )
+    if not version_ids:
+        return False
+    return any(
+        session.scalar(select(model.id).where(column.in_(version_ids)).limit(1))
+        for model, column in (
+            (LineageEdge, LineageEdge.parent_work_version_id),
+            (Draft, Draft.source_work_version_id),
+            (LicenseSnapshot, LicenseSnapshot.source_work_version_id),
+            (GenerationJob, GenerationJob.source_work_version_id),
+        )
+    )
+
+
+def _version_media_ids(session: Session, work_id: str) -> list[str]:
+    ids: list[str] = []
+    for cover_id, output_id in session.execute(
+        select(WorkVersion.cover_asset_id, WorkVersion.primary_output_asset_id).where(
+            WorkVersion.work_id == work_id
+        )
+    ):
+        if cover_id:
+            ids.append(cover_id)
+        if output_id:
+            ids.append(output_id)
+    return ids
+
+
+def _detach_version_media(session: Session, work_id: str) -> None:
+    for version in session.scalars(select(WorkVersion).where(WorkVersion.work_id == work_id)):
+        version.cover_asset_id = None
+        version.primary_output_asset_id = None
+    session.flush()
 
 
 def _reusable_params(draft: Draft, visibility: str) -> dict[str, Any]:

@@ -427,6 +427,67 @@
         }
       }
     },
+    "/v1/me/trash": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "My Trash",
+        "operationId": "my_trash_v1_me_trash_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 60,
+              "minimum": 1,
+              "default": 60,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_TrashWorkSummary_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/me/bookmarks": {
       "get": {
         "tags": [
@@ -696,7 +757,7 @@
           "works"
         ],
         "summary": "Delete Work",
-        "description": "Author-initiated removal: tombstones the work, same as the admin path.\n\nDescendants must still resolve their ancestry, so this never hard-deletes\nthe row — it only reaches `publishing.tombstone`, which the admin console\nalso uses, after confirming the caller is the owner.",
+        "description": "Author-initiated removal: moves the work into the recycle bin.\n\nHard-delete (and tombstone-when-referenced) happens later via `/purge`.",
         "operationId": "delete_work_v1_works__work_id__delete",
         "parameters": [
           {
@@ -1208,6 +1269,115 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/works/{work_id}/untrash": {
+      "post": {
+        "tags": [
+          "works"
+        ],
+        "summary": "Untrash Work",
+        "operationId": "untrash_work_v1_works__work_id__untrash_post",
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Work Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/works/{work_id}/purge": {
+      "delete": {
+        "tags": [
+          "works"
+        ],
+        "summary": "Purge Work",
+        "operationId": "purge_work_v1_works__work_id__purge_delete",
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Work Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -2921,7 +3091,7 @@
           "generation"
         ],
         "summary": "Cancel Job",
-        "description": "Requests cancellation.\n\nA job already at the provider may still complete; settlement follows the\nreal outcome rather than the request.",
+        "description": "Requests cancellation.\n\nParked jobs (never started, waiting on the author, or waiting on an\nupstream render) stop in this request. A worker that is mid-node only\nrecords the request; the runner honours it at the next boundary.",
         "operationId": "cancel_job_v1_generation_jobs__job_id__cancel_post",
         "parameters": [
           {
@@ -19632,6 +19802,49 @@
             ],
             "title": "Output Url"
           },
+          "output_media_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
           "published_work_id": {
             "anyOf": [
               {
@@ -21889,10 +22102,11 @@
         "enum": [
           "active",
           "hidden",
+          "trashed",
           "tombstone"
         ],
         "title": "LifecycleStatus",
-        "description": "A work is never hard-deleted; descendants must stay resolvable."
+        "description": "A work is never hard-deleted while descendants must stay resolvable.\n\n`TRASHED` is the owner's recycle bin (restorable). `TOMBSTONE` is terminal."
       },
       "LineageAncestor": {
         "properties": {
@@ -25051,6 +25265,38 @@
         ],
         "title": "Page[TagResponse]"
       },
+      "Page_TrashWorkSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrashWorkSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[TrashWorkSummary]"
+      },
       "Page_WorkSummary_": {
         "properties": {
           "items": {
@@ -27974,6 +28220,113 @@
           "reason"
         ],
         "title": "TombstoneRequest"
+      },
+      "TrashWorkSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          },
+          "lifecycle_status": {
+            "$ref": "#/components/schemas/LifecycleStatus"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "cover_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Width"
+          },
+          "cover_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Height"
+          },
+          "media_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author": {
+            "$ref": "#/components/schemas/AuthorSummary"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/WorkStats"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "remixable": {
+            "type": "boolean",
+            "title": "Remixable",
+            "default": false
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "referenced": {
+            "type": "boolean",
+            "title": "Referenced",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "visibility",
+          "lifecycle_status",
+          "author",
+          "stats"
+        ],
+        "title": "TrashWorkSummary",
+        "description": "Owner recycle-bin card. `referenced` chooses the purge confirmation copy."
       },
       "UploadCompleteRequest": {
         "properties": {

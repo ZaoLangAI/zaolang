@@ -6,23 +6,41 @@ import { useState } from 'react';
 import { CreateCollectionDialog } from '@/components/collection/create-collection-dialog';
 import { EditCollectionDialog } from '@/components/collection/edit-collection-dialog';
 import { ManageWorkDialog } from '@/components/collection/manage-work-dialog';
+import { DraftPoster } from '@/components/media/draft-poster';
 import { Poster } from '@/components/media/poster';
 import { CreateSkillDialog } from '@/components/skills/create-skill-dialog';
 import { ManageSkillDialog } from '@/components/skills/manage-skill-dialog';
 import { SkillCard } from '@/components/skills/skill-card';
+import { DeleteWorkDialog } from '@/components/work/delete-work-dialog';
+import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
 import { WorkCard } from '@/components/work/work-card';
 import { Button, IconButton } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { IconPencil, IconPlus, IconTrash } from '@/components/ui/icons';
+import { IconPencil, IconPlus, IconRefresh, IconTrash } from '@/components/ui/icons';
 import { EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
-import type { Collection, CreationSkillSummary, Draft, WorkSummary } from '@/lib/api/types';
+import type {
+  Collection,
+  CreationSkillSummary,
+  Draft,
+  TrashWorkSummary,
+  WorkSummary,
+} from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
-const TABS = ['all', 'published', 'drafts', 'private', 'bookmarks', 'collections', 'skills'] as const;
+const TABS = [
+  'all',
+  'published',
+  'drafts',
+  'private',
+  'bookmarks',
+  'trash',
+  'collections',
+  'skills',
+] as const;
 type Tab = (typeof TABS)[number];
 
 /**
@@ -39,6 +57,7 @@ export function LibraryTabs({
   privateWorks,
   drafts,
   bookmarks,
+  trash,
   collections,
   skills,
 }: {
@@ -48,6 +67,7 @@ export function LibraryTabs({
   privateWorks: WorkSummary[];
   drafts: Draft[];
   bookmarks: WorkSummary[];
+  trash: TrashWorkSummary[];
   collections: Collection[];
   skills: CreationSkillSummary[];
 }) {
@@ -68,6 +88,9 @@ export function LibraryTabs({
   const [deletingDraft, setDeletingDraft] = useState<Draft | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const [trashingWork, setTrashingWork] = useState<WorkSummary | null>(null);
+  const [purgingWork, setPurgingWork] = useState<TrashWorkSummary | null>(null);
+  const [restoreBusyId, setRestoreBusyId] = useState<string | null>(null);
 
   const labels: Record<Tab, string> = {
     all: t('tabAll'),
@@ -75,6 +98,7 @@ export function LibraryTabs({
     drafts: t('tabDrafts'),
     private: t('tabPrivate'),
     bookmarks: t('tabBookmarks'),
+    trash: t('tabTrash'),
     collections: t('tabCollections'),
     skills: t('tabSkills'),
   };
@@ -86,9 +110,30 @@ export function LibraryTabs({
         ? privateWorks
         : tab === 'bookmarks'
           ? bookmarks
-          : works;
+          : tab === 'trash'
+            ? []
+            : works;
   const shownDrafts = tab === 'all' || tab === 'drafts' ? drafts : [];
-  const empty = shownWorks.length === 0 && shownDrafts.length === 0;
+  const shownTrash = tab === 'trash' ? trash : [];
+  const empty =
+    tab === 'trash'
+      ? shownTrash.length === 0
+      : shownWorks.length === 0 && shownDrafts.length === 0;
+
+  const canManageWorks = tab !== 'bookmarks' && tab !== 'trash';
+
+  const restoreWork = async (work: TrashWorkSummary) => {
+    setRestoreBusyId(work.id);
+    try {
+      await api.post(`/v1/works/${work.id}/untrash`);
+      notify(t('restoreWorkDone'), 'success');
+      router.refresh();
+    } catch {
+      notify(t('restoreWorkFailed'), 'error');
+    } finally {
+      setRestoreBusyId(null);
+    }
+  };
 
   const deleteDraft = async () => {
     if (!deletingDraft) return;
@@ -108,7 +153,11 @@ export function LibraryTabs({
 
   return (
     <div>
-      <div role="tablist" aria-label={t('title')} className="flex gap-6 border-b border-border">
+      <div
+        role="tablist"
+        aria-label={t('title')}
+        className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border"
+      >
         {TABS.map((id) => (
           <button
             key={id}
@@ -185,14 +234,17 @@ export function LibraryTabs({
             ) : null}
           </>
         ) : empty ? (
-          <EmptyState title={t('empty')} description={t('emptyHint')} />
+          <EmptyState
+            title={t('empty')}
+            description={tab === 'trash' ? t('emptyTrashHint') : t('emptyHint')}
+          />
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {shownDrafts.map((draft) => (
               <li key={draft.id}>
                 <Link href={`/publish/${draft.id}`} className="block">
-                  <Poster
-                    src={draft.output_url}
+                  <DraftPoster
+                    draft={draft}
                     alt={draft.title ?? t('tabDrafts')}
                     className="border border-border"
                   >
@@ -214,11 +266,51 @@ export function LibraryTabs({
                         <IconTrash className="size-4" />
                       </IconButton>
                     </span>
-                  </Poster>
+                  </DraftPoster>
                   <p className="mt-2 truncate text-sm font-medium">
                     {draft.title ?? t('tabDrafts')}
                   </p>
                 </Link>
+              </li>
+            ))}
+
+            {shownTrash.map((work) => (
+              <li key={work.id}>
+                <WorkCard
+                  work={work}
+                  badge={{ label: t('tabTrash'), tone: 'neutral' }}
+                  actions={
+                    <>
+                      <IconButton
+                        label={t('restoreWork')}
+                        variant="secondary"
+                        size="sm"
+                        className="border-border bg-surface/90"
+                        disabled={restoreBusyId === work.id}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          void restoreWork(work);
+                        }}
+                      >
+                        <IconRefresh className="size-4" />
+                      </IconButton>
+                      <IconButton
+                        label={t('purgeWork')}
+                        variant="secondary"
+                        size="sm"
+                        className="border-border bg-surface/90"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setPurgingWork(work);
+                        }}
+                      >
+                        <IconTrash className="size-4" />
+                      </IconButton>
+                    </>
+                  }
+                />
               </li>
             ))}
 
@@ -231,20 +323,37 @@ export function LibraryTabs({
                     tone: work.visibility.startsWith('public') ? 'success' : 'neutral',
                   }}
                   actions={
-                    work.lifecycle_status === 'tombstone' ? null : (
-                      <IconButton
-                        label={t('manageWork')}
-                        variant="secondary"
-                        size="sm"
-                        className="border-border bg-surface/90"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setManagingWork(work);
-                        }}
-                      >
-                        <IconPencil className="size-4" />
-                      </IconButton>
+                    !canManageWorks ||
+                    work.lifecycle_status === 'tombstone' ||
+                    work.lifecycle_status === 'trashed' ? null : (
+                      <>
+                        <IconButton
+                          label={t('manageWork')}
+                          variant="secondary"
+                          size="sm"
+                          className="border-border bg-surface/90"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setManagingWork(work);
+                          }}
+                        >
+                          <IconPencil className="size-4" />
+                        </IconButton>
+                        <IconButton
+                          label={t('deleteWork')}
+                          variant="secondary"
+                          size="sm"
+                          className="border-border bg-surface/90"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setTrashingWork(work);
+                          }}
+                        >
+                          <IconTrash className="size-4" />
+                        </IconButton>
+                      </>
                     )
                   }
                 />
@@ -338,6 +447,31 @@ export function LibraryTabs({
         {draftError ? <ErrorNotice title={draftError} /> : null}
         <p className="text-sm text-muted">{t('deleteDraftConfirmBody')}</p>
       </Dialog>
+
+      {trashingWork ? (
+        <DeleteWorkDialog
+          workId={trashingWork.id}
+          open
+          onClose={() => setTrashingWork(null)}
+          onDeleted={() => {
+            setTrashingWork(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
+
+      {purgingWork ? (
+        <PurgeWorkDialog
+          workId={purgingWork.id}
+          referenced={purgingWork.referenced}
+          open
+          onClose={() => setPurgingWork(null)}
+          onPurged={() => {
+            setPurgingWork(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
