@@ -13,11 +13,15 @@ import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
+import { isApiError } from '@/lib/api/errors';
 import type { GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDateTime } from '@/lib/format';
 import { useJobStream } from '@/lib/use-job-stream';
 import { loadAnime, useReducedMotion } from '@/lib/motion';
+import { useToast } from '@/components/ui/toast';
+import { checkEditorAvailable } from '@/features/editor/api';
+import { createCutFromJob } from '@/features/editor/from-job';
 
 const PROGRESS_DURATION = 650;
 const STAGE_POP_DURATION = 420;
@@ -44,13 +48,17 @@ const STAGE_FOR_EVENT: Record<string, Stage> = {
 export function JobProgress({ jobId, initial }: { jobId: string; initial: GenerationJob }) {
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
+  const tEditor = useTranslations('editor');
   const tActions = useTranslations('actions');
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const { notify } = useToast();
 
   const { job, events, reconnecting } = useJobStream(jobId, initial);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [openingEditor, setOpeningEditor] = useState(false);
+  const [editorAvailable, setEditorAvailable] = useState<boolean | null>(null);
 
   const current = job ?? initial;
   const reached = new Set<Stage>();
@@ -125,6 +133,42 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
       setCancelling(false);
     }
   };
+
+  const enterEditor = async () => {
+    setOpeningEditor(true);
+    try {
+      const cut = await createCutFromJob(jobId);
+      const draftQuery = current.draft_id ? `?draftId=${encodeURIComponent(current.draft_id)}` : '';
+      router.push(`/create/drama/${cut.id}${draftQuery}`);
+    } catch (error) {
+      if (isApiError(error) && error.isNotFound && current.draft_id) {
+        router.push(`/publish/${current.draft_id}`);
+        return;
+      }
+      notify(isApiError(error) ? error.message : tEditor('commandFailed'), 'error');
+    } finally {
+      setOpeningEditor(false);
+    }
+  };
+
+  const canEnterEditor =
+    current.status === 'succeeded' &&
+    (current.operation === 'text_to_video' ||
+      current.operation === 'image_to_video' ||
+      current.operation === 'video_to_video');
+
+  useEffect(() => {
+    if (!canEnterEditor) return;
+    let cancelled = false;
+    void checkEditorAvailable().then((available) => {
+      if (!cancelled) setEditorAvailable(available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canEnterEditor]);
+
+  const showEnterEditor = canEnterEditor && editorAvailable !== false;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
@@ -248,8 +292,16 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
         {/* One row, two homes: pinned above the home indicator on a phone,
             inline under the timeline once there is room for it. */}
         <div className="safe-b fixed inset-x-0 bottom-0 z-30 flex flex-wrap items-center gap-3 border-t border-border bg-surface px-4 py-3 lg:static lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
+          {showEnterEditor ? (
+            <Button onClick={() => void enterEditor()} loading={openingEditor}>
+              {tJob('enterEditor')}
+            </Button>
+          ) : null}
           {current.status === 'succeeded' && current.draft_id ? (
-            <Button onClick={() => router.push(`/publish/${current.draft_id}`)}>
+            <Button
+              variant={showEnterEditor ? 'secondary' : 'primary'}
+              onClick={() => router.push(`/publish/${current.draft_id}`)}
+            >
               {tJob('publish')}
             </Button>
           ) : null}

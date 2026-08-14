@@ -54,6 +54,7 @@ export function ManageSkillDialog({
   const [category, setCategory] = useState<CreationSkillCategory>(skill.category);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const save = async () => {
     if (!detail.data) return;
@@ -99,6 +100,21 @@ export function ManageSkillDialog({
       onChanged();
     } catch {
       setError(t('saveFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.delete(`/v1/skills/${skill.id}`);
+      notify(t('deleteDone'), 'success');
+      onChanged();
+    } catch {
+      setConfirmDelete(false);
+      setError(t('deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -162,7 +178,33 @@ export function ManageSkillDialog({
             </Button>
           </div>
         </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="text-xs text-muted">{t('deleteHint')}</p>
+          <Button type="button" variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
+            {t('delete')}
+          </Button>
+        </div>
       </div>
+
+      <Dialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title={t('deleteConfirmTitle')}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              {tActions('cancel')}
+            </Button>
+            <Button variant="danger" loading={busy} onClick={() => void remove()}>
+              {tActions('confirm')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">{t('deleteConfirmBody')}</p>
+      </Dialog>
     </Dialog>
   );
 }

@@ -51,6 +51,9 @@ DEFAULT_ROLE_BINDINGS: dict[str, AgentModelBinding] = {
     AgentName.INTENT_ROUTER.value: AgentModelBinding(
         model="ling-3.0-flash-free", max_tokens=512, temperature=0.0
     ),
+    AgentName.EDITOR_PLANNER.value: AgentModelBinding(
+        model="kimi-k3", max_tokens=2048, temperature=0.2, reasoning_model=True
+    ),
 }
 
 

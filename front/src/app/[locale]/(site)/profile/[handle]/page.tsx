@@ -8,7 +8,7 @@ import { IconBell, IconChevronRight, IconGear, IconGrid, IconWallet } from '@/co
 import { Badge, EmptyState, SectionHeading, StatRow, StatTile } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import { serverFetch, serverFetchOrNull } from '@/lib/api/server';
+import { serverFetchOrNull } from '@/lib/api/server';
 import type {
   CountResponseLike,
   GenerationJob,
@@ -44,10 +44,10 @@ export default async function ProfilePage({ params }: Params) {
   });
   if (!profile) notFound();
 
-  const works = await serverFetch<Page<WorkSummary>>(`/v1/profiles/${handle}/works`, {
+  const works = (await serverFetchOrNull<Page<WorkSummary>>(`/v1/profiles/${handle}/works`, {
     authenticated: true,
     query: { limit: 12 },
-  });
+  })) ?? { items: [] };
 
   // The owner's page also shows the private half of their activity.
   const [me, bookmarks, jobs, unread] = profile.is_self

@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { AddToCollectionDialog } from '@/components/work/add-to-collection-dialog';
+import { AppealDialog } from '@/components/work/appeal-dialog';
 import { Avatar } from '@/components/work/avatar';
 import { LineageStrip } from '@/components/work/lineage-strip';
 import { ReportDialog } from '@/components/work/report-dialog';
@@ -19,7 +20,7 @@ import {
   IconRemix,
   IconSparkle,
 } from '@/components/ui/icons';
-import { Badge } from '@/components/ui/primitives';
+import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -55,7 +56,7 @@ export function WorkInfoPanel({
   const tPage = useTranslations('workPage');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { requireAuth } = useSession();
+  const { user, requireAuth } = useSession();
   const { notify } = useToast();
 
   const [liked, setLiked] = useState(work.viewer_liked);
@@ -63,6 +64,11 @@ export function WorkInfoPanel({
   const [bookmarked, setBookmarked] = useState(work.viewer_bookmarked);
   const [reportOpen, setReportOpen] = useState(false);
   const [collectionOpen, setCollectionOpen] = useState(false);
+  const [appealOpen, setAppealOpen] = useState(false);
+  const [appealStatus, setAppealStatus] = useState(work.appeal?.status ?? null);
+
+  const isOwner = user !== null && user.id === work.author.user_id;
+  const isHidden = work.lifecycle_status === 'hidden';
 
   const toggleLike = () =>
     requireAuth({
@@ -100,8 +106,7 @@ export function WorkInfoPanel({
       },
     });
 
-  const openReport = () =>
-    requireAuth({ label: t('report'), run: () => setReportOpen(true) });
+  const openReport = () => requireAuth({ label: t('report'), run: () => setReportOpen(true) });
 
   const openAddToCollection = () =>
     requireAuth({ label: tPage('addToCollection'), run: () => setCollectionOpen(true) });
@@ -118,6 +123,28 @@ export function WorkInfoPanel({
 
   return (
     <div className="flex flex-col gap-5">
+      {!compact && isHidden && isOwner ? (
+        <ErrorNotice
+          title={appealStatus === 'denied' ? tPage('appealDenied') : tPage('appealBanner')}
+          detail={
+            appealStatus === 'pending'
+              ? tPage('appealPending')
+              : appealStatus === 'denied' && work.appeal?.decision_note
+                ? tPage('appealDeniedNote', { note: work.appeal.decision_note })
+                : work.hide_reason
+                  ? tPage('appealBannerReason', { reason: work.hide_reason })
+                  : undefined
+          }
+          action={
+            appealStatus === 'pending' ? undefined : (
+              <Button size="sm" variant="secondary" onClick={() => setAppealOpen(true)}>
+                {tPage('appealButton')}
+              </Button>
+            )
+          }
+        />
+      ) : null}
+
       <div className="flex items-start justify-between gap-3">
         <Badge tone={isOriginal ? 'neutral' : 'amber'}>
           {isOriginal ? t('original') : t('remix')}
@@ -245,6 +272,12 @@ export function WorkInfoPanel({
       )}
 
       <ReportDialog workId={work.id} open={reportOpen} onClose={() => setReportOpen(false)} />
+      <AppealDialog
+        workId={work.id}
+        open={appealOpen}
+        onClose={() => setAppealOpen(false)}
+        onSubmitted={() => setAppealStatus('pending')}
+      />
       <AddToCollectionDialog
         workId={work.id}
         open={collectionOpen}

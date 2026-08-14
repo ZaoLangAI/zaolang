@@ -23,6 +23,7 @@ from app.api.v1 import (
     credits,
     devices,
     drafts,
+    editor,
     gateway,
     jobs,
     learning,
@@ -61,6 +62,7 @@ def build_router() -> APIRouter:
     router.include_router(style_gallery.router)
     router.include_router(privacy.router)
     router.include_router(devices.router)
+    router.include_router(editor.router)
     router.include_router(admin.router)
     return router
 
@@ -97,6 +99,10 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(build_router())
+
+    from app.mcp.server import router as mcp_router
+
+    app.include_router(mcp_router)
 
     from app.api import health
 

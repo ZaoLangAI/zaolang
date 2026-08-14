@@ -27,6 +27,7 @@ from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.notifications import push as notifications
 from app.domain.skill_library import service as skill_library_service
+from app.domain.style_gallery import service as style_gallery_service
 from app.models import Draft, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
@@ -182,15 +183,21 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
     return NodeResult(port="pass", summary="通过")
 
 
-def _fold_skill_prompt(prompt: str, params_json: dict[str, Any]) -> str:
-    """Applies a skill's prompt template the same way the studio's local
+_CONTEXT_ID_KEYS = frozenset({"skill_ids", "style_gallery_id"})
+
+
+def _fold_params_prompt(prompt: str, params_json: dict[str, Any]) -> str:
+    """Applies a template's prompt the same way the studio's local
     `applyParams` does (`front/src/components/studio/generation-studio.tsx`):
-    `prompt` is the skill's full directive text, `prompt_suffix` is a
+    `prompt` is the template's full directive text, `prompt_suffix` is a
     fragment meant to be tacked on. Appending only when the text is not
     already present keeps the normal path (client already merged it via
     `/apply`, possibly user-edited) from getting it duplicated, while a bare
     API call that never merged locally still ends up with it in the final
     prompt sent to the provider.
+
+    Shared by creation skills and system style-gallery entries — both store
+    the same `params_json` shape.
     """
     for key in ("prompt", "prompt_suffix"):
         value = params_json.get(key)
@@ -200,32 +207,45 @@ def _fold_skill_prompt(prompt: str, params_json: dict[str, Any]) -> str:
 
 
 def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> NodeResult:
-    """Makes every applied `CreationSkill`'s params authoritative server-side.
+    """Makes applied style-gallery and `CreationSkill` params authoritative.
 
-    The studio already merges a skill's params into the form locally and
-    counts the usage the moment a user picks it (`POST /v1/skills/{id}/apply`
-    -> `record_usage`) — that is the popularity signal, and stays a one-shot
-    "selected" event independent of whether a job ever gets submitted. This
-    node does not call `record_usage` again (that would double-count every
-    submission); its job is only to not trust the client's merge: a request
-    built without ever calling `/apply` (a future API-only client, a replay)
-    still gets each skill's real params rather than silently skipping them —
-    including its prompt template, which lives on `ctx.prompt` rather than
-    `ctx.params` and so needs its own fold (see `_fold_skill_prompt`).
+    The studio already merges templates into the form locally and counts
+    usage the moment a user picks one (`POST /v1/skills/{id}/apply` /
+    `POST /v1/style-gallery/{id}/apply`) — that is the popularity signal,
+    and stays a one-shot "selected" event independent of whether a job ever
+    gets submitted. This node does not call those counters again (that would
+    double-count every submission); its job is only to not trust the client's
+    merge: a request built without ever calling `/apply` (a future API-only
+    client, a replay) still gets each template's real params rather than
+    silently skipping them — including prompt text, which lives on
+    `ctx.prompt` rather than `ctx.params` and so needs its own fold (see
+    `_fold_params_prompt`).
 
-    `skill_ids` is applied in pick order: each skill's prompt/`prompt_suffix`
-    is folded into `ctx.prompt` in turn, and its other params are shallow-
-    merged with later skills winning over earlier ones on conflicting keys —
-    the same "last write wins" rule a single skill always had, extended
-    across more than one. A skill whose `applicable_operations` doesn't
-    include this job's operation (e.g. a video-only skill on a
-    `text_to_image` job) is skipped, same as an unusable/missing skill.
+    Order: the style gallery entry first (one, mutually exclusive), then
+    `skill_ids` in pick order. Later templates win on conflicting keys;
+    the user's own explicit params (non-`None`) always win over every
+    template. A skill whose `applicable_operations` doesn't include this
+    job's operation is skipped, same as an unusable/missing skill or style.
     """
+    style_gallery_id = ctx.params.get("style_gallery_id")
     skill_ids = ctx.params.get("skill_ids") or []
-    if not skill_ids or ctx.dry_run:
+    if ctx.dry_run or (not style_gallery_id and not skill_ids):
         return NodeResult(port="ok")
 
     template_params: dict[str, Any] = {}
+    if style_gallery_id:
+        try:
+            entry = style_gallery_service.get_usable(ctx.session, entry_id=str(style_gallery_id))
+        except NotFound:
+            logger.warning(
+                "job %s referenced an unusable style gallery entry %s; ignoring",
+                ctx.job.id,
+                style_gallery_id,
+            )
+        else:
+            ctx.prompt = _fold_params_prompt(ctx.prompt, entry.params_json)
+            template_params.update(entry.params_json)
+
     for skill_id in skill_ids:
         try:
             skill = skill_library_service.get_usable(
@@ -243,15 +263,19 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
                 ctx.job.operation,
             )
             continue
-        ctx.prompt = _fold_skill_prompt(ctx.prompt, skill.params_json)
+        ctx.prompt = _fold_params_prompt(ctx.prompt, skill.params_json)
         template_params.update(skill.params_json)
 
     if not template_params:
         return NodeResult(port="ok")
 
-    # The user's own explicit params always win over every skill's template.
-    merged = template_params
-    merged.update({k: v for k, v in ctx.params.items() if k != "skill_ids"})
+    # The user's own explicit params always win over every template. `None`
+    # is how Pydantic `model_dump()` represents omitted optional fields
+    # (`negative_prompt: null`) — those must not wipe a template value.
+    merged = dict(template_params)
+    merged.update(
+        {k: v for k, v in ctx.params.items() if k not in _CONTEXT_ID_KEYS and v is not None}
+    )
     merged["prompt"] = ctx.prompt
     ctx.params = merged
     return NodeResult(port="ok")

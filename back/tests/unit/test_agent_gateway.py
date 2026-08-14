@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.agents import base as agent_base
-from app.agents import copywriter, intent_router, planner, router, tools
+from app.agents import copywriter, editor_planner, intent_router, planner, router, tools
 from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ValidationFailed
@@ -598,6 +598,7 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
             intent_router.CLASSIFY_SLOT,
             intent_router.SELECT_PROVIDER_SLOT,
         },
+        AgentName.EDITOR_PLANNER.value: {editor_planner.SLOT},
     }
     for role, slots in called.items():
         declared = {slot.key for slot in agent_slots.slots_for(role)}

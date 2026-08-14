@@ -103,12 +103,58 @@ def suggest_tags(session: Session, keywords: list[str], limit: int = 8) -> list[
     ]
 
 
+def lookup_media_analysis(session: Session, asset_id: str) -> dict[str, Any]:
+    """Read-only media analysis summary for an asset the planner already saw."""
+    from app.domain.editor import analysis as media_analysis
+
+    summary = media_analysis.summary_for(session, asset_id)
+    return summary or {"found": False}
+
+
+def lookup_shortform_profile(session: Session, profile_key: str) -> dict[str, Any]:
+    """Returns a delivery profile's public spec. No secrets."""
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import ShortformConfig
+
+    cfg = config_service.get_typed(session, "shortform", ShortformConfig)
+    profile = cfg.profiles.get(profile_key)
+    if profile is None:
+        return {"found": False}
+    return {
+        "found": True,
+        "profile_key": profile_key,
+        "aspect_ratio": profile.aspect_ratio,
+        "width": profile.width,
+        "height": profile.height,
+        "min_duration_seconds": profile.min_duration_seconds,
+        "max_duration_seconds": profile.max_duration_seconds,
+    }
+
+
+def timeline_summary(session: Session, cut_id: str) -> dict[str, Any]:
+    """Normalized timeline summary. Does not include object keys or signed URLs."""
+    from app.domain.editor import document as docs
+    from app.domain.editor import service as editor_service
+    from app.models import EpisodeCut
+
+    cut_row = session.get(EpisodeCut, cut_id)
+    if cut_row is None:
+        return {"found": False}
+    head = editor_service.head_revision(session, cut_row)
+    if head is None:
+        return {"found": False}
+    return {"found": True, "summary": docs.timeline_summary(head.document_json)}
+
+
 # The complete set. Anything not listed here cannot be handed to an agent.
 TOOL_REGISTRY: dict[str, Callable[..., Any]] = {
     "price_operation": price_operation,
     "list_provider_capabilities": list_provider_capabilities,
     "lookup_source_parameters": lookup_source_parameters,
     "suggest_tags": suggest_tags,
+    "timeline_summary": timeline_summary,
+    "lookup_shortform_profile": lookup_shortform_profile,
+    "lookup_media_analysis": lookup_media_analysis,
 }
 
 # Which agent may use which tool. Safety gets nothing: a content judgement must
@@ -123,6 +169,9 @@ AGENT_TOOL_GRANTS: dict[str, frozenset[str]] = {
     # A cost/complexity judgement call, same reasoning as `safety`: it must
     # not depend on anything a prompt could steer it into fetching.
     "intent_router": frozenset(),
+    "editor_planner": frozenset(
+        {"timeline_summary", "lookup_shortform_profile", "lookup_media_analysis"}
+    ),
 }
 
 

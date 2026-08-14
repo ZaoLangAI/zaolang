@@ -167,6 +167,10 @@ class GenerationParams(ApiModel):
     # re-fetches and re-merges each skill's own params server-side before
     # generation runs.
     skill_ids: list[str] = Field(default_factory=list, max_length=5)
+    # Platform-curated style catalogue entry. Single and mutually exclusive —
+    # unlike `skill_ids`. The same `skill_context` node re-fetches it so a
+    # bare API client that never merged locally still gets `prompt_suffix`.
+    style_gallery_id: str | None = Field(default=None, max_length=40)
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -314,7 +318,7 @@ class UploadPresignRequest(ApiModel):
     purpose: str = Field(
         pattern=(
             r"^(generation_reference|avatar|profile_cover|consent_evidence|learn_media"
-            r"|style_gallery_cover)$"
+            r"|style_gallery_cover|editor_source|editor_export|caption|font)$"
         )
     )
 

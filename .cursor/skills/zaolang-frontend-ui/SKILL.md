@@ -14,13 +14,13 @@ disable-model-invocation: true
 
 | 路径 | 内容 |
 | --- | --- |
-| `front/src/app/[locale]/(site)/` | 首页、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
+| `front/src/app/[locale]/(site)/` | 首页、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
 | `front/src/components/ui/` | `button` / `dialog` / `field` / `primitives` / `spinner` / `toast` / `icons` |
 | `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer` / `brand` |
 | `front/src/components/auth/` | `login-dialog` / `session-provider` / `sign-in-prompt` |
 | `front/src/components/command/command-palette.tsx` | Cmd+K，combobox 无障碍模式 |
 | `front/src/lib/api/client.ts` | 浏览器侧 fetch：内存 access token、自动刷新、`Idempotency-Key` |
-| `front/src/lib/api/server.ts` | RSC 侧 fetch，走 `API_INTERNAL_URL` |
+| `front/src/lib/api/server.ts` | RSC 侧 fetch，走 `API_INTERNAL_URL`；发现/个人等列表页用 `serverFetchOrNull`，网络失败与 5xx 降为空，避免 API 挂掉整站 500 |
 | `front/src/lib/use-resource.ts`、`use-job-stream.ts` | 数据获取与 SSE hooks |
 | `front/src/lib/format.ts` | 货币、日期、数量的地区化格式 |
 
@@ -36,6 +36,8 @@ disable-model-invocation: true
 8. **文案一律走 next-intl**，不允许硬编码中文字符串（见 `zaolang-i18n-region`）。
 9. **命令面板是 combobox 而不是 dialog**：`role="search"` 容器 + `role="combobox"` 输入 + `role="listbox"`/`role="option"`。这个 ARIA 结构被 axe 检查，改标记前先看 `e2e/a11y.spec.ts`。
 10. **视频创作参数必须保持 provider-safe**：H3 用户控件只提交 4–15 秒、六种画幅、2K、可选 seed，以及互斥的普通参考/首尾帧模式。上传只传平台 `Asset.id`，不在 `extra` 中透传 webhook、外部 URL 或任意供应商 JSON。
+11. **短剧剪辑 `/create/drama` 是桌面 Chrome/Edge 硬门禁**：窄屏只给提示、不打开时间线，不要套用工作室的底栏 Sheet。该路由不进 `a11y-mobile` 扫描清单。任务页「进入剪辑」只引 `front/src/features/editor/from-job.ts`，禁止从 `features/editor` 桶文件静态拉整棵编辑器（会把 WASM / mediabunny 打进任务页）。`export-runner.ts` 对 `mediabunny` 动态 import。细节见 `zaolang-editor-drama`。
+12. **RSC 列表页遇 API 不可用要降级，不要白屏。** `serverFetchOrNull` / `adminFetchOrNull` 把网络失败与 5xx 收成 `null`（`ApiError.isUnavailable`）。发现页、个人页作品列表、后台统计页已按此处理。路由级兜底是 `front/src/app/[locale]/error.tsx`。
 
 ## 改造切入点
 

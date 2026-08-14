@@ -38,6 +38,8 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    * `skill_context` workflow node re-apply them authoritatively server-side.
    */
   skillIds?: string[];
+  /** Platform style-catalogue entry; `skill_context` re-fetches its params. */
+  styleGalleryId?: string;
   /** A licensed remix source. Carried by both the draft and the job. */
   sourceWorkId?: string;
   /** Ceiling sent to the API; the job is refused rather than trimmed. */
@@ -179,6 +181,7 @@ export function useGenerationSubmit(
                 character_ids: input.characterIds ?? [],
                 shortform_profile: input.shortformProfile,
                 skill_ids: input.skillIds ?? [],
+                style_gallery_id: input.styleGalleryId ?? null,
                 extra: input.extra ?? {},
               },
               max_credits: input.maxCredits,

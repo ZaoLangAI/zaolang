@@ -7,7 +7,7 @@ import { InspirationMasonry } from '@/components/discover/inspiration-masonry';
 import { InspirationSkeleton } from '@/components/discover/inspiration-skeleton';
 import { TagFilter } from '@/components/discover/tag-filter';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
-import { serverFetch, serverFetchOrNull } from '@/lib/api/server';
+import { serverFetchOrNull } from '@/lib/api/server';
 import type { Page, Tag, WorkDetail, WorkSummary } from '@/lib/api/types';
 
 /**
@@ -53,9 +53,9 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
 
 async function DiscoverHero({ filters }: { filters: Filters }) {
   const t = await getTranslations('discover');
-  const feed = await serverFetch<Page<WorkSummary>>('/v1/works', {
+  const feed = (await serverFetchOrNull<Page<WorkSummary>>('/v1/works', {
     query: { ...filters, limit: HERO_SLIDES },
-  });
+  })) ?? { items: [] };
 
   // The carousel shows several prominent works in full. Fetching each detail
   // separately is what gives the panel its lineage, licence and reusable
@@ -80,21 +80,23 @@ async function InspirationSection({ filters }: { filters: Filters }) {
   const filtered = Boolean(filters.q || filters.tag);
 
   const [feed, tags] = await Promise.all([
-    serverFetch<Page<WorkSummary>>('/v1/works', {
+    serverFetchOrNull<Page<WorkSummary>>('/v1/works', {
       query: { ...filters, limit: PAGE_SIZE },
     }),
-    serverFetch<Page<Tag>>('/v1/tags', { query: { limit: 24 }, revalidate: 300 }),
+    serverFetchOrNull<Page<Tag>>('/v1/tags', { query: { limit: 24 }, revalidate: 300 }),
   ]);
+  const works = feed ?? { items: [] };
+  const tagPage = tags ?? { items: [] };
 
   // The hero runs the same query with `limit: HERO_SLIDES`, so those items are
   // already on screen above the wall. The cursor still points at the last item
   // of the full page, so dropping them here leaves no gap.
-  const tiles = feed.items.slice(HERO_SLIDES);
+  const tiles = works.items.slice(HERO_SLIDES);
 
   return (
     <section>
       <SectionHeading title={t('inspiration')} description={t('inspirationHint')} />
-      <TagFilter tags={tags.items} active={filters.tag} q={filters.q} sort={filters.sort} />
+      <TagFilter tags={tagPage.items} active={filters.tag} q={filters.q} sort={filters.sort} />
       <div className="mt-5">
         {tiles.length > 0 ? (
           <InspirationMasonry
@@ -102,12 +104,12 @@ async function InspirationSection({ filters }: { filters: Filters }) {
             // query and there is nothing to reconcile them with.
             key={`${filters.q ?? ''}|${filters.tag ?? ''}|${filters.sort ?? ''}`}
             works={tiles}
-            cursor={feed.next_cursor ?? null}
+            cursor={works.next_cursor ?? null}
             query={filters}
             pageSize={PAGE_SIZE}
           />
         ) : null}
-        {feed.items.length === 0 ? (
+        {works.items.length === 0 ? (
           <EmptyState
             title={filtered ? t('noResults') : t('emptyFeed')}
             description={filtered ? t('noResultsHint') : t('emptyFeedHint')}

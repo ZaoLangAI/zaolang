@@ -51,6 +51,11 @@ export class ApiError extends Error {
   get isRateLimited(): boolean {
     return this.status === 429;
   }
+
+  /** API down, 5xx, or a response that was not JSON. Pages may degrade. */
+  get isUnavailable(): boolean {
+    return this.status >= 500 || this.status === 0;
+  }
 }
 
 export function isApiError(value: unknown): value is ApiError {

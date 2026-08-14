@@ -13,7 +13,16 @@ export type Asset = components['schemas']['AssetResponse'];
  */
 export async function uploadFile(
   file: File,
-  purpose: 'generation_reference' | 'avatar' | 'profile_cover' | 'consent_evidence' | 'learn_media',
+  purpose:
+    | 'generation_reference'
+    | 'avatar'
+    | 'profile_cover'
+    | 'consent_evidence'
+    | 'learn_media'
+    | 'editor_source'
+    | 'editor_export'
+    | 'caption'
+    | 'font',
 ): Promise<Asset> {
   const checksum = await sha256Hex(await file.arrayBuffer());
 
@@ -37,7 +46,7 @@ export async function uploadFile(
   });
 }
 
-async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+export async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))

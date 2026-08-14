@@ -17,6 +17,19 @@ from app.models.credits import (
     RedemptionRecord,
     WebhookEvent,
 )
+from app.models.editor import (
+    CutRevision,
+    DeliveryVariant,
+    DramaEpisode,
+    EditPlan,
+    EditorCommandEvent,
+    EditorExport,
+    EditorLease,
+    EditorOperationEvent,
+    EpisodeCut,
+    McpTokenGrant,
+    MediaAnalysis,
+)
 from app.models.generation import (
     AgentRun,
     GenerationJob,
@@ -49,6 +62,7 @@ from app.models.platform import (
     PlatformConfig,
     ReconciliationReport,
     ReportCase,
+    WorkAppeal,
 )
 from app.models.search import EMBEDDING_DIM, WorkEmbedding
 from app.models.skill_library import CreationSkill
@@ -93,9 +107,18 @@ __all__ = [
     "CreditAccount",
     "CreditLedgerEntry",
     "CreditPackage",
+    "CutRevision",
     "DataRequest",
+    "DeliveryVariant",
     "Device",
     "Draft",
+    "DramaEpisode",
+    "EditPlan",
+    "EditorCommandEvent",
+    "EditorExport",
+    "EditorLease",
+    "EditorOperationEvent",
+    "EpisodeCut",
     "Follow",
     "GenerationJob",
     "GenerationWorkflowTemplate",
@@ -105,6 +128,8 @@ __all__ = [
     "LicenseSnapshot",
     "Like",
     "LineageEdge",
+    "McpTokenGrant",
+    "MediaAnalysis",
     "ModerationQueueItem",
     "ModerationResult",
     "Notification",
@@ -129,6 +154,7 @@ __all__ = [
     "User",
     "WebhookEvent",
     "Work",
+    "WorkAppeal",
     "WorkEmbedding",
     "WorkTag",
     "WorkVersion",

@@ -43,6 +43,7 @@ QUEUE_NAMES = (
     # render it would fire minutes late and the heartbeats it exists to
     # produce would stop.
     "provider_task_polling",
+    "media_analysis",
 )
 
 celery_app.conf.update(
@@ -70,6 +71,9 @@ celery_app.conf.update(
         "app.workers.tasks.expire_stale_jobs": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_input_requests": {"queue": "webhook_reconcile"},
         "app.workers.tasks.poll_async_provider_tasks": {"queue": "provider_task_polling"},
+        "app.workers.tasks.run_media_analysis": {"queue": "media_analysis"},
+        "app.workers.tasks.expire_editor_leases": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.expire_orphan_editor_uploads": {"queue": "webhook_reconcile"},
     },
     beat_schedule={
         "expire-stale-jobs": {
@@ -94,6 +98,14 @@ celery_app.conf.update(
         "reconcile-credits": {
             "task": "app.workers.tasks.reconcile_credits",
             "schedule": 3600.0,
+        },
+        "expire-editor-leases": {
+            "task": "app.workers.tasks.expire_editor_leases",
+            "schedule": 60.0,
+        },
+        "expire-orphan-editor-uploads": {
+            "task": "app.workers.tasks.expire_orphan_editor_uploads",
+            "schedule": 300.0,
         },
     },
 )

@@ -15,7 +15,7 @@ disable-model-invocation: true
 | 文件 | 内容 |
 | --- | --- |
 | `back/app/domain/media/service.py` | `presign_upload` / `complete_upload` / `register_generated_asset` / `record_provenance` / `record_fingerprint` / `find_near_duplicates` / `signed_url_for` / `publish_asset` |
-| `back/app/storage/s3.py` | `ALLOWED_UPLOAD_MIME_TYPES`、`MAX_UPLOAD_BYTES`、`PURPOSE_PREFIXES`、预签名与生命周期策略 |
+| `back/app/storage/s3.py` | `ALLOWED_UPLOAD_MIME_TYPES`、`MAX_UPLOAD_BYTES`、`PURPOSE_PREFIXES`（含 `editor_source` / `editor_export`）、预签名、桶 CORS 与生命周期策略 |
 | `back/app/api/v1/uploads.py` | `POST /v1/uploads/presign` 与 `POST /v1/uploads/complete` |
 | `back/app/presenters/media_urls.py` | 出站 URL 组装（签名与有效期） |
 | `back/app/scripts/import_assets_pack.py` | 按 `assets-pack/manifest.example.json` 契约读取本地 `assets-pack/manifest.json`，支持导入与 `--dry-run` 校验 |
@@ -24,8 +24,8 @@ disable-model-invocation: true
 ## 不可破坏的不变量
 
 1. **上传是两段式**：先 `presign`（服务端校验 MIME、大小上限、用途），客户端直传 MinIO，再 `complete`（服务端复核实际对象、探测尺寸与时长、建 `Asset`）。**没有 `complete` 的对象不是资产**，靠生命周期策略清理。
-2. **白名单约束在发预签名之前生效**：只允许 `image/png` / `image/jpeg` / `image/webp` / `video/mp4` / `video/webm`；大小上限按用途区分（参考图 32MB、头像 4MB、封面 12MB、授权证据 16MB）。
-3. **每种用途关进自己的前缀**（`PURPOSE_PREFIXES` 全部在 `staging/` 下）。这样一个头像的签名 URL 无法被重放去覆盖生成产物。
+2. **白名单约束在发预签名之前生效**：只允许 `image/png` / `image/jpeg` / `image/webp` / `video/mp4` / `video/webm`；大小上限按用途区分（参考图 32MB、头像 4MB、封面 12MB、授权证据 16MB、剪辑源/导出 256MB）。
+3. **每种用途关进自己的前缀**（`PURPOSE_PREFIXES` 全部在 `staging/` 下）。这样一个头像的签名 URL 无法被重放去覆盖生成产物。`editor_export` 的 `complete` 必须 HEAD + checksum + **ffprobe**。剪辑源的时长/画幅分析是 `MediaAnalysis` + `media_analysis` 队列，领域在 `zaolang-editor-drama`，不要把 ffprobe 分析写进 `media/service.py`。
 4. **私密对象只能通过短时效签名 URL 下载**，且签发前必须校验调用者对该资产的权限。桶不对公网开放，不要为了省事把对象设成 public-read。
 5. **发布时才 `publish_asset`**：把对象从 staging 迁到可读区。发布事务回滚时不能留下已公开的对象。
 6. **pHash 存 64 位有符号整数的字符串形式**（`_to_signed_64`），比较用汉明距离，阈值 `DUPLICATE_HAMMING_THRESHOLD = 6`。改阈值会同时改变「重复上传拦截」与后台「指纹重复项」两处行为。

@@ -1,6 +1,6 @@
 ---
 name: zaolang-generation-jobs
-description: 造浪的生成任务与队列：任务状态机与合法迁移表、JobEvent 追加写与 SSE 断线重连、7 个 Celery 队列、异步供应商轮询与 pipeline、取消失败重试与积分释放。Use when changing job submission, job status transitions, JobEvent streaming, SSE resumption, Celery tasks or queues, provider polling, cancellation, retries, or job settlement.
+description: 造浪的生成任务与队列：任务状态机与合法迁移表、JobEvent 追加写与 SSE 断线重连、8 个 Celery 队列（含 media_analysis）、异步供应商轮询与 pipeline、取消失败重试与积分释放。Use when changing job submission, job status transitions, JobEvent streaming, SSE resumption, Celery tasks or queues, provider polling, cancellation, retries, or job settlement.
 disable-model-invocation: true
 ---
 
@@ -17,7 +17,7 @@ disable-model-invocation: true
 | `back/app/domain/jobs/state_machine.py` | `transition` / `request_cancel` / `append_event` / `events_since` |
 | `back/app/domain/jobs/service.py` | `quote_for` / `submit` / `settle_success` / `settle_release` / `get_owned_job` / `progress_for` |
 | `back/app/models/enums.py` | `JobStatus`、`JOB_TRANSITIONS`、`TERMINAL_JOB_STATUSES`、`CANCELLABLE_JOB_STATUSES`、`JobEventType`、`JobOrigin`（`user` / `sandbox`） |
-| `back/app/workers/celery_app.py` | 7 个队列的注册与路由 |
+| `back/app/workers/celery_app.py` | 8 个队列的注册与路由（`QUEUE_NAMES` 是真源） |
 | `back/app/workers/pipeline.py` | 安全 → 规划 → 路由 → 供应商 → 质检的实际编排 |
 | `back/app/workers/tasks.py` | Celery 任务入口与重试策略 |
 | `back/app/workers/async_polling.py` | `poll_once()`：Beat 周期任务的实际逻辑，认领到期的在途供应商任务、轮询、续跑或收尾 |
@@ -28,7 +28,7 @@ disable-model-invocation: true
 | `back/app/api/v1/admin/jobs.py` | 后台任务运维；`GET/POST /jobs/{id}/input-request`、`/answer` 供沙盒与运维台回答 `AWAITING_INPUT` |
 | `front/src/lib/use-job-stream.ts`、`front/src/lib/use-admin-job-stream.ts`、`front/src/components/job/job-progress.tsx` | C 端 / 后台消费 SSE；后台流额外带 `node_id` |
 
-六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`provider_task_polling`。`Operation.IMAGE_TO_IMAGE` 复用 `image_generation` 队列，`Operation.AUDIO_GENERATION` 走独立的 `audio_generation` 队列（同步调用，不走视频那种建任务+轮询）。`provider_task_polling` 只跑 Beat 周期任务 `poll_async_provider_tasks`，不接收用户提交。
+八个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`provider_task_polling`、`media_analysis`。`Operation.IMAGE_TO_IMAGE` 复用 `image_generation` 队列，`Operation.AUDIO_GENERATION` 走独立的 `audio_generation` 队列（同步调用，不走视频那种建任务+轮询）。`provider_task_polling` 只跑 Beat 周期任务 `poll_async_provider_tasks`，不接收用户提交。`media_analysis` 只跑剪辑源素材的 ffprobe 分析（`run_media_analysis`），不进生成 pipeline；租约/孤儿上传过期挂在 `webhook_reconcile`。见 `zaolang-editor-drama`。
 
 ## 不可破坏的不变量
 

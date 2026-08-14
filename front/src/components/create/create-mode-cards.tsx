@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useSession } from '@/components/auth/session-provider';
 import {
   AudioGenerationIllustration,
+  DramaIllustration,
   ImageToImageIllustration,
   ImageToVideoIllustration,
   RemixIllustration,
@@ -32,6 +33,7 @@ type ModeId =
   | 'image_to_image'
   | 'audio_generation'
   | 'shortform'
+  | 'drama'
   | 'remix';
 
 const MODES: Array<{
@@ -91,6 +93,14 @@ const MODES: Array<{
     accent: 'text-amber',
   },
   {
+    id: 'drama',
+    icon: <IconVideo className="size-5" />,
+    illustration: <DramaIllustration className="size-full" />,
+    href: '/create/drama',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
+  },
+  {
     id: 'remix',
     icon: <IconRemix className="size-5" />,
     illustration: <RemixIllustration className="size-full" />,
@@ -143,6 +153,11 @@ export function CreateModeCards({ className }: { className?: string }) {
       desc: t('modeShortformDesc'),
       tag: t('modeShortformTag'),
     },
+    drama: {
+      title: t('modeDramaTitle'),
+      desc: t('modeDramaDesc'),
+      tag: t('modeDramaTag'),
+    },
     remix: { title: t('modeRemixTitle'), desc: t('modeRemixDesc'), tag: t('modeRemixTag') },
   };
 
@@ -155,7 +170,9 @@ export function CreateModeCards({ className }: { className?: string }) {
             key={mode.id}
             className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow hover:shadow-raised"
           >
-            <div className={cn('relative aspect-[16/10] overflow-hidden bg-surface-soft', mode.accent)}>
+            <div
+              className={cn('relative aspect-[16/10] overflow-hidden bg-surface-soft', mode.accent)}
+            >
               <div className="absolute inset-0 p-3 opacity-90">{mode.illustration}</div>
               <span
                 className={cn(

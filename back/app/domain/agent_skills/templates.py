@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.agents import copywriter, custom, intent_router, planner, quality, safety
+from app.agents import copywriter, custom, editor_planner, intent_router, planner, quality, safety
 from app.agents.slots import DEFAULT_SLOT
 from app.domain.agent_skills.presets import ASSIST, JUDGMENT, AgentCategory
 
@@ -161,6 +161,16 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         description="按相关性/完成度/新意三个维度打分并给出通过与否。",
         category=JUDGMENT,
         prompt_template=_GENERIC_SCORE,
+    ),
+    SkillTemplate(
+        key="editor-planner-default",
+        label="短剧剪辑规划 · 平台默认",
+        description="根据规范化时间线摘要产出可执行 EditCommand，不发布、不改账本。",
+        category=JUDGMENT,
+        prompt_template=editor_planner.SYSTEM_PROMPT,
+        tool_grants=("timeline_summary", "lookup_shortform_profile", "lookup_media_analysis"),
+        role="editor_planner",
+        slot=editor_planner.SLOT,
     ),
 )
 

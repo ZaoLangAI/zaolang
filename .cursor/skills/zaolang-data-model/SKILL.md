@@ -24,7 +24,7 @@ disable-model-invocation: true
 | `back/app/models/platform.py` | `ModerationResult` / `ReportCase` / `Notification` / `PlatformConfig` / `AuditLog` / `IdempotencyRecord` / `Announcement` / `DataRequest` / `BackupRecord` / `ReconciliationReport` |
 | `back/app/models/search.py` | `WorkEmbedding`（pgvector `Vector` 列） |
 | `back/app/models/agent_skills.py` / `async_tasks.py` | `AgentNode` / `AgentProfile` / `AgentSkill` 与异步供应商检查点 `AsyncProviderTask` |
-| `back/app/models/characters.py` / `learning.py` / `skill_library.py` / `system_log.py` | 角色资产、学习内容、技能市场与聚合系统日志 |
+| `back/app/models/characters.py` / `learning.py` / `skill_library.py` / `system_log.py` / `editor.py` | 角色资产（`Series.kind`：`cast` 名册 / `drama` 制作项目）、学习内容、技能市场、聚合系统日志、短剧剪辑（episode/cut/revision/lease/export） |
 | `back/alembic/versions/` | 从基线持续追加的线性迁移链；以 Alembic 当前 head 为准，不依赖文档里的迁移数量 |
 
 ## 不可破坏的不变量
@@ -36,6 +36,7 @@ disable-model-invocation: true
 5. **`JobEvent.sequence` 对 `(job_id, sequence)` 唯一且从 1 连续递增**：SSE 断线重连按 `sequence > Last-Event-ID` 补发，有洞或重复会让客户端漏事件。
 6. **墓碑保留行**：`LifecycleStatus.TOMBSTONED` 只改状态，永不 `DELETE` `Work` / `WorkVersion` / `LineageEdge`，否则创作链断裂。删除用户走匿名化（见 `zaolang-compliance-audit`）。
 7. **枚举值持久化的是字符串**，改名等于数据迁移，加值才是安全操作。状态机改动必须同时改 `JOB_TRANSITIONS`。
+8. **`Series` 一张表两种 kind，禁止再建剧集表。** `cast` 是角色名册（`/v1/series`）；`drama` 是短剧制作项目（`/v1/drama-series`，MCP `project_id`）。名册查询必须带 `kind=cast`，drama id 对名册 API 404。`Series` 不进 `RESET_TABLES`（名册保留）；`make seed --reset` 额外 `DELETE FROM series WHERE kind = 'drama'`，剪辑子表在 `RESET_TABLES` 里。细节见 `zaolang-editor-drama`。
 
 ## 改造切入点
 
@@ -45,7 +46,7 @@ disable-model-invocation: true
 2. `back/app/models/__init__.py` 导出它，否则 autogenerate 看不见。
 3. `make migration m="add xxx"` → **打开生成的迁移人工过一遍**（autogenerate 不会推断 CHECK、部分索引、`server_default`）。
 4. `make migrate` 在空库上验证：`make reset` 是最干净的检验。
-5. 如果是业务表，加进 `back/app/scripts/seed.py` 的 `RESET_TABLES`，否则 `make seed --reset` 会留下脏数据。
+5. 如果是业务表，加进 `back/app/scripts/seed.py` 的 `RESET_TABLES`，否则 `make seed --reset` 会留下脏数据。与 `Series` 同表复用、但不能清名册的行，要像 drama 那样单独 `DELETE`，不要把整张 `series` 丢进 `RESET_TABLES`。
 
 **加一列**：可空或带 `server_default` 才能对存量数据安全升级；要求非空就分两步（先加可空并回填，再改非空）。**纯关联/追溯用的列（例如 `JobEvent.node_id`、`AgentRun.node_id`、`AgentRun.input_json`、`GenerationJob.graph_override_json`、`SystemLog.job_id`）可以只加可空列、不回填历史数据、不设外键**——同 `AuditLog.target_id` 一样，允许被引用的那一行先被清理，日志/追溯记录仍要能存在；这类列的目的是让后台能查到"是谁/哪个节点"，不是维护关系完整性。`GenerationJob.origin` 带 `server_default=user`，存量行即 C 端任务。
 

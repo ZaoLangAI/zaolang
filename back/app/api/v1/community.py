@@ -12,6 +12,7 @@ from app.api.schemas.works import (
     AuthorSummary,
     CollectionCreateRequest,
     CollectionResponse,
+    CollectionUpdateRequest,
     StylePresetCreateRequest,
     StylePresetResponse,
 )
@@ -61,6 +62,28 @@ def list_collections(user: CurrentUser, session: DbSession) -> Page[CollectionRe
         .order_by(Collection.created_at.desc())
     )
     return Page(items=[_collection_response(session, c) for c in rows])
+
+
+@router.patch("/collections/{collection_id}", response_model=CollectionResponse)
+def update_collection(
+    collection_id: str, payload: CollectionUpdateRequest, user: CurrentUser, session: DbSession
+) -> CollectionResponse:
+    collection = _owned_collection(session, collection_id, user.id)
+    collection.name = payload.name
+    collection.description = payload.description
+    collection.is_public = payload.is_public
+    session.commit()
+    return _collection_response(session, collection)
+
+
+@router.delete("/collections/{collection_id}", response_model=OkResponse)
+def delete_collection(collection_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
+    collection = _owned_collection(session, collection_id, user.id)
+    # `collection_items.collection_id` is `ondelete="CASCADE"`, so the items
+    # disappear with the row — no need to delete them one by one here.
+    session.delete(collection)
+    session.commit()
+    return OkResponse()
 
 
 @router.post("/collections/{collection_id}/items", response_model=OkResponse)

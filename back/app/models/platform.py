@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
 from app.models.enums import (
+    AppealStatus,
     DataRequestStatus,
     DataRequestType,
     ModerationStatus,
@@ -79,6 +80,43 @@ class ReportCase(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_report_cases_status_created", "status", "created_at"),
         Index("ix_report_cases_subject", "subject_type", "subject_id"),
+    )
+
+
+class WorkAppeal(Base, TimestampMixin):
+    """A work owner disputing one specific hide decision.
+
+    Deliberately not a `ReportCase` status: a hide can originate from the
+    moderation queue with no report at all, and `ReportStatus`'s
+    upheld/dismissed polarity would mean the opposite of granted/denied here.
+    Scoped to `LifecycleStatus.HIDDEN` works only — a tombstone is terminal
+    and has no restore path to grant an appeal into.
+    """
+
+    __tablename__ = "work_appeals"
+
+    id: Mapped[str] = id_column("apl")
+    work_id: Mapped[str] = mapped_column(ForeignKey("works.id", ondelete="RESTRICT"), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Best-effort link to the report (if any) that led to the hide — purely
+    # informational for a reviewer, not authoritative: a moderation-queue
+    # originated hide has no report at all.
+    source_report_id: Mapped[str | None] = mapped_column(
+        ForeignKey("report_cases.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default=AppealStatus.PENDING, nullable=False)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_work_appeals_status_created", "status", "created_at"),
+        Index("ix_work_appeals_work_id", "work_id"),
     )
 
 

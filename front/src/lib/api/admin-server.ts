@@ -37,20 +37,30 @@ async function adminRequest<T>(path: string, options: AdminRequestOptions = {}):
     }
   }
 
-  const response = await fetch(url, {
-    headers: {
-      accept: 'application/json',
-      // The admin token is the cookie value itself; there is no refresh
-      // exchange, because a console session is short-lived on purpose.
-      ...(session
-        ? { authorization: `Bearer ${session.value}`, cookie: `${ADMIN_COOKIE}=${session.value}` }
-        : {}),
-    },
-    cache: 'no-store',
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+        // The admin token is the cookie value itself; there is no refresh
+        // exchange, because a console session is short-lived on purpose.
+        ...(session
+          ? { authorization: `Bearer ${session.value}`, cookie: `${ADMIN_COOKIE}=${session.value}` }
+          : {}),
+      },
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiError(503, undefined, 'API unreachable');
+  }
 
   const text = await response.text();
-  const payload = text ? (JSON.parse(text) as unknown) : undefined;
+  let payload: unknown;
+  try {
+    payload = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    payload = undefined;
+  }
 
   if (!response.ok) {
     throw new ApiError(response.status, payload as ApiErrorBody | undefined, response.statusText);
@@ -88,7 +98,7 @@ export async function adminFetchOrNull<T>(
   } catch (error) {
     if (
       error instanceof ApiError &&
-      (error.isNotFound || error.isAuthRequired || error.isForbidden)
+      (error.isNotFound || error.isAuthRequired || error.isForbidden || error.isUnavailable)
     ) {
       return null;
     }

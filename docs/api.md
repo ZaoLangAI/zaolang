@@ -5,7 +5,7 @@
 ## 约定
 
 - **鉴权**：`Authorization: Bearer <access_token>`。refresh token 走 httpOnly cookie，前端拿不到也就无法被 XSS 偷走。
-- **后台命名空间**：`/v1/admin/*` 只认 audience 为 `admin` 的 token，存在独立 cookie `zl_admin_session` 里。
+- **MCP**：`POST /mcp` 只认 audience 为 `mcp` 的独立 JWT（`MCP_JWT_SECRET`），拒绝 C 端与后台 token。没有发布工具。
 - **幂等**：所有产生副作用的 POST 接受 `Idempotency-Key`。同键重放返回首次结果；同键不同 body 返回 `409 IDEMPOTENCY_CONFLICT`。
 - **分页**：游标分页（`cursor` + `next_cursor` + `has_more`），不用 offset。运维列表在被读的同时也在被写，offset 会漏行或重复行。
 - **金额**：全部是整数。积分是整数个，货币是最小货币单位（分）。浮点数不参与账务计算。

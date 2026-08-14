@@ -15,6 +15,7 @@ back/app/
 │  ├─ media/       上传、指纹、溯源清单
 │  ├─ publishing/  发布事务、可见性、墓碑
 │  ├─ search/      向量与关键词混合检索
+│  ├─ editor/      短剧时间线、修订 CAS、租约、浏览器导出
 │  ├─ audit/       追加式审计
 │  └─ compliance/  数据导出与匿名化
 ├─ agents/         Safety / Planner / Quality / Copy / Router
@@ -23,7 +24,7 @@ back/app/
 ├─ providers/      生成供应商适配器（fake open / fake paid）
 ├─ llm/            OpenAI 兼容网关客户端、模式切换、响应规范化
 ├─ platform_config/ 运行时配置中心与 Feature Flag
-├─ workers/        Celery 任务与五个队列
+├─ workers/        Celery 任务（生成队列 + media_analysis + 租约/孤儿清理）
 ├─ models/         SQLAlchemy 模型
 ├─ security/       密码、JWT、权限
 └─ observability/  日志与 OpenTelemetry
@@ -92,7 +93,7 @@ flowchart TB
 
 ```text
 front/src/app/[locale]/
-├─ (site)/    C 端 12 个页面，沉浸式外壳
+├─ (site)/    C 端（含 /create/drama 桌面剪辑），沉浸式外壳
 └─ (admin)/   后台控制台，独立 layout、独立登录、独立 API client
 ```
 

@@ -138,6 +138,23 @@ def publish(session: Session, *, skill: CreationSkill, actor_user_id: str) -> Cr
     return skill
 
 
+def delete(session: Session, *, skill: CreationSkill, actor_user_id: str) -> None:
+    """Owner removes a skill for good, at any status.
+
+    Unlike a work, a skill carries no downstream lineage: whoever already
+    applied it copied its params into their own draft/job at that moment, so
+    deleting the row here cannot orphan anything that resolves it live.
+    """
+    if skill.owner_user_id != actor_user_id:
+        raise Forbidden("只能删除自己创建的技能。")
+
+    queue_item = _queue_item_for(session, skill)
+    if queue_item is not None:
+        session.delete(queue_item)
+    session.delete(skill)
+    session.flush()
+
+
 def get_owned(session: Session, *, skill_id: str, owner_user_id: str) -> CreationSkill:
     skill = session.get(CreationSkill, skill_id)
     if skill is None or skill.owner_user_id != owner_user_id:

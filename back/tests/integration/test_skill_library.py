@@ -53,12 +53,32 @@ def test_create_skill_stores_applicable_operations(client: TestClient, author: U
     assert detail.json()["applicable_operations"] == body["applicable_operations"]
 
 
+def test_the_owner_can_delete_their_own_skill(
+    client: TestClient, db: Session, author: User
+) -> None:
+    created = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    skill_id = created.json()["id"]
+
+    response = client.delete(f"/v1/skills/{skill_id}", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+    assert db.get(CreationSkill, skill_id) is None
+
+
+def test_you_cannot_delete_someone_elses_skill(
+    client: TestClient, db: Session, author: User, remixer: User
+) -> None:
+    created = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    skill_id = created.json()["id"]
+
+    response = client.delete(f"/v1/skills/{skill_id}", headers=auth_header(remixer))
+    assert response.status_code == 404, response.text
+    assert db.get(CreationSkill, skill_id) is not None
+
+
 def test_public_listing_only_shows_published_skills(
     client: TestClient, db: Session, author: User
 ) -> None:
-    created = client.post(
-        "/v1/skills", json=_create_payload(), headers=auth_header(author)
-    )
+    created = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
     assert created.status_code == 201, created.text
     skill_id = created.json()["id"]
     assert created.json()["applicable_operations"] == []

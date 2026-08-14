@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 from app.domain.credits import service as credits_service
 from app.domain.jobs import service as jobs_service
 from app.domain.publishing import service as publishing
-from app.models import Follow, Notification, ReportCase, User, Work
+from app.models import Follow, Notification, ReportCase, User, Work, WorkAppeal
 from app.models.base import new_id
-from app.models.enums import NotificationType, Operation, QualityTier, Visibility
+from app.models.enums import LifecycleStatus, NotificationType, Operation, QualityTier, Visibility
 from app.workers import pipeline
 from tests.conftest import auth_header
 
@@ -159,6 +159,83 @@ def test_adding_the_same_work_twice_does_not_duplicate_it(
     assert listed.json()["items"][0]["item_count"] == 1
 
 
+def test_the_owner_can_rename_and_publish_a_collection(client: TestClient, remixer: User) -> None:
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/v1/collections/{collection_id}",
+        json={"name": "潮汐灵感", "description": "海面场景合集", "is_public": True},
+        headers=auth_header(remixer),
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["name"] == "潮汐灵感"
+    assert body["description"] == "海面场景合集"
+    assert body["is_public"] is True
+
+
+def test_you_cannot_edit_someone_elses_collection(
+    client: TestClient, remixer: User, author: User
+) -> None:
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+
+    response = client.patch(
+        f"/v1/collections/{collection_id}",
+        json={"name": "偷改", "description": None, "is_public": True},
+        headers=auth_header(author),
+    )
+    assert response.status_code in (403, 404)
+
+
+def test_deleting_a_collection_removes_it_and_its_items(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+    client.post(
+        f"/v1/collections/{collection_id}/items",
+        params={"work_id": work.id},
+        headers=auth_header(remixer),
+    )
+
+    response = client.delete(f"/v1/collections/{collection_id}", headers=auth_header(remixer))
+    assert response.status_code == 200, response.text
+
+    listed = client.get("/v1/collections", headers=auth_header(remixer))
+    assert listed.json()["items"] == []
+
+
+def test_you_cannot_delete_someone_elses_collection(
+    client: TestClient, remixer: User, author: User
+) -> None:
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+
+    response = client.delete(f"/v1/collections/{collection_id}", headers=auth_header(author))
+    assert response.status_code in (403, 404)
+
+    listed = client.get("/v1/collections", headers=auth_header(remixer))
+    assert len(listed.json()["items"]) == 1
+
+
 def test_you_cannot_add_to_someone_elses_collection(
     client: TestClient, work: Work, remixer: User, author: User
 ) -> None:
@@ -175,6 +252,27 @@ def test_you_cannot_add_to_someone_elses_collection(
         headers=auth_header(author),
     )
     assert response.status_code in (403, 404)
+
+
+def test_the_author_can_delete_their_own_work(
+    client: TestClient, db: Session, work: Work, author: User
+) -> None:
+    response = client.delete(f"/v1/works/{work.id}", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+
+    db.refresh(work)
+    assert work.lifecycle_status == LifecycleStatus.TOMBSTONE
+    assert work.visibility == Visibility.PRIVATE
+
+
+def test_you_cannot_delete_someone_elses_work(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    response = client.delete(f"/v1/works/{work.id}", headers=auth_header(remixer))
+    assert response.status_code == 403, response.text
+
+    db.refresh(work)
+    assert work.lifecycle_status == LifecycleStatus.ACTIVE
 
 
 def test_following_creates_the_edge_and_notifies(
@@ -313,6 +411,90 @@ def test_reporting_a_work_opens_a_case(
     case = db.scalar(select(ReportCase).where(ReportCase.subject_id == work.id))
     assert case is not None
     assert case.reporter_user_id == remixer.id
+
+
+def test_appealing_a_hidden_work_opens_a_pending_appeal(
+    client: TestClient, db: Session, work: Work, author: User
+) -> None:
+    publishing.hide(db, work_id=work.id, reason="怀疑侵权", actor_user_id=None)
+    db.commit()
+
+    response = client.post(
+        f"/v1/works/{work.id}/appeal",
+        json={"reason": "这是我的原创作品，附件是创作过程录屏。"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "pending"
+
+    appeal = db.scalar(select(WorkAppeal).where(WorkAppeal.work_id == work.id))
+    assert appeal is not None
+    assert appeal.owner_user_id == author.id
+
+
+def test_only_the_owner_can_appeal_a_hidden_work(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    publishing.hide(db, work_id=work.id, reason="怀疑侵权", actor_user_id=None)
+    db.commit()
+
+    response = client.post(
+        f"/v1/works/{work.id}/appeal",
+        json={"reason": "这不是我的作品，但我也想申诉。"},
+        headers=auth_header(remixer),
+    )
+    assert response.status_code == 403
+
+
+def test_an_active_work_cannot_be_appealed(
+    client: TestClient, work: Work, author: User
+) -> None:
+    response = client.post(
+        f"/v1/works/{work.id}/appeal",
+        json={"reason": "作品并没有被隐藏。"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 409
+
+
+def test_a_work_cannot_have_two_pending_appeals(
+    client: TestClient, db: Session, work: Work, author: User
+) -> None:
+    publishing.hide(db, work_id=work.id, reason="怀疑侵权", actor_user_id=None)
+    db.commit()
+
+    first = client.post(
+        f"/v1/works/{work.id}/appeal",
+        json={"reason": "这是我的原创作品，第一次申诉。"},
+        headers=auth_header(author),
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        f"/v1/works/{work.id}/appeal",
+        json={"reason": "再申诉一次。"},
+        headers=auth_header(author),
+    )
+    assert second.status_code == 409
+
+
+def test_the_owner_sees_hide_reason_and_appeal_status_on_their_hidden_work(
+    client: TestClient, db: Session, work: Work, author: User
+) -> None:
+    publishing.hide(db, work_id=work.id, reason="怀疑侵权", actor_user_id=None)
+    db.commit()
+    client.post(
+        f"/v1/works/{work.id}/appeal",
+        json={"reason": "这是我的原创作品。"},
+        headers=auth_header(author),
+    )
+
+    owner_view = client.get(f"/v1/works/{work.id}", headers=auth_header(author))
+    assert owner_view.status_code == 200
+    body = owner_view.json()
+    assert body["hide_reason"] == "怀疑侵权"
+    assert body["appeal"]["status"] == "pending"
 
 
 def test_a_style_preset_can_be_saved_and_applied(

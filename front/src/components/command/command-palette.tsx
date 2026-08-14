@@ -30,6 +30,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const t = useTranslations('commandPalette');
   const tNav = useTranslations('nav');
   const tShortform = useTranslations('shortform');
+  const tEditor = useTranslations('editor');
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { status, openLogin } = useSession();
@@ -125,6 +126,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'discover', label: tNav('discover'), path: '/discover' },
       { id: 'create', label: tNav('create'), path: '/create' },
       { id: 'create-short', label: tShortform('title'), path: '/create/short' },
+      { id: 'create-drama', label: tEditor('title'), path: '/create/drama' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
       { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
       { id: 'skills', label: tNav('skills'), path: '/skills' },
@@ -142,7 +144,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
         // dialog beats landing the user on an empty page.
         if (
           status !== 'authenticated' &&
-          ['learn-publish', 'collection', 'profile', 'billing', 'notifications', 'settings'].includes(
+          ['learn-publish', 'collection', 'profile', 'billing', 'notifications', 'settings', 'create-drama'].includes(
             id,
           )
         ) {
@@ -179,7 +181,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       : navigate;
 
     return [...search, ...filteredNavigate, ...workResults];
-  }, [close, go, openLogin, searchable, status, t, tNav, tShortform, trimmed, works]);
+  }, [close, go, openLogin, searchable, status, t, tEditor, tNav, tShortform, trimmed, works]);
 
   if (!open) return null;
 

@@ -84,6 +84,55 @@ def enqueue_for_review(
     return item
 
 
+def ensure_work_queue_item(
+    session: Session,
+    *,
+    work_id: str,
+    status: ModerationStatus | None = None,
+    reason_code: str | None = None,
+) -> ModerationQueueItem:
+    """Finds or creates the `pre_publish` row for a published work.
+
+    Used when a reviewer acts on a work that Safety auto-approved and never
+    enqueued. Does not reopen or rewrite an existing row's status — the
+    caller applies the new verdict afterwards.
+    """
+    item = session.scalar(
+        select(ModerationQueueItem)
+        .where(
+            ModerationQueueItem.subject_type == "work",
+            ModerationQueueItem.subject_id == work_id,
+            ModerationQueueItem.stage == ModerationStage.PRE_PUBLISH,
+        )
+        .limit(1)
+    )
+    if item is not None:
+        return item
+    item = ModerationQueueItem(
+        subject_type="work",
+        subject_id=work_id,
+        stage=ModerationStage.PRE_PUBLISH,
+        status=status or ModerationStatus.APPROVED,
+        reason_code=reason_code,
+        priority=_STAGE_BASE_PRIORITY[ModerationStage.PRE_PUBLISH],
+    )
+    session.add(item)
+    session.flush()
+    return item
+
+
+def latest_work_queue_item(session: Session, work_id: str) -> ModerationQueueItem | None:
+    return session.scalar(
+        select(ModerationQueueItem)
+        .where(
+            ModerationQueueItem.subject_type == "work",
+            ModerationQueueItem.subject_id == work_id,
+        )
+        .order_by(ModerationQueueItem.created_at.desc(), ModerationQueueItem.id.desc())
+        .limit(1)
+    )
+
+
 def open_report_count(session: Session, *, subject_type: str, subject_id: str) -> int:
     """How many still-open user reports name this same subject.
 

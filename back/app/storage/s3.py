@@ -6,6 +6,7 @@ a short-lived signed URL minted only after an ownership or visibility check.
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 from functools import lru_cache
 from typing import Any
@@ -16,6 +17,8 @@ from botocore.exceptions import ClientError
 
 from app.config import get_settings
 from app.domain.errors import NotFound
+
+logger = logging.getLogger(__name__)
 
 # Only these can be uploaded by users. Anything else is rejected before a
 # presigned URL is issued, so the bucket cannot receive arbitrary payloads.
@@ -34,6 +37,10 @@ MAX_UPLOAD_BYTES: dict[str, int] = {
     "consent_evidence": 16 * 1024 * 1024,
     "learn_media": 12 * 1024 * 1024,
     "style_gallery_cover": 8 * 1024 * 1024,
+    "editor_source": 256 * 1024 * 1024,
+    "editor_export": 256 * 1024 * 1024,
+    "caption": 4 * 1024 * 1024,
+    "font": 8 * 1024 * 1024,
 }
 
 # Each purpose is confined to its own prefix so a signed URL for an avatar can
@@ -45,6 +52,10 @@ PURPOSE_PREFIXES: dict[str, str] = {
     "consent_evidence": "staging/consents",
     "learn_media": "staging/learn-media",
     "style_gallery_cover": "staging/style-gallery",
+    "editor_source": "staging/editor-source",
+    "editor_export": "staging/editor-export",
+    "caption": "staging/captions",
+    "font": "staging/fonts",
 }
 
 
@@ -96,6 +107,25 @@ def ensure_bucket() -> None:
         client.head_bucket(Bucket=settings.s3_bucket)
     except ClientError:
         client.create_bucket(Bucket=settings.s3_bucket)
+    origins = [origin for origin in settings.cors_origins if origin]
+    if origins:
+        try:
+            client.put_bucket_cors(
+                Bucket=settings.s3_bucket,
+                CORSConfiguration={
+                    "CORSRules": [
+                        {
+                            "AllowedOrigins": origins,
+                            "AllowedMethods": ["GET", "PUT", "HEAD"],
+                            "AllowedHeaders": ["*"],
+                            "ExposeHeaders": ["ETag", "Content-Length"],
+                            "MaxAgeSeconds": 3600,
+                        }
+                    ]
+                },
+            )
+        except ClientError:
+            logger.warning("could not apply S3 CORS rules to %s", settings.s3_bucket)
 
 
 def head_bucket() -> None:

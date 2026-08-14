@@ -19,12 +19,23 @@ import { formatCount } from '@/lib/format';
 export function WorkCard({
   work,
   badge,
+  actions,
   priority,
   className,
 }: {
   work: WorkSummary;
   /** Extra state label, e.g. draft or private in the library. */
   badge?: { label: string; tone?: 'neutral' | 'primary' | 'amber' | 'success' };
+  /**
+   * Owner-only controls (edit/delete), rendered top-right next to the
+   * visibility badge. Only the library page passes this — every other place
+   * this card renders (discover, profile of another user, the lineage rail)
+   * leaves it unset, so a stranger's view never gains these affordances.
+   *
+   * Sits inside the cover's `<Link>`, so its trigger must call
+   * `preventDefault`/`stopPropagation` on click or it will also navigate.
+   */
+  actions?: React.ReactNode;
   priority?: boolean;
   className?: string;
 }) {
@@ -47,9 +58,10 @@ export function WorkCard({
             tombstoned && 'opacity-60 grayscale',
           )}
         >
-          {badge ? (
-            <span className="absolute right-2 top-2">
-              <Badge tone={badge.tone ?? 'neutral'}>{badge.label}</Badge>
+          {badge || actions ? (
+            <span className="absolute right-2 top-2 flex items-center gap-1.5">
+              {badge ? <Badge tone={badge.tone ?? 'neutral'}>{badge.label}</Badge> : null}
+              {actions}
             </span>
           ) : null}
           {tombstoned ? (

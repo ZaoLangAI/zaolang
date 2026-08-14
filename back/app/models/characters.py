@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
@@ -55,5 +55,15 @@ class Series(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     shortform_profile_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     character_ids_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), default="cast", nullable=False)
+    default_locale: Mapped[str] = mapped_column(String(16), default="zh-CN", nullable=False)
+    brand_pack_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    allow_external_models: Mapped[bool] = mapped_column(default=False, nullable=False)
 
-    __table_args__ = (Index("ix_series_owner_user_id", "owner_user_id"),)
+    __table_args__ = (
+        Index("ix_series_owner_user_id", "owner_user_id"),
+        Index("ix_series_owner_user_id_kind", "owner_user_id", "kind"),
+    )

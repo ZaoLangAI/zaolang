@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROFILE_KEY = "default"
 UNSET_BINDING = object()
 
-# The five roles the shipped pipeline invokes by name.
+# The roles the shipped pipeline invokes by name.
 DEFAULT_NODES: list[dict[str, Any]] = [
     {
         "role": "safety",
@@ -75,6 +75,12 @@ DEFAULT_NODES: list[dict[str, Any]] = [
         "display_name": "意图理解路由",
         "description": "判断需求复杂度，建议更省成本的生成档位（只能降级，不参与计费）",
         "sort_order": 4,
+    },
+    {
+        "role": "editor_planner",
+        "display_name": "短剧剪辑规划",
+        "description": "把剪辑目标拆成可执行的时间线命令",
+        "sort_order": 5,
     },
 ]
 

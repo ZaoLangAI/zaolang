@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # random placeholders only — rotate before any shared or production deploy.
     jwt_secret: str = "k9Yxvz5CCVmGk9OKwnnBF6VfsWs5VS8r21kmQZ9DSsc"
     admin_jwt_secret: str = "dbTYs3wmf9v5Hc6ZJwLivNUAA0t1NpX4b_eLZX53G5E"
+    mcp_jwt_secret: str = "m8Kq2nR4vX7pL1sD9wC6hB3tY0zF5jA2uE8iQ4oN7gM"
     payment_webhook_secret: str = "dev-only-change-me-webhook"
     access_token_ttl_seconds: int = 60 * 30
     refresh_token_ttl_seconds: int = 60 * 60 * 24 * 14
@@ -75,7 +76,7 @@ class Settings(BaseSettings):
     otel_exporter: Literal["console", "otlp", "none"] = "console"
     otel_endpoint: str = ""
 
-    @field_validator("jwt_secret", "admin_jwt_secret")
+    @field_validator("jwt_secret", "admin_jwt_secret", "mcp_jwt_secret")
     @classmethod
     def _hmac_secrets_meet_hs256_minimum(cls, value: str) -> str:
         if len(value.encode("utf-8")) < 32:

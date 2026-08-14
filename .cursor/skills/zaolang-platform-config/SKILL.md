@@ -47,7 +47,7 @@ disable-model-invocation: true
 
 **加一个新配置段**：`CONFIG_SCHEMAS` 与 `DEFAULT_CONFIGS` 各加一项即可，`all_keys()` 自动带出，后台列表自动出现。
 
-**加一个 Feature Flag**：`FeatureFlags` 加布尔字段 → 调用处 `is_enabled(session, "flag_name", user_id=...)`。灰度按 user_id 哈希，不要自己实现分流。
+**加一个 Feature Flag**：`FeatureFlags` 加布尔字段 → 调用处 `is_enabled(session, "flag_name", user_id=...)`。灰度按 user_id 哈希，不要自己实现分流。短剧五旗（`drama_studio_enabled` / `web_editor_enabled` / `variant_export_enabled` / `editor_ai_enabled` / `editor_mcp_enabled`）默认 false；后三者依赖 `web_editor_enabled`。本地 `make seed` 会打开，不要把 seed 行为写进 `DEFAULT_CONFIGS`。见 `zaolang-editor-drama`。
 
 ## 验证
 

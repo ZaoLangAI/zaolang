@@ -294,7 +294,16 @@ function ConfigForm({
     const rollout = (value.rollout_percentages ?? {}) as Record<string, number>;
     return (
       <div className="grid gap-3 sm:grid-cols-3">
-        {['video_generation', 'public_registration', 'shortform_studio'].map((flag) => (
+        {[
+          'video_generation',
+          'public_registration',
+          'shortform_studio',
+          'drama_studio_enabled',
+          'web_editor_enabled',
+          'variant_export_enabled',
+          'editor_ai_enabled',
+          'editor_mcp_enabled',
+        ].map((flag) => (
           <div key={flag} className="rounded-[var(--radius-sm)] border border-border p-3">
             <Switch
               label={flag}

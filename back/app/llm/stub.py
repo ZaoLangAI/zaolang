@@ -67,6 +67,8 @@ def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
         return _copy(prompt)
     if agent_name == AgentName.INTENT_ROUTER:
         return _intent_router(prompt)
+    if agent_name == AgentName.EDITOR_PLANNER:
+        return _editor_planner(prompt)
     # An operator-created role (run by the `custom_agent` node): the stub has
     # no idea what it was told to judge, so it returns the neutral shape
     # `app.agents.custom` declares rather than a fabricated verdict.
@@ -304,4 +306,14 @@ def _copy_clarify(text: str) -> dict[str, Any]:
                 "required": False,
             },
         ],
+    }
+
+
+def _editor_planner(prompt: str) -> dict[str, Any]:
+    """Deterministic empty plan: the user must confirm before any command lands."""
+    del prompt
+    return {
+        "summary": "stub: 未改动时间线，等待作者确认目标后再生成命令。",
+        "commands": [],
+        "warnings": ["stub_no_commands"],
     }

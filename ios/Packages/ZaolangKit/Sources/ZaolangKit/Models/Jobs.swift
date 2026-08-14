@@ -12,6 +12,7 @@ public struct GenerationParams: Codable, Sendable, Equatable {
     public var stylePresetID: String?
     public var shortformProfile: String?
     public var characterIDs: [String]
+    public var styleGalleryID: String?
 
     public init(
         prompt: String,
@@ -22,7 +23,8 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         referenceAssetIDs: [String] = [],
         stylePresetID: String? = nil,
         shortformProfile: String? = nil,
-        characterIDs: [String] = []
+        characterIDs: [String] = [],
+        styleGalleryID: String? = nil
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -33,6 +35,7 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         self.stylePresetID = stylePresetID
         self.shortformProfile = shortformProfile
         self.characterIDs = characterIDs
+        self.styleGalleryID = styleGalleryID
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -45,6 +48,7 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         case stylePresetID = "style_preset_id"
         case shortformProfile = "shortform_profile"
         case characterIDs = "character_ids"
+        case styleGalleryID = "style_gallery_id"
     }
 }
 

@@ -36,7 +36,6 @@ export interface NavItem {
     | 'agents'
     | 'statistics'
     | 'moderation'
-    | 'reports'
     | 'learnPosts'
     | 'skillLibrary'
     | 'styleGallery'
@@ -80,7 +79,6 @@ export const NAV_GROUPS: NavGroup[] = [
         requires: 'reviewer',
         icon: 'moderation',
       },
-      { href: '/admin/reports', labelKey: 'navReports', requires: 'reviewer', icon: 'reports' },
       {
         href: '/admin/learn-posts',
         labelKey: 'navLearnPosts',

@@ -39,6 +39,8 @@ export interface RequestOptions {
   /** Skip the refresh-and-retry dance, used by the auth calls themselves. */
   anonymous?: boolean;
   headers?: Record<string, string>;
+  /** Lets the request outlive a page unload (e.g. releasing a lease on tab close). */
+  keepalive?: boolean;
 }
 
 export function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -97,6 +99,7 @@ async function send(
     headers,
     credentials: 'include',
     signal: options.signal,
+    keepalive: options.keepalive,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 }

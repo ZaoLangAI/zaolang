@@ -6,6 +6,7 @@ logic to functions that can be called directly in tests.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
 from typing import Any
@@ -338,6 +339,63 @@ def reconcile_credits() -> str:
     with session_scope() as session:
         report: ReconciliationReport = reconciliation.build_report(session)
         return report.id
+
+
+@celery_app.task(name="app.workers.tasks.run_media_analysis")
+def run_media_analysis(analysis_id: str) -> str:
+    from app.domain.editor import analysis as media_analysis
+
+    with session_scope() as session:
+        row = media_analysis.run_analysis(session, analysis_id)
+        session.commit()
+        return row.status
+
+
+@celery_app.task(name="app.workers.tasks.expire_editor_leases")
+def expire_editor_leases() -> int:
+    from sqlalchemy import update
+
+    from app.models import EditorLease
+    from app.models.base import utcnow as now
+
+    with session_scope() as session:
+        matched = session.execute(
+            update(EditorLease)
+            .where(EditorLease.revoked_at.is_(None), EditorLease.expires_at <= now())
+            .values(revoked_at=now())
+        )
+        session.commit()
+        return int(matched.rowcount or 0)
+
+
+@celery_app.task(name="app.workers.tasks.expire_orphan_editor_uploads")
+def expire_orphan_editor_uploads() -> int:
+    """Marks expired editor uploads so they are not completed after the lease dies."""
+    from sqlalchemy import select
+
+    from app.models import UploadSession
+    from app.models.base import utcnow as now
+    from app.storage import s3
+
+    purposes = {"editor_source", "editor_export", "caption", "font"}
+    deleted = 0
+    with session_scope() as session:
+        rows = list(
+            session.scalars(
+                select(UploadSession).where(
+                    UploadSession.purpose.in_(purposes),
+                    UploadSession.completed_at.is_(None),
+                    UploadSession.expires_at <= now(),
+                )
+            )
+        )
+        for row in rows:
+            with contextlib.suppress(Exception):
+                s3.delete_object(row.object_key)
+            session.delete(row)
+            deleted += 1
+        session.commit()
+    return deleted
 
 
 def dispatch_generation(job: GenerationJob) -> None:

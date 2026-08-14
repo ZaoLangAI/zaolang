@@ -91,6 +91,14 @@ ROLE_PRESETS: tuple[RolePreset, ...] = (
         default_template_key="intent-router-classify",
         sort_order=4,
     ),
+    RolePreset(
+        role=AgentName.EDITOR_PLANNER.value,
+        display_name="短剧剪辑规划",
+        category=JUDGMENT,
+        description="根据规范化时间线摘要产出可执行的 EditCommand 列表，不发布、不改账本。",
+        default_template_key="editor-planner-default",
+        sort_order=5,
+    ),
 )
 
 _BY_ROLE: dict[str, RolePreset] = {preset.role: preset for preset in ROLE_PRESETS}

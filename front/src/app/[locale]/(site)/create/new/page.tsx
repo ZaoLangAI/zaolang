@@ -69,6 +69,7 @@ export default async function NewCreationPage({
         initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
         reference={reference ?? undefined}
         initialStyleParams={style?.params}
+        initialStyleGalleryId={style?.id}
       />
     </div>
   );

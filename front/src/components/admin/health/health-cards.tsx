@@ -122,7 +122,7 @@ export async function HealthCards({
             label={t('pendingModeration')}
           />
         </Link>
-        <Link href="/admin/reports" className="hover:bg-surface-soft">
+        <Link href="/admin/moderation?tab=reports" className="hover:bg-surface-soft">
           <StatTile value={formatNumber(openReports, locale)} label={t('openReports')} />
         </Link>
       </section>

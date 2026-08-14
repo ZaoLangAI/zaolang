@@ -121,6 +121,104 @@ class JobStatsView(ApiModel):
     avg_completion_ms: float | None = None
 
 
+# --- Daily time series for the statistics module's trend charts ------------
+#
+# Every `*_timeseries` endpoint returns a dense, gap-filled list of daily
+# points covering `[today - window_days + 1, today]` in UTC — a day with zero
+# activity still appears with zero values so a line chart never jumps.
+
+
+class JobsDailyPoint(ApiModel):
+    date: dt.date
+    total: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    avg_completion_ms: float | None = None
+
+
+class JobsTimeseriesView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    points: list[JobsDailyPoint] = Field(default_factory=list)
+
+
+class ProviderDailyPoint(ApiModel):
+    date: dt.date
+    attempts: int = 0
+    successes: int = 0
+    avg_latency_ms: float | None = None
+    total_cost_minor: int = 0
+
+
+class ProviderTimeseriesView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    points: list[ProviderDailyPoint] = Field(default_factory=list)
+
+
+class AgentDailyPoint(ApiModel):
+    date: dt.date
+    runs: int = 0
+    degraded_runs: int = 0
+    total_tokens: int = 0
+    avg_latency_ms: float | None = None
+
+
+class AgentTimeseriesView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    points: list[AgentDailyPoint] = Field(default_factory=list)
+
+
+class CreditFlowDailyPoint(ApiModel):
+    date: dt.date
+    granted: int = 0
+    purchased: int = 0
+    captured: int = 0
+    refunded: int = 0
+    royalty_out: int = 0
+    royalty_in: int = 0
+    adjustment: int = 0
+    # Sum of every ledger entry's signed amount that day — a sanity total,
+    # not a KPI on its own (reserve/release net to zero over time).
+    net: int = 0
+
+
+class CreditFlowTimeseriesView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    points: list[CreditFlowDailyPoint] = Field(default_factory=list)
+
+
+class ContentDailyPoint(ApiModel):
+    date: dt.date
+    published_works: int = 0
+    remix_edges: int = 0
+
+
+class ContentTimeseriesView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    points: list[ContentDailyPoint] = Field(default_factory=list)
+
+
+class UserGrowthDailyPoint(ApiModel):
+    date: dt.date
+    new_users: int = 0
+
+
+class UserGrowthTimeseriesView(ApiModel):
+    """Registrations are a real daily series; suspensions are not — `User`
+    has no `suspended_at`, so a suspension trend would be fabricated. The
+    suspended count is a current snapshot instead."""
+
+    generated_at: dt.datetime
+    window_days: int
+    points: list[UserGrowthDailyPoint] = Field(default_factory=list)
+    total_users: int = 0
+    suspended_users: int = 0
+
+
 class ProviderAttemptView(ApiModel):
     id: str
     attempt_number: int
@@ -291,6 +389,7 @@ class ModerationWorkDetailView(ApiModel):
     visibility: str
     lifecycle_status: str
     tombstone_reason: str | None = None
+    hide_reason: str | None = None
     created_at: dt.datetime
 
 
@@ -331,6 +430,15 @@ class ReportCaseView(ApiModel):
     reason: str
     detail: str | None = None
     status: str
+    resolution_note: str | None = None
+    handled_by_user_id: str | None = None
+    handled_by_display_name: str | None = None
+    handled_at: dt.datetime | None = None
+    # Populated only when subject_type == "work" — the only subject type any
+    # client actually creates reports against today.
+    subject: ModerationWorkDetailView | None = None
+    # How many other still-open reports name this same subject.
+    open_report_count: int = 0
     created_at: dt.datetime
 
 
@@ -341,6 +449,29 @@ class ReportResolveRequest(ApiModel):
 
 class TombstoneRequest(DangerousAction):
     pass
+
+
+class AppealAdminView(ApiModel):
+    id: str
+    work_id: str
+    owner_user_id: str
+    owner_display_name: str | None = None
+    owner_handle: str | None = None
+    reason: str
+    status: str
+    decision_note: str | None = None
+    decided_by_user_id: str | None = None
+    decided_by_display_name: str | None = None
+    decided_at: dt.datetime | None = None
+    source_report_id: str | None = None
+    subject: ModerationWorkDetailView | None = None
+    open_report_count: int = 0
+    created_at: dt.datetime
+
+
+class AppealDecisionRequest(ApiModel):
+    decision: Literal["granted", "denied"]
+    decision_note: str = Field(min_length=1, max_length=1000)
 
 
 class LearnPostAdminView(ApiModel):

@@ -148,3 +148,45 @@ class AgeGateRequired(DomainError):
     code = "AGE_GATE_REQUIRED"
     http_status = 403
     default_message = "需要确认已满 18 周岁。"
+
+
+class RevisionConflict(DomainError):
+    code = "REVISION_CONFLICT"
+    http_status = 409
+    default_message = "时间线已被其他人更新，请基于最新修订重试。"
+
+
+class LeaseHeld(DomainError):
+    code = "LEASE_HELD"
+    http_status = 409
+    default_message = "该剪辑正在被其他会话编辑。"
+
+
+class BatchRolledBack(DomainError):
+    code = "BATCH_ROLLED_BACK"
+    http_status = 409
+    default_message = "命令批次已回滚，未改动时间线。"
+
+
+class OperationTerminal(DomainError):
+    code = "OPERATION_TERMINAL"
+    http_status = 409
+    default_message = "该操作已结束，不能再更新。"
+
+
+class BrowserRequired(DomainError):
+    code = "BROWSER_REQUIRED"
+    http_status = 409
+    default_message = "该导出必须由桌面 Chrome 或 Edge 认领执行。"
+
+
+class ScopeRequired(DomainError):
+    code = "SCOPE_REQUIRED"
+    http_status = 403
+    default_message = "缺少所需的 MCP 权限范围。"
+
+
+class ProjectForbidden(DomainError):
+    code = "PROJECT_FORBIDDEN"
+    http_status = 403
+    default_message = "没有该剧集的访问权限。"

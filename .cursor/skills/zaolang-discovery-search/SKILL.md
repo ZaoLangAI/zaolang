@@ -1,6 +1,6 @@
 ---
 name: zaolang-discovery-search
-description: 造浪的发现与复用：可插拔 EmbeddingProvider + pgvector 相似作品、关键词与语义混合检索、标签体系、StylePreset 风格预设一键套用。Use when changing search, browse feeds, tag filters, embeddings, vector similarity, or style presets.
+description: 造浪的发现与复用：可插拔 EmbeddingProvider + pgvector 相似作品、关键词与语义混合检索、标签体系、用户 StylePreset 与平台策展 StyleGalleryEntry。Use when changing search, browse feeds, tag filters, embeddings, vector similarity, style presets, or the system style gallery.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## 职责
 
-让作品被找到（浏览、搜索、相似推荐），让参数被复用（标签、风格预设）。
+让作品被找到（浏览、搜索、相似推荐），让参数被复用（标签、用户风格预设、系统画风库）。
 
 ## 关键路径
 
@@ -17,10 +17,13 @@ disable-model-invocation: true
 | `back/app/domain/search/service.py` | `browse` / `search` / `similar_works` / `index_version` / `_visible_works` |
 | `back/app/domain/search/embeddings.py` | `EmbeddingProvider` 抽象、`DeterministicEmbeddingProvider`、`get_provider` / `set_provider` / `embed` |
 | `back/app/models/search.py` | `WorkEmbedding`（pgvector `Vector` 列） |
-| `back/app/models/works.py` | `Tag` / `WorkTag` / `StylePreset` |
+| `back/app/models/works.py` | `Tag` / `WorkTag` / `StylePreset`（用户从作品蒸馏的快捷参数，可公开分享） |
+| `back/app/models/style_gallery.py` | `StyleGalleryEntry`（平台策展系统画风，后台 Operator 写，C 端灵感墙与工作室弹窗共用） |
 | `back/app/api/v1/works.py` | 浏览与搜索接口 |
+| `back/app/api/v1/style_gallery.py` | 公开画风列表 / 详情 / `/apply` 计数 |
 | `front/src/app/[locale]/(site)/discover/page.tsx`、`front/src/components/discover/tag-filter.tsx` | 发现页与标签筛选 |
 | `front/src/components/work/reusable-params.tsx` | 参数一键套用 |
+| `front/src/components/studio/style-gallery-dialog.tsx`、`front/src/components/create/inspiration-recommendations.tsx` | 系统画风套用；job 提交 `style_gallery_id`，由 `skill_context` 服务端再折 `prompt_suffix` |
 
 ## 不可破坏的不变量
 
@@ -37,7 +40,7 @@ disable-model-invocation: true
 - **换真实向量模型**：实现 `EmbeddingProvider` 子类 → `set_provider` 注册（或按配置选择）→ 处理维度变更迁移 → 重算全部 `WorkEmbedding`。领域与 API 层不需要改。
 - **加一个排序维度**：改 `browse` 的排序键，注意游标分页要求**稳定且唯一**的排序（末位加 `id` 兜底），否则翻页会漏或重。
 - **加一种筛选**：`search` 的过滤条件 → 接口参数 → 前端 `tag-filter.tsx` 与 URL query 同步（筛选状态必须可分享）。
-- **扩展风格预设**：`StylePreset` 的 `params_json` 结构与生成参数同源，加字段要同时改「保存预设」与「套用预设」两条路径。
+- **扩展风格预设**：`StylePreset` 的 `params_json` 结构与生成参数同源，加字段要同时改「保存预设」与「套用预设」两条路径。系统画风 `StyleGalleryEntry` 是另一张表、另一套后台 CRUD，不要把运营目录写进用户预设；任务身份字段是 `style_gallery_id`，不要复用死字段 `style_preset_id`。
 
 ## 验证
 

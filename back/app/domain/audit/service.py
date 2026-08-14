@@ -27,6 +27,7 @@ REASON_REQUIRED_ACTIONS = frozenset(
         "credit.adjust",
         "work.tombstone",
         "work.hide",
+        "appeal.decide",
         "user.suspend",
         "user.unsuspend",
         "user.grant_role",

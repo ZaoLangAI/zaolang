@@ -119,8 +119,8 @@ NODE_TYPES: dict[str, NodeSpec] = {
     "skill_context": NodeSpec(
         category="context",
         label="创作技能上下文",
-        description="若请求携带 skill_ids，把每个适用于当前操作类型的创作技能的"
-        "参数模板（含 prompt）依次合并进 working params。",
+        description="若请求携带 style_gallery_id / skill_ids，把系统画风与每个"
+        "适用于当前操作类型的创作技能的参数模板（含 prompt）依次合并进 working params。",
         config_schema=SkillContextConfig,
         executor=nodes.execute_skill_context,
         output_ports=("ok",),

@@ -192,6 +192,7 @@ def publish(
         license_snapshot_id=draft.license_snapshot_id,
         reusable_params_json=_reusable_params(draft, visibility),
         immutable_created_at=utcnow(),
+        editor_export_id=draft.editor_export_id,
     )
     session.add(version)
     session.flush()
@@ -301,6 +302,7 @@ def hide(session: Session, *, work_id: str, reason: str, actor_user_id: str | No
         raise NotFound("作品不存在。")
 
     work.lifecycle_status = LifecycleStatus.HIDDEN
+    work.hide_reason = reason
     session.flush()
     logger.info("work %s hidden by %s: %s", work_id, actor_user_id or "system", reason)
     return work
@@ -315,6 +317,7 @@ def restore(session: Session, *, work_id: str) -> Work:
         raise Conflict("墓碑作品不可恢复。")
 
     work.lifecycle_status = LifecycleStatus.ACTIVE
+    work.hide_reason = None
     session.flush()
     return work
 

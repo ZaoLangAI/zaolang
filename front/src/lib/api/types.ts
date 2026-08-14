@@ -30,6 +30,7 @@ export type LineageResponse = S['LineageResponse'];
 export type LineageNode = S['LineageNodeResponse'];
 export type LineageAncestor = S['LineageAncestor'];
 export type VersionDiff = S['VersionDiffResponse'];
+export type WorkAppeal = S['WorkAppealView'];
 
 export type Draft = S['DraftResponse'];
 export type GenerationJob = S['GenerationJobResponse'];
@@ -55,6 +56,16 @@ export type Character = S['CharacterResponse'];
 export type Series = S['SeriesResponse'];
 export type SeriesDetail = S['SeriesDetailResponse'];
 export type SeriesEpisode = S['SeriesEpisodeSummary'];
+
+export type DramaSeries = S['DramaSeriesResponse'];
+export type DramaEpisode = S['DramaEpisodeResponse'];
+export type EpisodeCut = S['EpisodeCutResponse'];
+export type CutRevision = S['CutRevisionResponse'];
+export type EditorLease = S['LeaseResponse'];
+export type EditPlan = S['EditPlanResponse'];
+export type DeliveryVariant = S['DeliveryVariantResponse'];
+export type EditorExport = S['EditorExportResponse'];
+export type EditorOperation = S['EditorOperationResponse'];
 
 export type Collection = S['CollectionResponse'];
 export type Notification = S['NotificationResponse'];

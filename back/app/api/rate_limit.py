@@ -32,6 +32,9 @@ RULES: dict[str, RateLimitRule] = {
     "auth_attempt": RateLimitRule(limit=10, window_seconds=300),
     "generation_submit": RateLimitRule(limit=12, window_seconds=60),
     "upload_presign": RateLimitRule(limit=30, window_seconds=60),
+    "editor_write": RateLimitRule(limit=60, window_seconds=60),
+    "editor_export": RateLimitRule(limit=20, window_seconds=60),
+    "mcp_tool": RateLimitRule(limit=60, window_seconds=60),
     # Back office gets its own budget so consumer traffic can never starve an
     # operator during an incident.
     "admin_read": RateLimitRule(limit=300, window_seconds=60),

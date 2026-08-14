@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
-from app.models import User
+from app.domain.credits import service as credits_service
+from app.models import GenerationJob, User
+from app.models.base import new_id
 from tests.conftest import admin_header, auth_header
 
 
@@ -119,3 +123,35 @@ def test_deleting_requires_confirmation_and_a_reason(client: TestClient, admin: 
     )
     assert confirmed.status_code == 200
     assert not any(item["id"] == entry_id for item in confirmed.json()["items"])
+
+
+def test_submitting_a_job_persists_style_gallery_id(
+    client: TestClient, db: Session, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.workers.tasks.dispatch_generation", lambda job: None)
+    credits_service.grant(db, admin.id, 5_000, idempotency_key=new_id("grant"))
+    db.flush()
+
+    created = client.post(
+        "/v1/admin/style-gallery", json=_create_payload(), headers=admin_header(admin)
+    )
+    assert created.status_code == 201, created.text
+    entry_id = created.json()["id"]
+
+    response = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "text_to_image",
+            "quality_tier": "standard",
+            "params": {
+                "prompt": "海边的黄昏",
+                "aspect_ratio": "16:9",
+                "style_gallery_id": entry_id,
+            },
+        },
+        headers={**auth_header(admin), "Idempotency-Key": new_id("idk")},
+    )
+    assert response.status_code == 202, response.text
+    job = db.get(GenerationJob, response.json()["id"])
+    assert job is not None
+    assert job.request_json["style_gallery_id"] == entry_id

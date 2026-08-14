@@ -1,0 +1,115 @@
+'use client';
+
+import { useLocale } from 'next-intl';
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+import { EmptyState } from '@/components/ui/primitives';
+import type { Locale } from '@/i18n/routing';
+import { formatDate, formatNumber } from '@/lib/format';
+
+export type TrendColor = 'primary' | 'success' | 'amber' | 'danger' | 'muted';
+
+const SERIES_COLOR: Record<TrendColor, string> = {
+  primary: 'var(--color-primary)',
+  success: 'var(--color-success)',
+  amber: 'var(--color-amber)',
+  danger: 'var(--color-danger)',
+  muted: 'var(--color-muted)',
+};
+
+export interface TrendSeriesDef {
+  /** Key into each data point. */
+  dataKey: string;
+  label: string;
+  color: TrendColor;
+}
+
+/**
+ * Shared line-chart wrapper for the statistics module.
+ *
+ * The repo had no charting dependency before this module — everywhere else a
+ * stacked bar or a table was enough (see `duration-bars.tsx`). A daily trend
+ * across a 7–90 day window is exactly the case a bar/table cannot show well,
+ * which is why this one screen pulls in `recharts`.
+ */
+export function TrendChart<T extends { date: string }>({
+  data,
+  series,
+  emptyTitle,
+  height = 220,
+}: {
+  data: T[];
+  series: TrendSeriesDef[];
+  emptyTitle: string;
+  height?: number;
+}) {
+  const locale = useLocale() as Locale;
+  const hasActivity = data.some((point) =>
+    series.some((s) => Number((point as Record<string, unknown>)[s.dataKey] ?? 0) !== 0),
+  );
+
+  if (!hasActivity) {
+    return <EmptyState title={emptyTitle} />;
+  }
+
+  return (
+    <div style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+          <CartesianGrid stroke="var(--color-border)" vertical={false} />
+          <XAxis
+            dataKey="date"
+            tickFormatter={(value: string) => formatAxisDate(value, locale)}
+            tick={{ fontSize: 11, fill: 'var(--color-muted)' }}
+            axisLine={{ stroke: 'var(--color-border)' }}
+            tickLine={false}
+            minTickGap={24}
+          />
+          <YAxis
+            tick={{ fontSize: 11, fill: 'var(--color-muted)' }}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+            tickFormatter={(value: number) => formatNumber(value, locale)}
+          />
+          <Tooltip
+            labelFormatter={(label) => formatDate(String(label ?? ''), locale)}
+            formatter={(value, name) => [formatNumber(Number(value ?? 0), locale), String(name ?? '')]}
+            contentStyle={{
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 12,
+            }}
+          />
+          {series.map((s) => (
+            <Line
+              key={s.dataKey}
+              type="monotone"
+              dataKey={s.dataKey}
+              name={s.label}
+              stroke={SERIES_COLOR[s.color]}
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function formatAxisDate(value: string, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(
+    new Date(value),
+  );
+}

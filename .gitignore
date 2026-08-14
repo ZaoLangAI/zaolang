@@ -57,6 +57,13 @@ infra/backups/
 celerybeat-schedule.db
 back/celerybeat-schedule.db
 
+# --- vendored OpenCut classic build artefacts ---
+third_party/opencut-classic/node_modules/
+third_party/opencut-classic/**/target/
+third_party/opencut-classic/rust/wasm/pkg/
+third_party/opencut-classic/.next/
+third_party/opencut-classic/apps/**/.next/
+
 # --- os / editor ---
 .DS_Store
 Thumbs.db

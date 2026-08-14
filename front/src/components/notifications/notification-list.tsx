@@ -173,6 +173,11 @@ const MODERATION_BODY: Record<
     key: 'workTombstoned',
     params: { reason: String(p.reason ?? '') },
   }),
+  'notification.appeal_granted': () => ({ key: 'appealGranted' }),
+  'notification.appeal_denied': (p) =>
+    p.note
+      ? { key: 'appealDeniedReason', params: { note: String(p.note) } }
+      : { key: 'appealDenied' },
   'notification.skill_approved': (p) => ({
     key: 'skillApproved',
     params: { title: String(p.title ?? '') },

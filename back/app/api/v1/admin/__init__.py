@@ -24,6 +24,7 @@ from app.api.v1.admin import (
     observability,
     redemption,
     skill_library,
+    statistics,
     style_gallery,
     users,
     workflow_templates,
@@ -43,6 +44,7 @@ router.include_router(logs.router)
 router.include_router(llm_providers.router)
 router.include_router(agent_skills.router)
 router.include_router(skill_library.router)
+router.include_router(statistics.router)
 router.include_router(style_gallery.router)
 router.include_router(workflow_templates.router)
 router.include_router(data.router)

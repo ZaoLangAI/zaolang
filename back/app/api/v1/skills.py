@@ -168,6 +168,18 @@ def withdraw_skill(
     return _detail(session, skill)
 
 
+@router.delete("/skills/{skill_id}", status_code=204)
+def delete_skill(
+    skill_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> None:
+    skill = _require_owned(session, skill_id, user.id)
+    skill_library.delete(session, skill=skill, actor_user_id=user.id)
+    session.commit()
+
+
 @router.post("/skills/{skill_id}/apply", response_model=CreationSkillDetail)
 def apply_skill(
     skill_id: str,

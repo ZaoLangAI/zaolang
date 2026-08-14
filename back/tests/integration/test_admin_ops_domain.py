@@ -21,10 +21,12 @@ from app.models import (
     ReportCase,
     User,
     Work,
+    WorkAppeal,
     WorkVersion,
 )
 from app.models.base import new_id, utcnow
 from app.models.enums import (
+    AppealStatus,
     CreationSkillStatus,
     JobOrigin,
     JobStatus,
@@ -41,6 +43,7 @@ from app.models.enums import (
 from app.platform_config import service as config_service
 from app.workflows.defaults import default_graph
 from tests.conftest import admin_header
+from tests.factories import make_work
 
 
 @pytest.fixture
@@ -117,6 +120,19 @@ def report(db: Session, work: Work, remixer: User) -> ReportCase:
     return case
 
 
+@pytest.fixture
+def appeal(db: Session, work: Work) -> WorkAppeal:
+    work.lifecycle_status = LifecycleStatus.HIDDEN
+    work.hide_reason = "疑似侵权"
+    db.add(work)
+    item = WorkAppeal(
+        work_id=work.id, owner_user_id=work.owner_user_id, reason="这是我的原创作品，附创作过程录屏。"
+    )
+    db.add(item)
+    db.commit()
+    return item
+
+
 # --- moderation -----------------------------------------------------------
 
 
@@ -127,47 +143,66 @@ def test_the_queue_lists_items_needing_review(
     assert queue_item.id in [i["id"] for i in body["items"]]
 
 
-def test_the_queue_can_be_filtered_by_subject_type(
+def test_the_queue_lists_only_works_and_hides_skills(
     client: TestClient,
     reviewer: User,
     queue_item: ModerationQueueItem,
     skill_queue_item: ModerationQueueItem,
 ) -> None:
-    body = client.get(
+    body = client.get("/v1/admin/moderation/queue", headers=admin_header(reviewer)).json()
+    ids = [i["id"] for i in body["items"]]
+    types = {i["subject_type"] for i in body["items"]}
+    assert queue_item.id in ids
+    assert skill_queue_item.id not in ids
+    assert types <= {"work"}
+
+
+def test_the_queue_filters_by_title_and_implicit_approved_status(
+    client: TestClient, db: Session, reviewer: User, author: User, queue_item: ModerationQueueItem
+) -> None:
+    approved, _ = make_work(db, author, title="已上线霓虹港")
+    db.commit()
+
+    inbox = client.get(
         "/v1/admin/moderation/queue",
-        params={"subject_type": "skill"},
+        params={"status": ModerationStatus.NEEDS_REVIEW.value},
         headers=admin_header(reviewer),
     ).json()
-    ids = [i["id"] for i in body["items"]]
-    assert skill_queue_item.id in ids
-    assert queue_item.id not in ids
+    inbox_subjects = {i["subject_id"] for i in inbox["items"]}
+    assert queue_item.subject_id in inbox_subjects
+    assert approved.id not in inbox_subjects
+
+    approved_page = client.get(
+        "/v1/admin/moderation/queue",
+        params={"status": ModerationStatus.APPROVED.value, "title": "霓虹港"},
+        headers=admin_header(reviewer),
+    ).json()
+    assert any(i["subject_id"] == approved.id for i in approved_page["items"])
+    assert all("霓虹港" in (i["preview_title"] or "") for i in approved_page["items"])
 
 
 def test_the_queue_pages_by_cursor_without_skipping_or_repeating(
-    client: TestClient, db: Session, reviewer: User, work: Work
+    client: TestClient, db: Session, reviewer: User, author: User
 ) -> None:
-    items = [
-        ModerationQueueItem(
-            stage=ModerationStage.PRE_PUBLISH,
-            subject_type="work",
-            subject_id=new_id("wrk"),
-            status=ModerationStatus.NEEDS_REVIEW,
-            priority=priority,
-        )
-        for priority in range(5)
-    ]
-    db.add_all(items)
+    for index in range(5):
+        make_work(db, author, title=f"分页作品 {index}")
     db.commit()
 
     first = client.get(
-        "/v1/admin/moderation/queue", params={"limit": 2}, headers=admin_header(reviewer)
+        "/v1/admin/moderation/queue",
+        params={"limit": 2, "status": ModerationStatus.APPROVED.value},
+        headers=admin_header(reviewer),
     ).json()
     assert first["has_more"] is True
     assert first["next_cursor"]
 
     second = client.get(
         "/v1/admin/moderation/queue",
-        params={"limit": 2, "cursor": first["next_cursor"]},
+        params={
+            "limit": 2,
+            "status": ModerationStatus.APPROVED.value,
+            "cursor": first["next_cursor"],
+        },
         headers=admin_header(reviewer),
     ).json()
 
@@ -201,22 +236,25 @@ def test_a_second_reviewer_cannot_claim_an_already_claimed_item(
     assert response.status_code == 409
 
 
-def test_a_non_claimant_cannot_decide_a_claimed_item(
+def test_a_second_reviewer_can_decide_a_claimed_item(
     client: TestClient, db: Session, reviewer: User, admin: User, queue_item: ModerationQueueItem
 ) -> None:
-    """`claim` exists to stop two reviewers producing conflicting verdicts —
-    `decide` has to actually enforce that, not just offer the claim button."""
+    """Claim is advisory only — any reviewer may record the verdict."""
     client.post(f"/v1/admin/moderation/queue/{queue_item.id}/claim", headers=admin_header(reviewer))
 
     response = client.post(
         f"/v1/admin/moderation/queue/{queue_item.id}/decide",
-        json={"decision": ModerationStatus.APPROVED.value, "reason_code": None, "public_message": None},
+        json={
+            "decision": ModerationStatus.APPROVED.value,
+            "reason_code": None,
+            "public_message": None,
+        },
         headers=admin_header(admin),
     )
-    assert response.status_code == 409
+    assert response.status_code == 200, response.text
 
     db.refresh(queue_item)
-    assert queue_item.status == ModerationStatus.NEEDS_REVIEW
+    assert queue_item.status == ModerationStatus.APPROVED
 
 
 def test_the_claimant_can_still_decide_their_own_claim(
@@ -226,7 +264,11 @@ def test_the_claimant_can_still_decide_their_own_claim(
 
     response = client.post(
         f"/v1/admin/moderation/queue/{queue_item.id}/decide",
-        json={"decision": ModerationStatus.APPROVED.value, "reason_code": None, "public_message": None},
+        json={
+            "decision": ModerationStatus.APPROVED.value,
+            "reason_code": None,
+            "public_message": None,
+        },
         headers=admin_header(reviewer),
     )
     assert response.status_code == 200, response.text
@@ -285,6 +327,52 @@ def test_rejecting_hides_rather_than_tombstones_the_work(
     )
     assert note is not None
     assert note.payload_json["reason"] == "涉嫌侵权，已下架。"
+
+
+def test_reapproving_a_rejected_work_restores_it(
+    client: TestClient, db: Session, reviewer: User, work: Work, queue_item: ModerationQueueItem
+) -> None:
+    client.post(
+        f"/v1/admin/moderation/queue/{queue_item.id}/decide",
+        json={
+            "decision": ModerationStatus.REJECTED.value,
+            "reason_code": "copyright",
+            "public_message": None,
+        },
+        headers=admin_header(reviewer),
+    )
+    response = client.post(
+        f"/v1/admin/moderation/queue/{queue_item.id}/decide",
+        json={
+            "decision": ModerationStatus.APPROVED.value,
+            "reason_code": None,
+            "public_message": None,
+        },
+        headers=admin_header(reviewer),
+    )
+    assert response.status_code == 200, response.text
+    db.refresh(work)
+    assert work.lifecycle_status == LifecycleStatus.ACTIVE
+
+
+def test_decide_accepts_a_work_id_that_was_never_enqueued(
+    client: TestClient, db: Session, reviewer: User, author: User
+) -> None:
+    published, _ = make_work(db, author, title="从未入队的作品")
+    db.commit()
+
+    response = client.post(
+        f"/v1/admin/moderation/queue/{published.id}/decide",
+        json={
+            "decision": ModerationStatus.REJECTED.value,
+            "reason_code": "OTHER",
+            "public_message": None,
+        },
+        headers=admin_header(reviewer),
+    )
+    assert response.status_code == 200, response.text
+    db.refresh(published)
+    assert published.lifecycle_status == LifecycleStatus.HIDDEN
 
 
 def test_moderation_detail_exposes_work_and_history_and_supports_restore(
@@ -422,13 +510,8 @@ def test_moderation_detail_exposes_a_generation_job_and_decide_does_not_hide(
     db.add(item)
     db.commit()
 
-    listed = client.get(
-        "/v1/admin/moderation/queue",
-        params={"subject_type": "generation_job"},
-        headers=admin_header(admin),
-    ).json()
-    row = next(entry for entry in listed["items"] if entry["id"] == item.id)
-    assert row["preview_title"] == "雨后的东京街头"
+    listed = client.get("/v1/admin/moderation/queue", headers=admin_header(admin)).json()
+    assert item.id not in [entry["id"] for entry in listed["items"]]
 
     body = client.get(
         f"/v1/admin/moderation/queue/{item.id}/detail", headers=admin_header(admin)
@@ -550,8 +633,7 @@ def test_reports_page_by_cursor_without_skipping_or_repeating(
     client: TestClient, db: Session, reviewer: User, work: Work
 ) -> None:
     cases = [
-        ReportCase(subject_type="work", subject_id=work.id, reason="copyright")
-        for _ in range(3)
+        ReportCase(subject_type="work", subject_id=work.id, reason="copyright") for _ in range(3)
     ]
     db.add_all(cases)
     db.commit()
@@ -586,6 +668,115 @@ def test_resolving_a_report_records_who_handled_it(
     db.refresh(report)
     assert report.handled_by_user_id == reviewer.id
     assert report.resolution_note == "已核实并处理"
+
+    body = response.json()
+    assert body["resolution_note"] == "已核实并处理"
+    assert body["handled_by_user_id"] == reviewer.id
+    assert body["handled_by_display_name"] == "审核"
+    assert body["handled_at"] is not None
+
+
+def test_report_list_surfaces_subject_preview_and_open_report_count(
+    client: TestClient, db: Session, reviewer: User, work: Work, report: ReportCase
+) -> None:
+    """A second open report on the same subject should show up as `2` on
+    both rows — reports and the moderation queue share this signal (see
+    `test_moderation_detail_surfaces_the_open_report_count`), and a
+    reviewer needs the work's title/owner without decoding a raw id."""
+    db.add(ReportCase(subject_type="work", subject_id=work.id, reason="fraud"))
+    db.commit()
+
+    body = client.get("/v1/admin/reports", headers=admin_header(reviewer)).json()
+    row = next(r for r in body["items"] if r["id"] == report.id)
+    assert row["open_report_count"] == 2
+    assert row["subject"]["id"] == work.id
+    assert row["subject"]["owner_user_id"] == work.owner_user_id
+
+
+def test_appeals_are_listed(client: TestClient, reviewer: User, appeal: WorkAppeal) -> None:
+    body = client.get("/v1/admin/appeals", headers=admin_header(reviewer)).json()
+    assert appeal.id in [a["id"] for a in body["items"]]
+
+
+def test_appeals_page_by_cursor_without_skipping_or_repeating(
+    client: TestClient, db: Session, reviewer: User, work: Work
+) -> None:
+    work.lifecycle_status = LifecycleStatus.HIDDEN
+    db.add(work)
+    appeals = [
+        WorkAppeal(work_id=work.id, owner_user_id=work.owner_user_id, reason=f"申诉理由 {i}")
+        for i in range(3)
+    ]
+    db.add_all(appeals)
+    db.commit()
+
+    first = client.get(
+        "/v1/admin/appeals", params={"limit": 2}, headers=admin_header(reviewer)
+    ).json()
+    assert first["has_more"] is True
+    assert first["next_cursor"]
+
+    second = client.get(
+        "/v1/admin/appeals",
+        params={"limit": 2, "cursor": first["next_cursor"]},
+        headers=admin_header(reviewer),
+    ).json()
+
+    first_ids = {a["id"] for a in first["items"]}
+    second_ids = {a["id"] for a in second["items"]}
+    assert first_ids.isdisjoint(second_ids)
+
+
+def test_granting_an_appeal_restores_the_work(
+    client: TestClient, db: Session, reviewer: User, work: Work, appeal: WorkAppeal
+) -> None:
+    response = client.post(
+        f"/v1/admin/appeals/{appeal.id}/decide",
+        json={"decision": "granted", "decision_note": "已核实为原创。"},
+        headers=admin_header(reviewer),
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(work)
+    db.refresh(appeal)
+    assert work.lifecycle_status == LifecycleStatus.ACTIVE
+    assert appeal.status == AppealStatus.GRANTED
+    assert appeal.decided_by_user_id == reviewer.id
+
+
+def test_denying_an_appeal_keeps_it_hidden_and_records_the_note(
+    client: TestClient, db: Session, reviewer: User, work: Work, appeal: WorkAppeal
+) -> None:
+    response = client.post(
+        f"/v1/admin/appeals/{appeal.id}/decide",
+        json={"decision": "denied", "decision_note": "未提供有效证明。"},
+        headers=admin_header(reviewer),
+    )
+    assert response.status_code == 200, response.text
+
+    db.refresh(work)
+    db.refresh(appeal)
+    assert work.lifecycle_status == LifecycleStatus.HIDDEN
+    assert appeal.status == AppealStatus.DENIED
+    assert appeal.decision_note == "未提供有效证明。"
+
+
+def test_deciding_an_already_decided_appeal_conflicts(
+    client: TestClient, reviewer: User, appeal: WorkAppeal
+) -> None:
+    first = client.post(
+        f"/v1/admin/appeals/{appeal.id}/decide",
+        json={"decision": "denied", "decision_note": "未提供有效证明。"},
+        headers=admin_header(reviewer),
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        f"/v1/admin/appeals/{appeal.id}/decide",
+        json={"decision": "granted", "decision_note": "重新考虑。"},
+        headers=admin_header(reviewer),
+    )
+    assert second.status_code == 409
 
 
 def test_duplicate_fingerprints_can_be_listed(client: TestClient, reviewer: User) -> None:

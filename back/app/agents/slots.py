@@ -55,6 +55,9 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
             "从已通过硬性能力过滤的候选里选出本次生成实际使用的供应商。",
         ),
     ),
+    AgentName.EDITOR_PLANNER.value: (
+        PromptSlot("timeline_edit_plan", "时间线剪辑方案", "根据规范化时间线摘要产出可执行的 EditCommand 列表。"),
+    ),
 }
 
 

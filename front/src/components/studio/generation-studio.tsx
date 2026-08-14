@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { SourceMaterialRail } from '@/components/studio/source-material-rail';
@@ -41,6 +41,7 @@ import type {
 import { cn } from '@/lib/cn';
 import { formatCount, formatDuration } from '@/lib/format';
 import { DEFAULT_DEVICE_ID } from '@/lib/devices';
+import { styleGalleryLabel } from '@/lib/style-gallery';
 import type { Asset } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useMinWidth } from '@/lib/use-media-query';
@@ -96,6 +97,7 @@ export function GenerationStudio({
   reference,
   initialPrompt,
   initialStyleParams,
+  initialStyleGalleryId,
 }: {
   operation: Operation;
   /** A licensed remix source. Submitted as `source_work_id`. */
@@ -111,6 +113,8 @@ export function GenerationStudio({
   initialPrompt?: string;
   /** A style gallery entry's `params`, applied once on mount (from `?styleId=`). */
   initialStyleParams?: Record<string, unknown>;
+  /** The catalogue id behind `initialStyleParams`; submitted as `style_gallery_id`. */
+  initialStyleGalleryId?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -135,6 +139,9 @@ export function GenerationStudio({
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
   const [skillPickerValue, setSkillPickerValue] = useState('');
   const [styleGalleryOpen, setStyleGalleryOpen] = useState(false);
+  const [appliedStyleGalleryId, setAppliedStyleGalleryId] = useState<string | null>(
+    initialStyleGalleryId ?? null,
+  );
   const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
   // Distinct from `skillPickerValue` above (which resets after each pick so
   // the picker is ready for the next one): this is the ordered set that
@@ -191,6 +198,7 @@ export function GenerationStudio({
 
   const applyStyleGalleryEntry = (entry: StyleGalleryEntry) => {
     applyParams(entry.params);
+    setAppliedStyleGalleryId(entry.id);
     setStyleGalleryOpen(false);
     // Same best-effort shape as `applyPreset`: the usage counter is a nicety,
     // not a precondition for the pick actually landing in the form.
@@ -205,6 +213,20 @@ export function GenerationStudio({
     setStyleParamsApplied(true);
     applyParams(initialStyleParams);
   }
+
+  const countedInitialStyleApply = useRef(false);
+  useEffect(() => {
+    if (countedInitialStyleApply.current) return;
+    if (!initialStyleGalleryId) return;
+    if (sessionStatus !== 'authenticated') return;
+    if (appliedStyleGalleryId !== initialStyleGalleryId) return;
+    countedInitialStyleApply.current = true;
+    void api.post(`/v1/style-gallery/${initialStyleGalleryId}/apply`).catch(() => undefined);
+  }, [appliedStyleGalleryId, initialStyleGalleryId, sessionStatus]);
+
+  const appliedStyle = useResource<StyleGalleryEntry>(
+    appliedStyleGalleryId ? `/v1/style-gallery/${appliedStyleGalleryId}` : null,
+  );
 
   const MAX_APPLIED_SKILLS = 5;
 
@@ -316,6 +338,7 @@ export function GenerationStudio({
         : undefined,
       extra: isAudio ? { voice, ...presetExtra } : { sound, ...presetExtra },
       skillIds: appliedSkillIds,
+      styleGalleryId: appliedStyleGalleryId ?? undefined,
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -330,14 +353,36 @@ export function GenerationStudio({
   // bound to a single piece of state either way.
   const paramsPanel = (
     <>
-      <Button
-        variant="secondary"
-        icon={<IconSparkle className="size-4" />}
-        onClick={() => setStyleGalleryOpen(true)}
-        className="w-full"
-      >
-        {tGallery('trigger')}
-      </Button>
+      <div>
+        <Button
+          variant="secondary"
+          icon={<IconSparkle className="size-4" />}
+          onClick={() => setStyleGalleryOpen(true)}
+          className="w-full"
+        >
+          {tGallery('trigger')}
+        </Button>
+        {appliedStyleGalleryId ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAppliedStyleGalleryId(null)}
+              className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/12 py-0.5 pl-0.5 pr-2 text-xs font-medium text-primary"
+            >
+              <Poster
+                src={appliedStyle.data?.cover_url}
+                alt=""
+                aspect="square"
+                className="h-6 w-6 shrink-0 rounded"
+              />
+              {appliedStyle.data
+                ? styleGalleryLabel(appliedStyle.data, locale)
+                : tGallery('trigger')}
+              <IconClose className="h-3 w-3" />
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       {presets.length > 0 ? (
         <Select
@@ -382,7 +427,8 @@ export function GenerationStudio({
                 .filter(
                   (skill) =>
                     !appliedSkillIds.includes(skill.id) &&
-                    (!skill.applicable_operations || skill.applicable_operations.length === 0 ||
+                    (!skill.applicable_operations ||
+                      skill.applicable_operations.length === 0 ||
                       skill.applicable_operations.includes(operation)),
                 )
                 .map((skill) => ({ value: skill.id, label: skill.title })),

@@ -81,6 +81,10 @@ class AssetRole(StrEnum):
     CONSENT_EVIDENCE = "consent_evidence"
     # 封面与正文插图共用这一个角色，两者靠是否被 cover_asset_id 引用区分。
     LEARN_MEDIA = "learn_media"
+    EDITOR_SOURCE = "editor_source"
+    EDITOR_EXPORT = "editor_export"
+    EDITOR_CAPTION = "editor_caption"
+    EDITOR_FONT = "editor_font"
 
 
 class ModerationStatus(StrEnum):
@@ -342,6 +346,16 @@ class ReportStatus(StrEnum):
     APPEALED = "appealed"
 
 
+class AppealStatus(StrEnum):
+    """A `WorkAppeal` disputes one specific hide decision on a work — distinct
+    from `ReportStatus`, whose upheld/dismissed polarity means the opposite
+    thing (upholding a report is denying the creator, not granting them)."""
+
+    PENDING = "pending"
+    GRANTED = "granted"
+    DENIED = "denied"
+
+
 class DataRequestType(StrEnum):
     EXPORT = "export"
     DELETE = "delete"
@@ -360,6 +374,216 @@ class AgentName(StrEnum):
     QUALITY = "quality"
     COPY = "copy"
     INTENT_ROUTER = "intent_router"
+    EDITOR_PLANNER = "editor_planner"
+
+
+class SeriesKind(StrEnum):
+    CAST = "cast"
+    DRAMA = "drama"
+
+
+class SeriesStatus(StrEnum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class DramaEpisodeStatus(StrEnum):
+    DRAFT = "draft"
+    PRODUCTION = "production"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class EpisodeCutKind(StrEnum):
+    FULL = "full"
+    CONDENSED = "condensed"
+    TRAILER = "trailer"
+    HIGHLIGHT = "highlight"
+    CUSTOM = "custom"
+
+
+class EpisodeCutStatus(StrEnum):
+    DRAFT = "draft"
+    EDITING = "editing"
+    READY = "ready"
+    ARCHIVED = "archived"
+
+
+EPISODE_CUT_TRANSITIONS: dict[EpisodeCutStatus, frozenset[EpisodeCutStatus]] = {
+    EpisodeCutStatus.DRAFT: frozenset({EpisodeCutStatus.EDITING, EpisodeCutStatus.ARCHIVED}),
+    EpisodeCutStatus.EDITING: frozenset(
+        {EpisodeCutStatus.READY, EpisodeCutStatus.DRAFT, EpisodeCutStatus.ARCHIVED}
+    ),
+    EpisodeCutStatus.READY: frozenset({EpisodeCutStatus.EDITING, EpisodeCutStatus.ARCHIVED}),
+    EpisodeCutStatus.ARCHIVED: frozenset(),
+}
+
+
+class EditPlanStatus(StrEnum):
+    GENERATING = "generating"
+    VALIDATED = "validated"
+    APPLIED = "applied"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    FAILED = "failed"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in TERMINAL_EDIT_PLAN_STATUSES
+
+
+TERMINAL_EDIT_PLAN_STATUSES: frozenset[EditPlanStatus] = frozenset(
+    {
+        EditPlanStatus.APPLIED,
+        EditPlanStatus.REJECTED,
+        EditPlanStatus.EXPIRED,
+        EditPlanStatus.FAILED,
+    }
+)
+
+EDIT_PLAN_TRANSITIONS: dict[EditPlanStatus, frozenset[EditPlanStatus]] = {
+    EditPlanStatus.GENERATING: frozenset(
+        {EditPlanStatus.VALIDATED, EditPlanStatus.FAILED, EditPlanStatus.EXPIRED}
+    ),
+    EditPlanStatus.VALIDATED: frozenset(
+        {
+            EditPlanStatus.APPLIED,
+            EditPlanStatus.REJECTED,
+            EditPlanStatus.EXPIRED,
+            EditPlanStatus.FAILED,
+        }
+    ),
+    EditPlanStatus.APPLIED: frozenset(),
+    EditPlanStatus.REJECTED: frozenset(),
+    EditPlanStatus.EXPIRED: frozenset(),
+    EditPlanStatus.FAILED: frozenset(),
+}
+
+
+class DeliveryVariantStatus(StrEnum):
+    DRAFT = "draft"
+    READY = "ready"
+    EXPORTING = "exporting"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in TERMINAL_VARIANT_STATUSES
+
+
+TERMINAL_VARIANT_STATUSES: frozenset[DeliveryVariantStatus] = frozenset(
+    {
+        DeliveryVariantStatus.SUCCEEDED,
+        DeliveryVariantStatus.FAILED,
+        DeliveryVariantStatus.CANCELLED,
+    }
+)
+
+DELIVERY_VARIANT_TRANSITIONS: dict[DeliveryVariantStatus, frozenset[DeliveryVariantStatus]] = {
+    DeliveryVariantStatus.DRAFT: frozenset({DeliveryVariantStatus.READY}),
+    DeliveryVariantStatus.READY: frozenset(
+        {DeliveryVariantStatus.EXPORTING, DeliveryVariantStatus.CANCELLED}
+    ),
+    DeliveryVariantStatus.EXPORTING: frozenset(
+        {
+            DeliveryVariantStatus.SUCCEEDED,
+            DeliveryVariantStatus.FAILED,
+            DeliveryVariantStatus.CANCELLED,
+        }
+    ),
+    DeliveryVariantStatus.SUCCEEDED: frozenset(),
+    DeliveryVariantStatus.FAILED: frozenset(),
+    DeliveryVariantStatus.CANCELLED: frozenset(),
+}
+
+
+class EditorExportStatus(StrEnum):
+    QUEUED = "queued"
+    CLAIMED = "claimed"
+    ENCODING = "encoding"
+    UPLOADING = "uploading"
+    VERIFYING = "verifying"
+    SUCCEEDED = "succeeded"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in TERMINAL_EDITOR_EXPORT_STATUSES
+
+
+TERMINAL_EDITOR_EXPORT_STATUSES: frozenset[EditorExportStatus] = frozenset(
+    {
+        EditorExportStatus.SUCCEEDED,
+        EditorExportStatus.CANCELLED,
+        EditorExportStatus.FAILED,
+    }
+)
+
+EDITOR_EXPORT_TRANSITIONS: dict[EditorExportStatus, frozenset[EditorExportStatus]] = {
+    EditorExportStatus.QUEUED: frozenset(
+        {EditorExportStatus.CLAIMED, EditorExportStatus.CANCEL_REQUESTED, EditorExportStatus.FAILED}
+    ),
+    EditorExportStatus.CLAIMED: frozenset(
+        {
+            EditorExportStatus.ENCODING,
+            EditorExportStatus.CANCEL_REQUESTED,
+            EditorExportStatus.FAILED,
+        }
+    ),
+    EditorExportStatus.ENCODING: frozenset(
+        {
+            EditorExportStatus.UPLOADING,
+            EditorExportStatus.CANCEL_REQUESTED,
+            EditorExportStatus.FAILED,
+        }
+    ),
+    EditorExportStatus.UPLOADING: frozenset(
+        {
+            EditorExportStatus.VERIFYING,
+            EditorExportStatus.CANCEL_REQUESTED,
+            EditorExportStatus.FAILED,
+        }
+    ),
+    EditorExportStatus.VERIFYING: frozenset(
+        {
+            EditorExportStatus.SUCCEEDED,
+            EditorExportStatus.CANCEL_REQUESTED,
+            EditorExportStatus.FAILED,
+        }
+    ),
+    EditorExportStatus.CANCEL_REQUESTED: frozenset(
+        {EditorExportStatus.CANCELLED, EditorExportStatus.FAILED, EditorExportStatus.SUCCEEDED}
+    ),
+    EditorExportStatus.SUCCEEDED: frozenset(),
+    EditorExportStatus.CANCELLED: frozenset(),
+    EditorExportStatus.FAILED: frozenset(),
+}
+
+
+class MediaAnalysisStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    DEGRADED = "degraded"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in {
+            MediaAnalysisStatus.SUCCEEDED,
+            MediaAnalysisStatus.FAILED,
+            MediaAnalysisStatus.DEGRADED,
+        }
+
+
+class EditorCommandEventStatus(StrEnum):
+    APPLIED = "applied"
+    ROLLED_BACK = "rolled_back"
+    REJECTED = "rejected"
 
 
 class AgentRunStatus(StrEnum):

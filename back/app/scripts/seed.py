@@ -47,8 +47,17 @@ from app.models import (
     CreditAccount,
     CreditLedgerEntry,
     CreditPackage,
+    CutRevision,
     DataRequest,
+    DeliveryVariant,
     Draft,
+    DramaEpisode,
+    EditorCommandEvent,
+    EditorExport,
+    EditorLease,
+    EditorOperationEvent,
+    EditPlan,
+    EpisodeCut,
     Follow,
     GenerationJob,
     GenerationWorkflowTemplate,
@@ -57,6 +66,8 @@ from app.models import (
     LicenseSnapshot,
     Like,
     LineageEdge,
+    McpTokenGrant,
+    MediaAnalysis,
     ModerationQueueItem,
     ModerationResult,
     Notification,
@@ -65,12 +76,14 @@ from app.models import (
     ProviderStat,
     PublicationIntent,
     ReportCase,
+    Series,
     StyleGalleryEntry,
     StylePreset,
     SystemLog,
     Tag,
     User,
     Work,
+    WorkAppeal,
     WorkEmbedding,
     WorkTag,
     WorkVersion,
@@ -99,6 +112,8 @@ from app.models.enums import (
     Region,
     ReportReason,
     ReportStatus,
+    SeriesKind,
+    SeriesStatus,
     SystemLogLevel,
     SystemLogSource,
     ThemePreference,
@@ -603,6 +618,7 @@ RESET_TABLES = (
     ModerationQueueItem,
     ModerationResult,
     ReportCase,
+    WorkAppeal,
     DataRequest,
     StyleGalleryEntry,
     StylePreset,
@@ -612,6 +628,17 @@ RESET_TABLES = (
     # cleanup-must-not-cascade design), so `TRUNCATE ... CASCADE` on that
     # table alone would leave these rows behind across re-seeds.
     SystemLog,
+    EditorCommandEvent,
+    EditorOperationEvent,
+    EditorLease,
+    EditPlan,
+    EditorExport,
+    DeliveryVariant,
+    MediaAnalysis,
+    CutRevision,
+    EpisodeCut,
+    DramaEpisode,
+    McpTokenGrant,
     GenerationJob,
     GenerationWorkflowTemplate,
     Draft,
@@ -648,6 +675,8 @@ def run(*, reset: bool = False) -> dict[str, int]:
         _seed_agent_profiles(session)
         workflow_templates_service.ensure_default_templates(session)
         _seed_llm_providers(session)
+        _seed_editor_flags(session)
+        _seed_editor_demo(session, users)
         _seed_tags(session)
         _seed_packages(session)
         chain = _seed_creative_chain(session, users)
@@ -681,6 +710,10 @@ def _reset(session: Session) -> None:
     """
     tables = ", ".join(model.__tablename__ for model in RESET_TABLES)
     session.execute(text(f"TRUNCATE TABLE {tables} CASCADE"))
+    # Cast rosters stay (they are not in RESET_TABLES). Drama rows share
+    # `series` but their episodes/cuts were just truncated, so the leftover
+    # production shells would reappear on the editor landing as empty ghosts.
+    session.execute(text("DELETE FROM series WHERE kind = 'drama'"))
     session.flush()
     logger.info("truncated %d tables", len(RESET_TABLES))
 
@@ -796,6 +829,61 @@ def _seed_llm_providers(session: Session) -> None:
         note="seed: 从环境变量引导默认网关端点",
     )
     logger.info("已从环境变量引导默认 LLM 网关端点 seed-general。")
+
+
+def _seed_editor_flags(session: Session) -> None:
+    """Opens the desktop editor on local/demo databases only."""
+    from app.platform_config.schemas import FeatureFlags
+
+    current = config_service.get_typed(session, "feature_flags", FeatureFlags)
+    if (
+        current.drama_studio_enabled
+        and current.web_editor_enabled
+        and current.variant_export_enabled
+        and current.editor_ai_enabled
+        and current.editor_mcp_enabled
+    ):
+        return
+    value = current.model_dump(mode="json")
+    value.update(
+        {
+            "drama_studio_enabled": True,
+            "web_editor_enabled": True,
+            "variant_export_enabled": True,
+            "editor_ai_enabled": True,
+            "editor_mcp_enabled": True,
+        }
+    )
+    config_service.set_value(
+        session,
+        "feature_flags",
+        value,
+        actor_user_id=None,
+        note="seed: 本地打开短剧剪辑与 MCP",
+    )
+
+
+def _seed_editor_demo(session: Session, users: dict[str, User]) -> None:
+    """One local drama project so `/create/drama` is not an empty first-run."""
+    owner = users["linhai"]
+    existing = session.scalar(
+        select(Series).where(Series.owner_user_id == owner.id, Series.kind == SeriesKind.DRAMA)
+    )
+    if existing is not None:
+        return
+    session.add(
+        Series(
+            owner_user_id=owner.id,
+            title="本地短剧项目",
+            description="种子数据：桌面剪辑入口用的制作项目，不会出现在角色名册里。",
+            character_ids_json=[],
+            kind=SeriesKind.DRAMA,
+            default_locale=Locale.ZH_CN,
+            status=SeriesStatus.ACTIVE,
+            allow_external_models=False,
+        )
+    )
+    session.flush()
 
 
 def _seed_tags(session: Session) -> None:

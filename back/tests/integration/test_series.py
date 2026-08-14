@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Asset, Series, User, Work, WorkVersion
 from app.models.base import new_id, utcnow
-from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
+from app.models.enums import AssetRole, MediaType, ModerationStatus, SeriesKind, Visibility
 from tests.conftest import auth_header
 
 
@@ -161,3 +161,29 @@ def test_list_series_only_returns_the_caller_own_series(
     response = client.get("/v1/series", headers=auth_header(author))
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_list_and_get_series_exclude_drama_projects(
+    db: Session, client: TestClient, author: User
+) -> None:
+    """Drama rows share `series` but must not leak into the cast-roster API."""
+    roster = _series(db, author, title="角色名册")
+    drama = Series(
+        owner_user_id=author.id,
+        title="短剧制作",
+        character_ids_json=[],
+        kind=SeriesKind.DRAMA,
+    )
+    db.add(drama)
+    db.commit()
+
+    listed = client.get("/v1/series", headers=auth_header(author))
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [roster.id]
+
+    hidden = client.get(f"/v1/series/{drama.id}", headers=auth_header(author))
+    assert hidden.status_code == 404
+
+    visible = client.get(f"/v1/series/{roster.id}", headers=auth_header(author))
+    assert visible.status_code == 200
+    assert visible.json()["id"] == roster.id

@@ -13,6 +13,7 @@ import datetime as dt
 import hashlib
 import io
 import logging
+import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -39,6 +40,10 @@ PURPOSE_TO_ROLE: dict[str, AssetRole] = {
     "consent_evidence": AssetRole.CONSENT_EVIDENCE,
     "learn_media": AssetRole.LEARN_MEDIA,
     "style_gallery_cover": AssetRole.COVER,
+    "editor_source": AssetRole.EDITOR_SOURCE,
+    "editor_export": AssetRole.EDITOR_EXPORT,
+    "caption": AssetRole.EDITOR_CAPTION,
+    "font": AssetRole.EDITOR_FONT,
 }
 
 # Two images within this Hamming distance are treated as the same content.
@@ -144,6 +149,15 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
         raise ValidationFailed("文件校验和与申请时不一致。")
 
     width, height, media_type = _probe(payload, upload.mime_type)
+    duration_ms = None
+    if media_type in {MediaType.VIDEO, MediaType.AUDIO}:
+        from app.domain.editor.analysis import probe_bytes
+
+        probed_w, probed_h, duration_ms = probe_bytes(payload, upload.mime_type)
+        width = width or probed_w
+        height = height or probed_h
+        if upload.purpose == "editor_export" and duration_ms is None and shutil.which("ffprobe"):
+            raise ValidationFailed("导出文件无法通过 ffprobe 校验。")
 
     asset = Asset(
         owner_user_id=user_id,
@@ -155,6 +169,7 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
         role=PURPOSE_TO_ROLE[upload.purpose],
         width=width,
         height=height,
+        duration_ms=duration_ms,
         moderation_status=ModerationStatus.PENDING,
         visibility=Visibility.PRIVATE,
     )

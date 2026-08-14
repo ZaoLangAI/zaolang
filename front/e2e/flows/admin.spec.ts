@@ -234,16 +234,25 @@ test.describe('operations screens', () => {
     await expect(page.getByRole('table').first()).toBeVisible();
   });
 
-  test('moderation and reports both have real queues', async ({ page }) => {
+  test('moderation, reports and appeals share one console via tabs', async ({ page }) => {
     await page.goto('/zh-CN/admin/moderation', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '内容审核', level: 1 })).toBeVisible();
+    await expect(page.getByRole('tab', { name: '内容审核', selected: true })).toBeVisible();
     await expect(page.getByText('Night Tide · Neon').first()).toBeVisible();
     await expect(page.getByRole('heading', { name: '内容审核', level: 2 })).toBeVisible();
     await expect(page.getByRole('button', { name: '刷新' })).toBeVisible();
     await expect(page.getByRole('button', { name: '配置' })).toBeVisible();
 
+    await page.getByRole('tab', { name: '举报与申诉' }).click();
+    await expect(page.getByRole('table').first()).toBeVisible();
+
+    await page.getByRole('tab', { name: '申诉' }).click();
+    await expect(page.getByRole('table').first()).toBeVisible();
+
+    // The old standalone URL keeps working and lands on the reports tab.
     await page.goto('/zh-CN/admin/reports', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: '举报与申诉', level: 1 })).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/moderation\?tab=reports/);
+    await expect(page.getByRole('tab', { name: '举报与申诉', selected: true })).toBeVisible();
     await expect(page.getByRole('table').first()).toBeVisible();
   });
 
@@ -266,16 +275,25 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/statistics', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '数据统计', level: 1 })).toBeVisible();
 
-    // Fake providers are test-only; production seed data leaves this section empty.
-    await expect(page.getByRole('heading', { name: '供应商统计' })).toBeVisible();
+    // The module opens on the overview tab; each metric now lives behind its
+    // own scenario tab rather than being flattened onto a single page.
+    await expect(page.getByRole('tab', { name: '总览', selected: true })).toBeVisible();
 
+    // Providers & agents tab: fake providers are test-only, so production seed
+    // data leaves the comparison table empty, but the section always renders.
+    await page.getByRole('tab', { name: '供应商与智能体' }).click();
+    await expect(page.getByRole('heading', { name: '供应商统计' })).toBeVisible();
     // Agent usage grid: the seeded intent_router run, same source this feature's
     // routing decisions now come from.
     await expect(page.getByText('intent_router').first()).toBeVisible();
 
-    // Job throughput and credit reconciliation sections both render, even though
-    // the seeded jobs are older than the 24h window and legitimately count as zero.
+    // Jobs tab: renders even though the seeded jobs are older than the 24h
+    // window and legitimately count as zero.
+    await page.getByRole('tab', { name: '生成与任务' }).click();
     await expect(page.getByRole('heading', { name: '任务吞吐' })).toBeVisible();
+
+    // Credits tab: the reconciliation snapshot always renders.
+    await page.getByRole('tab', { name: '积分与账本' }).click();
     await expect(page.getByRole('heading', { name: '积分对账' })).toBeVisible();
   });
 

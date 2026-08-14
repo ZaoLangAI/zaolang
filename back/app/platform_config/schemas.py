@@ -149,12 +149,25 @@ class FeatureFlags(ConfigSection):
     video_generation: bool = True
     public_registration: bool = True
     shortform_studio: bool = True
+    drama_studio_enabled: bool = False
+    web_editor_enabled: bool = False
+    variant_export_enabled: bool = False
+    editor_ai_enabled: bool = False
+    editor_mcp_enabled: bool = False
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _percentages_in_range(self) -> FeatureFlags:
-        allowed = {"video_generation", "shortform_studio"}
+        allowed = {
+            "video_generation",
+            "shortform_studio",
+            "drama_studio_enabled",
+            "web_editor_enabled",
+            "variant_export_enabled",
+            "editor_ai_enabled",
+            "editor_mcp_enabled",
+        }
         for name, pct in self.rollout_percentages.items():
             if name not in allowed:
                 raise ValueError(f"{name} 不支持灰度发布。")
@@ -488,6 +501,11 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "video_generation": True,
         "public_registration": True,
         "shortform_studio": True,
+        "drama_studio_enabled": False,
+        "web_editor_enabled": False,
+        "variant_export_enabled": False,
+        "editor_ai_enabled": False,
+        "editor_mcp_enabled": False,
         "rollout_percentages": {},
     },
     "content_moderation": {"blocked_keywords": []},

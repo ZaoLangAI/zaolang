@@ -89,6 +89,23 @@ class LineageAncestor(ApiModel):
     cover_url: str | None = None
 
 
+class WorkAppealRequest(ApiModel):
+    reason: str = Field(min_length=4, max_length=2000)
+
+
+class WorkAppealView(ApiModel):
+    """Consumer-facing — always "my own appeal", so it omits `owner_user_id`
+    and `decided_by_user_id`."""
+
+    id: str
+    work_id: str
+    status: str
+    reason: str
+    decision_note: str | None = None
+    decided_at: dt.datetime | None = None
+    created_at: dt.datetime
+
+
 class WorkDetail(WorkSummary):
     description: str | None = None
     current_version: WorkVersionSummary | None = None
@@ -100,6 +117,11 @@ class WorkDetail(WorkSummary):
     viewer_bookmarked: bool = False
     can_remix: bool = False
     remix_block_reason: str | None = None
+    # Owner-only, like the viewer_* fields above: populated only when the
+    # requester is the work's owner, so a hidden work's reason and any
+    # in-flight appeal never leak to other viewers.
+    hide_reason: str | None = None
+    appeal: WorkAppealView | None = None
 
 
 class LineageNodeResponse(ApiModel):
@@ -179,6 +201,12 @@ class VisibilityUpdateRequest(ApiModel):
 
 
 class CollectionCreateRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    is_public: bool = True
+
+
+class CollectionUpdateRequest(ApiModel):
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
     is_public: bool = True

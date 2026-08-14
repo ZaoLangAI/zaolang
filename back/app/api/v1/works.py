@@ -20,12 +20,14 @@ from app.api.schemas.works import (
     VersionDiffEntry,
     VersionDiffResponse,
     VisibilityUpdateRequest,
+    WorkAppealRequest,
+    WorkAppealView,
     WorkDetail,
     WorkStats,
     WorkSummary,
     WorkVersionSummary,
 )
-from app.domain.errors import Conflict, NotFound
+from app.domain.errors import Conflict, Forbidden, NotFound
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage_service
 from app.domain.publishing import service as publishing
@@ -36,13 +38,15 @@ from app.models import (
     Like,
     LineageEdge,
     Profile,
+    ReportCase,
     Tag,
     User,
     Work,
+    WorkAppeal,
     WorkTag,
     WorkVersion,
 )
-from app.models.enums import ADMIN_ROLE_RANK, LifecycleStatus, Visibility
+from app.models.enums import ADMIN_ROLE_RANK, AppealStatus, LifecycleStatus, Visibility
 from app.presenters import media_urls
 
 router = APIRouter(tags=["works"])
@@ -101,6 +105,18 @@ def get_work(
     summary = _summary(session, work, version, viewer)
     can_remix = licensing.can_remix(work, viewer.id if viewer else None)
 
+    is_owner = viewer is not None and viewer.id == work.owner_user_id
+    latest_appeal = (
+        session.scalar(
+            select(WorkAppeal)
+            .where(WorkAppeal.work_id == work.id)
+            .order_by(WorkAppeal.created_at.desc())
+            .limit(1)
+        )
+        if is_owner
+        else None
+    )
+
     return WorkDetail(
         **summary.model_dump(),
         description=version.description,
@@ -113,6 +129,8 @@ def get_work(
         viewer_bookmarked=_has_interaction(session, Bookmark, viewer, work.id),
         can_remix=can_remix,
         remix_block_reason=None if can_remix else "该作品仅用于展示，作者未开放二创。",
+        hide_reason=work.hide_reason if is_owner else None,
+        appeal=_appeal_view(latest_appeal) if latest_appeal is not None else None,
     )
 
 
@@ -249,6 +267,67 @@ def update_visibility(
     return _summary(session, work, version, user)
 
 
+@router.delete("/works/{work_id}", status_code=204)
+def delete_work(work_id: str, user: CurrentUser, session: DbSession) -> None:
+    """Author-initiated removal: tombstones the work, same as the admin path.
+
+    Descendants must still resolve their ancestry, so this never hard-deletes
+    the row — it only reaches `publishing.tombstone`, which the admin console
+    also uses, after confirming the caller is the owner.
+    """
+    work = session.get(Work, work_id)
+    if work is None:
+        raise NotFound("作品不存在。")
+    if work.owner_user_id != user.id:
+        raise Forbidden("不能删除他人的作品。")
+
+    publishing.tombstone(session, work_id=work_id, reason="author_deleted", actor_user_id=user.id)
+    session.commit()
+
+
+@router.post("/works/{work_id}/appeal", response_model=WorkAppealView, status_code=201)
+def appeal_work(
+    work_id: str, payload: WorkAppealRequest, user: CurrentUser, session: DbSession
+) -> WorkAppealView:
+    """Owner disputes a hide decision. Tombstones are out of scope — they are
+    terminal, so `publishing.restore()` has nowhere to grant the appeal into.
+    """
+    work = session.get(Work, work_id)
+    if work is None:
+        raise NotFound("作品不存在。")
+    if work.owner_user_id != user.id:
+        raise Forbidden("不能为他人的作品申诉。")
+    if work.lifecycle_status != LifecycleStatus.HIDDEN:
+        raise Conflict("只有被隐藏的作品可以申诉。")
+
+    existing = session.scalar(
+        select(WorkAppeal).where(
+            WorkAppeal.work_id == work_id, WorkAppeal.status == AppealStatus.PENDING
+        )
+    )
+    if existing is not None:
+        raise Conflict("该作品已有待处理的申诉。")
+
+    # Best-effort, informational only — a moderation-queue-originated hide has
+    # no report at all, so this may legitimately stay unset.
+    source_report = session.scalar(
+        select(ReportCase)
+        .where(ReportCase.subject_type == "work", ReportCase.subject_id == work_id)
+        .order_by(ReportCase.created_at.desc())
+        .limit(1)
+    )
+
+    appeal = WorkAppeal(
+        work_id=work_id,
+        owner_user_id=user.id,
+        source_report_id=source_report.id if source_report is not None else None,
+        reason=payload.reason,
+    )
+    session.add(appeal)
+    session.commit()
+    return _appeal_view(appeal)
+
+
 @router.get("/tags", response_model=Page[TagResponse])
 def list_tags(
     session: DbSession, limit: int = Query(default=40, ge=1, le=120)
@@ -258,6 +337,18 @@ def list_tags(
 
 
 # --- projections ---------------------------------------------------------
+
+
+def _appeal_view(appeal: WorkAppeal) -> WorkAppealView:
+    return WorkAppealView(
+        id=appeal.id,
+        work_id=appeal.work_id,
+        status=appeal.status,
+        reason=appeal.reason,
+        decision_note=appeal.decision_note,
+        decided_at=appeal.decided_at,
+        created_at=appeal.created_at,
+    )
 
 
 def _load_visible(session, work_id: str, viewer: User | None) -> tuple[Work, WorkVersion]:  # type: ignore[no-untyped-def]

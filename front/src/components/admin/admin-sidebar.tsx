@@ -6,7 +6,6 @@ import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { useTheme } from '@/components/theme/theme-provider';
 import { Button } from '@/components/ui/button';
 import {
-  IconAlert,
   IconBell,
   IconChart,
   IconGear,
@@ -35,7 +34,6 @@ const ICONS: Record<NavItem['icon'], React.ComponentType<{ className?: string }>
   agents: IconSparkle,
   statistics: IconChart,
   moderation: IconShield,
-  reports: IconAlert,
   learnPosts: IconImage,
   skillLibrary: IconRemix,
   styleGallery: IconLandscape,

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, NotFound, ValidationFailed
 from app.models import Asset, Character, Series, Work
-from app.models.enums import MediaType
+from app.models.enums import MediaType, SeriesKind
 
 MAX_REFERENCE_ASSETS = 4
 # Mirrors GenerationParams.reference_asset_ids / character_ids in jobs.py —
@@ -40,7 +40,9 @@ def _owned_character(session: Session, *, user_id: str, character_id: str) -> Ch
 
 def _owned_series(session: Session, *, user_id: str, series_id: str) -> Series:
     series = session.get(Series, series_id)
-    if series is None or series.owner_user_id != user_id:
+    # Drama rows share this table (`kind=drama`) but are not a cast roster.
+    # Same 404 as missing: `/v1/series` must not confirm a production project.
+    if series is None or series.owner_user_id != user_id or series.kind != SeriesKind.CAST:
         raise NotFound("系列不存在。")
     return series
 
@@ -132,7 +134,9 @@ def delete_character(session: Session, *, user_id: str, character_id: str) -> No
     character = _owned_character(session, user_id=user_id, character_id=character_id)
     # Leaving a stale id in a series' roster would surface as a silent no-op
     # the next time the cast is resolved, so the roster is cleaned up here.
-    for series in session.scalars(select(Series).where(Series.owner_user_id == user_id)):
+    for series in session.scalars(
+        select(Series).where(Series.owner_user_id == user_id, Series.kind == SeriesKind.CAST)
+    ):
         if character.id in series.character_ids_json:
             series.character_ids_json = [
                 cid for cid in series.character_ids_json if cid != character.id
@@ -158,6 +162,7 @@ def create_series(
         description=(description or "").strip() or None,
         shortform_profile_key=shortform_profile_key,
         character_ids_json=[],
+        kind=SeriesKind.CAST,
     )
     session.add(series)
     session.flush()
@@ -165,7 +170,11 @@ def create_series(
 
 
 def list_series(session: Session, *, user_id: str) -> list[Series]:
-    stmt = select(Series).where(Series.owner_user_id == user_id).order_by(Series.created_at.desc())
+    stmt = (
+        select(Series)
+        .where(Series.owner_user_id == user_id, Series.kind == SeriesKind.CAST)
+        .order_by(Series.created_at.desc())
+    )
     return list(session.scalars(stmt))
 
 

@@ -54,6 +54,10 @@ class Work(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     tombstone_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set by `publishing.hide()`, cleared by `publishing.restore()` — unlike
+    # `tombstone_reason` this is meant to be transient, so an owner never sees
+    # a stale reason once the work is visible again.
+    hide_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     view_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     like_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
@@ -107,6 +111,7 @@ class WorkVersion(Base):
     immutable_created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     work: Mapped[Work] = relationship(back_populates="versions", foreign_keys=[work_id])
 
@@ -202,6 +207,9 @@ class Draft(Base, TimestampMixin):
     published_work_id: Mapped[str | None] = mapped_column(
         ForeignKey("works.id", ondelete="SET NULL"), nullable=True
     )
+    source_cut_revision_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    delivery_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (Index("ix_drafts_user_id", "user_id"),)
 
@@ -228,6 +236,8 @@ class PublicationIntent(Base, TimestampMixin):
     payload_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     external_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     submitted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivery_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (
         Index("ix_publication_intents_work_id", "work_id"),

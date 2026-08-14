@@ -24,7 +24,7 @@ FROM python:3.12-slim-bookworm AS runtime
 # `pg_dump` is not optional: the admin backup endpoint shells out to it, so an
 # image without it would fail only when an operator triggers a backup.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl postgresql-client \
+    && apt-get install -y --no-install-recommends curl postgresql-client ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 zaolang
 

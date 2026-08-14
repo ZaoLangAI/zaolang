@@ -31,7 +31,7 @@ disable-model-invocation: true
 
 ## 前端三个 project
 
-`front/playwright.config.ts`：`setup`（登录并存会话）→ `e2e`（`e2e/flows/*.spec.ts`）、`a11y`（`e2e/a11y.spec.ts`）、`visual-qa`（`e2e/visual.spec.ts`）。全部 `workers: 1`：三套共享同一个种子库，并行发布作品会互相污染断言。
+`front/playwright.config.ts`：`setup`（登录并存会话）→ `e2e`（`e2e/flows/*.spec.ts`，含桌面-only 的 `editor.spec.ts`）、`a11y`（`e2e/a11y.spec.ts`）、`visual-qa`（`e2e/visual.spec.ts`）。全部 `workers: 1`：三套共享同一个种子库，并行发布作品会互相污染断言。`/create/drama` 故意不进 `a11y-mobile` 与 `PUBLIC_PAGES`。
 
 支持文件：`e2e/support/session.ts`（`ACCOUNTS` / `STATE_FILES` / `signIn` / `watchForPageErrors`）、`support/axe.ts`、`support/theme.ts`、`setup/auth.setup.ts`。
 
@@ -40,7 +40,8 @@ disable-model-invocation: true
 3. **`baseURL` 用 `localhost` 不用 `127.0.0.1`**：后台会话 cookie 是 `SameSite=Strict`，浏览器视这两个主机名为不同站点。后端 `CORS_ORIGINS` 要同时包含 3000 与 3100。
 4. **`watchForPageErrors` 只放过已知的期望失败**（会话探测的 401），其余 4xx/5xx 与任何 JS 异常都算失败。不要为了让用例变绿而扩大白名单——那正是它要抓的东西。
 5. **视觉套件断言的是机械事实**：三视口无横向溢出（`scrollWidth === clientWidth`）、无控制台错误、reduced-motion 下没有超过 50ms 的动画。截图只附在报告里便于人工查看，不参与通过/失败判定。
-6. **无障碍套件对两套主题都扫**，含 `color-contrast`。命令面板是 combobox 而非 dialog，改标记会撞 ARIA 规则。
+6. **无障碍套件对两套主题都扫**，含 `color-contrast`。命令面板是 combobox 而非 dialog，改标记会撞 ARIA 规则。短剧剪辑是桌面硬门禁，不要为了覆盖率把它加进 `a11y-mobile`。
+7. **后台统计页单接口失败仍算通过渲染。** `/admin/statistics` 用 `adminFetchOrNull`；不要写「任一 5xx 整页红」的 e2e。日趋势口径见 `zaolang-admin-statistics`。
 
 ## 跑 E2E 的前置条件
 

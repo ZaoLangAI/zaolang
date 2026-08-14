@@ -36,7 +36,7 @@ make logs                                    # 跟容器日志
 
 ## 2. 队列积压 { #queue-backlog }
 
-六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`provider_task_polling`。最后一个由独占的 poller 进程消费，不与前五个共享 worker 池——图片/视频这类重任务一旦挤占了同一个池子，异步供应商轮询会被饿死，卡在 `RUNNING` 的视频任务全靠它按时认领。
+六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`media_analysis`。另有独占 poller 消费 `provider_task_polling`。`media_analysis` 跑剪辑源的 ffprobe；积压时剪辑页的分析会停在 degraded，导出 complete 仍要求 worker 镜像里有 ffprobe。
 
 **确认**：健康页的积压数与消费速率；健康页 `async_provider_polling` 探针专门测"是否存在早已到期却没人认领的轮询任务"——积压为 0 不代表健康，Beat 完全没在跑时队列同样是空的，这个探针才是真正测到症状的信号。
 
@@ -126,6 +126,27 @@ make restore f=.backups/xxx.dump  # 需要 --confirm，脚本内已带
 ## 10. 公告
 
 `/admin/announcements` 下发站内公告与维护公告。维护公告会在 C 端顶部醒目展示——发布前确认时间窗与文案，撤下也要走同一入口。
+
+## 11. 短剧剪辑租约、孤儿上传与导出失败 { #editor }
+
+**发现**：用户报「剪辑变只读」、导出停在 encoding、MinIO `staging/editor-export/` 堆积未 complete 对象；后台健康页 `media_analysis` 积压。
+
+**确认**
+
+- 租约：`editor_leases.expires_at` 与 `revoked_at`。Beat 每 60s 跑 `expire_editor_leases`。双标签抢租约时输家必须保持只读，不得覆盖 `head_revision_id`。
+- 修订冲突：API `409 REVISION_CONFLICT`。客户端应重新 GET cut 再带新的 `expected_revision_id`。
+- 孤儿上传：`expire_orphan_editor_uploads` 每 5 分钟删除过期且未 complete 的 `editor_source` / `editor_export` 会话并尝试删对象。
+- 导出 OOM / 预检失败：`EditorExport.failure_code`（`resolution` / `duration` / `memory` / `browser` / `webcodecs`）。产品硬上限 30s / 1080p / 约 80MB，在流式导出落地前不要放宽。
+- 非法 AI plan：`edit_plans.status=failed` 且 `validation_json.ok=false`。不要手工改 `document_json`。
+- MCP 拒绝：错 audience 是 `UNAUTHENTICATED`；错 `project_id` 是 `PROJECT_FORBIDDEN`。consumer/admin JWT 不得打 `/mcp`。
+
+**处理**
+
+- 卡死的导出：`POST /v1/editor-exports/{id}/fail` 或 `cancel`，再 `retry`。
+- 开关：`drama_studio_enabled` / `web_editor_enabled` 关闭后相关 C 端接口 404。export/ai/mcp 依赖 web_editor。
+- 本地 worker：`make dev-worker` 的 `-Q` 必须包含 `media_analysis`。
+
+**收尾**：无过期未撤销租约；staging 前缀无超期对象；失败导出具有 `failure_code`。
 
 ## 附：本地重建一套干净环境
 
