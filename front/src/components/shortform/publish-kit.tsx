@@ -27,6 +27,7 @@ import type {
 } from '@/lib/api/types';
 import { DEFAULT_DEVICE_ID } from '@/lib/devices';
 import { formatDateTime } from '@/lib/format';
+import { refreshAssetUrl, refreshDraftOutputUrl } from '@/lib/refresh-media-src';
 import { captionText, chromeOf } from '@/lib/shortform';
 
 const CHANNEL_LABEL_KEYS: Record<string, string> = {
@@ -176,6 +177,11 @@ export function PublishKit({
           defaultDeviceId={DEFAULT_DEVICE_ID}
           maxHeight={520}
           chrome={chromeOf(profile)}
+          refreshSrc={() =>
+            draft.output_asset_id
+              ? refreshAssetUrl(draft.output_asset_id)
+              : refreshDraftOutputUrl(draft.id)
+          }
         />
         <p className="text-xs leading-relaxed text-muted">{t('kitPreviewHint')}</p>
       </div>

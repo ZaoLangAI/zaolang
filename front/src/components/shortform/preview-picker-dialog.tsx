@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useCallback } from 'react';
 
 import { VideoPlayer } from '@/components/media/video-player';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/cn';
 import type { GenerationJob } from '@/lib/api/types';
+import { refreshAssetUrl, refreshJobOutputUrl } from '@/lib/refresh-media-src';
 import { useJobStream } from '@/lib/use-job-stream';
 
 /**
@@ -86,6 +88,10 @@ function PreviewCard({
   const succeeded = current.status === 'succeeded' && Boolean(current.output_url);
   const failed = current.status === 'failed' || current.status === 'cancelled' || current.status === 'expired';
   const running = !succeeded && !failed;
+  const refreshSrc = useCallback(async () => {
+    if (current.output_asset_id) return refreshAssetUrl(current.output_asset_id);
+    return refreshJobOutputUrl(current.id);
+  }, [current.id, current.output_asset_id]);
 
   return (
     <div
@@ -96,7 +102,12 @@ function PreviewCard({
     >
       <div className="relative flex aspect-[9/16] items-center justify-center bg-surface-soft">
         {succeeded ? (
-          <VideoPlayer src={current.output_url} title={t('previewCandidateLabel', { index: index + 1 })} bare />
+          <VideoPlayer
+            src={current.output_url}
+            title={t('previewCandidateLabel', { index: index + 1 })}
+            bare
+            refreshSrc={refreshSrc}
+          />
         ) : (
           <div className="flex flex-col items-center gap-2 text-muted">
             {running ? <Spinner /> : null}

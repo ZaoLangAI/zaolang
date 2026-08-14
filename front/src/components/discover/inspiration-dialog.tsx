@@ -2,6 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
+import { useCallback } from 'react';
 
 import { Poster } from '@/components/media/poster';
 import { VideoPlayer } from '@/components/media/video-player';
@@ -14,6 +15,7 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import type { WorkDetail, WorkSummary } from '@/lib/api/types';
 import { formatCount, formatDate } from '@/lib/format';
+import { refreshWorkMediaUrl } from '@/lib/refresh-media-src';
 import { useResource } from '@/lib/use-resource';
 
 const LineageExplorer = dynamic(() =>
@@ -48,6 +50,11 @@ export function InspirationDialog({
 
   const detail = useResource<WorkDetail>(open && work ? `/v1/works/${work.id}` : null);
   const full = detail.data;
+  const workId = work?.id;
+  const refreshSrc = useCallback(
+    () => (workId ? refreshWorkMediaUrl(workId) : Promise.resolve(null)),
+    [workId],
+  );
 
   if (!work) return null;
 
@@ -96,7 +103,7 @@ export function InspirationDialog({
     >
       <div className="flex flex-col gap-5">
         {mediaType === 'video' && mediaUrl ? (
-          <VideoPlayer src={mediaUrl} poster={cover} title={work.title} />
+          <VideoPlayer src={mediaUrl} poster={cover} title={work.title} refreshSrc={refreshSrc} />
         ) : (
           <Poster
             src={cover}

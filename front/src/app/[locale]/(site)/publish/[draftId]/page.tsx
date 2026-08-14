@@ -28,7 +28,7 @@ export default async function PublishPage({ params }: Params) {
       <BackLink href={draft.latest_job_id ? `/jobs/${draft.latest_job_id}` : '/create'}>
         {draft.latest_job_id ? t('backToJob') : t('backToCreate')}
       </BackLink>
-      <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
+      <PageHeading eyebrow={t('eyebrow')} title={t('title')} />
       <PublishForm draft={draft} />
     </div>
   );

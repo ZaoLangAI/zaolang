@@ -1,8 +1,13 @@
+'use client';
+
+import { useCallback } from 'react';
+
 import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { VideoPlayer } from '@/components/media/video-player';
 import type { WorkDetail } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
+import { refreshWorkMediaUrl } from '@/lib/refresh-media-src';
 
 /**
  * The large media area on discover and the work page.
@@ -35,6 +40,7 @@ export function WorkStage({
 }) {
   const version = work.current_version;
   const isVideo = (work.media_type ?? version?.media_type) === 'video';
+  const refreshSrc = useCallback(() => refreshWorkMediaUrl(work.id), [work.id]);
 
   if (isVideo && devicePreview) {
     return (
@@ -43,6 +49,7 @@ export function WorkStage({
         poster={version?.cover_url ?? work.cover_url}
         title={work.title}
         edgeToEdge
+        refreshSrc={refreshSrc}
       />
     );
   }
@@ -57,6 +64,7 @@ export function WorkStage({
         lazyMedia={lazyMedia}
         aspectRatio={fill ? null : undefined}
         objectFit={fill ? 'cover' : undefined}
+        refreshSrc={refreshSrc}
       />
     );
   }

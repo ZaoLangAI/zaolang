@@ -12,8 +12,11 @@
     "nextSlide": "Next set",
     "goToSlide": "Set {index}",
     "captions": "Captions",
+    "playbackError": "Playback failed. Try again.",
+    "retryPlayback": "Retry playback",
     "themeMenu": "Change theme",
-    "regionMenu": "Change region and language"
+    "regionMenu": "Change region and language",
+    "unmuteToHear": "Tap to unmute and hear sound"
   },
   "actions": {
     "create": "Create",
@@ -1447,6 +1450,9 @@
     "cancellingHint": "Cancel request received. The job will stop shortly.",
     "cancelFailed": "Could not cancel. Please try again.",
     "waiting": "Waiting for the first progress event",
+    "liveUpdating": "Live updates",
+    "copyId": "Copy job ID",
+    "idCopied": "Job ID copied",
     "openWork": "View the work",
     "backToCreate": "Back to the create centre",
     "eventLog": "Event log",
@@ -1669,7 +1675,6 @@
   "publishPage": {
     "eyebrow": "PUBLISH",
     "title": "Publish your version",
-    "subtitle": "Confirm the cover, title and licence. Source and credit are written into the lineage on publish.",
     "coverLabel": "Cover",
     "titleField": "Title",
     "descriptionField": "Description",

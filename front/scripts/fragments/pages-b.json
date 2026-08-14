@@ -58,6 +58,9 @@
       "cancelledTitle": "任务已取消",
       "cancelConfirm": "确定要取消这个任务吗？",
       "waiting": "正在等待第一条进度",
+      "liveUpdating": "实时更新中",
+      "copyId": "复制任务编号",
+      "idCopied": "已复制任务编号",
       "openWork": "查看作品",
       "backToCreate": "回到创作中心",
       "eventLog": "过程记录"
@@ -65,7 +68,6 @@
     "publishPage": {
       "eyebrow": "PUBLISH",
       "title": "发布你的版本",
-      "subtitle": "确认封面、标题与许可，发布后来源与署名会写入创作链。",
       "coverLabel": "封面",
       "titleField": "标题",
       "descriptionField": "简介",
@@ -144,6 +146,9 @@
       "cancelledTitle": "Job cancelled",
       "cancelConfirm": "Cancel this job?",
       "waiting": "Waiting for the first progress event",
+      "liveUpdating": "Live updates",
+      "copyId": "Copy job ID",
+      "idCopied": "Job ID copied",
       "openWork": "View the work",
       "backToCreate": "Back to the create centre",
       "eventLog": "Event log"
@@ -151,7 +156,6 @@
     "publishPage": {
       "eyebrow": "PUBLISH",
       "title": "Publish your version",
-      "subtitle": "Confirm the cover, title and licence. Source and credit are written into the lineage on publish.",
       "coverLabel": "Cover",
       "titleField": "Title",
       "descriptionField": "Description",
@@ -230,6 +234,9 @@
       "cancelledTitle": "ジョブをキャンセルしました",
       "cancelConfirm": "このジョブをキャンセルしますか？",
       "waiting": "最初の進捗を待っています",
+      "liveUpdating": "リアルタイム更新中",
+      "copyId": "ジョブ ID をコピー",
+      "idCopied": "ジョブ ID をコピーしました",
       "openWork": "作品を見る",
       "backToCreate": "制作センターへ戻る",
       "eventLog": "処理ログ"
@@ -237,7 +244,6 @@
     "publishPage": {
       "eyebrow": "PUBLISH",
       "title": "あなたの版を公開",
-      "subtitle": "カバー・タイトル・ライセンスを確認します。公開時に出典とクレジットが創作チェーンに記録されます。",
       "coverLabel": "カバー",
       "titleField": "タイトル",
       "descriptionField": "説明",

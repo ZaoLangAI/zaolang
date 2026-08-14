@@ -12,8 +12,11 @@
     "nextSlide": "下一组",
     "goToSlide": "第 {index} 组",
     "captions": "字幕",
+    "playbackError": "播放失败，请重试",
+    "retryPlayback": "重试播放",
     "themeMenu": "切换主题",
-    "regionMenu": "切换地区与语言"
+    "regionMenu": "切换地区与语言",
+    "unmuteToHear": "点击取消静音以听到声音"
   },
   "actions": {
     "create": "创作",
@@ -1447,6 +1450,9 @@
     "cancellingHint": "已收到取消请求，任务即将停止。",
     "cancelFailed": "取消失败，请重试。",
     "waiting": "正在等待第一条进度",
+    "liveUpdating": "实时更新中",
+    "copyId": "复制任务编号",
+    "idCopied": "已复制任务编号",
     "openWork": "查看作品",
     "backToCreate": "回到创作中心",
     "eventLog": "过程记录",
@@ -1669,7 +1675,6 @@
   "publishPage": {
     "eyebrow": "PUBLISH",
     "title": "发布你的版本",
-    "subtitle": "确认封面、标题与许可，发布后来源与署名会写入创作链。",
     "coverLabel": "封面",
     "titleField": "标题",
     "descriptionField": "简介",

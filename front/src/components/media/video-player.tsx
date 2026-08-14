@@ -4,6 +4,14 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  delayUntilSignedUrlRefresh,
+  isNotAllowedError,
+  mediaObjectKey,
+  pauseMedia,
+  playMedia,
+} from '@/components/media/safe-media-playback';
+import { Button } from '@/components/ui/button';
+import {
   IconFullscreen,
   IconGear,
   IconPause,
@@ -32,6 +40,7 @@ export function VideoPlayer({
   aspectRatio,
   objectFit = 'contain',
   bare = false,
+  refreshSrc,
 }: {
   src?: string | null;
   poster?: string | null;
@@ -52,10 +61,17 @@ export function VideoPlayer({
   objectFit?: 'contain' | 'cover';
   /** Drops the rounded border; the device frame supplies its own screen edge. */
   bare?: boolean;
+  /** Mint a fresh signed URL when the current one is about to expire or 403s. */
+  refreshSrc?: () => Promise<string | null>;
 }) {
   const t = useTranslations('a11y');
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const playInFlightRef = useRef<Promise<void> | null>(null);
+  const refreshSrcRef = useRef(refreshSrc);
+  refreshSrcRef.current = refreshSrc;
+  const refreshingRef = useRef(false);
+  const restoreRef = useRef<{ time: number; playing: boolean } | null>(null);
 
   const [activeSrc, setActiveSrc] = useState<string | null>(() =>
     lazyMedia ? null : (src ?? null),
@@ -66,8 +82,85 @@ export function VideoPlayer({
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [intrinsicRatio, setIntrinsicRatio] = useState<string | null>(null);
+  const [playbackError, setPlaybackError] = useState(false);
+  const [needsUnmute, setNeedsUnmute] = useState(false);
 
   const ratio = aspectRatio === undefined ? (intrinsicRatio ?? DEFAULT_ASPECT_RATIO) : aspectRatio;
+
+  const startPlay = useCallback(async (options: { userGesture: boolean }) => {
+    const video = videoRef.current;
+    if (!video) return;
+    setPlaybackError(false);
+    if (options.userGesture) {
+      video.muted = false;
+      video.volume = 1;
+      setNeedsUnmute(false);
+    }
+    const run = (async () => {
+      try {
+        await playMedia(video);
+      } catch (error) {
+        if (isNotAllowedError(error)) {
+          video.muted = true;
+          setNeedsUnmute(true);
+          await playMedia(video);
+          return;
+        }
+        throw error;
+      }
+    })();
+    playInFlightRef.current = run;
+    try {
+      await run;
+    } catch {
+      setPlaybackError(true);
+    } finally {
+      if (playInFlightRef.current === run) playInFlightRef.current = null;
+    }
+  }, []);
+
+  const startPause = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const inflight = playInFlightRef.current;
+    const run = pauseMedia(video, inflight);
+    playInFlightRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (playInFlightRef.current === run) playInFlightRef.current = null;
+    }
+  }, []);
+
+  const applyFreshSrc = useCallback((next: string) => {
+    const video = videoRef.current;
+    const currentSrc = video?.currentSrc || video?.src || null;
+    if (video && currentSrc && mediaObjectKey(currentSrc) === mediaObjectKey(next)) {
+      restoreRef.current = { time: video.currentTime, playing: !video.paused };
+    }
+    setPlaybackError(false);
+    setActiveSrc(next);
+  }, []);
+
+  const requestFreshSrc = useCallback(async (): Promise<string | null> => {
+    const refresh = refreshSrcRef.current;
+    if (!refresh || refreshingRef.current) return null;
+    refreshingRef.current = true;
+    try {
+      const next = await refresh();
+      if (next) applyFreshSrc(next);
+      return next;
+    } catch {
+      return null;
+    } finally {
+      refreshingRef.current = false;
+    }
+  }, [applyFreshSrc]);
+
+  const startPlayRef = useRef(startPlay);
+  startPlayRef.current = startPlay;
+  const requestFreshSrcRef = useRef(requestFreshSrc);
+  requestFreshSrcRef.current = requestFreshSrc;
 
   const togglePlay = useCallback(() => {
     if (lazyMedia && !activeSrc && src) {
@@ -77,9 +170,25 @@ export function VideoPlayer({
     }
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) void video.play();
-    else video.pause();
-  }, [activeSrc, lazyMedia, src]);
+    if (video.paused) void startPlay({ userGesture: true });
+    else void startPause();
+  }, [activeSrc, lazyMedia, src, startPause, startPlay]);
+
+  useEffect(() => {
+    if (!src) {
+      if (!lazyMedia) setActiveSrc(null);
+      return;
+    }
+    setActiveSrc((currentSrc) => {
+      if (currentSrc == null) return lazyMedia ? currentSrc : src;
+      if (currentSrc === src) return currentSrc;
+      const video = videoRef.current;
+      if (video && mediaObjectKey(currentSrc) === mediaObjectKey(src)) {
+        restoreRef.current = { time: video.currentTime, playing: !video.paused };
+      }
+      return src;
+    });
+  }, [src, lazyMedia]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -87,35 +196,80 @@ export function VideoPlayer({
 
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    const onEnded = () => setPlaying(false);
     const onTime = () => setCurrent(video.currentTime);
     const onMeta = () => {
       setDuration(video.duration || 0);
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         setIntrinsicRatio(`${video.videoWidth} / ${video.videoHeight}`);
       }
+      const restore = restoreRef.current;
+      if (!restore) return;
+      restoreRef.current = null;
+      if (restore.time > 0) video.currentTime = restore.time;
+      if (restore.playing) void startPlayRef.current({ userGesture: false });
     };
     const onVolume = () => setMuted(video.muted);
+    const onError = () => {
+      void (async () => {
+        const before = video.getAttribute('src');
+        const next = await requestFreshSrcRef.current();
+        if (!next || next === before) setPlaybackError(true);
+      })();
+    };
 
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('loadedmetadata', onMeta);
     video.addEventListener('volumechange', onVolume);
+    video.addEventListener('error', onError);
     return () => {
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('loadedmetadata', onMeta);
       video.removeEventListener('volumechange', onVolume);
+      video.removeEventListener('error', onError);
+      void pauseMedia(video, playInFlightRef.current);
     };
   }, [activeSrc]);
 
   useEffect(() => {
     if (!pendingPlay || !activeSrc) return;
+    void startPlay({ userGesture: false }).finally(() => setPendingPlay(false));
+  }, [pendingPlay, activeSrc, startPlay]);
+
+  useEffect(() => {
+    if (!activeSrc || !refreshSrcRef.current) return;
+    const delay = delayUntilSignedUrlRefresh(activeSrc);
+    if (delay == null) return;
+    const timer = window.setTimeout(() => {
+      void requestFreshSrc();
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [activeSrc, requestFreshSrc]);
+
+  const retryPlayback = () => {
+    void (async () => {
+      if (refreshSrcRef.current) {
+        const next = await requestFreshSrc();
+        if (!next && playbackError) return;
+      }
+      await startPlay({ userGesture: true });
+    })();
+  };
+
+  const unmuteToHear = () => {
     const video = videoRef.current;
     if (!video) return;
-    void video.play().finally(() => setPendingPlay(false));
-  }, [pendingPlay, activeSrc]);
+    video.muted = false;
+    video.volume = 1;
+    setNeedsUnmute(false);
+    if (video.paused) void startPlay({ userGesture: true });
+  };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     // Space and arrows are what people already expect from a video surface.
@@ -170,6 +324,27 @@ export function VideoPlayer({
           <div className="grid size-full place-items-center text-sm text-muted">{title}</div>
         )}
       </div>
+
+      {playbackError ? (
+        <div className="absolute inset-0 z-10 grid place-items-center bg-black/65 px-4">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <p className="text-sm text-white">{t('playbackError')}</p>
+            <Button size="sm" variant="secondary" onClick={retryPlayback}>
+              {t('retryPlayback')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {needsUnmute && !playbackError ? (
+        <button
+          type="button"
+          onClick={unmuteToHear}
+          className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70 px-3 py-2 text-xs text-white hover:bg-black/85"
+        >
+          {t('unmuteToHear')}
+        </button>
+      ) : null}
 
       <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/85 to-transparent px-3 pb-3 pt-10 xs:gap-3 xs:px-4">
         <button

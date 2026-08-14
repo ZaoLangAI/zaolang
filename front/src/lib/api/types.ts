@@ -33,6 +33,7 @@ export type VersionDiff = S['VersionDiffResponse'];
 export type WorkAppeal = S['WorkAppealView'];
 
 export type Draft = S['DraftResponse'];
+export type Asset = S['AssetResponse'];
 export type GenerationJob = S['GenerationJobResponse'];
 export type JobEvent = S['JobEventResponse'];
 export type Quote = S['QuoteResponse'];

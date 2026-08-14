@@ -35,6 +35,7 @@ export function DevicePreview({
   chrome,
   overlay,
   className,
+  refreshSrc,
 }: {
   src?: string | null;
   poster?: string | null;
@@ -57,6 +58,8 @@ export function DevicePreview({
    */
   overlay?: React.ReactNode;
   className?: string;
+  /** Forwarded to `VideoPlayer` so a signed URL can be re-minted in place. */
+  refreshSrc?: () => Promise<string | null>;
 }) {
   const t = useTranslations('devicePreview');
 
@@ -108,11 +111,12 @@ export function DevicePreview({
               objectFit="cover"
               bare
               className="size-full"
+              refreshSrc={refreshSrc}
             />
             {overlay ? <div className="absolute inset-0">{overlay}</div> : null}
           </DeviceFrame>
         ) : (
-          <VideoPlayer src={src} poster={poster} title={title} />
+          <VideoPlayer src={src} poster={poster} title={title} refreshSrc={refreshSrc} />
         )}
       </div>
 

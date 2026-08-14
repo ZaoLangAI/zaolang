@@ -1,6 +1,35 @@
-import Image from 'next/image';
+'use client';
 
+import Image from 'next/image';
+import { useEffect, useRef } from 'react';
+
+import { pauseMedia, playMedia } from '@/components/media/safe-media-playback';
 import { cn } from '@/lib/cn';
+
+function MutedLoopVideo({ src, label }: { src: string; label: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const play = playMedia(video);
+    return () => {
+      void pauseMedia(video, play);
+    };
+  }, [src]);
+
+  return (
+    <video
+      ref={videoRef}
+      src={src}
+      aria-label={label}
+      muted
+      loop
+      playsInline
+      className="absolute inset-0 h-full w-full object-cover"
+    />
+  );
+}
 
 /**
  * Poster frame for a work.
@@ -53,15 +82,7 @@ export function Poster({
     >
       {src ? (
         mediaType === 'video' ? (
-          <video
-            src={src}
-            aria-label={alt}
-            muted
-            loop
-            playsInline
-            autoPlay
-            className="absolute inset-0 h-full w-full object-cover"
-          />
+          <MutedLoopVideo src={src} label={alt} />
         ) : (
           <Image
             src={src}

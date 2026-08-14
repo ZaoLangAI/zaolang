@@ -12,8 +12,11 @@
     "nextSlide": "次のセット",
     "goToSlide": "セット {index}",
     "captions": "字幕",
+    "playbackError": "再生に失敗しました。再試行してください。",
+    "retryPlayback": "再生を再試行",
     "themeMenu": "テーマを切り替える",
-    "regionMenu": "地域と言語を切り替える"
+    "regionMenu": "地域と言語を切り替える",
+    "unmuteToHear": "タップしてミュートを解除し、音声を聞く"
   },
   "actions": {
     "create": "制作する",
@@ -1447,6 +1450,9 @@
     "cancellingHint": "キャンセルを受け付けました。まもなく停止します。",
     "cancelFailed": "キャンセルに失敗しました。もう一度お試しください。",
     "waiting": "最初の進捗を待っています",
+    "liveUpdating": "リアルタイム更新中",
+    "copyId": "ジョブ ID をコピー",
+    "idCopied": "ジョブ ID をコピーしました",
     "openWork": "作品を見る",
     "backToCreate": "制作センターへ戻る",
     "eventLog": "処理ログ",
@@ -1669,7 +1675,6 @@
   "publishPage": {
     "eyebrow": "PUBLISH",
     "title": "あなたの版を公開",
-    "subtitle": "カバー・タイトル・ライセンスを確認します。公開時に出典とクレジットが創作チェーンに記録されます。",
     "coverLabel": "カバー",
     "titleField": "タイトル",
     "descriptionField": "説明",
