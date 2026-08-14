@@ -1634,6 +1634,52 @@
         }
       }
     },
+    "billingPage.creatorEarnings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creator earnings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "創作収益"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创作收益"
+          }
+        }
+      }
+    },
+    "billingPage.creatorEarningsHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock fees plus remix royalties"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除手数料とリミックス還元の合計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权解锁与回流分成的合计"
+          }
+        }
+      }
+    },
     "billingPage.eyebrow": {
       "extractionState": "manual",
       "localizations": {
@@ -2002,6 +2048,52 @@
         }
       }
     },
+    "billingPage.typeAccessIn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock income"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除収入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权收入"
+          }
+        }
+      }
+    },
+    "billingPage.typeAccessOut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Credit unlock"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クレジット解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "积分解锁"
+          }
+        }
+      }
+    },
     "billingPage.typeAdjustment": {
       "extractionState": "manual",
       "localizations": {
@@ -2251,6 +2343,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "全球 AI 二创共享平台"
+          }
+        }
+      }
+    },
+    "collectionPage.accessCredits": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remix unlock price"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リミックス解除価格"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二创解锁价格"
           }
         }
       }
@@ -2698,19 +2813,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete work"
+            "value": "Move to trash"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "作品を削除"
+            "value": "ゴミ箱へ移す"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除作品"
+            "value": "移入回收站"
           }
         }
       }
@@ -2721,19 +2836,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The work is removed from view, but its slot in the lineage chain stays as a placeholder so downstream remixes can still resolve it. This cannot be undone."
+            "value": "The work leaves your library and can be restored from Trash. Permanent deletion needs a second confirmation."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "作品は表示から削除されますが、創作チェーン上の位置はプレースホルダーとして残り、二次創作の出典は保たれます。元に戻せません。"
+            "value": "作品はライブラリから外れ、ゴミ箱から復元できます。完全削除には再確認が必要です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "作品会从展示中下架，但创作链中的位置会保留占位，不会影响下游二创的溯源。此操作不可恢复。"
+            "value": "作品会从作品集撤下，可在回收站恢复。彻底删除需要再次确认。"
           }
         }
       }
@@ -2744,19 +2859,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete this work?"
+            "value": "Move this work to trash?"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この作品を削除しますか？"
+            "value": "ゴミ箱へ移しますか？"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除这个作品？"
+            "value": "移入回收站？"
           }
         }
       }
@@ -2767,19 +2882,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Work deleted."
+            "value": "Moved to trash."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "作品を削除しました。"
+            "value": "ゴミ箱へ移しました。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "作品已删除。"
+            "value": "已移入回收站。"
           }
         }
       }
@@ -2790,19 +2905,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Delete failed, please try again."
+            "value": "Could not move to trash, please try again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "削除に失敗しました。もう一度お試しください。"
+            "value": "ゴミ箱への移動に失敗しました。もう一度お試しください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除失败，请重试。"
+            "value": "移入回收站失败，请重试。"
           }
         }
       }
@@ -2813,19 +2928,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This cannot be undone."
+            "value": "You can restore it or delete it for good from Trash."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "元に戻せません。"
+            "value": "ゴミ箱から復元するか、完全に削除できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除后无法恢复。"
+            "value": "可在回收站恢复或彻底删除。"
           }
         }
       }
@@ -2968,6 +3083,29 @@
         }
       }
     },
+    "collectionPage.emptyTrashHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works you move out of the library show up here."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリから移した作品がここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从作品集移入回收站的作品会出现在这里。"
+          }
+        }
+      }
+    },
     "collectionPage.eyebrow": {
       "extractionState": "manual",
       "localizations": {
@@ -3102,6 +3240,213 @@
           "stringUnit": {
             "state": "translated",
             "value": "新建创作"
+          }
+        }
+      }
+    },
+    "collectionPage.purgeWork": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete permanently"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全に削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "彻底删除"
+          }
+        }
+      }
+    },
+    "collectionPage.purgeWorkConfirmBody": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The work record and its media files will be removed. This cannot be undone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品の記録とメディアファイルが削除されます。元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品记录与媒体文件会一并删除，此操作不可恢复。"
+          }
+        }
+      }
+    },
+    "collectionPage.purgeWorkConfirmBodyReferenced": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This work has downstream remixes. Its lineage slot stays as a placeholder, but cover and output files will be removed. This cannot be undone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この作品には二次創作があります。創作チェーン上の位置はプレースホルダーとして残り、カバーと出力ファイルは削除されます。元に戻せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该作品有下游二创。创作链会保留占位，封面和成片文件会被清除。此操作不可恢复。"
+          }
+        }
+      }
+    },
+    "collectionPage.purgeWorkConfirmTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this work permanently?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この作品を完全に削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "彻底删除这个作品？"
+          }
+        }
+      }
+    },
+    "collectionPage.purgeWorkDone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work permanently deleted."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品を完全に削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品已彻底删除。"
+          }
+        }
+      }
+    },
+    "collectionPage.purgeWorkFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permanent delete failed, please try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全削除に失敗しました。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "彻底删除失败，请重试。"
+          }
+        }
+      }
+    },
+    "collectionPage.restoreWork": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore work"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品を復元"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复作品"
+          }
+        }
+      }
+    },
+    "collectionPage.restoreWorkDone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Work restored."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品を復元しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品已恢复。"
+          }
+        }
+      }
+    },
+    "collectionPage.restoreWorkFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore failed, please try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復元に失敗しました。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复失败，请重试。"
           }
         }
       }
@@ -3401,6 +3746,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "技能库"
+          }
+        }
+      }
+    },
+    "collectionPage.tabTrash": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trash"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゴミ箱"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回收站"
           }
         }
       }
@@ -4854,6 +5222,75 @@
         }
       }
     },
+    "discover.accessAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any price"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての価格"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部价格"
+          }
+        }
+      }
+    },
+    "discover.accessFree": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free remixes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料リミックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费二创"
+          }
+        }
+      }
+    },
+    "discover.accessPaid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paid remixes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有料リミックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "付费二创"
+          }
+        }
+      }
+    },
     "discover.allTags": {
       "extractionState": "manual",
       "localizations": {
@@ -5034,6 +5471,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "已经看到底了"
+          }
+        }
+      }
+    },
+    "discover.filterAccess": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter by price"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "価格で絞り込み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按价格筛选"
           }
         }
       }
@@ -8465,6 +8925,29 @@
         }
       }
     },
+    "license.zaolangPaidRemix": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zaolang paid remix license"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "造浪の有料リミックス許諾"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "造浪付费二创授权"
+          }
+        }
+      }
+    },
     "lineagePanel.ancestors": {
       "extractionState": "manual",
       "localizations": {
@@ -9220,6 +9703,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "账号菜单"
+          }
+        }
+      }
+    },
+    "notificationBody.accessSoldSkill": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Someone unlocked your skill “{title}”. You earned {amount} credits."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキル「{title}」が解除され、{amount} クレジットを獲得しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有人解锁了你的技能「{title}」，你获得 {amount} 积分。"
+          }
+        }
+      }
+    },
+    "notificationBody.accessSoldWork": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Someone unlocked your work. You earned {amount} credits."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品が解除され、{amount} クレジットを獲得しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有人解锁了你的作品，你获得 {amount} 积分。"
           }
         }
       }
@@ -10328,6 +10857,29 @@
         }
       }
     },
+    "notificationsPage.typeAccessSold": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock income"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除収入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权收入"
+          }
+        }
+      }
+    },
     "notificationsPage.typeFollow": {
       "extractionState": "manual",
       "localizations": {
@@ -11244,6 +11796,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "作品"
+          }
+        }
+      }
+    },
+    "publishPage.accessCredits": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remix unlock price"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リミックス解除価格"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二创解锁价格"
+          }
+        }
+      }
+    },
+    "publishPage.accessCreditsHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 keeps remixes free. A paid unlock is an in-app license, not CC-BY."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 は無料公開です。有料解除はアプリ内許諾であり、CC-BY ではありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 为免费开放二创。付费授权仅限站内二创，不再标 CC-BY。"
+          }
+        }
+      }
+    },
+    "publishPage.accessCustom": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カスタム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义"
+          }
+        }
+      }
+    },
+    "publishPage.accessFree": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Free"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费"
           }
         }
       }
@@ -12835,6 +13479,52 @@
         }
       }
     },
+    "remixPage.needsUnlock": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock this work to open the studio"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スタジオを開くには先に解除してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要先解锁才能进入工作室"
+          }
+        }
+      }
+    },
+    "remixPage.needsUnlockHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The author set a credit price. Pay once, remix anytime."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作者がクレジット価格を設定しています。一度支払えば何度でもリミックスできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作者为二创设置了积分价格。解锁一次后可无限二创。"
+          }
+        }
+      }
+    },
     "remixPage.notRemixable": {
       "extractionState": "manual",
       "localizations": {
@@ -13820,6 +14510,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "从《{title}》开始新版本"
+          }
+        }
+      }
+    },
+    "remixPage.unlockCta": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock with credits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クレジットで解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "积分解锁"
           }
         }
       }
@@ -15733,6 +16446,29 @@
         }
       }
     },
+    "work.paidBadge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{credits} credits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{credits} クレジット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{credits} 积分"
+          }
+        }
+      }
+    },
     "work.prompt": {
       "extractionState": "manual",
       "localizations": {
@@ -15959,6 +16695,167 @@
           "stringUnit": {
             "state": "translated",
             "value": "作者或平台已下架这个版本，但创作链中的位置会保留。"
+          }
+        }
+      }
+    },
+    "work.trashed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In trash"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゴミ箱にあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在回收站中"
+          }
+        }
+      }
+    },
+    "work.trashedHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only you can see this. Restore it to the library, or delete the record and files for good."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなただけが閲覧できます。ライブラリに戻すか、記録とファイルを完全に削除できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有你可以查看。可恢复到作品集，或彻底删除记录与文件。"
+          }
+        }
+      }
+    },
+    "work.unlockConfirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pay {credits} credits once to remix this work as often as you like."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{credits} クレジットを一度支払うと、何度でもリミックスできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 {credits} 积分解锁后即可无限二创。"
+          }
+        }
+      }
+    },
+    "work.unlockDone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlocked. You can start remixing."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除しました。リミックスを始められます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已解锁，可以开始二创。"
+          }
+        }
+      }
+    },
+    "work.unlockFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock failed. Check your balance and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除に失敗しました。残高を確認して再試行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁失败，请检查余额后重试。"
+          }
+        }
+      }
+    },
+    "work.unlockThis": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock with credits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クレジットで解除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "积分解锁"
+          }
+        }
+      }
+    },
+    "work.unlocking": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlocking"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在解锁"
           }
         }
       }
@@ -16561,6 +17458,29 @@
         }
       }
     },
+    "workPage.goBilling": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buy credits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャージする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去充值"
+          }
+        }
+      }
+    },
     "workPage.lineageCount": {
       "extractionState": "manual",
       "localizations": {
@@ -16603,6 +17523,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "更多二创"
+          }
+        }
+      }
+    },
+    "workPage.needsUnlock": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This work allows remixes after a credit unlock."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この作品はクレジット解除後にリミックスできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该作品允许二创，需先用积分解锁。"
           }
         }
       }
@@ -17316,6 +18259,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "标签"
+          }
+        }
+      }
+    },
+    "workPage.unlockCta": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock and remix"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除してリミックス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "积分解锁并二创"
           }
         }
       }

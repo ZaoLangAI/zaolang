@@ -19,7 +19,7 @@ disable-model-invocation: true
 | `back/app/models/search.py` | `WorkEmbedding`（pgvector `Vector` 列） |
 | `back/app/models/works.py` | `Tag` / `WorkTag` / `StylePreset`（用户从作品蒸馏的快捷参数，可公开分享） |
 | `back/app/models/style_gallery.py` | `StyleGalleryEntry`（平台策展系统画风，后台 Operator 写，C 端灵感墙与工作室弹窗共用） |
-| `back/app/api/v1/works.py` | 浏览与搜索接口 |
+| `back/app/api/v1/works.py` | 浏览与搜索接口；`access=free|paid|all` 按作品标价筛选 |
 | `back/app/api/v1/style_gallery.py` | 公开画风列表 / 详情 / `/apply` 计数 |
 | `front/src/app/[locale]/(site)/discover/page.tsx`、`front/src/components/discover/tag-filter.tsx` | 首页 `/` 重定向到发现页；灵感墙 `TagFilter` + `DiscoverSort`（`recent`/`popular`/`remixed`，URL `?sort=`） |
 | `front/src/components/work/reusable-params.tsx` | 参数一键套用 |

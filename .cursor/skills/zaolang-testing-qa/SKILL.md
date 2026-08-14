@@ -13,7 +13,7 @@ disable-model-invocation: true
 | `back/tests/unit/` | 领域不变量、纯函数 | 任何 `app/domain/*` 改动 |
 | `back/tests/unit/test_credits_properties.py` | hypothesis 生成账本操作序列与状态机走法 | 改账本或状态机 |
 | `back/tests/integration/` | `TestClient` 走 `/v1`、后台越权与审计 | 任何接口改动 |
-| `back/tests/concurrency/` | 真线程 + 独立连接的竞态 | 改并发敏感路径（账本、幂等、回调） |
+| `back/tests/concurrency/` | 真线程 + 独立连接的竞态 | 改并发敏感路径（账本、幂等、回调、积分解锁） |
 
 关键 fixture 在 `back/tests/conftest.py`：`db`（回滚式，多数用例用它）、`committed_db`（真提交 + 事后 `truncate_all`）、`client`、`author` / `admin` / `reviewer` / `operator`、`make_user`；`viewer` 只在 `tests/integration/test_admin_security.py` 里局部定义。数据构造器在 `back/tests/factories.py`（`make_job` 等）。
 

@@ -389,7 +389,7 @@ def _resolve_source_version(
         if work is None:
             raise NotFound("来源作品不存在。")
         # Re-checked here so the API cannot be used to bypass the UI's guard.
-        licensing.assert_remixable(work, user_id)
+        licensing.assert_remixable(work, user_id, session)
         version = session.get(WorkVersion, work.current_version_id or "")
         return version.id if version else None
     return None

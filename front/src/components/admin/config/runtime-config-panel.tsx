@@ -303,6 +303,7 @@ function ConfigForm({
           'variant_export_enabled',
           'editor_ai_enabled',
           'editor_mcp_enabled',
+          'marketplace_enabled',
         ].map((flag) => (
           <div key={flag} className="rounded-[var(--radius-sm)] border border-border p-3">
             <Switch

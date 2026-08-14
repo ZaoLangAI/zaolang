@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from app.domain.skill_library import service as skill_library
 from app.domain.style_gallery import service as style_gallery
 from app.models import User
-from app.models.enums import CreationSkillCategory, Operation
+from app.models.enums import (
+    CreationSkillCategory,
+    CreationSkillStatus,
+    CreationSkillVisibility,
+    Operation,
+)
 from app.workflows.configs import SkillContextConfig
 from app.workflows.nodes import execute_skill_context
 from app.workflows.types import WorkflowContext
@@ -166,6 +171,30 @@ def test_the_users_negative_prompt_wins_over_the_template(db: Session, author: U
     )
     execute_skill_context(ctx, SkillContextConfig())
     assert ctx.params["negative_prompt"] == "extra fingers"
+
+
+def test_a_locked_paid_skill_is_not_folded(db: Session, author: User, remixer: User) -> None:
+    skill = skill_library.create(
+        db,
+        owner_user_id=author.id,
+        title="付费胶片",
+        description="",
+        category=CreationSkillCategory.LENS,
+        params_json={"prompt_suffix": "35mm film grain"},
+        cover_asset_id=None,
+        access_credits=8,
+    )
+    skill.status = CreationSkillStatus.PUBLISHED
+    skill.visibility = CreationSkillVisibility.PUBLIC
+    db.flush()
+
+    ctx = _ctx(
+        db,
+        remixer,
+        params={"prompt": "海边的黄昏", "skill_ids": [skill.id]},
+    )
+    execute_skill_context(ctx, SkillContextConfig())
+    assert ctx.prompt == "海边的黄昏"
 
 
 def test_dry_run_does_not_fold_style_or_skills(db: Session, author: User) -> None:

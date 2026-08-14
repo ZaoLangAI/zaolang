@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.access import service as access_service
 from app.domain.audit import service as audit
 from app.domain.characters import service as characters_service
 from app.domain.credits.royalty import RoyaltyRule, distribute
@@ -88,13 +89,15 @@ def create_draft(
         work = session.get(Work, source_work_id)
         if work is None:
             raise NotFound("来源作品不存在。")
-        licensing.assert_remixable(work, user_id)
+        licensing.assert_remixable(work, user_id, session)
 
         version = session.get(WorkVersion, work.current_version_id or "")
         if version is None:
             raise NotFound("来源作品没有可用版本。")
 
-        snapshot = licensing.capture_license_snapshot(session, source_version=version, work=work)
+        snapshot = licensing.capture_license_snapshot(
+            session, source_version=version, work=work, remixer_user_id=user_id
+        )
         source_version_id = version.id
         license_snapshot_id = snapshot.id
         # Carry over the author's reusable parameters unless the remixer
@@ -125,6 +128,7 @@ def publish(
     tags: list[str],
     cover_asset_id: str | None,
     rights_confirmed: bool,
+    access_credits: int = 0,
 ) -> PublishOutcome:
     draft = session.get(Draft, draft_id)
     if draft is None:
@@ -149,7 +153,7 @@ def publish(
         source_work = session.get(Work, source_version.work_id)
         if source_work is None:
             raise NotFound("来源作品不存在。")
-        licensing.assert_remixable(source_work, user_id)
+        licensing.assert_source_still_remixable(source_work, user_id)
 
     # 2. Final safety pass over what will actually be public.
     from app.agents import safety
@@ -166,11 +170,17 @@ def publish(
         raise ModerationRejected(verdict.public_message or "内容未通过安全检查。")
 
     # 3. Work and its immutable first version.
+    priced = access_service.normalize_access_credits(
+        session, access_credits, actor_user_id=user_id
+    )
+    if not Visibility(visibility).allows_remix:
+        priced = 0
     work = Work(
         owner_user_id=user_id,
         visibility=visibility,
         lifecycle_status=LifecycleStatus.ACTIVE,
         published_at=utcnow(),
+        access_credits=priced,
     )
     session.add(work)
     session.flush()
@@ -257,7 +267,14 @@ def publish(
     return PublishOutcome(work=work, version=version, lineage_edge=edge, royalties=royalties)
 
 
-def change_visibility(session: Session, *, user_id: str, work_id: str, visibility: str) -> Work:
+def change_visibility(
+    session: Session,
+    *,
+    user_id: str,
+    work_id: str,
+    visibility: str,
+    access_credits: int | None = None,
+) -> Work:
     """Visibility changes are forward-only in effect.
 
     Revoking remix rights stops new derivatives but never invalidates existing
@@ -272,6 +289,12 @@ def change_visibility(session: Session, *, user_id: str, work_id: str, visibilit
         raise Conflict("回收站或墓碑作品不能修改可见性。")
 
     work.visibility = visibility
+    if not Visibility(visibility).allows_remix:
+        work.access_credits = 0
+    elif access_credits is not None:
+        work.access_credits = access_service.normalize_access_credits(
+            session, access_credits, actor_user_id=user_id
+        )
     session.flush()
     return work
 

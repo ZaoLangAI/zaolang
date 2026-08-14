@@ -5,7 +5,7 @@ import { DiscoverHeroSkeleton } from '@/components/discover/hero-skeleton';
 import { HeroCarousel } from '@/components/discover/hero-carousel';
 import { InspirationMasonry } from '@/components/discover/inspiration-masonry';
 import { InspirationSkeleton } from '@/components/discover/inspiration-skeleton';
-import { DiscoverSort, TagFilter } from '@/components/discover/tag-filter';
+import { DiscoverAccess, DiscoverSort, TagFilter } from '@/components/discover/tag-filter';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Page, Tag, WorkDetail, WorkSummary } from '@/lib/api/types';
@@ -24,6 +24,7 @@ interface Filters {
   q?: string;
   tag?: string;
   sort?: string;
+  access?: string;
 }
 
 export async function generateMetadata() {
@@ -32,8 +33,13 @@ export async function generateMetadata() {
 }
 
 export default async function DiscoverPage({ searchParams }: { searchParams: Promise<Filters> }) {
-  const { q, tag, sort } = await searchParams;
-  const filters: Filters = { q: q?.trim() || undefined, tag, sort: sort ?? 'popular' };
+  const { q, tag, sort, access } = await searchParams;
+  const filters: Filters = {
+    q: q?.trim() || undefined,
+    tag,
+    sort: sort ?? 'popular',
+    access: access === 'free' || access === 'paid' ? access : undefined,
+  };
 
   // Two boundaries rather than one: the hero needs a second round trip for the
   // work detail, and holding the whole page for it would leave the wall behind
@@ -56,7 +62,13 @@ async function DiscoverHero({ filters }: { filters: Filters }) {
   // Featured stays popularity-ranked so "本期精选" does not become "newest"
   // when the wall below is sorted by time or remix count.
   const feed = (await serverFetchOrNull<Page<WorkSummary>>('/v1/works', {
-    query: { q: filters.q, tag: filters.tag, sort: 'popular', limit: HERO_SLIDES },
+    query: {
+      q: filters.q,
+      tag: filters.tag,
+      sort: 'popular',
+      access: filters.access,
+      limit: HERO_SLIDES,
+    },
   })) ?? { items: [] };
 
   // The carousel shows several prominent works in full. Fetching each detail
@@ -79,7 +91,7 @@ async function DiscoverHero({ filters }: { filters: Filters }) {
 
 async function InspirationSection({ filters }: { filters: Filters }) {
   const t = await getTranslations('discover');
-  const filtered = Boolean(filters.q || filters.tag);
+  const filtered = Boolean(filters.q || filters.tag || filters.access);
 
   const [feed, tags] = await Promise.all([
     serverFetchOrNull<Page<WorkSummary>>('/v1/works', {
@@ -100,15 +112,24 @@ async function InspirationSection({ filters }: { filters: Filters }) {
     <section>
       <SectionHeading title={t('inspiration')} description={t('inspirationHint')} />
       <div className="mt-4 flex flex-col gap-2">
-        <TagFilter tags={tagPage.items} active={filters.tag} q={filters.q} sort={filters.sort} />
-        <DiscoverSort q={filters.q} tag={filters.tag} sort={filters.sort} />
+        <TagFilter
+          tags={tagPage.items}
+          active={filters.tag}
+          q={filters.q}
+          sort={filters.sort}
+          access={filters.access}
+        />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <DiscoverSort q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
+          <DiscoverAccess q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
+        </div>
       </div>
       <div className="mt-5">
         {tiles.length > 0 ? (
           <InspirationMasonry
             // Remount on a filter change: the appended pages belong to the old
             // query and there is nothing to reconcile them with.
-            key={`${filters.q ?? ''}|${filters.tag ?? ''}|${filters.sort ?? ''}`}
+            key={`${filters.q ?? ''}|${filters.tag ?? ''}|${filters.sort ?? ''}|${filters.access ?? ''}`}
             works={tiles}
             cursor={works.next_cursor ?? null}
             query={filters}

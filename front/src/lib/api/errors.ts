@@ -48,6 +48,10 @@ export class ApiError extends Error {
     return this.code === 'INSUFFICIENT_CREDITS';
   }
 
+  get isAccessRequired(): boolean {
+    return this.code === 'ACCESS_REQUIRED';
+  }
+
   get isRateLimited(): boolean {
     return this.status === 429;
   }

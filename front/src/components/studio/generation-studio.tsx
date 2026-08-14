@@ -4,6 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
+import { UnlockDialog } from '@/components/marketplace/unlock-dialog';
 import { SourceMaterialRail } from '@/components/studio/source-material-rail';
 import { OptionGroup } from '@/components/studio/option-group';
 import { PromptPolish } from '@/components/studio/prompt-polish';
@@ -23,12 +24,14 @@ import {
   IconVolumeOff,
 } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
+import { useToast } from '@/components/ui/toast';
 import { Sheet } from '@/components/ui/sheet';
 import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/errors';
 import type {
   CreationSkillDetail,
   CreationSkillSummary,
@@ -119,6 +122,8 @@ export function GenerationStudio({
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
   const tGallery = useTranslations('styleGallery');
+  const tSkill = useTranslations('skillLibrary');
+  const { notify } = useToast();
   const locale = useLocale() as Locale;
   const router = useRouter();
 
@@ -148,6 +153,7 @@ export function GenerationStudio({
   // actually travels to the job. Up to 5 skills can be combined (mirrors
   // `GenerationParams.skill_ids` server-side cap).
   const [appliedSkillIds, setAppliedSkillIds] = useState<string[]>([]);
+  const [pendingUnlockSkill, setPendingUnlockSkill] = useState<CreationSkillSummary | null>(null);
 
   const { status: sessionStatus } = useSession();
   const publicPresets = useResource<Page<StylePreset>>('/v1/style-presets');
@@ -232,15 +238,21 @@ export function GenerationStudio({
 
   const applySkill = (skill: CreationSkillSummary) => {
     if (appliedSkillIds.includes(skill.id) || appliedSkillIds.length >= MAX_APPLIED_SKILLS) return;
-    // Unlike a preset, a skill's params never travel in the list payload —
-    // `/apply` both records usage and is the only place that returns them.
-    void api
-      .post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`)
-      .then((detail) => {
-        applyParams(detail.params ?? {});
-        setAppliedSkillIds((current) => [...current, skill.id]);
-      })
-      .catch(() => undefined);
+    if (skill.access_credits > 0 && !skill.viewer_unlocked) {
+      setPendingUnlockSkill(skill);
+      return;
+    }
+    void applyUnlockedSkill(skill);
+  };
+
+  const applyUnlockedSkill = async (skill: CreationSkillSummary) => {
+    try {
+      const detail = await api.post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`);
+      applyParams(detail.params ?? {});
+      setAppliedSkillIds((current) => [...current, skill.id]);
+    } catch (caught) {
+      notify(caught instanceof ApiError ? caught.message : tSkill('applyLocked'), 'error');
+    }
   };
 
   const removeSkill = (skillId: string) => {
@@ -431,7 +443,13 @@ export function GenerationStudio({
                       skill.applicable_operations.length === 0 ||
                       skill.applicable_operations.includes(operation)),
                 )
-                .map((skill) => ({ value: skill.id, label: skill.title })),
+                .map((skill) => ({
+                  value: skill.id,
+                  label:
+                    skill.access_credits > 0 && !skill.viewer_unlocked
+                      ? `${skill.title} · ${tSkill('priceCredits', { credits: skill.access_credits })}`
+                      : skill.title,
+                })),
             ]}
           />
           {appliedSkillIds.length > 0 ? (
@@ -833,6 +851,23 @@ export function GenerationStudio({
         open={styleGalleryOpen}
         onClose={() => setStyleGalleryOpen(false)}
         onSelect={applyStyleGalleryEntry}
+      />
+
+      <UnlockDialog
+        open={pendingUnlockSkill !== null}
+        onClose={() => setPendingUnlockSkill(null)}
+        path={pendingUnlockSkill ? `/v1/skills/${pendingUnlockSkill.id}/unlock` : '/v1/skills'}
+        credits={pendingUnlockSkill?.access_credits ?? 0}
+        title={tSkill('unlock')}
+        confirm={tSkill('unlockConfirm', {
+          credits: pendingUnlockSkill?.access_credits ?? 0,
+          title: pendingUnlockSkill?.title ?? '',
+        })}
+        onUnlocked={() => {
+          const skill = pendingUnlockSkill;
+          setPendingUnlockSkill(null);
+          if (skill) void applyUnlockedSkill({ ...skill, viewer_unlocked: true });
+        }}
       />
     </div>
   );

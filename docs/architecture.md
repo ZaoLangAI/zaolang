@@ -8,9 +8,10 @@ back/app/
 │  ├─ v1/          /v1 公开契约
 │  └─ v1/admin/    /v1/admin 独立命名空间，独立会话与限流
 ├─ domain/         领域服务：唯一允许写业务状态的地方
-│  ├─ credits/     预扣、结算、释放、回流分成
+│  ├─ credits/     预扣、结算、释放、回流分成、市场强制转账
 │  ├─ jobs/        任务状态机、报价、事件流
-│  ├─ licensing/   许可快照与二创权限
+│  ├─ licensing/   许可快照与二创权限（含积分解锁 Grant）
+│  ├─ access/      作品/技能买断授权与 AccessGrant
 │  ├─ lineage/     创作链边与墓碑
 │  ├─ media/       上传、指纹、溯源清单
 │  ├─ publishing/  发布事务、可见性、墓碑

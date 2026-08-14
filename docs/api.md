@@ -9,6 +9,7 @@
 - **幂等**：所有产生副作用的 POST 接受 `Idempotency-Key`。同键重放返回首次结果；同键不同 body 返回 `409 IDEMPOTENCY_CONFLICT`。
 - **分页**：游标分页（`cursor` + `next_cursor` + `has_more`），不用 offset。运维列表在被读的同时也在被写，offset 会漏行或重复行。
 - **金额**：全部是整数。积分是整数个，货币是最小货币单位（分）。浮点数不参与账务计算。
+- **积分解锁**：公开可二创作品与已发布技能可标 `access_credits`。未解锁时写接口返回 `402 ACCESS_REQUIRED`（`details` 带 `subject_type` / `subject_id` / `access_credits`），与仅展示、未开放二创的 `LICENSE_NOT_REMIXABLE` 分开。解锁走 `POST /v1/works/{id}/unlock` 与 `POST /v1/skills/{id}/unlock`，账本记 `access_out` / `access_in`，不复用回流分成。
 - **限流**：超限返回 `429` 并带 `Retry-After` 头。C 端与后台是两套独立的分层桶。
 
 ## 统一错误结构

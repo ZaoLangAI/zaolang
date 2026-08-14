@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import ZaolangKit
 
 /// 作品详情，对应 `(site)/work/[workId]/page.tsx`（`04-screens.md` 第 6 屏）。
@@ -224,7 +225,18 @@ struct WorkDetailView: View {
         // 墓碑态二创按钮整块隐藏（`04-screens.md` 第 6 屏"两个特殊态"），不留占位条。
         if !detail.isTombstoned {
             VStack(spacing: 6) {
-                if !detail.canRemix {
+                if detail.remixable && !detail.canRemix && detail.accessCredits > 0 {
+                    Text(L10n.t("workPage.needsUnlock"))
+                        .font(.caption)
+                        .foregroundStyle(Color.zl.textMuted)
+                    Button(L10n.t("work.unlockThis")) {
+                        if let url = shareURL(for: detail.id) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                } else if !detail.canRemix {
                     Text(L10n.t("work.notRemixable"))
                         .font(.caption)
                         .foregroundStyle(Color.zl.textMuted)

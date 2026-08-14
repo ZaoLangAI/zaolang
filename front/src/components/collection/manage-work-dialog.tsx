@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select } from '@/components/ui/field';
@@ -30,18 +31,26 @@ export function ManageWorkDialog({
 }) {
   const t = useTranslations('collectionPage');
   const tVisibility = useTranslations('visibility');
+  const tPublish = useTranslations('publishPage');
   const tActions = useTranslations('actions');
   const { notify } = useToast();
 
   const [visibility, setVisibility] = useState<Visibility>(work.visibility);
+  const [accessCredits, setAccessCredits] = useState(work.access_credits);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const unchanged =
+    visibility === work.visibility &&
+    (visibility !== 'public_remixable' || accessCredits === work.access_credits);
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      await api.patch(`/v1/works/${work.id}/visibility`, { visibility });
+      await api.patch(`/v1/works/${work.id}/visibility`, {
+        visibility,
+        access_credits: visibility === 'public_remixable' ? accessCredits : 0,
+      });
       notify(t('visibilityUpdateDone'), 'success');
       onChanged();
     } catch {
@@ -62,7 +71,7 @@ export function ManageWorkDialog({
           <Button variant="ghost" onClick={onClose}>
             {tActions('cancel')}
           </Button>
-          <Button loading={busy} disabled={visibility === work.visibility} onClick={() => void save()}>
+          <Button loading={busy} disabled={unchanged} onClick={() => void save()}>
             {tActions('save')}
           </Button>
         </>
@@ -76,6 +85,14 @@ export function ManageWorkDialog({
           onChange={(event) => setVisibility(event.target.value as Visibility)}
           options={VISIBILITIES.map((value) => ({ value, label: tVisibility(value) }))}
         />
+        {visibility === 'public_remixable' ? (
+          <AccessPriceField
+            value={accessCredits}
+            onChange={setAccessCredits}
+            label={t('accessCredits')}
+            hint={tPublish('accessCreditsHint')}
+          />
+        ) : null}
       </div>
     </Dialog>
   );

@@ -11,24 +11,31 @@ import { expectTheme, setTheme } from '../support/theme';
  * behaviour preserves the test.
  */
 
-/**
- * Walks the discover wall the way a visitor does: a tile opens the preview
- * dialog, and the dialog is what links on to the work page.
- *
- * Reached through a search rather than the bare feed. The wall loads twenty
- * tiles at a time and the seeded chain sits well down the popular sort, so
- * naming a specific work in the unfiltered feed would be a coin flip.
- */
-async function openSeededWorkFromFeed(page: Page) {
-  await page.goto('/zh-CN/discover?q=潮汐之上', { waitUntil: 'networkidle' });
-  await page
-    .getByRole('button', { name: /^预览《潮汐之上/ })
-    .first()
-    .click();
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:8000';
 
-  const preview = page.getByRole('dialog');
-  await expect(preview).toContainText('潮汐之上');
-  await preview.getByRole('button', { name: '查看详情' }).click();
+/** Active free remix in the seeded chain. The original root may be tombstoned. */
+const SEEDED_FREE_REMIX = '潮汐之上 · 夜行';
+const SEEDED_PAID_WORK = '潮汐之上 · 付费样例';
+const SEEDED_PAID_SKILL = '黄金时刻镜头';
+
+async function findPublicWorkId(page: Page, title: string): Promise<string> {
+  const response = await page.request.get(`${API_URL}/v1/works`, {
+    params: { q: title, limit: 40 },
+  });
+  const body = (await response.json()) as { items?: Array<{ id: string; title: string }> };
+  const work = (body.items ?? []).find((item) => item.title === title);
+  expect(work, `public work titled ${title}`).toBeTruthy();
+  return work!.id;
+}
+
+/**
+ * Opens a public work page. Search tiles are not used here: a narrow query
+ * puts the hit in the hero and slices it off the wall, so the preview button
+ * is often not in the DOM.
+ */
+async function openPublicWork(page: Page, title: string) {
+  const id = await findPublicWorkId(page, title);
+  await page.goto(`/zh-CN/work/${id}`, { waitUntil: 'networkidle' });
   await expect(page).toHaveURL(/\/work\/wrk_/);
 }
 
@@ -37,14 +44,13 @@ test.describe('anonymous browsing', () => {
 
   test('a visitor can browse the feed and open a work', async ({ page }) => {
     const problems = watchForPageErrors(page);
-    await page.goto('/zh-CN/discover?q=潮汐之上', { waitUntil: 'networkidle' });
+    await page.goto(`/zh-CN/discover?q=${encodeURIComponent(SEEDED_FREE_REMIX)}`, {
+      waitUntil: 'networkidle',
+    });
 
-    // The seeded chain puts a root work and its remix in the public feed; one of
-    // them leads the page as the hero and the other lands on the wall.
-    await expect(page.getByText('潮汐之上', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('潮汐之上 · 夜行').first()).toBeVisible();
+    await expect(page.getByText(SEEDED_FREE_REMIX).first()).toBeVisible();
 
-    await openSeededWorkFromFeed(page);
+    await openPublicWork(page, SEEDED_FREE_REMIX);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
     expect(problems(), 'console errors while browsing').toEqual([]);
@@ -69,7 +75,7 @@ test.describe('anonymous browsing', () => {
   });
 
   test('a protected action opens the login wall and resumes afterwards', async ({ page }) => {
-    await openSeededWorkFromFeed(page);
+    await openPublicWork(page, SEEDED_FREE_REMIX);
 
     await page.getByRole('button', { name: '点赞', exact: true }).click();
 
@@ -88,7 +94,7 @@ test.describe('anonymous browsing', () => {
   });
 
   test('cancelling the login wall abandons the action', async ({ page }) => {
-    await openSeededWorkFromFeed(page);
+    await openPublicWork(page, SEEDED_FREE_REMIX);
 
     await page.getByRole('button', { name: '收藏', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
@@ -165,6 +171,33 @@ test.describe('creation', () => {
     await expect(page.getByRole('radiogroup', { name: '质量档位' }).getByText('标准')).toBeVisible();
     await expect(page.getByRole('button', { name: '生成预览' })).toBeVisible();
   });
+
+  test('a paid remixable work can be unlocked and then remixed', async ({ page }) => {
+    const problems = watchForPageErrors(page);
+    await openPublicWork(page, SEEDED_PAID_WORK);
+    await expect(page.getByText('10 积分').first()).toBeVisible();
+
+    await page.getByRole('button', { name: '积分解锁并二创' }).click();
+    const unlock = page.getByRole('dialog');
+    await expect(unlock).toContainText('积分解锁');
+    await unlock.getByRole('button', { name: '积分解锁' }).click();
+    await expect(page).toHaveURL(/\/remix\/wrk_/);
+    await expect(page.getByRole('button', { name: '生成我的版本' })).toBeVisible();
+    expect(problems(), 'console errors while unlocking a paid work').toEqual([]);
+  });
+
+  test('a locked paid skill cannot be applied without unlocking', async ({ page }) => {
+    await page.goto('/zh-CN/skills?access=paid', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: SEEDED_PAID_SKILL })).toBeVisible();
+    await expect(page.getByText('8 积分').first()).toBeVisible();
+
+    await page.goto('/zh-CN/create/new?mode=text_to_image', { waitUntil: 'networkidle' });
+    await page.getByLabel('创作技能').selectOption({ label: '黄金时刻镜头 · 8 积分' });
+    const unlock = page.getByRole('dialog');
+    await expect(unlock).toContainText('积分解锁');
+    await unlock.getByRole('button', { name: '取消' }).click();
+    await expect(page.getByLabel('说说你想怎么改')).not.toHaveValue(/golden hour/);
+  });
 });
 
 test.describe('theme', () => {
@@ -218,7 +251,7 @@ test.describe('command palette', () => {
     await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
     await page.keyboard.press('Meta+k');
 
-    await page.getByRole('option', { name: '学习' }).click();
+    await page.getByRole('option', { name: '学习', exact: true }).click();
     await expect(page).toHaveURL(/\/learn/);
   });
 });

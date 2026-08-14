@@ -70,6 +70,9 @@ export function SkillCard({
           {showStatus ? (
             <Badge tone={STATUS_TONE[skill.status]}>{t(STATUS_LABEL_KEY[skill.status])}</Badge>
           ) : null}
+          {skill.access_credits > 0 ? (
+            <Badge tone="primary">{t('priceCredits', { credits: skill.access_credits })}</Badge>
+          ) : null}
         </div>
         <h3 className="mt-1.5 truncate text-sm font-semibold">{skill.title}</h3>
         {skill.description ? (

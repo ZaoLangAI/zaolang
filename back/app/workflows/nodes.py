@@ -230,6 +230,10 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
             skill = skill_library_service.get_usable(
                 ctx.session, skill_id=str(skill_id), viewer_id=ctx.job.user_id
             )
+            if not skill_library_service.viewer_has_access(
+                ctx.session, skill, ctx.job.user_id
+            ):
+                raise NotFound("技能未解锁。")
         except NotFound:
             logger.warning("job %s referenced an unusable skill %s; ignoring", ctx.job.id, skill_id)
             continue

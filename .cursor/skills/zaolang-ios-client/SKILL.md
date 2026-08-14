@@ -60,7 +60,7 @@ M5（上架准备）已全部实现：真实登录注册、四 Tab 全部有真�
 - **`AppEnvironment.requireAuth(actionLabel:action:)`** 是唯一的登录墙原语，见不变量 14。`actionLabel` 用于 `AuthSheet` 顶部提示"你正要做什么"，取值应为一个已存在的 i18n key（例如 `L10n.t("work.like")`），不要传硬编码英文/中文字面量。
 - **`StudioMode` 是创作工作台唯一入口**：`.new(operation:initialPrompt:)`（创作中心三个模式卡片、灵感预览"用此 prompt 创作"）与 `.remix(sourceWorkID:)`（作品详情"二创"）共用 `CreateRoute.studio`，都必须切到创作 Tab 再 push（`RootTabView.startRemix`/`DiscoverView` 里的写法），不要在其他 Tab 的栈里直接 push 工作台。
 - **推送**：`PushManager.shared.requestAuthorizationAndRegister()` 只在用户主动点"开启通知"（`SettingsView` 的通知分区）或首次引导页时调用，冷启动不自动弹系统权限框；拿到 device token 后 `AppEnvironment.registerPushToken` 调 `POST /v1/me/devices`；登出时 `AppEnvironment.signOut()` 会先 `DELETE` 这条设备记录。
-- **积分购买**：产品决策是不接 StoreKit，`BillingView` 只读展示余额/账本/积分包，"购买"按钮用 `UIApplication.shared.open` 跳网页版 `/billing`，不要在这条链路上加 `POST /v1/credits/checkout` 调用或 `SFSafariViewController` 内嵌结账。
+- **积分购买**：产品决策是不接 StoreKit，`BillingView` 只读展示余额/账本/积分包，"购买"按钮用 `UIApplication.shared.open` 跳网页版 `/billing`，不要在这条链路上加 `POST /v1/credits/checkout` 调用或 `SFSafariViewController` 内嵌结账。作品付费二创同样跳网页 `/work/{id}` 解锁；本版不接技能市场。
 
 ## 未实现范围（M6 之后，不排期）
 

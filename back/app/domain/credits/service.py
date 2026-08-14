@@ -337,6 +337,60 @@ def royalty_transfer(
     return out_leg, in_leg
 
 
+def access_transfer(
+    session: Session,
+    *,
+    from_user_id: str,
+    to_user_id: str,
+    price: int,
+    platform_fee: int,
+    seller_net: int,
+    idempotency_key: str,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[LedgerResult, LedgerResult]:
+    """Mandatory marketplace transfer. Unlike royalties, this must succeed.
+
+    Buyer is charged `price`. Seller receives `seller_net`. The fee is burned
+    (not booked to a platform account): `price == seller_net + platform_fee`.
+    """
+    if price <= 0:
+        raise Conflict("解锁价格必须为正数。")
+    if from_user_id == to_user_id:
+        raise Conflict("不能向自己支付授权费。")
+    if seller_net < 0 or platform_fee < 0 or seller_net + platform_fee != price:
+        raise Conflict("授权费拆分不守恒。")
+
+    extra = dict(metadata or {})
+    payer = get_or_create_account(session, from_user_id)
+    out_leg = _apply(
+        session,
+        payer,
+        available_delta=-price,
+        reserved_delta=0,
+        entry_type=LedgerEntryType.ACCESS_OUT,
+        amount=-price,
+        idempotency_key=f"{idempotency_key}:out",
+        metadata={**extra, "beneficiary_user_id": to_user_id, "source": "purchased"},
+    )
+    payee = get_or_create_account(session, to_user_id)
+    in_leg = _apply(
+        session,
+        payee,
+        available_delta=seller_net,
+        reserved_delta=0,
+        entry_type=LedgerEntryType.ACCESS_IN,
+        amount=seller_net,
+        idempotency_key=f"{idempotency_key}:in",
+        metadata={
+            **extra,
+            "payer_user_id": from_user_id,
+            "source": "earned",
+            "platform_fee_credits": platform_fee,
+        },
+    )
+    return out_leg, in_leg
+
+
 def _find_entry(
     session: Session, account_id: str, job_id: str, entry_type: LedgerEntryType
 ) -> CreditLedgerEntry | None:

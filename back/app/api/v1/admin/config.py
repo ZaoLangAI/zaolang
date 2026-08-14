@@ -51,6 +51,7 @@ FLAG_DESCRIPTIONS = {
     "variant_export_enabled": "交付变体导出",
     "editor_ai_enabled": "AI 剪辑方案",
     "editor_mcp_enabled": "剪辑 Remote MCP",
+    "marketplace_enabled": "作品与技能积分解锁市场",
 }
 
 # The landing page deliberately owns only truly global settings. Domain

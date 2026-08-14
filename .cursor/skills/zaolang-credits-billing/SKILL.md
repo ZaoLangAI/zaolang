@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 | 文件 | 内容 |
 | --- | --- |
-| `back/app/domain/credits/service.py` | `grant` / `purchase` / `reserve` / `capture` / `release` / `adjust` / `royalty_transfer` / `list_ledger`，核心是私有的 `_apply` |
+| `back/app/domain/credits/service.py` | `grant` / `purchase` / `reserve` / `capture` / `release` / `adjust` / `royalty_transfer` / `access_transfer` / `list_ledger`，核心是私有的 `_apply` |
 | `back/app/domain/credits/pricing.py` | `quote()` 报价、`settlement_credits()` 实耗折算 |
 | `back/app/domain/credits/royalty.py` | `plan_royalties` / `distribute` 回流分成 |
 | `back/app/domain/credits/reconciliation.py` | `derive_totals` / `find_mismatches` / `find_dangling_reservations` / `build_report` |
@@ -32,7 +32,8 @@ disable-model-invocation: true
 5. **支付只入账一次**：`purchase` 靠 `payment_reference` 唯一约束；`grant` / `adjust` 靠 `idempotency_key` 唯一约束（全局唯一，不是按账户）。webhook 重投是常态，不是异常。
 6. **人工调账只追加 `adjustment` 记录**，必须带理由与操作者，写 `AuditLog`。永不修改历史记录。
 7. **回流分成是尽力而为**：`_pay_royalties` 失败不能让发布回滚，但成功了就必须双向记账（`royalty_out` / `royalty_in`），金额守恒。
-8. **`IntegrityError` 会 `session.rollback()`**（见 `_apply`），整个工作单元被丢弃。调用方要么在其之后不再依赖之前 flush 的对象，要么先 commit——测试里这条踩过坑，`tests/conftest.py` 的 `committed_db` fixture 就是为它准备的。
+8. **市场解锁是强制转账**：`access_transfer` 记 `access_out` / `access_in`，买家付全额、卖家收净额、手续费烧掉；余额不足必须失败，禁止复用 `royalty_transfer`。本版赚到的积分只在站内消费，不接真钱提现。
+9. **`IntegrityError` 会 `session.rollback()`**（见 `_apply`），整个工作单元被丢弃。调用方要么在其之后不再依赖之前 flush 的对象，要么先 commit——测试里这条踩过坑，`tests/conftest.py` 的 `committed_db` fixture 就是为它准备的。
 
 ## 报价与结算
 
@@ -54,8 +55,8 @@ disable-model-invocation: true
 ## 验证
 
 ```bash
-cd back && conda run -n zaolang pytest tests/unit/test_credits_invariants.py tests/unit/test_credits_properties.py tests/concurrency -v
-cd back && conda run -n zaolang pytest tests/integration/test_billing_webhook.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_credits_invariants.py tests/unit/test_credits_properties.py tests/unit/test_access_marketplace.py tests/concurrency -v
+cd back && conda run -n zaolang pytest tests/integration/test_billing_webhook.py tests/integration/test_access_marketplace.py -v
 ```
 
 改完必须跑并发套件：账本的保证全是「两个事务同时来」时才成立的，顺序测试证明不了。

@@ -7,9 +7,12 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 
-from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
+from app.api import idempotency
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey, OptionalUser, rate_limited
 from app.api.schemas.common import CountResponse, OkResponse, Page
 from app.api.schemas.works import (
+    AccessGrantView,
+    AccessUnlockResponse,
     AuthorSummary,
     LicenseInfo,
     LineageAncestor,
@@ -27,6 +30,7 @@ from app.api.schemas.works import (
     WorkSummary,
     WorkVersionSummary,
 )
+from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage_service
@@ -46,7 +50,13 @@ from app.models import (
     WorkTag,
     WorkVersion,
 )
-from app.models.enums import ADMIN_ROLE_RANK, AppealStatus, LifecycleStatus, Visibility
+from app.models.enums import (
+    ADMIN_ROLE_RANK,
+    AccessSubjectType,
+    AppealStatus,
+    LifecycleStatus,
+    Visibility,
+)
 from app.presenters import media_urls
 
 router = APIRouter(tags=["works"])
@@ -60,6 +70,7 @@ def list_works(
     q: str | None = Query(default=None, max_length=200),
     tag: str | None = Query(default=None, max_length=64),
     remixable: bool = False,
+    access: Literal["free", "paid", "all"] = "all",
     semantic: bool = True,
     sort: Literal["recent", "popular", "remixed"] = "recent",
     cursor: str | None = None,
@@ -67,11 +78,22 @@ def list_works(
 ) -> Page[WorkSummary]:
     if q:
         results = search_service.search(
-            session, query=q, semantic=semantic, remixable_only=remixable, limit=limit + 1
+            session,
+            query=q,
+            semantic=semantic,
+            remixable_only=remixable,
+            access=access,
+            limit=limit + 1,
         )
     else:
         results = search_service.browse(
-            session, tag=tag, remixable_only=remixable, sort=sort, cursor=cursor, limit=limit + 1
+            session,
+            tag=tag,
+            remixable_only=remixable,
+            access=access,
+            sort=sort,
+            cursor=cursor,
+            limit=limit + 1,
         )
 
     has_more = len(results) > limit
@@ -103,7 +125,7 @@ def get_work(
     session.commit()
 
     summary = _summary(session, work, version, viewer)
-    can_remix = licensing.can_remix(work, viewer.id if viewer else None)
+    can_remix = licensing.can_remix(work, viewer.id if viewer else None, session)
 
     is_owner = viewer is not None and viewer.id == work.owner_user_id
     latest_appeal = (
@@ -128,7 +150,9 @@ def get_work(
         viewer_liked=_has_interaction(session, Like, viewer, work.id),
         viewer_bookmarked=_has_interaction(session, Bookmark, viewer, work.id),
         can_remix=can_remix,
-        remix_block_reason=None if can_remix else "该作品仅用于展示，作者未开放二创。",
+        remix_block_reason=licensing.remix_block_reason(
+            work, viewer.id if viewer else None, session
+        ),
         hide_reason=work.hide_reason if is_owner else None,
         appeal=_appeal_view(latest_appeal) if latest_appeal is not None else None,
     )
@@ -253,6 +277,57 @@ def unbookmark(work_id: str, user: CurrentUser, session: DbSession) -> OkRespons
     return OkResponse()
 
 
+UNLOCK_WORK_ENDPOINT = "POST /v1/works/{work_id}/unlock"
+
+
+@router.post("/works/{work_id}/unlock", response_model=AccessUnlockResponse)
+def unlock_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    idempotency_key: IdempotencyKey,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> AccessUnlockResponse:
+    request_hash = idempotency.hash_request({"work_id": work_id})
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=UNLOCK_WORK_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            return AccessUnlockResponse.model_validate(replay.response_snapshot)
+
+    existing = access_service.get_grant(
+        session,
+        buyer_user_id=user.id,
+        subject_type=AccessSubjectType.WORK,
+        subject_id=work_id,
+    )
+    grant = access_service.unlock_work(session, buyer_user_id=user.id, work_id=work_id)
+    work = session.get(Work, work_id)
+    response = _unlock_response(
+        work_id=work_id,
+        access_credits=work.access_credits if work is not None else 0,
+        grant=grant,
+        already_held=existing is not None or grant is None,
+    )
+    if idempotency_key:
+        idempotency.remember(
+            session,
+            user_id=user.id,
+            endpoint=UNLOCK_WORK_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+            status_code=200,
+            response=response.model_dump(mode="json"),
+        )
+    session.commit()
+    return response
+
+
 @router.patch("/works/{work_id}/visibility", response_model=WorkSummary)
 def update_visibility(
     work_id: str,
@@ -262,7 +337,11 @@ def update_visibility(
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> WorkSummary:
     work = publishing.change_visibility(
-        session, user_id=user.id, work_id=work_id, visibility=payload.visibility
+        session,
+        user_id=user.id,
+        work_id=work_id,
+        visibility=payload.visibility,
+        access_credits=payload.access_credits,
     )
     session.commit()
     version = session.get(WorkVersion, work.current_version_id or "")
@@ -411,7 +490,12 @@ def _summary(session, work: Work, version: WorkVersion, viewer: User | None) -> 
             remix_count=work.remix_count,
         ),
         tags=_tags(session, work.id),
-        remixable=licensing.can_remix(work, viewer.id if viewer else None),
+        remixable=licensing.visibility_allows_remix(work)
+        or (viewer is not None and viewer.id == work.owner_user_id),
+        access_credits=work.access_credits,
+        viewer_unlocked=access_service.viewer_unlocked_work(
+            session, work, viewer.id if viewer else None
+        ),
         published_at=work.published_at,
     )
 
@@ -449,6 +533,35 @@ def _tags(session, work_id: str) -> list[str]:  # type: ignore[no-untyped-def]
             .join(WorkTag, WorkTag.tag_id == Tag.id)
             .where(WorkTag.work_id == work_id)
         )
+    )
+
+
+def _unlock_response(
+    *,
+    work_id: str,
+    access_credits: int,
+    grant,
+    already_held: bool,
+) -> AccessUnlockResponse:
+    return AccessUnlockResponse(
+        subject_type=AccessSubjectType.WORK.value,
+        subject_id=work_id,
+        access_credits=access_credits,
+        viewer_unlocked=True,
+        already_held=already_held,
+        grant=(
+            AccessGrantView(
+                id=grant.id,
+                subject_type=grant.subject_type,
+                subject_id=grant.subject_id,
+                price_credits=grant.price_credits,
+                platform_fee_credits=grant.platform_fee_credits,
+                seller_net_credits=grant.seller_net_credits,
+                created_at=grant.created_at,
+            )
+            if grant is not None
+            else None
+        ),
     )
 
 

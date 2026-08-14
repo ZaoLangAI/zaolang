@@ -72,8 +72,11 @@ export function WorkCard({
               </Badge>
             </span>
           ) : work.remixable ? (
-            <span className="absolute left-2 top-2">
+            <span className="absolute left-2 top-2 flex flex-wrap items-center gap-1">
               <Badge tone="amber">{t('remix')}</Badge>
+              {work.access_credits > 0 ? (
+                <Badge tone="primary">{t('paidBadge', { credits: work.access_credits })}</Badge>
+              ) : null}
             </span>
           ) : null}
         </Poster>

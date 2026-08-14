@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { DevicePreview } from '@/components/media/device-preview';
 import { Button } from '@/components/ui/button';
 import { TextArea, TextInput } from '@/components/ui/field';
@@ -77,7 +78,8 @@ export function PublishForm({ draft }: { draft: Draft }) {
 
   const [title, setTitle] = useState(draft.title ?? '');
   const [description, setDescription] = useState(draft.description ?? '');
-  const [visibility, setVisibility] = useState<Visibility>('public_view_only');
+  const [visibility, setVisibility] = useState<Visibility>('public_remixable');
+  const [accessCredits, setAccessCredits] = useState(0);
   const [rights, setRights] = useState(false);
   const [disclosure, setDisclosure] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -97,6 +99,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
           title: title.trim(),
           description: description.trim() || null,
           visibility,
+          access_credits: visibility === 'public_remixable' ? accessCredits : 0,
           rights_confirmed: rights,
           ai_disclosure_confirmed: disclosure,
         },
@@ -184,6 +187,15 @@ export function PublishForm({ draft }: { draft: Draft }) {
           onChange={setVisibility}
           options={VISIBILITIES.map((value) => ({ value, label: tVisibility(value) }))}
         />
+
+        {visibility === 'public_remixable' ? (
+          <AccessPriceField
+            value={accessCredits}
+            onChange={setAccessCredits}
+            label={t('accessCredits')}
+            hint={t('accessCreditsHint')}
+          />
+        ) : null}
 
         <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
           <input

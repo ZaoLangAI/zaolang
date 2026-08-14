@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
@@ -53,6 +54,7 @@ def create(
     params_json: dict[str, Any],
     cover_asset_id: str | None,
     applicable_operations: list[Operation] | None = None,
+    access_credits: int = 0,
 ) -> CreationSkill:
     _assert_cover_owned(session, owner_user_id=owner_user_id, cover_asset_id=cover_asset_id)
     skill = CreationSkill(
@@ -65,6 +67,9 @@ def create(
         cover_asset_id=cover_asset_id,
         visibility=CreationSkillVisibility.PRIVATE,
         status=CreationSkillStatus.DRAFT,
+        access_credits=access_service.normalize_access_credits(
+            session, access_credits, actor_user_id=owner_user_id
+        ),
     )
     session.add(skill)
     session.flush()
@@ -99,6 +104,19 @@ def update(
     if skill.status != CreationSkillStatus.DRAFT:
         _unpublish(skill)
 
+    session.flush()
+    return skill
+
+
+def update_pricing(
+    session: Session, *, skill: CreationSkill, actor_user_id: str, access_credits: int
+) -> CreationSkill:
+    """Change only the unlock price. Does not unpublish or re-queue review."""
+    if skill.owner_user_id != actor_user_id:
+        raise Forbidden("只能修改自己创建的技能。")
+    skill.access_credits = access_service.normalize_access_credits(
+        session, access_credits, actor_user_id=actor_user_id
+    )
     session.flush()
     return skill
 
@@ -163,7 +181,11 @@ def get_owned(session: Session, *, skill_id: str, owner_user_id: str) -> Creatio
 
 
 def get_usable(session: Session, *, skill_id: str, viewer_id: str | None) -> CreationSkill:
-    """A skill can be applied by its owner (any status) or anyone once published."""
+    """A published skill is visible to anyone; drafts stay owner-only.
+
+    Visibility here is "can see the card / detail shell", not "can fold
+    params into a job". Paid apply is gated by `assert_unlocked_for_use`.
+    """
     skill = session.get(CreationSkill, skill_id)
     if skill is None:
         raise NotFound("技能不存在。")
@@ -172,6 +194,16 @@ def get_usable(session: Session, *, skill_id: str, viewer_id: str | None) -> Cre
     if viewer_id is not None and skill.owner_user_id == viewer_id:
         return skill
     raise NotFound("技能不存在。")
+
+
+def viewer_has_access(session: Session, skill: CreationSkill, viewer_id: str | None) -> bool:
+    return access_service.viewer_unlocked_skill(session, skill, viewer_id)
+
+
+def assert_unlocked_for_use(
+    session: Session, skill: CreationSkill, viewer_id: str | None
+) -> None:
+    access_service.assert_skill_unlocked(session, skill, viewer_id)
 
 
 def record_usage(session: Session, *, skill: CreationSkill) -> CreationSkill:
@@ -196,6 +228,7 @@ def list_public(
     session: Session,
     *,
     category: CreationSkillCategory | None = None,
+    access: str | None = None,
     cursor: str | None = None,
     limit: int = 24,
 ) -> ListPage:
@@ -208,6 +241,10 @@ def list_public(
     stmt = select(CreationSkill).where(CreationSkill.status == CreationSkillStatus.PUBLISHED)
     if category:
         stmt = stmt.where(CreationSkill.category == category)
+    if access == "free":
+        stmt = stmt.where(CreationSkill.access_credits == 0)
+    elif access == "paid":
+        stmt = stmt.where(CreationSkill.access_credits > 0)
     stmt = stmt.order_by(CreationSkill.created_at.desc(), CreationSkill.id.desc())
     if anchor is not None:
         stmt = stmt.where(

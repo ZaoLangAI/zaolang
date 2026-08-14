@@ -1,10 +1,9 @@
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
+import { RemixUnlockGate } from '@/components/marketplace/remix-unlock-gate';
 import { GenerationStudio } from '@/components/studio/generation-studio';
 import { BackLink } from '@/components/ui/back-link';
-import { EmptyState } from '@/components/ui/primitives';
-import { Link } from '@/i18n/navigation';
 import { getWork } from '@/lib/api/work-loaders';
 
 interface Params {
@@ -21,7 +20,6 @@ export async function generateMetadata({ params }: Params) {
 export default async function RemixPage({ params }: Params) {
   const { workId } = await params;
   const t = await getTranslations('remixPage');
-  const tWork = await getTranslations('workPage');
 
   const work = await getWork(workId, true);
   if (!work) notFound();
@@ -44,18 +42,7 @@ export default async function RemixPage({ params }: Params) {
           source={{ work, params: work.reusable_params }}
         />
       ) : (
-        <EmptyState
-          title={t('notRemixable')}
-          description={t('notRemixableHint')}
-          action={
-            <Link
-              href="/discover"
-              className="rounded-[var(--radius-sm)] border border-border px-4 py-2 text-sm hover:bg-surface-soft"
-            >
-              {tWork('backToDiscover')}
-            </Link>
-          }
-        />
+        <RemixUnlockGate work={work} />
       )}
     </div>
   );

@@ -20,7 +20,7 @@ disable-model-invocation: true
 | `front/src/components/admin/config/runtime-config-panel.tsx` | 可复用表单/JSON、diff、理由、历史和回滚编辑器 |
 | `front/src/components/admin/models/llm-providers-panel.tsx` | 模型管理：扁平主备列表 + 端点级主/备，支持增删改 |
 
-八个 key：`pricing`、`royalty`、`feature_flags`、`shortform`、`llm_providers`、`content_moderation`、`learning_moderation`、`skill_moderation`。旧 `providers`、`agents`、`moderation`、`llm_reliability` 只保留失活历史，不能读取或回滚。
+九个 key：`pricing`、`royalty`、`marketplace`、`feature_flags`、`shortform`、`llm_providers`、`content_moderation`、`learning_moderation`、`skill_moderation`。`marketplace` 管解锁抽成与标价上限；`feature_flags.marketplace_enabled` 是市场总开关。旧 `providers`、`agents`、`moderation`、`llm_reliability` 只保留失活历史，不能读取或回滚。
 
 `llm_providers` 里每个端点用 `kind` 二选一：`general`（文字与图片理解）或 `media`（图片/视频/音频生成）。判断类与辅助生成类 `AgentProfile` 手动选择默认供应商端点、兼容模型和可选备用端点；未显式绑定的非默认 Agent 才继承角色默认 Agent。`media` 端点声明一个模型 id（`model`）+ 输入/输出模态 + **`protocol`（HTTP 契约标准名，不是网关供应商）**；能力 tag 由 `capabilities_for_modalities` 推导，进入 `router.py` 的动态候选目录由 `intent_router` 的 LLM 选型挑选。媒体端点没有主备顺序和并发调度语义。`protocol` 落在这份 JSON 里，不改 SQLAlchemy / Alembic。
 

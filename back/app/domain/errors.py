@@ -74,6 +74,14 @@ class InsufficientCredits(DomainError):
     default_message = "积分不足，请先充值。"
 
 
+class AccessRequired(DomainError):
+    """The subject is remixable/usable, but this viewer has not unlocked it."""
+
+    code = "ACCESS_REQUIRED"
+    http_status = 402
+    default_message = "需要先用积分解锁。"
+
+
 class CreditsExceedBudget(DomainError):
     code = "CREDITS_EXCEED_BUDGET"
     http_status = 409

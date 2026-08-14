@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 | 路径 | 内容 |
 | --- | --- |
-| `front/src/app/[locale]/(site)/` | 首页（重定向到 `discover`）、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
+| `front/src/app/[locale]/(site)/` | 首页（重定向到 `discover`）、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`）；作品/技能积分解锁与标价在发布表单、作品详情、二创门栅与技能广场 |
 | `front/src/components/discover/` | 灵感墙：`tag-filter`（`TagFilter` + `DiscoverSort`）、`inspiration-masonry`、hero 轮播；排序/标签走 URL，见 `zaolang-discovery-search` |
 | `front/src/components/ui/` | `button` / `dialog` / `field` / `primitives` / `spinner` / `toast` / `icons` |
 | `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer`（品牌与构建版本，不是源码提供入口） / `brand` |

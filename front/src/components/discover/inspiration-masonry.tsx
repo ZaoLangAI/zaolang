@@ -29,6 +29,7 @@ interface FeedQuery {
   q?: string;
   tag?: string;
   sort?: string;
+  access?: string;
 }
 
 /**

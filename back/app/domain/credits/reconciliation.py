@@ -25,6 +25,8 @@ EXTERNAL_TYPES = (
     LedgerEntryType.ADJUSTMENT,
     LedgerEntryType.ROYALTY_IN,
     LedgerEntryType.ROYALTY_OUT,
+    LedgerEntryType.ACCESS_IN,
+    LedgerEntryType.ACCESS_OUT,
     LedgerEntryType.REFUND,
 )
 

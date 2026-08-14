@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
@@ -51,6 +51,8 @@ class CreationSkill(Base, TimestampMixin):
         String(24), default=CreationSkillStatus.DRAFT, nullable=False
     )
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Integer credits to unlock. 0 = free. Only meaningful once published.
+    access_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -58,6 +60,7 @@ class CreationSkill(Base, TimestampMixin):
     reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        CheckConstraint("access_credits >= 0", name="access_credits_non_negative"),
         Index("ix_creation_skills_owner", "owner_user_id"),
         Index("ix_creation_skills_status_created", "status", "created_at"),
     )

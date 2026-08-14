@@ -19,6 +19,7 @@ from app.models import Tag, Work, WorkEmbedding, WorkTag, WorkVersion
 from app.models.enums import LifecycleStatus, Visibility
 
 SortMode = Literal["recent", "popular", "remixed"]
+AccessFilter = Literal["free", "paid", "all"]
 
 KEYWORD_WEIGHT = 0.6
 VECTOR_WEIGHT = 0.4
@@ -71,11 +72,22 @@ def _after_published(anchor: Work) -> ColumnElement[bool]:
     )
 
 
+def _apply_access_filter(stmt: Select[tuple[Work, WorkVersion]], access: str | None):
+    if access == "free":
+        return stmt.where(
+            Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits == 0
+        )
+    if access == "paid":
+        return stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits > 0)
+    return stmt
+
+
 def browse(
     session: Session,
     *,
     tag: str | None = None,
     remixable_only: bool = False,
+    access: str | None = None,
     sort: SortMode = "recent",
     cursor: str | None = None,
     limit: int = 24,
@@ -94,6 +106,7 @@ def browse(
     stmt = _visible_works()
     if remixable_only:
         stmt = stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE)
+    stmt = _apply_access_filter(stmt, access)
     if tag:
         stmt = stmt.join(WorkTag, WorkTag.work_id == Work.id).join(
             Tag, (Tag.id == WorkTag.tag_id) & (Tag.slug == tag)
@@ -125,17 +138,22 @@ def search(
     query: str,
     semantic: bool = True,
     remixable_only: bool = False,
+    access: str | None = None,
     limit: int = 24,
 ) -> list[SearchResult]:
     text = query.strip()
     if not text:
-        return browse(session, remixable_only=remixable_only, limit=limit)
+        return browse(session, remixable_only=remixable_only, access=access, limit=limit)
 
-    keyword_hits = _keyword_search(session, text, remixable_only, limit * CANDIDATE_MULTIPLIER)
+    keyword_hits = _keyword_search(
+        session, text, remixable_only, limit * CANDIDATE_MULTIPLIER, access=access
+    )
     if not semantic:
         return keyword_hits[:limit]
 
-    vector_hits = _vector_search(session, text, remixable_only, limit * CANDIDATE_MULTIPLIER)
+    vector_hits = _vector_search(
+        session, text, remixable_only, limit * CANDIDATE_MULTIPLIER, access=access
+    )
 
     merged: dict[str, SearchResult] = {}
     for hit in keyword_hits:
@@ -162,7 +180,12 @@ def search(
 
 
 def _keyword_search(
-    session: Session, text: str, remixable_only: bool, limit: int
+    session: Session,
+    text: str,
+    remixable_only: bool,
+    limit: int,
+    *,
+    access: str | None = None,
 ) -> list[SearchResult]:
     pattern = f"%{text.lower()}%"
     stmt = _visible_works().where(
@@ -173,6 +196,7 @@ def _keyword_search(
     )
     if remixable_only:
         stmt = stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE)
+    stmt = _apply_access_filter(stmt, access)
 
     rows = session.execute(stmt.limit(limit)).all()
     results = []
@@ -185,7 +209,12 @@ def _keyword_search(
 
 
 def _vector_search(
-    session: Session, text: str, remixable_only: bool, limit: int
+    session: Session,
+    text: str,
+    remixable_only: bool,
+    limit: int,
+    *,
+    access: str | None = None,
 ) -> list[SearchResult]:
     vector = embeddings.embed(text)
     if not any(vector):
@@ -201,6 +230,7 @@ def _vector_search(
     )
     if remixable_only:
         stmt = stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE)
+    stmt = _apply_access_filter(stmt, access)
 
     results = []
     for work, version, dist in session.execute(stmt).all():

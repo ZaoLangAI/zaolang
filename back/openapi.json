@@ -602,6 +602,21 @@
             }
           },
           {
+            "name": "access",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "free",
+                "paid",
+                "all"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Access"
+            }
+          },
+          {
             "name": "semantic",
             "in": "query",
             "required": false,
@@ -1198,6 +1213,80 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/works/{work_id}/unlock": {
+      "post": {
+        "tags": [
+          "works"
+        ],
+        "summary": "Unlock Work",
+        "operationId": "unlock_work_v1_works__work_id__unlock_post",
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Work Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessUnlockResponse"
                 }
               }
             }
@@ -1984,6 +2073,21 @@
             }
           },
           {
+            "name": "access",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "free",
+                "paid",
+                "all"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Access"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -2359,6 +2463,74 @@
         }
       }
     },
+    "/v1/skills/{skill_id}/pricing": {
+      "patch": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Update Skill Pricing",
+        "operationId": "update_skill_pricing_v1_skills__skill_id__pricing_patch",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreationSkillPricingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/skills/{skill_id}/publish": {
       "post": {
         "tags": [
@@ -2458,6 +2630,80 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreationSkillDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/skills/{skill_id}/unlock": {
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Unlock Skill",
+        "operationId": "unlock_skill_v1_skills__skill_id__unlock_post",
+        "parameters": [
+          {
+            "name": "skill_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessUnlockResponse"
                 }
               }
             }
@@ -15669,6 +15915,93 @@
   },
   "components": {
     "schemas": {
+      "AccessGrantView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "subject_type": {
+            "type": "string",
+            "title": "Subject Type"
+          },
+          "subject_id": {
+            "type": "string",
+            "title": "Subject Id"
+          },
+          "price_credits": {
+            "type": "integer",
+            "title": "Price Credits"
+          },
+          "platform_fee_credits": {
+            "type": "integer",
+            "title": "Platform Fee Credits"
+          },
+          "seller_net_credits": {
+            "type": "integer",
+            "title": "Seller Net Credits"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "subject_type",
+          "subject_id",
+          "price_credits",
+          "platform_fee_credits",
+          "seller_net_credits",
+          "created_at"
+        ],
+        "title": "AccessGrantView"
+      },
+      "AccessUnlockResponse": {
+        "properties": {
+          "subject_type": {
+            "type": "string",
+            "title": "Subject Type"
+          },
+          "subject_id": {
+            "type": "string",
+            "title": "Subject Id"
+          },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits"
+          },
+          "viewer_unlocked": {
+            "type": "boolean",
+            "title": "Viewer Unlocked",
+            "default": true
+          },
+          "already_held": {
+            "type": "boolean",
+            "title": "Already Held",
+            "default": false
+          },
+          "grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessGrantView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "subject_type",
+          "subject_id",
+          "access_credits"
+        ],
+        "title": "AccessUnlockResponse"
+      },
       "AdjustCreditsRequest": {
         "properties": {
           "reason": {
@@ -18767,6 +19100,11 @@
             "type": "integer",
             "title": "Usage Count"
           },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          },
           "reject_reason": {
             "anyOf": [
               {
@@ -18848,6 +19186,12 @@
             },
             "type": "array",
             "title": "Applicable Operations"
+          },
+          "access_credits": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Access Credits",
+            "default": 0
           }
         },
         "type": "object",
@@ -18914,6 +19258,16 @@
             "type": "integer",
             "title": "Usage Count"
           },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          },
+          "viewer_unlocked": {
+            "type": "boolean",
+            "title": "Viewer Unlocked",
+            "default": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -18960,6 +19314,20 @@
           "created_at"
         ],
         "title": "CreationSkillDetail"
+      },
+      "CreationSkillPricingRequest": {
+        "properties": {
+          "access_credits": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Access Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_credits"
+        ],
+        "title": "CreationSkillPricingRequest"
       },
       "CreationSkillStatus": {
         "type": "string",
@@ -19029,6 +19397,16 @@
             "type": "integer",
             "title": "Usage Count"
           },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          },
+          "viewer_unlocked": {
+            "type": "boolean",
+            "title": "Viewer Unlocked",
+            "default": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -19090,6 +19468,12 @@
             },
             "type": "array",
             "title": "Applicable Operations"
+          },
+          "access_credits": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Access Credits",
+            "default": 0
           }
         },
         "type": "object",
@@ -19165,6 +19549,16 @@
           "royalty_in": {
             "type": "integer",
             "title": "Royalty In",
+            "default": 0
+          },
+          "access_out": {
+            "type": "integer",
+            "title": "Access Out",
+            "default": 0
+          },
+          "access_in": {
+            "type": "integer",
+            "title": "Access In",
             "default": 0
           },
           "adjustment": {
@@ -21964,10 +22358,12 @@
           "refund",
           "adjustment",
           "royalty_out",
-          "royalty_in"
+          "royalty_in",
+          "access_out",
+          "access_in"
         ],
         "title": "LedgerEntryType",
-        "description": "Append-only ledger vocabulary.\n\n`RESERVE` is negative available / positive reserved; `CAPTURE` settles it;\n`RELEASE` returns it. `ROYALTY_OUT` / `ROYALTY_IN` move credits from a\nremixer to ancestor authors."
+        "description": "Append-only ledger vocabulary.\n\n`RESERVE` is negative available / positive reserved; `CAPTURE` settles it;\n`RELEASE` returns it. `ROYALTY_OUT` / `ROYALTY_IN` move credits from a\nremixer to ancestor authors (best-effort). `ACCESS_OUT` / `ACCESS_IN` are\nthe mandatory marketplace transfer when someone unlocks a paid work or\nskill — they must not be reused for royalties."
       },
       "LedgerEntryView": {
         "properties": {
@@ -22093,7 +22489,8 @@
           "cc_by_4.0",
           "cc_by_sa_4.0",
           "cc_by_nc_4.0",
-          "all_rights_reserved"
+          "all_rights_reserved",
+          "zaolang_paid_remix"
         ],
         "title": "LicenseType"
       },
@@ -23828,6 +24225,7 @@
           "work_liked",
           "work_remixed",
           "royalty_received",
+          "access_sold",
           "new_follower",
           "moderation",
           "system"
@@ -26268,6 +26666,12 @@
             "type": "boolean",
             "title": "Ai Disclosure Confirmed",
             "default": false
+          },
+          "access_credits": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Access Credits",
+            "default": 0
           }
         },
         "type": "object",
@@ -28298,6 +28702,16 @@
             "title": "Remixable",
             "default": false
           },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          },
+          "viewer_unlocked": {
+            "type": "boolean",
+            "title": "Viewer Unlocked",
+            "default": true
+          },
           "published_at": {
             "anyOf": [
               {
@@ -28674,6 +29088,18 @@
         "properties": {
           "visibility": {
             "$ref": "#/components/schemas/Visibility"
+          },
+          "access_credits": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Credits"
           }
         },
         "type": "object",
@@ -28831,6 +29257,16 @@
             "type": "boolean",
             "title": "Remixable",
             "default": false
+          },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          },
+          "viewer_unlocked": {
+            "type": "boolean",
+            "title": "Viewer Unlocked",
+            "default": true
           },
           "published_at": {
             "anyOf": [
@@ -29058,6 +29494,16 @@
             "type": "boolean",
             "title": "Remixable",
             "default": false
+          },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          },
+          "viewer_unlocked": {
+            "type": "boolean",
+            "title": "Viewer Unlocked",
+            "default": true
           },
           "published_at": {
             "anyOf": [

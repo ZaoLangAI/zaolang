@@ -1120,7 +1120,11 @@
     "redeemSubmit": "引き換える",
     "redeemSucceeded": "引き換えに成功しました。{count} クレジットが付与されました。",
     "redeemFailed": "引き換えに失敗しました。コードを確認して再試行してください。",
-    "backToProfile": "プロフィールに戻る"
+    "backToProfile": "プロフィールに戻る",
+    "typeAccessIn": "解除収入",
+    "typeAccessOut": "クレジット解除",
+    "creatorEarnings": "創作収益",
+    "creatorEarningsHint": "解除手数料とリミックス還元の合計"
   },
   "brand": {
     "name": "造浪",
@@ -1209,7 +1213,8 @@
     "deleteDraftConfirmTitle": "このドラフトを削除しますか？",
     "deleteDraftConfirmBody": "ドラフトと生成結果が削除されます。元に戻せません。",
     "deleteDraftDone": "ドラフトを削除しました。",
-    "deleteDraftFailed": "削除に失敗しました。もう一度お試しください。"
+    "deleteDraftFailed": "削除に失敗しました。もう一度お試しください。",
+    "accessCredits": "リミックス解除価格"
   },
   "commandPalette": {
     "open": "コマンドパレットを開く",
@@ -1330,7 +1335,11 @@
     "featuredCarousel": "注目の作品カルーセル",
     "previousFeatured": "前の注目作品",
     "nextFeatured": "次の注目作品",
-    "goToSlide": "{index} 番目のスライドに移動"
+    "goToSlide": "{index} 番目のスライドに移動",
+    "accessAll": "すべての価格",
+    "accessFree": "無料リミックス",
+    "accessPaid": "有料リミックス",
+    "filterAccess": "価格で絞り込み"
   },
   "editor": {
     "title": "短編ドラマ編集",
@@ -1538,7 +1547,8 @@
     "cc0": "CC0",
     "attributionRequired": "クレジット表記が必要",
     "remixAllowed": "二次創作可",
-    "commercialAllowed": "商用利用可"
+    "commercialAllowed": "商用利用可",
+    "zaolangPaidRemix": "造浪の有料リミックス許諾"
   },
   "lineagePanel": {
     "title": "創作チェーン",
@@ -1615,7 +1625,9 @@
     "opAudio": "音声生成",
     "opShortform": "ショート動画",
     "opRemix": "二次創作",
-    "opDramaExport": "短編書き出し"
+    "opDramaExport": "短編書き出し",
+    "accessSoldWork": "作品が解除され、{amount} クレジットを獲得しました。",
+    "accessSoldSkill": "スキル「{title}」が解除され、{amount} クレジットを獲得しました。"
   },
   "notificationsPage": {
     "title": "通知センター",
@@ -1635,7 +1647,8 @@
     "allRead": "すべて既読にしました",
     "open": "開く",
     "typeLike": "いいね",
-    "backToProfile": "プロフィールに戻る"
+    "backToProfile": "プロフィールに戻る",
+    "typeAccessSold": "解除収入"
   },
   "profilePage": {
     "eyebrow": "CREATOR PROFILE",
@@ -1721,7 +1734,11 @@
       "preview": "クイックプレビュー",
       "standard": "標準",
       "cinematic": "シネマ級"
-    }
+    },
+    "accessCredits": "リミックス解除価格",
+    "accessCreditsHint": "0 は無料公開です。有料解除はアプリ内許諾であり、CC-BY ではありません。",
+    "accessFree": "無料",
+    "accessCustom": "カスタム"
   },
   "region": {
     "label": "地域",
@@ -1805,7 +1822,10 @@
     "viewSourceWork": "原作を見る",
     "adjustParams": "設定",
     "adjustParamsHint": "調整したらプレビューに戻って送信できます。",
-    "paramsDone": "完了"
+    "paramsDone": "完了",
+    "needsUnlock": "スタジオを開くには先に解除してください",
+    "needsUnlockHint": "作者がクレジット価格を設定しています。一度支払えば何度でもリミックスできます。",
+    "unlockCta": "クレジットで解除"
   },
   "search": {
     "recentSearches": "最近の検索",
@@ -2039,7 +2059,24 @@
     "deleteConfirmTitle": "このスキルを削除しますか？",
     "deleteConfirmBody": "元に戻せません。すでに適用済みの制作物には影響しません。",
     "deleteDone": "スキルを削除しました。",
-    "deleteFailed": "削除に失敗しました。もう一度お試しください。"
+    "deleteFailed": "削除に失敗しました。もう一度お試しください。",
+    "priceFree": "無料",
+    "priceCredits": "{credits} クレジット",
+    "filterAccess": "価格",
+    "accessAll": "すべて",
+    "accessFree": "無料",
+    "accessPaid": "有料",
+    "priceLabel": "解除価格",
+    "priceHint": "0 は無料です。目安は 0 / 10 / 50 / 200。",
+    "priceCustom": "カスタム",
+    "unlock": "クレジットで解除",
+    "unlockConfirm": "{credits} クレジットで「{title}」を解除すると、以降ずっと使えます。",
+    "unlocking": "解除中",
+    "unlockFailed": "解除に失敗しました。残高を確認して再試行してください。",
+    "unlockDone": "解除しました",
+    "applyLocked": "適用する前に解除してください",
+    "pricingSaved": "価格を更新しました",
+    "paramsHidden": "解除後に完全なパラメータが表示されます"
   },
   "states": {
     "loading": "読み込み中",
@@ -2106,7 +2143,13 @@
     "resolution": "{width}×{height}",
     "fps": "{fps} fps",
     "publishedOn": "{date} 公開",
-    "notFound": "This work does not exist or was removed"
+    "notFound": "This work does not exist or was removed",
+    "paidBadge": "{credits} クレジット",
+    "unlockThis": "クレジットで解除",
+    "unlockConfirm": "{credits} クレジットを一度支払うと、何度でもリミックスできます。",
+    "unlocking": "解除中",
+    "unlockFailed": "解除に失敗しました。残高を確認して再試行してください。",
+    "unlockDone": "解除しました。リミックスを始められます。"
   },
   "workPage": {
     "description": "説明",
@@ -2164,6 +2207,9 @@
     "similarEmpty": "似た作品はまだありません",
     "tags": "タグ",
     "stats": "統計",
-    "openInLineage": "創作チェーンで見る"
+    "openInLineage": "創作チェーンで見る",
+    "unlockCta": "解除してリミックス",
+    "needsUnlock": "この作品はクレジット解除後にリミックスできます。",
+    "goBilling": "チャージする"
   }
 }

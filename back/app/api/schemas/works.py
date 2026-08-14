@@ -54,6 +54,8 @@ class WorkSummary(ApiModel):
     stats: WorkStats
     tags: list[str] = Field(default_factory=list)
     remixable: bool = False
+    access_credits: int = 0
+    viewer_unlocked: bool = True
     published_at: dt.datetime | None = None
 
 
@@ -196,6 +198,7 @@ class PublishRequest(ApiModel):
     # Publishing requires an explicit statement that added material is cleared.
     rights_confirmed: bool = False
     ai_disclosure_confirmed: bool = False
+    access_credits: int = Field(default=0, ge=0)
 
 
 class PublishResponse(ApiModel):
@@ -208,6 +211,26 @@ class PublishResponse(ApiModel):
 
 class VisibilityUpdateRequest(ApiModel):
     visibility: Visibility
+    access_credits: int | None = Field(default=None, ge=0)
+
+
+class AccessGrantView(ApiModel):
+    id: str
+    subject_type: str
+    subject_id: str
+    price_credits: int
+    platform_fee_credits: int
+    seller_net_credits: int
+    created_at: dt.datetime
+
+
+class AccessUnlockResponse(ApiModel):
+    subject_type: str
+    subject_id: str
+    access_credits: int
+    viewer_unlocked: bool = True
+    already_held: bool = False
+    grant: AccessGrantView | None = None
 
 
 class CollectionCreateRequest(ApiModel):

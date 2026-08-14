@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
@@ -36,6 +37,7 @@ export function CreateSkillDialog({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<CreationSkillCategory>('scene');
+  const [accessCredits, setAccessCredits] = useState(0);
   const [paramsText, setParamsText] = useState(() => JSON.stringify(initialParams ?? {}, null, 2));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,7 @@ export function CreateSkillDialog({
     setTitle('');
     setDescription('');
     setCategory('scene');
+    setAccessCredits(0);
     setParamsText(JSON.stringify(initialParams ?? {}, null, 2));
     setError(null);
   };
@@ -74,6 +77,7 @@ export function CreateSkillDialog({
         description: description.trim(),
         category,
         params,
+        access_credits: accessCredits,
       });
       onCreated(skill);
       reset();
@@ -118,6 +122,12 @@ export function CreateSkillDialog({
                     : 'categoryOther',
             ),
           }))}
+        />
+        <AccessPriceField
+          value={accessCredits}
+          onChange={setAccessCredits}
+          label={t('priceLabel')}
+          hint={t('priceHint')}
         />
         <TextArea
           label={t('paramsLabel')}

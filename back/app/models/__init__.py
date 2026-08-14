@@ -4,6 +4,7 @@ Everything is re-exported here so that `Base.metadata` is fully populated by a
 single import, which is what Alembic autogenerate relies on.
 """
 
+from app.models.access import AccessGrant
 from app.models.agent_skills import AgentNode, AgentProfile, AgentSkill
 from app.models.async_tasks import AsyncProviderTask
 from app.models.base import Base, TimestampMixin, new_id, utcnow
@@ -87,6 +88,7 @@ from app.models.works import (
 
 __all__ = [
     "EMBEDDING_DIM",
+    "AccessGrant",
     "AgentNode",
     "AgentProfile",
     "AgentRun",

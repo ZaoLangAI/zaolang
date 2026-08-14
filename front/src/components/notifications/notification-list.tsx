@@ -41,6 +41,7 @@ const GROUPS = {
   job_failed: { key: 'typeJob' },
   job_cancelled: { key: 'typeJob' },
   royalty_received: { key: 'typeRoyalty' },
+  access_sold: { key: 'typeAccessSold' },
   moderation: { key: 'typeModeration' },
   system: { key: 'typeSystem' },
 } as const;
@@ -266,6 +267,16 @@ const TITLE_KEYS: Record<
     key: 'royaltyReceived',
     params: { work_title: String(p.work_title ?? ''), amount: String(p.amount ?? '') },
   }),
+  'notification.access_sold': (p): { key: string; params: Record<string, string> } => {
+    const amount = String(p.amount ?? '');
+    if (p.subject_type === 'skill') {
+      return {
+        key: 'accessSoldSkill',
+        params: { title: String(p.title ?? ''), amount },
+      };
+    }
+    return { key: 'accessSoldWork', params: { amount } };
+  },
   'notification.new_follower': (p) => ({
     key: 'newFollower',
     params: { actor_name: String(p.follower_display_name || p.actor_name || '') },
@@ -359,7 +370,9 @@ function notificationVisual(item: Notification): {
   if (item.type === 'new_follower') return { icon: IconUser, badge: null, tone: 'text-primary' };
   if (item.type === 'work_liked') return { icon: IconHeart, badge: null, tone: 'text-primary' };
   if (item.type === 'work_remixed') return { icon: IconRemix, badge: null, tone: 'text-primary' };
-  if (item.type === 'royalty_received') return { icon: IconWallet, badge: null, tone: 'text-amber' };
+  if (item.type === 'royalty_received' || item.type === 'access_sold') {
+    return { icon: IconWallet, badge: null, tone: 'text-amber' };
+  }
   if (item.type === 'moderation') return { icon: IconShield, badge: null, tone: 'text-muted' };
   return { icon: IconBell, badge: null, tone: 'text-muted' };
 }

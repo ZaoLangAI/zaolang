@@ -145,6 +145,17 @@ class ShortformConfig(ConfigSection):
         return self
 
 
+class MarketplaceConfig(ConfigSection):
+    """Paid unlock of remixable works and published skills.
+
+    The fee is burned (not booked to a platform account): buyer pays `price`,
+    seller receives `price - fee`, so mutual farming is lossy.
+    """
+
+    platform_fee_bps: int = Field(default=1000, ge=0, le=10_000)
+    max_access_credits: int = Field(default=10_000, ge=1)
+
+
 class FeatureFlags(ConfigSection):
     video_generation: bool = True
     public_registration: bool = True
@@ -154,6 +165,7 @@ class FeatureFlags(ConfigSection):
     variant_export_enabled: bool = False
     editor_ai_enabled: bool = False
     editor_mcp_enabled: bool = False
+    marketplace_enabled: bool = True
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
@@ -167,6 +179,7 @@ class FeatureFlags(ConfigSection):
             "variant_export_enabled",
             "editor_ai_enabled",
             "editor_mcp_enabled",
+            "marketplace_enabled",
         }
         for name, pct in self.rollout_percentages.items():
             if name not in allowed:
@@ -467,6 +480,7 @@ class LlmProviderConfig(ConfigSection):
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
     "pricing": PricingConfig,
     "royalty": RoyaltyConfig,
+    "marketplace": MarketplaceConfig,
     "feature_flags": FeatureFlags,
     "content_moderation": ContentModerationConfig,
     "learning_moderation": LearningModerationConfig,
@@ -497,6 +511,10 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "min_payout": 1,
         "total_cap_bps": 2000,
     },
+    "marketplace": {
+        "platform_fee_bps": 1000,
+        "max_access_credits": 10_000,
+    },
     "feature_flags": {
         "video_generation": True,
         "public_registration": True,
@@ -506,6 +524,7 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "variant_export_enabled": False,
         "editor_ai_enabled": False,
         "editor_mcp_enabled": False,
+        "marketplace_enabled": True,
         "rollout_percentages": {},
     },
     "content_moderation": {"blocked_keywords": []},

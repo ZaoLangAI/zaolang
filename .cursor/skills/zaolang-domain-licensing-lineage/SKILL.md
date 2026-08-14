@@ -14,7 +14,8 @@ disable-model-invocation: true
 
 | 文件 | 内容 |
 | --- | --- |
-| `back/app/domain/licensing/service.py` | `can_view` / `can_remix` / `assert_viewable` / `assert_remixable` / `capture_license_snapshot` / `LICENSE_PERMISSIONS` |
+| `back/app/domain/licensing/service.py` | `can_view` / `can_remix` / `assert_viewable` / `assert_remixable` / `assert_source_still_remixable` / `capture_license_snapshot` / `LICENSE_PERMISSIONS` |
+| `back/app/domain/access/service.py` | 作品/技能积分解锁、`AccessGrant` 买断、强制 `access_transfer` |
 | `back/app/domain/lineage/service.py` | `create_edge` / `ancestors` / `descendants` / `build_tree` / `ancestor_author_ids` / `is_referenced_by_descendants` |
 | `back/app/domain/publishing/service.py` | `create_draft` / `publish`（八步）/ `change_visibility` / `tombstone` |
 | `back/app/models/enums.py` | `Visibility`（含 `allows_remix`）、`LifecycleStatus`、`LicenseType` |
@@ -25,7 +26,7 @@ disable-model-invocation: true
 
 1. **默认可见性是 `PUBLIC_VIEW_ONLY`**。只有 `PUBLIC_REMIXABLE` 允许他人二创（`Visibility.allows_remix`），作者对自己的作品不受限制。
 2. **许可快照在创建草稿那一刻冻结**。`LicenseSnapshot` 记录当时的条款、原作者署名与 `snapshot_at`；上游后来改许可或转私密，**已存在的二创不受影响**，可见性变更只对未来生效。
-3. **二创入口必须 `assert_remixable`**，不是只在前端隐藏按钮。直接打 API 的 `public_view_only` 作品必须 `LicenseNotRemixable`（403）。
+3. **二创入口必须 `assert_remixable`**，不是只在前端隐藏按钮。直接打 API 的 `public_view_only` 作品必须 `LicenseNotRemixable`（409）。付费可二创但未解锁是 `AccessRequired`（402）。`can_remix` 含作者本人或（`PUBLIC_REMIXABLE` + 价格为 0 或已 Grant）。发布复核只走 `assert_source_still_remixable`（可见性），不重收授权费。`access_credits > 0` 的快照用 `zaolang_paid_remix`，并记下当时价格与 grant id。
 4. **墓碑保留节点**：`tombstone` 只把 `lifecycle_status` 改成 `TOMBSTONED`，永不删行。被墓碑的作品不可直接查看，但**仍可通过创作链看到占位节点**，否则下游作品的来源会凭空消失。删除用户走匿名化而非删除，理由相同。
 5. **`LineageEdge` 指向版本而不是作品**，并冻结 `parent_author_snapshot` 与 `license_snapshot_id`。作者改名后旧边显示的仍是当时的署名。
 6. **发布八步的顺序不能重排**：① 复核来源仍可二创 ② 发布前安全审核 ③ 建 `Work` + 首个 `WorkVersion` ④ 资产转可读 + 打标签 ⑤ 建 `LineageEdge` 并 `remix_count += 1` ⑥ 写检索索引 ⑦ 结算回流分成 ⑧ 通知祖先作者。安全审核必须在建 `Work` 之前；创作链边必须在通知与分成之前。
@@ -42,7 +43,7 @@ disable-model-invocation: true
 ## 验证
 
 ```bash
-cd back && conda run -n zaolang pytest tests/unit/test_licensing_invariants.py tests/unit/test_lineage_invariants.py tests/integration/test_publish_flow.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_licensing_invariants.py tests/unit/test_lineage_invariants.py tests/unit/test_access_marketplace.py tests/integration/test_publish_flow.py tests/integration/test_access_marketplace.py -v
 ```
 
-手工路径：用 `mizuki` 对 `linhai` 的 `public_view_only` 作品发二创请求，必须 403；对 `public_remixable` 的《潮汐之上》成功后，在作品页创作链里能看到新节点。
+手工路径：用 `mizuki` 对 `linhai` 的 `public_view_only` 作品发二创请求，必须 409；对 `public_remixable` 的《潮汐之上》成功后，在作品页创作链里能看到新节点。付费样例未解锁是 402。

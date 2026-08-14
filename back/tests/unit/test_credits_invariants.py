@@ -160,6 +160,8 @@ def test_ledger_sum_matches_the_account_balance(db: Session, author: User) -> No
             LedgerEntryType.ADJUSTMENT,
             LedgerEntryType.ROYALTY_IN,
             LedgerEntryType.ROYALTY_OUT,
+            LedgerEntryType.ACCESS_IN,
+            LedgerEntryType.ACCESS_OUT,
         )
     )
     captured = -sum(e.amount for e in entries if e.type == LedgerEntryType.CAPTURE)

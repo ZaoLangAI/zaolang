@@ -1,0 +1,212 @@
+{
+  "zh-CN": {
+    "license": {
+      "zaolangPaidRemix": "造浪付费二创授权"
+    },
+    "billingPage": {
+      "typeAccessIn": "授权收入",
+      "typeAccessOut": "积分解锁",
+      "creatorEarnings": "创作收益",
+      "creatorEarningsHint": "授权解锁与回流分成的合计"
+    },
+    "work": {
+      "paidBadge": "{credits} 积分",
+      "unlockThis": "积分解锁",
+      "unlockConfirm": "用 {credits} 积分解锁后即可无限二创。",
+      "unlocking": "正在解锁",
+      "unlockFailed": "解锁失败，请检查余额后重试。",
+      "unlockDone": "已解锁，可以开始二创。"
+    },
+    "workPage": {
+      "unlockCta": "积分解锁并二创",
+      "needsUnlock": "该作品允许二创，需先用积分解锁。",
+      "goBilling": "去充值"
+    },
+    "remixPage": {
+      "needsUnlock": "需要先解锁才能进入工作室",
+      "needsUnlockHint": "作者为二创设置了积分价格。解锁一次后可无限二创。",
+      "unlockCta": "积分解锁"
+    },
+    "skillLibrary": {
+      "priceFree": "免费",
+      "priceCredits": "{credits} 积分",
+      "filterAccess": "价格",
+      "accessAll": "全部",
+      "accessFree": "免费",
+      "accessPaid": "付费",
+      "priceLabel": "解锁价格",
+      "priceHint": "0 为免费。建议 0 / 10 / 50 / 200。",
+      "priceCustom": "自定义",
+      "unlock": "积分解锁",
+      "unlockConfirm": "用 {credits} 积分解锁「{title}」后可永久套用。",
+      "unlocking": "正在解锁",
+      "unlockFailed": "解锁失败，请检查余额后重试。",
+      "unlockDone": "已解锁",
+      "applyLocked": "请先解锁再套用",
+      "pricingSaved": "标价已更新",
+      "paramsHidden": "解锁后可见完整参数"
+    },
+    "publishPage": {
+      "accessCredits": "二创解锁价格",
+      "accessCreditsHint": "0 为免费开放二创。付费授权仅限站内二创，不再标 CC-BY。",
+      "accessFree": "免费",
+      "accessCustom": "自定义"
+    },
+    "discover": {
+      "accessAll": "全部价格",
+      "accessFree": "免费二创",
+      "accessPaid": "付费二创",
+      "filterAccess": "按价格筛选"
+    },
+    "notificationBody": {
+      "accessSoldWork": "有人解锁了你的作品，你获得 {amount} 积分。",
+      "accessSoldSkill": "有人解锁了你的技能「{title}」，你获得 {amount} 积分。"
+    },
+    "notificationsPage": {
+      "typeAccessSold": "授权收入"
+    },
+    "collectionPage": {
+      "accessCredits": "二创解锁价格"
+    }
+  },
+  "en": {
+    "license": {
+      "zaolangPaidRemix": "Zaolang paid remix license"
+    },
+    "billingPage": {
+      "typeAccessIn": "Unlock income",
+      "typeAccessOut": "Credit unlock",
+      "creatorEarnings": "Creator earnings",
+      "creatorEarningsHint": "Unlock fees plus remix royalties"
+    },
+    "work": {
+      "paidBadge": "{credits} credits",
+      "unlockThis": "Unlock with credits",
+      "unlockConfirm": "Pay {credits} credits once to remix this work as often as you like.",
+      "unlocking": "Unlocking",
+      "unlockFailed": "Unlock failed. Check your balance and try again.",
+      "unlockDone": "Unlocked. You can start remixing."
+    },
+    "workPage": {
+      "unlockCta": "Unlock and remix",
+      "needsUnlock": "This work allows remixes after a credit unlock.",
+      "goBilling": "Buy credits"
+    },
+    "remixPage": {
+      "needsUnlock": "Unlock this work to open the studio",
+      "needsUnlockHint": "The author set a credit price. Pay once, remix anytime.",
+      "unlockCta": "Unlock with credits"
+    },
+    "skillLibrary": {
+      "priceFree": "Free",
+      "priceCredits": "{credits} credits",
+      "filterAccess": "Price",
+      "accessAll": "All",
+      "accessFree": "Free",
+      "accessPaid": "Paid",
+      "priceLabel": "Unlock price",
+      "priceHint": "0 is free. Suggested tiers: 0 / 10 / 50 / 200.",
+      "priceCustom": "Custom",
+      "unlock": "Unlock with credits",
+      "unlockConfirm": "Pay {credits} credits to use “{title}” forever.",
+      "unlocking": "Unlocking",
+      "unlockFailed": "Unlock failed. Check your balance and try again.",
+      "unlockDone": "Unlocked",
+      "applyLocked": "Unlock this skill before applying it",
+      "pricingSaved": "Price updated",
+      "paramsHidden": "Full parameters appear after unlock"
+    },
+    "publishPage": {
+      "accessCredits": "Remix unlock price",
+      "accessCreditsHint": "0 keeps remixes free. A paid unlock is an in-app license, not CC-BY.",
+      "accessFree": "Free",
+      "accessCustom": "Custom"
+    },
+    "discover": {
+      "accessAll": "Any price",
+      "accessFree": "Free remixes",
+      "accessPaid": "Paid remixes",
+      "filterAccess": "Filter by price"
+    },
+    "notificationBody": {
+      "accessSoldWork": "Someone unlocked your work. You earned {amount} credits.",
+      "accessSoldSkill": "Someone unlocked your skill “{title}”. You earned {amount} credits."
+    },
+    "notificationsPage": {
+      "typeAccessSold": "Unlock income"
+    },
+    "collectionPage": {
+      "accessCredits": "Remix unlock price"
+    }
+  },
+  "ja": {
+    "license": {
+      "zaolangPaidRemix": "造浪の有料リミックス許諾"
+    },
+    "billingPage": {
+      "typeAccessIn": "解除収入",
+      "typeAccessOut": "クレジット解除",
+      "creatorEarnings": "創作収益",
+      "creatorEarningsHint": "解除手数料とリミックス還元の合計"
+    },
+    "work": {
+      "paidBadge": "{credits} クレジット",
+      "unlockThis": "クレジットで解除",
+      "unlockConfirm": "{credits} クレジットを一度支払うと、何度でもリミックスできます。",
+      "unlocking": "解除中",
+      "unlockFailed": "解除に失敗しました。残高を確認して再試行してください。",
+      "unlockDone": "解除しました。リミックスを始められます。"
+    },
+    "workPage": {
+      "unlockCta": "解除してリミックス",
+      "needsUnlock": "この作品はクレジット解除後にリミックスできます。",
+      "goBilling": "チャージする"
+    },
+    "remixPage": {
+      "needsUnlock": "スタジオを開くには先に解除してください",
+      "needsUnlockHint": "作者がクレジット価格を設定しています。一度支払えば何度でもリミックスできます。",
+      "unlockCta": "クレジットで解除"
+    },
+    "skillLibrary": {
+      "priceFree": "無料",
+      "priceCredits": "{credits} クレジット",
+      "filterAccess": "価格",
+      "accessAll": "すべて",
+      "accessFree": "無料",
+      "accessPaid": "有料",
+      "priceLabel": "解除価格",
+      "priceHint": "0 は無料です。目安は 0 / 10 / 50 / 200。",
+      "priceCustom": "カスタム",
+      "unlock": "クレジットで解除",
+      "unlockConfirm": "{credits} クレジットで「{title}」を解除すると、以降ずっと使えます。",
+      "unlocking": "解除中",
+      "unlockFailed": "解除に失敗しました。残高を確認して再試行してください。",
+      "unlockDone": "解除しました",
+      "applyLocked": "適用する前に解除してください",
+      "pricingSaved": "価格を更新しました",
+      "paramsHidden": "解除後に完全なパラメータが表示されます"
+    },
+    "publishPage": {
+      "accessCredits": "リミックス解除価格",
+      "accessCreditsHint": "0 は無料公開です。有料解除はアプリ内許諾であり、CC-BY ではありません。",
+      "accessFree": "無料",
+      "accessCustom": "カスタム"
+    },
+    "discover": {
+      "accessAll": "すべての価格",
+      "accessFree": "無料リミックス",
+      "accessPaid": "有料リミックス",
+      "filterAccess": "価格で絞り込み"
+    },
+    "notificationBody": {
+      "accessSoldWork": "作品が解除され、{amount} クレジットを獲得しました。",
+      "accessSoldSkill": "スキル「{title}」が解除され、{amount} クレジットを獲得しました。"
+    },
+    "notificationsPage": {
+      "typeAccessSold": "解除収入"
+    },
+    "collectionPage": {
+      "accessCredits": "リミックス解除価格"
+    }
+  }
+}

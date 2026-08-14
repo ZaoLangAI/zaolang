@@ -14,7 +14,7 @@ disable-model-invocation: true
 
 | 文件 | 内容 |
 | --- | --- |
-| `back/app/api/v1/*.py` | C 端路由：`auth` / `works` / `drafts` / `jobs` / `uploads` / `credits` / `community` / `profiles` / `privacy` / `gateway` / `characters` / `devices` / `learning` / `shortform` / `skills` / `editor`；MCP 在 `POST /mcp`（独立 audience `mcp`）；`/v1/series` 只出 `kind=cast`，制作项目走 `/v1/drama-series`；以目录和 `back/app/main.py` `build_router()` 的注册为准 |
+| `back/app/api/v1/*.py` | C 端路由：`auth` / `works` / `drafts` / `jobs` / `uploads` / `credits` / `community` / `profiles` / `privacy` / `gateway` / `characters` / `devices` / `learning` / `shortform` / `skills` / `editor`；作品/技能 `POST .../unlock` 与技能 `PATCH .../pricing`；MCP 在 `POST /mcp`（独立 audience `mcp`）；`/v1/series` 只出 `kind=cast`，制作项目走 `/v1/drama-series`；以目录和 `back/app/main.py` `build_router()` 的注册为准 |
 | `back/app/api/v1/admin/*.py` | 后台路由，独立命名空间，见 `zaolang-admin-console` |
 | `back/app/api/deps.py` | `CurrentUser` / `OptionalUser` / `AdminUser` / `IdempotencyKey` / `rate_limited(bucket)` / `require_admin_role(minimum)` |
 | `back/app/api/errors.py` | 统一错误信封与异常处理器注册 |
@@ -33,7 +33,7 @@ disable-model-invocation: true
 4. **C 端 token 与后台 token audience 不同**：C 端 token 打 `/v1/admin/*` 必须 401，反之亦然。
 5. **幂等键作用域是 `(user_id, endpoint, key)`**，命中且 request hash 相同 → 回放存储的响应；hash 不同 → `IdempotencyConflict`（409）。所有创建型写接口（提交任务、发布、支付回调）都必须接幂等。
 6. **限流分层**，桶定义在 `RULES`：`public_read` 240/60s、`authenticated_write` 90/60s、`auth_attempt` 10/300s、`generation_submit` 12/60s、`upload_presign` 30/60s，后台另有 `admin_read` / `admin_write` / `admin_dangerous`。`RateLimited` 必须带 `Retry-After`。**改这些数字会影响 E2E**（见 `zaolang-testing-qa` 里为什么 E2E 复用会话）。
-7. **资源所有权在服务层校验**，不靠路由参数是否可猜。可见性与二创权限一律走 `app/domain/licensing/service.py`。
+7. **资源所有权在服务层校验**，不靠路由参数是否可猜。可见性与二创权限一律走 `app/domain/licensing/service.py`。付费未解锁是 `ACCESS_REQUIRED`（402），未开放二创是 `LICENSE_NOT_REMIXABLE`（409），不要混用。
 8. **`/v1/series` 与 `/v1/drama-series` 隔离。** 名册 API 只出 `kind=cast`；drama id 打 `/v1/series/{id}` 必须 404（与不存在相同）。MCP 只用 audience `mcp`，禁止 consumer/admin token。见 `zaolang-editor-drama`。后台日趋势在 `/v1/admin/statistics/*`，见 `zaolang-admin-statistics`。
 
 ## 改造切入点

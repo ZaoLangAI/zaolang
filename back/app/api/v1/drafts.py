@@ -79,6 +79,7 @@ def publish(
         tags=payload.tags,
         cover_asset_id=payload.cover_asset_id,
         rights_confirmed=payload.rights_confirmed,
+        access_credits=payload.access_credits,
     )
     session.commit()
 

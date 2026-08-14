@@ -216,6 +216,8 @@ class CreditFlowDailyStat:
     refunded: int = 0
     royalty_out: int = 0
     royalty_in: int = 0
+    access_out: int = 0
+    access_in: int = 0
     adjustment: int = 0
     # Sum of every entry's signed amount that day, reserve/release included —
     # a sanity total, not a KPI (those two net out over the reservation's life).
@@ -232,6 +234,8 @@ _CREDIT_TYPE_FIELDS: dict[str, str] = {
     LedgerEntryType.REFUND.value: "refunded",
     LedgerEntryType.ROYALTY_OUT.value: "royalty_out",
     LedgerEntryType.ROYALTY_IN.value: "royalty_in",
+    LedgerEntryType.ACCESS_OUT.value: "access_out",
+    LedgerEntryType.ACCESS_IN.value: "access_in",
     LedgerEntryType.ADJUSTMENT.value: "adjustment",
 }
 

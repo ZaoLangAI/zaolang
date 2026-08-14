@@ -1120,7 +1120,11 @@
     "redeemSubmit": "Redeem",
     "redeemSucceeded": "Redeemed! {count} credits added.",
     "redeemFailed": "Could not redeem this code. Check it and try again.",
-    "backToProfile": "Back to profile"
+    "backToProfile": "Back to profile",
+    "typeAccessIn": "Unlock income",
+    "typeAccessOut": "Credit unlock",
+    "creatorEarnings": "Creator earnings",
+    "creatorEarningsHint": "Unlock fees plus remix royalties"
   },
   "brand": {
     "name": "ZaoLang",
@@ -1209,7 +1213,8 @@
     "deleteDraftConfirmTitle": "Delete this draft?",
     "deleteDraftConfirmBody": "The draft and its generated result are removed. This cannot be undone.",
     "deleteDraftDone": "Draft deleted.",
-    "deleteDraftFailed": "Delete failed, please try again."
+    "deleteDraftFailed": "Delete failed, please try again.",
+    "accessCredits": "Remix unlock price"
   },
   "commandPalette": {
     "open": "Open command palette",
@@ -1330,7 +1335,11 @@
     "featuredCarousel": "Trending picks carousel",
     "previousFeatured": "Previous trending pick",
     "nextFeatured": "Next trending pick",
-    "goToSlide": "Go to slide {index}"
+    "goToSlide": "Go to slide {index}",
+    "accessAll": "Any price",
+    "accessFree": "Free remixes",
+    "accessPaid": "Paid remixes",
+    "filterAccess": "Filter by price"
   },
   "editor": {
     "title": "Drama editor",
@@ -1538,7 +1547,8 @@
     "cc0": "CC0",
     "attributionRequired": "Attribution required",
     "remixAllowed": "Remixing allowed",
-    "commercialAllowed": "Commercial use allowed"
+    "commercialAllowed": "Commercial use allowed",
+    "zaolangPaidRemix": "Zaolang paid remix license"
   },
   "lineagePanel": {
     "title": "Lineage",
@@ -1615,7 +1625,9 @@
     "opAudio": "voice generation",
     "opShortform": "short video",
     "opRemix": "remix",
-    "opDramaExport": "drama export"
+    "opDramaExport": "drama export",
+    "accessSoldWork": "Someone unlocked your work. You earned {amount} credits.",
+    "accessSoldSkill": "Someone unlocked your skill “{title}”. You earned {amount} credits."
   },
   "notificationsPage": {
     "title": "Notifications",
@@ -1635,7 +1647,8 @@
     "allRead": "Everything marked as read",
     "open": "Open",
     "typeLike": "Like",
-    "backToProfile": "Back to profile"
+    "backToProfile": "Back to profile",
+    "typeAccessSold": "Unlock income"
   },
   "profilePage": {
     "eyebrow": "CREATOR PROFILE",
@@ -1721,7 +1734,11 @@
       "preview": "Quick preview",
       "standard": "Standard",
       "cinematic": "Cinematic"
-    }
+    },
+    "accessCredits": "Remix unlock price",
+    "accessCreditsHint": "0 keeps remixes free. A paid unlock is an in-app license, not CC-BY.",
+    "accessFree": "Free",
+    "accessCustom": "Custom"
   },
   "region": {
     "label": "Region",
@@ -1805,7 +1822,10 @@
     "viewSourceWork": "View the original",
     "adjustParams": "Settings",
     "adjustParamsHint": "Adjust, then head back to the preview to submit.",
-    "paramsDone": "Done"
+    "paramsDone": "Done",
+    "needsUnlock": "Unlock this work to open the studio",
+    "needsUnlockHint": "The author set a credit price. Pay once, remix anytime.",
+    "unlockCta": "Unlock with credits"
   },
   "search": {
     "recentSearches": "Recent searches",
@@ -2039,7 +2059,24 @@
     "deleteConfirmTitle": "Delete this skill?",
     "deleteConfirmBody": "This cannot be undone; creations that already applied it are unaffected.",
     "deleteDone": "Skill deleted.",
-    "deleteFailed": "Delete failed, please try again."
+    "deleteFailed": "Delete failed, please try again.",
+    "priceFree": "Free",
+    "priceCredits": "{credits} credits",
+    "filterAccess": "Price",
+    "accessAll": "All",
+    "accessFree": "Free",
+    "accessPaid": "Paid",
+    "priceLabel": "Unlock price",
+    "priceHint": "0 is free. Suggested tiers: 0 / 10 / 50 / 200.",
+    "priceCustom": "Custom",
+    "unlock": "Unlock with credits",
+    "unlockConfirm": "Pay {credits} credits to use “{title}” forever.",
+    "unlocking": "Unlocking",
+    "unlockFailed": "Unlock failed. Check your balance and try again.",
+    "unlockDone": "Unlocked",
+    "applyLocked": "Unlock this skill before applying it",
+    "pricingSaved": "Price updated",
+    "paramsHidden": "Full parameters appear after unlock"
   },
   "states": {
     "loading": "Loading",
@@ -2106,7 +2143,13 @@
     "resolution": "{width}×{height}",
     "fps": "{fps} fps",
     "publishedOn": "Published {date}",
-    "notFound": "This work does not exist or was removed"
+    "notFound": "This work does not exist or was removed",
+    "paidBadge": "{credits} credits",
+    "unlockThis": "Unlock with credits",
+    "unlockConfirm": "Pay {credits} credits once to remix this work as often as you like.",
+    "unlocking": "Unlocking",
+    "unlockFailed": "Unlock failed. Check your balance and try again.",
+    "unlockDone": "Unlocked. You can start remixing."
   },
   "workPage": {
     "description": "Description",
@@ -2164,6 +2207,9 @@
     "similarEmpty": "No similar works yet",
     "tags": "Tags",
     "stats": "Stats",
-    "openInLineage": "Open in the lineage"
+    "openInLineage": "Open in the lineage",
+    "unlockCta": "Unlock and remix",
+    "needsUnlock": "This work allows remixes after a credit unlock.",
+    "goBilling": "Buy credits"
   }
 }

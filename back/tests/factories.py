@@ -21,12 +21,14 @@ def make_work(
     title: str = "深海霓虹",
     visibility: str = Visibility.PUBLIC_REMIXABLE,
     lifecycle_status: str = "active",
+    access_credits: int = 0,
 ) -> tuple[Work, WorkVersion]:
     work = Work(
         owner_user_id=owner.id,
         visibility=visibility,
         lifecycle_status=lifecycle_status,
         published_at=utcnow(),
+        access_credits=access_credits,
     )
     session.add(work)
     session.flush()

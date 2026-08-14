@@ -28,17 +28,18 @@ export async function generateMetadata() {
 export default async function SkillLibraryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; access?: string }>;
 }) {
-  const { category } = await searchParams;
+  const { category, access } = await searchParams;
   const t = await getTranslations('skillLibrary');
   const locale = (await getLocale()) as Locale;
   const activeCategory = (CATEGORIES as readonly string[]).includes(category ?? '')
     ? (category as CreationSkillCategory)
     : undefined;
+  const activeAccess = access === 'free' || access === 'paid' ? access : undefined;
 
   const page = await serverFetchOrNull<Page<CreationSkillSummary>>('/v1/skills/public', {
-    query: { category: activeCategory, limit: 48 },
+    query: { category: activeCategory, access: activeAccess, limit: 48 },
     revalidate: 60,
   });
   const skills = page?.items ?? [];
@@ -51,17 +52,45 @@ export default async function SkillLibraryPage({
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">{t('plazaSubtitle')}</p>
       </div>
 
-      <nav aria-label={t('filterCategory')} className="flex flex-wrap gap-2">
-        <CategoryLink label={t('categoryAll')} active={!activeCategory} category={undefined} />
-        {CATEGORIES.map((value) => (
+      <div className="flex flex-col gap-2">
+        <nav aria-label={t('filterCategory')} className="flex flex-wrap gap-2">
           <CategoryLink
-            key={value}
-            label={t(CATEGORY_LABEL_KEY[value])}
-            active={activeCategory === value}
-            category={value}
+            label={t('categoryAll')}
+            active={!activeCategory}
+            category={undefined}
+            access={activeAccess}
           />
-        ))}
-      </nav>
+          {CATEGORIES.map((value) => (
+            <CategoryLink
+              key={value}
+              label={t(CATEGORY_LABEL_KEY[value])}
+              active={activeCategory === value}
+              category={value}
+              access={activeAccess}
+            />
+          ))}
+        </nav>
+        <nav aria-label={t('filterAccess')} className="flex flex-wrap gap-2">
+          <AccessLink
+            label={t('accessAll')}
+            active={!activeAccess}
+            category={activeCategory}
+            access={undefined}
+          />
+          <AccessLink
+            label={t('accessFree')}
+            active={activeAccess === 'free'}
+            category={activeCategory}
+            access="free"
+          />
+          <AccessLink
+            label={t('accessPaid')}
+            active={activeAccess === 'paid'}
+            category={activeCategory}
+            access="paid"
+          />
+        </nav>
+      </div>
 
       <section>
         <SectionHeading title={t('plazaTitle')} />
@@ -79,18 +108,54 @@ export default async function SkillLibraryPage({
   );
 }
 
+function skillsHref(category?: CreationSkillCategory, access?: 'free' | 'paid') {
+  const query = new URLSearchParams();
+  if (category) query.set('category', category);
+  if (access) query.set('access', access);
+  const suffix = query.toString();
+  return suffix ? `/skills?${suffix}` : '/skills';
+}
+
 function CategoryLink({
   label,
   active,
   category,
+  access,
 }: {
   label: string;
   active: boolean;
   category: CreationSkillCategory | undefined;
+  access?: 'free' | 'paid';
 }) {
   return (
     <Link
-      href={category ? `/skills?category=${category}` : '/skills'}
+      href={skillsHref(category, access)}
+      className={cn(
+        'rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors',
+        active
+          ? 'border-primary bg-primary/12 text-primary'
+          : 'border-border text-muted hover:border-border-strong hover:text-text',
+      )}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function AccessLink({
+  label,
+  active,
+  category,
+  access,
+}: {
+  label: string;
+  active: boolean;
+  category: CreationSkillCategory | undefined;
+  access?: 'free' | 'paid';
+}) {
+  return (
+    <Link
+      href={skillsHref(category, access)}
       className={cn(
         'rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors',
         active

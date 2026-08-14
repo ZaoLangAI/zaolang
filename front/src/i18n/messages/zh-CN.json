@@ -1120,7 +1120,11 @@
     "redeemSubmit": "兑换",
     "redeemSucceeded": "兑换成功，已到账 {count} 积分",
     "redeemFailed": "兑换失败，请检查兑换码后重试。",
-    "backToProfile": "返回个人中心"
+    "backToProfile": "返回个人中心",
+    "typeAccessIn": "授权收入",
+    "typeAccessOut": "积分解锁",
+    "creatorEarnings": "创作收益",
+    "creatorEarningsHint": "授权解锁与回流分成的合计"
   },
   "brand": {
     "name": "造浪",
@@ -1209,7 +1213,8 @@
     "deleteDraftConfirmTitle": "删除这个草稿？",
     "deleteDraftConfirmBody": "草稿及其生成结果会一并删除，此操作不可恢复。",
     "deleteDraftDone": "草稿已删除。",
-    "deleteDraftFailed": "删除失败，请重试。"
+    "deleteDraftFailed": "删除失败，请重试。",
+    "accessCredits": "二创解锁价格"
   },
   "commandPalette": {
     "open": "打开命令面板",
@@ -1330,7 +1335,11 @@
     "featuredCarousel": "热门推荐轮播",
     "previousFeatured": "上一条热门内容",
     "nextFeatured": "下一条热门内容",
-    "goToSlide": "跳转到第 {index} 条"
+    "goToSlide": "跳转到第 {index} 条",
+    "accessAll": "全部价格",
+    "accessFree": "免费二创",
+    "accessPaid": "付费二创",
+    "filterAccess": "按价格筛选"
   },
   "editor": {
     "title": "短剧剪辑",
@@ -1538,7 +1547,8 @@
     "cc0": "CC0",
     "attributionRequired": "需要署名",
     "remixAllowed": "允许二创",
-    "commercialAllowed": "允许商用"
+    "commercialAllowed": "允许商用",
+    "zaolangPaidRemix": "造浪付费二创授权"
   },
   "lineagePanel": {
     "title": "创作链",
@@ -1615,7 +1625,9 @@
     "opAudio": "语音生成",
     "opShortform": "短视频",
     "opRemix": "二创",
-    "opDramaExport": "短剧导出"
+    "opDramaExport": "短剧导出",
+    "accessSoldWork": "有人解锁了你的作品，你获得 {amount} 积分。",
+    "accessSoldSkill": "有人解锁了你的技能「{title}」，你获得 {amount} 积分。"
   },
   "notificationsPage": {
     "title": "通知中心",
@@ -1635,7 +1647,8 @@
     "allRead": "已全部标记为已读",
     "open": "查看",
     "typeLike": "点赞提醒",
-    "backToProfile": "返回个人中心"
+    "backToProfile": "返回个人中心",
+    "typeAccessSold": "授权收入"
   },
   "profilePage": {
     "eyebrow": "CREATOR PROFILE",
@@ -1721,7 +1734,11 @@
       "preview": "快速预览",
       "standard": "标准",
       "cinematic": "电影级"
-    }
+    },
+    "accessCredits": "二创解锁价格",
+    "accessCreditsHint": "0 为免费开放二创。付费授权仅限站内二创，不再标 CC-BY。",
+    "accessFree": "免费",
+    "accessCustom": "自定义"
   },
   "region": {
     "label": "地区",
@@ -1805,7 +1822,10 @@
     "viewSourceWork": "查看原作",
     "adjustParams": "参数",
     "adjustParamsHint": "改完回到预览即可提交。",
-    "paramsDone": "完成"
+    "paramsDone": "完成",
+    "needsUnlock": "需要先解锁才能进入工作室",
+    "needsUnlockHint": "作者为二创设置了积分价格。解锁一次后可无限二创。",
+    "unlockCta": "积分解锁"
   },
   "search": {
     "recentSearches": "最近搜索",
@@ -2039,7 +2059,24 @@
     "deleteConfirmTitle": "删除这个技能？",
     "deleteConfirmBody": "删除后无法恢复，已经套用过的创作不受影响。",
     "deleteDone": "技能已删除。",
-    "deleteFailed": "删除失败，请重试。"
+    "deleteFailed": "删除失败，请重试。",
+    "priceFree": "免费",
+    "priceCredits": "{credits} 积分",
+    "filterAccess": "价格",
+    "accessAll": "全部",
+    "accessFree": "免费",
+    "accessPaid": "付费",
+    "priceLabel": "解锁价格",
+    "priceHint": "0 为免费。建议 0 / 10 / 50 / 200。",
+    "priceCustom": "自定义",
+    "unlock": "积分解锁",
+    "unlockConfirm": "用 {credits} 积分解锁「{title}」后可永久套用。",
+    "unlocking": "正在解锁",
+    "unlockFailed": "解锁失败，请检查余额后重试。",
+    "unlockDone": "已解锁",
+    "applyLocked": "请先解锁再套用",
+    "pricingSaved": "标价已更新",
+    "paramsHidden": "解锁后可见完整参数"
   },
   "states": {
     "loading": "加载中",
@@ -2106,7 +2143,13 @@
     "resolution": "分辨率 {width}×{height}",
     "fps": "帧率 {fps}fps",
     "publishedOn": "{date} 发布",
-    "notFound": "作品不存在或已被移除"
+    "notFound": "作品不存在或已被移除",
+    "paidBadge": "{credits} 积分",
+    "unlockThis": "积分解锁",
+    "unlockConfirm": "用 {credits} 积分解锁后即可无限二创。",
+    "unlocking": "正在解锁",
+    "unlockFailed": "解锁失败，请检查余额后重试。",
+    "unlockDone": "已解锁，可以开始二创。"
   },
   "workPage": {
     "description": "描述",
@@ -2164,6 +2207,9 @@
     "similarEmpty": "还没有找到相似作品",
     "tags": "标签",
     "stats": "数据",
-    "openInLineage": "在创作链中查看"
+    "openInLineage": "在创作链中查看",
+    "unlockCta": "积分解锁并二创",
+    "needsUnlock": "该作品允许二创，需先用积分解锁。",
+    "goBilling": "去充值"
   }
 }

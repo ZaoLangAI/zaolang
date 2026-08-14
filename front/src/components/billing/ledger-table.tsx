@@ -16,6 +16,8 @@ const TYPE_KEYS = {
   adjustment: 'typeAdjustment',
   royalty_in: 'typeRoyaltyIn',
   royalty_out: 'typeRoyaltyOut',
+  access_in: 'typeAccessIn',
+  access_out: 'typeAccessOut',
 } as const;
 
 /**

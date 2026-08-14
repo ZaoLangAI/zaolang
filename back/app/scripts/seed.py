@@ -34,6 +34,7 @@ from app.domain.lineage import service as lineage_service
 from app.domain.search import service as search_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import (
+    AccessGrant,
     AgentNode,
     AgentRun,
     AgentSkill,
@@ -43,6 +44,7 @@ from app.models import (
     Bookmark,
     Collection,
     CollectionItem,
+    CreationSkill,
     ContentFingerprint,
     CreditAccount,
     CreditLedgerEntry,
@@ -91,6 +93,9 @@ from app.models import (
 from app.models.base import utcnow
 from app.models.enums import (
     AssetRole,
+    CreationSkillCategory,
+    CreationSkillStatus,
+    CreationSkillVisibility,
     DataRequestStatus,
     DataRequestType,
     DistributionChannel,
@@ -648,6 +653,8 @@ RESET_TABLES = (
     Work,
     LicenseSnapshot,
     Asset,
+    AccessGrant,
+    CreationSkill,
     CreditLedgerEntry,
     CreditAccount,
     ProviderStat,
@@ -680,6 +687,7 @@ def run(*, reset: bool = False) -> dict[str, int]:
         _seed_tags(session)
         _seed_packages(session)
         chain = _seed_creative_chain(session, users)
+        _seed_marketplace_samples(session, users)
         _seed_inspiration_feed(session, users)
         _seed_community(session, users, chain)
         _seed_learning_posts(session, users)
@@ -997,6 +1005,47 @@ def _seed_creative_chain(session: Session, users: dict[str, User]) -> list[Work]
     return [root, second, removed, deep]
 
 
+def _seed_marketplace_samples(session: Session, users: dict[str, User]) -> None:
+    """A paid remixable work and a paid published skill for marketplace tests."""
+    existing = session.scalar(select(Work).where(Work.access_credits > 0).limit(1))
+    if existing is None:
+        _publish(
+            session,
+            owner=users["linhai"],
+            title="潮汐之上 · 付费样例",
+            description="用积分解锁后即可二创的样例作品。",
+            visibility=Visibility.PUBLIC_REMIXABLE,
+            tags=["cinematic", "ocean"],
+            params={
+                "prompt": "paid remix sample, aerial ocean, film grain",
+                "seed": 20260814,
+                "style_tags": ["cinematic"],
+                "aspect_ratio": "21:9",
+            },
+            operation=Operation.TEXT_TO_IMAGE,
+            tier=QualityTier.STANDARD,
+            access_credits=10,
+        )
+
+    paid_skill = session.scalar(
+        select(CreationSkill).where(CreationSkill.access_credits > 0).limit(1)
+    )
+    if paid_skill is None:
+        session.add(
+            CreationSkill(
+                owner_user_id=users["linhai"].id,
+                title="黄金时刻镜头",
+                description="付费解锁后可套用的镜头技能样例。",
+                category=CreationSkillCategory.LENS,
+                params_json={"prompt_suffix": "golden hour, anamorphic flare"},
+                visibility=CreationSkillVisibility.PUBLIC,
+                status=CreationSkillStatus.PUBLISHED,
+                access_credits=8,
+            )
+        )
+        session.flush()
+
+
 def _seed_inspiration_feed(session: Session, users: dict[str, User]) -> list[Work]:
     """Fills the discover feed up to `INSPIRATION_TOTAL_WORKS`.
 
@@ -1091,6 +1140,7 @@ def _publish(
     operation: str,
     tier: str,
     parent: Work | None = None,
+    access_credits: int = 0,
 ) -> Work:
     """Creates a published work directly.
 
@@ -1113,6 +1163,7 @@ def _publish(
         view_count=120 + len(title) * 7,
         like_count=8 + len(title),
         remix_count=0,
+        access_credits=access_credits,
     )
     session.add(work)
     session.flush()

@@ -28,8 +28,8 @@ description: 造浪（zaolang）仓库的总索引与路由表：说明 front/ba
 | 加表、改列、写迁移 | `zaolang-data-model` |
 | 加接口、改错误码、幂等、限流、鉴权 | `zaolang-api-contract` |
 | 档位定价、供应商开关与限额、Feature Flag、智能体模型绑定 | `zaolang-platform-config` |
-| 可见性、二创授权、许可快照、创作链边与墓碑 | `zaolang-domain-licensing-lineage` |
-| 积分预扣与结算、回流分成、对账、支付 webhook、兑换码 | `zaolang-credits-billing` |
+| 可见性、二创授权、许可快照、创作链边与墓碑、积分解锁 Grant | `zaolang-domain-licensing-lineage` |
+| 积分预扣与结算、回流分成、市场强制转账、对账、支付 webhook、兑换码 | `zaolang-credits-billing` |
 | 任务提交、状态机、SSE、Celery 队列、取消与重试 | `zaolang-generation-jobs` |
 | Safety/Planner/Quality/Copy/Intent Router Agent、供应商硬过滤与 LLM 选型、LLM 网关与响应规范化 | `zaolang-agent-gateway` |
 | 上传预签名、私密对象下载、pHash 指纹、AI 溯源清单 | `zaolang-media-assets` |

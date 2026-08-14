@@ -17,6 +17,7 @@ from app.api.schemas.works import (
     StylePresetCreateRequest,
     StylePresetResponse,
 )
+from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound
 from app.domain.notifications import push as notifications
 from app.models import (
@@ -149,8 +150,11 @@ def create_preset(
         if version is None:
             raise NotFound("来源版本不存在。")
         work = session.get(Work, version.work_id)
-        if work is not None and work.owner_user_id != user.id and not version.reusable_params_json:
-            raise Forbidden("该作品未开放参数复用。")
+        if work is not None and work.owner_user_id != user.id:
+            if not version.reusable_params_json:
+                raise Forbidden("该作品未开放参数复用。")
+            if not access_service.viewer_unlocked_work(session, work, user.id):
+                raise Forbidden("该作品未开放参数复用。")
 
     preset = StylePreset(
         owner_user_id=user.id,

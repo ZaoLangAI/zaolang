@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
@@ -52,6 +53,7 @@ export function ManageSkillDialog({
   const [title, setTitle] = useState(skill.title);
   const [description, setDescription] = useState(skill.description);
   const [category, setCategory] = useState<CreationSkillCategory>(skill.category);
+  const [accessCredits, setAccessCredits] = useState(skill.access_credits);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -61,14 +63,25 @@ export function ManageSkillDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.patch(`/v1/skills/${skill.id}`, {
-        title: title.trim(),
-        description: description.trim(),
-        category,
-        params: detail.data.params ?? {},
-        cover_asset_id: detail.data.cover_asset_id,
-      });
-      notify(t('saveChanges'), 'success');
+      const contentChanged =
+        title.trim() !== skill.title ||
+        description.trim() !== skill.description ||
+        category !== skill.category;
+      if (contentChanged) {
+        await api.patch(`/v1/skills/${skill.id}`, {
+          title: title.trim(),
+          description: description.trim(),
+          category,
+          params: detail.data.params ?? {},
+          cover_asset_id: detail.data.cover_asset_id,
+        });
+      }
+      if (accessCredits !== skill.access_credits) {
+        await api.patch(`/v1/skills/${skill.id}/pricing`, { access_credits: accessCredits });
+        notify(t('pricingSaved'), 'success');
+      } else if (contentChanged) {
+        notify(t('saveChanges'), 'success');
+      }
       onChanged();
     } catch {
       setError(t('saveFailed'));
@@ -150,6 +163,12 @@ export function ManageSkillDialog({
           value={category}
           onChange={(event) => setCategory(event.target.value as CreationSkillCategory)}
           options={CATEGORIES.map((value) => ({ value, label: t(CATEGORY_LABEL_KEY[value]) }))}
+        />
+        <AccessPriceField
+          value={accessCredits}
+          onChange={setAccessCredits}
+          label={t('priceLabel')}
+          hint={t('priceHint')}
         />
 
         <div className="flex items-center justify-between border-t border-border pt-4">

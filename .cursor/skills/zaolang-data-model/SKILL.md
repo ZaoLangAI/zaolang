@@ -24,7 +24,7 @@ disable-model-invocation: true
 | `back/app/models/platform.py` | `ModerationResult` / `ReportCase` / `Notification` / `PlatformConfig` / `AuditLog` / `IdempotencyRecord` / `Announcement` / `DataRequest` / `BackupRecord` / `ReconciliationReport` |
 | `back/app/models/search.py` | `WorkEmbedding`（pgvector `Vector` 列） |
 | `back/app/models/agent_skills.py` / `async_tasks.py` | `AgentNode` / `AgentProfile` / `AgentSkill` 与异步供应商检查点 `AsyncProviderTask` |
-| `back/app/models/characters.py` / `learning.py` / `skill_library.py` / `system_log.py` / `editor.py` | 角色资产（`Series.kind`：`cast` 名册 / `drama` 制作项目）、学习内容、技能市场、聚合系统日志、短剧剪辑（episode/cut/revision/lease/export） |
+| `back/app/models/characters.py` / `learning.py` / `skill_library.py` / `system_log.py` / `editor.py` / `access.py` | 角色资产（`Series.kind`：`cast` 名册 / `drama` 制作项目）、学习内容、技能市场、聚合系统日志、短剧剪辑（episode/cut/revision/lease/export）、积分解锁 `AccessGrant` |
 | `back/alembic/versions/` | 从基线持续追加的线性迁移链；以 Alembic 当前 head 为准，不依赖文档里的迁移数量 |
 
 ## 不可破坏的不变量

@@ -4,6 +4,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
+import { UnlockDialog } from '@/components/marketplace/unlock-dialog';
 import { AddToCollectionDialog } from '@/components/work/add-to-collection-dialog';
 import { AppealDialog } from '@/components/work/appeal-dialog';
 import { Avatar } from '@/components/work/avatar';
@@ -73,6 +74,7 @@ export function WorkInfoPanel({
   const [appealStatus, setAppealStatus] = useState(work.appeal?.status ?? null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [purgeOpen, setPurgeOpen] = useState(false);
+  const [unlockOpen, setUnlockOpen] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
 
   const isOwner = user !== null && user.id === work.author.user_id;
@@ -121,7 +123,13 @@ export function WorkInfoPanel({
   const openAddToCollection = () =>
     requireAuth({ label: tPage('addToCollection'), run: () => setCollectionOpen(true) });
 
+  const needsUnlock = work.remix_block_reason === 'needs_unlock';
+
   const startRemix = () => {
+    if (needsUnlock) {
+      requireAuth({ label: t('unlockThis'), run: () => setUnlockOpen(true) });
+      return;
+    }
     if (!work.can_remix) {
       notify(tPage('remixBlocked'), 'error');
       return;
@@ -200,11 +208,16 @@ export function WorkInfoPanel({
         <Badge tone={isOriginal ? 'neutral' : 'amber'}>
           {isOriginal ? t('original') : t('remix')}
         </Badge>
-        {work.license ? (
-          <Badge tone="amber" icon={<IconSparkle className="size-3.5" />}>
-            {work.license.attribution_text || work.license.license_type}
-          </Badge>
-        ) : null}
+        <span className="flex flex-wrap items-center justify-end gap-1.5">
+          {work.access_credits > 0 ? (
+            <Badge tone="primary">{t('paidBadge', { credits: work.access_credits })}</Badge>
+          ) : null}
+          {work.license ? (
+            <Badge tone="amber" icon={<IconSparkle className="size-3.5" />}>
+              {work.license.attribution_text || work.license.license_type}
+            </Badge>
+          ) : null}
+        </span>
       </div>
 
       <div>
@@ -266,9 +279,13 @@ export function WorkInfoPanel({
           className="flex-1"
           icon={<IconRemix className="size-5" />}
           onClick={startRemix}
-          disabled={!work.can_remix}
+          disabled={!work.can_remix && !needsUnlock}
         >
-          {work.can_remix ? t('remixThis') : t('notRemixable')}
+          {needsUnlock
+            ? tPage('unlockCta')
+            : work.can_remix
+              ? t('remixThis')
+              : t('notRemixable')}
         </Button>
         <Button
           size="lg"
@@ -332,6 +349,15 @@ export function WorkInfoPanel({
         </div>
       )}
 
+      <UnlockDialog
+        open={unlockOpen}
+        onClose={() => setUnlockOpen(false)}
+        path={`/v1/works/${work.id}/unlock`}
+        credits={work.access_credits}
+        title={t('unlockThis')}
+        confirm={t('unlockConfirm', { credits: work.access_credits })}
+        onUnlocked={() => router.push(`/remix/${work.id}`)}
+      />
       <ReportDialog workId={work.id} open={reportOpen} onClose={() => setReportOpen(false)} />
       <AppealDialog
         workId={work.id}

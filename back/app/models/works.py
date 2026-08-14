@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -69,12 +70,16 @@ class Work(Base, TimestampMixin):
     like_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     comment_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     remix_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # Integer credits to unlock remix. 0 = free. Only meaningful when
+    # visibility is `public_remixable`; viewing is never paywalled.
+    access_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     versions: Mapped[list[WorkVersion]] = relationship(
         back_populates="work", foreign_keys="WorkVersion.work_id"
     )
 
     __table_args__ = (
+        CheckConstraint("access_credits >= 0", name="access_credits_non_negative"),
         Index("ix_works_owner_user_id", "owner_user_id"),
         Index("ix_works_visibility_lifecycle_status", "visibility", "lifecycle_status"),
         Index("ix_works_published_at", "published_at"),
@@ -145,6 +150,11 @@ class LicenseSnapshot(Base):
         ForeignKey("work_versions.id", ondelete="RESTRICT"), nullable=False
     )
     captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Price and grant at the moment this remix was authorised. Historical
+    # audit only — later price changes never rewrite this. No FK: the grant
+    # row may outlive or predate the snapshot independently.
+    access_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    access_grant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (Index("ix_license_snapshots_source", "source_work_version_id"),)
 

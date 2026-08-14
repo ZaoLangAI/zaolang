@@ -164,6 +164,8 @@ public struct WorkSummary: Codable, Sendable, Equatable, Identifiable {
     public let stats: WorkStats
     public let tags: [String]
     public let remixable: Bool
+    public let accessCredits: Int
+    public let viewerUnlocked: Bool
     public let publishedAt: Date?
 
     private enum CodingKeys: String, CodingKey {
@@ -174,6 +176,8 @@ public struct WorkSummary: Codable, Sendable, Equatable, Identifiable {
         case coverHeight = "cover_height"
         case mediaType = "media_type"
         case author, stats, tags, remixable
+        case accessCredits = "access_credits"
+        case viewerUnlocked = "viewer_unlocked"
         case publishedAt = "published_at"
     }
 
@@ -191,6 +195,8 @@ public struct WorkSummary: Codable, Sendable, Equatable, Identifiable {
         stats = try c.decodeIfPresent(WorkStats.self, forKey: .stats) ?? .zero
         tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
         remixable = try c.decodeIfPresent(Bool.self, forKey: .remixable) ?? false
+        accessCredits = try c.decodeIfPresent(Int.self, forKey: .accessCredits) ?? 0
+        viewerUnlocked = try c.decodeIfPresent(Bool.self, forKey: .viewerUnlocked) ?? (accessCredits == 0)
         publishedAt = try c.decodeIfPresent(Date.self, forKey: .publishedAt)
     }
 
@@ -217,6 +223,8 @@ public struct WorkDetail: Codable, Sendable, Equatable, Identifiable {
     public let stats: WorkStats
     public let tags: [String]
     public let remixable: Bool
+    public let accessCredits: Int
+    public let viewerUnlocked: Bool
     public let publishedAt: Date?
     public let description: String?
     public let currentVersion: WorkVersionSummary?
@@ -237,6 +245,8 @@ public struct WorkDetail: Codable, Sendable, Equatable, Identifiable {
         case coverHeight = "cover_height"
         case mediaType = "media_type"
         case author, stats, tags, remixable
+        case accessCredits = "access_credits"
+        case viewerUnlocked = "viewer_unlocked"
         case publishedAt = "published_at"
         case description
         case currentVersion = "current_version"
@@ -264,6 +274,8 @@ public struct WorkDetail: Codable, Sendable, Equatable, Identifiable {
         stats = try c.decodeIfPresent(WorkStats.self, forKey: .stats) ?? .zero
         tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
         remixable = try c.decodeIfPresent(Bool.self, forKey: .remixable) ?? false
+        accessCredits = try c.decodeIfPresent(Int.self, forKey: .accessCredits) ?? 0
+        viewerUnlocked = try c.decodeIfPresent(Bool.self, forKey: .viewerUnlocked) ?? (accessCredits == 0)
         publishedAt = try c.decodeIfPresent(Date.self, forKey: .publishedAt)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         currentVersion = try c.decodeIfPresent(WorkVersionSummary.self, forKey: .currentVersion)

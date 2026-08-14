@@ -178,6 +178,8 @@ class CreditFlowDailyPoint(ApiModel):
     refunded: int = 0
     royalty_out: int = 0
     royalty_in: int = 0
+    access_out: int = 0
+    access_in: int = 0
     adjustment: int = 0
     # Sum of every ledger entry's signed amount that day — a sanity total,
     # not a KPI on its own (reserve/release net to zero over time).
@@ -506,6 +508,7 @@ class CreationSkillAdminView(ApiModel):
     visibility: CreationSkillVisibility
     status: CreationSkillStatus
     usage_count: int
+    access_credits: int = 0
     reject_reason: str | None = None
     created_at: dt.datetime
 

@@ -265,7 +265,9 @@ class LedgerEntryType(StrEnum):
 
     `RESERVE` is negative available / positive reserved; `CAPTURE` settles it;
     `RELEASE` returns it. `ROYALTY_OUT` / `ROYALTY_IN` move credits from a
-    remixer to ancestor authors.
+    remixer to ancestor authors (best-effort). `ACCESS_OUT` / `ACCESS_IN` are
+    the mandatory marketplace transfer when someone unlocks a paid work or
+    skill — they must not be reused for royalties.
     """
 
     GRANT = "grant"
@@ -277,6 +279,8 @@ class LedgerEntryType(StrEnum):
     ADJUSTMENT = "adjustment"
     ROYALTY_OUT = "royalty_out"
     ROYALTY_IN = "royalty_in"
+    ACCESS_OUT = "access_out"
+    ACCESS_IN = "access_in"
 
 
 class RedemptionCodeKind(StrEnum):
@@ -318,6 +322,9 @@ class LicenseType(StrEnum):
     CC_BY_SA_4_0 = "cc_by_sa_4.0"
     CC_BY_NC_4_0 = "cc_by_nc_4.0"
     ALL_RIGHTS_RESERVED = "all_rights_reserved"
+    # On-platform remix right purchased with credits. Not a Creative Commons
+    # licence — charging for remix while labelling CC-BY would be contradictory.
+    ZAOLANG_PAID_REMIX = "zaolang_paid_remix"
 
 
 class NotificationType(StrEnum):
@@ -328,6 +335,7 @@ class NotificationType(StrEnum):
     WORK_LIKED = "work_liked"
     WORK_REMIXED = "work_remixed"
     ROYALTY_RECEIVED = "royalty_received"
+    ACCESS_SOLD = "access_sold"
     NEW_FOLLOWER = "new_follower"
     MODERATION = "moderation"
     SYSTEM = "system"
@@ -634,6 +642,14 @@ class CreationSkillStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     PUBLISHED = "published"
     REJECTED = "rejected"
+
+
+class AccessSubjectType(StrEnum):
+    """What an `AccessGrant` unlocks. Price lives on the subject; the grant is
+    the buyer's one-time receipt."""
+
+    WORK = "work"
+    SKILL = "skill"
 
 
 class Region(StrEnum):

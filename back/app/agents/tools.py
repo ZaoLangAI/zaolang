@@ -75,6 +75,7 @@ def lookup_source_parameters(session: Session, work_version_id: str) -> dict[str
         work is None
         or work.lifecycle_status != LifecycleStatus.ACTIVE
         or work.visibility != Visibility.PUBLIC_REMIXABLE
+        or (work.access_credits or 0) > 0
     ):
         return {"found": False}
 

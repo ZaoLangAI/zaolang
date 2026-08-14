@@ -78,6 +78,7 @@ public enum LicenseType: String, Codable, Sendable, CaseIterable {
     case ccBySa40 = "cc_by_sa_4.0"
     case ccByNc40 = "cc_by_nc_4.0"
     case allRightsReserved = "all_rights_reserved"
+    case zaolangPaidRemix = "zaolang_paid_remix"
 }
 
 public enum NotificationType: String, Codable, Sendable, CaseIterable {
@@ -88,6 +89,7 @@ public enum NotificationType: String, Codable, Sendable, CaseIterable {
     case workLiked = "work_liked"
     case workRemixed = "work_remixed"
     case royaltyReceived = "royalty_received"
+    case accessSold = "access_sold"
     case newFollower = "new_follower"
     case moderation
     case system
@@ -103,6 +105,8 @@ public enum LedgerEntryType: String, Codable, Sendable, CaseIterable {
     case adjustment
     case royaltyOut = "royalty_out"
     case royaltyIn = "royalty_in"
+    case accessOut = "access_out"
+    case accessIn = "access_in"
 }
 
 public enum Region: String, Codable, Sendable, CaseIterable {

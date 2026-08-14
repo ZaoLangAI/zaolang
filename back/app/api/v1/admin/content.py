@@ -192,6 +192,7 @@ def moderation_detail(
                 visibility=skill.visibility,
                 status=skill.status,
                 usage_count=skill.usage_count,
+                access_credits=skill.access_credits,
                 reject_reason=skill.reject_reason,
                 created_at=skill.created_at,
             )

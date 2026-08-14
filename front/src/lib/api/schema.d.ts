@@ -337,6 +337,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/works/{work_id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock Work */
+        post: operations["unlock_work_v1_works__work_id__unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/works/{work_id}/visibility": {
         parameters: {
             query?: never;
@@ -567,6 +584,23 @@ export interface paths {
         patch: operations["update_skill_v1_skills__skill_id__patch"];
         trace?: never;
     };
+    "/v1/skills/{skill_id}/pricing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Skill Pricing */
+        patch: operations["update_skill_pricing_v1_skills__skill_id__pricing_patch"];
+        trace?: never;
+    };
     "/v1/skills/{skill_id}/publish": {
         parameters: {
             query?: never;
@@ -595,6 +629,23 @@ export interface paths {
         put?: never;
         /** Withdraw Skill */
         post: operations["withdraw_skill_v1_skills__skill_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/skills/{skill_id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unlock Skill */
+        post: operations["unlock_skill_v1_skills__skill_id__unlock_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4113,6 +4164,46 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccessGrantView */
+        AccessGrantView: {
+            /** Id */
+            id: string;
+            /** Subject Type */
+            subject_type: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Price Credits */
+            price_credits: number;
+            /** Platform Fee Credits */
+            platform_fee_credits: number;
+            /** Seller Net Credits */
+            seller_net_credits: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AccessUnlockResponse */
+        AccessUnlockResponse: {
+            /** Subject Type */
+            subject_type: string;
+            /** Subject Id */
+            subject_id: string;
+            /** Access Credits */
+            access_credits: number;
+            /**
+             * Viewer Unlocked
+             * @default true
+             */
+            viewer_unlocked: boolean;
+            /**
+             * Already Held
+             * @default false
+             */
+            already_held: boolean;
+            grant?: components["schemas"]["AccessGrantView"] | null;
+        };
         /** AdjustCreditsRequest */
         AdjustCreditsRequest: {
             /** Reason */
@@ -5253,6 +5344,11 @@ export interface components {
             status: components["schemas"]["CreationSkillStatus"];
             /** Usage Count */
             usage_count: number;
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
             /** Reject Reason */
             reject_reason?: string | null;
             /**
@@ -5285,6 +5381,11 @@ export interface components {
             cover_asset_id?: string | null;
             /** Applicable Operations */
             applicable_operations?: components["schemas"]["Operation"][];
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
         };
         /** CreationSkillDetail */
         CreationSkillDetail: {
@@ -5306,6 +5407,16 @@ export interface components {
             /** Usage Count */
             usage_count: number;
             /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
+            /**
+             * Viewer Unlocked
+             * @default true
+             */
+            viewer_unlocked: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -5318,6 +5429,11 @@ export interface components {
             };
             /** Reject Reason */
             reject_reason?: string | null;
+        };
+        /** CreationSkillPricingRequest */
+        CreationSkillPricingRequest: {
+            /** Access Credits */
+            access_credits: number;
         };
         /**
          * CreationSkillStatus
@@ -5347,6 +5463,16 @@ export interface components {
             /** Usage Count */
             usage_count: number;
             /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
+            /**
+             * Viewer Unlocked
+             * @default true
+             */
+            viewer_unlocked: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -5371,6 +5497,11 @@ export interface components {
             cover_asset_id?: string | null;
             /** Applicable Operations */
             applicable_operations?: components["schemas"]["Operation"][];
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
         };
         /**
          * CreationSkillVisibility
@@ -5431,6 +5562,16 @@ export interface components {
              * @default 0
              */
             royalty_in: number;
+            /**
+             * Access Out
+             * @default 0
+             */
+            access_out: number;
+            /**
+             * Access In
+             * @default 0
+             */
+            access_in: number;
             /**
              * Adjustment
              * @default 0
@@ -6504,10 +6645,12 @@ export interface components {
          *
          *     `RESERVE` is negative available / positive reserved; `CAPTURE` settles it;
          *     `RELEASE` returns it. `ROYALTY_OUT` / `ROYALTY_IN` move credits from a
-         *     remixer to ancestor authors.
+         *     remixer to ancestor authors (best-effort). `ACCESS_OUT` / `ACCESS_IN` are
+         *     the mandatory marketplace transfer when someone unlocks a paid work or
+         *     skill — they must not be reused for royalties.
          * @enum {string}
          */
-        LedgerEntryType: "grant" | "purchase" | "reserve" | "capture" | "release" | "refund" | "adjustment" | "royalty_out" | "royalty_in";
+        LedgerEntryType: "grant" | "purchase" | "reserve" | "capture" | "release" | "refund" | "adjustment" | "royalty_out" | "royalty_in" | "access_out" | "access_in";
         /** LedgerEntryView */
         LedgerEntryView: {
             /** Id */
@@ -6552,7 +6695,7 @@ export interface components {
          * LicenseType
          * @enum {string}
          */
-        LicenseType: "cc_by_4.0" | "cc_by_sa_4.0" | "cc_by_nc_4.0" | "all_rights_reserved";
+        LicenseType: "cc_by_4.0" | "cc_by_sa_4.0" | "cc_by_nc_4.0" | "all_rights_reserved" | "zaolang_paid_remix";
         /**
          * LifecycleStatus
          * @description A work is never hard-deleted while descendants must stay resolvable.
@@ -7212,7 +7355,7 @@ export interface components {
          * NotificationType
          * @enum {string}
          */
-        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "royalty_received" | "new_follower" | "moderation" | "system";
+        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "royalty_received" | "access_sold" | "new_follower" | "moderation" | "system";
         /** OkResponse */
         OkResponse: {
             /**
@@ -8136,6 +8279,11 @@ export interface components {
              * @default false
              */
             ai_disclosure_confirmed: boolean;
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
         };
         /** PublishResponse */
         PublishResponse: {
@@ -8957,6 +9105,16 @@ export interface components {
              * @default false
              */
             remixable: boolean;
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
+            /**
+             * Viewer Unlocked
+             * @default true
+             */
+            viewer_unlocked: boolean;
             /** Published At */
             published_at?: string | null;
             /**
@@ -9130,6 +9288,8 @@ export interface components {
         /** VisibilityUpdateRequest */
         VisibilityUpdateRequest: {
             visibility: components["schemas"]["Visibility"];
+            /** Access Credits */
+            access_credits?: number | null;
         };
         /** WorkAppealRequest */
         WorkAppealRequest: {
@@ -9184,6 +9344,16 @@ export interface components {
              * @default false
              */
             remixable: boolean;
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
+            /**
+             * Viewer Unlocked
+             * @default true
+             */
+            viewer_unlocked: boolean;
             /** Published At */
             published_at?: string | null;
             /** Description */
@@ -9269,6 +9439,16 @@ export interface components {
              * @default false
              */
             remixable: boolean;
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
+            /**
+             * Viewer Unlocked
+             * @default true
+             */
+            viewer_unlocked: boolean;
             /** Published At */
             published_at?: string | null;
         };
@@ -9770,6 +9950,7 @@ export interface operations {
                 q?: string | null;
                 tag?: string | null;
                 remixable?: boolean;
+                access?: "free" | "paid" | "all";
                 semantic?: boolean;
                 sort?: "recent" | "popular" | "remixed";
                 cursor?: string | null;
@@ -10087,6 +10268,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_work_v1_works__work_id__unlock_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessUnlockResponse"];
                 };
             };
             /** @description Validation Error */
@@ -10513,6 +10728,7 @@ export interface operations {
         parameters: {
             query?: {
                 category?: components["schemas"]["CreationSkillCategory"] | null;
+                access?: "free" | "paid" | "all";
                 cursor?: string | null;
                 limit?: number;
             };
@@ -10714,6 +10930,43 @@ export interface operations {
             };
         };
     };
+    update_skill_pricing_v1_skills__skill_id__pricing_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreationSkillPricingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     publish_skill_v1_skills__skill_id__publish_post: {
         parameters: {
             query?: never;
@@ -10767,6 +11020,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreationSkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_skill_v1_skills__skill_id__unlock_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessUnlockResponse"];
                 };
             };
             /** @description Validation Error */

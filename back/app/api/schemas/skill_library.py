@@ -38,6 +38,8 @@ class CreationSkillSummary(ApiModel):
     visibility: CreationSkillVisibility
     status: CreationSkillStatus
     usage_count: int
+    access_credits: int = 0
+    viewer_unlocked: bool = True
     created_at: dt.datetime
 
 
@@ -54,7 +56,12 @@ class CreationSkillCreateRequest(ApiModel):
     params: dict[str, Any] = Field(default_factory=dict)
     cover_asset_id: str | None = None
     applicable_operations: list[Operation] = Field(default_factory=list)
+    access_credits: int = Field(default=0, ge=0)
 
 
 class CreationSkillUpdateRequest(CreationSkillCreateRequest):
     pass
+
+
+class CreationSkillPricingRequest(ApiModel):
+    access_credits: int = Field(ge=0)
