@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     app_version: str = "0.0.0-dev"
     api_base_url: str = "http://localhost:8000"
     web_base_url: str = "http://localhost:3000"
-    source_repository_url: str = "https://github.com/ZaoLangAI/zaolang"
 
     database_url: str = "postgresql+psycopg://zaolang:zaolang@localhost:5433/zaolang"
     test_database_url: str = "postgresql+psycopg://zaolang:zaolang@localhost:5433/zaolang_test"

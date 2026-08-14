@@ -26,7 +26,6 @@ def healthz() -> dict[str, Any]:
         "version": settings.app_version,
         "env": settings.app_env,
         "llm_mode": settings.llm_mode,
-        "source": settings.source_repository_url,
     }
 
 

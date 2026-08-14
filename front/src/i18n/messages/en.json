@@ -1402,10 +1402,7 @@
     "backToDrama": "Back to drama"
   },
   "footer": {
-    "source": "Source code",
-    "sourceNotice": "This service is AGPL-3.0 licensed; you may obtain the complete source of this deployment.",
     "version": "Version {version}",
-    "license": "AGPL-3.0",
     "docs": "Docs",
     "learn": "Learn"
   },

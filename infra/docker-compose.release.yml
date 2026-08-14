@@ -162,7 +162,6 @@ services:
       context: ../front
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        SOURCE_REPOSITORY_URL: ${SOURCE_REPOSITORY_URL:-https://github.com/ZaoLangAI/zaolang}
         APP_VERSION: ${APP_VERSION:-0.0.0-dev}
     image: zaolang-front:local
     depends_on:

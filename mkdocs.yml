@@ -2,7 +2,7 @@ site_name: 造浪 ZaoLang
 site_description: 全球 AI 二创共享平台的架构、运维与接口文档
 repo_url: https://github.com/ZaoLangAI/zaolang
 repo_name: ZaoLangAI/zaolang
-copyright: AGPL-3.0-or-later · 源码即产品的一部分
+copyright: 内部专有 · 造浪
 
 docs_dir: docs
 site_dir: .site

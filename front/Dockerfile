@@ -17,10 +17,8 @@ COPY . .
 # API URL has to be known at build time. Server-side reads (`API_INTERNAL_URL`)
 # stay runtime configuration.
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
-ARG SOURCE_REPOSITORY_URL=https://github.com/ZaoLangAI/zaolang
 ARG APP_VERSION=0.0.0-dev
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
-    SOURCE_REPOSITORY_URL=$SOURCE_REPOSITORY_URL \
     APP_VERSION=$APP_VERSION \
     NEXT_TELEMETRY_DISABLED=1
 

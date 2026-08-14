@@ -28,7 +28,7 @@ E2E、axe 无障碍扫描是额外的本地套件（需要真实数据库与种�
 
 提交信息建议遵循 [Conventional Commits](https://www.conventionalcommits.org/)，方便人读历史，但不再驱动自动升版。
 
-构建时通过 `APP_VERSION` 注入前端页脚——AGPL 第 13 条要求网络用户能拿到对应版本的源码，页脚里的仓库链接加版本号就是这个要求的落点。`SOURCE_REPOSITORY_URL` 指向源码仓库，不是构建服务。
+构建时通过 `APP_VERSION` 注入前端页脚，方便对照本次运行的构建。页脚只展示版本号，不再提供源码仓库链接。
 
 ## 容器镜像
 

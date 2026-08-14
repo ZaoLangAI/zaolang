@@ -70,7 +70,7 @@ docs/         文档站源码与运维手册
 
 ### 许可
 
-[AGPL-3.0](LICENSE)。若你把本项目或其修改版本作为网络服务提供给他人使用，AGPL 第 13 条要求你向这些用户提供对应的完整源码。
+内部专有软件，见 [LICENSE](LICENSE)。未经授权不得复制、分发或对外提供。第三方组件（如 OpenCut）保留其原有开源声明。
 
 ---
 
@@ -111,4 +111,4 @@ Then open http://localhost:3000. See [docs/local-development.md](docs/local-deve
 
 ### License
 
-[AGPL-3.0](LICENSE). If you offer this software (or a modified version) to users over a network, section 13 requires you to provide those users with the corresponding source.
+Proprietary internal software; see [LICENSE](LICENSE). Unauthorized copying, distribution, or public provision is prohibited. Third-party components (such as OpenCut) retain their original open-source notices.

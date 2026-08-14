@@ -1402,10 +1402,7 @@
     "backToDrama": "短編ドラマに戻る"
   },
   "footer": {
-    "source": "ソースコード",
-    "sourceNotice": "本サービスは AGPL-3.0 で提供され、この実行環境の完全なソースを取得できます。",
     "version": "バージョン {version}",
-    "license": "AGPL-3.0",
     "docs": "ドキュメント",
     "learn": "学習センター"
   },

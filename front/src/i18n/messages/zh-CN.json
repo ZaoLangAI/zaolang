@@ -1402,10 +1402,7 @@
     "backToDrama": "返回短剧"
   },
   "footer": {
-    "source": "源代码",
-    "sourceNotice": "本站以 AGPL-3.0 授权，你可以获取本次运行的完整源码。",
     "version": "版本 {version}",
-    "license": "AGPL-3.0",
     "docs": "文档",
     "learn": "学习中心"
   },

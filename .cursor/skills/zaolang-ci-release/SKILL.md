@@ -1,6 +1,6 @@
 ---
 name: zaolang-ci-release
-description: 造浪的工程交付链：本地 make check 与 pre-commit 门禁、本地 Docker 镜像与一键体验编排、手改版本号、MkDocs Material 文档站与 AGPL 合规要求。Use when changing pre-commit hooks, Dockerfiles, the release compose file, version numbers, the docs site, or repository/licence baseline files.
+description: 造浪的工程交付链：本地 make check 与 pre-commit 门禁、本地 Docker 镜像与一键体验编排、手改版本号、MkDocs Material 文档站与内部专有许可基线。Use when changing pre-commit hooks, Dockerfiles, the release compose file, version numbers, the docs site, or repository/licence baseline files.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## 职责
 
-保证「能构建、能发布、能查文档」，以及 AGPL-3.0 的合规义务。仓库不使用 GitHub Actions、GHCR、release-please 或 GitHub Pages。
+保证「能构建、能发布、能查文档」。本仓库是内部专有产品。仓库不使用 GitHub Actions、GHCR、release-please 或 GitHub Pages。
 
 ## 关键路径
 
@@ -25,7 +25,7 @@ disable-model-invocation: true
 1. **唯一门禁是 `make check`。** E2E 与无障碍需要真实数据库与种子数据，是额外的本地套件，不要为了「更保险」把它们塞进 `make check`（那会让每次提交都依赖一整套种子库）。
 2. **`make check` 里 `LLM_MODE=stub` 不可放开**：测试必须确定性、不需要密钥、不产生费用。`@pytest.mark.live` 的冒烟测试永不进 `make check`。
 3. **版本号有两处**：发版时手改 `front/package.json` 的 `version`，并同步 `APP_VERSION`。不要只改一处。
-4. **AGPL 第 13 条**：C 端页脚与后台「关于」必须提供源码仓库链接与构建版本号（`SOURCE_REPOSITORY_URL` / `APP_VERSION` 注入 `front/next.config.ts` 的 `env`）。**删掉页脚链接是许可证违规**，不是 UI 优化。
+4. **内部专有，不是开源合规。** 本仓库软件许可是内部专有（根目录 `LICENSE`）。C 端页脚只展示 `APP_VERSION`，**不要**再加源码仓库外链或 AGPL 声明。第三方 NOTICE/LICENSE（如 OpenCut MIT）不得删除。
 5. **`mkdocs.yml` 是 `strict: true`**：死链与孤儿页会让构建失败。加文档要同时加进 `nav`。
 6. **`docs/openapi.json` 是导出物**：`make docs` / `make docs-build` 会从 `back/openapi.json` 拷贝，不要手改。
 7. **Docker 镜像带 ffmpeg/ffprobe**：后端 worker 的 `complete` 与 `media_analysis` 依赖 ffprobe。`back/Dockerfile` 已安装。不要从镜像里拿掉。

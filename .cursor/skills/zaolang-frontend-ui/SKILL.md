@@ -17,7 +17,7 @@ disable-model-invocation: true
 | `front/src/app/[locale]/(site)/` | 首页（重定向到 `discover`）、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`） |
 | `front/src/components/discover/` | 灵感墙：`tag-filter`（`TagFilter` + `DiscoverSort`）、`inspiration-masonry`、hero 轮播；排序/标签走 URL，见 `zaolang-discovery-search` |
 | `front/src/components/ui/` | `button` / `dialog` / `field` / `primitives` / `spinner` / `toast` / `icons` |
-| `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer` / `brand` |
+| `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer`（品牌与构建版本，不是源码提供入口） / `brand` |
 | `front/src/components/auth/` | `login-dialog` / `session-provider` / `sign-in-prompt` |
 | `front/src/components/command/command-palette.tsx` | Cmd+K，combobox 无障碍模式 |
 | `front/src/lib/api/client.ts` | 浏览器侧 fetch：内存 access token、自动刷新、`Idempotency-Key` |

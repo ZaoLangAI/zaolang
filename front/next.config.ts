@@ -14,9 +14,6 @@ const config: NextConfig = {
   output: 'standalone',
   allowedDevOrigins,
   env: {
-    // Surfaced in the footer to satisfy AGPL section 13.
-    NEXT_PUBLIC_SOURCE_URL:
-      process.env.SOURCE_REPOSITORY_URL ?? 'https://github.com/ZaoLangAI/zaolang',
     NEXT_PUBLIC_APP_VERSION: process.env.APP_VERSION ?? '0.0.0-dev',
   },
   images: {

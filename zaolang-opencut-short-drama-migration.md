@@ -9,7 +9,7 @@
 
 | Repo | Local root | Commit | Status |
 |---|---|---|---|
-| ZaoLang | `sources/zaolang` | `49e323371451ba0a1e73c0aeda441e7a0a5a3f6c` | Product host; AGPL-3.0 |
+| ZaoLang | `sources/zaolang` | `49e323371451ba0a1e73c0aeda441e7a0a5a3f6c` | Product host; proprietary internal |
 | OpenCut classic | `sources/opencut-classic` | `cf5e79e919144200294fb9fed22a222592a0aeea` | Editor source; archived; MIT |
 | OpenCut rewrite | `sources/opencut-rewrite` | `400f097becba5db0fbc305d5a65348cb81c20356` | Future reference only; MIT |
 
@@ -803,7 +803,7 @@ Rollout: internal -> selected projects -> 5% -> 20% -> 50% -> 100%. Monitor expo
 | S3 large uploads | strict CORS, multipart resume, short URL TTL, orphan sweeper |
 | Classic archived | owned fork and security/browser maintenance |
 | In-memory export | MVP caps; production streaming/file target |
-| AGPL + MIT | retain OpenCut MIT notice; satisfy ZaoLang AGPL network-source obligations; legal review |
+| Proprietary + MIT | retain OpenCut MIT notice; ZaoLang itself is proprietary internal software; legal review |
 | MCP prompt injection/IDOR | structured inputs, per-call ACL, independent OAuth audience, red-team tests |
 | External model privacy | project opt-in, minimum context, retention/DPA/region controls |
 
