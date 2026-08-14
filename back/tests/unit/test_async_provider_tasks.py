@@ -209,6 +209,52 @@ def test_heartbeat_progress_never_goes_backwards(
     assert progress == sorted(progress)
 
 
+def test_a_resume_crash_after_quality_check_keeps_the_checkpoint(
+    db: Session, funded: User, provider: _AsyncProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Settling the row before `resume()` used to orphan the job: the user
+    saw quality_check, the render was already on disk, and nobody came back."""
+    from sqlalchemy.exc import IntegrityError
+
+    job = _suspended(db, funded)
+    provider.outcomes = [_finished()]
+    _due(db, job.id)
+
+    original = async_polling.WorkflowRunner.resume
+    calls = {"n": 0}
+
+    def _boom(self, ctx, *, node_id, port):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise IntegrityError("notify", {}, Exception("duplicate key"))
+        return original(self, ctx, node_id=node_id, port=port)
+
+    monkeypatch.setattr(async_polling.WorkflowRunner, "resume", _boom)
+
+    assert async_polling.poll_once(db) == 0
+    db.refresh(job)
+    assert job.status == JobStatus.RUNNING
+    task = async_tasks.find_for_job(db, job.id)
+    assert task is not None
+    assert (task.state_checkpoint_json or {}).get("parked_resume", {}).get("kind") == "succeeded"
+    assert task.claimed_at is None
+    account = credits_service.get_or_create_account(db, funded.id)
+    assert account.reserved_balance == job.reserved_credits
+
+    _due(db, job.id)
+    assert async_polling.poll_once(db) == 1
+    db.refresh(job)
+    assert job.status == JobStatus.SUCCEEDED
+    assert async_tasks.find_for_job(db, job.id) is None
+    assert account.reserved_balance == 0
+    captures = list(
+        db.scalars(
+            select(CreditLedgerEntry).where(CreditLedgerEntry.type == LedgerEntryType.CAPTURE)
+        )
+    )
+    assert len(captures) == 1
+
+
 def test_a_completed_render_resumes_the_workflow_through_to_settlement(
     db: Session, funded: User, provider: _AsyncProvider
 ) -> None:

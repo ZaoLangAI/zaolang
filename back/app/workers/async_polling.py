@@ -21,7 +21,7 @@ during which a user can press cancel and nothing would notice.
 from __future__ import annotations
 
 import logging
-from dataclasses import fields
+from dataclasses import asdict, fields
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -106,6 +106,11 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
         _cancel(session, job, task, provider)
         return
 
+    parked = _parked_resume(task)
+    if parked is not None:
+        _replay_parked(session, job, task, capability=capability, parked=parked)
+        return
+
     request = _request_from(task.request_json)
     result = provider.poll(task.external_task_id, request)
 
@@ -179,11 +184,14 @@ def _resume_succeeded(
     ctx = _context(session, job, task)
     ctx.state["result"] = result
     ctx.state["capability"] = capability
-    node_id = task.node_id
-    async_tasks.settle(session, task)
-    session.commit()
-    _runner(session, job).resume(ctx, node_id=node_id, port="succeeded")
-    session.commit()
+    _resume_then_release(
+        session,
+        job,
+        task,
+        ctx,
+        port="succeeded",
+        park={"kind": "succeeded", "result": asdict(result)},
+    )
 
 
 def _resume_failed(
@@ -199,7 +207,6 @@ def _resume_failed(
     ctx = _context(session, job, task)
     ctx.state["failure_code"] = code
     node_id = task.node_id
-    async_tasks.settle(session, task)
     _emit(
         session,
         job,
@@ -210,11 +217,98 @@ def _resume_failed(
         internal_code=code,
         node_id=node_id,
     )
-    session.commit()
     runner = _runner(session, job)
     port = "retry" if _retries_on_failure(runner, node_id) else "failed"
-    runner.resume(ctx, node_id=node_id, port=port)
+    _resume_then_release(
+        session,
+        job,
+        task,
+        ctx,
+        port=port,
+        park={"kind": "failed", "code": code},
+    )
+
+
+def _resume_then_release(
+    session: Session,
+    job: GenerationJob,
+    task: AsyncProviderTask,
+    ctx: WorkflowContext,
+    *,
+    port: str,
+    park: dict[str, Any],
+) -> None:
+    """Walks the graph from the parked node, and only then drops the row.
+
+    Mid-node `_emit` commits (so the user sees quality_check immediately).
+    Settling the checkpoint *before* that walk used to orphan the job: a
+    later UniqueViolation / LLM crash rolled back settlement, the row was
+    already gone, and the next tick had nothing to claim.
+    """
+    node_id = task.node_id
+    task_id = task.id
+    try:
+        _runner(session, job).resume(ctx, node_id=node_id, port=port)
+    except Exception:
+        _park_for_retry(session, task_id, park)
+        raise
+    leftover = session.get(AsyncProviderTask, task_id)
+    if leftover is not None:
+        async_tasks.settle(session, leftover)
     session.commit()
+
+
+def _parked_resume(task: AsyncProviderTask) -> dict[str, Any] | None:
+    checkpoint = dict(task.state_checkpoint_json or {})
+    parked = checkpoint.get("parked_resume")
+    return parked if isinstance(parked, dict) else None
+
+
+def _replay_parked(
+    session: Session,
+    job: GenerationJob,
+    task: AsyncProviderTask,
+    *,
+    capability: Any,
+    parked: dict[str, Any],
+) -> None:
+    """Retries a walk that already saw a finished upstream result."""
+    kind = parked.get("kind")
+    if kind == "succeeded":
+        result = _result_from(parked.get("result") or {})
+        if result.object_key:
+            _close_attempt(session, task, ProviderAttemptStatus.SUCCEEDED, result)
+            _resume_succeeded(session, job, task, capability=capability, result=result)
+            return
+    if kind == "failed":
+        _close_attempt(session, task, ProviderAttemptStatus.FAILED, None)
+        _resume_failed(session, job, task, code=str(parked.get("code") or "PROVIDER_TEMPORARY_FAILURE"))
+        return
+    async_tasks.reschedule(session, task)
+    session.commit()
+
+
+def _park_for_retry(session: Session, task_id: str, park: dict[str, Any]) -> None:
+    """Keeps the checkpoint after a mid-resume crash so the next tick can retry.
+
+    Commits on purpose: `poll_once` rollbacks the failed tick, and
+    `nodes._emit` may already have committed the QUALITY_CHECK event. The
+    claim must be released in a transaction that survives that rollback.
+    """
+    session.rollback()
+    task = session.get(AsyncProviderTask, task_id)
+    if task is None:
+        return
+    checkpoint = dict(task.state_checkpoint_json or {})
+    checkpoint["parked_resume"] = park
+    task.state_checkpoint_json = checkpoint
+    async_tasks.reschedule(session, task)
+    session.commit()
+
+
+def _result_from(payload: dict[str, Any]) -> GenerationResult:
+    known = {field.name for field in fields(GenerationResult)}
+    return GenerationResult(**{k: v for k, v in payload.items() if k in known})
 
 
 def _retries_on_failure(runner: WorkflowRunner, node_id: str) -> bool:
