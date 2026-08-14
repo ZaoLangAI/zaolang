@@ -61,6 +61,7 @@ back/celerybeat-schedule.db
 third_party/opencut-classic/node_modules/
 third_party/opencut-classic/**/target/
 third_party/opencut-classic/rust/wasm/pkg/
+third_party/opencut-classic/rust/wasm/pkg-web/
 third_party/opencut-classic/.next/
 third_party/opencut-classic/apps/**/.next/
 

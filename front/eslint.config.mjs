@@ -9,6 +9,9 @@ const config = [
       'node_modules/**',
       // Generated from the backend contract; formatting it is not our call.
       'src/lib/api/schema.d.ts',
+      // Vendored wasm-bindgen output from third_party/opencut-classic — not
+      // our source, never hand-edited.
+      'public/wasm/opencut/**',
       'playwright-report/**',
       'test-results/**',
     ],

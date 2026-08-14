@@ -6,6 +6,9 @@
  */
 
 import { TICKS_PER_SECOND, type BrandOverlay, type CanonicalDocument, type ResolvedAsset } from './ports';
+import { WasmCompositor } from './wasm-compositor';
+
+type Canvas2DContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 export interface ActiveClipLayer {
   asset_id: string;
@@ -72,6 +75,9 @@ export class MediaPool {
   // pooled elements attached (off-screen, not display:none) keeps decode
   // and `seeked` events firing normally.
   private readonly host: HTMLDivElement;
+  private scratch: OffscreenCanvas | null = null;
+  private wasm: WasmCompositor | null | undefined;
+  private wasmDimensions: { width: number; height: number } | null = null;
 
   constructor() {
     this.host = window.document.createElement('div');
@@ -112,6 +118,33 @@ export class MediaPool {
     return element;
   }
 
+  /** Reused scratch surface for cover-fitting a frame before GPU upload / fallback draw. */
+  scratchCanvas(width: number, height: number): OffscreenCanvas {
+    if (!this.scratch || this.scratch.width !== width || this.scratch.height !== height) {
+      this.scratch = new OffscreenCanvas(width, height);
+    }
+    return this.scratch;
+  }
+
+  /**
+   * Lazily creates (once) the real OpenCut WASM compositor at the given
+   * size, resizing it on later calls if the canvas size changed. Returns
+   * null forever after the first failed attempt — no per-frame retry cost.
+   */
+  async wasmCompositorFor(width: number, height: number): Promise<WasmCompositor | null> {
+    if (this.wasm === null) return null;
+    if (this.wasm === undefined) {
+      this.wasm = await WasmCompositor.create(width, height);
+      this.wasmDimensions = this.wasm ? { width, height } : null;
+      return this.wasm;
+    }
+    if (this.wasmDimensions?.width !== width || this.wasmDimensions?.height !== height) {
+      this.wasm.resize(width, height);
+      this.wasmDimensions = { width, height };
+    }
+    return this.wasm;
+  }
+
   dispose(): void {
     for (const video of this.videos.values()) {
       video.pause();
@@ -120,6 +153,7 @@ export class MediaPool {
     }
     this.videos.clear();
     this.images.clear();
+    this.wasm?.dispose();
     this.host.remove();
   }
 }
@@ -130,11 +164,12 @@ export async function seekVideo(video: HTMLVideoElement, seconds: number): Promi
   const target = Math.max(0, seconds);
   if (video.readyState >= 2 && Math.abs(video.currentTime - target) < 0.02) return;
   await new Promise<void>((resolve) => {
-    let timer: number | undefined;
+    let settled = false;
     const finish = () => {
+      if (settled) return;
+      settled = true;
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
-      if (timer != null) window.clearTimeout(timer);
       resolve();
     };
     const onSeeked = finish;
@@ -142,7 +177,7 @@ export async function seekVideo(video: HTMLVideoElement, seconds: number): Promi
     // A stuck load (network failure, unsupported codec, a detached element
     // the browser deprioritized) must never hang the render loop forever —
     // draw whatever frame is available and move on.
-    timer = window.setTimeout(finish, SEEK_TIMEOUT_MS);
+    window.setTimeout(finish, SEEK_TIMEOUT_MS);
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onError);
     video.currentTime = target;
@@ -163,7 +198,7 @@ function waitForImage(image: HTMLImageElement): Promise<void> {
 }
 
 function drawCover(
-  ctx: CanvasRenderingContext2D,
+  ctx: Canvas2DContext,
   source: CanvasImageSource,
   sourceWidth: number,
   sourceHeight: number,
@@ -210,6 +245,11 @@ function drawCaptions(
  * Resolves + seeks + draws one frame. Callers own the canvas/ctx lifecycle;
  * this only mutates pixel contents and returns the volume the active clip's
  * audio should play at (null when nothing is playing).
+ *
+ * The video layer renders through the real OpenCut WASM compositor when
+ * it's available (GPU-composited via wgpu), and falls back to a plain
+ * Canvas2D draw otherwise — same visible result either way, so callers
+ * never need to know which path ran.
  */
 export async function composeFrame(
   ctx: CanvasRenderingContext2D,
@@ -230,14 +270,29 @@ export async function composeFrame(
     if (asset) {
       const video = pool.video(asset.asset_id, asset.url);
       await seekVideo(video, layers.clip.sourceSeconds);
-      drawCover(
-        ctx,
-        video,
-        video.videoWidth || canvasWidth,
-        video.videoHeight || canvasHeight,
-        canvasWidth,
-        canvasHeight,
-      );
+
+      const scratch = pool.scratchCanvas(canvasWidth, canvasHeight);
+      const scratchCtx = scratch.getContext('2d');
+      if (scratchCtx) {
+        scratchCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+        drawCover(
+          scratchCtx,
+          video,
+          video.videoWidth || canvasWidth,
+          video.videoHeight || canvasHeight,
+          canvasWidth,
+          canvasHeight,
+        );
+
+        const wasm = await pool.wasmCompositorFor(canvasWidth, canvasHeight);
+        const wasmCanvas = wasm?.canvas ?? null;
+        const rendered = wasm && wasmCanvas ? wasm.renderVideoFrame(scratch) : false;
+        if (rendered && wasmCanvas) {
+          ctx.drawImage(wasmCanvas, 0, 0, canvasWidth, canvasHeight);
+        } else {
+          ctx.drawImage(scratch, 0, 0);
+        }
+      }
       clipVolume = layers.clip.volume;
     }
   }
