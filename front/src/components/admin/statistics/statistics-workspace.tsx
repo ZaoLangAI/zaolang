@@ -8,7 +8,6 @@ import { CreditsPanel } from '@/components/admin/statistics/credits-panel';
 import { JobsPanel } from '@/components/admin/statistics/jobs-panel';
 import { OverviewPanel } from '@/components/admin/statistics/overview-panel';
 import { ProvidersAgentsPanel } from '@/components/admin/statistics/providers-agents-panel';
-import { SystemPanel } from '@/components/admin/statistics/system-panel';
 import { UsersPanel } from '@/components/admin/statistics/users-panel';
 import { cn } from '@/lib/cn';
 import { adminApi } from '@/lib/api/admin-client';
@@ -22,20 +21,11 @@ import type {
   ProviderStat,
   ProviderTimeseries,
   Reconciliation,
-  StorageUsage,
   SystemHealth,
   UserGrowthTimeseries,
 } from '@/lib/api/admin-types';
 
-const TABS = [
-  'overview',
-  'jobs',
-  'providers',
-  'credits',
-  'content',
-  'users',
-  'system',
-] as const;
+const TABS = ['overview', 'jobs', 'providers', 'credits', 'content', 'users'] as const;
 type Tab = (typeof TABS)[number];
 
 const RANGES = [7, 30, 90] as const;
@@ -51,7 +41,7 @@ interface Timeseries {
 }
 
 /**
- * The statistics module's shell: one route, seven scenario tabs.
+ * The statistics module's shell: one route, six scenario tabs.
  *
  * Every tab's data is fetched once on the server and handed down here (like
  * `library-tabs.tsx` does for the collection page) so switching tabs never
@@ -66,7 +56,6 @@ export function StatisticsWorkspace({
   jobStats,
   reconciliation,
   health,
-  storageUsage,
   initialSeries,
 }: {
   initialRange: Range;
@@ -75,7 +64,6 @@ export function StatisticsWorkspace({
   jobStats: JobStats;
   reconciliation: Reconciliation;
   health: SystemHealth;
-  storageUsage: StorageUsage;
   initialSeries: Timeseries;
 }) {
   const t = useTranslations('adminStatistics');
@@ -116,7 +104,6 @@ export function StatisticsWorkspace({
     credits: t('tabCredits'),
     content: t('tabContent'),
     users: t('tabUsers'),
-    system: t('tabSystem'),
   };
 
   return (
@@ -142,7 +129,7 @@ export function StatisticsWorkspace({
           ))}
         </div>
 
-        {tab !== 'overview' && tab !== 'system' ? (
+        {tab !== 'overview' ? (
           <div className="mb-2 flex items-center gap-2">
             <span className="text-xs text-muted">{t('rangeLabel')}</span>
             <div className="flex gap-1 rounded-full border border-border bg-surface-soft p-0.5">
@@ -190,7 +177,6 @@ export function StatisticsWorkspace({
       ) : null}
       {tab === 'content' ? <ContentPanel timeseries={series.content} /> : null}
       {tab === 'users' ? <UsersPanel timeseries={series.users} /> : null}
-      {tab === 'system' ? <SystemPanel health={health} storageUsage={storageUsage} /> : null}
     </div>
   );
 }

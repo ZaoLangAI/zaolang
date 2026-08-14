@@ -278,6 +278,7 @@ test.describe('operations screens', () => {
     // The module opens on the overview tab; each metric now lives behind its
     // own scenario tab rather than being flattened onto a single page.
     await expect(page.getByRole('tab', { name: '总览', selected: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: '系统与基础设施' })).toHaveCount(0);
 
     // Providers & agents tab: fake providers are test-only, so production seed
     // data leaves the comparison table empty, but the section always renders.

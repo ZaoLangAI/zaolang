@@ -790,7 +790,7 @@
   },
   "adminStatistics": {
     "title": "Statistics",
-    "subtitle": "Scenario-based analytics for generation jobs, providers & agents, the credits ledger, content & lineage, user growth and system infrastructure.",
+    "subtitle": "Scenario-based analytics for generation jobs, providers & agents, the credits ledger, content & lineage, and user growth.",
     "sectionProviders": "Provider statistics",
     "colProvider": "Provider",
     "colAttempts": "Attempts",
@@ -814,7 +814,6 @@
     "tabCredits": "Credits & ledger",
     "tabContent": "Content & lineage",
     "tabUsers": "User growth",
-    "tabSystem": "System & infrastructure",
     "rangeLabel": "Time range",
     "range7d": "Last 7 days",
     "range30d": "Last 30 days",

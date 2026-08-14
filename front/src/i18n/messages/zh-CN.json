@@ -790,7 +790,7 @@
   },
   "adminStatistics": {
     "title": "数据统计",
-    "subtitle": "生成任务、供应商与智能体、积分账本、内容创作生态、用户增长与系统基础设施的场景化数据分析。",
+    "subtitle": "生成任务、供应商与智能体、积分账本、内容创作生态与用户增长的场景化数据分析。",
     "sectionProviders": "供应商统计",
     "colProvider": "供应商",
     "colAttempts": "尝试数",
@@ -814,7 +814,6 @@
     "tabCredits": "积分与账本",
     "tabContent": "内容与创作生态",
     "tabUsers": "用户增长",
-    "tabSystem": "系统与基础设施",
     "rangeLabel": "时间范围",
     "range7d": "近 7 天",
     "range30d": "近 30 天",

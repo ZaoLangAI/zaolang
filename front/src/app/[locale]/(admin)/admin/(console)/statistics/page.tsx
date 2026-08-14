@@ -14,7 +14,6 @@ import type {
   ProviderStat,
   ProviderTimeseries,
   Reconciliation,
-  StorageUsage,
   SystemHealth,
   UserGrowthTimeseries,
 } from '@/lib/api/admin-types';
@@ -39,7 +38,6 @@ export default async function AdminStatisticsPage() {
     jobStats,
     reconciliation,
     health,
-    storageUsage,
     jobsTimeseries,
     providersTimeseries,
     agentsTimeseries,
@@ -54,7 +52,6 @@ export default async function AdminStatisticsPage() {
     adminFetchOrNull<JobStats>('/v1/admin/jobs/stats', { query: { hours: JOB_STATS_WINDOW_HOURS } }),
     adminFetchOrNull<Reconciliation>('/v1/admin/credits/reconciliation'),
     adminFetchOrNull<SystemHealth>('/v1/admin/health'),
-    adminFetchOrNull<StorageUsage>('/v1/admin/storage/usage'),
     adminFetchOrNull<JobsTimeseries>('/v1/admin/statistics/jobs', {
       query: { days: DEFAULT_TIMESERIES_DAYS },
     }),
@@ -103,7 +100,6 @@ export default async function AdminStatisticsPage() {
             generated_at: generatedAt,
           }
         }
-        storageUsage={storageUsage ?? { bucket: '', object_count: 0, total_bytes: 0 }}
         initialSeries={{
           jobs: jobsTimeseries ?? emptySeries,
           providers: providersTimeseries ?? emptySeries,

@@ -1,6 +1,6 @@
 ---
 name: zaolang-admin-statistics
-description: 造浪后台数据统计中心：按 UTC 日 SQL 聚合的任务/供应商/智能体/积分/内容/用户增长 timeseries，以及仍走旧快照接口的系统健康与存储用量。Use when changing /admin/statistics, /v1/admin/statistics/*, daily timeseries aggregation, empty-day zero-fill, or the recharts trend charts.
+description: 造浪后台数据统计中心：按 UTC 日 SQL 聚合的任务/供应商/智能体/积分/内容/用户增长 timeseries，以及仍走旧快照接口的任务/供应商/智能体/积分对账与系统健康（总览积压）。Use when changing /admin/statistics, /v1/admin/statistics/*, daily timeseries aggregation, empty-day zero-fill, or the recharts trend charts.
 disable-model-invocation: true
 ---
 
@@ -16,7 +16,7 @@ disable-model-invocation: true
 | `back/app/api/v1/admin/statistics.py` | `/v1/admin/statistics/{jobs,providers,agents,credits,content,users}`，`days` 1–180，`Viewer` + `AdminRead` |
 | `back/app/api/schemas/admin.py` | `*TimeseriesView` / `*DailyPoint` |
 | `front/src/app/[locale]/(admin)/admin/(console)/statistics/page.tsx` | RSC 一次拉齐快照 + 默认 30 日序列，单接口失败用 `adminFetchOrNull` 降级为空 |
-| `front/src/components/admin/statistics/` | 七个 tab：`overview` / `jobs` / `providers` / `credits` / `content` / `users` / `system`；`recharts` 只在此模块 |
+| `front/src/components/admin/statistics/` | 六个 tab：`overview` / `jobs` / `providers` / `credits` / `content` / `users`；`recharts` 只在此模块 |
 | `back/tests/integration/test_admin_statistics.py` | 窗口补零、viewer 可读、越权拒绝 |
 
 快照仍走旧接口，不要搬进 `statistics.py`：
@@ -25,8 +25,7 @@ disable-model-invocation: true
 - `/v1/admin/agent-runs/usage`
 - `/v1/admin/jobs/stats`
 - `/v1/admin/credits/reconciliation`
-- `/v1/admin/health`
-- `/v1/admin/storage/usage`
+- `/v1/admin/health`（总览队列积压）
 
 外壳、RBAC、限流见 `zaolang-admin-console`。运维域清单见 `zaolang-admin-ops`。
 
@@ -53,4 +52,4 @@ disable-model-invocation: true
 cd back && conda run -n zaolang pytest tests/integration/test_admin_statistics.py -v
 ```
 
-手工路径：`make seed` 后以 viewer 打开 `/admin/statistics`，七个 tab 都能出数；把 API 停掉再刷新，页面应是空图而不是白屏。
+手工路径：`make seed` 后以 viewer 打开 `/admin/statistics`，六个 tab 都能出数；把 API 停掉再刷新，页面应是空图而不是白屏。
