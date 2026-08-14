@@ -1,41 +1,17 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useRef } from 'react';
 
-import { pauseMedia, playMedia } from '@/components/media/safe-media-playback';
+import { isVideoPosterSrc } from '@/components/media/safe-media-playback';
+import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import { cn } from '@/lib/cn';
-
-function MutedLoopVideo({ src, label }: { src: string; label: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const play = playMedia(video);
-    return () => {
-      void pauseMedia(video, play);
-    };
-  }, [src]);
-
-  return (
-    <video
-      ref={videoRef}
-      src={src}
-      aria-label={label}
-      muted
-      loop
-      playsInline
-      className="absolute inset-0 h-full w-full object-cover"
-    />
-  );
-}
 
 /**
  * Poster frame for a work.
  *
  * The design forbids placeholder art, so a missing cover renders as an honest
- * empty surface with the title rather than as fake imagery.
+ * empty surface with the title rather than as fake imagery. Video covers show
+ * the first decoded frame and stay still — a looping preview is not a poster.
  */
 export function Poster({
   src,
@@ -47,6 +23,8 @@ export function Poster({
   className,
   children,
   mediaType,
+  lazy,
+  onMediaSize,
 }: {
   src?: string | null;
   alt: string;
@@ -58,9 +36,12 @@ export function Poster({
   sizes?: string;
   className?: string;
   children?: React.ReactNode;
-  /** `'video'` renders `src` as a looping, muted `<video>` instead of an
-   * `<Image>` — omit (or any other value) to keep the default image path. */
+  /** `'video'` (or a video URL) renders a first-frame still instead of `<Image>`. */
   mediaType?: 'image' | 'video' | 'audio' | null;
+  /** Defer attaching a video `src` until the poster is near the viewport. */
+  lazy?: boolean;
+  /** Intrinsic pixel size once the image or first frame is known. */
+  onMediaSize?: (width: number, height: number) => void;
 }) {
   const preset =
     aspect === 'fill'
@@ -70,6 +51,7 @@ export function Poster({
         : aspect === 'square'
           ? 'aspect-square'
           : 'aspect-[3/4]';
+  const showFirstFrame = isVideoPosterSrc(src, mediaType);
 
   return (
     <div
@@ -81,8 +63,8 @@ export function Poster({
       )}
     >
       {src ? (
-        mediaType === 'video' ? (
-          <MutedLoopVideo src={src} label={alt} />
+        showFirstFrame ? (
+          <VideoFirstFrame src={src} label={alt} lazy={lazy} onMediaSize={onMediaSize} />
         ) : (
           <Image
             src={src}
@@ -91,6 +73,12 @@ export function Poster({
             sizes={sizes}
             priority={priority}
             className="object-cover"
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                onMediaSize?.(image.naturalWidth, image.naturalHeight);
+              }
+            }}
           />
         )
       ) : (

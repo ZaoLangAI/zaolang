@@ -8,6 +8,21 @@ export function isPlayAbortError(error: unknown): boolean {
   );
 }
 
+/**
+ * Finite duration in seconds. Signed / fragmented MP4s sometimes report
+ * `NaN` or `Infinity` on `loadedmetadata`; `seekable` is the fallback the
+ * progress bar can actually drag against.
+ */
+export function readMediaDuration(media: HTMLMediaElement): number {
+  const duration = media.duration;
+  if (Number.isFinite(duration) && duration > 0) return duration;
+  if (media.seekable.length > 0) {
+    const end = media.seekable.end(media.seekable.length - 1);
+    if (Number.isFinite(end) && end > 0) return end;
+  }
+  return 0;
+}
+
 export function isNotAllowedError(error: unknown): boolean {
   return (
     (error instanceof DOMException && error.name === 'NotAllowedError') ||
@@ -58,6 +73,35 @@ export function mediaObjectKey(url: string): string {
   } catch {
     return url.split('?')[0] ?? url;
   }
+}
+
+function mediaPathname(url: string): string {
+  try {
+    return new URL(url).pathname.toLowerCase();
+  } catch {
+    return (url.split('?')[0] ?? url).toLowerCase();
+  }
+}
+
+const VIDEO_PATH = /\.(mp4|webm|mov)$/;
+const IMAGE_PATH = /\.(jpe?g|png|webp|gif|avif)$/;
+
+export function isVideoMediaUrl(url: string | null | undefined): boolean {
+  return Boolean(url) && VIDEO_PATH.test(mediaPathname(url as string));
+}
+
+export function isImageMediaUrl(url: string | null | undefined): boolean {
+  return Boolean(url) && IMAGE_PATH.test(mediaPathname(url as string));
+}
+
+/** Cover that should render as a first-frame still rather than `next/image`. */
+export function isVideoPosterSrc(
+  src: string | null | undefined,
+  mediaType?: string | null,
+): boolean {
+  if (!src) return false;
+  if (isImageMediaUrl(src)) return false;
+  return mediaType === 'video' || isVideoMediaUrl(src);
 }
 
 /**

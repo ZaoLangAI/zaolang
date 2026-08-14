@@ -29,6 +29,10 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
     public let latestJobID: String?
     public let outputAssetID: String?
     public let outputURL: String?
+    public let outputMediaType: MediaType?
+    public let durationMs: Int?
+    public let width: Int?
+    public let height: Int?
     public let publishedWorkID: String?
     public let createdAt: Date
 
@@ -39,6 +43,9 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
         case latestJobID = "latest_job_id"
         case outputAssetID = "output_asset_id"
         case outputURL = "output_url"
+        case outputMediaType = "output_media_type"
+        case durationMs = "duration_ms"
+        case width, height
         case publishedWorkID = "published_work_id"
         case createdAt = "created_at"
     }
@@ -54,11 +61,36 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
         latestJobID = try c.decodeIfPresent(String.self, forKey: .latestJobID)
         outputAssetID = try c.decodeIfPresent(String.self, forKey: .outputAssetID)
         outputURL = try c.decodeIfPresent(String.self, forKey: .outputURL)
+        outputMediaType = try c.decodeIfPresent(MediaType.self, forKey: .outputMediaType)
+        durationMs = try c.decodeIfPresent(Int.self, forKey: .durationMs)
+        width = try c.decodeIfPresent(Int.self, forKey: .width)
+        height = try c.decodeIfPresent(Int.self, forKey: .height)
         publishedWorkID = try c.decodeIfPresent(String.self, forKey: .publishedWorkID)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 
     public var isRemix: Bool { sourceWorkVersionID != nil }
+
+    public func stringParam(_ key: String) -> String? {
+        guard case .string(let value)? = params[key] else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public func numberParam(_ key: String) -> Double? {
+        if case .number(let value)? = params[key] { return value }
+        return nil
+    }
+
+    public var durationSeconds: Int? {
+        if let durationMs, durationMs > 0 {
+            return Int((Double(durationMs) / 1000.0).rounded())
+        }
+        if let seconds = numberParam("duration_seconds"), seconds > 0 {
+            return Int(seconds.rounded())
+        }
+        return nil
+    }
 }
 
 /// `POST /v1/drafts/{id}/publish` 请求体。`visibility` 默认 `publicViewOnly`，

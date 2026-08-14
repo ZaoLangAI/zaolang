@@ -19,8 +19,11 @@ struct InspirationPreviewSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                RemoteImage(url: work.coverURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0)
-                    .zlCornerRadius(ZLRadius.md)
+                RemoteImage(
+                    url: work.coverURL.flatMap(URL.init),
+                    aspectRatio: MediaStageMetrics.stageAspect(for: work.coverAspectRatio)
+                )
+                .zlCornerRadius(ZLRadius.md)
 
                 HStack(alignment: .top) {
                     AuthorRow(author: work.author, avatarSize: 32)

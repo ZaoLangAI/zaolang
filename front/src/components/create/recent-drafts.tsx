@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 
-import { Poster } from '@/components/media/poster';
+import { DraftPoster } from '@/components/media/draft-poster';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -37,10 +37,9 @@ export async function RecentDrafts({ drafts }: { drafts: Draft[] }) {
           {drafts.map((draft) => (
             <li key={draft.id}>
               <Link href={`/publish/${draft.id}`} className="block">
-                <Poster
-                  src={draft.output_url}
+                <DraftPoster
+                  draft={draft}
                   alt={draft.title ?? t('recentDrafts')}
-                  aspect="video"
                   className="border border-border"
                 />
                 <p className="mt-2 truncate text-xs">{draft.title ?? t('recentDrafts')}</p>

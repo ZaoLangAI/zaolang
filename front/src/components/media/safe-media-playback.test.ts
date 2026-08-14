@@ -2,11 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   delayUntilSignedUrlRefresh,
+  isImageMediaUrl,
   isNotAllowedError,
   isPlayAbortError,
+  isVideoMediaUrl,
+  isVideoPosterSrc,
   mediaObjectKey,
   pauseMedia,
   playMedia,
+  readMediaDuration,
   SIGNED_URL_REFRESH_MARGIN_MS,
   signedUrlExpiresAt,
 } from './safe-media-playback';
@@ -128,12 +132,55 @@ describe('signedUrlExpiresAt', () => {
   it('schedules a refresh one minute before expiry', () => {
     const issued = Date.UTC(2026, 7, 14, 6, 0, 0);
     const now = issued + 100_000;
-    expect(delayUntilSignedUrlRefresh(sample, now)).toBe(900_000 - 100_000 - SIGNED_URL_REFRESH_MARGIN_MS);
+    expect(delayUntilSignedUrlRefresh(sample, now)).toBe(
+      900_000 - 100_000 - SIGNED_URL_REFRESH_MARGIN_MS,
+    );
   });
 
   it('returns 0 when the URL is already inside the refresh margin', () => {
     const issued = Date.UTC(2026, 7, 14, 6, 0, 0);
     const now = issued + 880_000;
     expect(delayUntilSignedUrlRefresh(sample, now)).toBe(0);
+  });
+});
+
+describe('isVideoMediaUrl / isImageMediaUrl', () => {
+  const signed =
+    'http://localhost:9000/zaolang/generated/job_1/output.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=aaa';
+
+  it('reads the path, not the signature query', () => {
+    expect(isVideoMediaUrl(signed)).toBe(true);
+    expect(isImageMediaUrl(signed)).toBe(false);
+    expect(isImageMediaUrl('http://localhost:9000/zaolang/out/cover.png?X-Amz-Signature=bbb')).toBe(
+      true,
+    );
+  });
+
+  it('treats a video-typed still image as an image poster', () => {
+    expect(isVideoPosterSrc('http://localhost:9000/zaolang/out/cover.jpg', 'video')).toBe(false);
+    expect(isVideoPosterSrc(signed, 'video')).toBe(true);
+    expect(isVideoPosterSrc(signed)).toBe(true);
+    expect(isVideoPosterSrc('http://localhost:9000/zaolang/out/cover.png')).toBe(false);
+  });
+});
+
+describe('readMediaDuration', () => {
+  it('keeps a finite duration', () => {
+    expect(readMediaDuration(mockMedia({ duration: 8.4 }))).toBe(8.4);
+  });
+
+  it('rejects NaN and Infinity, then uses seekable', () => {
+    const seekable = {
+      length: 1,
+      end: (index: number) => (index === 0 ? 12 : 0),
+    };
+    expect(
+      readMediaDuration(
+        mockMedia({ duration: Number.POSITIVE_INFINITY, seekable: seekable as TimeRanges }),
+      ),
+    ).toBe(12);
+    expect(
+      readMediaDuration(mockMedia({ duration: Number.NaN, seekable: { length: 0 } as TimeRanges })),
+    ).toBe(0);
   });
 });

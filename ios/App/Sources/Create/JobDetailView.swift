@@ -62,8 +62,14 @@ struct JobDetailView: View {
                 statusSection(job)
 
                 if let outputURL = job.outputURL, job.status.value == .succeeded {
-                    RemoteImage(url: URL(string: outputURL), aspectRatio: 16.0 / 9.0)
-                        .zlCornerRadius(ZLRadius.md)
+                    WorkMediaStage(
+                        mediaType: job.operation.value?.isVideo == true ? .video : .image,
+                        mediaURL: outputURL,
+                        coverURL: job.operation.value?.isVideo == true ? nil : outputURL,
+                        aspectRatio: MediaStageMetrics.stageAspect(for: 16.0 / 9.0),
+                        isTombstoned: false,
+                        isOffline: environment.reachability.isOffline
+                    )
                 }
 
                 creditsSection(job)

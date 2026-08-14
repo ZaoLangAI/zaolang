@@ -13,14 +13,21 @@ struct WorkMediaStage: View {
     let isOffline: Bool
 
     @State private var player: AVPlayer?
+    @State private var intrinsicAspect: Double?
+
+    private var stageAspect: Double {
+        MediaStageMetrics.stageAspect(for: intrinsicAspect ?? aspectRatio)
+    }
 
     var body: some View {
         ZStack {
             if isTombstoned || isOffline || mediaType != .video || mediaURL == nil {
-                RemoteImage(url: coverURL.flatMap(URL.init), aspectRatio: aspectRatio, contentMode: .fill)
+                RemoteImage(url: coverURL.flatMap(URL.init), aspectRatio: stageAspect, contentMode: .fill)
             } else if let player {
                 VideoPlayer(player: player)
-                    .aspectRatio(aspectRatio, contentMode: .fit)
+                    .aspectRatio(stageAspect, contentMode: .fit)
+            } else if let mediaURL {
+                VideoFirstFrame(url: URL(string: mediaURL), aspectRatio: stageAspect)
             }
         }
         .zlCornerRadius(ZLRadius.md)
@@ -51,10 +58,20 @@ struct WorkMediaStage: View {
     }
 
     private func preparePlayer() async {
+        intrinsicAspect = nil
         guard !isTombstoned, !isOffline, mediaType == .video, let mediaURL, let url = URL(string: mediaURL) else {
             player = nil
             return
         }
         player = AVPlayer(url: url)
+        if let track = try? await AVURLAsset(url: url).loadTracks(withMediaType: .video).first,
+           let natural = try? await track.load(.naturalSize)
+        {
+            let transform = (try? await track.load(.preferredTransform)) ?? .identity
+            let size = natural.applying(transform)
+            if abs(size.width) > 0, abs(size.height) > 0 {
+                intrinsicAspect = abs(size.width / size.height)
+            }
+        }
     }
 }

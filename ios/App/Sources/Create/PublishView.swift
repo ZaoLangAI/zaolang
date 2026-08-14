@@ -41,11 +41,16 @@ struct PublishView: View {
     private func form(_ draft: DraftResponse, _ viewModel: PublishViewModel) -> some View {
         Form {
             Section {
-                RemoteImage(url: draft.outputURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0)
-                    .zlCornerRadius(ZLRadius.md)
+                DraftMediaView(draft: draft)
                     .listRowInsets(EdgeInsets())
             } header: {
-                Text(L10n.t("publishPage.coverLabel"))
+                Text(draft.outputMediaType == .video || draft.outputMediaType == .audio
+                    ? L10n.t("publishPage.previewLabel")
+                    : L10n.t("publishPage.coverLabel"))
+            }
+
+            Section {
+                DraftSpecSection(draft: draft)
             }
 
             Section {

@@ -52,6 +52,7 @@ export function WorkCard({
         <Poster
           src={work.cover_url}
           alt={work.title}
+          mediaType={work.media_type}
           priority={priority}
           className={cn(
             'transition-transform duration-300 group-hover:scale-[1.01]',

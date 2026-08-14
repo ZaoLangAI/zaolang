@@ -259,7 +259,7 @@ private struct DraftRow: View {
         HStack(spacing: 12) {
             Button(action: onTap) {
                 HStack(spacing: 12) {
-                    RemoteImage(url: draft.outputURL.flatMap(URL.init), aspectRatio: 1)
+                    DraftPoster(draft: draft, aspectRatio: 1)
                         .frame(width: 56, height: 56)
                         .zlCornerRadius(ZLRadius.sm)
                     VStack(alignment: .leading, spacing: 2) {

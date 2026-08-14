@@ -12,8 +12,9 @@ import { refreshWorkMediaUrl } from '@/lib/refresh-media-src';
 /**
  * The large media area on discover and the work page.
  *
- * Video gets the player; stills get a plain poster, because a control bar over
- * an image is a lie about what the medium is.
+ * The detail page offers a phone-frame picker; the stage still follows the
+ * file's own ratio unless the author picks a device. The discover hero keeps
+ * a plain poster / fill player.
  */
 export function WorkStage({
   work,
@@ -42,14 +43,19 @@ export function WorkStage({
   const isVideo = (work.media_type ?? version?.media_type) === 'video';
   const refreshSrc = useCallback(() => refreshWorkMediaUrl(work.id), [work.id]);
 
-  if (isVideo && devicePreview) {
+  if (devicePreview) {
     return (
       <DevicePreview
-        src={version?.media_url}
+        src={
+          isVideo
+            ? version?.media_url
+            : (version?.media_url ?? version?.cover_url ?? work.cover_url)
+        }
         poster={version?.cover_url ?? work.cover_url}
         title={work.title}
+        mediaType={isVideo ? 'video' : 'image'}
         edgeToEdge
-        refreshSrc={refreshSrc}
+        refreshSrc={isVideo ? refreshSrc : undefined}
       />
     );
   }

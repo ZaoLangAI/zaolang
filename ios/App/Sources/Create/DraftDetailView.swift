@@ -35,17 +35,18 @@ struct DraftDetailView: View {
     }
 
     private func body(_ draft: DraftResponse) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            RemoteImage(url: draft.outputURL.flatMap(URL.init), aspectRatio: 16.0 / 9.0)
-                .zlCornerRadius(ZLRadius.md)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                DraftMediaView(draft: draft)
 
-            Text(draft.title ?? L10n.t("createPage.recentDrafts")).font(.title3.weight(.semibold))
+                Text(draft.title ?? L10n.t("createPage.recentDrafts")).font(.title3.weight(.semibold))
 
-            actionButton(draft)
+                DraftSpecSection(draft: draft)
 
-            Spacer()
+                actionButton(draft)
+            }
+            .padding(16)
         }
-        .padding(16)
     }
 
     @ViewBuilder

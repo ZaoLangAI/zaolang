@@ -57,12 +57,7 @@ export function PreviewPickerDialog({
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {jobs.map((job, index) => (
           <li key={job.id}>
-            <PreviewCard
-              job={job}
-              index={index}
-              disabled={promoting}
-              onPick={() => onPick(job)}
-            />
+            <PreviewCard job={job} index={index} disabled={promoting} onPick={() => onPick(job)} />
           </li>
         ))}
       </ul>
@@ -86,7 +81,8 @@ function PreviewCard({
   const current = job ?? initial;
 
   const succeeded = current.status === 'succeeded' && Boolean(current.output_url);
-  const failed = current.status === 'failed' || current.status === 'cancelled' || current.status === 'expired';
+  const failed =
+    current.status === 'failed' || current.status === 'cancelled' || current.status === 'expired';
   const running = !succeeded && !failed;
   const refreshSrc = useCallback(async () => {
     if (current.output_asset_id) return refreshAssetUrl(current.output_asset_id);
@@ -100,7 +96,7 @@ function PreviewCard({
         succeeded ? 'border-border' : 'border-border/60',
       )}
     >
-      <div className="relative flex aspect-[9/16] items-center justify-center bg-surface-soft">
+      <div className="relative overflow-hidden bg-surface-soft">
         {succeeded ? (
           <VideoPlayer
             src={current.output_url}
@@ -109,24 +105,22 @@ function PreviewCard({
             refreshSrc={refreshSrc}
           />
         ) : (
-          <div className="flex flex-col items-center gap-2 text-muted">
+          <div className="flex aspect-video flex-col items-center justify-center gap-2 text-muted">
             {running ? <Spinner /> : null}
             <p className="text-xs">
               {failed ? t('previewStatusFailed') : t('previewStatusGenerating')}
             </p>
           </div>
         )}
-        <Badge tone={succeeded ? 'success' : failed ? 'danger' : 'neutral'} className="absolute left-2 top-2">
+        <Badge
+          tone={succeeded ? 'success' : failed ? 'danger' : 'neutral'}
+          className="absolute left-2 top-2"
+        >
           {t('previewCandidateLabel', { index: index + 1 })}
         </Badge>
       </div>
       <div className="p-2.5">
-        <Button
-          size="sm"
-          fullWidth
-          disabled={!succeeded || disabled}
-          onClick={onPick}
-        >
+        <Button size="sm" fullWidth disabled={!succeeded || disabled} onClick={onPick}>
           {t('previewPick')}
         </Button>
       </div>

@@ -73,15 +73,29 @@ def load_locale(filename: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def flatten_leaves(value: object, prefix: str = "") -> dict[str, str]:
+    """`publishPage.operation.text_to_video` 这类嵌套对象摊成点号键。"""
+    if isinstance(value, dict):
+        out: dict[str, str] = {}
+        for key, child in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            out.update(flatten_leaves(child, path))
+        return out
+    if isinstance(value, str) and prefix:
+        return {prefix: value}
+    return {}
+
+
 def main() -> None:
     messages = {locale: load_locale(filename) for locale, filename in LOCALE_FILES.items()}
 
     strings: dict[str, dict] = {}
     total_keys = 0
     for ns in NAMESPACES:
-        per_locale_keys = {locale: set(messages[locale].get(ns, {}).keys()) for locale in LOCALE_FILES}
-        reference = per_locale_keys[SOURCE_LANGUAGE]
-        for locale, keys in per_locale_keys.items():
+        flat = {locale: flatten_leaves(messages[locale].get(ns, {})) for locale in LOCALE_FILES}
+        reference = set(flat[SOURCE_LANGUAGE])
+        for locale, leaves in flat.items():
+            keys = set(leaves)
             if keys != reference:
                 missing = reference - keys
                 extra = keys - reference
@@ -94,7 +108,7 @@ def main() -> None:
             full_key = f"{ns}.{key}"
             localizations = {}
             for locale in LOCALE_FILES:
-                value = messages[locale].get(ns, {}).get(key)
+                value = flat[locale].get(key)
                 if value is None:
                     continue
                 localizations[locale] = {"stringUnit": {"state": "translated", "value": value}}

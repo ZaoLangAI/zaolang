@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 
 import { tileRatio } from '@/components/discover/inspiration-aspect';
@@ -37,6 +38,13 @@ export function InspirationCard({
   const locale = useLocale() as Locale;
   const tombstoned = work.lifecycle_status === 'tombstone';
   const revealRef = useRevealOnView<HTMLElement>();
+  const knownSize = Boolean(work.cover_width && work.cover_height);
+  const [ratio, setRatio] = useState(() => tileRatio(work.cover_width, work.cover_height));
+  const [sizedFor, setSizedFor] = useState(work.id);
+  if (work.id !== sizedFor) {
+    setSizedFor(work.id);
+    setRatio(tileRatio(work.cover_width, work.cover_height));
+  }
 
   return (
     <article ref={revealRef} className="group flex flex-col gap-2">
@@ -49,7 +57,19 @@ export function InspirationCard({
         <Poster
           src={work.cover_url}
           alt={work.title}
-          ratio={tileRatio(work.cover_width, work.cover_height)}
+          mediaType={work.media_type}
+          lazy
+          ratio={ratio}
+          onMediaSize={
+            knownSize
+              ? undefined
+              : (width, height) => {
+                  setRatio((current) => {
+                    const next = tileRatio(width, height);
+                    return next === current ? current : next;
+                  });
+                }
+          }
           priority={priority}
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
           className={cn(

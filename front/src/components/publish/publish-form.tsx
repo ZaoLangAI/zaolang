@@ -3,7 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { Poster } from '@/components/media/poster';
+import { DevicePreview } from '@/components/media/device-preview';
 import { Button } from '@/components/ui/button';
 import { TextArea, TextInput } from '@/components/ui/field';
 import { IconSparkle } from '@/components/ui/icons';
@@ -15,6 +15,7 @@ import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Draft, Visibility } from '@/lib/api/types';
 import { formatDate } from '@/lib/format';
+import { refreshDraftOutputUrl } from '@/lib/refresh-media-src';
 
 interface PublishResult {
   work_id: string;
@@ -23,9 +24,41 @@ interface PublishResult {
 
 const VISIBILITIES: Visibility[] = ['public_remixable', 'public_view_only', 'private'];
 
+const OPERATIONS = [
+  'text_to_image',
+  'image_to_image',
+  'text_to_video',
+  'image_to_video',
+  'video_to_video',
+  'audio_generation',
+] as const;
+
+const TIERS = ['preview', 'standard', 'cinematic'] as const;
+
+type OperationKey = (typeof OPERATIONS)[number];
+type TierKey = (typeof TIERS)[number];
+
 /** Drafts created by the short-form studio carry the spec they were made for. */
 function isShortform(draft: Draft): boolean {
   return typeof draft.params?.shortform_profile === 'string';
+}
+
+function stringParam(params: Draft['params'], key: string): string | null {
+  const value = params?.[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function numberParam(params: Draft['params'], key: string): number | null {
+  const value = params?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isOperation(value: string): value is OperationKey {
+  return (OPERATIONS as readonly string[]).includes(value);
+}
+
+function isTier(value: string): value is TierKey {
+  return (TIERS as readonly string[]).includes(value);
 }
 
 /**
@@ -49,6 +82,10 @@ export function PublishForm({ draft }: { draft: Draft }) {
   const [disclosure, setDisclosure] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const previewTitle = title || t('title');
+  const isPlayable = draft.output_media_type === 'video' || draft.output_media_type === 'audio';
+  const specRows = draftSpecRows(draft, t, locale);
 
   const publish = async () => {
     setPublishing(true);
@@ -80,19 +117,32 @@ export function PublishForm({ draft }: { draft: Draft }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="flex flex-col gap-4">
-        <p className="text-sm font-medium">{t('coverLabel')}</p>
-        <Poster
-          src={draft.output_url}
-          alt={title || t('title')}
-          aspect="video"
-          className="border border-border"
-        />
+        <p className="text-sm font-medium">{isPlayable ? t('previewLabel') : t('coverLabel')}</p>
+        <DraftOutput draft={draft} title={previewTitle} />
 
         <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4 text-xs">
           <div className="flex items-center gap-2">
             <IconSparkle className="size-4 text-amber" />
             <span className="font-medium">{t('aiLabel')}</span>
           </div>
+
+          {specRows.prompt ? (
+            <div>
+              <p className="font-medium">{t('prompt')}</p>
+              <p className="mt-1 whitespace-pre-wrap text-muted">{specRows.prompt}</p>
+            </div>
+          ) : null}
+
+          {specRows.rows.length > 0 ? (
+            <dl className="flex flex-col gap-2">
+              {specRows.rows.map((row) => (
+                <div key={row.key} className="flex justify-between gap-3">
+                  <dt className="shrink-0 text-muted">{row.label}</dt>
+                  <dd className="min-w-0 text-right">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
 
           {draft.source_work_version_id ? (
             <p className="text-muted">
@@ -174,4 +224,79 @@ export function PublishForm({ draft }: { draft: Draft }) {
       </aside>
     </div>
   );
+}
+
+function DraftOutput({ draft, title }: { draft: Draft; title: string }) {
+  if (draft.output_media_type === 'audio' && draft.output_url) {
+    return (
+      <audio
+        src={draft.output_url}
+        controls
+        className="w-full rounded-[var(--radius-md)] border border-border p-4"
+      />
+    );
+  }
+  return (
+    <DevicePreview
+      src={draft.output_url}
+      title={title}
+      mediaType={draft.output_media_type === 'image' ? 'image' : 'video'}
+      refreshSrc={() => refreshDraftOutputUrl(draft.id)}
+    />
+  );
+}
+
+function draftSpecRows(
+  draft: Draft,
+  t: ReturnType<typeof useTranslations<'publishPage'>>,
+  locale: Locale,
+): { prompt: string | null; rows: Array<{ key: string; label: string; value: string }> } {
+  const prompt = stringParam(draft.params, 'prompt');
+  const operation = stringParam(draft.params, 'operation');
+  const quality = stringParam(draft.params, 'quality_tier');
+  const aspect = stringParam(draft.params, 'aspect_ratio');
+  const durationSeconds =
+    draft.duration_ms != null && draft.duration_ms > 0
+      ? draft.duration_ms / 1000
+      : numberParam(draft.params, 'duration_seconds');
+  const rows: Array<{ key: string; label: string; value: string }> = [];
+
+  if (operation) {
+    rows.push({
+      key: 'operation',
+      label: t('operationLabel'),
+      value: isOperation(operation) ? t(`operation.${operation}`) : operation,
+    });
+  }
+  if (quality) {
+    rows.push({
+      key: 'quality',
+      label: t('quality'),
+      value: isTier(quality) ? t(`tier.${quality}`) : quality,
+    });
+  }
+  if (aspect) {
+    rows.push({ key: 'aspect', label: t('aspect'), value: aspect });
+  }
+  if (durationSeconds != null && durationSeconds > 0) {
+    rows.push({
+      key: 'duration',
+      label: t('duration'),
+      value: t('durationSeconds', { count: Math.round(durationSeconds) }),
+    });
+  }
+  if (draft.width && draft.height) {
+    rows.push({
+      key: 'resolution',
+      label: t('resolution'),
+      value: `${draft.width}×${draft.height}`,
+    });
+  }
+  rows.push({
+    key: 'createdAt',
+    label: t('createdAt'),
+    value: formatDate(draft.created_at, locale),
+  });
+
+  return { prompt, rows };
 }

@@ -43,6 +43,17 @@ export const DEVICES: readonly DeviceSpec[] = [
     safeArea: { top: 20, bottom: 0 },
   },
   {
+    id: 'iphone-17',
+    name: 'iPhone 17',
+    width: 402,
+    height: 874,
+    dpr: 3,
+    radius: 55,
+    bezel: 10,
+    cutout: 'island',
+    safeArea: { top: 62, bottom: 34 },
+  },
+  {
     id: 'iphone-15',
     name: 'iPhone 15',
     width: 393,
@@ -110,11 +121,88 @@ export const DEVICES: readonly DeviceSpec[] = [
   },
 ] as const;
 
-export const DEFAULT_DEVICE_ID = 'iphone-15';
+export const DEFAULT_DEVICE_ID = 'iphone-17';
+
+/** iPhone 17 logical screen; height ceiling for uncapped C-end players. */
+export const REFERENCE_CANVAS = { width: 402, height: 874 } as const;
+
+/**
+ * Desktop portrait preview height. 874pt is one full phone and pins 9:16 to
+ * the laptop viewport; this keeps a phone clip beside the work-page rail.
+ */
+export const PORTRAIT_STAGE_MAX_HEIGHT = 600;
 
 /** Falls back to the default rather than throwing: the id can come from a URL. */
 export function deviceById(id: string): DeviceSpec {
-  return DEVICES.find((device) => device.id === id) ?? DEVICES[1]!;
+  return (
+    DEVICES.find((device) => device.id === id) ??
+    DEVICES.find((device) => device.id === DEFAULT_DEVICE_ID) ??
+    DEVICES[0]!
+  );
+}
+
+/** `16 / 9`, `16/9`, or a plain number. */
+export function parseCssRatio(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const parts = value.split('/').map((part) => Number(part.trim()));
+  if (parts.length === 2 && parts[0]! > 0 && parts[1]! > 0) return parts[0]! / parts[1]!;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+/**
+ * Fit a media box of `ratio` (width / height) into the caller’s column.
+ *
+ * Landscape and square follow the parent width so 16:9 fills the work-page
+ * stage. Portrait stays phone-sized: width ≤ 402, and on a desktop column
+ * height ≤ 600 so 9:16 cannot pin itself to the viewport.
+ */
+export function fitWithinReferenceCanvas({
+  ratio,
+  availWidth,
+  availHeight,
+}: {
+  ratio: number;
+  availWidth: number;
+  availHeight: number;
+}): { width: number; height: number } {
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 16 / 9;
+  const availW = availWidth > 0 ? availWidth : REFERENCE_CANVAS.width;
+  const availH = availHeight > 0 ? availHeight : REFERENCE_CANVAS.height;
+  const portrait = safeRatio < 1;
+  const desktopColumn = availW > REFERENCE_CANVAS.width;
+  const maxWidth = portrait ? Math.min(availW, REFERENCE_CANVAS.width) : availW;
+  let maxHeight = Math.min(REFERENCE_CANVAS.height, availH);
+  if (portrait && desktopColumn) {
+    maxHeight = Math.min(maxHeight, PORTRAIT_STAGE_MAX_HEIGHT);
+  }
+  if (safeRatio > maxWidth / maxHeight) {
+    return { width: maxWidth, height: maxWidth / safeRatio };
+  }
+  return { width: maxHeight * safeRatio, height: maxHeight };
+}
+
+/** First-paint CSS before the parent has been measured. */
+export function referenceStageFallbackStyle(ratio: number): {
+  width: string;
+  maxWidth?: number;
+  maxHeight: number;
+  aspectRatio: string;
+} {
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : 16 / 9;
+  if (safeRatio < 1) {
+    return {
+      width: '100%',
+      maxWidth: REFERENCE_CANVAS.width,
+      maxHeight: PORTRAIT_STAGE_MAX_HEIGHT,
+      aspectRatio: String(safeRatio),
+    };
+  }
+  return {
+    width: '100%',
+    maxHeight: REFERENCE_CANVAS.height,
+    aspectRatio: String(safeRatio),
+  };
 }
 
 /**

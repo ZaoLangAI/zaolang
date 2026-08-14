@@ -1,9 +1,10 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { DeviceFrame } from '@/components/media/device-frame';
+import { useAvailableStage } from '@/components/media/use-available-stage';
 import { VideoPlayer } from '@/components/media/video-player';
 import {
   DropdownMenu,
@@ -12,37 +13,46 @@ import {
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { IconCheck, IconVideo } from '@/components/ui/icons';
-import { DEVICES, deviceById, type PlatformChrome } from '@/lib/devices';
 import { cn } from '@/lib/cn';
+import {
+  DEVICES,
+  deviceById,
+  fitWithinReferenceCanvas,
+  referenceStageFallbackStyle,
+  type PlatformChrome,
+} from '@/lib/devices';
 
-/** Selection that shows the clip at its own size, with no phone around it. */
+/** Selection that shows the clip without a phone around it. */
 export const NO_DEVICE = 'none';
 
 /**
  * The media stage with an optional phone around it.
  *
- * The device list includes "no device" as its first choice rather than sitting
- * behind a separate toggle: framing is one decision with one control, and a
- * 16:9 clip has no reason to start inside a phone.
+ * Defaults to the file's own ratio. Landscape follows the parent column;
+ * portrait stays phone-sized so a 9:16 clip cannot pin itself to the
+ * viewport. The phone frame is opt-in — most stills and landscape clips
+ * are not phone-sized. Short-form callers pass `DEFAULT_DEVICE_ID` when
+ * the author is composing for a vertical screen.
  */
 export function DevicePreview({
   src,
   poster,
   title,
   defaultDeviceId = NO_DEVICE,
-  maxHeight = 560,
+  maxHeight,
   edgeToEdge = false,
   chrome,
   overlay,
   className,
   refreshSrc,
+  mediaType = 'video',
 }: {
   src?: string | null;
   poster?: string | null;
   title: string;
   /** `NO_DEVICE`, or an id from the device catalogue. */
   defaultDeviceId?: string;
-  /** Ceiling for the framed phone, in px, before the container width applies. */
+  /** Extra ceiling for the framed phone, in px, on top of the remaining viewport. */
   maxHeight?: number;
   /**
    * The stage runs to the viewport edges on a phone, so the control row has to
@@ -60,36 +70,25 @@ export function DevicePreview({
   className?: string;
   /** Forwarded to `VideoPlayer` so a signed URL can be re-minted in place. */
   refreshSrc?: () => Promise<string | null>;
+  mediaType?: 'image' | 'video';
 }) {
   const t = useTranslations('devicePreview');
 
   const [deviceId, setDeviceId] = useState(defaultDeviceId);
   const [showSafeArea, setShowSafeArea] = useState(true);
   const [showPlatformChrome, setShowPlatformChrome] = useState(false);
-  const [available, setAvailable] = useState(0);
 
   const stageRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const node = stageRef.current;
-    if (!node) return;
-    const observer = new ResizeObserver((entries) => {
-      setAvailable(entries[0]?.contentRect.width ?? 0);
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+  const avail = useAvailableStage(stageRef, maxHeight);
 
   const framed = deviceId !== NO_DEVICE;
   const device = deviceById(deviceId);
   const bodyWidth = device.width + device.bezel * 2;
   const bodyHeight = device.height + device.bezel * 2;
-  // A 430pt body does not fit a 390px viewport, and the stage is often
-  // narrower still; the smaller of the two constraints wins, never above 1:1.
   const scale = Math.min(
     1,
-    available > 0 ? available / bodyWidth : 1,
-    maxHeight > 0 ? maxHeight / bodyHeight : 1,
+    avail.width > 0 ? avail.width / bodyWidth : 1,
+    avail.height > 0 ? avail.height / bodyHeight : 1,
   );
 
   return (
@@ -103,20 +102,25 @@ export function DevicePreview({
             showPlatformChrome={showPlatformChrome}
             chrome={chrome}
           >
-            <VideoPlayer
+            <StageMedia
+              mediaType={mediaType}
               src={src}
               poster={poster}
               title={title}
-              aspectRatio={null}
-              objectFit="cover"
-              bare
-              className="size-full"
+              framed
               refreshSrc={refreshSrc}
             />
             {overlay ? <div className="absolute inset-0">{overlay}</div> : null}
           </DeviceFrame>
         ) : (
-          <VideoPlayer src={src} poster={poster} title={title} refreshSrc={refreshSrc} />
+          <StageMedia
+            mediaType={mediaType}
+            src={src}
+            poster={poster}
+            title={title}
+            framed={false}
+            refreshSrc={refreshSrc}
+          />
         )}
       </div>
 
@@ -184,6 +188,93 @@ export function DevicePreview({
             {t('scale', { percent: Math.round(scale * 100) })}
           </p>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function StageMedia({
+  mediaType,
+  src,
+  poster,
+  title,
+  framed,
+  refreshSrc,
+}: {
+  mediaType: 'image' | 'video';
+  src?: string | null;
+  poster?: string | null;
+  title: string;
+  framed: boolean;
+  refreshSrc?: () => Promise<string | null>;
+}) {
+  if (mediaType === 'image') {
+    if (framed) {
+      return src ? (
+        // eslint-disable-next-line @next/next/no-img-element -- signed object URLs.
+        <img src={src} alt={title} className="size-full object-cover" />
+      ) : (
+        <div className="grid size-full place-items-center text-sm text-muted">{title}</div>
+      );
+    }
+    return <CappedStill src={src} title={title} />;
+  }
+
+  if (framed) {
+    return (
+      <VideoPlayer
+        src={src}
+        poster={poster}
+        title={title}
+        aspectRatio={null}
+        objectFit="cover"
+        bare
+        className="size-full"
+        refreshSrc={refreshSrc}
+      />
+    );
+  }
+
+  return <VideoPlayer src={src} poster={poster} title={title} refreshSrc={refreshSrc} />;
+}
+
+function CappedStill({ src, title }: { src?: string | null; title: string }) {
+  const measureRef = useRef<HTMLDivElement>(null);
+  const avail = useAvailableStage(measureRef);
+  const [ratio, setRatio] = useState(16 / 9);
+  const stage = fitWithinReferenceCanvas({
+    ratio,
+    availWidth: avail.width,
+    availHeight: avail.height,
+  });
+  const measured = avail.width > 0;
+
+  return (
+    <div ref={measureRef} className="flex w-full justify-center">
+      <div
+        className="relative overflow-hidden rounded-[var(--radius-md)] border border-border bg-black"
+        style={
+          measured
+            ? { width: stage.width, height: stage.height }
+            : referenceStageFallbackStyle(ratio)
+        }
+      >
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element -- signed object URLs.
+          <img
+            src={src}
+            alt={title}
+            className="size-full object-contain"
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+                setRatio(image.naturalWidth / image.naturalHeight);
+              }
+            }}
+          />
+        ) : (
+          <div className="grid size-full place-items-center text-sm text-muted">{title}</div>
+        )}
       </div>
     </div>
   );

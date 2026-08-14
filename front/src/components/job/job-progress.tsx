@@ -254,15 +254,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           {current.output_url ? (
-            current.output_media_type === 'image' ? (
-              // Native img: job output URLs are short-lived object signatures.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={current.output_url}
-                alt={t('title')}
-                className="w-full rounded-[var(--radius-md)] border border-border object-contain"
-              />
-            ) : current.output_media_type === 'audio' ? (
+            current.output_media_type === 'audio' ? (
               <audio
                 src={current.output_url}
                 controls
@@ -272,6 +264,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               <DevicePreview
                 src={current.output_url}
                 title={t('title')}
+                mediaType={current.output_media_type === 'image' ? 'image' : 'video'}
                 refreshSrc={refreshOutputSrc}
               />
             )

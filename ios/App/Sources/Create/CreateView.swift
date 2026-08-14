@@ -127,7 +127,7 @@ struct CreateView: View {
                         path.append(CreateRoute.draft(draftID: draft.id))
                     } label: {
                         HStack(spacing: 12) {
-                            RemoteImage(url: draft.outputURL.flatMap(URL.init), aspectRatio: 1)
+                            DraftPoster(draft: draft, aspectRatio: 1)
                                 .frame(width: 48, height: 48)
                                 .zlCornerRadius(ZLRadius.sm)
                             Text(draft.title ?? L10n.t("createPage.recentDrafts")).font(.subheadline).lineLimit(1)
