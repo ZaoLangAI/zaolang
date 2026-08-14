@@ -1038,6 +1038,9 @@
     "dryRunWaitingRender": "レンダリング中です。しばらくお待ちください",
     "dryRunLatest": "最新の進捗",
     "dryRunSelectNode": "ノードをクリックすると実際の入出力を確認できます",
+    "dryRunOutput": "Output",
+    "dryRunNoPreview": "No output yet",
+    "dryRunCollapseNode": "Collapse node",
     "dryRunNodeInput": "入力プロンプト",
     "dryRunNodeOutput": "出力",
     "dryRunSystemPrompt": "システムプロンプト",
@@ -1053,7 +1056,8 @@
     "sandboxHistoryDraft": "ドラフトグラフ",
     "sandboxHistoryPublished": "公開中のグラフ",
     "sandboxHistoryOperator": "実行者",
-    "sandboxHistoryNoPrompt": "（プロンプトなし）"
+    "sandboxHistoryNoPrompt": "（プロンプトなし）",
+    "sandboxHistoryDismiss": "Close sandbox history"
   },
   "auth": {
     "signIn": "ログイン",

@@ -1038,6 +1038,9 @@
     "dryRunWaitingRender": "正在渲染，请稍候",
     "dryRunLatest": "最新进度",
     "dryRunSelectNode": "点击节点查看实际输入与输出",
+    "dryRunOutput": "产出作品",
+    "dryRunNoPreview": "还没有产出",
+    "dryRunCollapseNode": "收起节点",
     "dryRunNodeInput": "输入提示词",
     "dryRunNodeOutput": "输出",
     "dryRunSystemPrompt": "系统提示词",
@@ -1053,7 +1056,8 @@
     "sandboxHistoryDraft": "草稿图",
     "sandboxHistoryPublished": "已发布图",
     "sandboxHistoryOperator": "操作人",
-    "sandboxHistoryNoPrompt": "（无提示词）"
+    "sandboxHistoryNoPrompt": "（无提示词）",
+    "sandboxHistoryDismiss": "关闭试跑历史"
   },
   "auth": {
     "signIn": "登录",

@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   SandboxRunInspector,
@@ -15,12 +15,13 @@ import { Spinner } from '@/components/ui/spinner';
 import type { Locale } from '@/i18n/routing';
 import { useAdminList } from '@/lib/admin/use-admin-list';
 import type { WorkflowSandboxRunSummary } from '@/lib/api/admin-types';
+import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
 import { useAdminJobStream } from '@/lib/use-admin-job-stream';
 
 /**
- * Non-modal right-hand drawer of past sandbox try-its. Clicking a row opens
- * a dialog that replays node progress via `GET /v1/admin/jobs/{id}`.
+ * Floating overlay of past sandbox try-its, anchored to the canvas. Clicking
+ * a row opens a dialog that replays node progress via `GET /v1/admin/jobs/{id}`.
  */
 export function WorkflowSandboxHistoryPanel({
   operation,
@@ -52,12 +53,31 @@ export function WorkflowSandboxHistoryPanel({
     setSelected(null);
   };
 
+  useEffect(() => {
+    if (selected !== null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      closePanel();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+    // closePanel is a fresh closure each render; the listener is torn down
+    // with the effect, so capturing the latest onClose/onTrace is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, onClose, onTrace]);
+
   return (
     <>
+      <button
+        type="button"
+        aria-label={t('sandboxHistoryDismiss')}
+        onClick={closePanel}
+        className="absolute inset-0 z-20 bg-[var(--overlay)]"
+      />
       <aside
         role="complementary"
         aria-label={t('sandboxHistory')}
-        className="flex h-[70vh] min-h-[520px] w-[22rem] shrink-0 flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface"
+        className="absolute top-3 right-3 z-30 flex h-[calc(70vh-1.5rem)] min-h-[496px] w-[22rem] flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface-raised shadow-raised"
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
@@ -68,7 +88,7 @@ export function WorkflowSandboxHistoryPanel({
             type="button"
             onClick={closePanel}
             aria-label={tAdmin('closeDetail')}
-            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-sm)] text-muted hover:bg-surface-soft hover:text-text"
+            className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-soft hover:text-text active:bg-primary/12"
           >
             <IconClose className="size-4" />
           </button>
@@ -96,11 +116,12 @@ export function WorkflowSandboxHistoryPanel({
                       type="button"
                       title={row.job_id}
                       onClick={() => setSelected(row)}
-                      className={`flex w-full flex-col gap-1.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left text-sm ${
+                      className={cn(
+                        'flex w-full flex-col gap-1.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-left text-sm transition-colors',
                         active
-                          ? 'border-accent bg-accent/10'
-                          : 'border-border hover:border-accent/40'
-                      }`}
+                          ? 'border-primary bg-primary/12'
+                          : 'border-border bg-surface hover:border-border-strong hover:bg-surface-soft active:bg-primary/12',
+                      )}
                     >
                       <span className="line-clamp-2 font-medium">
                         {row.prompt_excerpt || t('sandboxHistoryNoPrompt')}
@@ -169,6 +190,7 @@ export function WorkflowSandboxHistoryPanel({
             detail={stream.detail}
             reconnecting={stream.reconnecting}
             idleLabel={t('sandboxHistoryIdle')}
+            layout="split"
             onTrace={onTrace}
           />
         ) : null}

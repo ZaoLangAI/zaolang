@@ -30,7 +30,7 @@ disable-model-invocation: true
 | `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | 控制台外壳 |
 | `front/src/components/admin/admin-session-provider.tsx` | 后台会话上下文 |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
-| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor` / `models/llm-providers-panel`（模型管理：扁平主备列表 + 端点级主备）/ `audit/log-center-console` / `statistics/*`（日趋势，见 `zaolang-admin-statistics`） |
+| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor`（试跑历史是画布浮动窗，详情见 `zaolang-admin-ops`）/ `models/llm-providers-panel`（模型管理：扁平主备列表 + 端点级主备）/ `audit/log-center-console` / `statistics/*`（日趋势，见 `zaolang-admin-statistics`） |
 | `front/src/lib/api/admin-client.ts`、`admin-server.ts`、`use-admin-list.ts` | 后台专用客户端与列表 hook |
 
 ## 不可破坏的不变量

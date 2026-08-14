@@ -1038,6 +1038,9 @@
     "dryRunWaitingRender": "Rendering — please wait",
     "dryRunLatest": "Latest",
     "dryRunSelectNode": "Click a node to inspect its actual input and output",
+    "dryRunOutput": "Output",
+    "dryRunNoPreview": "No output yet",
+    "dryRunCollapseNode": "Collapse node",
     "dryRunNodeInput": "Input prompts",
     "dryRunNodeOutput": "Output",
     "dryRunSystemPrompt": "System prompt",
@@ -1053,7 +1056,8 @@
     "sandboxHistoryDraft": "Draft graph",
     "sandboxHistoryPublished": "Published graph",
     "sandboxHistoryOperator": "Operator",
-    "sandboxHistoryNoPrompt": "(no prompt)"
+    "sandboxHistoryNoPrompt": "(no prompt)",
+    "sandboxHistoryDismiss": "Close sandbox history"
   },
   "auth": {
     "signIn": "Sign in",

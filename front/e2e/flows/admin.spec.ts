@@ -404,10 +404,49 @@ test.describe('operations screens', () => {
     await expect(history.getByRole('heading', { name: '试跑历史' })).toBeVisible();
     await expect(history.getByText('历史回放用的猫')).toBeVisible();
 
-    await history.getByRole('button', { name: /历史回放用的猫/ }).click();
+    await page.getByRole('button', { name: '关闭试跑历史' }).click();
+    await expect(page.getByRole('complementary', { name: '试跑历史' })).toHaveCount(0);
+
+    await page.getByRole('button', { name: '试跑历史' }).click();
+    await expect(page.getByRole('complementary', { name: '试跑历史' })).toBeVisible();
+
+    await page.route('**/v1/admin/jobs/job_*', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({
+        response,
+        body: JSON.stringify({
+          ...body,
+          events: [
+            {
+              sequence: 1,
+              event_type: 'generating',
+              status: 'succeeded',
+              progress: 100,
+              message: '节点已完成',
+              node_id: 'provider_generate',
+              created_at: new Date().toISOString(),
+              payload: { prompt: '历史回放用的猫' },
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.getByRole('complementary', { name: '试跑历史' }).getByRole('button', { name: /历史回放用的猫/ }).click();
     const detail = page.getByRole('dialog');
     await expect(detail.getByRole('heading', { name: '试跑详情' })).toBeVisible();
     await expect(detail.getByText('实时流转')).toBeVisible();
+    await expect(detail.getByText('产出作品')).toBeVisible();
+
+    await detail.getByRole('button', { name: /provider_generate/ }).click();
+    await expect(detail.getByText('输入提示词')).toBeVisible();
+    await detail.getByRole('button', { name: '收起节点' }).click();
+    await expect(detail.getByText('输入提示词')).toHaveCount(0);
   });
 
   test('a graph that fails validation cannot be published', async ({ page }) => {

@@ -318,38 +318,36 @@ function WorkflowOperationTab({
 
       {loadError ? <ErrorNotice title={loadError} /> : null}
 
-      <div className="flex items-stretch gap-3">
-        <div className="min-w-0 flex-1">
-          {template === undefined ? (
-            <div className="flex h-40 items-center justify-center">
-              <Spinner />
-            </div>
-          ) : template === null && !loadError ? (
-            <EmptyState
-              title={t('noActiveTemplate')}
-              description={t('noActiveTemplateDesc')}
-              action={
-                canEdit ? (
-                  <Button size="sm" variant="secondary" onClick={() => setPublishOpen(true)}>
-                    {t('publish')}
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <WorkflowCanvas
-              key={reloadToken}
-              initialGraph={currentGraph}
-              nodeTypeCatalog={nodeTypeCatalog}
-              readOnly={!canEdit}
-              invalidNodeErrors={invalidNodeErrors}
-              hotspotCounts={hotspotCounts}
-              trace={sandboxTrace}
-              onChange={setWorkingGraph}
-              onDirty={() => onDirtyChange(true)}
-            />
-          )}
-        </div>
+      <div className="relative min-w-0">
+        {template === undefined ? (
+          <div className="flex h-40 items-center justify-center">
+            <Spinner />
+          </div>
+        ) : template === null && !loadError ? (
+          <EmptyState
+            title={t('noActiveTemplate')}
+            description={t('noActiveTemplateDesc')}
+            action={
+              canEdit ? (
+                <Button size="sm" variant="secondary" onClick={() => setPublishOpen(true)}>
+                  {t('publish')}
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <WorkflowCanvas
+            key={reloadToken}
+            initialGraph={currentGraph}
+            nodeTypeCatalog={nodeTypeCatalog}
+            readOnly={!canEdit}
+            invalidNodeErrors={invalidNodeErrors}
+            hotspotCounts={hotspotCounts}
+            trace={sandboxTrace}
+            onChange={setWorkingGraph}
+            onDirty={() => onDirtyChange(true)}
+          />
+        )}
         {historyOpen ? (
           <WorkflowSandboxHistoryPanel
             operation={operation}

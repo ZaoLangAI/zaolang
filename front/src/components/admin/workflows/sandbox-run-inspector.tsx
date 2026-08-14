@@ -4,12 +4,14 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
+import { IconClose } from '@/components/ui/icons';
 import { Badge } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import type { Locale } from '@/i18n/routing';
 import { adminApi } from '@/lib/api/admin-client';
 import type { AdminJobDetail } from '@/lib/api/admin-types';
 import type { JobStatus } from '@/lib/api/types';
+import { cn } from '@/lib/cn';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import type { AdminStreamedEvent } from '@/lib/use-admin-job-stream';
 
@@ -29,8 +31,8 @@ export function traceFromEvents(events: AdminStreamedEvent[]): SandboxTraceStep[
 }
 
 /**
- * Shared right-hand pane for a live sandbox try-it and for replaying a
- * historical one: node timeline, inspect, awaiting-input, preview.
+ * Shared pane for a live sandbox try-it and for replaying a historical one:
+ * node timeline (accordion inspect), awaiting-input, preview.
  */
 export function SandboxRunInspector({
   jobId,
@@ -38,6 +40,7 @@ export function SandboxRunInspector({
   detail,
   reconnecting = false,
   idleLabel,
+  layout = 'stack',
   onTrace,
 }: {
   jobId: string | null;
@@ -45,6 +48,7 @@ export function SandboxRunInspector({
   detail: AdminJobDetail | null;
   reconnecting?: boolean;
   idleLabel: string;
+  layout?: 'stack' | 'split';
   onTrace?: (trace: SandboxTraceStep[] | null) => void;
 }) {
   const t = useTranslations('adminWorkflows');
@@ -52,8 +56,10 @@ export function SandboxRunInspector({
   const tJob = useTranslations('job');
   const tJobs = useTranslations('adminJobs');
   const locale = useLocale() as Locale;
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedSequence, setSelectedSequence] = useState<number | null>(null);
   const [inspectDetail, setInspectDetail] = useState<AdminJobDetail | null>(null);
+  const selectedEvent = events.find((event) => event.sequence === selectedSequence) ?? null;
+  const selectedNodeId = selectedEvent?.node_id ?? null;
 
   const mergedDetail = inspectDetail ?? detail;
   const trace = useMemo(() => traceFromEvents(events), [events]);
@@ -63,7 +69,7 @@ export function SandboxRunInspector({
   }, [trace, onTrace]);
 
   useEffect(() => {
-    setSelectedNodeId(null);
+    setSelectedSequence(null);
     setInspectDetail(null);
   }, [jobId]);
 
@@ -91,29 +97,35 @@ export function SandboxRunInspector({
   const inFlight = Boolean(jobId) && (jobStatus == null || !TERMINAL.has(jobStatus));
   const asyncTask = inFlight ? (detail?.async_task ?? null) : null;
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
-          {t('dryRunStreaming')}
-        </h3>
-        {jobStatus ? (
-          <Badge
-            tone={
-              jobStatus === 'succeeded'
-                ? 'success'
-                : jobStatus === 'awaiting_input'
-                  ? 'amber'
-                  : TERMINAL.has(jobStatus)
-                    ? 'danger'
-                    : 'primary'
-            }
-          >
-            {tJob(jobStatus)}
-          </Badge>
-        ) : null}
-      </div>
+  const toggleEvent = (sequence: number) => {
+    setSelectedSequence((current) => (current === sequence ? null : sequence));
+  };
 
+  const flowHeader = (
+    <div className="flex shrink-0 items-center justify-between gap-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+        {t('dryRunStreaming')}
+      </h3>
+      {jobStatus ? (
+        <Badge
+          tone={
+            jobStatus === 'succeeded'
+              ? 'success'
+              : jobStatus === 'awaiting_input'
+                ? 'amber'
+                : TERMINAL.has(jobStatus)
+                  ? 'danger'
+                  : 'primary'
+          }
+        >
+          {tJob(jobStatus)}
+        </Badge>
+      ) : null}
+    </div>
+  );
+
+  const flowBody = (
+    <>
       {!jobId ? (
         <p className="text-xs text-muted">{idleLabel}</p>
       ) : events.length === 0 ? (
@@ -124,32 +136,65 @@ export function SandboxRunInspector({
       ) : (
         <ol className="flex flex-col gap-1.5">
           {events.map((event) => {
-            const active = event.node_id != null && event.node_id === selectedNodeId;
+            const expandable = Boolean(event.node_id);
+            const expanded = event.sequence === selectedSequence;
             return (
               <li key={event.sequence}>
-                <button
-                  type="button"
-                  disabled={!event.node_id}
-                  onClick={() => event.node_id && setSelectedNodeId(event.node_id)}
-                  className={`flex w-full flex-col gap-0.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-left text-xs ${
-                    active
-                      ? 'border-accent bg-accent/10'
+                <div
+                  className={cn(
+                    'overflow-hidden rounded-[var(--radius-sm)] border transition-colors',
+                    expanded
+                      ? 'border-primary bg-primary/12'
                       : event.status === 'awaiting_input'
                         ? 'border-amber/40 bg-amber/5'
-                        : 'border-border hover:border-accent/40'
-                  } ${event.node_id ? 'cursor-pointer' : 'cursor-default'}`}
+                        : 'border-border bg-surface',
+                  )}
                 >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{event.node_id ?? event.event_type}</span>
-                    <span className="tabular text-muted">{event.progress}%</span>
-                  </span>
-                  <span className="text-muted">{event.message}</span>
-                </button>
+                  <button
+                    type="button"
+                    disabled={!expandable}
+                    aria-expanded={expandable ? expanded : undefined}
+                    onClick={() => event.node_id && toggleEvent(event.sequence)}
+                    className={cn(
+                      'flex w-full flex-col gap-0.5 px-3 py-1.5 text-left text-xs transition-colors',
+                      expandable
+                        ? 'hover:bg-surface-soft active:bg-primary/12'
+                        : 'cursor-default',
+                      !expanded && expandable && 'hover:border-border-strong',
+                    )}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="font-medium">{event.node_id ?? event.event_type}</span>
+                      <span className="tabular text-muted">{event.progress}%</span>
+                    </span>
+                    <span className="text-muted">{event.message}</span>
+                  </button>
+                  {expanded && inspect ? (
+                    <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium">{t('dryRunSelectNode')}</p>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSequence(null)}
+                          aria-label={t('dryRunCollapseNode')}
+                          className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-soft hover:text-text active:bg-primary/12"
+                        >
+                          <IconClose className="size-3.5" />
+                        </button>
+                      </div>
+                      <NodeInspectBody inspect={inspect} />
+                    </div>
+                  ) : null}
+                </div>
               </li>
             );
           })}
         </ol>
       )}
+
+      {jobId && !selectedNodeId && events.length > 0 ? (
+        <p className="text-xs text-muted">{t('dryRunSelectNode')}</p>
+      ) : null}
 
       {inFlight && latestEvent ? (
         <div className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border p-3 text-xs">
@@ -186,63 +231,105 @@ export function SandboxRunInspector({
       {jobId && jobStatus === 'awaiting_input' ? (
         <AwaitingInputPanel jobId={jobId} client={adminApi} basePath="/v1/admin/jobs" />
       ) : null}
+    </>
+  );
 
-      {inspect ? (
-        <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-border p-3">
-          <p className="text-xs font-medium">{t('dryRunSelectNode')}</p>
-          {inspect.systemPrompt || inspect.userPrompt || inspect.mediaPrompt ? (
-            <div className="flex flex-col gap-1">
-              <span className="text-[11px] uppercase tracking-wide text-muted">
-                {t('dryRunNodeInput')}
-              </span>
-              {inspect.systemPrompt ? (
-                <PromptBlock label={t('dryRunSystemPrompt')} text={inspect.systemPrompt} />
-              ) : null}
-              {inspect.userPrompt ? (
-                <PromptBlock label={t('dryRunUserPrompt')} text={inspect.userPrompt} />
-              ) : null}
-              {inspect.mediaPrompt ? (
-                <PromptBlock label={t('dryRunPrompt')} text={inspect.mediaPrompt} />
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-xs text-muted">{t('dryRunNoInput')}</p>
-          )}
-          <div className="flex flex-col gap-1">
-            <span className="text-[11px] uppercase tracking-wide text-muted">
-              {t('dryRunNodeOutput')}
-            </span>
-            {inspect.output ? (
-              <pre className="max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-muted/30 p-2 font-mono text-[11px] whitespace-pre-wrap">
-                {inspect.output}
-              </pre>
-            ) : (
-              <p className="text-xs text-muted">{t('dryRunNoOutput')}</p>
-            )}
-          </div>
-        </div>
-      ) : jobId ? (
-        <p className="text-xs text-muted">{t('dryRunSelectNode')}</p>
+  const output = (
+    <div className={cn('flex flex-col gap-3', layout === 'split' && 'h-full min-h-80')}>
+      {layout === 'split' ? (
+        <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted">
+          {t('dryRunOutput')}
+        </h3>
       ) : null}
-
       {previewUrl ? (
-        <div className="overflow-hidden rounded-[var(--radius-sm)] border border-border">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-[var(--radius-sm)] border border-border">
           {mimeType?.startsWith('audio/') ? (
             <audio src={previewUrl} controls className="w-full p-3" />
           ) : mimeType?.startsWith('video/') ? (
-            <video src={previewUrl} controls className="w-full bg-black" />
+            <video src={previewUrl} controls className="h-full w-full bg-bg" />
           ) : (
             // Native img: sandbox preview URLs are short-lived MinIO signatures.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={previewUrl}
               alt={t('dryRunPreview')}
-              className="max-h-80 w-full object-contain"
+              className="h-full max-h-80 w-full object-contain"
             />
           )}
         </div>
+      ) : layout === 'split' ? (
+        <p className="flex min-h-0 flex-1 items-center text-xs text-muted">{t('dryRunNoPreview')}</p>
       ) : null}
     </div>
+  );
+
+  if (layout === 'split') {
+    return (
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="relative min-h-80">
+          <div className="flex max-h-80 flex-col gap-3 lg:absolute lg:inset-0 lg:max-h-none">
+            {flowHeader}
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">{flowBody}</div>
+          </div>
+        </section>
+        <section className="min-h-80 lg:border-l lg:border-border lg:pl-8">{output}</section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {flowHeader}
+      {flowBody}
+      {output}
+    </div>
+  );
+}
+
+function NodeInspectBody({
+  inspect,
+}: {
+  inspect: {
+    systemPrompt: string | null;
+    userPrompt: string | null;
+    mediaPrompt: string | null;
+    output: string | null;
+  };
+}) {
+  const t = useTranslations('adminWorkflows');
+  return (
+    <>
+      {inspect.systemPrompt || inspect.userPrompt || inspect.mediaPrompt ? (
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] uppercase tracking-wide text-muted">
+            {t('dryRunNodeInput')}
+          </span>
+          {inspect.systemPrompt ? (
+            <PromptBlock label={t('dryRunSystemPrompt')} text={inspect.systemPrompt} />
+          ) : null}
+          {inspect.userPrompt ? (
+            <PromptBlock label={t('dryRunUserPrompt')} text={inspect.userPrompt} />
+          ) : null}
+          {inspect.mediaPrompt ? (
+            <PromptBlock label={t('dryRunPrompt')} text={inspect.mediaPrompt} />
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-xs text-muted">{t('dryRunNoInput')}</p>
+      )}
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-wide text-muted">
+          {t('dryRunNodeOutput')}
+        </span>
+        {inspect.output ? (
+          <pre className="max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-surface-soft p-2 font-mono text-[11px] whitespace-pre-wrap">
+            {inspect.output}
+          </pre>
+        ) : (
+          <p className="text-xs text-muted">{t('dryRunNoOutput')}</p>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -250,7 +337,7 @@ function PromptBlock({ label, text }: { label: string; text: string }) {
   return (
     <div>
       <p className="text-[11px] text-muted">{label}</p>
-      <pre className="mt-0.5 max-h-36 overflow-auto rounded-[var(--radius-sm)] bg-muted/30 p-2 font-mono text-[11px] whitespace-pre-wrap">
+      <pre className="mt-0.5 max-h-36 overflow-auto rounded-[var(--radius-sm)] bg-surface-soft p-2 font-mono text-[11px] whitespace-pre-wrap">
         {text}
       </pre>
     </div>
