@@ -4,6 +4,7 @@ import { getTranslations } from 'next-intl/server';
 import { WorkInfoPanel } from '@/components/work/work-info-panel';
 import { WorkStage } from '@/components/work/work-stage';
 import { WorkCard } from '@/components/work/work-card';
+import { BackLink } from '@/components/ui/back-link';
 import { Badge, EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { IconTombstone } from '@/components/ui/icons';
 import { serverFetch } from '@/lib/api/server';
@@ -45,6 +46,9 @@ export default async function WorkPage({ params }: Params) {
   // phone, and every other block puts the gutter back on itself.
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-10 py-6 sm:px-6">
+      <BackLink href="/discover" className="mx-4 sm:mx-0">
+        {tPage('backToDiscover')}
+      </BackLink>
       {work.lifecycle_status === 'tombstone' ? (
         <div className="mx-4 flex items-center gap-3 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/8 px-4 py-3 sm:mx-0">
           <IconTombstone className="size-5 shrink-0 text-danger" />

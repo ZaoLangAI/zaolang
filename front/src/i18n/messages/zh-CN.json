@@ -1116,7 +1116,8 @@
     "redeemCodeLabel": "兑换码",
     "redeemSubmit": "兑换",
     "redeemSucceeded": "兑换成功，已到账 {count} 积分",
-    "redeemFailed": "兑换失败，请检查兑换码后重试。"
+    "redeemFailed": "兑换失败，请检查兑换码后重试。",
+    "backToProfile": "返回个人中心"
   },
   "brand": {
     "name": "造浪",
@@ -1136,7 +1137,8 @@
     "referenceHint": "最多 4 张，将用于后续生成时保持人物样貌一致。",
     "noReference": "暂无参考图",
     "emptyTitle": "还没有角色",
-    "emptyHint": "新建一个角色，保存样貌参考和音色描述，方便多集短剧复用。"
+    "emptyHint": "新建一个角色，保存样貌参考和音色描述，方便多集短剧复用。",
+    "backToCreate": "回到创作中心"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -1258,7 +1260,8 @@
     "modeLearnPublishTag": "社区教程",
     "modeDramaTitle": "短剧剪辑",
     "modeDramaDesc": "把生成好的成片放进时间线，加字幕、裁切，再按平台规格导出。",
-    "modeDramaTag": "桌面 Chrome · 不计费"
+    "modeDramaTag": "桌面 Chrome · 不计费",
+    "backToCreate": "回到创作中心"
   },
   "credits": {
     "label": "积分",
@@ -1380,7 +1383,9 @@
     "brandOverlayHint": "输入已上传素材的 Asset ID 添加品牌角标；暂不支持在此浏览素材库。",
     "brandOverlayAssetId": "角标素材 ID",
     "brandOverlayApply": "应用角标",
-    "brandOverlayRemove": "移除角标"
+    "brandOverlayRemove": "移除角标",
+    "backToCreate": "回到创作中心",
+    "backToDrama": "返回短剧"
   },
   "footer": {
     "source": "源代码",
@@ -1413,6 +1418,7 @@
     "expired": "已超时",
     "progress": "进度 {percent}%",
     "cancel": "取消任务",
+    "cancelRequested": "正在取消",
     "retry": "重新生成",
     "publish": "去发布",
     "reconnecting": "连接中断，正在重连",
@@ -1438,6 +1444,8 @@
     "failedHint": "预扣的积分已经退回，你可以调整描述后重试。",
     "cancelledTitle": "任务已取消",
     "cancelConfirm": "确定要取消这个任务吗？",
+    "cancellingHint": "已收到取消请求，任务即将停止。",
+    "cancelFailed": "取消失败，请重试。",
     "waiting": "正在等待第一条进度",
     "openWork": "查看作品",
     "backToCreate": "回到创作中心",
@@ -1496,7 +1504,16 @@
     "editAction": "编辑",
     "withdrawAction": "撤回",
     "withdrawConfirm": "确定要撤回这篇内容吗？",
-    "cancelEdit": "取消编辑"
+    "cancelEdit": "取消编辑",
+    "paths": "推荐学习路径",
+    "pathsHint": "完成 3 个模块即可掌握平台核心流程。",
+    "levelRequired": "必修",
+    "lesson": "课程 {index}",
+    "includesPractice": "包含交互练习",
+    "course1Title": "5 分钟完成第一次视频二创",
+    "course2Title": "如何写出有镜头感的提示词",
+    "course3Title": "读懂授权、署名与创作链",
+    "backToList": "返回学习"
   },
   "license": {
     "label": "许可",
@@ -1559,7 +1576,32 @@
     "skillRejected": "你的技能《{title}》未通过审核：{reason}",
     "skillTakedown": "你的技能《{title}》已被下架：{reason}",
     "learnPostApproved": "你发布的学习内容《{title}》已通过审核。",
-    "learnPostRejected": "你发布的学习内容《{title}》未通过审核：{reason}"
+    "learnPostRejected": "你发布的学习内容《{title}》未通过审核：{reason}",
+    "jobQueued": "你的{operation}「{excerpt}」已加入队列。",
+    "jobRunning": "你的{operation}「{excerpt}」正在生成。",
+    "jobAwaitingInput": "你的{operation}需要你回答几个问题才能继续。",
+    "jobSucceeded": "你的{operation}「{excerpt}」已完成。",
+    "jobFailed": "你的{operation}「{excerpt}」未能完成。",
+    "jobCancelled": "你的{operation}「{excerpt}」已取消。",
+    "jobExpired": "你的{operation}「{excerpt}」已超时，积分已退回。",
+    "exportQueued": "短剧《{series}》{episode} 已加入导出队列。",
+    "exportRunning": "短剧《{series}》{episode} 正在导出。",
+    "exportSucceeded": "短剧《{series}》{episode} 已导出完成。",
+    "exportFailed": "短剧《{series}》{episode} 导出失败。",
+    "exportCancelled": "短剧《{series}》{episode} 导出已取消。",
+    "workRemixed": "有人基于《{work_title}》创作了新作品。",
+    "royaltyReceived": "《{work_title}》为你带来了 {amount} 积分回流。",
+    "newFollower": "{actor_name} 关注了你。",
+    "announcement": "平台发布了新公告。",
+    "opTextToImage": "文生图",
+    "opImageToImage": "图生图",
+    "opTextToVideo": "文生视频",
+    "opImageToVideo": "图生视频",
+    "opVideoToVideo": "视频转视频",
+    "opAudio": "语音生成",
+    "opShortform": "短视频",
+    "opRemix": "二创",
+    "opDramaExport": "短剧导出"
   },
   "notificationsPage": {
     "title": "通知中心",
@@ -1577,7 +1619,9 @@
     "filterAll": "全部",
     "filterUnread": "未读",
     "allRead": "已全部标记为已读",
-    "open": "查看"
+    "open": "查看",
+    "typeLike": "点赞提醒",
+    "backToProfile": "返回个人中心"
   },
   "profilePage": {
     "eyebrow": "CREATOR PROFILE",
@@ -1640,7 +1684,9 @@
     "licenseSnapshot": "许可快照",
     "aiLabel": "AI 生成标识",
     "viewWork": "查看作品",
-    "draftMissing": "草稿不存在或已发布"
+    "draftMissing": "草稿不存在或已发布",
+    "backToJob": "返回任务",
+    "backToCreate": "回到创作中心"
   },
   "region": {
     "label": "地区",
@@ -1910,7 +1956,8 @@
     "kitStatusReady": "待导出",
     "kitStatusExported": "已导出",
     "kitStatusSubmitted": "已投递",
-    "kitStatusFailed": "失败"
+    "kitStatusFailed": "失败",
+    "backToCreate": "回到创作中心"
   },
   "skillLibrary": {
     "plazaEyebrow": "SKILL LIBRARY",

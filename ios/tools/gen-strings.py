@@ -60,6 +60,7 @@ NAMESPACES = [
     "settingsPage",
     "billingPage",
     "notificationsPage",
+    "notificationBody",
     "credits",
     "iosOnboarding",
 ]

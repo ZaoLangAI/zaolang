@@ -1,14 +1,14 @@
 import Observation
 import ZaolangKit
 
-/// 与 `front/src/components/notifications/notification-list.tsx` 同一套分组/取文案规则：
-/// 正文优先取 `payload` 里的 `title`/`work_title`/`actor_name`/`message`，都没有才落回 `title_key` 原串。
+/// 与 `front/src/components/notifications/notification-list.tsx` 同一套分组 / 正文 / 图标规则。
 enum NotificationGroup {
-    case remix, follow, job, royalty, moderation, system
+    case remix, like, follow, job, royalty, moderation, system
 
     var labelKey: String {
         switch self {
         case .remix: "notificationsPage.typeRemix"
+        case .like: "notificationsPage.typeLike"
         case .follow: "notificationsPage.typeFollow"
         case .job: "notificationsPage.typeJob"
         case .royalty: "notificationsPage.typeRoyalty"
@@ -17,22 +17,12 @@ enum NotificationGroup {
         }
     }
 
-    var systemImage: String {
-        switch self {
-        case .remix: "arrow.triangle.branch"
-        case .follow: "person.fill"
-        case .job: "sparkles"
-        case .royalty: "banknote"
-        case .moderation: "shield.fill"
-        case .system: "bell.fill"
-        }
-    }
-
     init(type: NotificationType?) {
         switch type {
-        case .workRemixed, .workLiked: self = .remix
+        case .workRemixed: self = .remix
+        case .workLiked: self = .like
         case .newFollower: self = .follow
-        case .jobProgress, .jobSucceeded, .jobFailed: self = .job
+        case .jobProgress, .jobSucceeded, .jobFailed, .jobCancelled: self = .job
         case .royaltyReceived: self = .royalty
         case .moderation: self = .moderation
         case .system, nil: self = .system
@@ -43,28 +33,191 @@ enum NotificationGroup {
 enum NotificationDestination: Equatable {
     case work(workID: String)
     case job(jobID: String)
-    // 没有"按 user id 查主页"的端点（`GET /v1/profiles/{handle}` 只认 handle），
-    // `new_follower` 通知的 payload 也只有 `follower_user_id`，拿不到 handle——不提供跳转，
-    // 总比给一个打不开的链接好。
+    case profile(handle: String)
+    case learn(postID: String)
 }
 
 extension NotificationResponse {
     var group: NotificationGroup { NotificationGroup(type: type.value) }
 
     var bodyText: String {
-        for field in ["title", "work_title", "actor_name", "message"] {
-            if case .string(let value)? = payload[field] { return value }
+        let payload = payload
+        switch titleKey {
+        case "notification.work_approved":
+            return L10n.t("notificationBody.workApproved")
+        case "notification.work_hidden":
+            if let reason = payload.string("reason"), !reason.isEmpty {
+                return L10n.t("notificationBody.workHiddenReason", ["reason": reason])
+            }
+            return L10n.t("notificationBody.workHidden")
+        case "notification.work_restored":
+            return L10n.t("notificationBody.workRestored")
+        case "notification.work_tombstoned":
+            return L10n.t("notificationBody.workTombstoned", ["reason": payload.string("reason") ?? ""])
+        case "notification.appeal_granted":
+            return L10n.t("notificationBody.appealGranted")
+        case "notification.appeal_denied":
+            if let note = payload.string("note"), !note.isEmpty {
+                return L10n.t("notificationBody.appealDeniedReason", ["note": note])
+            }
+            return L10n.t("notificationBody.appealDenied")
+        case "notification.skill_approved":
+            return L10n.t("notificationBody.skillApproved", ["title": payload.string("title") ?? ""])
+        case "notification.skill_rejected":
+            return L10n.t(
+                "notificationBody.skillRejected",
+                ["title": payload.string("title") ?? "", "reason": payload.string("reason") ?? ""]
+            )
+        case "notification.skill_takedown":
+            return L10n.t(
+                "notificationBody.skillTakedown",
+                ["title": payload.string("title") ?? "", "reason": payload.string("reason") ?? ""]
+            )
+        case "notification.learn_post_approved":
+            return L10n.t("notificationBody.learnPostApproved", ["title": payload.string("title") ?? ""])
+        case "notification.learn_post_rejected":
+            return L10n.t(
+                "notificationBody.learnPostRejected",
+                ["title": payload.string("title") ?? "", "reason": payload.string("reason") ?? ""]
+            )
+        case "notification.job_queued":
+            return L10n.t("notificationBody.jobQueued", jobArgs)
+        case "notification.job_running":
+            return L10n.t("notificationBody.jobRunning", jobArgs)
+        case "notification.job_awaiting_input":
+            return L10n.t("notificationBody.jobAwaitingInput", jobArgs)
+        case "notification.job_succeeded":
+            return L10n.t("notificationBody.jobSucceeded", jobArgs)
+        case "notification.job_failed":
+            return L10n.t("notificationBody.jobFailed", jobArgs)
+        case "notification.job_cancelled":
+            return L10n.t("notificationBody.jobCancelled", jobArgs)
+        case "notification.job_expired":
+            return L10n.t("notificationBody.jobExpired", jobArgs)
+        case "notification.export_queued":
+            return L10n.t("notificationBody.exportQueued", exportArgs)
+        case "notification.export_running":
+            return L10n.t("notificationBody.exportRunning", exportArgs)
+        case "notification.export_succeeded":
+            return L10n.t("notificationBody.exportSucceeded", exportArgs)
+        case "notification.export_failed":
+            return L10n.t("notificationBody.exportFailed", exportArgs)
+        case "notification.export_cancelled":
+            return L10n.t("notificationBody.exportCancelled", exportArgs)
+        case "notification.work_remixed":
+            return L10n.t("notificationBody.workRemixed", ["work_title": payload.string("work_title") ?? ""])
+        case "notification.royalty_received":
+            return L10n.t(
+                "notificationBody.royaltyReceived",
+                ["work_title": payload.string("work_title") ?? "", "amount": payload.string("amount") ?? ""]
+            )
+        case "notification.new_follower":
+            return L10n.t(
+                "notificationBody.newFollower",
+                ["actor_name": payload.string("follower_display_name") ?? payload.string("actor_name") ?? ""]
+            )
+        case "notification.announcement":
+            return L10n.t("notificationBody.announcement")
+        default:
+            for field in ["title", "work_title", "actor_name", "message"] {
+                if let value = payload.string(field), !value.isEmpty { return value }
+            }
+            return titleKey
         }
-        return titleKey
+    }
+
+    var systemImage: String {
+        if payload.bool("is_remix") == true { return "arrow.triangle.branch" }
+        if let profile = payload.string("shortform_profile"), !profile.isEmpty { return "iphone" }
+        switch payload.string("operation") {
+        case "text_to_image": return "photo"
+        case "image_to_image": return "wand.and.stars"
+        case "text_to_video", "video_to_video", "drama_export": return "video"
+        case "image_to_video": return "photo"
+        case "audio_generation": return "mic"
+        default: break
+        }
+        switch type.value {
+        case .workRemixed: return "arrow.triangle.branch"
+        case .workLiked: return "heart.fill"
+        case .newFollower: return "person.fill"
+        case .royaltyReceived: return "banknote"
+        case .moderation: return "shield.fill"
+        case .jobSucceeded: return "checkmark.circle"
+        case .jobFailed: return "exclamationmark.triangle"
+        case .jobCancelled: return "xmark.circle"
+        case .jobProgress: return "sparkles"
+        case .system, nil: return "bell.fill"
+        }
     }
 
     var destination: NotificationDestination? {
-        guard let targetID else { return nil }
         switch targetType {
-        case "work": return .work(workID: targetID)
-        case "generation_job": return .job(jobID: targetID)
+        case "work":
+            return targetID.map { .work(workID: $0) }
+        case "generation_job":
+            return targetID.map { .job(jobID: $0) }
+        case "learn_post":
+            return targetID.map { .learn(postID: $0) }
+        case "user":
+            if let handle = payload.string("follower_handle"), !handle.isEmpty {
+                return .profile(handle: handle)
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private var jobArgs: [String: CustomStringConvertible] {
+        [
+            "operation": operationLabel,
+            "excerpt": payload.string("prompt_excerpt") ?? "",
+            "tier": payload.string("quality_tier") ?? "",
+        ]
+    }
+
+    private var exportArgs: [String: CustomStringConvertible] {
+        [
+            "series": payload.string("series_title") ?? "",
+            "episode": payload.string("episode_title") ?? "",
+        ]
+    }
+
+    private var operationLabel: String {
+        if payload.bool("is_remix") == true { return L10n.t("notificationBody.opRemix") }
+        if let profile = payload.string("shortform_profile"), !profile.isEmpty {
+            return L10n.t("notificationBody.opShortform")
+        }
+        switch payload.string("operation") {
+        case "text_to_image": return L10n.t("notificationBody.opTextToImage")
+        case "image_to_image": return L10n.t("notificationBody.opImageToImage")
+        case "text_to_video": return L10n.t("notificationBody.opTextToVideo")
+        case "image_to_video": return L10n.t("notificationBody.opImageToVideo")
+        case "video_to_video": return L10n.t("notificationBody.opVideoToVideo")
+        case "audio_generation": return L10n.t("notificationBody.opAudio")
+        case "drama_export": return L10n.t("notificationBody.opDramaExport")
+        default: return payload.string("operation") ?? ""
+        }
+    }
+}
+
+private extension Dictionary where Key == String, Value == JSONValue {
+    func string(_ key: String) -> String? {
+        guard let value = self[key] else { return nil }
+        switch value {
+        case .string(let text): return text
+        case .number(let number):
+            return number.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(number))
+                : String(number)
         default: return nil
         }
+    }
+
+    func bool(_ key: String) -> Bool? {
+        if case .bool(let value)? = self[key] { return value }
+        return nil
     }
 }
 

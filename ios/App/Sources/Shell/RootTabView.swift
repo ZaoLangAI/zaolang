@@ -218,7 +218,12 @@ struct RootTabView: View {
         case .notifications:
             NotificationsView(
                 onOpenWork: { router.libraryPath.append(LibraryRoute.workDetail(workID: $0)) },
-                onOpenJob: { router.libraryPath.append(LibraryRoute.jobDetail(jobID: $0)) }
+                onOpenJob: { router.libraryPath.append(LibraryRoute.jobDetail(jobID: $0)) },
+                onOpenProfile: { router.libraryPath.append(LibraryRoute.profile(handle: $0)) },
+                onOpenLearn: { postID in
+                    router.selectTab(.learn)
+                    router.learnPath.append(LearnRoute.postDetail(postID: postID))
+                }
             )
         case .billing:
             BillingView()

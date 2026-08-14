@@ -65,7 +65,9 @@
       "goldEnginesPending": "正在验证多实例引擎",
       "goldExportStart": "导出 10 秒金样",
       "goldExportOk": "金样已编码 {bytes} 字节",
-      "goldExportFailed": "金样导出失败"
+      "goldExportFailed": "金样导出失败",
+      "backToCreate": "回到创作中心",
+      "backToDrama": "返回短剧"
     },
     "createPage": {
       "modeDramaTitle": "短剧剪辑",
@@ -142,7 +144,9 @@
       "goldEnginesPending": "Checking independent engines",
       "goldExportStart": "Encode 10s gold sample",
       "goldExportOk": "Gold sample encoded ({bytes} bytes)",
-      "goldExportFailed": "Gold sample encode failed"
+      "goldExportFailed": "Gold sample encode failed",
+      "backToCreate": "Back to the create centre",
+      "backToDrama": "Back to drama"
     },
     "createPage": {
       "modeDramaTitle": "Drama editor",
@@ -219,7 +223,9 @@
       "goldEnginesPending": "複数インスタンスを確認中",
       "goldExportStart": "10 秒ゴールドサンプルを書き出す",
       "goldExportOk": "ゴールドサンプルを {bytes} バイトで符号化しました",
-      "goldExportFailed": "ゴールドサンプルの書き出しに失敗しました"
+      "goldExportFailed": "ゴールドサンプルの書き出しに失敗しました",
+      "backToCreate": "制作センターへ戻る",
+      "backToDrama": "短編ドラマに戻る"
     },
     "createPage": {
       "modeDramaTitle": "短編ドラマ編集",

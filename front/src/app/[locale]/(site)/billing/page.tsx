@@ -4,6 +4,7 @@ import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { CreditPackages } from '@/components/billing/credit-packages';
 import { LedgerTable } from '@/components/billing/ledger-table';
 import { RedeemCodeForm } from '@/components/billing/redeem-code-form';
+import { BackLink } from '@/components/ui/back-link';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { serverFetchOrNull } from '@/lib/api/server';
@@ -35,6 +36,7 @@ export default async function BillingPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-8 sm:px-6">
+      <BackLink href="/profile">{t('backToProfile')}</BackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
 
       <div className="grid grid-cols-2 divide-x divide-border overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface">

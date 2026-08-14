@@ -81,6 +81,7 @@ struct CreateJobBanner: View {
         case .queued: L10n.t("job.queued")
         case .submitted: L10n.t("job.submitted")
         case .running: L10n.t("job.running")
+        case .awaitingInput: L10n.t("job.awaiting_input")
         case .succeeded: L10n.t("job.succeeded")
         case .failed: L10n.t("job.failed")
         case .cancelled: L10n.t("job.cancelled")

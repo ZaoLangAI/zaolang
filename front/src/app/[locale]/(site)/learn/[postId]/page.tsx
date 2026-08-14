@@ -6,8 +6,8 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { LearnBodyView } from '@/components/learn/learn-body-view';
 import { Poster } from '@/components/media/poster';
 import { Avatar } from '@/components/work/avatar';
+import { BackLink } from '@/components/ui/back-link';
 import { Badge } from '@/components/ui/primitives';
-import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { LearnPostDetail, LearnPostLevel, LearnPostStatus } from '@/lib/api/types';
@@ -65,9 +65,7 @@ export default async function LearnPostPage({ params }: Params) {
 
   return (
     <div className="mx-auto flex w-full max-w-[860px] flex-col gap-6 px-4 py-8 sm:px-6">
-      <Link href="/learn" className="w-fit text-sm text-muted hover:text-text">
-        {t('listTitle')}
-      </Link>
+      <BackLink href="/learn">{t('backToList')}</BackLink>
 
       <Poster src={post.cover_url} alt={post.title} aspect="video" priority />
 

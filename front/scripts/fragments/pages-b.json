@@ -80,7 +80,9 @@
       "licenseSnapshot": "许可快照",
       "aiLabel": "AI 生成标识",
       "viewWork": "查看作品",
-      "draftMissing": "草稿不存在或已发布"
+      "draftMissing": "草稿不存在或已发布",
+      "backToJob": "返回任务",
+      "backToCreate": "回到创作中心"
     }
   },
   "en": {
@@ -164,7 +166,9 @@
       "licenseSnapshot": "Licence snapshot",
       "aiLabel": "AI disclosure",
       "viewWork": "View the work",
-      "draftMissing": "That draft is gone, or it was already published"
+      "draftMissing": "That draft is gone, or it was already published",
+      "backToJob": "Back to the job",
+      "backToCreate": "Back to the create centre"
     }
   },
   "ja": {
@@ -248,7 +252,9 @@
       "licenseSnapshot": "ライセンススナップショット",
       "aiLabel": "AI 生成表示",
       "viewWork": "作品を見る",
-      "draftMissing": "下書きが存在しないか、すでに公開済みです"
+      "draftMissing": "下書きが存在しないか、すでに公開済みです",
+      "backToJob": "ジョブに戻る",
+      "backToCreate": "制作センターへ戻る"
     }
   }
 }

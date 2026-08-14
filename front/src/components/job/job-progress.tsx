@@ -54,7 +54,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const router = useRouter();
   const { notify } = useToast();
 
-  const { job, events, reconnecting } = useJobStream(jobId, initial);
+  const { job, events, reconnecting, applyJob } = useJobStream(jobId, initial);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
@@ -127,8 +127,11 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const cancel = async () => {
     setCancelling(true);
     try {
-      await api.post(`/v1/generation-jobs/${jobId}/cancel`);
+      const latest = await api.post<GenerationJob>(`/v1/generation-jobs/${jobId}/cancel`);
+      applyJob(latest);
       setConfirmCancel(false);
+    } catch (error) {
+      notify(isApiError(error) ? error.message : t('cancelFailed'), 'error');
     } finally {
       setCancelling(false);
     }
@@ -284,7 +287,14 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
           <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
         ) : null}
 
-        {current.status === 'awaiting_input' ? <AwaitingInputPanel jobId={jobId} /> : null}
+        {current.status === 'awaiting_input' && !current.cancel_requested ? (
+          <AwaitingInputPanel jobId={jobId} />
+        ) : null}
+        {current.cancel_requested && !finished ? (
+          <p role="status" className="text-sm text-muted">
+            {t('cancellingHint')}
+          </p>
+        ) : null}
 
         {/* Keeps the tail of the page clear of the fixed bar below. */}
         <div aria-hidden="true" className="safe-mb h-16 lg:hidden" />
@@ -311,7 +321,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               onClick={() => setConfirmCancel(true)}
               disabled={current.cancel_requested}
             >
-              {tJob('cancel')}
+              {current.cancel_requested ? tJob('cancelRequested') : tJob('cancel')}
             </Button>
           ) : null}
           <Button variant="ghost" onClick={() => router.push('/create')}>

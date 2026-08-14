@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { JobProgress } from '@/components/job/job-progress';
+import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { GenerationJob } from '@/lib/api/types';
@@ -28,6 +29,7 @@ export default async function JobPage({ params }: Params) {
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-6 sm:px-6">
+      <BackLink href="/create">{t('backToCreate')}</BackLink>
       <PageHeading title={t('title')} description={t('subtitle', { id: job.id })} />
       <JobProgress jobId={jobId} initial={job} />
     </div>

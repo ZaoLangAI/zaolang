@@ -57,7 +57,8 @@
       "modeRemixTitle": "基于作品二创",
       "modeRemixDesc": "继承授权素材、参数和署名，创作可追溯的新版本。",
       "modeRemixTag": "来源链已保留",
-      "pickWork": "去发现页挑一个作品"
+      "pickWork": "去发现页挑一个作品",
+      "backToCreate": "回到创作中心"
     }
   },
   "en": {
@@ -118,7 +119,8 @@
       "modeRemixTitle": "Remix a work",
       "modeRemixDesc": "Inherit licensed assets, parameters and credit, with a traceable new version.",
       "modeRemixTag": "Lineage preserved",
-      "pickWork": "Pick a work from Discover"
+      "pickWork": "Pick a work from Discover",
+      "backToCreate": "Back to the create centre"
     }
   },
   "ja": {
@@ -179,7 +181,8 @@
       "modeRemixTitle": "作品から二次創作",
       "modeRemixDesc": "許諾済みの素材・パラメータ・クレジットを引き継ぎ、追跡可能な新版をつくります。",
       "modeRemixTag": "出典チェーンを保持",
-      "pickWork": "発見ページから作品を選ぶ"
+      "pickWork": "発見ページから作品を選ぶ",
+      "backToCreate": "制作センターへ戻る"
     }
   }
 }

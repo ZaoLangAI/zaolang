@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
+import { NOTIFICATIONS_CHANGED } from '@/components/notifications/notification-list';
 import { Brand } from '@/components/layout/brand';
 import { CreateMenu } from '@/components/layout/create-menu';
 import { PreferenceMenu } from '@/components/layout/preference-menu';
@@ -41,10 +42,15 @@ export function TopBar() {
 
   useEffect(() => {
     if (status !== 'authenticated') return;
-    void api
-      .get<{ count: number }>('/v1/notifications/unread-count')
-      .then((body) => setUnread(body.count))
-      .catch(() => undefined);
+    const refresh = () => {
+      void api
+        .get<{ count: number }>('/v1/notifications/unread-count')
+        .then((body) => setUnread(body.count))
+        .catch(() => undefined);
+    };
+    refresh();
+    window.addEventListener(NOTIFICATIONS_CHANGED, refresh);
+    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, refresh);
   }, [status, pathname]);
 
   return (

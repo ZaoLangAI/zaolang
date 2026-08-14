@@ -1116,7 +1116,8 @@
     "redeemCodeLabel": "コード",
     "redeemSubmit": "引き換える",
     "redeemSucceeded": "引き換えに成功しました。{count} クレジットが付与されました。",
-    "redeemFailed": "引き換えに失敗しました。コードを確認して再試行してください。"
+    "redeemFailed": "引き換えに失敗しました。コードを確認して再試行してください。",
+    "backToProfile": "プロフィールに戻る"
   },
   "brand": {
     "name": "造浪",
@@ -1136,7 +1137,8 @@
     "referenceHint": "最大4枚まで。今後の生成でこのキャラクターの見た目を保つために使われます。",
     "noReference": "参考画像はまだありません",
     "emptyTitle": "まだキャラクターがいません",
-    "emptyHint": "キャラクターを追加して、見た目の参考と声の説明を保存し、複数話で使い回せるようにしましょう。"
+    "emptyHint": "キャラクターを追加して、見た目の参考と声の説明を保存し、複数話で使い回せるようにしましょう。",
+    "backToCreate": "制作センターへ戻る"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -1258,7 +1260,8 @@
     "modeLearnPublishTag": "コミュニティチュートリアル",
     "modeDramaTitle": "短編ドラマ編集",
     "modeDramaDesc": "生成済みクリップをタイムラインに載せ、字幕やトリムを加えて配信規格で書き出します。",
-    "modeDramaTag": "デスクトップ Chrome · 課金なし"
+    "modeDramaTag": "デスクトップ Chrome · 課金なし",
+    "backToCreate": "制作センターへ戻る"
   },
   "credits": {
     "label": "クレジット",
@@ -1380,7 +1383,9 @@
     "brandOverlayHint": "アップロード済み素材の Asset ID を入力してブランドオーバーレイを追加します。ここでのライブラリ閲覧には対応していません。",
     "brandOverlayAssetId": "オーバーレイ素材 ID",
     "brandOverlayApply": "オーバーレイを適用",
-    "brandOverlayRemove": "オーバーレイを削除"
+    "brandOverlayRemove": "オーバーレイを削除",
+    "backToCreate": "制作センターへ戻る",
+    "backToDrama": "短編ドラマに戻る"
   },
   "footer": {
     "source": "ソースコード",
@@ -1413,6 +1418,7 @@
     "expired": "タイムアウト",
     "progress": "進捗 {percent}%",
     "cancel": "ジョブをキャンセル",
+    "cancelRequested": "キャンセル中",
     "retry": "もう一度生成",
     "publish": "公開する",
     "reconnecting": "接続が切れました。再接続しています",
@@ -1438,6 +1444,8 @@
     "failedHint": "保留していたクレジットは返却済みです。説明を調整して再試行してください。",
     "cancelledTitle": "ジョブをキャンセルしました",
     "cancelConfirm": "このジョブをキャンセルしますか？",
+    "cancellingHint": "キャンセルを受け付けました。まもなく停止します。",
+    "cancelFailed": "キャンセルに失敗しました。もう一度お試しください。",
     "waiting": "最初の進捗を待っています",
     "openWork": "作品を見る",
     "backToCreate": "制作センターへ戻る",
@@ -1496,7 +1504,16 @@
     "editAction": "編集",
     "withdrawAction": "取り下げ",
     "withdrawConfirm": "この投稿を取り下げますか？",
-    "cancelEdit": "編集をキャンセル"
+    "cancelEdit": "編集をキャンセル",
+    "paths": "おすすめの学習パス",
+    "pathsHint": "3 つのモジュールでプラットフォームの流れを把握できます。",
+    "levelRequired": "必修",
+    "lesson": "レッスン {index}",
+    "includesPractice": "実習付き",
+    "course1Title": "5 分で最初の動画二次創作",
+    "course2Title": "カメラ感のあるプロンプトの書き方",
+    "course3Title": "ライセンス・クレジット・創作チェーンを読む",
+    "backToList": "学習に戻る"
   },
   "license": {
     "label": "ライセンス",
@@ -1559,7 +1576,32 @@
     "skillRejected": "あなたのスキル「{title}」は審査を通過しませんでした：{reason}",
     "skillTakedown": "あなたのスキル「{title}」は取り下げられました：{reason}",
     "learnPostApproved": "投稿した学習コンテンツ「{title}」が審査を通過しました。",
-    "learnPostRejected": "投稿した学習コンテンツ「{title}」は審査を通過しませんでした：{reason}"
+    "learnPostRejected": "投稿した学習コンテンツ「{title}」は審査を通過しませんでした：{reason}",
+    "jobQueued": "{operation}「{excerpt}」がキューに入りました。",
+    "jobRunning": "{operation}「{excerpt}」を生成しています。",
+    "jobAwaitingInput": "{operation}を続けるには、いくつか答える必要があります。",
+    "jobSucceeded": "{operation}「{excerpt}」が完成しました。",
+    "jobFailed": "{operation}「{excerpt}」は完了できませんでした。",
+    "jobCancelled": "{operation}「{excerpt}」はキャンセルされました。",
+    "jobExpired": "{operation}「{excerpt}」はタイムアウトし、クレジットを返却しました。",
+    "exportQueued": "短編「{series}」{episode} の書き出し待ちです。",
+    "exportRunning": "短編「{series}」{episode} を書き出しています。",
+    "exportSucceeded": "短編「{series}」{episode} の書き出しが完了しました。",
+    "exportFailed": "短編「{series}」{episode} の書き出しに失敗しました。",
+    "exportCancelled": "短編「{series}」{episode} の書き出しはキャンセルされました。",
+    "workRemixed": "「{work_title}」を元にした二次創作がありました。",
+    "royaltyReceived": "「{work_title}」から {amount} クレジットの還元がありました。",
+    "newFollower": "{actor_name} があなたをフォローしました。",
+    "announcement": "新しいお知らせがあります。",
+    "opTextToImage": "テキストから画像",
+    "opImageToImage": "画像編集",
+    "opTextToVideo": "テキストから動画",
+    "opImageToVideo": "画像から動画",
+    "opVideoToVideo": "動画変換",
+    "opAudio": "音声生成",
+    "opShortform": "ショート動画",
+    "opRemix": "二次創作",
+    "opDramaExport": "短編書き出し"
   },
   "notificationsPage": {
     "title": "通知センター",
@@ -1577,7 +1619,9 @@
     "filterAll": "すべて",
     "filterUnread": "未読",
     "allRead": "すべて既読にしました",
-    "open": "開く"
+    "open": "開く",
+    "typeLike": "いいね",
+    "backToProfile": "プロフィールに戻る"
   },
   "profilePage": {
     "eyebrow": "CREATOR PROFILE",
@@ -1640,7 +1684,9 @@
     "licenseSnapshot": "ライセンススナップショット",
     "aiLabel": "AI 生成表示",
     "viewWork": "作品を見る",
-    "draftMissing": "下書きが存在しないか、すでに公開済みです"
+    "draftMissing": "下書きが存在しないか、すでに公開済みです",
+    "backToJob": "ジョブに戻る",
+    "backToCreate": "制作センターへ戻る"
   },
   "region": {
     "label": "地域",
@@ -1910,7 +1956,8 @@
     "kitStatusReady": "書き出し待ち",
     "kitStatusExported": "書き出し済み",
     "kitStatusSubmitted": "送信済み",
-    "kitStatusFailed": "失敗"
+    "kitStatusFailed": "失敗",
+    "backToCreate": "制作センターへ戻る"
   },
   "skillLibrary": {
     "plazaEyebrow": "SKILL LIBRARY",

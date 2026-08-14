@@ -6,6 +6,8 @@ struct NotificationsView: View {
     @Environment(AppEnvironment.self) private var environment
     let onOpenWork: (String) -> Void
     let onOpenJob: (String) -> Void
+    let onOpenProfile: (String) -> Void
+    let onOpenLearn: (String) -> Void
 
     @State private var viewModel: NotificationsViewModel?
     @State private var filterUnreadOnly = false
@@ -66,7 +68,7 @@ struct NotificationsView: View {
     private func row(_ item: NotificationResponse) -> some View {
         let isRead = viewModel?.isRead(item) ?? item.read
         return HStack(alignment: .top, spacing: 12) {
-            Image(systemName: item.group.systemImage)
+            Image(systemName: item.systemImage)
                 .frame(width: 32, height: 32)
                 .background(Color.zl.surfaceSoft, in: Circle())
                 .foregroundStyle(Color.zl.textMuted)
@@ -79,7 +81,7 @@ struct NotificationsView: View {
                     }
                 }
                 Text(item.bodyText).font(.subheadline)
-                Text(item.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text((item.updatedAt ?? item.createdAt).formatted(date: .abbreviated, time: .shortened))
                     .font(.caption2)
                     .foregroundStyle(Color.zl.textMuted)
             }
@@ -103,6 +105,8 @@ struct NotificationsView: View {
         switch destination {
         case .work(let workID): onOpenWork(workID)
         case .job(let jobID): onOpenJob(jobID)
+        case .profile(let handle): onOpenProfile(handle)
+        case .learn(let postID): onOpenLearn(postID)
         }
     }
 

@@ -1116,7 +1116,8 @@
     "redeemCodeLabel": "Code",
     "redeemSubmit": "Redeem",
     "redeemSucceeded": "Redeemed! {count} credits added.",
-    "redeemFailed": "Could not redeem this code. Check it and try again."
+    "redeemFailed": "Could not redeem this code. Check it and try again.",
+    "backToProfile": "Back to profile"
   },
   "brand": {
     "name": "ZaoLang",
@@ -1136,7 +1137,8 @@
     "referenceHint": "Up to 4 images, used to keep this character's look consistent in future generations.",
     "noReference": "No reference yet",
     "emptyTitle": "No characters yet",
-    "emptyHint": "Create a character to save a look and voice hint you can reuse across episodes."
+    "emptyHint": "Create a character to save a look and voice hint you can reuse across episodes.",
+    "backToCreate": "Back to the create centre"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -1258,7 +1260,8 @@
     "modeLearnPublishTag": "Community tutorial",
     "modeDramaTitle": "Drama editor",
     "modeDramaDesc": "Drop a finished clip on the timeline, add captions and trims, then export to a delivery spec.",
-    "modeDramaTag": "Desktop Chrome · unbilled"
+    "modeDramaTag": "Desktop Chrome · unbilled",
+    "backToCreate": "Back to the create centre"
   },
   "credits": {
     "label": "Credits",
@@ -1380,7 +1383,9 @@
     "brandOverlayHint": "Add a brand overlay by asset ID from an existing upload; browsing your library here isn't supported yet.",
     "brandOverlayAssetId": "Overlay asset ID",
     "brandOverlayApply": "Apply overlay",
-    "brandOverlayRemove": "Remove overlay"
+    "brandOverlayRemove": "Remove overlay",
+    "backToCreate": "Back to the create centre",
+    "backToDrama": "Back to drama"
   },
   "footer": {
     "source": "Source code",
@@ -1413,6 +1418,7 @@
     "expired": "Timed out",
     "progress": "{percent}% complete",
     "cancel": "Cancel job",
+    "cancelRequested": "Cancelling",
     "retry": "Generate again",
     "publish": "Publish",
     "reconnecting": "Connection dropped, reconnecting",
@@ -1438,6 +1444,8 @@
     "failedHint": "The held credits are already back in your balance. Adjust the description and try again.",
     "cancelledTitle": "Job cancelled",
     "cancelConfirm": "Cancel this job?",
+    "cancellingHint": "Cancel request received. The job will stop shortly.",
+    "cancelFailed": "Could not cancel. Please try again.",
     "waiting": "Waiting for the first progress event",
     "openWork": "View the work",
     "backToCreate": "Back to the create centre",
@@ -1496,7 +1504,16 @@
     "editAction": "Edit",
     "withdrawAction": "Withdraw",
     "withdrawConfirm": "Withdraw this post?",
-    "cancelEdit": "Cancel editing"
+    "cancelEdit": "Cancel editing",
+    "paths": "Suggested path",
+    "pathsHint": "Three modules cover the whole platform flow.",
+    "levelRequired": "Required",
+    "lesson": "Lesson {index}",
+    "includesPractice": "Includes hands-on practice",
+    "course1Title": "Your first video remix in five minutes",
+    "course2Title": "Writing prompts with a sense of camera",
+    "course3Title": "Reading licences, credit and lineage",
+    "backToList": "Back to Learn"
   },
   "license": {
     "label": "License",
@@ -1559,7 +1576,32 @@
     "skillRejected": "Your skill \"{title}\" did not pass review: {reason}",
     "skillTakedown": "Your skill \"{title}\" was taken down: {reason}",
     "learnPostApproved": "Your learning post \"{title}\" passed review.",
-    "learnPostRejected": "Your learning post \"{title}\" did not pass review: {reason}"
+    "learnPostRejected": "Your learning post \"{title}\" did not pass review: {reason}",
+    "jobQueued": "Your {operation} “{excerpt}” is in the queue.",
+    "jobRunning": "Your {operation} “{excerpt}” is generating.",
+    "jobAwaitingInput": "Your {operation} needs a few answers from you before it can continue.",
+    "jobSucceeded": "Your {operation} “{excerpt}” is ready.",
+    "jobFailed": "Your {operation} “{excerpt}” could not finish.",
+    "jobCancelled": "Your {operation} “{excerpt}” was cancelled.",
+    "jobExpired": "Your {operation} “{excerpt}” timed out. Credits were returned.",
+    "exportQueued": "Drama “{series}” {episode} is queued for export.",
+    "exportRunning": "Drama “{series}” {episode} is exporting.",
+    "exportSucceeded": "Drama “{series}” {episode} finished exporting.",
+    "exportFailed": "Drama “{series}” {episode} failed to export.",
+    "exportCancelled": "Drama “{series}” {episode} export was cancelled.",
+    "workRemixed": "Someone remixed “{work_title}”.",
+    "royaltyReceived": "“{work_title}” earned you {amount} credits.",
+    "newFollower": "{actor_name} followed you.",
+    "announcement": "There is a new platform announcement.",
+    "opTextToImage": "text-to-image",
+    "opImageToImage": "image edit",
+    "opTextToVideo": "text-to-video",
+    "opImageToVideo": "image-to-video",
+    "opVideoToVideo": "video-to-video",
+    "opAudio": "voice generation",
+    "opShortform": "short video",
+    "opRemix": "remix",
+    "opDramaExport": "drama export"
   },
   "notificationsPage": {
     "title": "Notifications",
@@ -1577,7 +1619,9 @@
     "filterAll": "All",
     "filterUnread": "Unread",
     "allRead": "Everything marked as read",
-    "open": "Open"
+    "open": "Open",
+    "typeLike": "Like",
+    "backToProfile": "Back to profile"
   },
   "profilePage": {
     "eyebrow": "CREATOR PROFILE",
@@ -1640,7 +1684,9 @@
     "licenseSnapshot": "Licence snapshot",
     "aiLabel": "AI disclosure",
     "viewWork": "View the work",
-    "draftMissing": "That draft is gone, or it was already published"
+    "draftMissing": "That draft is gone, or it was already published",
+    "backToJob": "Back to the job",
+    "backToCreate": "Back to the create centre"
   },
   "region": {
     "label": "Region",
@@ -1910,7 +1956,8 @@
     "kitStatusReady": "Ready",
     "kitStatusExported": "Exported",
     "kitStatusSubmitted": "Submitted",
-    "kitStatusFailed": "Failed"
+    "kitStatusFailed": "Failed",
+    "backToCreate": "Back to the create centre"
   },
   "skillLibrary": {
     "plazaEyebrow": "SKILL LIBRARY",

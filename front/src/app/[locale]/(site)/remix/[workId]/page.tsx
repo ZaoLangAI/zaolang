@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { GenerationStudio } from '@/components/studio/generation-studio';
-import { IconArrowLeft } from '@/components/ui/icons';
+import { BackLink } from '@/components/ui/back-link';
 import { EmptyState } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
 import { getWork } from '@/lib/api/work-loaders';
@@ -21,19 +21,14 @@ export async function generateMetadata({ params }: Params) {
 export default async function RemixPage({ params }: Params) {
   const { workId } = await params;
   const t = await getTranslations('remixPage');
+  const tWork = await getTranslations('workPage');
 
   const work = await getWork(workId, true);
   if (!work) notFound();
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-6 sm:px-6">
-      <Link
-        href={`/work/${work.id}`}
-        className="flex w-fit items-center gap-1.5 text-sm text-muted hover:text-text"
-      >
-        <IconArrowLeft className="size-4" />
-        {t('backToSource')}
-      </Link>
+      <BackLink href={`/work/${work.id}`}>{t('backToSource')}</BackLink>
 
       <header>
         <p className="eyebrow">{t('eyebrow')}</p>
@@ -57,7 +52,7 @@ export default async function RemixPage({ params }: Params) {
               href="/discover"
               className="rounded-[var(--radius-sm)] border border-border px-4 py-2 text-sm hover:bg-surface-soft"
             >
-              {t('backToSource')}
+              {tWork('backToDiscover')}
             </Link>
           }
         />

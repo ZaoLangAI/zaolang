@@ -101,7 +101,11 @@
       "kitStatusReady": "待导出",
       "kitStatusExported": "已导出",
       "kitStatusSubmitted": "已投递",
-      "kitStatusFailed": "失败"
+      "kitStatusFailed": "失败",
+      "backToCreate": "回到创作中心"
+    },
+    "characters": {
+      "backToCreate": "回到创作中心"
     }
   },
   "en": {
@@ -206,7 +210,11 @@
       "kitStatusReady": "Ready",
       "kitStatusExported": "Exported",
       "kitStatusSubmitted": "Submitted",
-      "kitStatusFailed": "Failed"
+      "kitStatusFailed": "Failed",
+      "backToCreate": "Back to the create centre"
+    },
+    "characters": {
+      "backToCreate": "Back to the create centre"
     }
   },
   "ja": {
@@ -311,7 +319,11 @@
       "kitStatusReady": "書き出し待ち",
       "kitStatusExported": "書き出し済み",
       "kitStatusSubmitted": "送信済み",
-      "kitStatusFailed": "失敗"
+      "kitStatusFailed": "失敗",
+      "backToCreate": "制作センターへ戻る"
+    },
+    "characters": {
+      "backToCreate": "制作センターへ戻る"
     }
   }
 }

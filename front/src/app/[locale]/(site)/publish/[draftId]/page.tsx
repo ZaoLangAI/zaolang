@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { PublishForm } from '@/components/publish/publish-form';
+import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft } from '@/lib/api/types';
@@ -24,6 +25,9 @@ export default async function PublishPage({ params }: Params) {
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-8 sm:px-6">
+      <BackLink href={draft.latest_job_id ? `/jobs/${draft.latest_job_id}` : '/create'}>
+        {draft.latest_job_id ? t('backToJob') : t('backToCreate')}
+      </BackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
       <PublishForm draft={draft} />
     </div>

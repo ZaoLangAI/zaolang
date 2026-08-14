@@ -52,6 +52,7 @@ public enum JobStatus: String, Codable, Sendable, CaseIterable {
     case queued
     case submitted
     case running
+    case awaitingInput = "awaiting_input"
     case succeeded
     case failed
     case cancelled
@@ -60,13 +61,13 @@ public enum JobStatus: String, Codable, Sendable, CaseIterable {
     public var isTerminal: Bool {
         switch self {
         case .succeeded, .failed, .cancelled, .expired: true
-        case .created, .queued, .submitted, .running: false
+        case .created, .queued, .submitted, .running, .awaitingInput: false
         }
     }
 
     public var isCancellable: Bool {
         switch self {
-        case .created, .queued, .submitted, .running: true
+        case .created, .queued, .submitted, .running, .awaitingInput: true
         case .succeeded, .failed, .cancelled, .expired: false
         }
     }
@@ -83,6 +84,7 @@ public enum NotificationType: String, Codable, Sendable, CaseIterable {
     case jobProgress = "job_progress"
     case jobSucceeded = "job_succeeded"
     case jobFailed = "job_failed"
+    case jobCancelled = "job_cancelled"
     case workLiked = "work_liked"
     case workRemixed = "work_remixed"
     case royaltyReceived = "royalty_received"

@@ -18,6 +18,7 @@ public struct NotificationResponse: Codable, Sendable, Equatable, Identifiable {
     public let targetID: String?
     public let read: Bool
     public let createdAt: Date
+    public let updatedAt: Date?
 
     private enum CodingKeys: String, CodingKey {
         case id, type
@@ -27,6 +28,7 @@ public struct NotificationResponse: Codable, Sendable, Equatable, Identifiable {
         case targetID = "target_id"
         case read
         case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     public init(from decoder: Decoder) throws {
@@ -39,6 +41,7 @@ public struct NotificationResponse: Codable, Sendable, Equatable, Identifiable {
         targetID = try c.decodeIfPresent(String.self, forKey: .targetID)
         read = try c.decodeIfPresent(Bool.self, forKey: .read) ?? false
         createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
 }
 

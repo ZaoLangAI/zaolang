@@ -18,6 +18,7 @@ function isTerminal(status: string): boolean {
 export type StreamedEvent = Omit<JobEvent, 'created_at'> & {
   status: JobStatus;
   created_at?: string;
+  cancel_requested?: boolean;
 };
 
 export interface JobStreamState {
@@ -26,6 +27,7 @@ export interface JobStreamState {
   connected: boolean;
   /** True while a dropped stream is being re-established. */
   reconnecting: boolean;
+  applyJob: (next: GenerationJob) => void;
 }
 
 /**
@@ -109,7 +111,15 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
               );
               setJob((current) =>
                 current
-                  ? { ...current, status: payload.status, progress: payload.progress }
+                  ? {
+                      ...current,
+                      status: payload.status,
+                      progress: payload.progress,
+                      cancel_requested:
+                        payload.cancel_requested === true ||
+                        payload.status === 'cancelled' ||
+                        current.cancel_requested,
+                    }
                   : current,
               );
               if (isTerminal(payload.status)) {
@@ -148,7 +158,12 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
     };
   }, [jobId, initial]);
 
-  return { job, events, connected, reconnecting };
+  const applyJob = (next: GenerationJob) => {
+    setJob(next);
+    if (next.events?.length) setEvents(next.events);
+  };
+
+  return { job, events, connected, reconnecting, applyJob };
 }
 
 function parseFrame(frame: string): StreamedEvent | null {

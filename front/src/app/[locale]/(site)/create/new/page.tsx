@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { GenerationStudio } from '@/components/studio/generation-studio';
+import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
@@ -63,6 +64,7 @@ export default async function NewCreationPage({
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
+      <BackLink href="/create">{t('backToCreate')}</BackLink>
       <PageHeading eyebrow={t('eyebrow')} title={title} description={description} />
       <GenerationStudio
         operation={operation}

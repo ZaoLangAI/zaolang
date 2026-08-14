@@ -5,13 +5,21 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
+  IconAlert,
   IconBell,
   IconCheck,
   IconHeart,
+  IconImage,
+  IconMessage,
+  IconMic,
+  IconPhone,
   IconRemix,
   IconShield,
   IconSparkle,
   IconUser,
+  IconVideo,
+  IconWallet,
+  IconWand,
 } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -22,17 +30,22 @@ import type { Notification } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/format';
 
+const NOTIFICATIONS_CHANGED = 'zl-notifications-changed';
+
 const GROUPS = {
-  work_remixed: { key: 'typeRemix', icon: IconRemix },
-  work_liked: { key: 'typeRemix', icon: IconHeart },
-  new_follower: { key: 'typeFollow', icon: IconUser },
-  job_progress: { key: 'typeJob', icon: IconSparkle },
-  job_succeeded: { key: 'typeJob', icon: IconCheck },
-  job_failed: { key: 'typeJob', icon: IconSparkle },
-  royalty_received: { key: 'typeRoyalty', icon: IconSparkle },
-  moderation: { key: 'typeModeration', icon: IconShield },
-  system: { key: 'typeSystem', icon: IconBell },
+  work_remixed: { key: 'typeRemix' },
+  work_liked: { key: 'typeLike' },
+  new_follower: { key: 'typeFollow' },
+  job_progress: { key: 'typeJob' },
+  job_succeeded: { key: 'typeJob' },
+  job_failed: { key: 'typeJob' },
+  job_cancelled: { key: 'typeJob' },
+  royalty_received: { key: 'typeRoyalty' },
+  moderation: { key: 'typeModeration' },
+  system: { key: 'typeSystem' },
 } as const;
+
+type IconComponent = (props: { className?: string }) => React.ReactNode;
 
 export function NotificationList({ initial }: { initial: Notification[] }) {
   const t = useTranslations('notificationsPage');
@@ -52,6 +65,7 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
     try {
       await api.post('/v1/notifications/read');
       setItems((current) => current.map((item) => ({ ...item, read: true })));
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
       notify(t('allRead'), 'success');
     } finally {
       setBusy(false);
@@ -61,6 +75,7 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
   const markOne = async (id: string) => {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, read: true } : item)));
     await api.post('/v1/notifications/read', undefined, { query: { notification_id: id } });
+    window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
   };
 
   if (items.length === 0) {
@@ -110,7 +125,9 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
         <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface">
           {shown.map((item) => {
             const group = GROUPS[item.type as keyof typeof GROUPS] ?? GROUPS.system;
-            const Icon = group.icon;
+            const visual = notificationVisual(item);
+            const Icon = visual.icon;
+            const Badge = visual.badge;
             const href = targetHref(item);
 
             return (
@@ -118,8 +135,18 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
                 key={item.id}
                 className={cn('flex gap-3 px-5 py-4', !item.read && 'bg-primary/4')}
               >
-                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-surface-soft">
-                  <Icon className="size-4 text-muted" />
+                <span
+                  className={cn(
+                    'relative mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-surface-soft',
+                    visual.tone,
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {Badge ? (
+                    <span className="absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full bg-surface">
+                      <Badge className="size-2.5" />
+                    </span>
+                  ) : null}
                 </span>
 
                 <div className="min-w-0 flex-1">
@@ -134,7 +161,7 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
                   </p>
                   <p className="mt-1 text-sm">{notificationText(item, tBody)}</p>
                   <p className="mt-1 text-xs text-muted">
-                    {formatRelative(item.created_at, locale)}
+                    {formatRelative(item.updated_at ?? item.created_at, locale)}
                   </p>
                 </div>
 
@@ -156,12 +183,12 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
   );
 }
 
-/** Moderation outcomes carry only interpolation values (title/reason), keyed
- * by `title_key`, so one write reads correctly in whichever of the three UI
- * languages the reader has selected — never frozen in the actor's language. */
-const MODERATION_BODY: Record<
+const TITLE_KEYS: Record<
   string,
-  (payload: Record<string, unknown>) => { key: string; params?: Record<string, string> }
+  (payload: Record<string, unknown>, tBody: ReturnType<typeof useTranslations>) => {
+    key: string;
+    params?: Record<string, string>;
+  }
 > = {
   'notification.work_approved': () => ({ key: 'workApproved' }),
   'notification.work_hidden': (p) =>
@@ -198,18 +225,59 @@ const MODERATION_BODY: Record<
     key: 'learnPostRejected',
     params: { title: String(p.title ?? ''), reason: String(p.reason ?? '') },
   }),
+  'notification.job_queued': (p, tBody) => ({
+    key: 'jobQueued',
+    params: jobParams(p, tBody),
+  }),
+  'notification.job_running': (p, tBody) => ({
+    key: 'jobRunning',
+    params: jobParams(p, tBody),
+  }),
+  'notification.job_awaiting_input': (p, tBody) => ({
+    key: 'jobAwaitingInput',
+    params: jobParams(p, tBody),
+  }),
+  'notification.job_succeeded': (p, tBody) => ({
+    key: 'jobSucceeded',
+    params: jobParams(p, tBody),
+  }),
+  'notification.job_failed': (p, tBody) => ({
+    key: 'jobFailed',
+    params: jobParams(p, tBody),
+  }),
+  'notification.job_cancelled': (p, tBody) => ({
+    key: 'jobCancelled',
+    params: jobParams(p, tBody),
+  }),
+  'notification.job_expired': (p, tBody) => ({
+    key: 'jobExpired',
+    params: jobParams(p, tBody),
+  }),
+  'notification.export_queued': (p) => ({ key: 'exportQueued', params: exportParams(p) }),
+  'notification.export_running': (p) => ({ key: 'exportRunning', params: exportParams(p) }),
+  'notification.export_succeeded': (p) => ({ key: 'exportSucceeded', params: exportParams(p) }),
+  'notification.export_failed': (p) => ({ key: 'exportFailed', params: exportParams(p) }),
+  'notification.export_cancelled': (p) => ({ key: 'exportCancelled', params: exportParams(p) }),
+  'notification.work_remixed': (p) => ({
+    key: 'workRemixed',
+    params: { work_title: String(p.work_title ?? '') },
+  }),
+  'notification.royalty_received': (p) => ({
+    key: 'royaltyReceived',
+    params: { work_title: String(p.work_title ?? ''), amount: String(p.amount ?? '') },
+  }),
+  'notification.new_follower': (p) => ({
+    key: 'newFollower',
+    params: { actor_name: String(p.follower_display_name || p.actor_name || '') },
+  }),
+  'notification.announcement': () => ({ key: 'announcement' }),
 };
 
-/**
- * Older notification types (remix, follow, royalty…) were written with the
- * body pre-rendered into the payload, so those fall back to reading it back
- * out rather than resolving `title_key`.
- */
 function notificationText(item: Notification, tBody: ReturnType<typeof useTranslations>): string {
   const payload = item.payload ?? {};
-  const moderation = MODERATION_BODY[item.title_key];
-  if (moderation) {
-    const { key, params } = moderation(payload);
+  const mapped = TITLE_KEYS[item.title_key];
+  if (mapped) {
+    const { key, params } = mapped(payload, tBody);
     return tBody(key, params);
   }
   const parts = ['title', 'work_title', 'actor_name', 'message']
@@ -218,11 +286,123 @@ function notificationText(item: Notification, tBody: ReturnType<typeof useTransl
   return parts[0] ?? item.title_key;
 }
 
+function jobParams(
+  payload: Record<string, unknown>,
+  tBody: ReturnType<typeof useTranslations>,
+): Record<string, string> {
+  return {
+    operation: operationLabel(payload, tBody),
+    excerpt: String(payload.prompt_excerpt ?? ''),
+    tier: String(payload.quality_tier ?? ''),
+  };
+}
+
+function exportParams(payload: Record<string, unknown>): Record<string, string> {
+  return {
+    series: String(payload.series_title ?? ''),
+    episode: String(payload.episode_title ?? ''),
+  };
+}
+
+function operationLabel(
+  payload: Record<string, unknown>,
+  tBody: ReturnType<typeof useTranslations>,
+): string {
+  if (payload.is_remix === true) return tBody('opRemix');
+  if (typeof payload.shortform_profile === 'string' && payload.shortform_profile) {
+    return tBody('opShortform');
+  }
+  switch (payload.operation) {
+    case 'text_to_image':
+      return tBody('opTextToImage');
+    case 'image_to_image':
+      return tBody('opImageToImage');
+    case 'text_to_video':
+      return tBody('opTextToVideo');
+    case 'image_to_video':
+      return tBody('opImageToVideo');
+    case 'video_to_video':
+      return tBody('opVideoToVideo');
+    case 'audio_generation':
+      return tBody('opAudio');
+    case 'drama_export':
+      return tBody('opDramaExport');
+    default:
+      return String(payload.operation ?? '');
+  }
+}
+
+function notificationVisual(item: Notification): {
+  icon: IconComponent;
+  badge: IconComponent | null;
+  tone: string;
+} {
+  const payload = item.payload ?? {};
+  const status = String(payload.status ?? '');
+  const kindIcon = creationIcon(item, payload);
+  if (status === 'succeeded' || item.type === 'job_succeeded') {
+    return { icon: kindIcon, badge: IconCheck, tone: 'text-success' };
+  }
+  if (status === 'failed' || status === 'expired' || item.type === 'job_failed') {
+    return { icon: kindIcon, badge: IconAlert, tone: 'text-danger' };
+  }
+  if (status === 'cancelled' || item.type === 'job_cancelled') {
+    return { icon: kindIcon, badge: null, tone: 'text-muted' };
+  }
+  if (status === 'awaiting_input') {
+    return { icon: kindIcon, badge: IconMessage, tone: 'text-amber' };
+  }
+  if (item.type === 'job_progress') {
+    const amberOps = payload.operation === 'image_to_image' || payload.operation === 'image_to_video';
+    return { icon: kindIcon, badge: IconSparkle, tone: amberOps ? 'text-amber' : 'text-primary' };
+  }
+  if (item.type === 'new_follower') return { icon: IconUser, badge: null, tone: 'text-primary' };
+  if (item.type === 'work_liked') return { icon: IconHeart, badge: null, tone: 'text-primary' };
+  if (item.type === 'work_remixed') return { icon: IconRemix, badge: null, tone: 'text-primary' };
+  if (item.type === 'royalty_received') return { icon: IconWallet, badge: null, tone: 'text-amber' };
+  if (item.type === 'moderation') return { icon: IconShield, badge: null, tone: 'text-muted' };
+  return { icon: IconBell, badge: null, tone: 'text-muted' };
+}
+
+function creationIcon(item: Notification, payload: Record<string, unknown>): IconComponent {
+  if (payload.is_remix === true) return IconRemix;
+  if (typeof payload.shortform_profile === 'string' && payload.shortform_profile) return IconPhone;
+  switch (payload.operation) {
+    case 'text_to_image':
+      return IconImage;
+    case 'image_to_image':
+      return IconWand;
+    case 'text_to_video':
+    case 'video_to_video':
+    case 'drama_export':
+      return IconVideo;
+    case 'image_to_video':
+      return IconImage;
+    case 'audio_generation':
+      return IconMic;
+    default:
+      if (item.type.startsWith('job_')) return IconSparkle;
+      return IconBell;
+  }
+}
+
 function targetHref(item: Notification): string | null {
-  if (!item.target_id) return null;
-  if (item.target_type === 'work') return `/work/${item.target_id}`;
-  if (item.target_type === 'generation_job') return `/jobs/${item.target_id}`;
-  if (item.target_type === 'user') return `/profile/${item.target_id}`;
-  if (item.target_type === 'learn_post') return `/learn/${item.target_id}`;
+  const payload = item.payload ?? {};
+  if (item.target_type === 'generation_job' && item.target_id) {
+    return `/jobs/${item.target_id}`;
+  }
+  if (item.target_type === 'editor_export') {
+    const cutId = payload.cut_id;
+    return typeof cutId === 'string' && cutId ? `/create/drama/${cutId}` : '/create/drama';
+  }
+  if (item.target_type === 'work' && item.target_id) return `/work/${item.target_id}`;
+  if (item.target_type === 'learn_post' && item.target_id) return `/learn/${item.target_id}`;
+  if (item.target_type === 'skill') return '/skills';
+  if (item.target_type === 'user') {
+    const handle = payload.follower_handle;
+    return typeof handle === 'string' && handle ? `/profile/${handle}` : null;
+  }
   return null;
 }
+
+export { NOTIFICATIONS_CHANGED };

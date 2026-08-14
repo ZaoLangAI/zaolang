@@ -4,9 +4,17 @@ import { getTranslations } from 'next-intl/server';
 import { PublishKit } from '@/components/shortform/publish-kit';
 import { ShortformStudio } from '@/components/shortform/shortform-studio';
 import type { Caption } from '@/components/shortform/caption-composer';
+import { BackLink } from '@/components/ui/back-link';
 import { EmptyState, PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { Character, Draft, Page, PublicationIntent, ShortformProfiles, Series } from '@/lib/api/types';
+import type {
+  Character,
+  Draft,
+  Page,
+  PublicationIntent,
+  ShortformProfiles,
+  Series,
+} from '@/lib/api/types';
 
 export async function generateMetadata() {
   const t = await getTranslations('shortform');
@@ -37,7 +45,12 @@ export default async function ShortformPage({
 
   if (!profiles || profiles.profiles.length === 0) {
     return (
-      <Shell title={t('title')} subtitle={t('subtitle')} eyebrow={t('eyebrow')}>
+      <Shell
+        title={t('title')}
+        subtitle={t('subtitle')}
+        eyebrow={t('eyebrow')}
+        backLabel={t('backToCreate')}
+      >
         <EmptyState title={t('unavailable')} description={t('unavailableHint')} />
       </Shell>
     );
@@ -55,7 +68,12 @@ export default async function ShortformPage({
     // that would only surface as a confusing 404 once it fetches the detail.
     const validSeriesId = series?.some((item) => item.id === seriesId) ? seriesId : undefined;
     return (
-      <Shell title={t('title')} subtitle={t('subtitle')} eyebrow={t('eyebrow')}>
+      <Shell
+        title={t('title')}
+        subtitle={t('subtitle')}
+        eyebrow={t('eyebrow')}
+        backLabel={t('backToCreate')}
+      >
         <ShortformStudio
           profiles={profiles}
           series={series}
@@ -82,7 +100,12 @@ export default async function ShortformPage({
     : null;
 
   return (
-    <Shell title={t('kitTitle')} subtitle={t('kitHint')} eyebrow={t('eyebrow')}>
+    <Shell
+      title={t('kitTitle')}
+      subtitle={t('kitHint')}
+      eyebrow={t('eyebrow')}
+      backLabel={t('backToCreate')}
+    >
       <PublishKit
         draft={draft}
         profile={profile}
@@ -97,15 +120,18 @@ function Shell({
   eyebrow,
   title,
   subtitle,
+  backLabel,
   children,
 }: {
   eyebrow: string;
   title: string;
   subtitle: string;
+  backLabel: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
+      <BackLink href="/create">{backLabel}</BackLink>
       <PageHeading eyebrow={eyebrow} title={title} description={subtitle} />
       {children}
     </div>
