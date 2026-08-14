@@ -24,6 +24,7 @@ from app.domain.errors import (
     ValidationFailed,
 )
 from app.domain.media import service as media_service
+from app.domain.notifications import push as notifications
 from app.models import (
     Asset,
     CutRevision,
@@ -69,6 +70,7 @@ def queue_exports(
             )
         )
         if existing is not None:
+            notifications.sync_export_notification(session, existing, user_id=user_id)
             exports.append(existing)
             continue
         export = EditorExport(
@@ -87,6 +89,7 @@ def queue_exports(
             status=export.status,
             public_message="已加入导出队列，等待浏览器认领。",
         )
+        notifications.sync_export_notification(session, export, user_id=user_id)
         exports.append(export)
     return exports
 

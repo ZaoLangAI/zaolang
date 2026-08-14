@@ -24,6 +24,7 @@ from sqlalchemy import update
 from app.domain.jobs import async_tasks, input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.jobs.cancellation import honor_user_cancel
 from app.domain.system_log import service as system_log
 from app.models import AgentRun
 from app.models.enums import JobStatus, SystemLogLevel, SystemLogSource
@@ -61,6 +62,9 @@ class WorkflowRunner:
         return self._node_map.get(node_id)
 
     def run(self, ctx: WorkflowContext) -> PipelineOutcome:
+        cancelled = self._cancel_if_requested(ctx)
+        if cancelled is not None and cancelled.terminal is not None:
+            return cancelled.terminal
         if not ctx.dry_run and ctx.job.status == JobStatus.CREATED:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.QUEUED)
         return self._walk(ctx, self._entry_id, {})
@@ -144,6 +148,10 @@ class WorkflowRunner:
         answer. Anything else defaults to the provider path, matching every
         checkpoint written before this discriminator existed.
         """
+        cancelled = self._cancel_if_requested(ctx)
+        if cancelled is not None and cancelled.terminal is not None:
+            return cancelled.terminal
+
         checkpoint = result.checkpoint or {}
         if ctx.dry_run:
             # Unit-test isolation: no persisted job, so nothing to park and
@@ -186,6 +194,9 @@ class WorkflowRunner:
         node = self._node_map[node_id]
         config = spec.config_schema.model_validate(node.config or {})
         ctx.state["_current_node_id"] = node_id
+        cancelled = self._cancel_if_requested(ctx)
+        if cancelled is not None:
+            return cancelled
         previous_agent_run_id = ctx.state.get("_last_agent_run_id")
         started = perf_counter()
         result = spec.executor(ctx, config)
@@ -194,7 +205,37 @@ class WorkflowRunner:
         self._record_trace(
             ctx, node_id=node_id, node_type=node_type, result=result, duration_ms=elapsed_ms
         )
+        cancelled = self._cancel_if_requested(ctx)
+        if cancelled is not None:
+            return cancelled
         return result
+
+    @staticmethod
+    def _cancel_if_requested(ctx: WorkflowContext) -> NodeResult | None:
+        """Stops the walk when the author asked to cancel, or the job already ended.
+
+        Refresh is required: `request_cancel` writes from another session while
+        this worker is inside a long node (planning LLM, sync `submit()`).
+        """
+        if ctx.dry_run:
+            return None
+        ctx.session.refresh(ctx.job)
+        status = JobStatus(ctx.job.status)
+        if status.is_terminal:
+            # A node that just settled (success/fail) already returned the
+            # real `PipelineOutcome`. Only a cancel that landed from another
+            # session should stop the walk here.
+            if status == JobStatus.CANCELLED:
+                return NodeResult(
+                    port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
+                )
+            return None
+        if ctx.job.cancel_requested_at is None:
+            return None
+        ctx.job = honor_user_cancel(
+            ctx.session, ctx.job, node_id=ctx.state.get("_current_node_id")
+        )
+        return NodeResult(port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED))
 
     @staticmethod
     def _tag_agent_run_node(

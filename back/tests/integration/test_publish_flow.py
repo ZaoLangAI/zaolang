@@ -22,6 +22,7 @@ from app.models import (
     LineageEdge,
     ModerationQueueItem,
     Notification,
+    Profile,
     User,
     Work,
     WorkTag,
@@ -276,6 +277,31 @@ def test_a_remix_notifies_the_original_author(
         )
     )
     assert len(notes) == 1
+    assert notes[0].payload_json.get("work_title") == "雾谷 · 夜"
+
+
+def test_remix_skips_ancestors_who_disabled_notify_on_remix(
+    db: Session, author: User, original: publishing.PublishOutcome, remixer: User
+) -> None:
+    profile = db.scalar(select(Profile).where(Profile.user_id == author.id))
+    assert profile is not None
+    profile.notify_on_remix = False
+    db.flush()
+
+    _fund(db, remixer)
+    draft = publishing.create_draft(db, user_id=remixer.id, source_work_id=original.work.id)
+    _generate_into_draft(db, remixer, draft)
+    _publish(db, remixer, draft, title="雾谷 · 夜")
+
+    notes = list(
+        db.scalars(
+            select(Notification).where(
+                Notification.user_id == author.id,
+                Notification.type == NotificationType.WORK_REMIXED,
+            )
+        )
+    )
+    assert notes == []
 
 
 def test_remixing_your_own_work_does_not_notify_you(

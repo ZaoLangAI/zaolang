@@ -1222,6 +1222,75 @@
         }
       }
     },
+    "/v1/works/{work_id}/appeal": {
+      "post": {
+        "tags": [
+          "works"
+        ],
+        "summary": "Appeal Work",
+        "description": "Owner disputes a hide decision. Tombstones are out of scope — they are\nterminal, so `publishing.restore()` has nowhere to grant the appeal into.",
+        "operationId": "appeal_work_v1_works__work_id__appeal_post",
+        "parameters": [
+          {
+            "name": "work_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Work Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkAppealRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkAppealView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/tags": {
       "get": {
         "tags": [
@@ -9767,6 +9836,169 @@
         }
       }
     },
+    "/v1/admin/appeals": {
+      "get": {
+        "tags": [
+          "admin:content"
+        ],
+        "summary": "List Appeals",
+        "description": "Oldest first, same cursor shape as `list_reports`.",
+        "operationId": "list_appeals_v1_admin_appeals_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_AppealAdminView_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/appeals/{appeal_id}/decide": {
+      "post": {
+        "tags": [
+          "admin:content"
+        ],
+        "summary": "Decide Appeal",
+        "description": "Grant restores the work (see `publishing.restore`); deny leaves it\nhidden. Both notify the owner and require a `decision_note`.",
+        "operationId": "decide_appeal_v1_admin_appeals__appeal_id__decide_post",
+        "parameters": [
+          {
+            "name": "appeal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Appeal Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppealDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppealAdminView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/works/{work_id}/tombstone": {
       "post": {
         "tags": [
@@ -15263,238 +15495,6 @@
           }
         }
       }
-    },
-    "/v1/admin/appeals": {
-      "get": {
-        "tags": [
-          "admin:content"
-        ],
-        "summary": "List Appeals",
-        "description": "Oldest first, same cursor shape as `list_reports`.",
-        "operationId": "list_appeals_v1_admin_appeals_get",
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_AppealAdminView_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/admin/appeals/{appeal_id}/decide": {
-      "post": {
-        "tags": [
-          "admin:content"
-        ],
-        "summary": "Decide Appeal",
-        "description": "Grant restores the work (see `publishing.restore`); deny leaves it\nhidden. Both notify the owner and require a `decision_note`.",
-        "operationId": "decide_appeal_v1_admin_appeals__appeal_id__decide_post",
-        "parameters": [
-          {
-            "name": "appeal_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Appeal Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AppealDecisionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AppealAdminView"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/works/{work_id}/appeal": {
-      "post": {
-        "tags": [
-          "works"
-        ],
-        "summary": "Appeal Work",
-        "description": "Owner disputes a hide decision. Tombstones are out of scope — they are\nterminal, so `publishing.restore()` has nowhere to grant the appeal into.",
-        "operationId": "appeal_work_v1_works__work_id__appeal_post",
-        "parameters": [
-          {
-            "name": "work_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Work Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WorkAppealRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkAppealView"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -17169,6 +17169,162 @@
           "is_published"
         ],
         "title": "AnnouncementView"
+      },
+      "AppealAdminView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "work_id": {
+            "type": "string",
+            "title": "Work Id"
+          },
+          "owner_user_id": {
+            "type": "string",
+            "title": "Owner User Id"
+          },
+          "owner_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Display Name"
+          },
+          "owner_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Handle"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "decided_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By User Id"
+          },
+          "decided_by_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Display Name"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "source_report_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Report Id"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModerationWorkDetailView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "open_report_count": {
+            "type": "integer",
+            "title": "Open Report Count",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "work_id",
+          "owner_user_id",
+          "reason",
+          "status",
+          "created_at"
+        ],
+        "title": "AppealAdminView"
+      },
+      "AppealDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied"
+            ],
+            "title": "Decision"
+          },
+          "decision_note": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Decision Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "decision_note"
+        ],
+        "title": "AppealDecisionRequest"
       },
       "ApplyCommandsRequest": {
         "properties": {
@@ -19039,6 +19195,13 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Document"
+          },
+          "asset_urls": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Asset Urls"
           },
           "created_at": {
             "type": "string",
@@ -23200,11 +23363,6 @@
             ],
             "title": "Tombstone Reason"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
           "hide_reason": {
             "anyOf": [
               {
@@ -23215,6 +23373,11 @@
               }
             ],
             "title": "Hide Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           }
         },
         "type": "object",
@@ -23424,6 +23587,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
@@ -23431,7 +23599,8 @@
           "id",
           "type",
           "title_key",
-          "created_at"
+          "created_at",
+          "updated_at"
         ],
         "title": "NotificationResponse"
       },
@@ -23441,6 +23610,7 @@
           "job_progress",
           "job_succeeded",
           "job_failed",
+          "job_cancelled",
           "work_liked",
           "work_remixed",
           "royalty_received",
@@ -23728,6 +23898,38 @@
           "items"
         ],
         "title": "Page[AnnouncementView]"
+      },
+      "Page_AppealAdminView_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AppealAdminView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[AppealAdminView]"
       },
       "Page_AuditLogView_": {
         "properties": {
@@ -26335,11 +26537,6 @@
             "type": "string",
             "title": "Status"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
           "resolution_note": {
             "anyOf": [
               {
@@ -26399,6 +26596,11 @@
             "type": "integer",
             "title": "Open Report Count",
             "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           }
         },
         "type": "object",
@@ -28127,6 +28329,79 @@
         ],
         "title": "VisibilityUpdateRequest"
       },
+      "WorkAppealRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 4,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "WorkAppealRequest"
+      },
+      "WorkAppealView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "work_id": {
+            "type": "string",
+            "title": "Work Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "work_id",
+          "status",
+          "reason",
+          "created_at"
+        ],
+        "title": "WorkAppealView",
+        "description": "Consumer-facing — always \"my own appeal\", so it omits `owner_user_id`\nand `decided_by_user_id`."
+      },
       "WorkDetail": {
         "properties": {
           "id": {
@@ -28816,267 +29091,6 @@
           "created_at"
         ],
         "title": "WorkflowTemplateView"
-      },
-      "WorkAppealRequest": {
-        "properties": {
-          "reason": {
-            "type": "string",
-            "maxLength": 2000,
-            "minLength": 4,
-            "title": "Reason"
-          }
-        },
-        "type": "object",
-        "required": [
-          "reason"
-        ],
-        "title": "WorkAppealRequest"
-      },
-      "WorkAppealView": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "work_id": {
-            "type": "string",
-            "title": "Work Id"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "reason": {
-            "type": "string",
-            "title": "Reason"
-          },
-          "decision_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decision Note"
-          },
-          "decided_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decided At"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "work_id",
-          "status",
-          "reason",
-          "created_at"
-        ],
-        "title": "WorkAppealView",
-        "description": "Consumer-facing — always \"my own appeal\", so it omits `owner_user_id`\nand `decided_by_user_id`."
-      },
-      "AppealAdminView": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "work_id": {
-            "type": "string",
-            "title": "Work Id"
-          },
-          "owner_user_id": {
-            "type": "string",
-            "title": "Owner User Id"
-          },
-          "owner_display_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Display Name"
-          },
-          "owner_handle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner Handle"
-          },
-          "reason": {
-            "type": "string",
-            "title": "Reason"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "decision_note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decision Note"
-          },
-          "decided_by_user_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decided By User Id"
-          },
-          "decided_by_display_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decided By Display Name"
-          },
-          "decided_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Decided At"
-          },
-          "source_report_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Report Id"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ModerationWorkDetailView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "open_report_count": {
-            "type": "integer",
-            "title": "Open Report Count",
-            "default": 0
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "work_id",
-          "owner_user_id",
-          "reason",
-          "status",
-          "created_at"
-        ],
-        "title": "AppealAdminView"
-      },
-      "AppealDecisionRequest": {
-        "properties": {
-          "decision": {
-            "type": "string",
-            "enum": [
-              "granted",
-              "denied"
-            ],
-            "title": "Decision"
-          },
-          "decision_note": {
-            "type": "string",
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Decision Note"
-          }
-        },
-        "type": "object",
-        "required": [
-          "decision",
-          "decision_note"
-        ],
-        "title": "AppealDecisionRequest"
-      },
-      "Page_AppealAdminView_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/AppealAdminView"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "has_more": {
-            "type": "boolean",
-            "title": "Has More",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "Page[AppealAdminView]"
       }
     }
   }

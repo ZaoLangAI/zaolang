@@ -114,4 +114,7 @@ def transition_export(
     session.expire_all()
     export = session.get(EditorExport, export_id)
     assert export is not None
+    from app.domain.notifications import push as notifications
+
+    notifications.sync_export_notification(session, export)
     return export

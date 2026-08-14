@@ -297,6 +297,8 @@ def test_following_creates_the_edge_and_notifies(
         )
     )
     assert len(notes) == 1
+    assert notes[0].payload_json["follower_handle"] == "remixer"
+    assert notes[0].payload_json["follower_display_name"] == "二创者"
 
 
 def test_following_twice_does_not_notify_twice(

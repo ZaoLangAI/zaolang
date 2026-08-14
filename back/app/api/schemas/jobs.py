@@ -418,6 +418,7 @@ class NotificationResponse(ApiModel):
     target_id: str | None = None
     read: bool = False
     created_at: dt.datetime
+    updated_at: dt.datetime
 
 
 class ReportCreateRequest(ApiModel):

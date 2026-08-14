@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -134,7 +135,20 @@ class Notification(Base, TimestampMixin):
     target_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_notifications_user_created", "user_id", "created_at"),
+        Index("ix_notifications_user_updated", "user_id", "updated_at"),
+        Index(
+            "uq_notifications_user_creation_target",
+            "user_id",
+            "target_type",
+            "target_id",
+            unique=True,
+            postgresql_where=text(
+                "target_type IN ('generation_job', 'editor_export') AND target_id IS NOT NULL"
+            ),
+        ),
+    )
 
 
 class Device(Base, TimestampMixin):

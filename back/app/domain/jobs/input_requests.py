@@ -90,6 +90,21 @@ def due_for_expiry(
     )
 
 
+def due_for_user_cancel(session: Session, *, limit: int = 100) -> list[WorkflowInputRequest]:
+    """Parked questions whose author already asked to stop — ignore `expires_at`."""
+    return list(
+        session.scalars(
+            select(WorkflowInputRequest)
+            .join(GenerationJob, GenerationJob.id == WorkflowInputRequest.job_id)
+            .where(
+                GenerationJob.cancel_requested_at.is_not(None),
+                GenerationJob.status == JobStatus.AWAITING_INPUT.value,
+            )
+            .limit(limit)
+        )
+    )
+
+
 def validate_answers(
     questions: list[dict[str, Any]], raw_answers: dict[str, str | list[str]]
 ) -> dict[str, str | list[str]]:
@@ -210,7 +225,14 @@ def answer(
     inline, same as the C-end path: nothing else will come back and finish
     this the way a provider poll would.
     """
+    from app.domain.jobs.cancellation import honor_user_cancel
     from app.workers.pipeline import resume_after_input
+
+    session.refresh(job)
+    if job.cancel_requested_at is not None:
+        job = honor_user_cancel(session, job)
+        session.commit()
+        return job
 
     accepted = _accept(session, job, raw_answers)
     session.commit()

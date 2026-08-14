@@ -60,6 +60,16 @@ SSE_HEARTBEAT_SECONDS = 15
 SSE_MAX_DURATION_SECONDS = 600
 
 
+def _queue_analysis_if_needed(session: Any, asset_id: str | None) -> str | None:
+    if not asset_id:
+        return None
+    return media_analysis.enqueue(session, asset_id=asset_id).id
+
+
+def _enqueue_media_analysis(analysis_id: str) -> None:
+    celery_app.send_task("app.workers.tasks.run_media_analysis", args=[analysis_id])
+
+
 def _operation_status_is_terminal(status: str) -> bool:
     for enum_cls in (EditorExportStatus, EditPlanStatus, MediaAnalysisStatus):
         try:
@@ -268,10 +278,10 @@ def create_cut_from_job(
         series_id=payload.series_id,
         title=payload.title,
     )
-    if cut.source_asset_id:
-        analysis = media_analysis.enqueue(session, asset_id=cut.source_asset_id)
-        celery_app.send_task("app.workers.tasks.run_media_analysis", args=[analysis.id])
+    analysis_id = _queue_analysis_if_needed(session, cut.source_asset_id)
     session.commit()
+    if analysis_id:
+        _enqueue_media_analysis(analysis_id)
     return _cut_response(session, cut)
 
 
@@ -296,10 +306,10 @@ def create_cut(
         kind=payload.kind,
         job_id=payload.job_id,
     )
-    if cut.source_asset_id:
-        analysis = media_analysis.enqueue(session, asset_id=cut.source_asset_id)
-        celery_app.send_task("app.workers.tasks.run_media_analysis", args=[analysis.id])
+    analysis_id = _queue_analysis_if_needed(session, cut.source_asset_id)
     session.commit()
+    if analysis_id:
+        _enqueue_media_analysis(analysis_id)
     return _cut_response(session, cut)
 
 

@@ -278,6 +278,24 @@ def test_a_failed_render_releases_the_reservation_rather_than_stranding_it(
     assert account.reserved_balance == 0
 
 
+def test_cancel_api_honours_a_parked_async_render_immediately(
+    client, db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    """User cancel of a suspended video job must not wait for the next poll."""
+    from tests.conftest import auth_header
+
+    job = _suspended(db, funded)
+
+    response = client.post(f"/v1/generation-jobs/{job.id}/cancel", headers=auth_header(funded))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == JobStatus.CANCELLED
+    db.refresh(job)
+    assert job.status == JobStatus.CANCELLED
+    assert provider.cancelled == ["ext_1"]
+    assert async_tasks.find_for_job(db, job.id) is None
+
+
 def test_a_cancel_during_the_render_is_honoured_on_the_next_tick(
     db: Session, funded: User, provider: _AsyncProvider
 ) -> None:

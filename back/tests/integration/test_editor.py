@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -19,7 +22,7 @@ from app.models.enums import (
 )
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
-from tests.conftest import auth_header
+from tests.conftest import auth_header, make_user
 from tests.factories import make_job
 
 
@@ -241,6 +244,111 @@ def test_cut_from_job_opens_a_timeline_on_success(
     assert body["source_job_id"] == job.id
     assert body["source_asset_id"] == asset.id
     assert body["head_revision_id"]
+
+
+@contextmanager
+def _committed_client(committed_db: Session) -> Iterator[TestClient]:
+    from app.api.deps import get_db
+    from app.main import create_app
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: committed_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def _capture_analysis_enqueue(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Records send_task ids and asserts each row is visible on a new connection."""
+
+    from app.db import get_engine
+    from app.models import MediaAnalysis
+
+    seen: list[str] = []
+
+    def fake_send_task(name: str, args: list[str] | None = None, **kwargs: object) -> None:
+        del name, kwargs
+        analysis_id = (args or [""])[0]
+        other = Session(bind=get_engine(), expire_on_commit=False)
+        try:
+            assert other.get(MediaAnalysis, analysis_id) is not None
+        finally:
+            other.close()
+        seen.append(analysis_id)
+
+    monkeypatch.setattr("app.api.v1.editor.celery_app.send_task", fake_send_task)
+    return seen
+
+
+def _seed_editor_owner(committed_db: Session) -> tuple[User, User, Asset]:
+    author = make_user(committed_db, email="analysis-author@example.com", handle="anauthor")
+    admin = make_user(
+        committed_db,
+        email="analysis-admin@example.com",
+        handle="anadmin",
+        roles=["user", "admin"],
+    )
+    _enable_editor(committed_db, admin)
+    asset = _video_asset(committed_db, author)
+    committed_db.commit()
+    return author, admin, asset
+
+
+def test_cut_from_job_enqueues_analysis_only_after_commit(
+    committed_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    author, _admin, asset = _seed_editor_owner(committed_db)
+    job = make_job(
+        committed_db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO
+    )
+    job.output_asset_id = asset.id
+    committed_db.commit()
+    seen = _capture_analysis_enqueue(monkeypatch)
+
+    with _committed_client(committed_db) as client:
+        response = client.post(
+            "/v1/episode-cuts:from-job",
+            headers=auth_header(author),
+            json={"job_id": job.id, "title": "提交后入队"},
+        )
+
+    assert response.status_code == 201, response.text
+    assert seen
+
+
+def test_creating_a_cut_enqueues_analysis_only_after_commit(
+    committed_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    author, _admin, asset = _seed_editor_owner(committed_db)
+    seen = _capture_analysis_enqueue(monkeypatch)
+
+    with _committed_client(committed_db) as client:
+        series = client.post(
+            "/v1/drama-series",
+            headers=auth_header(author),
+            json={"title": "提交后入队"},
+        )
+        assert series.status_code == 201, series.text
+        episode = client.post(
+            f"/v1/drama-series/{series.json()['id']}/episodes",
+            headers=auth_header(author),
+            json={"title": "第一集"},
+        )
+        assert episode.status_code == 201, episode.text
+        response = client.post(
+            f"/v1/drama-episodes/{episode.json()['id']}/cuts",
+            headers=auth_header(author),
+            json={"asset_id": asset.id, "name": "主剪辑"},
+        )
+
+    assert response.status_code == 201, response.text
+    assert seen
+
+
+def test_missing_media_analysis_does_not_raise() -> None:
+    from app.workers import tasks
+
+    assert tasks.run_media_analysis.apply(args=["man_ghost"], throw=True).get() == "missing"
 
 
 def _open_cut(client: TestClient, author: User, asset: Asset) -> dict[str, Any]:

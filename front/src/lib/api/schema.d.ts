@@ -339,6 +339,27 @@ export interface paths {
         patch: operations["update_visibility_v1_works__work_id__visibility_patch"];
         trace?: never;
     };
+    "/v1/works/{work_id}/appeal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Appeal Work
+         * @description Owner disputes a hide decision. Tombstones are out of scope — they are
+         *     terminal, so `publishing.restore()` has nowhere to grant the appeal into.
+         */
+        post: operations["appeal_work_v1_works__work_id__appeal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tags": {
         parameters: {
             query?: never;
@@ -2498,6 +2519,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Appeals
+         * @description Oldest first, same cursor shape as `list_reports`.
+         */
+        get: operations["list_appeals_v1_admin_appeals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/appeals/{appeal_id}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Appeal
+         * @description Grant restores the work (see `publishing.restore`); deny leaves it
+         *     hidden. Both notify the owner and require a `decision_note`.
+         */
+        post: operations["decide_appeal_v1_admin_appeals__appeal_id__decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/works/{work_id}/tombstone": {
         parameters: {
             query?: never;
@@ -3997,68 +4059,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/appeals": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Appeals
-         * @description Oldest first, same cursor shape as `list_reports`.
-         */
-        get: operations["list_appeals_v1_admin_appeals_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/appeals/{appeal_id}/decide": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Decide Appeal
-         * @description Grant restores the work (see `publishing.restore`); deny leaves it
-         *     hidden. Both notify the owner and require a `decision_note`.
-         */
-        post: operations["decide_appeal_v1_admin_appeals__appeal_id__decide_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/works/{work_id}/appeal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Appeal Work
-         * @description Owner disputes a hide decision. Tombstones are out of scope — they are
-         *     terminal, so `publishing.restore()` has nowhere to grant the appeal into.
-         */
-        post: operations["appeal_work_v1_works__work_id__appeal_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4680,6 +4680,54 @@ export interface components {
             ends_at?: string | null;
             /** Is Published */
             is_published: boolean;
+        };
+        /** AppealAdminView */
+        AppealAdminView: {
+            /** Id */
+            id: string;
+            /** Work Id */
+            work_id: string;
+            /** Owner User Id */
+            owner_user_id: string;
+            /** Owner Display Name */
+            owner_display_name?: string | null;
+            /** Owner Handle */
+            owner_handle?: string | null;
+            /** Reason */
+            reason: string;
+            /** Status */
+            status: string;
+            /** Decision Note */
+            decision_note?: string | null;
+            /** Decided By User Id */
+            decided_by_user_id?: string | null;
+            /** Decided By Display Name */
+            decided_by_display_name?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Source Report Id */
+            source_report_id?: string | null;
+            subject?: components["schemas"]["ModerationWorkDetailView"] | null;
+            /**
+             * Open Report Count
+             * @default 0
+             */
+            open_report_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AppealDecisionRequest */
+        AppealDecisionRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "granted" | "denied";
+            /** Decision Note */
+            decision_note: string;
         };
         /** ApplyCommandsRequest */
         ApplyCommandsRequest: {
@@ -5417,6 +5465,10 @@ export interface components {
             /** Document */
             document?: {
                 [key: string]: unknown;
+            };
+            /** Asset Urls */
+            asset_urls?: {
+                [key: string]: string;
             };
             /**
              * Created At
@@ -7005,13 +7057,13 @@ export interface components {
             lifecycle_status: string;
             /** Tombstone Reason */
             tombstone_reason?: string | null;
+            /** Hide Reason */
+            hide_reason?: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
-            /** Hide Reason */
-            hide_reason?: string | null;
         };
         /** MyDataRequestView */
         MyDataRequestView: {
@@ -7091,12 +7143,17 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * NotificationType
          * @enum {string}
          */
-        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "work_liked" | "work_remixed" | "royalty_received" | "new_follower" | "moderation" | "system";
+        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "royalty_received" | "new_follower" | "moderation" | "system";
         /** OkResponse */
         OkResponse: {
             /**
@@ -7198,6 +7255,18 @@ export interface components {
         Page_AnnouncementView_: {
             /** Items */
             items: components["schemas"]["AnnouncementView"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
+        /** Page[AppealAdminView] */
+        Page_AppealAdminView_: {
+            /** Items */
+            items: components["schemas"]["AppealAdminView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -8206,11 +8275,6 @@ export interface components {
             detail?: string | null;
             /** Status */
             status: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
             /** Resolution Note */
             resolution_note?: string | null;
             /** Handled By User Id */
@@ -8225,6 +8289,11 @@ export interface components {
              * @default 0
              */
             open_report_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ReportCreateRequest */
         ReportCreateRequest: {
@@ -8956,6 +9025,35 @@ export interface components {
         VisibilityUpdateRequest: {
             visibility: components["schemas"]["Visibility"];
         };
+        /** WorkAppealRequest */
+        WorkAppealRequest: {
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * WorkAppealView
+         * @description Consumer-facing — always "my own appeal", so it omits `owner_user_id`
+         *     and `decided_by_user_id`.
+         */
+        WorkAppealView: {
+            /** Id */
+            id: string;
+            /** Work Id */
+            work_id: string;
+            /** Status */
+            status: string;
+            /** Reason */
+            reason: string;
+            /** Decision Note */
+            decision_note?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** WorkDetail */
         WorkDetail: {
             /** Id */
@@ -9209,95 +9307,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-        };
-        /** WorkAppealRequest */
-        WorkAppealRequest: {
-            /** Reason */
-            reason: string;
-        };
-        /**
-         * WorkAppealView
-         * @description Consumer-facing — always "my own appeal", so it omits `owner_user_id`
-         *     and `decided_by_user_id`.
-         */
-        WorkAppealView: {
-            /** Id */
-            id: string;
-            /** Work Id */
-            work_id: string;
-            /** Status */
-            status: string;
-            /** Reason */
-            reason: string;
-            /** Decision Note */
-            decision_note?: string | null;
-            /** Decided At */
-            decided_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /** AppealAdminView */
-        AppealAdminView: {
-            /** Id */
-            id: string;
-            /** Work Id */
-            work_id: string;
-            /** Owner User Id */
-            owner_user_id: string;
-            /** Owner Display Name */
-            owner_display_name?: string | null;
-            /** Owner Handle */
-            owner_handle?: string | null;
-            /** Reason */
-            reason: string;
-            /** Status */
-            status: string;
-            /** Decision Note */
-            decision_note?: string | null;
-            /** Decided By User Id */
-            decided_by_user_id?: string | null;
-            /** Decided By Display Name */
-            decided_by_display_name?: string | null;
-            /** Decided At */
-            decided_at?: string | null;
-            /** Source Report Id */
-            source_report_id?: string | null;
-            subject?: components["schemas"]["ModerationWorkDetailView"] | null;
-            /**
-             * Open Report Count
-             * @default 0
-             */
-            open_report_count: number;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
-        /** AppealDecisionRequest */
-        AppealDecisionRequest: {
-            /**
-             * Decision
-             * @enum {string}
-             */
-            decision: "granted" | "denied";
-            /** Decision Note */
-            decision_note: string;
-        };
-        /** Page[AppealAdminView] */
-        Page_AppealAdminView_: {
-            /** Items */
-            items: components["schemas"]["AppealAdminView"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-            /**
-             * Has More
-             * @default false
-             */
-            has_more: boolean;
         };
     };
     responses: never;
@@ -9976,6 +9985,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    appeal_work_v1_works__work_id__appeal_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkAppealRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkAppealView"];
                 };
             };
             /** @description Validation Error */
@@ -14571,6 +14617,78 @@ export interface operations {
             };
         };
     };
+    list_appeals_v1_admin_appeals_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AppealAdminView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_appeal_v1_admin_appeals__appeal_id__decide_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                appeal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppealDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppealAdminView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     tombstone_work_v1_admin_works__work_id__tombstone_post: {
         parameters: {
             query?: never;
@@ -17411,115 +17529,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-        };
-    };
-    list_appeals_v1_admin_appeals_get: {
-        parameters: {
-            query?: {
-                status?: string | null;
-                cursor?: string | null;
-                limit?: number;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Page_AppealAdminView_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    decide_appeal_v1_admin_appeals__appeal_id__decide_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                appeal_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AppealDecisionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AppealAdminView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    appeal_work_v1_works__work_id__appeal_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                work_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["WorkAppealRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkAppealView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

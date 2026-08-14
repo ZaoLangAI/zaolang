@@ -320,6 +320,7 @@ class NotificationType(StrEnum):
     JOB_PROGRESS = "job_progress"
     JOB_SUCCEEDED = "job_succeeded"
     JOB_FAILED = "job_failed"
+    JOB_CANCELLED = "job_cancelled"
     WORK_LIKED = "work_liked"
     WORK_REMIXED = "work_remixed"
     ROYALTY_RECEIVED = "royalty_received"

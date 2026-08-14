@@ -647,6 +647,31 @@ def test_planning_clarify_from_created_reaches_awaiting_input(db: Session, autho
     assert input_requests.find_for_job(db, job.id) is not None
 
 
+def test_cancel_during_planning_does_not_park_awaiting_input(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reported bug: cancel arrives while the planner is still thinking,
+    then the node tries to suspend. The runner must honour the flag after the
+    node returns and never write a `WorkflowInputRequest`."""
+    from app.agents import planner as planner_agent
+
+    ctx = _running_job(db, author, prompt=f"{PLANNER_CLARIFY_MARKER}：香港街头斗殴")
+    original = planner_agent.clarify
+
+    def _clarify_then_cancel(*args: object, **kwargs: object):
+        outcome = original(*args, **kwargs)
+        sm.request_cancel(db, ctx.job.id)
+        return outcome
+
+    monkeypatch.setattr("app.workflows.nodes.planner.clarify", _clarify_then_cancel)
+    outcome = WorkflowRunner(_planning_graph()).run(ctx)
+
+    assert outcome.status == JobStatus.CANCELLED
+    db.refresh(ctx.job)
+    assert ctx.job.status == JobStatus.CANCELLED
+    assert input_requests.find_for_job(db, ctx.job.id) is None
+
+
 def test_planning_without_the_clarify_marker_does_not_suspend_by_default(
     db: Session, author: User
 ) -> None:

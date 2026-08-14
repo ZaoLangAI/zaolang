@@ -38,6 +38,7 @@ from app.models import (
     Asset,
     Draft,
     LineageEdge,
+    Profile,
     Tag,
     Work,
     WorkTag,
@@ -384,15 +385,21 @@ def _pay_royalties(
         rule=rule,
         idempotency_key=f"royalty:{version.id}",
     )
+    work = session.get(Work, version.work_id)
     for plan in plans:
         notifications.notify(
             session,
             user_id=plan.beneficiary_user_id,
             type=NotificationType.ROYALTY_RECEIVED,
             title_key="notification.royalty_received",
-            payload={"amount": plan.amount, "work_version_id": version.id},
-            target_type="work_version",
-            target_id=version.id,
+            payload={
+                "amount": plan.amount,
+                "work_id": version.work_id,
+                "work_version_id": version.id,
+                "work_title": version.title,
+            },
+            target_type="work",
+            target_id=version.work_id if work is not None else version.id,
         )
     return [
         {"beneficiary_user_id": p.beneficiary_user_id, "amount": p.amount, "level": p.level}
@@ -407,12 +414,19 @@ def _notify_ancestors(
         author_id = str(edge.parent_author_snapshot_json.get("user_id", ""))
         if not author_id or author_id == actor_user_id:
             continue
+        profile = session.scalar(select(Profile).where(Profile.user_id == author_id))
+        if profile is not None and not profile.notify_on_remix:
+            continue
         notifications.notify(
             session,
             user_id=author_id,
             type=NotificationType.WORK_REMIXED,
             title_key="notification.work_remixed",
-            payload={"work_id": work.id, "work_version_id": version.id},
+            payload={
+                "work_id": work.id,
+                "work_version_id": version.id,
+                "work_title": version.title,
+            },
             target_type="work",
             target_id=work.id,
         )

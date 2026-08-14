@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser
 from app.api.schemas.common import CountResponse, OkResponse, Page
@@ -21,7 +22,9 @@ from app.domain.notifications import push as notifications
 from app.models import (
     Collection,
     CollectionItem,
+    EditorExport,
     Follow,
+    GenerationJob,
     Notification,
     Profile,
     ReportCase,
@@ -205,25 +208,31 @@ def list_notifications(
     stmt = (
         select(Notification)
         .where(Notification.user_id == user.id)
-        .order_by(Notification.created_at.desc())
+        .order_by(Notification.updated_at.desc())
         .limit(limit)
     )
     if unread_only:
         stmt = stmt.where(Notification.read_at.is_(None))
 
+    rows = list(session.scalars(stmt))
+    job_ids = [
+        n.target_id for n in rows if n.target_type == "generation_job" and n.target_id
+    ]
+    export_ids = [
+        n.target_id for n in rows if n.target_type == "editor_export" and n.target_id
+    ]
+    jobs = {
+        job.id: job
+        for job in session.scalars(select(GenerationJob).where(GenerationJob.id.in_(job_ids)))
+    } if job_ids else {}
+    exports = {
+        export.id: export
+        for export in session.scalars(select(EditorExport).where(EditorExport.id.in_(export_ids)))
+    } if export_ids else {}
+
     return Page(
         items=[
-            NotificationResponse(
-                id=n.id,
-                type=NotificationType(n.type),
-                title_key=n.title_key,
-                payload=n.payload_json,
-                target_type=n.target_type,
-                target_id=n.target_id,
-                read=n.read_at is not None,
-                created_at=n.created_at,
-            )
-            for n in session.scalars(stmt)
+            _notification_response(session, n, jobs=jobs, exports=exports) for n in rows
         ]
     )
 
@@ -272,12 +281,17 @@ def follow(user_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
     )
     if existing is None:
         session.add(Follow(follower_user_id=user.id, followed_user_id=user_id))
+        follower = session.scalar(select(Profile).where(Profile.user_id == user.id))
         notifications.notify(
             session,
             user_id=user_id,
             type=NotificationType.NEW_FOLLOWER,
             title_key="notification.new_follower",
-            payload={"follower_user_id": user.id},
+            payload={
+                "follower_user_id": user.id,
+                "follower_handle": follower.handle if follower else "",
+                "follower_display_name": follower.display_name if follower else "",
+            },
             target_type="user",
             target_id=user.id,
         )
@@ -356,6 +370,29 @@ def _collection_response(session, collection: Collection) -> CollectionResponse:
         is_public=collection.is_public,
         item_count=int(total or 0),
         cover_urls=covers,
+    )
+
+
+def _notification_response(
+    session: Session,
+    record: Notification,
+    *,
+    jobs: dict[str, GenerationJob],
+    exports: dict[str, EditorExport],
+) -> NotificationResponse:
+    ntype, title_key, payload = notifications.present_notification(
+        session, record, jobs=jobs, exports=exports
+    )
+    return NotificationResponse(
+        id=record.id,
+        type=ntype,
+        title_key=title_key,
+        payload=payload,
+        target_type=record.target_type,
+        target_id=record.target_id,
+        read=record.read_at is not None,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
     )
 
 

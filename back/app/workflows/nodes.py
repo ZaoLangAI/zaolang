@@ -23,9 +23,9 @@ from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.jobs.cancellation import honor_user_cancel
 from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
-from app.domain.notifications import push as notifications
 from app.domain.skill_library import service as skill_library_service
 from app.domain.style_gallery import service as style_gallery_service
 from app.models import Draft, ProviderAttempt
@@ -35,7 +35,6 @@ from app.models.enums import (
     JobStatus,
     ModerationStage,
     ModerationStatus,
-    NotificationType,
     Operation,
     ProviderAttemptStatus,
     QualityTier,
@@ -113,26 +112,6 @@ def _emit(
         payload=payload,
         node_id=ctx.state.get("_current_node_id"),
     )
-    if status in (JobStatus.SUCCEEDED, JobStatus.FAILED) and not ctx.is_sandbox:
-        # 只在终态发通知：进度事件太吵，用户只关心结果。沙盒试跑的操作员
-        # 正在看右侧面板，不要再往 C 端通知箱塞一条。
-        notifications.notify(
-            ctx.session,
-            user_id=ctx.job.user_id,
-            type=(
-                NotificationType.JOB_SUCCEEDED
-                if status == JobStatus.SUCCEEDED
-                else NotificationType.JOB_FAILED
-            ),
-            title_key=(
-                "notification.job_succeeded"
-                if status == JobStatus.SUCCEEDED
-                else "notification.job_failed"
-            ),
-            payload={"job_id": ctx.job.id},
-            target_type="generation_job",
-            target_id=ctx.job.id,
-        )
     ctx.session.commit()
     publisher.publish_job_event(
         ctx.job.id,
@@ -818,9 +797,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
 
         ctx.session.refresh(ctx.job)
         if ctx.job.cancel_requested_at is not None:
-            jobs_service.settle_release(ctx.session, ctx.job, reason="cancelled_by_user")
-            ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.CANCELLED)
-            _emit(ctx, JobEventType.CANCELLED, JobStatus.CANCELLED, "任务已取消，积分已退回", 100)
+            ctx.job = honor_user_cancel(ctx.session, ctx.job)
             return NodeResult(
                 port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
             )
@@ -859,6 +836,22 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
         )
         ctx.session.add(attempt)
         ctx.session.flush()
+
+        ctx.session.refresh(ctx.job)
+        if ctx.job.cancel_requested_at is not None:
+            if result.pending and result.external_task_id:
+                try:
+                    decision.provider.cancel(result.external_task_id)
+                except Exception:
+                    logger.exception(
+                        "provider.cancel failed after submit for job %s", ctx.job.id
+                    )
+            attempt.status = ProviderAttemptStatus.CANCELLED
+            ctx.session.flush()
+            ctx.job = honor_user_cancel(ctx.session, ctx.job)
+            return NodeResult(
+                port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
+            )
 
         if result.pending and result.external_task_id:
             # The upstream owns the work now. Suspending keeps the job

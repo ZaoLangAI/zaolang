@@ -310,6 +310,28 @@ def test_a_failing_route_is_retried_before_giving_up(db: Session, funded: User) 
     assert [a.attempt_number for a in attempts] == [1, 2]
 
 
+def _park_awaiting_input(db: Session, job: GenerationJob) -> None:
+    from app.domain.jobs import input_requests
+
+    if job.status == JobStatus.CREATED:
+        sm.transition(db, job.id, JobStatus.QUEUED)
+    if job.status == JobStatus.QUEUED:
+        sm.transition(db, job.id, JobStatus.RUNNING)
+    if job.status == JobStatus.RUNNING:
+        sm.transition(db, job.id, JobStatus.AWAITING_INPUT)
+    input_requests.suspend(
+        db,
+        job_id=job.id,
+        node_id="planning",
+        checkpoint={
+            "kind": "input_request",
+            "output_key": "plan",
+            "questions": [{"id": "scene", "kind": "free_text", "prompt": "?", "options": []}],
+            "state": {},
+        },
+    )
+
+
 def test_a_cancelled_job_is_released_and_not_charged(db: Session, funded: User) -> None:
     job = _submit(db, funded)
     sm.request_cancel(db, job.id)
@@ -322,6 +344,156 @@ def test_a_cancelled_job_is_released_and_not_charged(db: Session, funded: User) 
     db.refresh(account)
     assert account.available_balance == before
     assert not _ledger(db, funded, LedgerEntryType.CAPTURE)
+
+
+def test_cancel_an_awaiting_input_job_releases_immediately_through_the_api(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """The stuck-job shape: flag set, parked on a question, nobody polling."""
+    from app.domain.jobs import input_requests
+
+    job = _submit(db, funded)
+    _park_awaiting_input(db, job)
+    account = credits_service.get_or_create_account(db, funded.id)
+    before = account.available_balance + job.reserved_credits
+
+    response = client.post(f"/v1/generation-jobs/{job.id}/cancel", headers=auth_header(funded))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == JobStatus.CANCELLED
+    assert body["cancel_requested"] is True
+    db.refresh(job)
+    db.refresh(account)
+    assert job.status == JobStatus.CANCELLED
+    assert job.finished_at is not None
+    assert input_requests.find_for_job(db, job.id) is None
+    assert account.available_balance == before
+    assert account.reserved_balance == 0
+    assert _ledger(db, funded, LedgerEntryType.RELEASE)
+
+
+def test_cancel_a_created_job_is_honoured_immediately(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    job = _submit(db, funded)
+    assert job.status == JobStatus.CREATED
+
+    response = client.post(f"/v1/generation-jobs/{job.id}/cancel", headers=auth_header(funded))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == JobStatus.CANCELLED
+    db.refresh(job)
+    assert job.status == JobStatus.CANCELLED
+
+
+def test_cancel_a_queued_job_is_a_request_until_the_worker_honours(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    job = _submit(db, funded)
+    sm.transition(db, job.id, JobStatus.QUEUED)
+
+    response = client.post(f"/v1/generation-jobs/{job.id}/cancel", headers=auth_header(funded))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == JobStatus.QUEUED
+    assert body["cancel_requested"] is True
+    assert any(event["message"] == "已收到取消请求" for event in body["events"])
+
+
+def test_answering_a_cancelled_awaiting_input_job_does_not_resume(
+    db: Session, funded: User
+) -> None:
+    from app.domain.jobs import input_requests
+
+    job = _submit(db, funded)
+    _park_awaiting_input(db, job)
+    sm.request_cancel(db, job.id)
+
+    result = input_requests.answer(db, job, {"scene": "indoor"})
+
+    db.refresh(job)
+    assert result.status == JobStatus.CANCELLED
+    assert job.status == JobStatus.CANCELLED
+    assert input_requests.find_for_job(db, job.id) is None
+
+
+def test_expire_stale_input_requests_honours_a_pending_cancel(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cancel on a question that has not timed out must not wait 6 hours,
+    and must become `cancelled` rather than `expired`."""
+    from app.domain.jobs import input_requests
+
+    job = _submit(db, funded)
+    _park_awaiting_input(db, job)
+    sm.request_cancel(db, job.id)
+    account = credits_service.get_or_create_account(db, funded.id)
+    before = account.available_balance + job.reserved_credits
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(tasks, "session_scope", fake_session_scope)
+    assert tasks.expire_stale_input_requests.run() == 1
+
+    db.refresh(job)
+    db.refresh(account)
+    assert job.status == JobStatus.CANCELLED
+    assert job.failure_code is None
+    assert account.available_balance == before
+    assert input_requests.find_for_job(db, job.id) is None
+
+
+def test_cancel_during_sync_submit_is_honoured_before_quality(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.fake_providers import REGISTRY
+
+    job = _submit(db, funded)
+    for provider in REGISTRY.values():
+        original = provider.submit
+
+        def _submit_and_cancel(request: object, *, _original=original) -> object:
+            sm.request_cancel(db, job.id)
+            return _original(request)
+
+        monkeypatch.setattr(provider, "submit", _submit_and_cancel)
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.CANCELLED
+    db.refresh(job)
+    assert job.status == JobStatus.CANCELLED
+    assert not _ledger(db, funded, LedgerEntryType.CAPTURE)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        Operation.TEXT_TO_IMAGE,
+        Operation.IMAGE_TO_IMAGE,
+        Operation.TEXT_TO_VIDEO,
+        Operation.AUDIO_GENERATION,
+    ],
+)
+def test_honor_user_cancel_is_shared_across_operations(
+    db: Session, funded: User, operation: str
+) -> None:
+    from app.domain.jobs import input_requests
+    from app.domain.jobs.cancellation import honor_user_cancel
+
+    job = _submit(db, funded, operation=operation)
+    _park_awaiting_input(db, job)
+    sm.request_cancel(db, job.id)
+
+    job = honor_user_cancel(db, job)
+
+    assert job.status == JobStatus.CANCELLED
+    assert input_requests.find_for_job(db, job.id) is None
+    assert _ledger(db, funded, LedgerEntryType.RELEASE)
 
 
 def test_events_carry_a_strictly_increasing_sequence(db: Session, funded: User) -> None:

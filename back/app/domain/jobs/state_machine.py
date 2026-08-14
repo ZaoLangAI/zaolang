@@ -20,6 +20,7 @@ from app.models.enums import (
     CANCELLABLE_JOB_STATUSES,
     JOB_TRANSITIONS,
     JobEventType,
+    JobOrigin,
     JobStatus,
 )
 
@@ -80,6 +81,10 @@ def transition(
     job = session.get(GenerationJob, job_id)
     if job is None:  # pragma: no cover - the UPDATE just matched this row
         raise NotFound("任务不存在。")
+    if job.origin != JobOrigin.SANDBOX:
+        from app.domain.notifications import push as notifications
+
+        notifications.sync_job_notification(session, job)
     return job
 
 

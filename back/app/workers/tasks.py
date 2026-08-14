@@ -20,6 +20,7 @@ from app.db import session_scope
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.jobs.cancellation import honor_user_cancel
 from app.domain.system_log import service as system_log
 from app.models import (
     AsyncProviderTask,
@@ -243,6 +244,13 @@ def expire_stale_jobs() -> int:
         for job in stale:
             # Claim the job first: releasing credits for a job another worker is
             # still running would double-settle the reservation.
+            if job.cancel_requested_at is not None:
+                try:
+                    honor_user_cancel(session, job)
+                    expired += 1
+                except Exception:
+                    logger.exception("could not honour cancel on stale job %s", job.id)
+                continue
             try:
                 sm.transition(
                     session,
@@ -284,6 +292,19 @@ def expire_stale_input_requests() -> int:
     """
     expired = 0
     with session_scope() as session:
+        for request in input_requests.due_for_user_cancel(session):
+            job = session.get(GenerationJob, request.job_id)
+            if job is None or JobStatus(job.status).is_terminal:
+                input_requests.settle(session, request)
+                session.commit()
+                continue
+            try:
+                honor_user_cancel(session, job, node_id=request.node_id)
+            except Exception:
+                logger.exception("could not honour cancel for job %s awaiting input", job.id)
+                continue
+            session.commit()
+            expired += 1
         for request in input_requests.due_for_expiry(session):
             job = session.get(GenerationJob, request.job_id)
             if job is None or JobStatus(job.status).is_terminal:
@@ -291,6 +312,17 @@ def expire_stale_input_requests() -> int:
                 # cancel); nothing left to expire.
                 input_requests.settle(session, request)
                 session.commit()
+                continue
+            if job.cancel_requested_at is not None:
+                try:
+                    honor_user_cancel(session, job, node_id=request.node_id)
+                except Exception:
+                    logger.exception(
+                        "could not honour cancel for job %s awaiting input", job.id
+                    )
+                    continue
+                session.commit()
+                expired += 1
                 continue
             try:
                 sm.transition(
@@ -344,9 +376,16 @@ def reconcile_credits() -> str:
 @celery_app.task(name="app.workers.tasks.run_media_analysis")
 def run_media_analysis(analysis_id: str) -> str:
     from app.domain.editor import analysis as media_analysis
+    from app.domain.errors import NotFound
 
     with session_scope() as session:
-        row = media_analysis.run_analysis(session, analysis_id)
+        try:
+            row = media_analysis.run_analysis(session, analysis_id)
+        except NotFound as exc:
+            # Broker message left over after a DB truncate/seed --reset, or a
+            # vanished row: nothing to analyse and retrying will fail the same way.
+            logger.warning("media analysis task skipped: %s", exc)
+            return "missing"
         session.commit()
         return row.status
 

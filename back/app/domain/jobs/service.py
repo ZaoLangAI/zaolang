@@ -27,6 +27,7 @@ from app.domain.errors import (
 )
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
+from app.domain.notifications import push as notifications
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, JobEvent
@@ -181,6 +182,8 @@ def submit(
         public_message="任务已创建，正在排队。",
         progress=2,
     )
+    if not sandbox:
+        notifications.sync_job_notification(session, job)
     return SubmissionResult(job=job, quote=priced)
 
 

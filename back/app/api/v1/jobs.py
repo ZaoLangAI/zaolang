@@ -31,6 +31,11 @@ from app.domain.errors import NotFound, ValidationFailed
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
+from app.domain.jobs.cancellation import (
+    ack_cancel_request,
+    honor_user_cancel,
+    should_honor_immediately,
+)
 from app.domain.licensing import service as licensing
 from app.models import Draft, GenerationJob, Work, WorkVersion
 from app.models.base import new_id
@@ -141,11 +146,17 @@ def get_job(job_id: str, user: CurrentUser, session: DbSession) -> GenerationJob
 def cancel_job(job_id: str, user: CurrentUser, session: DbSession) -> GenerationJobResponse:
     """Requests cancellation.
 
-    A job already at the provider may still complete; settlement follows the
-    real outcome rather than the request.
+    Parked jobs (never started, waiting on the author, or waiting on an
+    upstream render) stop in this request. A worker that is mid-node only
+    records the request; the runner honours it at the next boundary.
     """
     job = jobs_service.get_owned_job(session, job_id, user.id)
+    already_requested = job.cancel_requested_at is not None
     job = sm.request_cancel(session, job.id)
+    if should_honor_immediately(session, job):
+        job = honor_user_cancel(session, job)
+    elif not already_requested:
+        ack_cancel_request(session, job)
     session.commit()
     return _job_response(session, job, include_events=True)
 

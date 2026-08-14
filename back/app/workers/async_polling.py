@@ -28,7 +28,6 @@ from sqlalchemy.orm import Session
 
 from app.agents import router
 from app.domain.jobs import async_tasks
-from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
 from app.models import AsyncProviderTask, GenerationJob, ProviderAttempt
@@ -138,23 +137,14 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
 def _cancel(session: Session, job: GenerationJob, task: AsyncProviderTask, provider: Any) -> None:
     """Honours a cancel that arrived while the render was in flight.
 
-    Same settlement as `execute_provider_generate`'s cancellation branch —
-    release the reservation, move to `CANCELLED`, tell the user. Telling the
-    upstream to stop is best effort: it may bill us anyway, and settlement
-    follows what we actually reserved, not what they charge.
+    `honor_user_cancel` is the shared settlement; the provider handle this
+    tick already resolved is passed through `cancel_upstream` first so we
+    do not look the catalogue up again.
     """
+    from app.domain.jobs.cancellation import honor_user_cancel
+
     async_tasks.cancel_upstream(session, task, provider)
-    jobs_service.settle_release(session, job, reason="cancelled_by_user")
-    sm.transition(session, job.id, JobStatus.CANCELLED)
-    _emit(
-        session,
-        job,
-        JobEventType.CANCELLED,
-        JobStatus.CANCELLED,
-        "任务已取消，积分已退回",
-        100,
-        node_id=task.node_id,
-    )
+    honor_user_cancel(session, job, node_id=task.node_id)
     session.commit()
 
 
