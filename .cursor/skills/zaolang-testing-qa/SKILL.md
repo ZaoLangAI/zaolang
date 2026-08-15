@@ -1,64 +1,64 @@
 ---
 name: zaolang-testing-qa
-description: 造浪的测试与 QA 体系：pytest 四层（单元 / hypothesis 属性 / 集成 / 真并发竞态）、fixture 与 committed_db、Playwright 三个 project（e2e / a11y / visual-qa）、会话复用与限流、双主题三视口与 reduced-motion 检查。Use when writing or fixing tests, adding a property or concurrency test, debugging a flaky or hanging test, or running the E2E, accessibility and visual QA suites.
+description: The testing and QA system — four pytest layers (unit / hypothesis property / integration / real concurrency), fixtures and committed_db, three Playwright projects (e2e / a11y / visual-qa), session reuse and rate limiting, dual-theme three-viewport and reduced-motion checks. Use when writing or fixing tests, adding a property or concurrency test, debugging a flaky or hanging test, or running the E2E, accessibility and visual QA suites.
 disable-model-invocation: true
 ---
 
-# 测试与 QA
+# Testing & QA
 
-## 后端四层
+## Backend: Four Layers
 
-| 目录 | 跑什么 | 何时加用例 |
+| Directory | What it runs | When to add a case |
 | --- | --- | --- |
-| `back/tests/unit/` | 领域不变量、纯函数 | 任何 `app/domain/*` 改动 |
-| `back/tests/unit/test_credits_properties.py` | hypothesis 生成账本操作序列与状态机走法 | 改账本或状态机 |
-| `back/tests/integration/` | `TestClient` 走 `/v1`、后台越权与审计 | 任何接口改动 |
-| `back/tests/concurrency/` | 真线程 + 独立连接的竞态 | 改并发敏感路径（账本、幂等、回调、积分解锁） |
+| `back/tests/unit/` | domain invariants, pure functions | any `app/domain/*` change |
+| `back/tests/unit/test_credits_properties.py` | hypothesis-generated sequences of ledger operations and their state-machine paths | any ledger or state-machine change |
+| `back/tests/integration/` | `TestClient` against `/v1`, admin unauthorized-access and audit checks | any endpoint change |
+| `back/tests/concurrency/` | real threads with independent connections, racing | any concurrency-sensitive path (ledger, idempotency, callbacks, credit unlocks) |
 
-关键 fixture 在 `back/tests/conftest.py`：`db`（回滚式，多数用例用它）、`committed_db`（真提交 + 事后 `truncate_all`）、`client`、`author` / `admin` / `reviewer` / `operator`、`make_user`；`viewer` 只在 `tests/integration/test_admin_security.py` 里局部定义。数据构造器在 `back/tests/factories.py`（`make_job` 等）。
+Key fixtures live in `back/tests/conftest.py`: `db` (rollback-style, used by most tests), `committed_db` (real commit + `truncate_all` afterward), `client`, `author` / `admin` / `reviewer` / `operator`, `make_user`; `viewer` is defined locally, only in `tests/integration/test_admin_security.py`. Data builders live in `back/tests/factories.py` (`make_job`, etc.).
 
-## 不可破坏的测试约定
+## Invariants
 
-1. **`LLM_MODE=stub` 是测试的前提**（`make test-back` 已强制）。任何用例依赖真实网关就不再确定性；`@pytest.mark.live` 的用例必须被 `-m "not live"` 排除。
-2. **属性测试与触发 `IntegrityError` 的用例必须用 `committed_db`**：`credits._apply` 在 `IntegrityError` 时会 `session.rollback()`，把整个工作单元（包括 fixture 建的用户）一起丢掉。用回滚式 `db` 会得到「外键指向不存在的用户」这种假失败。
-3. **hypothesis 需要 `suppress_health_check=[HealthCheck.function_scoped_fixture]`**：每个例子重建 schema 会慢到不可用，因此每个例子自己隔离——用 SAVEPOINT，或用带 nonce 的唯一键。
-4. **生成的字符串要排除控制字符与代理对**：Postgres text 列不接受 NUL，HTTP 头也带不了。
-5. **并发用例不能用回滚式 session**：两个事务互相竞争在单事务里根本看不见。规则有两条，缺一会把失败变成挂死——
-   - 每个 worker **一定结束自己的事务**（`tests/concurrency/conftest.py` 的 `race()` 在任何异常上先 rollback 再抛），否则输家坐在行锁上，赢家永远等下去；
-   - 每个 session 设 `lock_timeout`（默认 5s），意外死锁表现为失败用例而不是卡住整个套件。
-   `run_in_parallel()` 用 barrier 对齐 worker、daemon 线程 + 有界 join，**返回异常而不是抛出**——竞态里「输」是正确行为，判定交给用例。
-6. **竞态断言的形状是「恰好一个赢家」**，并且要检查输家是因为并发原因失败（`Conflict` / `InsufficientCredits` / `SQLAlchemyError`），而不是碰巧因为别的错误。
+1. **`LLM_MODE=stub` is a precondition for tests** (`make test-back` already enforces it). Any test depending on the real gateway is no longer deterministic; `@pytest.mark.live` cases must be excluded via `-m "not live"`.
+2. **Property tests and any case that triggers `IntegrityError` must use `committed_db`**: `credits._apply` calls `session.rollback()` on `IntegrityError`, discarding the whole unit of work — including fixture-created users. A rollback-style `db` produces false failures like "foreign key points at a nonexistent user."
+3. **hypothesis needs `suppress_health_check=[HealthCheck.function_scoped_fixture]`**: rebuilding the schema for every example would be unusably slow, so each example isolates itself instead — via a SAVEPOINT, or a unique key with a nonce.
+4. **Generated strings must exclude control characters and surrogate pairs**: Postgres text columns reject NUL, and HTTP headers can't carry them either.
+5. **Concurrency tests can't use a rollback-style session**: two transactions racing each other are invisible inside a single transaction. Two rules apply — miss either and a failure turns into a hang:
+   - every worker **must end its own transaction** (`tests/concurrency/conftest.py`'s `race()` rolls back before re-raising on any exception), or the loser sits on a row lock forever while the winner waits;
+   - every session sets a `lock_timeout` (5s default), so an unexpected deadlock shows up as a failed test, not a hung suite.
+   `run_in_parallel()` uses a barrier to align workers, daemon threads with a bounded join, and **returns exceptions rather than raising them** — "losing" a race is the correct outcome; judging it is the test's job.
+6. **Race-condition assertions take the shape "exactly one winner"**, and must confirm the loser failed for a concurrency reason (`Conflict` / `InsufficientCredits` / `SQLAlchemyError`) rather than coincidentally failing for something else.
 
-## 前端三个 project
+## Frontend: Three Playwright Projects
 
-`front/playwright.config.ts`：`setup`（登录并存会话）→ `e2e`（`e2e/flows/*.spec.ts`，含桌面-only 的 `editor.spec.ts`）、`a11y`（`e2e/a11y.spec.ts`）、`visual-qa`（`e2e/visual.spec.ts`）。全部 `workers: 1`：三套共享同一个种子库，并行发布作品会互相污染断言。`/create/drama` 故意不进 `a11y-mobile` 与 `PUBLIC_PAGES`。
+`front/playwright.config.ts`: `setup` (log in and store sessions) → `e2e` (`e2e/flows/*.spec.ts`, incl. the desktop-only `editor.spec.ts`), `a11y` (`e2e/a11y.spec.ts`), `visual-qa` (`e2e/visual.spec.ts`). All run with `workers: 1` — the three suites share one seeded database, and parallel publishing would cross-contaminate assertions. `/create/drama` is deliberately excluded from both `a11y-mobile` and `PUBLIC_PAGES`.
 
-支持文件：`e2e/support/session.ts`（`ACCOUNTS` / `STATE_FILES` / `signIn` / `watchForPageErrors`）、`support/axe.ts`、`support/theme.ts`、`setup/auth.setup.ts`。
+Support files: `e2e/support/session.ts` (`ACCOUNTS` / `STATE_FILES` / `signIn` / `watchForPageErrors`), `support/axe.ts`, `support/theme.ts`, `setup/auth.setup.ts`.
 
-1. **会话复用不是为了快**：`/v1/auth/login` 限流 10 次 / 5 分钟 / 每地址，这是正确的产品行为。每个用例都真登录会把这条保护变成 flaky 失败。因此 `setup` 只登录四次并存 `e2e/.auth/*.json`（已 gitignore），其余用例 `test.use({ storageState })`；**专门测登录的用例仍然真登录**。
-2. **匿名用例要显式清空**：`test.use({ storageState: { cookies: [], origins: [] } })`，否则会继承上一个 project 的会话。
-3. **`baseURL` 用 `localhost` 不用 `127.0.0.1`**：后台会话 cookie 是 `SameSite=Strict`，浏览器视这两个主机名为不同站点。后端 `CORS_ORIGINS` 要同时包含 3000 与 3100。
-4. **`watchForPageErrors` 只放过已知的期望失败**（会话探测的 401），其余 4xx/5xx 与任何 JS 异常都算失败。不要为了让用例变绿而扩大白名单——那正是它要抓的东西。
-5. **视觉套件断言的是机械事实**：三视口无横向溢出（`scrollWidth === clientWidth`）、无控制台错误、reduced-motion 下没有超过 50ms 的动画。截图只附在报告里便于人工查看，不参与通过/失败判定。
-6. **无障碍套件对两套主题都扫**，含 `color-contrast`。命令面板是 combobox 而非 dialog，改标记会撞 ARIA 规则。短剧剪辑是桌面硬门禁，不要为了覆盖率把它加进 `a11y-mobile`。
-7. **后台统计页单接口失败仍算通过渲染。** `/admin/statistics` 用 `adminFetchOrNull`；不要写「任一 5xx 整页红」的 e2e。日趋势口径见 `zaolang-admin-statistics`。
+1. **Session reuse isn't about speed** — `/v1/auth/login` is rate-limited to 10 attempts/5 min/address, correct product behavior. Every test logging in for real would turn that protection into flaky failures. So `setup` logs in exactly four times and stores `e2e/.auth/*.json` (gitignored); other tests use `test.use({ storageState })`. **Tests specifically about login still log in for real.**
+2. **Anonymous tests must explicitly clear session state**: `test.use({ storageState: { cookies: [], origins: [] } })`, or they inherit the previous project's session.
+3. **`baseURL` uses `localhost`, not `127.0.0.1`**: the admin session cookie is `SameSite=Strict`, and browsers treat these hostnames as different sites. The backend's `CORS_ORIGINS` must include both 3000 and 3100.
+4. **`watchForPageErrors` only allows a known set of expected failures** (the session probe's 401); every other 4xx/5xx and any JS exception counts as a failure. Don't widen the allowlist to make a test pass — that's exactly what this check exists to catch.
+5. **The visual suite asserts mechanical facts**: no horizontal overflow at three viewports (`scrollWidth === clientWidth`), no console errors, no reduced-motion transition over 50ms. Screenshots are attached to the report for human review only — they don't gate pass/fail.
+6. **The accessibility suite scans both themes**, including `color-contrast`. The command palette is a combobox, not a dialog — changing its markup risks breaking the ARIA rule. The drama editor is a hard desktop gate — don't add it to `a11y-mobile` for coverage's sake.
+7. **The admin statistics page still counts as passing when a single endpoint fails.** `/admin/statistics` uses `adminFetchOrNull` — don't write an e2e test that expects "any 5xx turns the whole page red." Daily-trend semantics: see `zaolang-admin-statistics`.
 
-## 跑 E2E 的前置条件
+## E2E Prerequisites
 
 ```bash
-make up && make migrate && make seed          # 真实数据库与种子数据
-make dev-api                                   # 后端必须在 8000
+make up && make migrate && make seed          # a real database and seed data
+make dev-api                                   # backend must be on 8000
 cd front && npm run build && npx next start --port 3100
 make test-e2e && make test-a11y && make qa-visual
 ```
 
-`front/.env.local` 需要 `ALLOW_LOCAL_IMAGE_HOSTS=1`：Next 16 默认拒绝优化解析到私有地址的图片（SSRF 防护），本地 MinIO 正好是私有地址，不开这一项封面全是 400。生产不要设置。
+`front/.env.local` needs `ALLOW_LOCAL_IMAGE_HOSTS=1`: Next 16 rejects image optimization against private-address hosts by default (SSRF protection), and the local MinIO instance is exactly that — skip this and every cover image 400s. Never set this in production.
 
-## 验证
+## Verify
 
 ```bash
-make test-back      # 480+ 用例，覆盖率写进终端
-make check          # 全量本地门禁
+make test-back      # 480+ cases, coverage printed to the terminal
+make check          # the full local gate
 ```
 
-用例写完问一句：**它能失败吗？** 把被测不变量临时改坏，确认用例真的红了，再改回来。
+After writing a test, ask: **can it actually fail?** Temporarily break the invariant under test, confirm the test goes red, then revert.

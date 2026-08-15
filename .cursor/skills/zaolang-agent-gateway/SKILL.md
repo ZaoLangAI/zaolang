@@ -1,87 +1,67 @@
 ---
 name: zaolang-agent-gateway
-description: 造浪的 Agno 智能网关与 LLM 接入：Safety/Planner/Quality/Copy/Intent Router Agent、硬过滤 + LLM 驱动的供应商选型、Generation Gateway Team 与 Workflow、工具白名单、OpenAI 兼容网关（AIHubMix）三档模式、响应规范化与 AgentRun 记录。Use when changing an agent prompt or tool, the routing/selection logic, provider candidates, the LLM client, response normalisation, model bindings, or stub/degradation behaviour.
+description: The Agno agent gateway and LLM access layer — Safety/Planner/Quality/Copy/Intent Router agents, hard-filter + LLM-driven provider selection, the Generation Gateway Team and Workflow, the tool whitelist, and the OpenAI-compatible gateway (AIHubMix) with its three modes. Use when changing an agent prompt or tool, routing/selection logic, provider candidates, the LLM client, response normalisation, model bindings, or stub/degradation behaviour.
 disable-model-invocation: true
 ---
 
-# Agno 智能网关与 LLM 接入
+# Agno Agent Gateway & LLM Access
 
-## 职责
+## Scope
 
-智能体负责**判断**（安全、规划、质检、路由选型）或**辅助生成**（文案：为待发布作品生成标题/简介/标签，或润色画面描述，不产出通过/拒绝式判断），供应商负责**产出**（图片、视频）。判断与辅助生成两者之间由 `router.py` 的硬性能力/档位/启用状态过滤 + `intent_router` Agent 的 LLM 选型共同连接：过滤是代码，选谁是模型。
+Agents own **judgment** (safety, planning, quality, routing selection) or **assisted generation** (copy: titles/descriptions/tags for a work about to publish, or polishing a scene description — never a pass/fail verdict); providers own **production** (images, video). Judgment and assisted generation are bridged by `router.py`'s hard capability/tier/enablement filtering plus the `intent_router` agent's LLM-driven selection: filtering is code, choosing is the model.
 
-## 关键路径
+For the failover pool, MiniMax H3 contract details, `node_id` write-back mechanics, and prompt/model-binding, see [reference.md](reference.md) — this file covers the routing core (invariants #1–9) that almost every change in this skill touches.
 
-| 文件 | 内容 |
+## Key Paths
+
+| File | Contents |
 | --- | --- |
-| `back/app/agents/safety.py` / `planner.py` / `quality.py` / `editor_planner.py` | 三个判断类 Agent + 短剧时间线规划器（模块内常量作 fallback）。`editor_planner` 只记 `AgentRun`，不建 `GenerationJob`，不进生成 DAG；工具白名单与产品路径见 `zaolang-editor-drama` |
-| `back/app/agents/copywriter.py` | 辅助生成类（`assist`）Agent：只生成/润色文案，不产出通过/拒绝式判断，`copy_generate` 节点只有一个 `ok` 输出端口，不参与门禁 |
-| `back/app/agents/intent_router.py` | `classify()`（档位建议，只降不升）与 `select_provider()`（LLM 路由选型，见不变量 #1） |
-| `back/app/domain/agent_skills/service.py` | `AgentNode`（角色）/ `AgentProfile`（智能体本体）/ `AgentSkill` 版本化 Prompt，`resolve_prompt(role, agent_id, slot)` |
-| `back/app/domain/agent_skills/presets.py` | `ROLE_PRESETS`：管理台建智能体时角色下拉的**唯一**来源（代码维护的目录，不是表） |
-| `back/app/domain/agent_skills/templates.py` | `SKILL_TEMPLATES`：技能编辑器「从模板填充」的起始提示词，内置角色的模板直接引用各模块的 `SYSTEM_PROMPT` 常量 |
-| `back/app/agents/custom.py` | `custom_agent` 节点用的通用判断执行器，角色在运行时由节点配置给出 |
-| `back/app/agents/router.py` | 硬过滤 + LLM 选型编排：`ProviderCapability` / `Candidate` / `RoutingDecision` / `route()`，不含打分公式 |
-| `back/app/agents/tools.py` | **受控工具白名单**，Agent 唯一能碰领域服务的入口 |
-| `back/app/agents/base.py` / `agent_os.py` | Agent 基类与 AgentOS 挂载（产品 FastAPI 作为 `base_app`） |
-| `back/app/teams/generation_gateway.py` | Generation Gateway Team 的高层入口 |
-| `back/app/workflows/runner.py` / `nodes.py` / `registry.py` / `configs.py` | 可发布 DAG 的执行器、代码审核节点白名单、节点配置 schema 与 agent/profile 绑定；`defaults.py` 提供默认图 |
-| `back/app/providers/base.py` | `ProviderCapability`（含 `provider_factory`）；测试 fake 只在测试中注入 |
-| `back/app/providers/media_endpoints.py` | `dynamic_capabilities(session)`：把数据库里 `kind="media"` 的启用端点按能力展开成 `ProviderCapability`，供 `router.build_catalog` 合并 |
-| `back/app/providers/aihubmix_media.py` | `AiHubMixMediaProvider`：`protocol=openai` 时文生图/图生图都走 `POST /v1/images/generations`（图生图 JSON 加 `image` 签名 URL，不再走 `/v1/images/edits`），音频走 `/v1/audio/speech`；`protocol=minimax` 时视频走 MiniMax H3（`/ai/v1/videos` 建任务再轮询）。本轮不按 protocol 拆成两个类 |
-| `back/app/llm/client.py` | `complete()` / `probe()`，三档模式与降级 |
-| `back/app/llm/failover.py` | LLM 网关独立 failover 池：并发占用、熔断、按主/备角色 + 优先级选端点（单一通用池，四个 Agent 角色共用，不再分场景） |
+| `back/app/agents/safety.py` / `planner.py` / `quality.py` / `editor_planner.py` | three judgment-role agents plus the drama-editor timeline planner (module-level constants serve as fallback). `editor_planner` only records an `AgentRun` — it never creates a `GenerationJob` or enters the generation DAG; tool whitelist and product path: see `zaolang-editor-drama` |
+| `back/app/agents/copywriter.py` | the assist-role (`assist`) agent: only generates/polishes copy, never a pass/fail verdict; the `copy_generate` node has a single `ok` output port and never gates anything |
+| `back/app/agents/intent_router.py` | `classify()` (tier suggestion, downgrade-only, never upgrades) and `select_provider()` (LLM-driven routing selection, see invariant #1) |
+| `back/app/domain/agent_skills/service.py` | `AgentNode` (role) / `AgentProfile` (the agent instance) / versioned `AgentSkill` prompts, `resolve_prompt(role, agent_id, slot)` |
+| `back/app/domain/agent_skills/presets.py` | `ROLE_PRESETS`: the **sole** source for the role dropdown when creating an agent in admin (a code-maintained catalogue, not a table) |
+| `back/app/domain/agent_skills/templates.py` | `SKILL_TEMPLATES`: starting prompts for the skill editor's "fill from template," with built-in roles' templates referencing each module's `SYSTEM_PROMPT` constant directly |
+| `back/app/agents/custom.py` | the generic judgment executor used by the `custom_agent` node; its role comes from the node's runtime config |
+| `back/app/agents/router.py` | hard-filter + LLM-selection orchestration: `ProviderCapability` / `Candidate` / `RoutingDecision` / `route()` — contains no scoring formula |
+| `back/app/agents/tools.py` | **the controlled tool whitelist** — the only entry point an agent has into domain services |
+| `back/app/agents/base.py` / `agent_os.py` | the agent base class and AgentOS mounting (the product's FastAPI app as `base_app`) |
+| `back/app/teams/generation_gateway.py` | the high-level entry point for the Generation Gateway Team |
+| `back/app/workflows/runner.py` / `nodes.py` / `registry.py` / `configs.py` | the publishable-DAG executor, the code-reviewed node-type whitelist, node config schemas and agent/profile binding; `defaults.py` supplies the default graph |
+| `back/app/providers/base.py` | `ProviderCapability` (incl. `provider_factory`); test fakes are injected only inside tests |
+| `back/app/providers/media_endpoints.py` | `dynamic_capabilities(session)`: expands enabled `kind="media"` database endpoints into `ProviderCapability` entries by capability, for `router.build_catalog` to merge in |
+| `back/app/providers/aihubmix_media.py` | `AiHubMixMediaProvider`: under `protocol=openai`, both text-to-image and image-to-image go through `POST /v1/images/generations` (image-to-image adds a signed `image` URL to the JSON body, no longer using `/v1/images/edits`), audio goes through `/v1/audio/speech`; under `protocol=minimax`, video goes through MiniMax H3 (`/ai/v1/videos` creates a task, then polls). Not split into two classes by protocol this round |
+| `back/app/llm/client.py` | `complete()` / `probe()`, the three modes and degradation |
+| `back/app/llm/failover.py` | the LLM gateway's independent failover pool: concurrency slots, circuit-breaking, endpoint selection by primary/backup role + priority (a single shared pool across the four agent roles, no longer split by scenario) |
 | `back/app/llm/normalize.py` | `strip_thinking` / `extract_json` / `normalize_completion` |
-| `back/app/llm/capabilities.py` | 按错误反馈学习模型能力（温度、JSON 模式等） |
-| `back/app/llm/stub.py` | 确定性 stub，测试与 `make check` 用 |
+| `back/app/llm/capabilities.py` | learns model capabilities from error feedback (temperature support, JSON mode, etc.) |
+| `back/app/llm/stub.py` | the deterministic stub used by tests and `make check` |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **硬性过滤是代码，选谁是 LLM，没有兜底公式。** `router.route()` 先用代码过滤掉物理/业务上不可用的候选（能力不支持、档位不支持、供应商禁用、超预算延迟、本次 job 已失败过），只有过滤后仍合格的候选才会连同各自的成功率/延迟/成本一起交给 `intent_router.select_provider()`；LLM 返回哪个就用哪个，`reason` 就是它给出的理由。**LLM 不可用、降级或选了一个不在合格集合里的供应商时，`route()` 直接返回 `selected=None`（`reason="llm_selection_unavailable"`），绝不回退到任何加权公式或排序规则**——曾经的 `quality/latency/cost/reliability` 加权公式与 `routing_weights` 配置已被移除，不要凭直觉重新加回来。
-2. **候选信息只做展示与输入，不做决策。** `Candidate` 的 `success_rate`/`avg_latency_ms`/`effective_cost` 是喂给 LLM 的上下文、也是后台「决策逐候选回放」的展示字段，但代码里不允许再出现按这些字段排序/加权选出胜者的逻辑——排序权只属于 `intent_router`。
-3. **`effective_cost` 包含固定 1.2 的失败重试放大**；少于 20 个样本用 0.8 保守先验。
-4. **每个候选的淘汰理由都要落 `ProviderAttempt` / 决策记录**，后台「决策逐候选回放」依赖它。
-5. **Agent 输出不是事实，落库才是**。Agent 只能通过 `tools.py` 白名单调领域服务；不要给 Agent 直接的 session 或任意 SQL。
-6. **测试与 `make check` 强制 `LLM_MODE=stub`**。三档模式：`openai_compatible`（只走真实网关，失败即报错）、`stub`（确定性假响应）、`auto`（网关失败自动降级到 stub）。降级必须写入 `AgentRun` 的降级标记与原因，并在界面明确标识。
-7. **每次调用写 `AgentRun`**：模型、token 用量、延迟、是否降级，以及 `input_json`（`{system_prompt, user_prompt}`，后台点节点回放用）。后台智能体完全建立在这张表上。
-8. **响应规范化不可跳过**：剥离 `<think>...</think>` 与 `reasoning_details`、从自由文本里提取最外层 JSON、解析失败先修复重试再降级。reasoning 模型（`ling-3.0-flash-free`）的推理 token 计入 `max_tokens`，**必须给足预算**，否则 `content` 为空且 `finish_reason=length`。
-9. **密钥只通过 `/admin/models` 专用掩码 API 管理**，不进通用配置 API、JSON 编辑器、日志或 prompt；环境变量只用于本地 seed 首次引导。
-10. **LLM 推理端点走独立 failover 池**（`llm/failover.py`），与图片/视频/音频生成的 `router.py` 选型路由并行，不要混用同一套候选选择逻辑。两者共享 `llm_providers` 存储但按 `kind` 严格隔离。绑一个模型的 `AgentProfile`（判断类或辅助生成类）填了默认/备用端点时，failover 只在这两个手动选择的供应商之间进行；没有端点绑定时才使用支持目标模型的通用共享池。
-11. **角色只能来自 `ROLE_PRESETS`。** 管理台建智能体时角色是下拉不是自由文本：工作流节点类型是代码白名单，没有任何节点类型认识的角色建出来也永远不会被执行。要让一个新的判断类角色能跑，要么给它加专属节点类型，要么用通用的 `custom_agent` 节点（角色由 `config.agent_role` 在运行时给出）。
-12. **工作流按智能体 id 绑定，且绑定的智能体必须是该节点要求的角色。** 一个角色下可以有多个智能体（管理台按角色分组，但分组只是标题，可操作的对象只有智能体）；节点配置里的 `agent_id` / `selector_agent_id` 存的是 `AgentProfile.id`，不是名称也不是 key——名称随时可改，已发布的图必须一直指向同一个智能体。角色不匹配在发布时报错（`workflow_templates.service._binding_errors`），运行时也会拒绝并回落到角色默认智能体（`resolve_prompt`），因为拿文案智能体跑安全审核会把它产出的任何东西当成放行结论。留空表示该角色的默认智能体。
-13. **媒体端点没有 LLM 主备/并发语义**：它只声明一个模型、接口协议、输入/输出模态、超时与启停；通用端点才有主备顺序和并发租约。
-14. **MiniMax H3 走官方异步契约**：创建请求固定 `resolution="2K"`，时长 4–15 秒，创建响应读 `id`，状态产物读 `output[].result_id`。图片/视频参考使用平台私有素材生成短时签名 URL，`input_references` 与 `frame_images` 必须互斥；物理参数不兼容时在路由硬过滤阶段淘汰，不能等供应商报错。H3 硬过滤仍看**模型名** `minimax-h3`，不要改成只看 `protocol`。
-15. **媒体 `protocol` 是 HTTP 契约标准名，不是网关供应商名。** 下拉显示 OpenAI / MiniMax / ComfyUI 等；AiHubMix 的图/音频符合 OpenAI 兼容，显示 **OpenAI**。已实现：`openai`（文生图、图生图、音频）、`minimax`（文生视频、图生视频、视频生视频）。`comfyui` / `google` / `dashscope` / `ark` / `kling` 只占目录，未实现协议不得进 `dynamic_capabilities` catalog，也禁止静默回退到 OpenAI。`openai` 与 `minimax` 都继续实例化现有 `AiHubMixMediaProvider`。
-16. **`AgentRun.node_id` 由工作流引擎回写，不是 Agent 自己填的。** `WorkflowRunner._execute_node` 在调 executor 前记下 `ctx.state["_last_agent_run_id"]` 的旧值，executor 跑完后如果这个值变了（说明本节点新产生了一条 `AgentRun`）且非 `dry_run`，就对那一行做一次 `UPDATE ... SET node_id = :node_id`——任何 agent 函数都不需要、也不应该新增 `node_id` 参数。产品沙盒是真实 job（`dry_run=False`），这条回写照常发生。`RoutingDecision.agent_run_id` 同理：`select_provider()` 的 `AgentOutcome.agent_run_id` 透传进 `RoutingDecision`，`nodes.py::execute_route_score` 把它塞进 `ctx.state["_last_agent_run_id"]`，让路由打分这次 LLM 调用也能挂上 `route_score` 节点——不改 `intent_router.select_provider()` 本身的调用契约。
-17. **产品沙盒走真实媒体供应商，与 C 端相同。** 编辑器试跑不再有 `live_provider` 开关；`WorkflowContext.dry_run` 只留给单测隔离走图。不要把完整 prompt 推上 C 端公开 SSE，后台检视从 `AgentRun.input_json` / `JobEvent.payload` 读。
+1. **The hard filter is code; the choice is the LLM's — there is no fallback formula.** `router.route()` first filters out candidates that are physically or commercially unusable (capability unsupported, tier unsupported, provider disabled, over-budget latency, already failed once this job) in code; only candidates that survive get passed to `intent_router.select_provider()` together with each one's success rate/latency/cost — whichever the LLM returns is what gets used, and `reason` is its stated rationale. **When the LLM is unavailable, degraded, or picks a provider outside the eligible set, `route()` returns `selected=None` (`reason="llm_selection_unavailable"`) directly — it never falls back to any weighted formula or ranking rule.** The old `quality/latency/cost/reliability` weighted formula and the `routing_weights` config have been removed; don't intuitively add them back.
+2. **Candidate info is for display and input only, never for deciding.** `Candidate`'s `success_rate`/`avg_latency_ms`/`effective_cost` are context fed to the LLM, and also the fields shown in admin's "step-through candidate replay" — but no code path is allowed to sort or weight by these fields to pick a winner. Ranking authority belongs to `intent_router` alone.
+3. **`effective_cost` bakes in a fixed 1.2× failure-retry amplification**; fewer than 20 samples uses a conservative 0.8 prior.
+4. **Every candidate's elimination reason must be persisted** to `ProviderAttempt` / the decision record — admin's "step-through candidate replay" depends on it.
+5. **Agent output isn't fact until it's persisted.** Agents can only call domain services through the `tools.py` whitelist — never give an agent a raw session or arbitrary SQL.
+6. **Tests and `make check` force `LLM_MODE=stub`.** Three modes: `openai_compatible` (real gateway only, errors on failure), `stub` (deterministic fake responses), `auto` (falls back to stub automatically on gateway failure). A fallback must write a degradation flag and reason into `AgentRun`, and be clearly indicated in the UI.
+7. **Every call writes an `AgentRun`**: model, token usage, latency, whether it degraded, and `input_json` (`{system_prompt, user_prompt}`, used for admin per-node replay). Admin's agent tooling is built entirely on this table.
+8. **Response normalization can never be skipped**: strip `<think>...</think>` and `reasoning_details`, extract the outermost JSON from free text, retry-and-repair before degrading on a parse failure. A reasoning model's thinking tokens count against `max_tokens` — **budget generously**, or `content` comes back empty with `finish_reason=length`.
+9. **Secrets are managed only through the dedicated masked `/admin/models` API** — never the general config API, the JSON editor, logs, or a prompt; environment variables are for local seed bootstrapping only.
 
-## Prompt 与模型绑定
+## Extension Points
 
-各 Agent 的 `SYSTEM_PROMPT` 已迁移为版本化 `AgentSkill`。模型绑定只由 `/admin/agents` 的 `AgentProfile` 管理：判断类（`judgment`）与辅助生成类（`assist`）智能体共用同一种表单——手动选择默认供应商、可选备用供应商及两者共同支持的模型；非默认智能体空采样字段继承角色默认 AgentProfile。`assist` 只是给 `copy` 角色的语义标注（生成/润色文案，不是通过/拒绝式判断），不改变绑定方式。代码常量只作空库启动兜底，运行时不再读取旧 `agents` 配置段。
+- **Add an agent**: add an executable role/node → create an `AgentProfile` in `/admin/agents` and pick a provider and model → call domain services only through `tools.py` → add the stub branch.
+- **Add a new system prompt to an existing role (a sibling slot)**: a role can hold several prompts that don't share instructions, as long as they're all called directly from code rather than through a workflow node — e.g. the `copy` role's `suggest` (work copy), `enhance` (prompt polishing), and `clarify` (a pre-generation follow-up question, letting the short-video studio decide whether it needs more info from the user before submitting). Add a `PromptSlot` to `back/app/agents/slots.py`'s `PROMPT_SLOTS[role]` → add the constant + function in the matching agent module, `run_agent(..., slot=your_slot)` → add a starting template in `agent_skills/templates.py` → (optional) add a thin wrapper function under `back/app/domain/<domain>/`, named for the caller's role semantics — don't reuse a domain function already consumed by another frontend. The new slot appears automatically as a tab in `/admin/agents`'s `AgentSkillEditorDialog` — no new frontend code needed.
+- **Add a role preset**: add an entry to `presets.py`'s `ROLE_PRESETS` (choose `judgment` or `assist` — binding works the same either way, only the semantics differ: whether it produces a pass/fail verdict) → add a starting template in `templates.py` while you're there → confirm it can actually be invoked by some node type (a dedicated node type, or `custom_agent`), or an agent built from it will never run. Presets are a code catalogue, not a table — adding one is still an engineering change, which is exactly the point of "roles can only be chosen from presets."
+- **Add a tool for an agent**: add it only to `tools.py`, with a narrow signature (explicit params, explicit return) — never expose the session.
+- **Add a fake provider for tests**: construct a `ProviderCapability` and monkeypatch `build_catalog` only inside `back/tests` — production `router.py` never registers a fake.
+- **Add a real media provider (config-driven, no code change)**: go to `/admin/models` and add a `kind="media"` endpoint, pick its **interface protocol** (OpenAI / MiniMax are implemented; other options are disabled), fill in the model id, then check the input/output modalities it supports; capability tags are derived automatically by `capabilities_for_modalities`, and `router.build_catalog(session)` expands it into the candidate catalogue by capability on the next routing pass. An unimplemented protocol never enters the catalogue. If the same credential needs different models for different capabilities, configure multiple endpoints. A new `GenerationProvider` implementation is only needed when the target provider's HTTP contract is neither OpenAI-compatible generations/speech nor the existing MiniMax H3 video path (e.g. a future standalone ComfyUI `POST /prompt` + `GET /history` adapter).
+- **Change selection logic**: never add sorting/weighting code to `router.py` — that's a deliberate gap (invariant #1). To change the criteria for "which provider wins," edit `intent_router.py`'s `SELECT_PROVIDER_SYSTEM_PROMPT` (or the admin-publishable `AgentSkill` version), and sync `llm/stub.py`'s `_intent_router` deterministic branch, or every routing test under `LLM_MODE=stub` changes behavior.
 
-| Agent | 默认模型 | 为什么 |
-| --- | --- | --- |
-| Safety | `doubao-seed-2-1-pro` | 输出干净 JSON，安全判定必须稳定可解析 |
-| Planner | `kimi-k3` | |
-| Quality | `kimi-k3` | |
-| Copy | `ling-3.0-flash-free` | 免费、高频文案 |
-| Intent Router | `ling-3.0-flash-free` | 一个 agent 身份、两次互不共享系统提示词的调用：`classify()` 判档位、`select_provider()` 选供应商（见 `intent_router.py` 顶部 docstring）；两次调用都轻量、高频，选免费模型控制成本 |
-
-网关**没有 embedding 模型**，语义检索用本地确定性实现（见 `zaolang-discovery-search`）。
-
-## 改造切入点
-
-- **加一个 Agent**：增加可执行角色/节点 → 在 `/admin/agents` 创建 AgentProfile 并选择供应商和模型 → 只经 `tools.py` 调领域服务 → 补 stub 分支。
-- **给已有角色加一个新的系统提示词（sibling slot）**：一个角色可以拥有几个互不共享指令的提示词，只要它们都由代码直接调用而不是走工作流节点——例如 `copy` 角色的 `suggest`（作品文案）/`enhance`（提示词润色）/`clarify`（生成前追问澄清，供短视频工作室在提交前判断是否需要用户补充信息）。往 `back/app/agents/slots.py` 的 `PROMPT_SLOTS[角色]` 加一个 `PromptSlot` → 在对应 agent 模块加常量 + 函数，`run_agent(..., slot=你的槽位)` → 在 `agent_skills/templates.py` 补一个起始模板 →（可选）在 `back/app/domain/<领域>/` 下建一个薄封装函数，调用方按角色语义命名，不要复用已被其他前端消费的领域函数。新槽位会自动出现在 `/admin/agents` 的 `AgentSkillEditorDialog` 标签页里，不需要新前端代码。
-- **加一个角色预设**：往 `presets.py` 的 `ROLE_PRESETS` 加一项（`judgment`/`assist` 二选一，绑定方式相同，只是语义不同：会不会产出通过/拒绝式判断）→ 顺手在 `templates.py` 补一个起始模板 → 确认它能被某个节点类型调用（专属节点类型或 `custom_agent`），否则建出来的智能体不会执行。预设是代码目录不是表，加预设仍是一次工程改动，这正是"角色只能从预设选"想要的效果。
-- **给 Agent 加工具**：只加进 `tools.py`，函数签名保持窄（明确的参数、明确的返回），不要暴露 session。
-- **加测试假供应商**：只在 `back/tests` 构造 `ProviderCapability` 并 monkeypatch `build_catalog`；生产 `router.py` 不登记 fake。
-- **加一个真实媒体供应商（管理台配置驱动）**：不改代码——去 `/admin/models` 新增一个 `kind="media"` 端点，选 **接口协议**（已实现的 OpenAI / MiniMax；其余 option 禁用），填模型 id，再勾选它支持的输入/输出模态；能力 tag 由 `capabilities_for_modalities` 自动推导，`router.build_catalog(session)` 会在下一次路由时把它按能力展开进候选目录。未实现 protocol 不会进 catalog。同一凭证要用不同模型服务不同能力就配多个端点。只有当目标供应商的 HTTP 契约既不是 OpenAI 兼容 generations/speech、也不是现有 MiniMax H3 视频路径时，才需要新写一个 `GenerationProvider` 实现（例如后续独立的 ComfyUI `POST /prompt` + `GET /history` 适配器）。
-- **改选型逻辑**：不要在 `router.py` 里加任何排序/加权代码——那是刻意留白的（不变量 #1）。要改"选哪个供应商"的判断标准，去改 `intent_router.py` 的 `SELECT_PROVIDER_SYSTEM_PROMPT`（或后台可发布的 `AgentSkill` 版本），并同步 `llm/stub.py` 里 `_intent_router` 的确定性分支，否则 `LLM_MODE=stub` 下的路由测试会全部改变行为。
-
-## 验证
+## Verify
 
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_agent_gateway.py tests/unit/test_llm_normalize.py tests/unit/test_llm_gateway_modes.py tests/unit/test_llm_capabilities.py -v
-make test-llm    # @pytest.mark.live 连通性冒烟，只在本地有密钥时跑，不进 make check
+make test-llm    # @pytest.mark.live connectivity smoke test — only runs locally with real keys, not part of make check
 ```

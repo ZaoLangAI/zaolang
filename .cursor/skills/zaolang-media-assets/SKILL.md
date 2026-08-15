@@ -1,54 +1,54 @@
 ---
 name: zaolang-media-assets
-description: 造浪的上传链路与内容完整性：MinIO 预签名上传与 complete、MIME/大小/前缀约束、Asset role 与私密对象签名下载、pHash 指纹去重与洗稿检测、AI 生成溯源清单、assets-pack 导入。Use when changing uploads, presigned URLs, object keys, asset visibility, media probing, perceptual hashing, provenance manifests, or the assets-pack import script.
+description: The upload pipeline and content integrity — MinIO presigned uploads and complete, MIME/size/prefix constraints, Asset roles and private-object signed downloads, pHash fingerprint dedup and reuse detection, AI-generation provenance manifests, assets-pack import. Use when changing uploads, presigned URLs, object keys, asset visibility, media probing, perceptual hashing, provenance manifests, or the assets-pack import script.
 disable-model-invocation: true
 ---
 
-# 上传链路与内容完整性
+# Upload Pipeline & Content Integrity
 
-## 职责
+## Scope
 
-保证进桶的东西是我们允许的、出桶的东西是调用者有权看的，并且能回答「这个文件是不是已经有了」「这段视频是怎么生成的」。
+Ensure what goes into the bucket is something we allow, that what comes out of it is something the caller is authorized to see, and that the system can answer "do we already have this file" and "how was this video generated."
 
-## 关键路径
+## Key Paths
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
 | `back/app/domain/media/service.py` | `presign_upload` / `complete_upload` / `register_generated_asset` / `record_provenance` / `record_fingerprint` / `find_near_duplicates` / `signed_url_for` / `publish_asset` |
-| `back/app/storage/s3.py` | `ALLOWED_UPLOAD_MIME_TYPES`、`MAX_UPLOAD_BYTES`、`PURPOSE_PREFIXES`（含 `editor_source` / `editor_export`）、预签名、桶 CORS 与生命周期策略 |
-| `back/app/api/v1/uploads.py` | `POST /v1/uploads/presign` 与 `POST /v1/uploads/complete` |
-| `back/app/presenters/media_urls.py` | 出站 URL 组装（签名与有效期） |
-| `back/app/scripts/import_assets_pack.py` | 按 `assets-pack/manifest.example.json` 契约读取本地 `assets-pack/manifest.json`，支持导入与 `--dry-run` 校验 |
-| `front/src/lib/upload.ts`、`front/src/components/studio/source-material-rail.tsx` | 前端两段式上传 |
+| `back/app/storage/s3.py` | `ALLOWED_UPLOAD_MIME_TYPES`, `MAX_UPLOAD_BYTES`, `PURPOSE_PREFIXES` (incl. `editor_source` / `editor_export`), presigning, bucket CORS and lifecycle policy |
+| `back/app/api/v1/uploads.py` | `POST /v1/uploads/presign` and `POST /v1/uploads/complete` |
+| `back/app/presenters/media_urls.py` | outbound URL assembly (signing and expiry) |
+| `back/app/scripts/import_assets_pack.py` | reads a local `assets-pack/manifest.json` under the `assets-pack/manifest.example.json` contract; supports import and `--dry-run` validation |
+| `front/src/lib/upload.ts`, `front/src/components/studio/source-material-rail.tsx` | the frontend's two-phase upload |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **上传是两段式**：先 `presign`（服务端校验 MIME、大小上限、用途），客户端直传 MinIO，再 `complete`（服务端复核实际对象、探测尺寸与时长、建 `Asset`）。**没有 `complete` 的对象不是资产**，靠生命周期策略清理。
-2. **白名单约束在发预签名之前生效**：只允许 `image/png` / `image/jpeg` / `image/webp` / `video/mp4` / `video/webm`；大小上限按用途区分（参考图 32MB、头像 4MB、封面 12MB、授权证据 16MB、剪辑源/导出 256MB）。
-3. **每种用途关进自己的前缀**（`PURPOSE_PREFIXES` 全部在 `staging/` 下）。这样一个头像的签名 URL 无法被重放去覆盖生成产物。`editor_export` 的 `complete` 必须 HEAD + checksum + **ffprobe**。剪辑源的时长/画幅分析是 `MediaAnalysis` + `media_analysis` 队列，领域在 `zaolang-editor-drama`，不要把 ffprobe 分析写进 `media/service.py`。
-4. **私密对象只能通过短时效签名 URL 下载**，且签发前必须校验调用者对该资产的权限。桶不对公网开放，不要为了省事把对象设成 public-read。
-5. **发布时才 `publish_asset`**：把对象从 staging 迁到可读区。发布事务回滚时不能留下已公开的对象。
-6. **pHash 存 64 位有符号整数的字符串形式**（`_to_signed_64`），比较用汉明距离，阈值 `DUPLICATE_HAMMING_THRESHOLD = 6`。改阈值会同时改变「重复上传拦截」与后台「指纹重复项」两处行为。
-7. **AI 生成产物必须有溯源清单**（`ProvenanceManifest`：模型、参数、来源资产、时间）。C2PA 签名是预留接口位，不要声称已实现。
-8. **`AssetConsent`**：涉及真人肖像等素材的授权证据与资产分离存储，状态流转要留痕。
-9. **生成参考素材按用户所有权解析**：普通 H3 参考最多 9 个，支持图片/视频；首尾帧只接受图片并与普通参考互斥。供应商只能收到由对象 key 生成的短时签名 URL，不能接受用户任意外链。
+1. **Uploads are two-phase**: first `presign` (server validates MIME, size cap, and purpose), the client uploads directly to MinIO, then `complete` (server re-verifies the actual object, probes dimensions/duration, creates the `Asset`). **An object without a `complete` call is not an asset** and is cleaned up by lifecycle policy.
+2. **Whitelist constraints apply before a presigned URL is issued**: only `image/png` / `image/jpeg` / `image/webp` / `video/mp4` / `video/webm` are allowed; size caps vary by purpose (reference image 32MB, avatar 4MB, cover 12MB, authorization evidence 16MB, editor source/export 256MB).
+3. **Every purpose is confined to its own prefix** (`PURPOSE_PREFIXES`, all under `staging/`) — an avatar's signed URL can't be replayed to overwrite a generated output. `editor_export`'s `complete` requires HEAD + checksum + **ffprobe**. Editor-source duration/dimension analysis is `MediaAnalysis` + the `media_analysis` queue, owned by `zaolang-editor-drama` — don't put ffprobe analysis logic in `media/service.py`.
+4. **Private objects are downloadable only via short-lived signed URLs**, and the caller's permission on that asset must be checked before signing. The bucket is never public — don't set an object `public-read` for convenience.
+5. **`publish_asset` runs only at publish time**: it moves the object from staging into the readable area. A rolled-back publish transaction must not leave a publicly readable object behind.
+6. **pHash is stored as the string form of a signed 64-bit integer** (`_to_signed_64`); comparison uses Hamming distance with threshold `DUPLICATE_HAMMING_THRESHOLD = 6`. Changing the threshold changes both "block duplicate uploads" and the admin "duplicate fingerprints" view at once.
+7. **AI-generated output must carry a provenance manifest** (`ProvenanceManifest`: model, parameters, source assets, timestamp). C2PA signing is a reserved interface slot — don't claim it's implemented.
+8. **`AssetConsent`**: consent evidence for material involving real likenesses is stored separately from the asset itself, with a tracked status history.
+9. **Generation reference assets resolve by user ownership**: a normal H3 reference accepts up to 9 images/videos; first/last-frame mode accepts images only and is mutually exclusive with normal references. Providers only ever receive short-lived signed URLs generated from object keys — never an arbitrary user-supplied external URL.
 
-## 改造切入点
+## Extension Points
 
-- **允许一种新格式**：`ALLOWED_UPLOAD_MIME_TYPES` 加项（带扩展名）→ `_probe` 加探测分支（拿不到尺寸/时长就别接受）→ 前端 `accept` 属性与文案 → 补 `tests/unit/test_media_integrity.py`。
-- **加一种用途**：`MAX_UPLOAD_BYTES` 与 `PURPOSE_PREFIXES` 必须成对加，缺一会在预签名时 KeyError。
-- **改指纹策略**：`record_fingerprint` 与 `find_near_duplicates` 成对改；存量指纹不会自动重算，要写一次性脚本。
-- **换对象存储**：只改 `app/storage/s3.py`（boto3 S3 兼容层），领域层不感知。生命周期策略与用量统计也在这里。
+- **Allow a new format**: add an entry to `ALLOWED_UPLOAD_MIME_TYPES` (with its extension) → add a probing branch to `_probe` (reject if dimensions/duration can't be read) → update the frontend `accept` attribute and copy → add coverage in `tests/unit/test_media_integrity.py`.
+- **Add a purpose**: `MAX_UPLOAD_BYTES` and `PURPOSE_PREFIXES` must be added together — missing either raises a `KeyError` at presign time.
+- **Change fingerprinting**: `record_fingerprint` and `find_near_duplicates` change together; existing fingerprints don't auto-recompute — write a one-off backfill script.
+- **Swap object storage**: change only `app/storage/s3.py` (the boto3 S3-compatible layer) — the domain layer stays unaware. Lifecycle policy and usage stats live here too.
 
-## 素材包
+## Assets Pack
 
-`assets-pack/manifest.example.json` 是随代码维护的契约示例；真实素材到位后复制为本地 `assets-pack/manifest.json` 并填写，该文件当前不在仓库中。`make check-assets` 只校验不写库，`make import-assets` 才落库。真实素材未到位前，种子里用明确标记 `PROTOTYPE` 的临时媒体，**视觉验收在真实素材到位前不能宣布通过**。
+`assets-pack/manifest.example.json` is the versioned contract example; once real assets are ready, copy it to a local `assets-pack/manifest.json` and fill it in — this file is not checked into the repo. `make check-assets` validates only, without writing; `make import-assets` actually persists. Before real assets are ready, seed data uses temporary media explicitly marked `PROTOTYPE`, and **visual acceptance cannot be declared passed** until real assets are in place.
 
-## 验证
+## Verify
 
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_media_integrity.py tests/unit/test_assets_pack_import.py -v
 make check-assets
 ```
 
-手工路径：`/create` 上传一张参考图 → MinIO 控制台（`localhost:9001`）应只在对应前缀下出现一个对象 → 未登录直接访问该对象 URL 必须失败。
+Manual path: upload a reference image on `/create` → the MinIO console (`localhost:9001`) should show exactly one object under the matching prefix → accessing that object URL while logged out must fail.

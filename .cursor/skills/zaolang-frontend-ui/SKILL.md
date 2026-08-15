@@ -1,58 +1,58 @@
 ---
 name: zaolang-frontend-ui
-description: 造浪 C 端 Next.js 前端：发现、作品、创作、角色、短片、任务、发布、技能、学习、个人与账单等当前路由族，共享组件与全状态要求，API client 与 token 刷新，登录弹窗与 pendingAction 恢复，Cmd+K 命令面板，以及响应式无横向溢出约束。Use when adding or changing a consumer-facing route, shared UI component, the API client, the login dialog, the command palette, or responsive behaviour.
+description: Consumer Next.js frontend — the current discover/work/create/character/short-video/job/publish/skills/learning/profile/billing route families, shared components and full-state requirements, the API client and token refresh, the login dialog with pendingAction recovery, the Cmd+K command palette, and no-horizontal-overflow responsive constraints. Use when adding or changing a consumer-facing route, shared UI component, the API client, the login dialog, the command palette, or responsive behaviour.
 disable-model-invocation: true
 ---
 
-# C 端前端
+# Consumer Frontend
 
-## 职责
+## Scope
 
-`front/src/app/[locale]/(site)/` 下的当前 C 端路由与它们共用的组件族。**以现有 `page.tsx`、共享组件与视觉 e2e 为准**，不要依赖文档里的固定页面数量；深色主题是验收基准。
+The current consumer routes under `front/src/app/[locale]/(site)/` and the component families they share. **Trust the actual `page.tsx` files, shared components, and visual e2e specs**, not a fixed page count from a doc — dark theme is the acceptance baseline.
 
-## 关键路径
+## Key Paths
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `front/src/app/[locale]/(site)/` | 首页（重定向到 `discover`）、`discover`、`work/[workId]`、`create`（含 `new` / `short` / `characters` / `drama`）、`remix/[workId]`、`jobs/[jobId]`、`publish/[draftId]`、`skills`、`collection`、`profile`（含 `[handle]` / `settings`）、`billing`、`notifications`、`learn`（含 `[postId]` / `publish`）；作品/技能积分解锁与标价在发布表单、作品详情、二创门栅与技能广场 |
-| `front/src/components/discover/` | 灵感墙：`tag-filter`（`TagFilter` + `DiscoverSort`）、`inspiration-masonry`、hero 轮播；排序/标签走 URL，见 `zaolang-discovery-search` |
+| `front/src/app/[locale]/(site)/` | home (redirects to `discover`), `discover`, `work/[workId]`, `create` (incl. `new` / `short` / `characters` / `drama`), `remix/[workId]`, `jobs/[jobId]`, `publish/[draftId]`, `skills`, `collection`, `profile` (incl. `[handle]` / `settings`), `billing`, `notifications`, `learn` (incl. `[postId]` / `publish`); credit-unlock pricing for works/skills appears in the publish form, work detail, remix gate, and skill marketplace |
+| `front/src/components/discover/` | the inspiration wall: `tag-filter` (`TagFilter` + `DiscoverSort`), `inspiration-masonry`, the hero carousel; sort/tags live in the URL — see `zaolang-discovery-search` |
 | `front/src/components/ui/` | `button` / `dialog` / `field` / `primitives` / `spinner` / `toast` / `icons` |
-| `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer`（品牌与构建版本，不是源码提供入口） / `brand` |
+| `front/src/components/layout/` | `top-bar` / `preference-menu` / `site-footer` (brand + build version, not a source-code link) / `brand` |
 | `front/src/components/auth/` | `login-dialog` / `session-provider` / `sign-in-prompt` |
-| `front/src/components/command/command-palette.tsx` | Cmd+K，combobox 无障碍模式 |
-| `front/src/lib/api/client.ts` | 浏览器侧 fetch：内存 access token、自动刷新、`Idempotency-Key` |
-| `front/src/lib/api/server.ts` | RSC 侧 fetch，走 `API_INTERNAL_URL`；发现/个人等列表页用 `serverFetchOrNull`，网络失败与 5xx 降为空，避免 API 挂掉整站 500 |
-| `front/src/lib/use-resource.ts`、`use-job-stream.ts` | 数据获取与 SSE hooks |
-| `front/src/lib/format.ts` | 货币、日期、数量的地区化格式 |
+| `front/src/components/command/command-palette.tsx` | Cmd+K, an accessible combobox pattern |
+| `front/src/lib/api/client.ts` | browser-side fetch: in-memory access token, automatic refresh, `Idempotency-Key` |
+| `front/src/lib/api/server.ts` | RSC-side fetch via `API_INTERNAL_URL`; list pages (discover, profile, etc.) use `serverFetchOrNull`, degrading network failures and 5xxs to empty rather than a site-wide 500 |
+| `front/src/lib/use-resource.ts`, `use-job-stream.ts` | data-fetching and SSE hooks |
+| `front/src/lib/format.ts` | region-aware currency, date, and quantity formatting |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **access token 只在内存**。放进 `localStorage` 会让任意 XSS 变成永久账号接管；长效的一半是 httpOnly refresh cookie。刷新页面后先无 token、再静默换取——所有依赖登录态的组件必须能承受这个中间态。
-2. **刷新请求要合并**：`client.ts` 用 `refreshInFlight` 保证并发 401 只触发一次刷新。不要在组件里自己实现重试。
-3. **受保护动作走登录墙 + 动作恢复**：拦截 → 打开 `login-dialog` → 成功后按 `pendingAction` 恢复原动作；取消则**放弃**动作，不能悄悄执行。
-4. **移动积分的调用必须带 `idempotencyKey`**（提交生成、购买积分）。
-5. **每个交互组件实现全部状态**：`default / hover / focus-visible / disabled / loading / error`（+ `selected`）。缺 `focus-visible` 会被无障碍套件抓出来。
-6. **不引入 UI 组件库**，避免主题令牌漂移。组件只消费语义令牌（见 `zaolang-theming`），**永不写死颜色**。
-7. **三个断点无横向溢出**：1440×1024 / 1024 / 390×844，断言 `scrollWidth === clientWidth`。视觉 QA 套件会逐页检查。
-8. **文案一律走 next-intl**，不允许硬编码中文字符串（见 `zaolang-i18n-region`）。
-9. **命令面板是 combobox 而不是 dialog**：`role="search"` 容器 + `role="combobox"` 输入 + `role="listbox"`/`role="option"`。这个 ARIA 结构被 axe 检查，改标记前先看 `e2e/a11y.spec.ts`。
-10. **视频创作参数必须保持 provider-safe**：H3 用户控件只提交 4–15 秒、六种画幅、2K、可选 seed，以及互斥的普通参考/首尾帧模式。上传只传平台 `Asset.id`，不在 `extra` 中透传 webhook、外部 URL 或任意供应商 JSON。
-11. **短剧剪辑 `/create/drama` 是桌面 Chrome/Edge 硬门禁**：窄屏只给提示、不打开时间线，不要套用工作室的底栏 Sheet。该路由不进 `a11y-mobile` 扫描清单。任务页「进入剪辑」只引 `front/src/features/editor/from-job.ts`，禁止从 `features/editor` 桶文件静态拉整棵编辑器（会把 WASM / mediabunny 打进任务页）。`export-runner.ts` 对 `mediabunny` 动态 import。细节见 `zaolang-editor-drama`。
-12. **RSC 列表页遇 API 不可用要降级，不要白屏。** `serverFetchOrNull` / `adminFetchOrNull` 把网络失败与 5xx 收成 `null`（`ApiError.isUnavailable`）。发现页、个人页作品列表、后台统计页已按此处理。路由级兜底是 `front/src/app/[locale]/error.tsx`。
+1. **The access token lives only in memory.** Storing it in `localStorage` turns any XSS into permanent account takeover; the durable half is the httpOnly refresh cookie. On reload, every component that depends on auth state must tolerate the intermediate "no token yet, silently refreshing" moment.
+2. **Refresh requests are coalesced**: `client.ts`'s `refreshInFlight` guarantees concurrent 401s trigger only one refresh. Don't implement your own retry inside a component.
+3. **Protected actions go through the login wall + action recovery**: intercept → open `login-dialog` → on success, resume via `pendingAction`; on cancel, the action is **discarded**, never silently executed.
+4. **Any endpoint that moves credits requires an `idempotencyKey`** (submitting a generation, purchasing credits).
+5. **Every interactive component implements the full state set**: `default / hover / focus-visible / disabled / loading / error` (+ `selected`). Missing `focus-visible` gets caught by the accessibility suite.
+6. **No UI component library** — that's how theme-token drift starts. Components consume semantic tokens only (see `zaolang-theming`); **never a hardcoded colour**.
+7. **No horizontal overflow at any of the three breakpoints**: 1440×1024 / 1024 / 390×844, asserted as `scrollWidth === clientWidth`. The visual QA suite checks this page by page.
+8. **All copy goes through next-intl** — hardcoded Chinese strings are never allowed (see `zaolang-i18n-region`).
+9. **The command palette is a combobox, not a dialog**: `role="search"` container + `role="combobox"` input + `role="listbox"`/`role="option"`. This ARIA structure is checked by axe — read `e2e/a11y.spec.ts` before touching the markup.
+10. **Video creation parameters must stay provider-safe**: H3's user controls only ever submit 4–15 seconds, six aspect ratios, 2K, an optional seed, and mutually exclusive normal-reference/first-last-frame modes. Uploads only ever pass a platform `Asset.id` — never a webhook, external URL, or arbitrary provider JSON inside `extra`.
+11. **`/create/drama` is a hard desktop Chrome/Edge gate.** Narrow screens get a notice only, never the timeline — don't reuse the studio's mobile bottom sheet here. This route is excluded from `a11y-mobile` scanning. A job page's "enter editing" link imports only `front/src/features/editor/from-job.ts` — never the `features/editor` barrel (that pulls WASM/mediabunny into the job page). `export-runner.ts` dynamically imports `mediabunny`. Details: `zaolang-editor-drama`.
+12. **RSC list pages degrade gracefully when the API is unavailable — never a blank screen.** `serverFetchOrNull` / `adminFetchOrNull` collapse network failures and 5xxs into `null` (`ApiError.isUnavailable`). Discover, profile work lists, and admin statistics already follow this. The route-level fallback is `front/src/app/[locale]/error.tsx`.
 
-## 改造切入点
+## Extension Points
 
-- **加一个页面**：在 `(site)/` 下建目录（RSC 默认服务端渲染，数据用 `lib/api/server.ts` 取）→ 交互部分拆成 `'use client'` 组件 → 三语文案进 `src/i18n/messages/*.json`（三份都要）→ 加进命令面板的可跳转项 → 视觉与无障碍套件的页面清单（`e2e/visual.spec.ts`、`e2e/a11y.spec.ts`）。
-- **改发现页筛选/排序**：`TagFilter` / `DiscoverSort` 用 `Link` 写 `q`/`tag`/`sort`，缺省 `popular` 不进 query；Hero 固定 popular。契约见 `zaolang-discovery-search`。
-- **加一个共享组件**：放 `components/ui/`，用 `lib/cn.ts` 合并类名，状态齐全，键盘可达。
-- **调 API client**：错误一律 `ApiError`（带后端错误码），不要在组件里解析响应体。
-- **加一个表单**：用 `components/ui/field.tsx`，把后端 422 的字段路径映射到内联错误，而不是弹一个通用横幅。
+- **Add a page**: create a directory under `(site)/` (RSC renders server-side by default, fetching via `lib/api/server.ts`) → split interactive pieces into `'use client'` components → add trilingual copy to `src/i18n/messages/*.json` (all three files) → add it to the command palette's navigable items → add it to the visual and accessibility suites' page lists (`e2e/visual.spec.ts`, `e2e/a11y.spec.ts`).
+- **Change discover filtering/sorting**: `TagFilter` / `DiscoverSort` write `q`/`tag`/`sort` via `Link`; the default `popular` is omitted from the query. The Hero is pinned to popular. Contract: `zaolang-discovery-search`.
+- **Add a shared component**: place it in `components/ui/`, merge classes via `lib/cn.ts`, implement every state, keep it keyboard-reachable.
+- **Modify the API client**: errors are always `ApiError` (carrying the backend error code) — never parse a response body inside a component.
+- **Add a form**: use `components/ui/field.tsx`, mapping a backend 422's field paths to inline errors rather than a generic banner.
 
-## 验证
+## Verify
 
 ```bash
 make test-front              # tsc --noEmit + next build
-make messages                # 三语键一致，且代码引用的键都存在
-make test-e2e                # 需要先起后端与种子数据
+make messages                # trilingual key consistency, plus every code-referenced key exists
+make test-e2e                # needs the backend and seed data running first
 make test-a11y && make qa-visual
 ```

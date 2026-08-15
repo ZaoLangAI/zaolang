@@ -1,55 +1,55 @@
 ---
 name: zaolang-admin-statistics
-description: 造浪后台数据统计中心：按 UTC 日 SQL 聚合的任务/供应商/智能体/积分/内容/用户增长 timeseries，以及仍走旧快照接口的任务/供应商/智能体/积分对账与系统健康（总览积压）。Use when changing /admin/statistics, /v1/admin/statistics/*, daily timeseries aggregation, empty-day zero-fill, or the recharts trend charts.
+description: Admin data-statistics center — UTC-day SQL-aggregated job/provider/agent/credit/content/user-growth timeseries, plus job/provider/agent/credit reconciliation and system-health snapshots still served by the older snapshot endpoints. Use when changing /admin/statistics, /v1/admin/statistics/*, daily timeseries aggregation, empty-day zero-fill, or the recharts trend charts.
 disable-model-invocation: true
 ---
 
-# 后台数据统计中心
+# Admin Data-Statistics Center
 
-快照接口回答「此刻怎样」，本模块补「按日怎么走」。不要为统计新建事实表，也不要把全表拉进 Python 再分组。
+The snapshot endpoints answer "how does it look right now"; this module answers "how did it trend day by day." Don't create new fact tables for statistics, and don't pull whole tables into Python to group them.
 
-## 关键路径
+## Key Paths
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `back/app/domain/statistics/service.py` | `jobs_daily` / `providers_daily` / `agents_daily` / `credits_daily` / `content_daily` / `users_growth`：`date_trunc(..., 'UTC')` + `group_by`，窗口内空日补零 |
-| `back/app/api/v1/admin/statistics.py` | `/v1/admin/statistics/{jobs,providers,agents,credits,content,users}`，`days` 1–180，`Viewer` + `AdminRead` |
+| `back/app/domain/statistics/service.py` | `jobs_daily` / `providers_daily` / `agents_daily` / `credits_daily` / `content_daily` / `users_growth`: `date_trunc(..., 'UTC')` + `group_by`, zero-filling empty days inside the window |
+| `back/app/api/v1/admin/statistics.py` | `/v1/admin/statistics/{jobs,providers,agents,credits,content,users}`, `days` 1–180, `Viewer` + `AdminRead` |
 | `back/app/api/schemas/admin.py` | `*TimeseriesView` / `*DailyPoint` |
-| `front/src/app/[locale]/(admin)/admin/(console)/statistics/page.tsx` | RSC 一次拉齐快照 + 默认 30 日序列，单接口失败用 `adminFetchOrNull` 降级为空 |
-| `front/src/components/admin/statistics/` | 六个 tab：`overview` / `jobs` / `providers` / `credits` / `content` / `users`；`recharts` 只在此模块 |
-| `back/tests/integration/test_admin_statistics.py` | 窗口补零、viewer 可读、越权拒绝 |
+| `front/src/app/[locale]/(admin)/admin/(console)/statistics/page.tsx` | RSC fetching snapshots + a default 30-day series in one pass; falls back gracefully via `adminFetchOrNull` if a single endpoint fails |
+| `front/src/components/admin/statistics/` | six tabs: `overview` / `jobs` / `providers` / `credits` / `content` / `users`; `recharts` is used only in this module |
+| `back/tests/integration/test_admin_statistics.py` | window zero-fill, viewer readability, unauthorized-access rejection |
 
-快照仍走旧接口，不要搬进 `statistics.py`：
+Snapshots still go through the older endpoints — don't move them into `statistics.py`:
 
 - `/v1/admin/providers/stats`
 - `/v1/admin/agent-runs/usage`
 - `/v1/admin/jobs/stats`
 - `/v1/admin/credits/reconciliation`
-- `/v1/admin/health`（总览队列积压）
+- `/v1/admin/health` (overview queue backlog)
 
-外壳、RBAC、限流见 `zaolang-admin-console`。运维域清单见 `zaolang-admin-ops`。
+Shell, RBAC, and rate limiting: see `zaolang-admin-console`. The full admin-ops domain list: see `zaolang-admin-ops`.
 
-## 不可破坏的不变量
+## Invariants
 
-1. **聚合在 SQL 里完成。** `date_trunc` + `group_by`，禁止 `session.scalars(select(整表)).all()` 再在 Python 里按日分组。后台数据量会长。
-2. **日历日是 UTC。** `_day_bucket` 必须传 `'UTC'`。裸 `date_trunc('day', col)` 跟会话时区走，会把跨日点算错。
-3. **空日补零，不省略。** 窗口是闭区间 `[today - days + 1, today]`，无活动的日子仍返回 0。图表跳过空日会把冷清读成缺数。
-4. **只读、不写事实表。** 统计读现有 `GenerationJob` / `ProviderAttempt` / `AgentRun` / `CreditLedgerEntry` / `Work` / `LineageEdge` / `User`。不要为趋势新建汇总表或物化视图，除非产品明确要求且另开迁移。
-5. **viewer 可看、不可改。** 路由是 `Viewer` + `AdminRead`。不要在本模块加写接口或调账入口。
-6. **单接口失败页面仍渲染。** RSC 用 `adminFetchOrNull`；网络/5xx 降为空序列或空快照，不要让整页 500。
-7. **`recharts` 不出本目录。** C 端与其它后台页继续用手写组件，避免主题令牌漂移。
-8. **窗口上限 180 天。** 查询参数 `ge=1, le=180`。前端档位是 7 / 30 / 90；不要默默把默认窗口拉到 180。
+1. **Aggregation happens in SQL.** `date_trunc` + `group_by` — never `session.scalars(select(whole_table)).all()` followed by grouping in Python. Admin data volume only grows.
+2. **Calendar days are UTC.** `_day_bucket` must pass `'UTC'` explicitly. A bare `date_trunc('day', col)` follows the session's timezone and miscounts points near a day boundary.
+3. **Empty days are zero-filled, never omitted.** The window is the closed interval `[today - days + 1, today]`; days with no activity still return 0. Skipping empty days on a chart reads as missing data, not as quiet.
+4. **Read-only — never writes fact tables.** Statistics reads existing `GenerationJob` / `ProviderAttempt` / `AgentRun` / `CreditLedgerEntry` / `Work` / `LineageEdge` / `User`. Don't create summary tables or materialized views for trends unless the product explicitly requires it, via a separate migration.
+5. **Viewer can read, cannot write.** Routes require `Viewer` + `AdminRead`. Don't add a write endpoint or adjustment entry point in this module.
+6. **A single failing endpoint must still let the page render.** The RSC uses `adminFetchOrNull`; a network error or 5xx degrades to an empty series or empty snapshot rather than a full-page 500.
+7. **`recharts` stays inside this directory.** The consumer app and other admin pages keep their hand-written components to avoid theme-token drift.
+8. **The window caps at 180 days.** The query param is `ge=1, le=180`. Frontend presets are 7 / 30 / 90 — don't silently push the default window to 180.
 
-## 改造切入点
+## Extension Points
 
-- **加一条日序列**：`service.py` 写 `*_daily`（复用 `_window` / `_day_bucket`，空日补零）→ schema 加 `*DailyPoint` / `*TimeseriesView` → `statistics.py` 加 `GET` → 前端加 panel 或在现有 tab 加系列 → `test_admin_statistics.py` 覆盖补零与越权。
-- **加一个快照卡片**：继续打旧运维接口，不要为「此刻」再写一份聚合。
-- **改口径**：先改 SQL 与测试，再改三语文案 `adminStatistics.*`。不要只改图表标签。
+- **Add a daily series**: write `*_daily` in `service.py` (reuse `_window` / `_day_bucket`, zero-fill empty days) → add `*DailyPoint` / `*TimeseriesView` to the schema → add the `GET` route in `statistics.py` → add a panel or a series on an existing tab → cover zero-fill and unauthorized access in `test_admin_statistics.py`.
+- **Add a snapshot card**: keep hitting the older admin-ops endpoint — don't write a second aggregation for "right now."
+- **Change a metric's definition**: change the SQL and tests first, then the trilingual copy `adminStatistics.*`. Don't just relabel the chart.
 
-## 验证
+## Verify
 
 ```bash
 cd back && conda run -n zaolang pytest tests/integration/test_admin_statistics.py -v
 ```
 
-手工路径：`make seed` 后以 viewer 打开 `/admin/statistics`，六个 tab 都能出数；把 API 停掉再刷新，页面应是空图而不是白屏。
+Manual path: after `make seed`, open `/admin/statistics` as viewer — all six tabs should show data; stop the API and reload — the page should show empty charts, not a blank screen.

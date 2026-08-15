@@ -1,70 +1,70 @@
 ---
 name: zaolang-admin-console
-description: 造浪后台的安全边界与前端外壳：独立 /v1/admin 命名空间与 admin audience token、四级 RBAC、二次确认与强制理由、独立限流、审计装饰器，以及 (admin) 路由组的独立 layout、登录页、RBAC 导航与数据密集型组件族。Use when adding a back-office endpoint or page, changing admin roles and permissions, the admin session, dangerous-action confirmation, or the console's tables/drawers/diff components.
+description: Admin security boundary and shell — the separate /v1/admin namespace and admin-audience token, four-tier RBAC, dangerous-action confirmation with mandatory reason, independent rate limits, the audit decorator, plus the (admin) route group's own layout, login page, RBAC nav, and data-dense component family. Use when adding a back-office endpoint or page, changing admin roles and permissions, the admin session, dangerous-action confirmation, or the console's tables/drawers/diff components.
 disable-model-invocation: true
 ---
 
-# 后台安全边界与控制台外壳
+# Admin Security Boundary & Console Shell
 
-## 职责
+## Scope
 
-后台代码住在 `front/` 与 `back/` 内部，但**会话、命名空间、限流、权限、外壳全部与 C 端隔离**。C 端 token 打后台必须 401。
+Admin code lives inside `front/` and `back/`, but **its session, namespace, rate limits, permissions, and shell are fully isolated from the consumer app.** A consumer token against admin must 401.
 
-## 关键路径
+## Key Paths
 
-### 后端
+### Backend
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `back/app/api/v1/admin/deps.py` | `Viewer` / `Reviewer` / `Operator` / `Admin` 四个等级别名；`AdminRead` / `AdminWrite` / `AdminDangerous` 限流；`require_confirmation` |
-| `back/app/api/v1/admin/auth.py` | `/admin/login`、会话查询、登出；签发 audience 为 `admin` 的 token，存 `zl_admin_session` cookie |
+| `back/app/api/v1/admin/deps.py` | the four role aliases `Viewer` / `Reviewer` / `Operator` / `Admin`; the `AdminRead` / `AdminWrite` / `AdminDangerous` rate-limit tiers; `require_confirmation` |
+| `back/app/api/v1/admin/auth.py` | `/admin/login`, session lookup, logout; issues a token with audience `admin`, stored in the `zl_admin_session` cookie |
 | `back/app/api/v1/admin/*.py` | `config` / `content` / `data` / `jobs` / `ledger` / `logs` / `observability` / `statistics` / `users` / `llm_providers` / `agent_skills` / `skill_library` / `redemption` / `learning` |
-| `back/app/domain/audit/service.py` | 写操作留痕 |
-| `back/tests/integration/test_admin_security.py` | 37 个越权与高危操作用例，改权限前先读它 |
+| `back/app/domain/audit/service.py` | write-operation trail |
+| `back/tests/integration/test_admin_security.py` | 37 unauthorized-access and dangerous-operation cases — read this before changing permissions |
 
-### 前端
+### Frontend
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `front/src/app/[locale]/(admin)/admin/login/page.tsx` | 独立登录页（不复用 C 端登录弹窗） |
-| `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | 控制台外壳 |
-| `front/src/components/admin/admin-session-provider.tsx` | 后台会话上下文 |
+| `front/src/app/[locale]/(admin)/admin/login/page.tsx` | a standalone login page (never reuses the consumer login dialog) |
+| `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | the console shell |
+| `front/src/components/admin/admin-session-provider.tsx` | the admin session context |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
-| `front/src/components/admin/` | `data-table` / `filter-bar`（含 `daterange`）/ `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor`（试跑历史是画布浮动窗，详情见 `zaolang-admin-ops`）/ `models/llm-providers-panel`（模型管理：扁平主备列表 + 端点级主备）/ `audit/log-center-console` / `statistics/*`（日趋势，见 `zaolang-admin-statistics`） |
-| `front/src/lib/api/admin-client.ts`、`admin-server.ts`、`use-admin-list.ts` | 后台专用客户端与列表 hook |
+| `front/src/components/admin/` | `data-table` / `filter-bar` (incl. `daterange`) / `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor` (sandbox run history is a floating window over the canvas — see `zaolang-admin-ops`) / `models/llm-providers-panel` (model management: a flat primary/backup list + per-endpoint primary/backup) / `audit/log-center-console` / `statistics/*` (daily trends, see `zaolang-admin-statistics`) |
+| `front/src/lib/api/admin-client.ts`, `admin-server.ts`, `use-admin-list.ts` | admin-only client and list hook |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **两套会话互不通用**：C 端 token 打 `/v1/admin/*` 401，后台 token 打 C 端接口 401。cookie 名、audience、登录页都独立。
-2. **服务端强制 RBAC**，前端导航裁剪只是体验优化。`rbac.ts` 里 `requires` 与后端路由的等级别名要一致，但**任何隐藏的路由被直接访问时仍由后端拒绝**。等级：`viewer < reviewer < operator < admin`，高等级自动满足低要求。
-3. **读写等级分离**：例如配置读是 viewer 级、写与回滚是 admin 级。因此「operator 能打开配置页但没有保存按钮」是正确行为，不是漏洞。
-4. **高危操作两道闸**：`require_confirmation(confirmed)` + schema 强制的 `reason`。缺一必须 4xx，理由进 `AuditLog`。前端一律用 `danger-confirm.tsx`。
-5. **所有 `/v1/admin/*` 写操作都要审计**，包括失败的高危尝试。
-6. **后台限流按管理员维度独立计量**：`admin_read` 300/60s、`admin_write` 60/60s、`admin_dangerous` 10/300s。
-7. **管理员不能自己摘掉自己的 admin 角色**（避免把系统锁死），有专门用例守着。
-8. **被封禁的管理员立即失去访问**，不等 token 过期。
-9. **后台复用同一套设计令牌与三态主题**，但组件族与 C 端截然不同（表格、筛选、游标分页、批量操作、抽屉、JSON diff、时间线）。后台文案 `zh-CN` 与 `en`，`ja` 回退 `en`。
-10. **列表与详情优先展示人类可读名称，原始 id 收进 tooltip**，不要在正文里直接吐 `usr_.../job_.../ep_...` 这类裸编号。约定做法：后端 schema 在保留原始 id 字段的同时加一个解出来的名称字段（如 `user_display_name`/`provider_label`/`agent_display_name`），前端渲染优先用名称、id 只作为 `title` tooltip 或次要说明——参考 `jobs-console.tsx` 的用户列/供应商列/AgentRuns 小节。新增任何列出用户、供应商、智能体的后台页面都要遵守，否则运营只能对着裸 id 猜。
+1. **The two sessions are never interchangeable**: a consumer token against `/v1/admin/*` 401s, and an admin token against a consumer endpoint 401s. Cookie name, audience, and login page are all separate.
+2. **RBAC is enforced server-side; frontend nav trimming is only a convenience.** `rbac.ts`'s `requires` must match the backend's role aliases, but **any hidden route hit directly is still rejected by the backend.** Tiers: `viewer < reviewer < operator < admin`, with a higher tier automatically satisfying a lower requirement.
+3. **Read and write access are separated by tier**: e.g. reading config requires `viewer`, writing or rolling it back requires `admin`. "An operator can open the config page but has no save button" is correct behavior, not a bug.
+4. **High-risk operations need two locks**: `require_confirmation(confirmed)` plus a schema-enforced `reason`. Missing either must 4xx, and the reason gets written to `AuditLog`. The frontend always uses `danger-confirm.tsx`.
+5. **Every `/v1/admin/*` write is audited**, including failed high-risk attempts.
+6. **Admin rate limits are metered per admin, independently**: `admin_read` 300/60s, `admin_write` 60/60s, `admin_dangerous` 10/300s.
+7. **An admin can't remove their own admin role** (a lockout guard), enforced by a dedicated test.
+8. **A suspended admin loses access immediately**, not waiting for their token to expire.
+9. **Admin reuses the same design tokens and three-state theme as consumer**, but its component family is entirely different (tables, filters, cursor pagination, bulk actions, drawers, JSON diffs, timelines). Admin copy is `zh-CN` and `en`; `ja` falls back to `en`.
+10. **Lists and detail views show human-readable names first, with raw IDs tucked into a tooltip** — never dump a bare `usr_.../job_.../ep_...` directly into the body copy. Convention: the backend schema keeps the raw ID field but adds a resolved name field alongside it (e.g. `user_display_name`/`provider_label`/`agent_display_name`); the frontend renders the name and uses the ID only as a `title` tooltip or secondary note — see the user/provider/AgentRuns columns in `jobs-console.tsx` for the pattern. Any new admin page listing users, providers, or agents must follow this, or operators are left guessing at raw IDs.
 
-## 改造切入点
+## Extension Points
 
-**加一个后台接口**
+**Add an admin endpoint**
 
-1. 选等级别名（`Viewer` / `Reviewer` / `Operator` / `Admin`）与限流别名（`AdminRead` / `AdminWrite` / `AdminDangerous`）。
-2. 高危的话：schema 里带 `confirm: bool` 与 `reason: str`，函数体先 `require_confirmation`。
-3. 写操作接审计装饰器，`before`/`after` 只放摘要。
-4. 在 `test_admin_security.py` 加「低一级角色被拒」与「审计留痕」两条用例。
+1. Choose a role alias (`Viewer` / `Reviewer` / `Operator` / `Admin`) and a rate-limit alias (`AdminRead` / `AdminWrite` / `AdminDangerous`).
+2. If it's dangerous: the schema carries `confirm: bool` and `reason: str`, and the function body starts with `require_confirmation`.
+3. Attach the audit decorator to any write; `before`/`after` should hold only a summary.
+4. Add "a lower-tier role gets rejected" and "the action is audited" cases to `test_admin_security.py`.
 
-**加一个后台页面**
+**Add an admin page**
 
-1. `(console)/` 下建目录 → 用 `use-admin-list.ts` + `data-table.tsx` 组装。
-2. `rbac.ts` 的 `NAV_GROUPS` 加导航项并写清 `requires`。
-3. 三语文案（`ja` 复用 `en` 值）。
-4. `front/e2e/flows/admin.spec.ts` 加一条「页面能打开且有真实数据」的用例。
+1. Create a directory under `(console)/` → assemble it with `use-admin-list.ts` + `data-table.tsx`.
+2. Add a nav item to `rbac.ts`'s `NAV_GROUPS` with an explicit `requires`.
+3. Add trilingual copy (`ja` reuses the `en` value).
+4. Add a "the page opens and shows real data" case to `front/e2e/flows/admin.spec.ts`.
 
-## 验证
+## Verify
 
 ```bash
 cd back && conda run -n zaolang pytest tests/integration/test_admin_security.py -v
-make test-e2e     # e2e/flows/admin.spec.ts 覆盖登录边界、十个以上运维页与 RBAC 导航
+make test-e2e     # e2e/flows/admin.spec.ts covers the login boundary, 10+ ops pages, and RBAC nav
 ```

@@ -1,51 +1,51 @@
 ---
 name: zaolang-compliance-audit
-description: 造浪的合规能力：追加式 AuditLog、用户数据导出与删除请求（删除保留创作链墓碑）、MinIO 对象生命周期策略、pg_dump 备份与恢复脚本。Use when changing audit logging, data export or deletion requests, user anonymisation, retention/lifecycle policies, or backup and restore.
+description: Compliance capabilities — append-only AuditLog, user data export/deletion requests (deletion preserves lineage tombstones), MinIO object lifecycle policy, pg_dump backup and restore scripts. Use when changing audit logging, data export or deletion requests, user anonymisation, retention/lifecycle policies, or backup and restore.
 disable-model-invocation: true
 ---
 
-# 合规、审计与数据留存
+# Compliance, Audit & Data Retention
 
-## 职责
+## Scope
 
-回答「谁在什么时候改了什么、为什么」，以及「用户要求带走或删除自己的数据时怎么办」。
+Answers "who changed what, when, and why," and "what happens when a user asks to take or delete their data."
 
-## 关键路径
+## Key Paths
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `back/app/domain/audit/service.py` | `record()` / `search()`，自动带上操作者、角色、request_id、IP、UA |
-| `back/app/domain/system_log/service.py` | `emit()`（窗口聚合）/ `search()`，登录失败、限流、鉴权拒绝等安全信号；`emit()` 与 `search()` 都带可选 `job_id`，用于把 pipeline/worker 的运行时报错信号与具体生成任务关联起来 |
+| `back/app/domain/audit/service.py` | `record()` / `search()`, automatically attaching actor, role, request_id, IP, UA |
+| `back/app/domain/system_log/service.py` | `emit()` (windowed aggregation) / `search()` for security signals (failed logins, rate limiting, auth rejections); both `emit()` and `search()` take an optional `job_id` to tie pipeline/worker runtime-error signals to a specific generation job |
 | `back/app/domain/compliance/service.py` | `export_user_data` / `anonymise_user` / `signed_export_url` / `purge_expired_exports` |
-| `back/app/api/v1/privacy.py` | 用户侧导出与删除请求入口 |
-| `back/app/api/v1/admin/users.py` | 后台审批 `DataRequest` |
-| `back/app/api/v1/admin/data.py` | 备份触发、生命周期策略、seed/reset |
-| `infra/scripts/backup.sh` / `restore.sh` | `pg_dump` / `pg_restore`，对应 `make backup` / `make restore` |
+| `back/app/api/v1/privacy.py` | user-facing export and deletion-request entry points |
+| `back/app/api/v1/admin/users.py` | admin approval of `DataRequest` |
+| `back/app/api/v1/admin/data.py` | backup triggers, lifecycle policy, seed/reset |
+| `infra/scripts/backup.sh` / `restore.sh` | `pg_dump` / `pg_restore`, backing `make backup` / `make restore` |
 | `back/app/models/platform.py` | `AuditLog` / `DataRequest` / `BackupRecord` |
-| `back/app/models/system_log.py` | `SystemLog`（安全信号聚合投影，不替代 AuditLog） |
+| `back/app/models/system_log.py` | `SystemLog` (a security-signal aggregation projection, not a replacement for AuditLog) |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **`AuditLog` 只追加**，永不 UPDATE/DELETE。字段包含操作者、角色、目标对象、**前后值摘要**、理由、request_id、IP、UA。
-2. **`SystemLog` 是旁路聚合投影**，用于高频安全信号（登录失败、限流、鉴权拒绝）**以及关键运行时报错信号**（`SystemLogSource.PIPELINE`：`pipeline.py` 顶层 crash、`WorkflowRunner._engine_failure`、异步供应商轮询里 capability 缺失/超时放弃、Celery 任务边界兜底失败），窗口内计数折叠防写爆；**不替代** `AuditLog` 与各业务专表。运行时报错信号带 `job_id` 是为了让后台任务详情能查到"这条任务当时到底崩在哪一行"——`JobEvent.public_message` 依然是给用户看的模糊文案，异常原文只进 `SystemLog.message`，两者不要混。
-3. **`/v1/admin/*` 的所有写操作都必须留痕**，由审计装饰器统一处理。新增后台写接口忘了接装饰器，是这个仓库最容易犯又最难发现的错。
-4. **高危操作强制理由**：调账、墓碑、封禁、配置回滚、强制终止任务、切换智能体模型、触发恢复。没有理由要 `ReasonRequired`（而不是存一个空字符串）。
-5. **删除用户是匿名化，不是 DELETE**：`anonymise_user` 抹掉 PII、保留 `Work` / `WorkVersion` / `LineageEdge` 的墓碑节点。**下游二创的来源不能凭空消失**，这是创作链的完整性要求，也是 `LineageProtected` 存在的原因。
-6. **导出物是有时效的**：`export_user_data` 落对象存储，只通过短时效签名 URL 交付（默认 900 秒），过期由 `purge_expired_exports` 清理。不要把导出 URL 写进邮件或日志。
-7. **备份记录进 `BackupRecord`**：谁触发、结果、文件位置。恢复脚本必须显式 `--confirm`，不给「顺手执行」的机会。
-8. **审计日志可检索可导出**，但导出本身也是一次审计事件。
+1. **`AuditLog` is append-only** — never UPDATE or DELETE. Fields include actor, role, target object, a **before/after value summary**, reason, request_id, IP, UA.
+2. **`SystemLog` is a side-channel aggregation projection** for high-frequency security signals (failed logins, rate limiting, auth rejections) **and key runtime-error signals** (`SystemLogSource.PIPELINE`: top-level crashes in `pipeline.py`, `WorkflowRunner._engine_failure`, capability-missing/timeout abandonment during async-provider polling, Celery task-boundary fallback failures), with windowed count-folding to avoid write storms; it **does not replace** `AuditLog` or the various business-specific tables. Runtime-error signals carry `job_id` so the admin job-detail view can answer "exactly where did this job crash" — `JobEvent.public_message` stays the vague user-facing text; the raw exception only goes into `SystemLog.message`. Don't mix the two.
+3. **Every `/v1/admin/*` write must be audited**, handled uniformly by the audit decorator. Forgetting to attach the decorator to a new admin write endpoint is the easiest mistake to make in this repo, and the hardest to notice.
+4. **High-risk operations require a mandatory reason**: adjustments, tombstoning, bans, config rollbacks, forced job termination, switching an agent's model, triggering a restore. Missing a reason must raise `ReasonRequired` — never accept an empty string.
+5. **Deleting a user means anonymisation, not DELETE**: `anonymise_user` scrubs PII while keeping `Work` / `WorkVersion` / `LineageEdge` as tombstone nodes. **Downstream remixes' provenance must not vanish** — this is a lineage-integrity requirement, and the reason `LineageProtected` exists.
+6. **Exports are time-limited**: `export_user_data` writes to object storage and is delivered only via a short-lived signed URL (900s default); `purge_expired_exports` cleans up after expiry. Never put an export URL in an email or a log line.
+7. **Backups are recorded in `BackupRecord`**: who triggered it, the result, the file location. The restore script requires an explicit `--confirm` — no "run it by accident" path.
+8. **Audit logs are searchable and exportable, but exporting them is itself an audited event.**
 
-## 改造切入点
+## Extension Points
 
-- **加一个受审计的操作**：领域函数里调 `audit.record(...)`，`before`/`after` 只放摘要而**不放敏感原文**（密钥、密码、完整 PII）。补 `tests/integration/test_admin_security.py` 的审计断言。
-- **加一种数据请求类型**：`DataRequestType` 加值 → 审批流程分支 → 后台 `data-requests-panel.tsx` 加处理入口。
-- **改留存策略**：MinIO 生命周期规则在 `app/storage/s3.py` 的 `lifecycle_rules` / `put_lifecycle_rules`，后台 `lifecycle-panel.tsx` 可视化。改规则前确认不会误删已发布资产（staging 前缀与发布区必须分开）。
+- **Add an audited operation**: call `audit.record(...)` from the domain function; `before`/`after` hold only a summary, **never sensitive raw values** (keys, passwords, full PII). Add the corresponding assertion to `tests/integration/test_admin_security.py`.
+- **Add a data-request type**: add a value to `DataRequestType` → branch the approval flow → add a handling entry point in the admin `data-requests-panel.tsx`.
+- **Change retention policy**: MinIO lifecycle rules live in `app/storage/s3.py`'s `lifecycle_rules` / `put_lifecycle_rules`, visualized in the admin `lifecycle-panel.tsx`. Before changing a rule, confirm it won't accidentally delete published assets (staging prefixes and the published area must stay separate).
 
-## 验证
+## Verify
 
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_compliance_audit.py tests/integration/test_admin_security.py -v
-make backup          # 生成 .backups/*.dump 并记录 BackupRecord
+make backup          # produces .backups/*.dump and records a BackupRecord
 ```
 
-手工路径：后台做一次人工调账 → `/admin/audit`（日志中心）能看到记录且带理由；对种子用户提一次删除请求并审批 → 用户匿名化后，其作品在创作链里仍是墓碑节点而不是消失。
+Manual path: perform a manual credit adjustment in admin → `/admin/audit` (Log Center) should show the record with its reason; file and approve a deletion request for a seed user → after anonymisation, their work should remain a lineage tombstone, not disappear.
