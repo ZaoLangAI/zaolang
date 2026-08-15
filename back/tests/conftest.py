@@ -60,12 +60,19 @@ def db(engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def fake_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Opt-in test routes; production never registers fake media providers."""
+def fake_media_catalog(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+    """Opt-in test routes plus a catalog-bound default agent.
+
+    Production never registers fake media providers. Default agents stay
+    unbound unless a test writes `llm_providers` and pins a model — this
+    fixture does both so pipeline tests can actually `route()`.
+    """
     from app.agents import router
     from tests.fake_provider_catalog import build_fake_catalog
+    from tests.llm_catalog import bind_default_agents_to_catalog
 
     monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
+    bind_default_agents_to_catalog(db)
 
 
 def truncate_all(engine: Engine) -> None:

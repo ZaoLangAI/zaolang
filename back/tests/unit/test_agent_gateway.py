@@ -21,6 +21,7 @@ from app.workflows.defaults import default_graph
 from app.workflows.graph import WorkflowGraph
 from app.workflows.graph import validate as validate_graph
 from tests.fake_provider_catalog import build_fake_catalog
+from tests.llm_catalog import bind_default_agents_to_catalog
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +130,7 @@ def test_a_private_works_parameters_are_not_readable_through_a_tool(db: Session)
 
 
 def test_routing_is_deterministic_for_identical_requests(db: Session) -> None:
+    bind_default_agents_to_catalog(db)
     first = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     second = router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     assert first.selected is not None
@@ -139,6 +141,7 @@ def test_routing_is_deterministic_for_identical_requests(db: Session) -> None:
 def test_every_candidate_records_why_it_was_rejected(db: Session) -> None:
     """An operator replaying a decision needs a reason for each loser, not just
     the name of the winner."""
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db, operation=Operation.TEXT_TO_VIDEO, quality_tier=QualityTier.CINEMATIC
     )
@@ -150,6 +153,7 @@ def test_every_candidate_records_why_it_was_rejected(db: Session) -> None:
 
 
 def test_a_route_that_cannot_do_the_operation_is_filtered_not_scored(db: Session) -> None:
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db, operation=Operation.TEXT_TO_VIDEO, quality_tier=QualityTier.STANDARD
     )
@@ -174,6 +178,7 @@ def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> 
     )
     db.flush()
 
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
@@ -196,6 +201,7 @@ def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
     )
     db.flush()
 
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
@@ -207,6 +213,7 @@ def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
 def test_llm_picks_the_lowest_effective_cost_among_eligible_candidates(db: Session) -> None:
     """Deterministic stub selection: cheapest-effective-cost eligible route
     wins, and the reason trail says an LLM made the call."""
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
@@ -258,6 +265,7 @@ def test_cost_bias_reaches_the_agent_as_context_only(
 
     monkeypatch.setattr(intent_router, "run_agent", capture)
 
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db,
         operation=Operation.TEXT_TO_IMAGE,
@@ -280,6 +288,7 @@ def test_cost_bias_is_omitted_from_the_payload_when_the_caller_has_none(
 
     monkeypatch.setattr(intent_router, "run_agent", capture)
 
+    bind_default_agents_to_catalog(db)
     router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     assert "cost_bias" not in json.loads(captured[0])
 
@@ -659,7 +668,7 @@ def test_a_variant_that_pins_nothing_still_draws_from_the_shared_pool(db: Sessio
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
     assert binding.preferred_endpoint_ids == ()
-    assert binding.model == agent_base.resolve_binding(db, AgentName.SAFETY.value).model
+    assert binding.model == ""
 
 
 def test_a_pinned_variant_tries_its_own_endpoints_first(db: Session) -> None:
@@ -700,23 +709,31 @@ def test_pinning_an_endpoint_restricts_the_provider_pool(db: Session) -> None:
     ] == ["backup-ep"]
 
 
-def test_a_profile_bound_to_a_known_model_gets_fixed_sampling_params(db: Session) -> None:
-    """max_tokens/temperature are no longer typed in by hand — they follow
-    whichever model was picked (`app.llm.model_defaults`), same as an agent's
-    other properties follow its role."""
+def test_a_profile_without_sampling_overrides_uses_generic_defaults(db: Session) -> None:
+    """Sampling is no longer looked up by model name — unbound numbers use
+    the generic fallback in `app.llm.model_defaults`."""
+    from app.llm.model_defaults import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
+    from tests.llm_catalog import TEST_LLM_MODEL, seed_test_llm_catalog
+
     _seeded(db)
+    seed_test_llm_catalog(db)
     profile = agent_skills_service.create_profile(
         db,
         role="safety",
         key="hot",
         display_name="高温版",
-        model="kimi-k3",
+        model=TEST_LLM_MODEL,
         reasoning_model=True,
     )
-    assert (profile.max_tokens, profile.temperature_milli) == (2048, 300)
+    assert (profile.max_tokens, profile.temperature_milli) == (None, None)
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
-    assert (binding.max_tokens, binding.temperature, binding.reasoning_model) == (2048, 0.3, True)
+    assert (binding.max_tokens, binding.temperature, binding.reasoning_model) == (
+        DEFAULT_MAX_TOKENS,
+        DEFAULT_TEMPERATURE,
+        True,
+    )
+    assert binding.model == TEST_LLM_MODEL
     assert binding.preferred_endpoint_ids == ()
 
 
@@ -726,7 +743,9 @@ def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     """The whole point of the debug endpoint: an unpublished draft can be
     tried against a real (here, stubbed) model, and the attempt still shows
     up in the agent's usage history despite backing no job."""
-    _seeded(db)
+    from tests.llm_catalog import bind_default_agents_to_catalog
+
+    bind_default_agents_to_catalog(db)
     default = agent_skills_service.default_profile(db, "safety")
     assert default is not None
 
@@ -753,28 +772,27 @@ def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     assert run.prompt_slot == agent_slots.DEFAULT_SLOT
 
 
-def test_an_unregistered_model_leaves_sampling_params_unset(db: Session) -> None:
-    """A model this table has never heard of behaves exactly like an unset
-    override always did: inherit whatever the role's default agent runs
-    with."""
+def test_an_unbound_agent_degrades_without_calling_a_vendor(db: Session) -> None:
+    """No catalog model on the profile means no invented name and no HTTP."""
+    from app.llm import client as llm_client
+
     _seeded(db)
     default = agent_skills_service.default_profile(db, "safety")
-    assert default is not None
-    agent_skills_service.update_profile(db, default.id, model="kimi-k3", reasoning_model=True)
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, default)
+    assert binding.model == ""
 
-    variant = agent_skills_service.create_profile(
+    outcome = agent_base.run_agent(
         db,
-        role="safety",
-        key="temporary-override",
-        display_name="临时覆盖版",
-        model="some-unlisted-model",
-        reasoning_model=False,
+        agent_name=AgentName.SAFETY.value,
+        system_prompt="{}",
+        user_prompt="x",
+        fallback={"decision": "needs_review"},
     )
-    assert (variant.max_tokens, variant.temperature_milli) == (None, None)
-
-    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, variant)
-    assert (binding.max_tokens, binding.temperature) == (2048, 0.3)
-    assert binding.reasoning_model is False
+    assert outcome.degraded is True
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.degrade_reason == llm_client.NO_MODEL_BOUND
+    assert run.model is None
 
 
 def test_pinning_an_endpoint_that_no_longer_exists_does_not_change_provider(db: Session) -> None:

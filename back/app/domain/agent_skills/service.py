@@ -32,7 +32,6 @@ from sqlalchemy.orm import Session
 from app.agents.slots import DEFAULT_SLOT, is_known_slot
 from app.domain.agent_skills import presets
 from app.domain.errors import NotFound, ValidationFailed
-from app.llm import model_defaults
 from app.models import AgentNode, AgentProfile, AgentSkill
 from app.models.base import utcnow
 from app.models.enums import Operation
@@ -310,9 +309,8 @@ def _apply_bindings(
     pool once an endpoint had been pinned.
 
     `max_tokens`/`temperature_milli` are deliberately not parameters here: an
-    operator no longer fills them in, they are fixed by whatever `row.model`
-    resolves to (see the lookup at the end of this function) exactly the way
-    `reasoning_model` still is a manual override.
+    operator no longer fills them in. A bound model gets the generic sampling
+    fallback; an unbound profile leaves both empty so runtime inherits.
     """
     endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
     if default_endpoint_id is not None:
@@ -346,11 +344,8 @@ def _apply_bindings(
         endpoint = endpoints[row.default_endpoint_id]
         row.model = endpoint.models[0]
 
-    # Fixed by the model, not typed in: a model missing from the table keeps
-    # inheriting the role default, same as an unset value always has.
-    defaults = model_defaults.for_model(row.model)
-    row.max_tokens = defaults.max_tokens if defaults is not None else None
-    row.temperature_milli = round(defaults.temperature * 1000) if defaults is not None else None
+    row.max_tokens = None
+    row.temperature_milli = None
 
     if reasoning_model is not UNSET_BINDING:
         row.reasoning_model = reasoning_model if isinstance(reasoning_model, bool) else None

@@ -23,29 +23,10 @@ def without_agent_os(monkeypatch):  # type: ignore[no-untyped-def]
 def with_llm_endpoint(committed_db: Session):  # type: ignore[no-untyped-def]
     """Mounting reads endpoints from the database now, via a session that is
     *not* the rolled-back `db` fixture — so this must commit for real."""
-    from app.platform_config import service as config_service
+    from tests.llm_catalog import bind_default_agents_to_catalog
 
-    config_service.set_value(
-        committed_db,
-        "llm_providers",
-        {
-            "endpoints": {
-                "agent-os-test-endpoint": {
-                    "name": "AgentOS 测试端点",
-                    "base_url": "https://example.invalid/v1",
-                    "api_key": "test-key",
-                    "kind": "general",
-                    "models": [
-                        "doubao-seed-2-1-pro",
-                        "kimi-k3",
-                        "ling-3.0-flash-free",
-                    ],
-                    "role": "primary",
-                }
-            }
-        },
-        actor_user_id=None,
-        note="test bootstrap",
+    bind_default_agents_to_catalog(
+        committed_db, model="test-llm", endpoint_id="agent-os-test-endpoint"
     )
     committed_db.commit()
 

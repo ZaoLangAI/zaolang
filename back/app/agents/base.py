@@ -16,12 +16,13 @@ from sqlalchemy.orm import Session
 from app.agents.slots import DEFAULT_SLOT
 from app.domain.agent_skills import service as agent_skills_service
 from app.llm import client as llm_client
+from app.llm.model_defaults import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from app.models import AgentProfile, AgentRun
 from app.models.base import utcnow
-from app.models.enums import AgentName, AgentRunStatus
+from app.models.enums import AgentRunStatus
 from app.observability.context import get_request_id
 from app.platform_config import service as config_service
-from app.platform_config.schemas import AgentModelBinding, LlmProviderConfig
+from app.platform_config.schemas import LlmProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -33,41 +34,6 @@ class AgentOutcome:
     degraded: bool
     model: str
     agent_run_id: str
-
-
-DEFAULT_ROLE_BINDINGS: dict[str, AgentModelBinding] = {
-    AgentName.SAFETY.value: AgentModelBinding(
-        model="doubao-seed-2-1-pro", max_tokens=1024, temperature=0.0
-    ),
-    AgentName.PLANNER.value: AgentModelBinding(
-        model="kimi-k3", max_tokens=2048, temperature=0.3, reasoning_model=True
-    ),
-    AgentName.QUALITY.value: AgentModelBinding(
-        model="kimi-k3", max_tokens=1536, temperature=0.1, reasoning_model=True
-    ),
-    AgentName.COPY.value: AgentModelBinding(
-        model="ling-3.0-flash-free", max_tokens=4096, temperature=0.7, reasoning_model=True
-    ),
-    AgentName.INTENT_ROUTER.value: AgentModelBinding(
-        model="ling-3.0-flash-free", max_tokens=512, temperature=0.0
-    ),
-    AgentName.EDITOR_PLANNER.value: AgentModelBinding(
-        model="kimi-k3", max_tokens=2048, temperature=0.2, reasoning_model=True
-    ),
-}
-
-
-def resolve_binding(session: Session, agent_name: str) -> AgentModelBinding:
-    """Bootstrap defaults used only when the role's default AgentProfile is empty.
-
-    Runtime ownership lives in `/admin/agents`; these constants only keep a
-    fresh or partially migrated database operable until an administrator
-    explicitly binds the role's default agent to a provider and model.
-    """
-    del session
-    return DEFAULT_ROLE_BINDINGS.get(
-        agent_name, DEFAULT_ROLE_BINDINGS[AgentName.INTENT_ROUTER.value]
-    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -89,10 +55,10 @@ def effective_binding(
     """Resolves provider/model selection from AgentProfile.
 
     Non-default profiles inherit empty values from the role's default profile.
-    The endpoint ids are the provider binding an administrator selected; the
-    model is required to be supported by those endpoints at write time.
+    The model id is only whatever an administrator stored on the profile —
+    never a code-level default name. A pin that drifted off the catalog is
+    treated as unbound rather than guessed.
     """
-    base = resolve_binding(session, agent_name)
     role_default = agent_skills_service.default_profile(session, agent_name)
     inherited = (
         role_default
@@ -110,26 +76,29 @@ def effective_binding(
     preferred = tuple(
         endpoint_id for endpoint_id in (default_endpoint_id, backup_endpoint_id) if endpoint_id
     )
-    model = value("model") or base.model
+    model = value("model") or ""
     pinned = endpoints.get(default_endpoint_id) if default_endpoint_id else None
-    if pinned is not None and model not in pinned.models:
-        model = pinned.models[0]
+    if pinned is not None and model and model not in pinned.models:
+        model = ""
 
     return EffectiveBinding(
         model=model,
-        max_tokens=value("max_tokens") or base.max_tokens,
+        max_tokens=value("max_tokens") or DEFAULT_MAX_TOKENS,
         temperature=(
             value("temperature_milli") / 1000
             if value("temperature_milli") is not None
-            else base.temperature
+            else DEFAULT_TEMPERATURE
         ),
-        reasoning_model=(
-            value("reasoning_model")
-            if value("reasoning_model") is not None
-            else base.reasoning_model
-        ),
+        reasoning_model=bool(value("reasoning_model")),
         preferred_endpoint_ids=preferred,
     )
+
+
+def _recorded_model(result: llm_client.LlmCallResult, binding: EffectiveBinding) -> str | None:
+    """Persists the catalog model that ran, or nothing when none was bound."""
+    if result.degrade_reason == llm_client.NO_MODEL_BOUND:
+        return None
+    return result.response.model or binding.model or None
 
 
 def run_agent(
@@ -168,7 +137,7 @@ def run_agent(
     result = llm_client.complete(
         session=session,
         agent_name=agent_name,
-        model=binding.model,
+        model=binding.model or "",
         messages=[
             {"role": "system", "content": resolved.text},
             {"role": "user", "content": user_prompt},
@@ -200,7 +169,7 @@ def run_agent(
         agent_profile_id=profile_id,
         prompt_slot=slot,
         mode=result.mode,
-        model=result.response.model or binding.model,
+        model=_recorded_model(result, binding),
         status=status,
         degraded=result.degraded or parse_failed,
         degrade_reason=result.degrade_reason or ("json_parse_failed" if parse_failed else None),
@@ -220,7 +189,7 @@ def run_agent(
         data=data,
         raw_text=result.response.text,
         degraded=run.degraded,
-        model=run.model or binding.model,
+        model=run.model or binding.model or "",
         agent_run_id=run.id,
     )
 
@@ -293,7 +262,7 @@ def run_agent_debug(
         agent_profile_id=profile.id,
         prompt_slot=slot,
         mode=result.mode,
-        model=result.response.model or binding.model,
+        model=_recorded_model(result, binding),
         status=AgentRunStatus.DEGRADED if result.degraded else AgentRunStatus.SUCCEEDED,
         degraded=result.degraded,
         degrade_reason=result.degrade_reason,
@@ -316,7 +285,7 @@ def run_agent_debug(
         reply_text=result.response.text,
         parsed_json=result.response.data,
         degraded=result.degraded,
-        model=run.model or binding.model,
+        model=run.model or binding.model or "",
         latency_ms=result.latency_ms,
         prompt_tokens=result.response.prompt_tokens,
         completion_tokens=result.response.completion_tokens,

@@ -21,12 +21,8 @@ from app.providers.base import GenerationRequest, GenerationResult, ProviderCapa
 from app.workers import pipeline
 from app.workflows.defaults import default_graph
 from tests.conftest import admin_header
-from tests.fake_provider_catalog import build_fake_catalog
 
-
-@pytest.fixture(autouse=True)
-def _inject_test_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
 
 @pytest.fixture

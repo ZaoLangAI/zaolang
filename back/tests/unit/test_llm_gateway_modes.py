@@ -44,11 +44,7 @@ def seed_endpoint(db: Session):  # type: ignore[no-untyped-def]
                         "base_url": "https://example.invalid/v1",
                         "api_key": "test-key",
                         "kind": "general",
-                        "models": [
-                            "doubao-seed-2-1-pro",
-                            "kimi-k3",
-                            "ling-3.0-flash-free",
-                        ],
+                        "models": ["test-llm"],
                         "role": "primary",
                     }
                 }
@@ -71,7 +67,7 @@ def test_stub_mode_never_calls_the_gateway(db: Session, monkeypatch, force_mode)
     result = llm_client.complete(
         session=db,
         agent_name="safety",
-        model="doubao-seed-2-1-pro",
+        model="test-llm",
         messages=[{"role": "user", "content": "海边的黄昏"}],
     )
     assert result.mode == "stub"
@@ -82,8 +78,8 @@ def test_stub_mode_never_calls_the_gateway(db: Session, monkeypatch, force_mode)
 def test_stub_output_is_deterministic() -> None:
     """CI depends on this: the same prompt must always produce the same verdict."""
     messages = [{"role": "user", "content": "同一个提示词"}]
-    first = stub_completion(agent_name="safety", messages=messages, model="doubao-seed-2-1-pro")
-    second = stub_completion(agent_name="safety", messages=messages, model="doubao-seed-2-1-pro")
+    first = stub_completion(agent_name="safety", messages=messages, model="test-llm")
+    second = stub_completion(agent_name="safety", messages=messages, model="test-llm")
     assert first.data == second.data
 
 
@@ -97,7 +93,7 @@ def test_auto_mode_degrades_to_the_stub_on_a_gateway_failure(
     result = llm_client.complete(
         session=db,
         agent_name="planner",
-        model="kimi-k3",
+        model="test-llm",
         messages=[{"role": "user", "content": "x"}],
     )
     assert result.degraded is True
@@ -118,7 +114,7 @@ def test_strict_mode_surfaces_the_failure_instead_of_faking_success(
         llm_client.complete(
             session=db,
             agent_name="planner",
-            model="kimi-k3",
+            model="test-llm",
             messages=[{"role": "user", "content": "x"}],
         )
 
@@ -131,7 +127,7 @@ def test_auto_mode_degrades_to_stub_when_no_endpoint_is_configured(db: Session, 
     result = llm_client.complete(
         session=db,
         agent_name="planner",
-        model="kimi-k3",
+        model="test-llm",
         messages=[{"role": "user", "content": "x"}],
     )
     assert result.degraded is True
@@ -145,9 +141,27 @@ def test_strict_mode_errors_when_no_endpoint_is_configured(db: Session, force_mo
         llm_client.complete(
             session=db,
             agent_name="planner",
-            model="kimi-k3",
+            model="test-llm",
             messages=[{"role": "user", "content": "x"}],
         )
+
+
+def test_an_empty_model_degrades_without_calling_the_gateway(
+    db: Session, monkeypatch, force_mode, seed_endpoint
+) -> None:
+    force_mode("auto")
+    seed_endpoint()
+    monkeypatch.setattr(llm_client, "_call_gateway", _explode)
+
+    result = llm_client.complete(
+        session=db,
+        agent_name="planner",
+        model="",
+        messages=[{"role": "user", "content": "x"}],
+    )
+    assert result.degraded is True
+    assert result.degrade_reason == llm_client.NO_MODEL_BOUND
+    assert result.response.model == ""
 
 
 def test_every_agent_call_is_recorded(db: Session, author: User) -> None:
@@ -176,7 +190,7 @@ def test_an_unparseable_response_falls_back_without_losing_the_record(
     class _Unparseable:
         data = None
         text = "抱歉，我无法回答。"
-        model = "kimi-k3"
+        model = "test-llm"
         prompt_tokens = 10
         completion_tokens = 5
         truncated = False
@@ -210,10 +224,12 @@ def test_an_unparseable_response_falls_back_without_losing_the_record(
 
 
 def test_degraded_runs_are_queryable_for_the_ops_console(
-    db: Session, author: User, monkeypatch, force_mode, seed_endpoint
+    db: Session, author: User, monkeypatch, force_mode
 ) -> None:
+    from tests.llm_catalog import bind_default_agents_to_catalog
+
     force_mode("auto")
-    seed_endpoint()
+    bind_default_agents_to_catalog(db)
     monkeypatch.setattr(llm_client, "_call_gateway", _explode)
 
     agents_base.run_agent(

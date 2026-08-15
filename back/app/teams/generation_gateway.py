@@ -55,6 +55,8 @@ def _resolve_endpoint(
     AgentOS console with an empty `llm_providers` pool needs a clear reason
     it failed to mount, not a confusing model error.
     """
+    if not binding.model:
+        raise ValueError("智能体未绑定模型，无法构建 AgentOS 团队")
     candidates = [
         pair
         for pair in failover.general_candidates(provider_config)

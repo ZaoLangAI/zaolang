@@ -815,19 +815,6 @@ class AgentNodeView(ApiModel):
     prompt_slots: list[PromptSlotView] = Field(default_factory=list)
 
 
-class ModelSamplingDefaultView(ApiModel):
-    """The fixed max_tokens/temperature one model resolves to.
-
-    The console reads this list to show what picking a model will fix
-    sampling to (`app.llm.model_defaults`) before the operator saves —
-    those two fields are never a free-text input anymore.
-    """
-
-    model: str
-    max_tokens: int
-    temperature: float
-
-
 class AgentProfileView(ApiModel):
     """One agent. Its `role` says which pipeline stage it can run.
 
@@ -874,8 +861,8 @@ class AgentProfileCreateRequest(ApiModel):
     default_endpoint_id: str | None = Field(default=None, max_length=64)
     backup_endpoint_id: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=160)
-    # No max_tokens/temperature here on purpose: they are fixed by whichever
-    # model is selected (`app.llm.model_defaults`), not an operator input.
+    # No max_tokens/temperature here on purpose: sampling is a generic
+    # runtime fallback, not an operator input or a per-model table.
     reasoning_model: bool | None = None
 
 
@@ -895,8 +882,8 @@ class AgentProfileUpdateRequest(ApiModel):
     default_endpoint_id: str | None = Field(default=None, max_length=64)
     backup_endpoint_id: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=160)
-    # No max_tokens/temperature here on purpose: they are fixed by whichever
-    # model is selected (`app.llm.model_defaults`), not an operator input.
+    # No max_tokens/temperature here on purpose: sampling is a generic
+    # runtime fallback, not an operator input or a per-model table.
     reasoning_model: bool | None = None
 
 

@@ -17,11 +17,8 @@ import type {
   Page,
   RolePreset,
 } from '@/lib/api/admin-types';
-import type { components } from '@/lib/api/schema';
 import { ApiError } from '@/lib/api/errors';
 import { OPERATIONS, operationLabelKey } from '@/lib/admin/operations';
-
-type ModelSamplingDefault = components['schemas']['ModelSamplingDefaultView'];
 
 /**
  * Creates or edits one agent — never its prompts, which are versioned
@@ -66,7 +63,6 @@ export function AgentProfileDialog({
   const isEdit = profile !== undefined;
   const [presets, setPresets] = useState<RolePreset[] | null>(null);
   const [endpoints, setEndpoints] = useState<LlmProviderEndpoint[] | null>(null);
-  const [samplingDefaults, setSamplingDefaults] = useState<ModelSamplingDefault[]>([]);
 
   const role = profile?.role ?? initialRole ?? '';
   const [key, setKey] = useState(profile?.key ?? '');
@@ -101,18 +97,9 @@ export function AgentProfileDialog({
       .catch(() => setEndpoints([]));
   }, []);
 
-  useEffect(() => {
-    void adminApi
-      .get<Page<ModelSamplingDefault>>('/v1/admin/model-sampling-defaults')
-      .then((page) => setSamplingDefaults(page.items))
-      .catch(() => setSamplingDefaults([]));
-  }, []);
-
   const preset = presets?.find((item) => item.role === role);
   const category: AgentCategory = profile?.category ?? preset?.category ?? 'judgment';
   const operations = manualOperations;
-
-  const activeSampling = samplingDefaults.find((item) => item.model === model);
 
   const generalEndpoints = (endpoints ?? []).filter(
     (endpoint) => endpoint.kind === 'general' && endpoint.enabled,
@@ -144,8 +131,6 @@ export function AgentProfileDialog({
     default_endpoint_id: defaultEndpointId,
     backup_endpoint_id: defaultEndpointId ? backupEndpointId : '',
     model: defaultEndpointId ? model : '',
-    // No max_tokens/temperature here — the server fixes both from whichever
-    // model this resolves to (`app.llm.model_defaults`).
     reasoning_model: reasoningModel === '' ? null : reasoningModel === 'true',
   });
 
@@ -318,14 +303,7 @@ export function AgentProfileDialog({
               ...modelOptions.map((name) => ({ value: name, label: name })),
             ]}
           />
-          <p className="text-xs text-muted">
-            {activeSampling
-              ? t('samplingFixedByModel', {
-                  maxTokens: activeSampling.max_tokens,
-                  temperature: activeSampling.temperature,
-                })
-              : t('samplingInherited')}
-          </p>
+          <p className="text-xs text-muted">{t('samplingInherited')}</p>
           <Select
             label={t('reasoningModel')}
             hint={t('reasoningModelHint')}

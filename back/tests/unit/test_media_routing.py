@@ -8,6 +8,7 @@ from app.agents import router
 from app.models.enums import Operation, QualityTier
 from app.platform_config import service as config_service
 from app.providers.aihubmix_media import AiHubMixMediaProvider
+from tests.llm_catalog import bind_default_agents_to_catalog
 
 
 def _seed_media_endpoint(
@@ -46,6 +47,7 @@ def test_a_configured_media_endpoint_can_serve_an_operation_the_fakes_cannot(
 ) -> None:
     """Production catalogues never include the test fakes, so `image_to_image`
     is only routable once a media endpoint is configured."""
+    bind_default_agents_to_catalog(db)
     decision = router.route(
         db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
@@ -115,6 +117,7 @@ def test_h3_is_hard_filtered_when_video_parameters_exceed_its_contract(db: Sessi
         input_modalities=["text", "image", "video"],
         output_modalities=["video"],
     )
+    bind_default_agents_to_catalog(db)
     provider_name = "media-ep:text_to_video"
     rejected = router.route(
         db,

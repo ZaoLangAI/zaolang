@@ -26,7 +26,7 @@ def _general_payload(**overrides: object) -> dict:
         "base_url": "https://gateway.invalid/v1",
         "api_key": "sk-test",
         "kind": "general",
-        "models": ["kimi-k3"],
+        "models": ["test-llm"],
         "role": "backup",
         "backup_order": 100,
         "max_concurrency": 4,
@@ -179,7 +179,7 @@ def test_admin_can_validate_one_exact_endpoint_and_the_result_is_audited(
     def fake_validate(endpoint):  # type: ignore[no-untyped-def]
         seen.append(endpoint.base_url)
         return ConnectivityResult(
-            target_model="kimi-k3",
+            target_model="test-llm",
             probe_type="chat_completion",
             reachable=True,
             usable=True,
@@ -213,7 +213,7 @@ def test_admin_can_validate_one_exact_endpoint_and_the_result_is_audited(
     result = polled.json()
     assert result["status"] == "completed"
     assert result["result"]["usable"] is True
-    assert result["result"]["target_model"] == "kimi-k3"
+    assert result["result"]["target_model"] == "test-llm"
     assert result["result"]["external_task_id"] == "task-validation-1"
     assert "sk-never-return-this" not in polled.text
 
@@ -256,7 +256,7 @@ def test_a_viewer_can_poll_a_validation_job(
     monkeypatch.setattr(
         "app.api.v1.admin.llm_providers.connectivity.validate_endpoint",
         lambda endpoint: ConnectivityResult(  # type: ignore[misc]
-            target_model="kimi-k3",
+            target_model="test-llm",
             probe_type="chat_completion",
             reachable=True,
             usable=True,

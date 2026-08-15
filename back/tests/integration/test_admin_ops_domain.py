@@ -1368,7 +1368,7 @@ def _seed_endpoints(db: Session) -> None:
                     "base_url": "https://general.invalid",
                     "api_key": "k",
                     "kind": "general",
-                    "models": ["kimi-k3"],
+                    "models": ["test-llm"],
                     "role": "primary",
                 },
                 "video-ep": {
@@ -1448,12 +1448,11 @@ def test_a_judgment_agent_can_pin_a_default_and_backup_model(
     assert created.status_code == 201
     body = created.json()
     assert body["default_endpoint_id"] == "general-ep"
-    # max_tokens/temperature are no longer an operator input — they are fixed
-    # by whichever model the endpoint resolved to (`kimi-k3` here), per
-    # `app.llm.model_defaults`.
-    assert body["model"] == "kimi-k3"
-    assert body["max_tokens"] == 2048
-    assert body["temperature"] == pytest.approx(0.3)
+    # The model id comes from the catalog endpoint, not a code default.
+    # Sampling is no longer looked up by model name.
+    assert body["model"] == "test-llm"
+    assert body["max_tokens"] is None
+    assert body["temperature"] is None
 
     # An empty string is how the console goes back to the shared pool.
     cleared = client.patch(

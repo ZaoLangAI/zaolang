@@ -3390,30 +3390,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/admin/model-sampling-defaults": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Model Sampling Defaults
-         * @description The fixed max_tokens/temperature each known model resolves to.
-         *
-         *     The console reads this to preview what picking a model will fix sampling
-         *     to (`app.llm.model_defaults`) — those two fields are no longer typed in
-         *     by hand, so this is the only place their numbers are visible pre-save.
-         */
-        get: operations["list_model_sampling_defaults_v1_admin_model_sampling_defaults_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/admin/agent-nodes": {
         parameters: {
             query?: never;
@@ -7093,22 +7069,6 @@ export interface components {
          * @enum {string}
          */
         MediaType: "image" | "video" | "audio";
-        /**
-         * ModelSamplingDefaultView
-         * @description The fixed max_tokens/temperature one model resolves to.
-         *
-         *     The console reads this list to show what picking a model will fix
-         *     sampling to (`app.llm.model_defaults`) before the operator saves —
-         *     those two fields are never a free-text input anymore.
-         */
-        ModelSamplingDefaultView: {
-            /** Model */
-            model: string;
-            /** Max Tokens */
-            max_tokens: number;
-            /** Temperature */
-            temperature: number;
-        };
         /** ModerationDecisionRequest */
         ModerationDecisionRequest: {
             /**
@@ -7709,18 +7669,6 @@ export interface components {
         Page_LogEntryView_: {
             /** Items */
             items: components["schemas"]["LogEntryView"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-            /**
-             * Has More
-             * @default false
-             */
-            has_more: boolean;
-        };
-        /** Page[ModelSamplingDefaultView] */
-        Page_ModelSamplingDefaultView_: {
-            /** Items */
-            items: components["schemas"]["ModelSamplingDefaultView"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -16563,37 +16511,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_RolePresetView_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_model_sampling_defaults_v1_admin_model_sampling_defaults_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Page_ModelSamplingDefaultView_"];
                 };
             };
             /** @description Validation Error */

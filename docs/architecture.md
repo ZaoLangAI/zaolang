@@ -82,11 +82,13 @@ flowchart TB
 
 ## LLM 网关响应规范化
 
-三个模型的输出形态完全不同，`app/llm/` 统一处理：
+不同上游模型的输出形态不同，`app/llm/` 统一处理：
 
-- `ling-3.0-flash-free` 是 reasoning 模型，推理 token 计入 `max_tokens`。给它按普通模型估算预算，会拿到空 `content` 加 `finish_reason=length`。
+- reasoning 模型的推理 token 计入 `max_tokens`。按普通模型估算预算，会拿到空 `content` 加 `finish_reason=length`。
 - 思考模型即使指定 `response_format={"type":"json_object"}`，仍可能在 JSON 前吐 `<think>...</think>`。
-- `doubao-seed-2-1-pro` 输出干净 JSON，所以安全判定绑给它。
+- 有的模型直接返回干净 JSON。
+
+模型 id **只**来自 `/admin/models` 的 `llm_providers` 与 `/admin/agents` 的 `AgentProfile` 绑定；代码不内置默认模型名。未绑定则降级（`no_model_bound`），不猜目录里的第一个名字。
 
 规范化层做四件事：剥离思考块与 `reasoning_details`、从自由文本里定位并提取 JSON、解析失败先修复重试再降级、把模型 / token 用量 / 延迟 / 是否降级写进 `AgentRun`。
 

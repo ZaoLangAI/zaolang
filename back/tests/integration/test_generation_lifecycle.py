@@ -16,7 +16,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents import router
 from app.domain.credits import service as credits_service
 from app.domain.errors import CreditsExceedBudget, InsufficientCredits
 from app.domain.jobs import service as jobs_service
@@ -45,14 +44,9 @@ from app.models.enums import (
 from app.workers import pipeline, tasks
 from tests.conftest import auth_header
 from tests.factories import make_job
-from tests.fake_provider_catalog import build_fake_catalog
 from tests.fake_providers import FORCE_FAILURE_MARKER
 
-
-@pytest.fixture(autouse=True)
-def _inject_test_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Generation tests opt into fake providers; production never registers them."""
-    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
 
 @pytest.fixture

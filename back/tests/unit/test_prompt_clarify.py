@@ -11,6 +11,12 @@ from app.agents.base import AgentOutcome
 from app.domain.errors import ValidationFailed
 from app.domain.shortform import clarify
 from app.models import User
+from tests.llm_catalog import bind_default_agents_to_catalog
+
+
+@pytest.fixture(autouse=True)
+def _bind_copy_model(db: Session) -> None:
+    bind_default_agents_to_catalog(db)
 
 
 def test_a_sparse_description_gets_a_structured_question(db: Session, author: User) -> None:

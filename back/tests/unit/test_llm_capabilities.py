@@ -16,7 +16,7 @@ def _clean_cache() -> None:
 
 
 def test_models_start_out_assumed_capable() -> None:
-    caps = capabilities.get("doubao-seed-2-1-pro")
+    caps = capabilities.get("test-llm")
 
     assert caps.supports_response_format is True
     assert caps.supports_temperature is True
@@ -29,29 +29,29 @@ def test_structured_output_rejection_disables_response_format() -> None:
         'inclusionai/ling-3.0-flash does not support feature: structured-outputs"}'
     )
 
-    learned = capabilities.learn_from_error("ling-3.0-flash-free", message)
+    learned = capabilities.learn_from_error("test-llm", message)
 
     assert learned is True
-    assert capabilities.get("ling-3.0-flash-free").supports_response_format is False
+    assert capabilities.get("test-llm").supports_response_format is False
 
 
 def test_temperature_rejection_records_the_forced_value() -> None:
     message = "Error code: 400 - invalid temperature: only 1 is allowed for this model"
 
-    learned = capabilities.learn_from_error("kimi-k3", message)
+    learned = capabilities.learn_from_error("test-llm", message)
 
     assert learned is True
-    caps = capabilities.get("kimi-k3")
+    caps = capabilities.get("test-llm")
     assert caps.supports_temperature is False
     assert caps.forced_temperature == 1.0
 
 
 def test_unrelated_error_teaches_nothing() -> None:
     """A quota or auth failure must not silently degrade the request shape."""
-    learned = capabilities.learn_from_error("kimi-k3", "Error code: 429 - rate limit exceeded")
+    learned = capabilities.learn_from_error("test-llm", "Error code: 429 - rate limit exceeded")
 
     assert learned is False
-    assert capabilities.get("kimi-k3").supports_response_format is True
+    assert capabilities.get("test-llm").supports_response_format is True
 
 
 def test_repeated_rejection_stops_the_retry_loop() -> None:
@@ -72,6 +72,6 @@ def test_max_tokens_rejection_switches_the_parameter_name() -> None:
 
 
 def test_snapshot_exposes_learned_state_for_the_console() -> None:
-    capabilities.learn_from_error("kimi-k3", "invalid temperature: only 1 is allowed")
+    capabilities.learn_from_error("test-llm", "invalid temperature: only 1 is allowed")
 
-    assert "kimi-k3" in capabilities.snapshot()
+    assert "test-llm" in capabilities.snapshot()

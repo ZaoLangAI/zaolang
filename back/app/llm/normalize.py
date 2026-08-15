@@ -1,14 +1,14 @@
 """Response normalisation for the OpenAI-compatible gateway.
 
-The three models behind the gateway behave differently, and every difference
-observed against the live endpoint is handled here rather than in each agent:
+Upstream models do not share one response shape, and every difference
+observed against a live endpoint is handled here rather than in each agent:
 
-* `ling-3.0-flash-free` is a reasoning model. Thinking tokens are billed against
-  `max_tokens`, so a small budget returns empty `content` with
-  `finish_reason=length` and the text only present in `reasoning_details`.
+* Reasoning models bill thinking against `max_tokens`, so a small budget
+  returns empty `content` with `finish_reason=length` and the text only
+  present in `reasoning_details`.
 * Thinking models emit `<think>...</think>` before the payload even when
   `response_format={"type": "json_object"}` is requested.
-* `doubao-seed-2-1-pro` returns clean JSON.
+* Some models return clean JSON with no extra wrapper.
 """
 
 from __future__ import annotations

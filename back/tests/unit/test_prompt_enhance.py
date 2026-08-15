@@ -9,6 +9,12 @@ from sqlalchemy.orm import Session
 from app.domain import prompts
 from app.domain.errors import ValidationFailed
 from app.models import User
+from tests.llm_catalog import bind_default_agents_to_catalog
+
+
+@pytest.fixture(autouse=True)
+def _bind_copy_model(db: Session) -> None:
+    bind_default_agents_to_catalog(db)
 
 
 def test_a_sparse_description_is_flagged_and_expanded(db: Session, author: User) -> None:

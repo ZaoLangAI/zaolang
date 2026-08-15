@@ -44,8 +44,8 @@ from app.models import (
     Bookmark,
     Collection,
     CollectionItem,
-    CreationSkill,
     ContentFingerprint,
+    CreationSkill,
     CreditAccount,
     CreditLedgerEntry,
     CreditPackage,
@@ -798,6 +798,15 @@ def _seed_agent_profiles(session: Session) -> None:
     )
 
 
+def _catalog_general_model(session: Session) -> str | None:
+    """The first model declared on an enabled general endpoint, if any."""
+    config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    for endpoint in config.endpoints.values():
+        if endpoint.enabled and endpoint.kind == "general" and endpoint.models:
+            return endpoint.models[0]
+    return None
+
+
 def _seed_llm_providers(session: Session) -> None:
     """Bootstraps one general-purpose gateway endpoint from `.env`, if present.
 
@@ -814,9 +823,10 @@ def _seed_llm_providers(session: Session) -> None:
 
     base_url = os.environ.get("LLM_BASE_URL", "").strip()
     api_key = os.environ.get("LLM_API_KEY", "").strip()
-    if not base_url or not api_key:
+    model = os.environ.get("LLM_MODEL", "").strip()
+    if not base_url or not api_key or not model:
         logger.info(
-            "未在环境变量中找到 LLM_BASE_URL/LLM_API_KEY，跳过网关端点引导；"
+            "未在环境变量中找到 LLM_BASE_URL/LLM_API_KEY/LLM_MODEL，跳过网关端点引导；"
             "请到后台「/admin/models」手动配置。"
         )
         return
@@ -827,7 +837,7 @@ def _seed_llm_providers(session: Session) -> None:
         api_key=api_key,
         kind="general",
         role="primary",
-        models=[os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"],
+        models=[model],
     )
     config_service.set_value(
         session,
@@ -1810,11 +1820,12 @@ def _seed_ops_material(session: Session, users: dict[str, User], works: list[Wor
     )
     # Agent runs for the agent-ops screen, including one degraded call so the
     # "how often are we falling back to the stub" panel is not empty.
+    catalog_model = _catalog_general_model(session)
     agent_runs = (
-        ("safety", "doubao-seed-2-1-pro", 620, 41, 380, False, None),
-        ("planner", "kimi-k3", 1180, 260, 2450, False, None),
-        ("quality", "kimi-k3", 940, 190, 1870, False, None),
-        ("copy", "ling-3.0-flash-free", 410, 520, 3120, True, "upstream_timeout"),
+        ("safety", catalog_model, 620, 41, 380, False, None),
+        ("planner", catalog_model, 1180, 260, 2450, False, None),
+        ("quality", catalog_model, 940, 190, 1870, False, None),
+        ("copy", catalog_model, 410, 520, 3120, True, "upstream_timeout"),
     )
     for name, model, prompt_tokens, completion_tokens, latency, degraded, reason in agent_runs:
         session.add(

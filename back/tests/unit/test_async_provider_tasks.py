@@ -77,6 +77,9 @@ class _AsyncProvider:
 def provider(monkeypatch: pytest.MonkeyPatch, db: Session) -> _AsyncProvider:
     """Makes the async provider the only route any job can take."""
     instance = _AsyncProvider()
+    from tests.llm_catalog import bind_default_agents_to_catalog
+
+    bind_default_agents_to_catalog(db)
     monkeypatch.setattr(
         router,
         "build_catalog",

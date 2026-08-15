@@ -13311,56 +13311,6 @@
         }
       }
     },
-    "/v1/admin/model-sampling-defaults": {
-      "get": {
-        "tags": [
-          "admin:agent-skills"
-        ],
-        "summary": "List Model Sampling Defaults",
-        "description": "The fixed max_tokens/temperature each known model resolves to.\n\nThe console reads this to preview what picking a model will fix sampling\nto (`app.llm.model_defaults`) — those two fields are no longer typed in\nby hand, so this is the only place their numbers are visible pre-save.",
-        "operationId": "list_model_sampling_defaults_v1_admin_model_sampling_defaults_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Page_ModelSamplingDefaultView_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/admin/agent-nodes": {
       "get": {
         "tags": [
@@ -23455,30 +23405,6 @@
         ],
         "title": "MediaType"
       },
-      "ModelSamplingDefaultView": {
-        "properties": {
-          "model": {
-            "type": "string",
-            "title": "Model"
-          },
-          "max_tokens": {
-            "type": "integer",
-            "title": "Max Tokens"
-          },
-          "temperature": {
-            "type": "number",
-            "title": "Temperature"
-          }
-        },
-        "type": "object",
-        "required": [
-          "model",
-          "max_tokens",
-          "temperature"
-        ],
-        "title": "ModelSamplingDefaultView",
-        "description": "The fixed max_tokens/temperature one model resolves to.\n\nThe console reads this list to show what picking a model will fix\nsampling to (`app.llm.model_defaults`) before the operator saves —\nthose two fields are never a free-text input anymore."
-      },
       "ModerationDecisionRequest": {
         "properties": {
           "decision": {
@@ -25182,38 +25108,6 @@
           "items"
         ],
         "title": "Page[LogEntryView]"
-      },
-      "Page_ModelSamplingDefaultView_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ModelSamplingDefaultView"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "has_more": {
-            "type": "boolean",
-            "title": "Has More",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "Page[ModelSamplingDefaultView]"
       },
       "Page_ModerationQueueView_": {
         "properties": {

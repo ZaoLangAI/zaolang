@@ -35,6 +35,8 @@ REASONING_TOKEN_FLOOR = 2048
 # Recorded on `AgentRun` / returned to callers when nothing in `llm_providers`
 # matched — there is no per-endpoint id to report in that case.
 NO_ENDPOINT_ID = "none"
+# AgentProfile has no model (and none was inherited). Never invent a name.
+NO_MODEL_BOUND = "no_model_bound"
 
 # Endpoint timeout and concurrency remain model-level settings. These bounded
 # gateway safeguards are deliberately code constants, not a second global
@@ -104,9 +106,21 @@ def complete(
     settings = get_settings()
     mode = settings.llm_mode
     started = time.perf_counter()
+    chosen = (model or "").strip()
+
+    if not chosen:
+        stub_response = stub_completion(agent_name=agent_name, messages=messages, model="")
+        stub_response.model = ""
+        return LlmCallResult(
+            response=stub_response,
+            mode=mode if mode == "stub" else "auto",
+            degraded=True,
+            degrade_reason=NO_MODEL_BOUND,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+        )
 
     if mode == "stub":
-        stub_response = stub_completion(agent_name=agent_name, messages=messages, model=model)
+        stub_response = stub_completion(agent_name=agent_name, messages=messages, model=chosen)
         return LlmCallResult(
             response=stub_response,
             mode="stub",
@@ -118,7 +132,7 @@ def complete(
     budget = max(max_tokens, REASONING_TOKEN_FLOOR) if reasoning_model else max_tokens
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     endpoints = failover.eligible_candidates(
-        provider_config, preferred_ids=preferred_endpoint_ids, model=model
+        provider_config, preferred_ids=preferred_endpoint_ids, model=chosen
     )
 
     last_error: Exception | None = None
@@ -130,7 +144,7 @@ def complete(
             response, budget, error = _attempt_endpoint(
                 client=client_for_endpoint(endpoint),
                 max_retries=MAX_TRANSPORT_RETRIES,
-                model=model,
+                model=chosen,
                 messages=messages,
                 budget=budget,
                 temperature=temperature,
@@ -163,7 +177,7 @@ def complete(
             from app.domain.errors import ProviderTemporaryFailure
 
             raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
-        response = stub_completion(agent_name=agent_name, messages=messages, model=model)
+        response = stub_completion(agent_name=agent_name, messages=messages, model=chosen)
         return LlmCallResult(
             response=response,
             mode="auto",
@@ -180,7 +194,7 @@ def complete(
 
         raise ProviderTemporaryFailure(f"LLM 网关不可用: {reason}")
 
-    response = stub_completion(agent_name=agent_name, messages=messages, model=model)
+    response = stub_completion(agent_name=agent_name, messages=messages, model=chosen)
     return LlmCallResult(
         response=response,
         mode="auto",

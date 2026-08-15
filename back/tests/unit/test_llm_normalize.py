@@ -46,7 +46,7 @@ def test_non_object_json_is_rejected() -> None:
 
 def test_clean_json_response_is_passed_through() -> None:
     raw = {
-        "model": "doubao-seed-2-1-pro",
+        "model": "test-llm",
         "choices": [{"message": {"content": '{"decision": "approve"}'}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 120, "completion_tokens": 18},
     }
@@ -60,7 +60,7 @@ def test_clean_json_response_is_passed_through() -> None:
 
 def test_thinking_prefix_is_stripped_before_parsing() -> None:
     raw = {
-        "model": "kimi-k3",
+        "model": "test-llm",
         "choices": [
             {
                 "message": {"content": '<think>先分析</think>{"verdict": "pass"}'},
@@ -75,13 +75,13 @@ def test_thinking_prefix_is_stripped_before_parsing() -> None:
 
 
 def test_reasoning_only_response_is_recovered() -> None:
-    """`ling-3.0-flash-free` bills thinking against max_tokens.
+    """A reasoning model may bill thinking against max_tokens.
 
     With a small budget the content field is empty and the answer only exists
     in reasoning_details.
     """
     raw = {
-        "model": "ling-3.0-flash-free",
+        "model": "test-llm",
         "choices": [
             {
                 "message": {
@@ -103,7 +103,7 @@ def test_reasoning_only_response_is_recovered() -> None:
 
 def test_unparseable_json_is_flagged_rather_than_raising() -> None:
     raw = {
-        "model": "kimi-k3",
+        "model": "test-llm",
         "choices": [
             {"message": {"content": "抱歉，我无法给出结构化结果"}, "finish_reason": "stop"}
         ],
@@ -129,7 +129,7 @@ def test_sdk_style_object_is_accepted() -> None:
     class FakeCompletion:
         def model_dump(self) -> dict[str, object]:
             return {
-                "model": "kimi-k3",
+                "model": "test-llm",
                 "choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 5, "completion_tokens": 3},
             }
@@ -137,4 +137,4 @@ def test_sdk_style_object_is_accepted() -> None:
     result = normalize_completion(FakeCompletion(), expect_json=True)
 
     assert result.data == {"ok": True}
-    assert result.model == "kimi-k3"
+    assert result.model == "test-llm"

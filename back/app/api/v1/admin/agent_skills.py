@@ -31,7 +31,6 @@ from app.api.schemas.admin import (
     AgentSkillToolView,
     AgentSkillView,
     DangerousAction,
-    ModelSamplingDefaultView,
     PromptSlotView,
     RolePresetView,
     SkillTemplateView,
@@ -51,7 +50,6 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.agent_skills import templates as skill_templates
 from app.domain.audit import service as audit
 from app.domain.workflow_templates import service as workflow_templates_service
-from app.llm import model_defaults
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 
@@ -79,26 +77,6 @@ def list_agent_node_presets(session: DbSession, user: Viewer, _: AdminRead) -> P
                 is_new=preset.role not in existing_roles,
             )
             for preset in role_presets.all_presets()
-        ]
-    )
-
-
-@router.get("/model-sampling-defaults", response_model=Page[ModelSamplingDefaultView])
-def list_model_sampling_defaults(
-    user: Viewer, _: AdminRead
-) -> Page[ModelSamplingDefaultView]:
-    """The fixed max_tokens/temperature each known model resolves to.
-
-    The console reads this to preview what picking a model will fix sampling
-    to (`app.llm.model_defaults`) — those two fields are no longer typed in
-    by hand, so this is the only place their numbers are visible pre-save.
-    """
-    return Page(
-        items=[
-            ModelSamplingDefaultView(
-                model=model, max_tokens=defaults.max_tokens, temperature=defaults.temperature
-            )
-            for model, defaults in model_defaults.MODEL_SAMPLING_DEFAULTS.items()
         ]
     )
 

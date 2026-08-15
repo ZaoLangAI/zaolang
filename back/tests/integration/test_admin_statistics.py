@@ -8,7 +8,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.agents import router
 from app.domain.credits import service as credits_service
 from app.domain.jobs import service as jobs_service
 from app.models import GenerationJob, User, Work
@@ -16,12 +15,8 @@ from app.models.base import new_id, utcnow
 from app.models.enums import Operation, QualityTier
 from app.workers import pipeline
 from tests.conftest import admin_header
-from tests.fake_provider_catalog import build_fake_catalog
 
-
-@pytest.fixture(autouse=True)
-def _inject_test_media_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
+pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
 
 @pytest.fixture
