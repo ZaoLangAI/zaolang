@@ -493,10 +493,8 @@
     "queueRate": "消费速率",
     "alembic": "Alembic 版本",
     "llmGateway": "LLM 网关",
-    "llmMode": "当前模式",
     "up": "正常",
     "down": "不可用",
-    "degraded": "降级",
     "latency": "延迟 {ms}ms",
     "dangling": "悬挂预扣",
     "danglingHint": "reserve 长期未 capture 或 release",
@@ -1544,6 +1542,11 @@
     "emptyScriptsHint": "点击「新建文案」写下你的创意，AI 会生成完整的分场剧本初稿。",
     "myScripts": "我的剧本",
     "untitled": "未命名剧本",
+    "deleteScript": "删除文案",
+    "deleteScriptConfirmTitle": "删除这份文案？",
+    "deleteScriptConfirmBody": "删除后无法恢复，包括全部对话记录。",
+    "deleteScriptDone": "已删除",
+    "deleteScriptFailed": "删除失败，请稍后重试。",
     "turnCount": "{count} 轮对话",
     "chatEmpty": "对话记录会显示在这里。",
     "turnLabel": "第 {count} 版",
@@ -1580,11 +1583,6 @@
     "generateCharacterImage": "生成角色图",
     "generateSceneImage": "生成场景图",
     "linkReturnNotFound": "未找到对应条目，请手动关联"
-  },
-  "footer": {
-    "version": "版本 {version}",
-    "docs": "文档",
-    "learn": "学习中心"
   },
   "iosOnboarding": {
     "page1Title": "每一次二创都留下创作链",

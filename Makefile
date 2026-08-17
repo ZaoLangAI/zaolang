@@ -168,8 +168,8 @@ typecheck: ## 类型检查
 test: test-back test-front ## 全部测试
 
 .PHONY: test-back
-test-back: ## 后端测试（强制 stub 模式保证确定性）
-	cd back && LLM_MODE=stub $(CONDA_RUN) pytest -m "not live" --cov=app --cov-report=term-missing
+test-back: ## 后端测试（假网关 fixture 保证确定性，见 tests/fake_llm_gateway.py）
+	cd back && $(CONDA_RUN) pytest -m "not live" --cov=app --cov-report=term-missing
 
 .PHONY: test-llm
 test-llm: ## LLM 网关连通性冒烟（需要真实密钥，不进 make check）

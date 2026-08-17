@@ -1,17 +1,31 @@
-"""Deterministic agent responses used by tests, CI and the degraded path.
+"""Deterministic replacement for `app.llm.client.complete`/`stream_complete`.
 
-The stub is not a mock that returns a fixed blob: it applies the same rules the
-real agents are instructed to follow, so a test asserting "unsafe prompts are
-rejected" is still testing the product rule rather than a hard-coded string.
+Installed by the autouse fixture in `conftest.py` for every test except the
+ones exercising the real gateway plumbing (`@pytest.mark.live`) or the
+gateway's own failover/circuit-breaker logic against a mocked transport
+(`@pytest.mark.real_gateway_seams`). Production code has exactly one calling
+behaviour now — call the real, admin-configured gateway or raise
+`ProviderTemporaryFailure` — so this fake exists purely to keep the rest of
+the suite deterministic, key-free and offline, the same job `app/llm/stub.py`
+used to do before the `stub`/`auto` modes were removed.
+
+The fake is not a mock that returns a fixed blob: it applies the same rules
+the real agents are instructed to follow, so a test asserting "unsafe prompts
+are rejected" is still testing the product rule rather than a hard-coded
+string.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator, Sequence
 from copy import deepcopy
 from typing import Any
 
+from sqlalchemy.orm import Session
+
+from app.llm.client import NO_ENDPOINT_ID, LlmCallResult, StreamResult
 from app.llm.normalize import NormalizedResponse
 from app.models.enums import AgentName
 
@@ -39,31 +53,76 @@ SENSITIVE_TERMS = ("血腥", "gore", "暴力", "violence", "武器", "weapon", "
 PLANNER_CLARIFY_MARKER = "需要追问"
 
 
-def stub_completion(
-    *, agent_name: str, messages: list[dict[str, str]], model: str
-) -> NormalizedResponse:
-    # Only the user turn is inspected: a system prompt that spells out what is
-    # forbidden would otherwise trip the very rules it describes.
+def fake_complete(
+    *,
+    session: Session,
+    agent_name: str,
+    model: str,
+    messages: list[dict[str, str]],
+    max_tokens: int = 1024,
+    temperature: float = 0.2,
+    expect_json: bool = True,
+    reasoning_model: bool = False,
+    preferred_endpoint_ids: Sequence[str] = (),
+) -> LlmCallResult:
+    """Signature-compatible with `app.llm.client.complete`; ignores every
+    gateway-selection argument (`session`/`temperature`/`preferred_endpoint_ids`/
+    ...) since there is no real endpoint behind this call.
+
+    Deliberately does not replicate the real client's "unbound model raises"
+    rule: almost none of the suite binds a catalog model to every agent it
+    exercises, so this fake stays permissive the way `app.llm.stub` always
+    was. Tests that specifically need to observe the real "unbound → 503"
+    behaviour opt out of this fake with `@pytest.mark.real_gateway_seams`
+    instead (see `tests/unit/test_agent_gateway.py` and
+    `tests/integration/test_prompts_api.py`).
+    """
+    del session, max_tokens, temperature, reasoning_model, preferred_endpoint_ids
     prompt = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
     payload = _dispatch(agent_name, prompt)
     text = json.dumps(payload, ensure_ascii=False)
-    return NormalizedResponse(
+    response = NormalizedResponse(
         text=text,
-        data=payload,
+        data=payload if expect_json else None,
         finish_reason="stop",
         prompt_tokens=len(prompt) // 4,
         completion_tokens=len(text) // 4,
-        model=f"stub:{model}",
+        model=model or "fake-llm",
     )
+    return LlmCallResult(response=response, latency_ms=0, endpoint_id=NO_ENDPOINT_ID)
 
 
-def stub_stream_completion(*, agent_name: str, messages: list[dict[str, str]]) -> str:
+def fake_stream_complete(
+    *,
+    session: Session,
+    agent_name: str,
+    model: str,
+    messages: list[dict[str, str]],
+    result: StreamResult,
+    max_tokens: int = 2048,
+    temperature: float = 0.4,
+    reasoning_model: bool = False,
+    preferred_endpoint_ids: Sequence[str] = (),
+) -> Iterator[str]:
+    """Signature-compatible with `app.llm.client.stream_complete`."""
+    del session, max_tokens, temperature, reasoning_model, preferred_endpoint_ids
+    text = _dispatch_stream(agent_name, messages)
+    yield text
+    result.text = text
+    result.endpoint_id = NO_ENDPOINT_ID
+    result.model = model or "fake-llm"
+    result.prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
+    result.completion_tokens = len(text) // 4
+    result.latency_ms = 0
+
+
+def _dispatch_stream(agent_name: str, messages: list[dict[str, str]]) -> str:
     """Deterministic mixed prose+JSON text for a streaming turn.
 
     Only the `copy` role's `script_draft`/`script_revise` slots stream today
     (see `app.agents.copywriter.stream_script_turn`) — everything else falls
-    back to the plain JSON-mode stub payload serialised as text, so a
-    misrouted call still gets something deterministic instead of silence.
+    back to the plain JSON-mode payload serialised as text, so a misrouted
+    call still gets something deterministic instead of silence.
     """
     prompt = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
     if agent_name == AgentName.COPY:
@@ -122,14 +181,14 @@ def _copy_stream_script_draft(payload: dict[str, Any]) -> str:
             }
         ],
     }
-    summary = f"已根据你的创意生成剧本初稿（stub:{digest}）。"
+    summary = f"已根据你的创意生成剧本初稿（fake:{digest}）。"
     return f"{summary}\n```json\n{json.dumps(script, ensure_ascii=False)}\n```"
 
 
 def _copy_stream_script_revise(payload: dict[str, Any]) -> str:
     """Deterministically appends a scene reflecting the user's message, so a
     test asserting "the revision changed" observes real movement instead of
-    an unchanged echo — unlike `_editor_planner`'s "no commands" stub, a
+    an unchanged echo — unlike `_editor_planner`'s "no commands" fake, a
     script revision with literally no change would look like a broken turn."""
     message = str(payload.get("message") or "").strip()
     current = payload.get("current_script")
@@ -150,12 +209,12 @@ def _copy_stream_script_revise(payload: dict[str, Any]) -> str:
                 {
                     "type": "action",
                     "character": None,
-                    "text": message[:160] or "（stub 未提供修改说明）",
+                    "text": message[:160] or "（fake 未提供修改说明）",
                 }
             ],
         }
     )
-    summary = f"已根据你的意见修改剧本（stub:{digest}）。"
+    summary = f"已根据你的意见修改剧本（fake:{digest}）。"
     return f"{summary}\n```json\n{json.dumps(script, ensure_ascii=False)}\n```"
 
 
@@ -172,10 +231,10 @@ def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
         return _intent_router(prompt)
     if agent_name == AgentName.EDITOR_PLANNER:
         return _editor_planner(prompt)
-    # An operator-created role (run by the `custom_agent` node): the stub has
+    # An operator-created role (run by the `custom_agent` node): the fake has
     # no idea what it was told to judge, so it returns the neutral shape
     # `app.agents.custom` declares rather than a fabricated verdict.
-    return {"verdict": "unknown", "confidence": 0.0, "notes": "stub_custom_agent"}
+    return {"verdict": "unknown", "confidence": 0.0, "notes": "fake_custom_agent"}
 
 
 def _safety(prompt: str) -> dict[str, Any]:
@@ -201,7 +260,7 @@ def _safety(prompt: str) -> dict[str, Any]:
 
 
 def _planner(prompt: str) -> dict[str, Any]:
-    # `plan`, `clarify` and `asset_plan` share one agent identity, so the stub
+    # `plan`, `clarify` and `asset_plan` share one agent identity, so dispatch
     # tells them apart by shape: `plan`'s user turn always carries
     # `requested_operation` (even when its value is `None`), `asset_plan`'s
     # always carries `asset_kind`, `clarify`'s carries only `intent`.
@@ -348,7 +407,7 @@ def _intent_router(prompt: str) -> dict[str, Any]:
         # without a real model in the loop. The request-level `cost_bias`
         # carried alongside the candidates is deliberately ignored here: it
         # is a cost *preference* a real model weighs against quality, and
-        # folding it into a stub formula would make the offline path behave
+        # folding it into a fake formula would make the offline path behave
         # like the weighted router that was removed on purpose.
         winner = min(
             candidates,
@@ -356,14 +415,14 @@ def _intent_router(prompt: str) -> dict[str, Any]:
         )
         return {
             "selected_provider": winner.get("provider"),
-            "rationale": "stub_lowest_effective_cost",
+            "rationale": "fake_lowest_effective_cost",
         }
 
     requested_tier = payload.get("requested_tier")
     # Mirrors `SYSTEM_PROMPT`'s video-specific dimension: a short prompt
     # naming multi-subject/action content (a fight, a chase, weapons) is not
     # `simple` just because the text is short — the hard part is motion, not
-    # word count. Still never touches `suggested_quality_tier`: the stub's
+    # word count. Still never touches `suggested_quality_tier`: this fake's
     # job is staying a safe, deterministic "no downgrade" default, not
     # reproducing the real model's tier judgement.
     operation = str(payload.get("operation") or "")
@@ -375,12 +434,12 @@ def _intent_router(prompt: str) -> dict[str, Any]:
         "complexity": "complex" if is_action_heavy_video else "moderate",
         "suggested_quality_tier": requested_tier or "standard",
         "cost_bias": 0.0,
-        "rationale": "stub_no_downgrade",
+        "rationale": "fake_no_downgrade",
     }
 
 
 def _copy(prompt: str) -> dict[str, Any]:
-    # `suggest`, `enhance` and `clarify` share one agent identity, so the stub
+    # `suggest`, `enhance` and `clarify` share one agent identity, so dispatch
     # tells them apart by shape: `enhance`'s user turn carries `max_length`,
     # `suggest`'s always carries `locale`, `clarify`'s carries only `prompt`.
     try:
@@ -530,7 +589,7 @@ def _editor_planner(prompt: str) -> dict[str, Any]:
     """Deterministic empty plan: the user must confirm before any command lands."""
     del prompt
     return {
-        "summary": "stub: 未改动时间线，等待作者确认目标后再生成命令。",
+        "summary": "fake: 未改动时间线，等待作者确认目标后再生成命令。",
         "commands": [],
-        "warnings": ["stub_no_commands"],
+        "warnings": ["fake_no_commands"],
     }

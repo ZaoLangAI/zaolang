@@ -89,6 +89,10 @@ export function getScript(episodeId: string) {
   return api.get<ScriptDetail>(`/v1/scripts/${episodeId}`);
 }
 
+export function deleteScript(episodeId: string) {
+  return api.delete<void>(`/v1/scripts/${episodeId}`);
+}
+
 export function getTurnSnapshot(episodeId: string, turnId: string) {
   return api.get<ScriptTurnSnapshot>(`/v1/scripts/${episodeId}/turns/${turnId}/snapshot`);
 }

@@ -87,8 +87,10 @@ services:
       S3_BUCKET: zaolang-media
       S3_ACCESS_KEY: zaolang
       S3_SECRET_KEY: zaolang-secret
-      # No gateway key in a trial run, so agents stay on the deterministic stub.
-      LLM_MODE: ${LLM_MODE:-stub}
+      # No mode switch: the gateway always calls the real, admin-configured
+      # endpoint. A trial run with no `LLM_API_KEY` set can still boot, but
+      # every agent call fails until a real key/endpoint is provided (here or
+      # at /admin/models).
       LLM_BASE_URL: ${LLM_BASE_URL:-https://aihubmix.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       CORS_ORIGINS: http://localhost:3000

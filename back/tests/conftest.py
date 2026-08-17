@@ -10,10 +10,8 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 
-# Set before any app import so cached settings pick the test database and the
-# deterministic LLM stub.
+# Set before any app import so cached settings pick the test database.
 os.environ.setdefault("APP_ENV", "test")
-os.environ["LLM_MODE"] = "stub"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,10 +20,12 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_engine
+from app.llm import client as llm_client
 from app.models import Base, Profile, User
 from app.models.enums import UserRole
 from app.security.passwords import hash_password
 from app.security.tokens import issue_admin_token, issue_consumer_tokens
+from tests.fake_llm_gateway import fake_complete, fake_stream_complete
 
 
 @pytest.fixture(scope="session")
@@ -57,6 +57,29 @@ def db(engine: Engine) -> Iterator[Session]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture(autouse=True)
+def _fake_llm_gateway(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replaces the real gateway with `tests/fake_llm_gateway.py`'s
+    deterministic dispatch for every test — the offline default `LLM_MODE=stub`
+    used to provide before the `stub`/`auto` modes were removed from
+    production code.
+
+    Two kinds of test opt out and hit the real `app.llm.client.complete`/
+    `stream_complete`: `@pytest.mark.live` (an actual gateway call, see
+    `test_llm_live.py`) and `@pytest.mark.real_gateway_seams` (a unit test
+    that mocks `_call_gateway`/`_stream_gateway` itself to exercise
+    `complete()`/`stream_complete()`'s own failover, circuit-breaker and
+    error-surfacing logic — patching `complete` here would skip the very code
+    those tests are for).
+    """
+    if request.node.get_closest_marker("live") or request.node.get_closest_marker(
+        "real_gateway_seams"
+    ):
+        return
+    monkeypatch.setattr(llm_client, "complete", fake_complete)
+    monkeypatch.setattr(llm_client, "stream_complete", fake_stream_complete)
 
 
 @pytest.fixture

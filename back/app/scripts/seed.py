@@ -875,7 +875,7 @@ def _seed_llm_providers(session: Session) -> None:
     `zaolang-agent-gateway`); `.env`'s `LLM_BASE_URL`/`LLM_API_KEY` are read
     here, once, purely to save a local developer from having to open
     `/admin/models` before anything can call out to a real model. Without
-    them the pool stays empty and every call degrades to the stub until an
+    them the pool stays empty and every call fails immediately until an
     operator configures an endpoint by hand.
     """
     config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
@@ -1881,24 +1881,36 @@ def _seed_ops_material(session: Session, users: dict[str, User], works: list[Wor
             created_at=stale,
         )
     )
-    # Agent runs for the agent-ops screen, including one degraded call so the
-    # "how often are we falling back to the stub" panel is not empty.
+    # Agent runs for the agent-ops screen, including one degraded call (a
+    # model that answered but produced unparseable JSON) so the "how often is
+    # output falling back" panel is not empty. There is no gateway-mode
+    # degradation any more — the only remaining `degraded` cause is a
+    # JSON-parse failure, so `status` mirrors that (`failed`, not `succeeded`).
     catalog_model = _catalog_general_model(session)
     agent_runs = (
-        ("safety", catalog_model, 620, 41, 380, False, None),
-        ("planner", catalog_model, 1180, 260, 2450, False, None),
-        ("quality", catalog_model, 940, 190, 1870, False, None),
-        ("copy", catalog_model, 410, 520, 3120, True, "upstream_timeout"),
+        ("safety", catalog_model, 620, 41, 380, "succeeded", False, None),
+        ("planner", catalog_model, 1180, 260, 2450, "succeeded", False, None),
+        ("quality", catalog_model, 940, 190, 1870, "succeeded", False, None),
+        ("copy", catalog_model, 410, 520, 3120, "failed", True, "json_parse_failed"),
     )
-    for name, model, prompt_tokens, completion_tokens, latency, degraded, reason in agent_runs:
+    for (
+        name,
+        model,
+        prompt_tokens,
+        completion_tokens,
+        latency,
+        status,
+        degraded,
+        reason,
+    ) in agent_runs:
         session.add(
             AgentRun(
                 job_id=failed.id if degraded else stuck.id,
                 user_id=ava.id if degraded else mizuki.id,
                 agent_name=name,
-                mode="stub" if degraded else "openai_compatible",
+                mode="openai_compatible",
                 model=model,
-                status="succeeded",
+                status=status,
                 degraded=degraded,
                 degrade_reason=reason,
                 prompt_tokens=prompt_tokens,

@@ -1,8 +1,9 @@
 """Product sandbox try-it: a real GenerationJob that skips the credit ledger.
 
-Stub path (this file, CI): LLM_MODE=stub + fake media catalog. Celery dispatch
-is mocked so the HTTP handler returns 202 without a broker; the pipeline is
-then invoked inline, same as `test_generation_lifecycle`.
+Fake-gateway path (this file, CI): the autouse `tests/fake_llm_gateway.py`
+fixture + fake media catalog. Celery dispatch is mocked so the HTTP handler
+returns 202 without a broker; the pipeline is then invoked inline, same as
+`test_generation_lifecycle`.
 
 Live path with a real key is manual — not CI:
 
@@ -270,7 +271,7 @@ def test_a_sandbox_planning_follow_up_is_answerable_through_admin_api(
     C-end `/generation-jobs/{id}/input-request` 404s sandbox jobs; the
     editor answers through `/v1/admin/jobs/{id}/input-request` + `/answer`.
     """
-    from app.llm.stub import PLANNER_CLARIFY_MARKER
+    from tests.fake_llm_gateway import PLANNER_CLARIFY_MARKER
 
     job_id = _sandbox_run(client, operator, prompt=f"{PLANNER_CLARIFY_MARKER}：雨后的东京街头")
     outcome = pipeline.run_generation_pipeline(db, job_id)

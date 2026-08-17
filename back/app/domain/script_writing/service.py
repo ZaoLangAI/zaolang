@@ -44,7 +44,7 @@ from app.domain.characters import service as characters_service
 from app.domain.errors import DomainError, NotFound, ValidationFailed
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
-from app.models import DramaEpisode, EpisodeScriptTurn, Series
+from app.models import DramaEpisode, EpisodeCut, EpisodeScriptTurn, Series
 from app.models.enums import DramaEpisodeStatus, SeriesKind, SeriesStatus
 from app.platform_config import service as config_service
 
@@ -399,6 +399,42 @@ def get_turn_snapshot(
     if turn is None or turn.episode_id != episode.id:
         raise NotFound("该版本不存在。")
     return turn
+
+
+def delete_script(session: Session, *, user_id: str, episode_id: str) -> None:
+    """Deletes a script the caller owns.
+
+    Blocked once the episode has left this flow's exclusive care: a
+    published episode (`canonical_work_id` set) or one that has already been
+    opened in the drama editor and has an `EpisodeCut` — the latter check
+    also doubles as protection against the DB-level `RESTRICT` on
+    `episode_cuts.episode_id`, which would otherwise surface as a raw
+    `IntegrityError` instead of a friendly message. `EpisodeScriptTurn` rows
+    cascade automatically (`ondelete="CASCADE"`); the owning `Series` is
+    deleted too, but only when no other `DramaEpisode` still references it —
+    `prepare_new_script` always creates a fresh 1:1 `Series`+`DramaEpisode`
+    pair for this flow, but nothing prevents a future episode from being
+    added under the same series later.
+    """
+    _require_script_studio(session, user_id=user_id)
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    if episode.canonical_work_id is not None:
+        raise ValidationFailed("已发布的剧本不能删除。")
+    has_cuts = session.scalar(select(exists().where(EpisodeCut.episode_id == episode.id)))
+    if has_cuts:
+        raise ValidationFailed("该剧本已在剪辑台生成分镜，无法删除。")
+
+    series_id = episode.series_id
+    session.delete(episode)
+    session.flush()
+
+    other_episode_exists = session.scalar(
+        select(exists().where(DramaEpisode.series_id == series_id))
+    )
+    if not other_episode_exists:
+        series = session.get(Series, series_id)
+        if series is not None:
+            session.delete(series)
 
 
 def update_links(

@@ -17,7 +17,6 @@ from app.domain.credits import service as credits_service
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
-from app.llm.stub import PLANNER_CLARIFY_MARKER
 from app.models import AgentRun, JobEvent, User
 from app.models.base import new_id
 from app.models.enums import JobEventType, JobOrigin, JobStatus, Operation, QualityTier
@@ -39,6 +38,7 @@ from app.workflows.nodes import (
 )
 from app.workflows.runner import WorkflowRunner
 from app.workflows.types import NodeResult, WorkflowContext
+from tests.fake_llm_gateway import PLANNER_CLARIFY_MARKER
 
 _OUTPUT_PORTS_BY_TYPE = {
     node_type: spec.output_ports for node_type, spec in registry.NODE_TYPES.items()
@@ -413,9 +413,9 @@ def _copy_generate_graph() -> WorkflowGraph:
 def test_copy_generate_with_a_sparse_prompt_suspends_the_job_awaiting_input(
     db: Session, author: User
 ) -> None:
-    """The stub copy agent's `clarify` slot asks for a scene when the prompt
-    is under 20 characters (`app.llm.stub._copy_clarify`) — short enough to
-    drive this deterministically without a real model."""
+    """The fake gateway's copy agent `clarify` slot asks for a scene when the
+    prompt is under 20 characters (`tests.fake_llm_gateway._copy_clarify`) —
+    short enough to drive this deterministically without a real model."""
     credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
     job = jobs_service.submit(
         db,
@@ -570,10 +570,11 @@ def _running_job(
 def test_planning_with_the_clarify_marker_suspends_the_job_awaiting_input(
     db: Session, author: User
 ) -> None:
-    """The stub planner's `clarify` slot only asks when the intent contains
-    `PLANNER_CLARIFY_MARKER` (`app.llm.stub._planner_clarify`) — short enough
-    to drive this deterministically without a real model, and explicit enough
-    that no unrelated test's placeholder prompt accidentally triggers it."""
+    """The fake gateway's planner `clarify` slot only asks when the intent
+    contains `PLANNER_CLARIFY_MARKER` (`tests.fake_llm_gateway._planner_clarify`)
+    — short enough to drive this deterministically without a real model, and
+    explicit enough that no unrelated test's placeholder prompt accidentally
+    triggers it."""
     ctx = _running_job(db, author, prompt=f"{PLANNER_CLARIFY_MARKER}：香港街头斗殴")
     outcome = WorkflowRunner(_planning_graph()).run(ctx)
 
@@ -598,9 +599,7 @@ def test_planning_with_the_clarify_marker_suspends_the_job_awaiting_input(
     assert len(awaiting_events) == 1
 
 
-def test_sandbox_planning_clarify_still_suspends_awaiting_input(
-    db: Session, author: User
-) -> None:
+def test_sandbox_planning_clarify_still_suspends_awaiting_input(db: Session, author: User) -> None:
     """Product sandbox is a real job: the planner's follow-up must park it
     the same way a C-end request does, so the editor can render the questions.
     `WorkflowContext.dry_run` is the only path that skips clarify."""

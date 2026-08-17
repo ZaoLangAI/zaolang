@@ -71,17 +71,15 @@ make dev-purge-queues  # 清空 Celery 队列（先停 worker）
 
 种子数据还会刻意留下几处「不健康」现场，否则运维台每个页面都是空的：一个卡在 `running`
 且预扣已超时的任务（同时出现在卡死任务与悬挂预扣两个视图）、一个失败并已正确退款的任务、
-一条待审批的数据导出请求，以及一次降级到 stub 的 Copy Agent 调用。
+一条待审批的数据导出请求，以及一次因 JSON 解析失败而降级的 Copy Agent 调用。
 
 后台会话与 C 端会话完全独立：`/admin/login` 签发 audience 为 `admin` 的 token 并存在 `zl_admin_session` cookie 里，拿 C 端 token 打 `/v1/admin/*` 一律 401。
 
 ## LLM 网关
 
-`back/.env` 里的 `LLM_MODE` 有三档：
+生产代码只有一种调用行为：始终调用 `/admin/models` 配置好的真实网关；模型未绑定、没有可用端点，或网关调用失败，一律立即抛 `ProviderTemporaryFailure`（503），绝不会静默降级成假数据。任务级别的容错交给 Celery 重试，而不是单次 agent 调用内部换成假数据。
 
-- `openai_compatible`：只走真实网关，失败就报错。
-- `stub`：只走确定性 stub，不需要密钥、不产生费用。**pytest 与 `make check` 强制这一档。**
-- `auto`（默认）：优先真实网关，超时或报错自动降级到 stub，降级次数与原因写入 `AgentRun`，界面上明确标出「降级中」。
+测试的确定性不再靠环境变量切换生产代码路径，而是由 `back/tests/conftest.py` 里的 autouse fixture 用 `back/tests/fake_llm_gateway.py` 把 `llm_client.complete`/`stream_complete` 换成确定性假实现，对每条测试自动生效（`make test-back` 不需要任何 `LLM_MODE` 前缀）。只有标了 `@pytest.mark.live`（真连通性冒烟）或 `@pytest.mark.real_gateway_seams`（要测网关自身故障转移/熔断/报错逻辑）的用例才会绕过假网关，走真实的 `app.llm.client`。
 
 本地想跑真实模型，把 AIHubMix 的 key 放进 `back/.env` 的 `LLM_API_KEY`，然后：
 
@@ -99,7 +97,7 @@ make lint           # ruff / eslint
 make typecheck      # mypy / tsc
 make messages       # 三语文案键一致，且代码引用的键都存在
 make openapi-check  # 重新导出 OpenAPI 并检查生成的前端类型有没有漂移
-make test-back      # pytest（强制 stub）
+make test-back      # pytest（假网关 fixture 保证确定性，见 tests/fake_llm_gateway.py）
 make test-front     # tsc + next build
 make test-e2e       # Playwright 主流程（需要先起服务与种子数据）
 make test-a11y      # axe 扫描，深浅两套主题

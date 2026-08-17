@@ -13,7 +13,7 @@ make check   # 提交前跑一遍完整门禁
 设计取舍：
 
 - **后端跑真实依赖，不跑 mock。** schema 依赖 pgvector、部分索引和条件 UPDATE，限流与配置缓存依赖 Redis，上传链路依赖 S3 语义。用假实现只能证明假实现是对的。
-- **`make check` 强制 `LLM_MODE=stub`。** 不需要密钥、不产生费用、结果确定。真实网关的连通性由本地 `make test-llm` 覆盖，不进 `make check`。
+- **`make check` 不绕过假网关 fixture。** 生产代码只有一种 LLM 调用行为（真实网关，失败即报错），测试的确定性靠 `back/tests/conftest.py` 的 autouse fixture 自动把 `llm_client.complete`/`stream_complete` 换成 `tests/fake_llm_gateway.py` 的假实现，不需要密钥、不产生费用、结果确定。真实网关的连通性由本地 `make test-llm`（`@pytest.mark.live`）覆盖，不进 `make check`。
 - **先跑迁移再跑测试。** 本地 `make migrate` 证明迁移能作用于空库——这正是部署时会发生的事。
 - **Node 版本读 `.node-version`。** 和 fnm 同一个来源，不要另开一套版本号。
 

@@ -745,10 +745,9 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "preview_candidate_count": 3,
     },
     # Empty by default: with no endpoints configured, `app/llm/client.py` has
-    # nothing to call and degrades every request straight to the stub (or
-    # errors in `openai_compatible` mode) until an operator adds an endpoint
-    # at `/admin/models`. `make seed` bootstraps one from `.env` for local
-    # development; see `app/scripts/seed.py`.
+    # nothing to call and every request fails immediately until an operator
+    # adds an endpoint at `/admin/models`. `make seed` bootstraps one from
+    # `.env` for local development; see `app/scripts/seed.py`.
     "llm_providers": {
         "endpoints": {},
     },

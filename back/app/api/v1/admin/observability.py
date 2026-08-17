@@ -53,7 +53,6 @@ def system_health(session: DbSession, user: Viewer, _: AdminRead) -> SystemHealt
         services=services,
         queues=_queue_depths(),
         alembic_revision=_alembic_revision(session),
-        llm_mode=settings.llm_mode,
         llm_reachable=_llm_reachable(session),
         app_version=settings.app_version,
         generated_at=utcnow(),
@@ -246,10 +245,7 @@ def _alembic_revision(session) -> str | None:  # type: ignore[no-untyped-def]
         return None
 
 
-def _llm_reachable(session) -> bool | None:  # type: ignore[no-untyped-def]
-    """None means "not applicable" — stub mode never touches the gateway."""
+def _llm_reachable(session) -> bool:  # type: ignore[no-untyped-def]
     from app.llm import client as llm_client
 
-    if get_settings().llm_mode == "stub":
-        return None
     return bool(llm_client.probe(session).get("reachable"))

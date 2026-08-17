@@ -5,12 +5,13 @@ import { useEffect, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { SignInPrompt } from '@/components/auth/sign-in-prompt';
-import { Button } from '@/components/ui/button';
+import { Button, IconButton } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
-import { IconPlus } from '@/components/ui/icons';
+import { IconPlus, IconTrash } from '@/components/ui/icons';
 import { EmptyState, ErrorNotice, PageHeading } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
+import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { isApiError } from '@/lib/api/errors';
@@ -27,6 +28,7 @@ export function ScriptLanding() {
   const tActions = useTranslations('actions');
   const { status: sessionStatus } = useSession();
   const router = useRouter();
+  const { notify } = useToast();
   const locale = useLocale() as Locale;
   // Scoped to `episodeId === null`: the brief window between submitting and
   // the `start` frame naming a fresh episode. Once an episode exists, the
@@ -43,6 +45,9 @@ export function ScriptLanding() {
   const [scripts, setScripts] = useState<ScriptSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [deletingScript, setDeletingScript] = useState<ScriptSummary | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (sessionStatus !== 'authenticated') return;
@@ -76,6 +81,28 @@ export function ScriptLanding() {
   const closeDialog = () => {
     if (pending) return;
     setDialogOpen(false);
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteBusy) return;
+    setDeletingScript(null);
+    setDeleteError(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingScript) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await scriptApi.deleteScript(deletingScript.episode_id);
+      setScripts((prev) => prev.filter((s) => s.episode_id !== deletingScript.episode_id));
+      notify(t('deleteScriptDone'), 'success');
+      setDeletingScript(null);
+    } catch (error: unknown) {
+      setDeleteError(isApiError(error) ? error.message : t('deleteScriptFailed'));
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const submit = () => {
@@ -126,12 +153,12 @@ export function ScriptLanding() {
           <h2 className="text-sm font-semibold text-muted">{t('myScripts')}</h2>
           <ul className="flex flex-col gap-2">
             {scripts.map((script) => (
-              <li key={script.episode_id}>
+              <li key={script.episode_id} className="relative">
                 <Link
                   href={`/create/script/${script.episode_id}`}
-                  className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong hover:bg-surface-soft"
+                  className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3 pr-14 transition-colors hover:border-border-strong hover:bg-surface-soft"
                 >
-                  <p className="font-medium">{script.title || t('untitled')}</p>
+                  <p className="truncate pr-2 font-medium">{script.title || t('untitled')}</p>
                   {script.logline ? (
                     <p className="line-clamp-1 text-xs text-muted">{script.logline}</p>
                   ) : null}
@@ -140,6 +167,19 @@ export function ScriptLanding() {
                     {formatRelative(script.updated_at, locale)}
                   </p>
                 </Link>
+                <IconButton
+                  label={t('deleteScript')}
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-danger"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setDeletingScript(script);
+                  }}
+                >
+                  <IconTrash className="size-4" />
+                </IconButton>
               </li>
             ))}
           </ul>
@@ -182,6 +222,26 @@ export function ScriptLanding() {
             onChange={(event) => setIdea(event.target.value)}
           />
         </div>
+      </Dialog>
+
+      <Dialog
+        open={deletingScript !== null}
+        onClose={closeDeleteDialog}
+        title={t('deleteScriptConfirmTitle')}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeDeleteDialog} disabled={deleteBusy}>
+              {tActions('cancel')}
+            </Button>
+            <Button variant="danger" loading={deleteBusy} onClick={() => void confirmDelete()}>
+              {tActions('confirm')}
+            </Button>
+          </>
+        }
+      >
+        {deleteError ? <ErrorNotice title={deleteError} /> : null}
+        <p className="text-sm text-muted">{t('deleteScriptConfirmBody')}</p>
       </Dialog>
     </div>
   );

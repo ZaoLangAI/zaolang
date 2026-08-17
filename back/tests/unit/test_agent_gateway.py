@@ -11,7 +11,7 @@ from app.agents import base as agent_base
 from app.agents import copywriter, editor_planner, intent_router, planner, router, tools
 from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
-from app.domain.errors import ValidationFailed
+from app.domain.errors import ProviderTemporaryFailure, ValidationFailed
 from app.models import AgentRun, ProviderStat, User
 from app.models.enums import AgentName, Operation, QualityTier
 from app.platform_config import service as config_service
@@ -923,27 +923,29 @@ def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     assert run.prompt_slot == agent_slots.DEFAULT_SLOT
 
 
-def test_an_unbound_agent_degrades_without_calling_a_vendor(db: Session) -> None:
-    """No catalog model on the profile means no invented name and no HTTP."""
-    from app.llm import client as llm_client
+@pytest.mark.real_gateway_seams
+def test_an_unbound_agent_raises_instead_of_calling_a_vendor(db: Session) -> None:
+    """No catalog model on the profile means no invented name, no HTTP and no
+    silent fallback — the caller must see the outage immediately.
 
+    Opts out of the autouse fake gateway (`@pytest.mark.real_gateway_seams`):
+    the fake stays permissive about unbound models like `app.llm.stub` always
+    was, so this needs the real `app.llm.client.complete` to observe the
+    actual production rule."""
     _seeded(db)
     default = agent_skills_service.default_profile(db, "safety")
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, default)
     assert binding.model == ""
 
-    outcome = agent_base.run_agent(
-        db,
-        agent_name=AgentName.SAFETY.value,
-        system_prompt="{}",
-        user_prompt="x",
-        fallback={"decision": "needs_review"},
-    )
-    assert outcome.degraded is True
-    run = db.get(AgentRun, outcome.agent_run_id)
-    assert run is not None
-    assert run.degrade_reason == llm_client.NO_MODEL_BOUND
-    assert run.model is None
+    with pytest.raises(ProviderTemporaryFailure):
+        agent_base.run_agent(
+            db,
+            agent_name=AgentName.SAFETY.value,
+            system_prompt="{}",
+            user_prompt="x",
+            fallback={"decision": "needs_review"},
+        )
+    assert db.query(AgentRun).filter(AgentRun.agent_name == AgentName.SAFETY.value).count() == 0
 
 
 def test_pinning_an_endpoint_that_no_longer_exists_does_not_change_provider(db: Session) -> None:

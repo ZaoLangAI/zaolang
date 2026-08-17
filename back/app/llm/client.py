@@ -1,10 +1,11 @@
-"""LLM gateway client with three operating modes.
+"""LLM gateway client.
 
-* `openai_compatible` — always call the real gateway; surface failures.
-* `stub` — never call out. Deterministic, so tests and CI produce identical
-  results without a key and without cost.
-* `auto` — call the gateway, fall back to the stub on error or timeout, and
-  record the degradation so the ops console can show it.
+Every call goes through the real, admin-configured gateway
+(`llm_providers` platform config): there is no stub/mock mode and no silent
+fallback. A model that is not bound, or a gateway that is unreachable, raises
+`ProviderTemporaryFailure` immediately — an agent call either used the model
+an operator actually configured, or it failed loudly enough to be noticed
+and retried at the job level (see `app.workflows.runner`).
 """
 
 from __future__ import annotations
@@ -19,10 +20,9 @@ from typing import Any
 from openai import BadRequestError, OpenAI, OpenAIError
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
+from app.domain.errors import ProviderTemporaryFailure
 from app.llm import capabilities, failover
 from app.llm.normalize import NormalizedResponse, normalize_completion
-from app.llm.stub import stub_completion, stub_stream_completion
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
@@ -35,8 +35,6 @@ REASONING_TOKEN_FLOOR = 2048
 # Recorded on `AgentRun` / returned to callers when nothing in `llm_providers`
 # matched — there is no per-endpoint id to report in that case.
 NO_ENDPOINT_ID = "none"
-# AgentProfile has no model (and none was inherited). Never invent a name.
-NO_MODEL_BOUND = "no_model_bound"
 
 # Endpoint timeout and concurrency remain model-level settings. These bounded
 # gateway safeguards are deliberately code constants, not a second global
@@ -49,9 +47,6 @@ CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60
 @dataclass(slots=True)
 class LlmCallResult:
     response: NormalizedResponse
-    mode: str
-    degraded: bool
-    degrade_reason: str | None
     latency_ms: int
     endpoint_id: str = NO_ENDPOINT_ID
 
@@ -67,9 +62,6 @@ class StreamResult:
     """
 
     text: str = ""
-    mode: str = ""
-    degraded: bool = False
-    degrade_reason: str | None = None
     latency_ms: int = 0
     endpoint_id: str = NO_ENDPOINT_ID
     model: str = ""
@@ -117,8 +109,11 @@ def complete(
 
     Every agent role (safety/planner/quality/copy) shares the same
     `kind="general"` endpoint pool now — there is no per-agent scenario tag.
-    `agent_name` is kept only because `stub_completion` uses it to vary its
-    deterministic output.
+    `agent_name` plays no routing role here; it only makes the "which agent
+    has no model configured" error legible to whoever reads it, and gives
+    tests a real gateway seam to swap out (see `tests/fake_llm_gateway.py`)
+    without also having to fake `app.agents.base`'s profile/prompt
+    resolution.
 
     `preferred_endpoint_ids` is the provider order an `AgentProfile` pinned
     (default, then backup). When present, no unselected provider may serve
@@ -128,32 +123,17 @@ def complete(
     default endpoint. Each endpoint serves exactly one model, so failing over
     to the next candidate runs *that* endpoint's model rather than skipping it
     for naming something different.
+
+    Raises `ProviderTemporaryFailure` (never returns a fabricated result) when
+    no model is bound, no endpoint is configured, or every eligible endpoint's
+    call failed — the caller (an operator, or a job's own retry) needs an
+    honest signal, not a plausible-looking answer nobody actually generated.
     """
-    settings = get_settings()
-    mode = settings.llm_mode
     started = time.perf_counter()
     chosen = (model or "").strip()
 
     if not chosen:
-        stub_response = stub_completion(agent_name=agent_name, messages=messages, model="")
-        stub_response.model = ""
-        return LlmCallResult(
-            response=stub_response,
-            mode=mode if mode == "stub" else "auto",
-            degraded=True,
-            degrade_reason=NO_MODEL_BOUND,
-            latency_ms=int((time.perf_counter() - started) * 1000),
-        )
-
-    if mode == "stub":
-        stub_response = stub_completion(agent_name=agent_name, messages=messages, model=chosen)
-        return LlmCallResult(
-            response=stub_response,
-            mode="stub",
-            degraded=False,
-            degrade_reason=None,
-            latency_ms=int((time.perf_counter() - started) * 1000),
-        )
+        raise ProviderTemporaryFailure(f"智能体「{agent_name}」尚未在后台配置模型，无法调用。")
 
     budget = max(max_tokens, REASONING_TOKEN_FLOOR) if reasoning_model else max_tokens
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
@@ -185,9 +165,6 @@ def complete(
         if response is not None:
             return LlmCallResult(
                 response=response,
-                mode="openai_compatible",
-                degraded=False,
-                degrade_reason=None,
                 latency_ms=int((time.perf_counter() - started) * 1000),
                 endpoint_id=endpoint_id,
             )
@@ -198,36 +175,10 @@ def complete(
         # candidate is breaker-open/at capacity). There is no env-level
         # endpoint to fall back to any more — an operator has to configure one
         # at `/admin/models`.
-        reason = "no_endpoint_configured"
-        if mode == "openai_compatible":
-            from app.domain.errors import ProviderTemporaryFailure
-
-            raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
-        response = stub_completion(agent_name=agent_name, messages=messages, model=chosen)
-        return LlmCallResult(
-            response=response,
-            mode="auto",
-            degraded=True,
-            degrade_reason=reason,
-            latency_ms=int((time.perf_counter() - started) * 1000),
-        )
+        raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
 
     reason = type(last_error).__name__ if last_error else "unknown_error"
-    if mode == "openai_compatible":
-        # Strict mode: the caller asked for the real gateway, so failing loudly
-        # is more honest than silently returning stub content.
-        from app.domain.errors import ProviderTemporaryFailure
-
-        raise ProviderTemporaryFailure(f"LLM 网关不可用: {reason}")
-
-    response = stub_completion(agent_name=agent_name, messages=messages, model=chosen)
-    return LlmCallResult(
-        response=response,
-        mode="auto",
-        degraded=True,
-        degrade_reason=reason,
-        latency_ms=int((time.perf_counter() - started) * 1000),
-    )
+    raise ProviderTemporaryFailure(f"LLM 网关不可用（智能体「{agent_name}」）: {reason}")
 
 
 def _attempt_endpoint(
@@ -371,26 +322,17 @@ def stream_complete(
     silently restart on a different provider without a visibly broken UI. A
     connection that fails before yielding anything still moves on to the
     next candidate, same as `complete()`.
+
+    Raises `ProviderTemporaryFailure` under the same conditions `complete()`
+    does — no model bound, no endpoint configured, or every candidate failed
+    before yielding anything — rather than ever yielding fabricated text.
     """
-    settings = get_settings()
-    mode = settings.llm_mode
     started = time.perf_counter()
     chosen = (model or "").strip()
     prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
 
-    def _finalize(
-        *,
-        text: str,
-        result_mode: str,
-        degraded: bool,
-        reason: str | None,
-        endpoint_id: str,
-        served_model: str | None = None,
-    ) -> None:
+    def _finalize(*, text: str, endpoint_id: str, served_model: str | None = None) -> None:
         result.text = text
-        result.mode = result_mode
-        result.degraded = degraded
-        result.degrade_reason = reason
         result.endpoint_id = endpoint_id
         # Whichever endpoint answered decides the model — on failover that is
         # not the one the binding started with.
@@ -400,25 +342,7 @@ def stream_complete(
         result.latency_ms = int((time.perf_counter() - started) * 1000)
 
     if not chosen:
-        text = stub_stream_completion(agent_name=agent_name, messages=messages)
-        yield text
-        _finalize(
-            text=text,
-            result_mode=mode if mode == "stub" else "auto",
-            degraded=True,
-            reason=NO_MODEL_BOUND,
-            endpoint_id=NO_ENDPOINT_ID,
-        )
-        return
-
-    if mode == "stub":
-        text = stub_stream_completion(agent_name=agent_name, messages=messages)
-        yield text
-        _finalize(
-            text=text, result_mode="stub", degraded=False, reason=None, endpoint_id=NO_ENDPOINT_ID
-        )
-        result.model = f"stub:{chosen}"
-        return
+        raise ProviderTemporaryFailure(f"智能体「{agent_name}」尚未在后台配置模型，无法调用。")
 
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
@@ -461,9 +385,6 @@ def stream_complete(
             )
             _finalize(
                 text="".join(accumulated),
-                result_mode="openai_compatible",
-                degraded=error is not None,
-                reason=type(error).__name__ if error else None,
                 endpoint_id=endpoint_id,
                 served_model=endpoint.model,
             )
@@ -477,29 +398,10 @@ def stream_complete(
         last_error = error
 
     if not tried_endpoint:
-        reason = "no_endpoint_configured"
-        if mode == "openai_compatible":
-            from app.domain.errors import ProviderTemporaryFailure
-
-            raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
-        text = stub_stream_completion(agent_name=agent_name, messages=messages)
-        yield text
-        _finalize(
-            text=text, result_mode="auto", degraded=True, reason=reason, endpoint_id=NO_ENDPOINT_ID
-        )
-        return
+        raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
 
     reason = type(last_error).__name__ if last_error else "unknown_error"
-    if mode == "openai_compatible":
-        from app.domain.errors import ProviderTemporaryFailure
-
-        raise ProviderTemporaryFailure(f"LLM 网关不可用: {reason}")
-
-    text = stub_stream_completion(agent_name=agent_name, messages=messages)
-    yield text
-    _finalize(
-        text=text, result_mode="auto", degraded=True, reason=reason, endpoint_id=NO_ENDPOINT_ID
-    )
+    raise ProviderTemporaryFailure(f"LLM 网关不可用（智能体「{agent_name}」）: {reason}")
 
 
 def _stream_gateway(
@@ -539,15 +441,10 @@ def probe(session: Session) -> dict[str, Any]:
     Picks the "general" primary endpoint if one exists, otherwise any enabled
     endpoint — there is no env-level endpoint to fall back to any more.
     """
-    settings = get_settings()
-    mode = settings.llm_mode
-    if mode == "stub":
-        return {"mode": mode, "reachable": False, "detail": "stub 模式未连接网关"}
-
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     candidates = failover.general_candidates(provider_config)
     if not candidates:
-        return {"mode": mode, "reachable": False, "detail": "未配置任何网关端点"}
+        return {"reachable": False, "detail": "未配置任何网关端点"}
     _endpoint_id, endpoint = candidates[0]
 
     started = time.perf_counter()
@@ -555,10 +452,9 @@ def probe(session: Session) -> dict[str, Any]:
         models = client_for_endpoint(endpoint).models.list()
         count = len(getattr(models, "data", []) or [])
         return {
-            "mode": mode,
             "reachable": True,
             "model_count": count,
             "latency_ms": int((time.perf_counter() - started) * 1000),
         }
     except Exception as exc:
-        return {"mode": mode, "reachable": False, "detail": type(exc).__name__}
+        return {"reachable": False, "detail": type(exc).__name__}

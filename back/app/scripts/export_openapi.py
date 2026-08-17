@@ -16,7 +16,6 @@ from pathlib import Path
 # export must not depend on a reachable database.
 os.environ.setdefault("APP_ENV", "test")
 os.environ["AGENT_OS_ENABLED"] = "false"
-os.environ["LLM_MODE"] = "stub"
 
 OUTPUT = Path(__file__).resolve().parents[2] / "openapi.json"
 

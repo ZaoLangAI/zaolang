@@ -88,9 +88,9 @@ flowchart TB
 - 思考模型即使指定 `response_format={"type":"json_object"}`，仍可能在 JSON 前吐 `<think>...</think>`。
 - 有的模型直接返回干净 JSON。
 
-模型 id **只**来自 `/admin/models` 的 `llm_providers` 与 `/admin/agents` 的 `AgentProfile` 绑定；代码不内置默认模型名。未绑定则降级（`no_model_bound`），不猜目录里的第一个名字。
+模型 id **只**来自 `/admin/models` 的 `llm_providers` 与 `/admin/agents` 的 `AgentProfile` 绑定；代码不内置默认模型名。未绑定、没有可用端点，或网关调用全部失败，`complete()`/`stream_complete()` 一律立即抛 `ProviderTemporaryFailure`（503），不猜目录里的第一个名字，也不会静默返回假数据。
 
-规范化层做四件事：剥离思考块与 `reasoning_details`、从自由文本里定位并提取 JSON、解析失败先修复重试再降级、把模型 / token 用量 / 延迟 / 是否降级写进 `AgentRun`。
+规范化层做四件事：剥离思考块与 `reasoning_details`、从自由文本里定位并提取 JSON、解析失败先修复重试再降级、把模型 / token 用量 / 延迟 / 是否降级写进 `AgentRun`——这里的「降级」现在专指模型答复了但 JSON 解析失败，网关层面的失败已经在上一步抛出异常，不会走到这条记录路径。
 
 ## 前端结构
 

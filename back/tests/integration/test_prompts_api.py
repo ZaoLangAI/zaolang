@@ -68,13 +68,17 @@ def test_enhance_diagnoses_image_prompts_on_image_dimensions(
     assert "pacing" not in keys
 
 
+@pytest.mark.real_gateway_seams
 def test_enhance_reports_an_outage_instead_of_echoing_back(
     client: TestClient, author: User
 ) -> None:
-    """No catalog bound, so the agent degrades.
+    """No catalog bound, so the call must fail loudly.
 
-    The degraded fallback is the author's own text, and returning that as a
-    polish is what made this feature look broken. A 503 is the honest answer.
+    Echoing the author's own text back as a "polish" is what made this
+    feature look broken before; a 503 is the honest answer. Opts out of the
+    autouse fake gateway (`@pytest.mark.real_gateway_seams`) since the fake
+    stays permissive about unbound models — this needs the real
+    `app.llm.client.complete` to observe the actual production rule.
     """
     response = client.post(
         "/v1/generation/prompts/enhance",

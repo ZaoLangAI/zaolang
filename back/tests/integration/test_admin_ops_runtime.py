@@ -137,18 +137,15 @@ def test_health_reports_every_dependency(client: TestClient, admin: User) -> Non
     }
 
 
-def test_health_reports_the_running_llm_mode(client: TestClient, admin: User) -> None:
-    """An operator debugging odd agent output needs to know whether the
-    platform is talking to a real gateway at all."""
-    body = client.get("/v1/admin/health", headers=admin_header(admin)).json()
-    assert body["llm_mode"] == "stub"
-
-
-def test_stub_mode_reports_gateway_reachability_as_not_applicable(
+def test_health_reports_gateway_reachability_as_false_without_configured_endpoints(
     client: TestClient, admin: User
 ) -> None:
+    """An operator debugging odd agent output needs to know whether the
+    platform is talking to a real gateway at all. `probe()` always makes a
+    real connectivity check now (no stub short-circuit), so with no
+    `/admin/models` endpoint configured it reports unreachable."""
     body = client.get("/v1/admin/health", headers=admin_header(admin)).json()
-    assert body["llm_reachable"] is None
+    assert body["llm_reachable"] is False
 
 
 def test_health_lists_every_queue(client: TestClient, admin: User) -> None:
@@ -214,9 +211,7 @@ def test_health_flags_an_async_task_nobody_has_polled_in_a_while(
     job, _provider = suspended_video_job
     task = async_tasks.find_for_job(db, job.id)
     assert task is not None
-    task.next_poll_at = utcnow() - dt.timedelta(
-        seconds=async_tasks.POLL_INTERVAL_SECONDS * 10
-    )
+    task.next_poll_at = utcnow() - dt.timedelta(seconds=async_tasks.POLL_INTERVAL_SECONDS * 10)
     db.commit()
 
     body = client.get("/v1/admin/health", headers=admin_header(admin)).json()

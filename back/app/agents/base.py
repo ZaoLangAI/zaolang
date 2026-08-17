@@ -29,6 +29,12 @@ from app.platform_config.schemas import LlmProviderConfig
 
 logger = logging.getLogger(__name__)
 
+# `AgentRun.mode` is a historical column from when the gateway had three
+# selectable modes (`openai_compatible`/`stub`/`auto`). There is only one
+# calling behaviour left, so every new row just records this constant rather
+# than the column being dropped in a migration purely for this cleanup.
+GATEWAY_MODE = "openai_compatible"
+
 
 @dataclass(slots=True)
 class AgentOutcome:
@@ -97,10 +103,10 @@ def effective_binding(
 def _bound_model(config: LlmProviderConfig, preferred: tuple[str, ...]) -> str:
     """The model this binding starts on.
 
-    Failover may still finish on the backup endpoint's own model — this is only
-    where the call begins, and the name the stub reports when no gateway is
-    reachable. An agent pinned to endpoints that have since been removed counts
-    as unbound rather than quietly borrowing someone else's provider.
+    Failover may still finish on the backup endpoint's own model — this is
+    only where the call begins. An agent pinned to endpoints that have since
+    been removed counts as unbound rather than quietly borrowing someone
+    else's provider.
     """
     if preferred:
         for endpoint_id in preferred:
@@ -125,8 +131,7 @@ def _token_cost_micro_usd(
 
     Snapshotted at call time rather than derived when a report is read: an
     operator correcting a price next month must not silently rewrite what
-    last month's traffic cost. A degraded call served by the stub has no real
-    endpoint and therefore no cost.
+    last month's traffic cost.
     """
     config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     endpoint = config.endpoints.get(endpoint_id)
@@ -140,9 +145,7 @@ def _token_cost_micro_usd(
 
 
 def _recorded_model(result: llm_client.LlmCallResult, binding: EffectiveBinding) -> str | None:
-    """Persists the catalog model that ran, or nothing when none was bound."""
-    if result.degrade_reason == llm_client.NO_MODEL_BOUND:
-        return None
+    """Persists the catalog model that actually served the call."""
     return result.response.model or binding.model or None
 
 
@@ -263,11 +266,7 @@ def run_agent(
     else:
         data = result.response.data
 
-    status = AgentRunStatus.SUCCEEDED
-    if result.degraded:
-        status = AgentRunStatus.DEGRADED
-    elif parse_failed:
-        status = AgentRunStatus.FAILED
+    status = AgentRunStatus.FAILED if parse_failed else AgentRunStatus.SUCCEEDED
 
     run = _record_agent_run(
         session,
@@ -276,11 +275,11 @@ def run_agent(
         slot=slot,
         job_id=job_id,
         user_id=user_id,
-        mode=result.mode,
+        mode=GATEWAY_MODE,
         model=_recorded_model(result, binding),
         status=status,
-        degraded=result.degraded or parse_failed,
-        degrade_reason=result.degrade_reason or ("json_parse_failed" if parse_failed else None),
+        degraded=parse_failed,
+        degrade_reason="json_parse_failed" if parse_failed else None,
         prompt_tokens=result.response.prompt_tokens,
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
@@ -353,11 +352,9 @@ def run_agent_stream(
     )
 
     def finalize() -> StreamOutcome:
-        model = (
-            None
-            if result.degrade_reason == llm_client.NO_MODEL_BOUND
-            else (result.model or binding.model or None)
-        )
+        # Reaching here means the generator was drained without
+        # `stream_complete` raising, so the call succeeded — there is no
+        # streaming equivalent of a JSON-parse failure to mark degraded.
         run = _record_agent_run(
             session,
             agent_name=agent_name,
@@ -365,11 +362,11 @@ def run_agent_stream(
             slot=slot,
             job_id=job_id,
             user_id=user_id,
-            mode=result.mode,
-            model=model,
-            status=AgentRunStatus.DEGRADED if result.degraded else AgentRunStatus.SUCCEEDED,
-            degraded=result.degraded,
-            degrade_reason=result.degrade_reason,
+            mode=GATEWAY_MODE,
+            model=result.model or binding.model or None,
+            status=AgentRunStatus.SUCCEEDED,
+            degraded=False,
+            degrade_reason=None,
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             latency_ms=result.latency_ms,
@@ -412,11 +409,10 @@ def run_agent_debug(
 
     Mirrors the workflow sandbox-run's own precedent
     (`workflow_templates_service` + its `sandbox-run` endpoint): a draft
-    prompt can be tried before it is ever published, the call is real (never
-    stubbed unless `LLM_MODE=stub`), and an `AgentRun` is written with
-    `job_id=None` so the "agent invocations" console list still shows what a
-    debug session cost — unlike a sandbox job, this debug path still has no
-    `GenerationJob` behind it.
+    prompt can be tried before it is ever published, the call is always real,
+    and an `AgentRun` is written with `job_id=None` so the "agent invocations"
+    console list still shows what a debug session cost — unlike a sandbox
+    job, this debug path still has no `GenerationJob` behind it.
 
     `prompt_override` is the skill editor's unsaved draft when given;
     otherwise this resolves whatever is currently active for
@@ -454,11 +450,11 @@ def run_agent_debug(
         agent_name=profile.role,
         agent_profile_id=profile.id,
         prompt_slot=slot,
-        mode=result.mode,
+        mode=GATEWAY_MODE,
         model=_recorded_model(result, binding),
-        status=AgentRunStatus.DEGRADED if result.degraded else AgentRunStatus.SUCCEEDED,
-        degraded=result.degraded,
-        degrade_reason=result.degrade_reason,
+        status=AgentRunStatus.SUCCEEDED,
+        degraded=False,
+        degrade_reason=None,
         prompt_tokens=result.response.prompt_tokens,
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
@@ -477,7 +473,7 @@ def run_agent_debug(
     return DebugChatOutcome(
         reply_text=result.response.text,
         parsed_json=result.response.data,
-        degraded=result.degraded,
+        degraded=False,
         model=run.model or binding.model or "",
         latency_ms=result.latency_ms,
         prompt_tokens=result.response.prompt_tokens,

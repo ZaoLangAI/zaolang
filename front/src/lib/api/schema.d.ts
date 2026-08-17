@@ -2353,7 +2353,8 @@ export interface paths {
         get: operations["get_script_v1_scripts__episode_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Script */
+        delete: operations["delete_script_v1_scripts__episode_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6594,8 +6595,6 @@ export interface components {
             savings_percent: number;
             /** Status */
             status: string;
-            /** Mode */
-            mode: string;
             /** Degraded Runs 24H */
             degraded_runs_24h: number;
         };
@@ -9838,10 +9837,8 @@ export interface components {
             queues: components["schemas"]["QueueDepth"][];
             /** Alembic Revision */
             alembic_revision?: string | null;
-            /** Llm Mode */
-            llm_mode: string;
             /** Llm Reachable */
-            llm_reachable?: boolean | null;
+            llm_reachable: boolean;
             /** App Version */
             app_version: string;
             /**
@@ -15786,6 +15783,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ScriptDetailResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_script_v1_scripts__episode_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

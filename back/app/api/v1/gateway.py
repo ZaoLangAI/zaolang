@@ -16,7 +16,6 @@ from sqlalchemy import func, select
 from app.agents.router import build_catalog
 from app.api.deps import DbSession
 from app.api.schemas.common import ApiModel
-from app.config import get_settings
 from app.models import AgentRun, ProviderStat
 from app.models.enums import ProviderKind
 
@@ -38,7 +37,6 @@ class GatewayStatusResponse(ApiModel):
     status: str
     """`healthy`, `degraded` or `down`."""
 
-    mode: str
     degraded_runs_24h: int
 
 
@@ -67,7 +65,6 @@ def gateway_status(session: DbSession) -> GatewayStatusResponse:
         available_routes=len(enabled),
         savings_percent=_savings_percent(session),
         status=status,
-        mode=get_settings().llm_mode,
         degraded_runs_24h=int(degraded_runs),
     )
 

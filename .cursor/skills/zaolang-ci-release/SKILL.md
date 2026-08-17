@@ -23,7 +23,7 @@ Guarantee "it builds, it ships, it's documented." This repo is internal-propriet
 ## Invariants
 
 1. **The only gate is `make check`.** E2E and accessibility suites need a real database and seed data — they're an extra local suite, not something to fold into `make check` "to be safe" (that would make every commit depend on a full seeded database).
-2. **`LLM_MODE=stub` inside `make check` must not be relaxed**: tests must be deterministic, key-free, and cost-free. `@pytest.mark.live` smoke tests never run inside `make check`.
+2. **The autouse fake-gateway fixture inside `make check` must not be bypassed**: tests must be deterministic, key-free, and cost-free. Production code has no stub/auto mode — only `back/tests/fake_llm_gateway.py`'s monkeypatch (via `conftest.py`) keeps the suite offline. `@pytest.mark.live` smoke tests never run inside `make check` (`-m "not live"`); `@pytest.mark.real_gateway_seams` tests still run, they just skip the fake to exercise the real client's own failover/circuit-breaker logic against a mocked transport.
 3. **The version number lives in two places**: at release time, bump `front/package.json`'s `version` and sync `APP_VERSION`. Don't update only one.
 4. **Internal-proprietary, not open-source compliance.** This repo's software licence is internal-proprietary (root `LICENSE`). The consumer footer shows only `APP_VERSION` — **do not** add a source-repo link or an AGPL notice. Third-party NOTICE/LICENSE files (e.g. OpenCut's MIT notice) must not be removed.
 5. **`mkdocs.yml` is `strict: true`**: dead links and orphan pages fail the build. Adding a doc means adding it to `nav` too.

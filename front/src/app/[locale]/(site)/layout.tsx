@@ -4,7 +4,6 @@ import { getTranslations, setRequestLocale } from 'next-intl/server';
 import { LoginDialog } from '@/components/auth/login-dialog';
 import { SessionProvider } from '@/components/auth/session-provider';
 import { CommandPaletteHost } from '@/components/command/command-palette-host';
-import { SiteFooter } from '@/components/layout/site-footer';
 import { TopBar } from '@/components/layout/top-bar';
 import { NotificationCenterProvider } from '@/components/notifications/notification-center-provider';
 import { NotificationToastStack } from '@/components/notifications/notification-toast-stack';
@@ -38,7 +37,6 @@ export default async function SiteLayout({
           <main id="main" className="flex-1">
             {children}
           </main>
-          <SiteFooter />
           <LoginDialog />
           <CommandPaletteHost />
           <NotificationToastStack />

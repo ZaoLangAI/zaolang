@@ -32,7 +32,7 @@ def _endpoint_id(model: str) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+def _require_key(db: Session) -> None:
     """Bootstraps DB-backed endpoints from `.env` for the duration of the test.
 
     Endpoints only ever come from the database now; `LLM_BASE_URL`/
@@ -47,10 +47,6 @@ def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
         pytest.skip("LLM_API_KEY 未配置，跳过真实网关测试")
     if not MODELS:
         pytest.skip("LLM_MODEL 未配置，跳过真实网关测试")
-    monkeypatch.setenv("LLM_MODE", "openai_compatible")
-    from app.config import get_settings
-
-    get_settings.cache_clear()
     client.reset_client_cache()
 
     base_url = os.getenv("LLM_BASE_URL", "https://aihubmix.com/v1")

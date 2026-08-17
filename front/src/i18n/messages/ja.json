@@ -493,10 +493,8 @@
     "queueRate": "Throughput",
     "alembic": "Alembic revision",
     "llmGateway": "LLM gateway",
-    "llmMode": "Current mode",
     "up": "Up",
     "down": "Down",
-    "degraded": "Degraded",
     "latency": "{ms}ms",
     "dangling": "Dangling reservations",
     "danglingHint": "Reserved but never captured or released",
@@ -1544,6 +1542,11 @@
     "emptyScriptsHint": "「新しい台本」をタップしてアイデアを書くと、AI が場面構成の台本初稿を作成します。",
     "myScripts": "自分の台本",
     "untitled": "無題の台本",
+    "deleteScript": "台本を削除",
+    "deleteScriptConfirmTitle": "この台本を削除しますか？",
+    "deleteScriptConfirmBody": "削除すると元に戻せません。すべての対話履歴も含まれます。",
+    "deleteScriptDone": "削除しました",
+    "deleteScriptFailed": "削除に失敗しました。しばらくしてから再度お試しください。",
     "turnCount": "{count} 回のやり取り",
     "chatEmpty": "会話履歴はここに表示されます。",
     "turnLabel": "第 {count} 版",
@@ -1580,11 +1583,6 @@
     "generateCharacterImage": "キャラクター画像を生成",
     "generateSceneImage": "シーン画像を生成",
     "linkReturnNotFound": "該当する項目が見つかりません。手動で関連付けてください。"
-  },
-  "footer": {
-    "version": "バージョン {version}",
-    "docs": "ドキュメント",
-    "learn": "学習センター"
   },
   "iosOnboarding": {
     "page1Title": "リミックスのたびに創作の系譜が残る",

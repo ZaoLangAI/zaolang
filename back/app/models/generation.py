@@ -291,7 +291,12 @@ class ProviderStat(Base, TimestampMixin):
 
 class AgentRun(Base):
     """One agent invocation. Records the model actually used, token spend and
-    whether the call degraded to the deterministic stub."""
+    whether the call degraded (output that failed to parse as JSON, rather
+    than a call that fabricated a response — that path no longer exists).
+
+    `mode` is a historical column from when the gateway had a selectable
+    `openai_compatible`/`stub`/`auto` mode; every new row now records the
+    same constant (`app.agents.base.GATEWAY_MODE`)."""
 
     __tablename__ = "agent_runs"
 

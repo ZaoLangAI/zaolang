@@ -493,10 +493,8 @@
     "queueRate": "Throughput",
     "alembic": "Alembic revision",
     "llmGateway": "LLM gateway",
-    "llmMode": "Current mode",
     "up": "Up",
     "down": "Down",
-    "degraded": "Degraded",
     "latency": "{ms}ms",
     "dangling": "Dangling reservations",
     "danglingHint": "Reserved but never captured or released",
@@ -1544,6 +1542,11 @@
     "emptyScriptsHint": "Tap \"New script\" and write your idea — the AI will draft a full scene-by-scene script.",
     "myScripts": "My scripts",
     "untitled": "Untitled script",
+    "deleteScript": "Delete script",
+    "deleteScriptConfirmTitle": "Delete this script?",
+    "deleteScriptConfirmBody": "This cannot be undone, including the entire conversation history.",
+    "deleteScriptDone": "Deleted",
+    "deleteScriptFailed": "Failed to delete. Please try again.",
     "turnCount": "{count} turns",
     "chatEmpty": "The conversation will appear here.",
     "turnLabel": "Version {count}",
@@ -1580,11 +1583,6 @@
     "generateCharacterImage": "Generate character image",
     "generateSceneImage": "Generate scene image",
     "linkReturnNotFound": "Couldn't find a matching entry — link it manually instead."
-  },
-  "footer": {
-    "version": "Version {version}",
-    "docs": "Docs",
-    "learn": "Learn"
   },
   "iosOnboarding": {
     "page1Title": "Every remix keeps its lineage",

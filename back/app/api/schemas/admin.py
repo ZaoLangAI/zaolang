@@ -67,8 +67,7 @@ class SystemHealthResponse(ApiModel):
     services: list[ServiceHealth]
     queues: list[QueueDepth]
     alembic_revision: str | None = None
-    llm_mode: str
-    llm_reachable: bool | None = None
+    llm_reachable: bool
     app_version: str
     generated_at: dt.datetime
 

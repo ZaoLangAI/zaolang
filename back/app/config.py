@@ -12,8 +12,6 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-LlmMode = Literal["openai_compatible", "stub", "auto"]
-
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -47,11 +45,6 @@ class Settings(BaseSettings):
     s3_secret_key: str = "zaolang-secret"
     upload_url_ttl_seconds: int = 60 * 10
     download_url_ttl_seconds: int = 60 * 15
-
-    # Operator/test intent only. Endpoint URLs, keys, timeouts and retry
-    # counts all live in the `llm_providers` platform config now — see
-    # `app/llm/client.py` and `zaolang-agent-gateway`.
-    llm_mode: LlmMode = "auto"
 
     # The Agno console is an operator tool that exposes model bindings and lets
     # a human drive agents interactively, so it stays off unless asked for.

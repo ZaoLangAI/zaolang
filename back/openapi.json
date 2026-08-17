@@ -9691,6 +9691,55 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Delete Script",
+        "operationId": "delete_script_v1_scripts__episode_id__delete",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/scripts/{episode_id}/turns/{turn_id}/snapshot": {
@@ -22782,10 +22831,6 @@
             "type": "string",
             "title": "Status"
           },
-          "mode": {
-            "type": "string",
-            "title": "Mode"
-          },
           "degraded_runs_24h": {
             "type": "integer",
             "title": "Degraded Runs 24H"
@@ -22796,7 +22841,6 @@
           "available_routes",
           "savings_percent",
           "status",
-          "mode",
           "degraded_runs_24h"
         ],
         "title": "GatewayStatusResponse",
@@ -31221,19 +31265,8 @@
             ],
             "title": "Alembic Revision"
           },
-          "llm_mode": {
-            "type": "string",
-            "title": "Llm Mode"
-          },
           "llm_reachable": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "boolean",
             "title": "Llm Reachable"
           },
           "app_version": {
@@ -31250,7 +31283,7 @@
         "required": [
           "services",
           "queues",
-          "llm_mode",
+          "llm_reachable",
           "app_version",
           "generated_at"
         ],

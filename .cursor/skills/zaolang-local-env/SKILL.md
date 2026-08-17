@@ -18,7 +18,7 @@ disable-model-invocation: true
 | `infra/docker-compose.yml` | postgres (pgvector/pg17) / redis / minio / minio-init |
 | `infra/.env.example` | compose variables (ports, MinIO credentials, bucket names) |
 | `back/environment.yml` + `back/requirements*.txt` | conda env `zaolang`, Python 3.12 |
-| `back/.env.example` → `back/.env` | backend config, incl. `LLM_MODE`, `LLM_API_KEY`, `CORS_ORIGINS` |
+| `back/.env.example` → `back/.env` | backend config, incl. `LLM_API_KEY`, `CORS_ORIGINS` |
 | `front/.node-version` | Node version read by fnm |
 | `front/.env.example` → `front/.env.local` | `API_INTERNAL_URL` (RSC) and `NEXT_PUBLIC_API_URL` (browser + SSE) |
 | `back/app/config.py` | pydantic-settings; the single source for every default |

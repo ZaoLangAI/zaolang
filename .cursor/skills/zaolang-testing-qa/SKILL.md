@@ -19,7 +19,7 @@ Key fixtures live in `back/tests/conftest.py`: `db` (rollback-style, used by mos
 
 ## Invariants
 
-1. **`LLM_MODE=stub` is a precondition for tests** (`make test-back` already enforces it). Any test depending on the real gateway is no longer deterministic; `@pytest.mark.live` cases must be excluded via `-m "not live"`.
+1. **An autouse fixture in `conftest.py` swaps the LLM gateway for `tests/fake_llm_gateway.py`'s deterministic fake, for every test** — production code has no stub/auto mode any more, only "real gateway or error," so this fixture is what keeps the suite offline and deterministic instead of an env var flipping a production code path. `@pytest.mark.live` (real network call) and `@pytest.mark.real_gateway_seams` (tests the real client's own failover/circuit-breaker/error logic) opt out; `make test-back` already excludes `live` via `-m "not live"`.
 2. **Property tests and any case that triggers `IntegrityError` must use `committed_db`**: `credits._apply` calls `session.rollback()` on `IntegrityError`, discarding the whole unit of work — including fixture-created users. A rollback-style `db` produces false failures like "foreign key points at a nonexistent user."
 3. **hypothesis needs `suppress_health_check=[HealthCheck.function_scoped_fixture]`**: rebuilding the schema for every example would be unusably slow, so each example isolates itself instead — via a SAVEPOINT, or a unique key with a nonce.
 4. **Generated strings must exclude control characters and surrogate pairs**: Postgres text columns reject NUL, and HTTP headers can't carry them either.

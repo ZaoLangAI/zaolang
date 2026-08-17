@@ -115,7 +115,7 @@ export default async function AdminStatisticsPage() {
           health ?? {
             services: [],
             queues: [],
-            llm_mode: 'unknown',
+            llm_reachable: false,
             app_version: '',
             generated_at: generatedAt,
           }

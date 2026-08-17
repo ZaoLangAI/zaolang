@@ -215,6 +215,17 @@ def get_script(
     )
 
 
+@router.delete("/scripts/{episode_id}", status_code=204)
+def delete_script(
+    episode_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> None:
+    script_writing_service.delete_script(session, user_id=user.id, episode_id=episode_id)
+    session.commit()
+
+
 @router.get(
     "/scripts/{episode_id}/turns/{turn_id}/snapshot",
     response_model=ScriptTurnSnapshotResponse,

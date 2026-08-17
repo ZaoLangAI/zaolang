@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.script_writing import service as script_writing_service
@@ -338,6 +339,97 @@ def test_update_links_patches_the_document_without_creating_a_turn(
         c for c in revised_complete["script"]["characters"] if c["name"] == character_name
     )
     assert revised_character["character_ref_id"] == character.id
+
+
+def test_delete_script_removes_episode_and_turns(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    first = next(data for kind, data in _parse_sse(created.text) if kind == "complete")
+    episode_id = first["episode_id"]
+
+    from app.models import DramaEpisode, EpisodeScriptTurn, Series
+
+    series_id = db.get(DramaEpisode, episode_id).series_id
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 204
+
+    assert db.get(DramaEpisode, episode_id) is None
+    assert (
+        db.scalar(
+            select(func.count(EpisodeScriptTurn.id)).where(
+                EpisodeScriptTurn.episode_id == episode_id
+            )
+        )
+        == 0
+    )
+    # The 1:1 `Series` created for this script goes away too, once it is the
+    # episode's only one.
+    assert db.get(Series, series_id) is None
+
+    listed = client.get("/v1/scripts", headers=auth_header(author))
+    assert listed.json() == []
+
+
+def test_delete_script_rejects_another_users_episode(
+    client: TestClient, db: Session, author: User, remixer: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _enable_script_studio(db, remixer)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(remixer))
+    assert response.status_code == 404
+
+    # Untouched — still there for the real owner.
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert detail.status_code == 200
+
+
+def test_delete_script_blocked_once_opened_in_the_editor(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once an `EpisodeCut` exists, deleting outright would hit the DB's own
+    `RESTRICT` on `episode_cuts.episode_id` — `delete_script` must catch this
+    itself and leave everything intact."""
+    from app.models import DramaEpisode, EpisodeCut
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+
+    db.add(EpisodeCut(episode_id=episode_id, name="正片"))
+    db.flush()
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 422
+
+    assert db.get(DramaEpisode, episode_id) is not None
 
 
 def test_list_scripts_only_shows_started_scripts(

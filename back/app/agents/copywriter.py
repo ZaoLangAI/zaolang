@@ -87,8 +87,8 @@ MAX_ADDITION_LENGTH = 40
 MAX_FEEDBACK_LENGTH = 300
 
 # One round's requested adjustment. Free-text `instruction` covers everything
-# else; these exist so the panel can offer one-tap directions and so the stub
-# can mirror them deterministically.
+# else; these exist so the panel can offer one-tap directions and so the test
+# fake gateway (`tests/fake_llm_gateway.py`) can mirror them deterministically.
 ENHANCE_DIRECTIONS = (
     "more_specific",
     "more_concise",

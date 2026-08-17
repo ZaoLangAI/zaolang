@@ -12,8 +12,8 @@ from app.domain import prompts
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ValidationFailed
 from app.llm import client as llm_client
-from app.llm import stub
 from app.models import AgentRun, User
+from tests import fake_llm_gateway
 from tests.llm_catalog import bind_default_agents_to_catalog
 
 
@@ -239,9 +239,9 @@ def test_the_published_contract_matches_the_agent_whitelist() -> None:
     assert set(PromptEnhanceDirection.__args__) == set(copywriter.ENHANCE_DIRECTIONS)
 
 
-def test_the_stub_mirrors_the_agents_dimension_sets() -> None:
-    """A stub diagnosing different dimensions would make `make check` green
-    on behaviour the real model never produces."""
-    assert stub._ENHANCE_VIDEO_DIMENSIONS == copywriter.VIDEO_DIMENSIONS
-    assert stub._ENHANCE_IMAGE_DIMENSIONS == copywriter.IMAGE_DIMENSIONS
-    assert set(stub._ENHANCE_DIRECTION_PHRASES) == set(copywriter.ENHANCE_DIRECTIONS)
+def test_the_fake_gateway_mirrors_the_agents_dimension_sets() -> None:
+    """A test fake diagnosing different dimensions would make `make check`
+    green on behaviour the real model never produces."""
+    assert fake_llm_gateway._ENHANCE_VIDEO_DIMENSIONS == copywriter.VIDEO_DIMENSIONS
+    assert fake_llm_gateway._ENHANCE_IMAGE_DIMENSIONS == copywriter.IMAGE_DIMENSIONS
+    assert set(fake_llm_gateway._ENHANCE_DIRECTION_PHRASES) == set(copywriter.ENHANCE_DIRECTIONS)
