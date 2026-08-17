@@ -146,7 +146,15 @@ export function Dialog({
     <div
       ref={backdropRef}
       className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6"
-      style={{ background: 'var(--overlay)' }}
+      // `open` flips to false the instant the caller decides to close (e.g.
+      // right after a successful save), synchronously and independent of the
+      // exit animation below. Keying interactivity off `open` rather than
+      // `render` means a slow-to-resolve fade (a delayed anime.js chunk load,
+      // a dropped rAF, a tab that was backgrounded mid-transition) only ever
+      // leaves a purely visual, click-through remnant on screen — never a
+      // full-viewport layer that silently swallows the next click on
+      // whatever the user is actually trying to do behind it.
+      style={{ background: 'var(--overlay)', pointerEvents: open ? 'auto' : 'none' }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

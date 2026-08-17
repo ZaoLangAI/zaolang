@@ -67,7 +67,10 @@ test.describe('session boundary', () => {
 test.describe('an expired console session', () => {
   test.use({ storageState: STATE_FILES.admin });
 
-  test('a reload after the cookie is gone lands on the console login', async ({ page, context }) => {
+  test('a reload after the cookie is gone lands on the console login', async ({
+    page,
+    context,
+  }) => {
     await page.goto('/zh-CN/admin/config', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '配置中心', level: 1 })).toBeVisible();
 
@@ -437,7 +440,10 @@ test.describe('operations screens', () => {
       });
     });
 
-    await page.getByRole('complementary', { name: '试跑历史' }).getByRole('button', { name: /历史回放用的猫/ }).click();
+    await page
+      .getByRole('complementary', { name: '试跑历史' })
+      .getByRole('button', { name: /历史回放用的猫/ })
+      .click();
     const detail = page.getByRole('dialog');
     await expect(detail.getByRole('heading', { name: '试跑详情' })).toBeVisible();
     await expect(detail.getByText('实时流转')).toBeVisible();
@@ -557,6 +563,240 @@ test.describe('operations screens', () => {
     await expect(mediaRow.getByText('验证成功')).toBeVisible();
     await expect(mediaRow.getByText('42 ms')).toBeVisible();
     await expect(mediaRow.getByText('任务 task-live-1')).toBeVisible();
+  });
+
+  test('validating a freshly created model actually fires the probe', async ({ page }) => {
+    // Regression test: a model created in this same session previously left
+    // its "验证" button dead — no request, no loading state, no toast.
+    let validateCalls = 0;
+    await page.route('**/v1/admin/llm-providers/*/validate', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      validateCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          validation_id: 'val_e2e_new_model',
+          status: 'running',
+          elapsed_ms: 0,
+          timeout_ms: 30_000,
+          result: null,
+        }),
+      });
+    });
+    await page.route('**/v1/admin/llm-providers/*/validate/*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          validation_id: 'val_e2e_new_model',
+          status: 'completed',
+          elapsed_ms: 12,
+          timeout_ms: 30_000,
+          result: {
+            endpoint_id: 'ep_e2e_new_model',
+            kind: 'general',
+            target_model: 'e2e-new-model',
+            probe_type: 'chat_completion',
+            reachable: true,
+            usable: true,
+            latency_ms: 12,
+            provider_status_code: 200,
+            error_code: null,
+            warning_code: null,
+            provider_error_code: null,
+            provider_error_message: null,
+            external_task_id: null,
+          },
+        }),
+      });
+    });
+
+    await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '新增模型' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '新增模型' })).toBeVisible();
+
+    const modelName = `e2e-validate-${Date.now()}`;
+    await dialog.getByLabel('模型名称', { exact: true }).fill(modelName);
+    await dialog.getByLabel('Base URL').fill('https://example.com/v1');
+    await dialog.getByLabel('调用模型名称').fill('e2e-new-model');
+
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes('/v1/admin/llm-providers/'),
+    );
+    await dialog.getByRole('button', { name: '保存' }).click();
+    await saved;
+    await expect(dialog).toBeHidden();
+
+    const newRow = page.getByText(modelName, { exact: true }).locator('xpath=../../../..');
+    await expect(newRow).toBeVisible();
+
+    const validateRequest = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' &&
+        /\/llm-providers\/[^/]+\/validate$/.test(new URL(request.url()).pathname),
+    );
+    await newRow.getByRole('button', { name: '验证' }).click();
+    await validateRequest;
+    expect(validateCalls, 'POST .../validate fired for the just-created model').toBe(1);
+    await expect(newRow.getByText('验证成功')).toBeVisible();
+  });
+
+  test('context length and max output accept K/M shorthand and round-trip on edit', async ({
+    page,
+  }) => {
+    await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '新增模型' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '新增模型' })).toBeVisible();
+
+    const modelName = `e2e-tokens-${Date.now()}`;
+    await dialog.getByLabel('模型名称', { exact: true }).fill(modelName);
+    await dialog.getByLabel('Base URL').fill('https://example.com/v1');
+    await dialog.getByLabel('调用模型名称').fill('e2e-tokens-model');
+    // Shorthand stays on screen as typed — only the payload is converted.
+    await dialog.getByLabel('上下文长度').fill('128k');
+    await dialog.getByLabel('最大输出').fill('4K');
+    await expect(dialog.getByLabel('上下文长度')).toHaveValue('128k');
+
+    const savedRequest = page.waitForRequest(
+      (request) => request.method() === 'PUT' && request.url().includes('/v1/admin/llm-providers/'),
+    );
+    await dialog.getByRole('button', { name: '保存' }).click();
+    const request = await savedRequest;
+    const body = request.postDataJSON() as { context_length: number; max_output_tokens: number };
+    expect(body.context_length).toBe(128_000);
+    expect(body.max_output_tokens).toBe(4_000);
+    await expect(dialog).toBeHidden();
+
+    // Re-opening the same model shows the abbreviation again, not the raw
+    // integer, confirming `formatTokenCount` mirrors what was typed.
+    const newRow = page.getByText(modelName, { exact: true }).locator('xpath=../../../..');
+    await newRow.getByText(modelName, { exact: true }).click();
+    await expect(page.getByRole('heading', { name: '编辑模型' })).toBeVisible();
+    await expect(page.getByLabel('上下文长度')).toHaveValue('128K');
+    await expect(page.getByLabel('最大输出')).toHaveValue('4K');
+    await page.getByRole('dialog').press('Escape');
+  });
+
+  test('an invalid token count is rejected on save', async ({ page }) => {
+    await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '新增模型' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '新增模型' })).toBeVisible();
+
+    await dialog.getByLabel('模型名称', { exact: true }).fill(`e2e-bad-tokens-${Date.now()}`);
+    await dialog.getByLabel('Base URL').fill('https://example.com/v1');
+    await dialog.getByLabel('调用模型名称').fill('e2e-bad-tokens-model');
+    await dialog.getByLabel('上下文长度').fill('not-a-number');
+
+    await dialog.getByRole('button', { name: '保存' }).click();
+    await expect(dialog.getByRole('alert')).toContainText('K/M');
+    await expect(dialog).toBeVisible();
+  });
+
+  test('the remove-model confirmation dismisses with Cancel, not Reset', async ({ page }) => {
+    await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '移除模型' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    // The button only closes the dialog — it never clears a form, so it must
+    // read "取消" (Cancel), not the filter bar's "重置" (Reset).
+    await expect(dialog.getByRole('button', { name: '重置' })).toHaveCount(0);
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test('validating a freshly created media model also fires the probe', async ({ page }) => {
+    let validateCalls = 0;
+    await page.route('**/v1/admin/llm-providers/*/validate', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.fallback();
+        return;
+      }
+      validateCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          validation_id: 'val_e2e_new_media',
+          status: 'running',
+          elapsed_ms: 0,
+          timeout_ms: 90_000,
+          result: null,
+        }),
+      });
+    });
+    await page.route('**/v1/admin/llm-providers/*/validate/*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          validation_id: 'val_e2e_new_media',
+          status: 'completed',
+          elapsed_ms: 12,
+          timeout_ms: 90_000,
+          result: {
+            endpoint_id: 'ep_e2e_new_media',
+            kind: 'media',
+            target_model: 'e2e-new-media-model',
+            probe_type: 'text_to_image',
+            reachable: true,
+            usable: true,
+            latency_ms: 12,
+            provider_status_code: 200,
+            error_code: null,
+            warning_code: null,
+            provider_error_code: null,
+            provider_error_message: null,
+            external_task_id: null,
+          },
+        }),
+      });
+    });
+
+    await page.goto('/zh-CN/admin/models', { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '新增模型' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('heading', { name: '新增模型' })).toBeVisible();
+
+    const modelName = `e2e-media-validate-${Date.now()}`;
+    await dialog.getByLabel('模型名称', { exact: true }).fill(modelName);
+    await dialog.getByLabel('模型类型').selectOption('media');
+    await dialog.getByLabel('Base URL').fill('https://example.com');
+    await dialog.getByLabel('调用模型名称').fill('e2e-new-media-model');
+    await dialog.getByLabel('支持的输入类型 · 文本').click();
+    await dialog.getByLabel('支持的输出类型 · 图片').click();
+
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().includes('/v1/admin/llm-providers/'),
+    );
+    await dialog.getByRole('button', { name: '保存' }).click();
+    await saved;
+    await expect(dialog).toBeHidden();
+
+    const newRow = page.getByText(modelName, { exact: true }).locator('xpath=../../../..');
+    await expect(newRow).toBeVisible();
+
+    await newRow.getByRole('button', { name: '验证' }).click();
+    await expect(page.getByRole('heading', { name: '验证媒体模型' })).toBeVisible();
+    const validateRequest = page.waitForRequest(
+      (request) =>
+        request.method() === 'POST' &&
+        /\/llm-providers\/[^/]+\/validate$/.test(new URL(request.url()).pathname),
+    );
+    await page.getByRole('button', { name: '发送验证请求' }).click();
+    await validateRequest;
+    expect(validateCalls, 'POST .../validate fired for the just-created media model').toBe(1);
+    await expect(newRow.getByText('验证成功')).toBeVisible();
   });
 
   test('the style gallery console lists the seeded catalogue and creates an entry', async ({

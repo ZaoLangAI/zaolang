@@ -71,7 +71,7 @@ export function DangerConfirm({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            {t('reset')}
+            {t('cancel')}
           </Button>
           <Button variant="danger" disabled={!ready} loading={busy} onClick={() => void run()}>
             {t('dangerProceed')}

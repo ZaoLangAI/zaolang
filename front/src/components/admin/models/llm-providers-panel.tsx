@@ -8,10 +8,11 @@ import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextInput } from '@/components/ui/field';
-import { IconFlask, IconRefresh, IconTrash } from '@/components/ui/icons';
+import { IconFlask, IconPencil, IconRefresh, IconTrash } from '@/components/ui/icons';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { dollarsToMicroUsd, microUsdToDollars } from '@/lib/admin/micro-usd';
+import { formatTokenCount, parseTokenCount } from '@/lib/admin/token-count';
 import { cn } from '@/lib/cn';
 import {
   MEDIA_INPUT_MODALITIES,
@@ -208,8 +209,8 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     max_concurrency: String(endpoint.max_concurrency),
     timeout_ms: String(endpoint.timeout_ms),
     enabled: endpoint.enabled,
-    context_length: endpoint.context_length ? String(endpoint.context_length) : '',
-    max_output_tokens: endpoint.max_output_tokens ? String(endpoint.max_output_tokens) : '',
+    context_length: formatTokenCount(endpoint.context_length),
+    max_output_tokens: formatTokenCount(endpoint.max_output_tokens),
     input_per_million: microUsdToDollars(tokens?.input_per_million_micro_usd ?? 0),
     output_per_million: microUsdToDollars(tokens?.output_per_million_micro_usd ?? 0),
     image_input: microUsdToDollars(media?.image?.input_per_image_micro_usd ?? 0),
@@ -267,8 +268,8 @@ function buildUpsertPayload(form: EndpointFormState) {
     max_concurrency: Number(form.max_concurrency),
     timeout_ms: Number(form.timeout_ms),
     enabled: form.enabled,
-    context_length: form.kind === 'general' ? Number(form.context_length || 0) : 0,
-    max_output_tokens: form.kind === 'general' ? Number(form.max_output_tokens || 0) : 0,
+    context_length: form.kind === 'general' ? (parseTokenCount(form.context_length) ?? 0) : 0,
+    max_output_tokens: form.kind === 'general' ? (parseTokenCount(form.max_output_tokens) ?? 0) : 0,
     token_pricing:
       form.kind === 'general'
         ? {
@@ -413,6 +414,16 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
       // router's cost context toward it.
       if (priceFields(editing).some((value) => dollarsToMicroUsd(value) === null)) {
         setError(t('pricingInvalid'));
+        setBusy(false);
+        return;
+      }
+      if (
+        editing.kind === 'general' &&
+        [editing.context_length, editing.max_output_tokens].some(
+          (value) => parseTokenCount(value) === null,
+        )
+      ) {
+        setError(t('tokenCountInvalid'));
         setBusy(false);
         return;
       }
@@ -814,23 +825,17 @@ function PricingFields({
   if (form.kind === 'general') {
     return (
       <PricingSection title={t('pricingGeneralTitle')} hint={t('pricingGeneralHint')}>
-        <TextInput
-          layout="inline"
+        <TokenCountInput
           label={t('contextLength')}
           hint={t('contextLengthHint')}
-          type="number"
-          min="0"
           value={form.context_length}
-          onChange={(event) => onChange({ context_length: event.target.value })}
+          onChange={(value) => onChange({ context_length: value })}
         />
-        <TextInput
-          layout="inline"
+        <TokenCountInput
           label={t('maxOutputTokens')}
           hint={t('maxOutputTokensHint')}
-          type="number"
-          min="0"
           value={form.max_output_tokens}
-          onChange={(event) => onChange({ max_output_tokens: event.target.value })}
+          onChange={(value) => onChange({ max_output_tokens: value })}
         />
         <PriceInput
           label={t('priceInputTokens')}
@@ -977,6 +982,36 @@ function PriceInput({
       hint={invalid ? t('pricingInvalid') : hint}
       inputMode="decimal"
       placeholder="0.00"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
+/** A token count that accepts `k`/`m` shorthand (`"128k"`, `"1.5M"`) as typed
+ * rather than expanding it immediately — the operator keeps editing the
+ * abbreviation they wrote, and it is only converted to a plain integer on
+ * save (see `buildUpsertPayload`). */
+function TokenCountInput({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const t = useTranslations('adminProviders');
+  const invalid = value.trim() !== '' && parseTokenCount(value) === null;
+  return (
+    <TextInput
+      layout="inline"
+      label={label}
+      hint={invalid ? t('tokenCountInvalid') : hint}
+      inputMode="text"
+      placeholder="128K"
       value={value}
       onChange={(event) => onChange(event.target.value)}
     />
@@ -1213,12 +1248,14 @@ function IconAction({
       disabled={busy}
       onClick={onClick}
       className={cn(
-        'inline-flex size-8 items-center justify-center rounded-[var(--radius-sm)] border border-border bg-surface transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
-        busy ? 'animate-pulse cursor-progress opacity-70' : '',
+        'inline-flex size-8 items-center justify-center rounded-[var(--radius-sm)] border border-border bg-surface transition-all duration-150 ease-out',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary',
+        busy
+          ? 'animate-pulse cursor-progress opacity-70'
+          : 'cursor-pointer hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:scale-90 active:shadow-none',
         tone === 'danger'
-          ? 'text-danger hover:border-danger hover:bg-danger/10'
-          : 'text-muted hover:border-accent hover:text-accent',
+          ? 'text-danger hover:border-danger hover:bg-danger/10 active:bg-danger/15'
+          : 'text-muted hover:border-primary hover:bg-primary/10 hover:text-primary active:bg-primary/15',
       )}
     >
       {children}
@@ -1272,7 +1309,7 @@ function NodeRow({
       className={
         'grid gap-4 rounded-[var(--radius-sm)] border p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ' +
         (endpoint.role === 'primary'
-          ? 'border-accent/40 bg-accent/5'
+          ? 'border-primary/40 bg-primary/5'
           : 'border-border bg-surface-soft')
       }
     >
@@ -1285,11 +1322,12 @@ function NodeRow({
             <button
               type="button"
               onClick={() => onEdit(endpoint)}
-              className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm)] text-left transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="group flex min-w-0 cursor-pointer items-center gap-2 rounded-[var(--radius-sm)] -mx-1.5 -my-1 px-1.5 py-1 text-left transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               title={t('editModel')}
             >
-              <span className="truncate font-medium">{endpoint.name}</span>
+              <span className="truncate font-medium group-hover:underline">{endpoint.name}</span>
               <span className="font-mono text-[11px] text-muted">{endpoint.id}</span>
+              <IconPencil className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
             </button>
           ) : (
             <>
@@ -1392,11 +1430,11 @@ function NodeRow({
         ) : null}
       </div>
       {editable ? (
-        // The toggle takes its own line so the two icon buttons read as one
-        // group; before, four full-width buttons wrapped unpredictably and
-        // "remove" could land next to "validate" on one row and under it on
-        // the next.
-        <div className="flex w-full flex-col items-end gap-2 border-t border-border pt-3 lg:w-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
+        // Enable, validate and remove all read as one action group on a
+        // single row now — keeping them stacked made the row feel taller
+        // than it needed to be and separated actions an operator reaches
+        // for together.
+        <div className="flex w-full items-center justify-end gap-3 border-t border-border pt-3 lg:w-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
           <InlineToggle
             label={`${endpoint.name} · ${t('modelEnabled')}`}
             checked={endpoint.enabled}
