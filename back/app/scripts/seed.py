@@ -1470,22 +1470,39 @@ def _seed_community(session: Session, users: dict[str, User], works: list[Work])
     for position, work in enumerate(works[:2]):
         session.add(CollectionItem(collection_id=collection.id, work_id=work.id, position=position))
 
+    # Both notifications below interpolate `work_title` into their message
+    # template (`notification.work_remixed` / `notification.royalty_received`);
+    # omitting it renders as an empty 《》, matching the real `notify()` calls
+    # in `publishing/service.py` which always carry the version's title.
+    remixed_version = session.get(WorkVersion, works[1].current_version_id or "")
+    assert remixed_version is not None
     session.add(
         Notification(
             user_id=users["linhai"].id,
             type=NotificationType.WORK_REMIXED,
             title_key="notification.work_remixed",
-            payload_json={"work_id": works[1].id},
+            payload_json={
+                "work_id": works[1].id,
+                "work_version_id": remixed_version.id,
+                "work_title": remixed_version.title,
+            },
             target_type="work",
             target_id=works[1].id,
         )
     )
+    royalty_version = session.get(WorkVersion, works[3].current_version_id or "")
+    assert royalty_version is not None
     session.add(
         Notification(
             user_id=users["mizuki"].id,
             type=NotificationType.ROYALTY_RECEIVED,
             title_key="notification.royalty_received",
-            payload_json={"amount": 2, "work_id": works[3].id},
+            payload_json={
+                "amount": 2,
+                "work_id": works[3].id,
+                "work_version_id": royalty_version.id,
+                "work_title": royalty_version.title,
+            },
             target_type="work",
             target_id=works[3].id,
         )
