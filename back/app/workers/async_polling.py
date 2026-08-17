@@ -27,6 +27,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.agents import router
+from app.domain.costs import service as costs_service
 from app.domain.jobs import async_tasks
 from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
@@ -128,6 +129,7 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
         succeeded=result.succeeded,
         latency_ms=result.latency_ms,
         cost_minor=result.cost_minor,
+        cost_micro_usd=_attempt_cost_micro_usd(session, task, capability, request, job.operation),
     )
 
     if not result.succeeded or result.object_key is None:
@@ -282,7 +284,8 @@ def _replay_parked(
             return
     if kind == "failed":
         _close_attempt(session, task, ProviderAttemptStatus.FAILED, None)
-        _resume_failed(session, job, task, code=str(parked.get("code") or "PROVIDER_TEMPORARY_FAILURE"))
+        code = str(parked.get("code") or "PROVIDER_TEMPORARY_FAILURE")
+        _resume_failed(session, job, task, code=code)
         return
     async_tasks.reschedule(session, task)
     session.commit()
@@ -347,6 +350,29 @@ def _context(session: Session, job: GenerationJob, task: AsyncProviderTask) -> W
 def _request_from(payload: dict[str, Any]) -> GenerationRequest:
     known = {field.name for field in fields(GenerationRequest)}
     return GenerationRequest(**{k: v for k, v in payload.items() if k in known})
+
+
+def _attempt_cost_micro_usd(
+    session: Session,
+    task: AsyncProviderTask,
+    capability: Any,
+    request: GenerationRequest,
+    operation: str,
+) -> int:
+    """What this render cost, priced when it was submitted rather than now.
+
+    A render can sit with the upstream for minutes; re-pricing it on the tick
+    that happens to settle it would attribute a price change to the wrong
+    call. Recomputing from the same request is only the fallback for a task
+    whose attempt row is gone.
+    """
+    if task.provider_attempt_id:
+        attempt = session.get(ProviderAttempt, task.provider_attempt_id)
+        if attempt is not None:
+            return attempt.cost_micro_usd
+    return costs_service.generation_attempt_cost_micro_usd(
+        capability.pricing, capability=operation, request=request
+    )
 
 
 def _close_attempt(

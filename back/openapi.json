@@ -2073,6 +2073,26 @@
             }
           },
           {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "template",
+                    "image_asset"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Type"
+            }
+          },
+          {
             "name": "access",
             "in": "query",
             "required": false,
@@ -3202,6 +3222,7 @@
           "generation"
         ],
         "summary": "List Jobs",
+        "description": "Lists the user's own jobs, optionally scoped to one draft.\n\n`draft_id` is how the image studio's inline version-history strip lists\nevery iteration generated under the same creative draft — the\n`user_id`/`origin` filters below already keep this from leaking another\nuser's jobs even if a foreign draft id is passed.",
         "operationId": "list_jobs_v1_generation_jobs_get",
         "parameters": [
           {
@@ -3218,6 +3239,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Draft Id"
             }
           },
           {
@@ -3757,6 +3794,7 @@
           "prompts"
         ],
         "summary": "Enhance Generation Prompt",
+        "description": "把画面描述交给文案 Agent 逐维度诊断并润色，保留用户核心意图。",
         "operationId": "enhance_generation_prompt_v1_generation_prompts_enhance_post",
         "parameters": [
           {
@@ -3926,7 +3964,7 @@
           "shortform"
         ],
         "summary": "Enhance Prompt",
-        "description": "把画面描述交给文案 Agent 评估详细度并润色，保留用户核心意图。",
+        "description": "把画面描述交给文案 Agent 逐维度诊断并润色，保留用户核心意图。",
         "operationId": "enhance_prompt_v1_shortform_prompt_enhance_post",
         "parameters": [
           {
@@ -4476,6 +4514,274 @@
         }
       }
     },
+    "/v1/characters/{character_id}/reference-assets/{asset_id}": {
+      "patch": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Update Character Reference Asset",
+        "operationId": "update_character_reference_asset_v1_characters__character_id__reference_assets__asset_id__patch",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterReferenceAssetUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Delete Character Reference Asset",
+        "operationId": "delete_character_reference_asset_v1_characters__character_id__reference_assets__asset_id__delete",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{character_id}/publish": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Publish Character",
+        "operationId": "publish_character_v1_characters__character_id__publish_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/characters/{character_id}/withdraw": {
+      "post": {
+        "tags": [
+          "characters"
+        ],
+        "summary": "Withdraw Character",
+        "operationId": "withdraw_character_v1_characters__character_id__withdraw_post",
+        "parameters": [
+          {
+            "name": "character_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Character Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/series": {
       "post": {
         "tags": [
@@ -4762,6 +5068,547 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes": {
+      "post": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Create Scene",
+        "operationId": "create_scene_v1_scenes_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "List Scenes",
+        "operationId": "list_scenes_v1_scenes_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SceneResponse"
+                  },
+                  "title": "Response List Scenes V1 Scenes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{scene_id}": {
+      "get": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Get Scene",
+        "operationId": "get_scene_v1_scenes__scene_id__get",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Update Scene",
+        "operationId": "update_scene_v1_scenes__scene_id__patch",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Delete Scene",
+        "operationId": "delete_scene_v1_scenes__scene_id__delete",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{scene_id}/reference-assets/{asset_id}": {
+      "patch": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Update Scene Reference Asset",
+        "operationId": "update_scene_reference_asset_v1_scenes__scene_id__reference_assets__asset_id__patch",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneReferenceAssetUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Delete Scene Reference Asset",
+        "operationId": "delete_scene_reference_asset_v1_scenes__scene_id__reference_assets__asset_id__delete",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{scene_id}/publish": {
+      "post": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Publish Scene",
+        "operationId": "publish_scene_v1_scenes__scene_id__publish_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scenes/{scene_id}/withdraw": {
+      "post": {
+        "tags": [
+          "scenes"
+        ],
+        "summary": "Withdraw Scene",
+        "operationId": "withdraw_scene_v1_scenes__scene_id__withdraw_post",
+        "parameters": [
+          {
+            "name": "scene_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scene Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneResponse"
                 }
               }
             }
@@ -6132,6 +6979,54 @@
                 "schema": {
                   "$ref": "#/components/schemas/CountResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications/stream": {
+      "get": {
+        "tags": [
+          "community"
+        ],
+        "summary": "Stream Notifications",
+        "description": "Live tail of this user's notifications, for the bell badge/popover and\nthe right-side creation-status toasts.\n\nUnlike `/generation-jobs/{id}/events`, there is no `Last-Event-ID` backfill\nhere: `GET /notifications` already covers \"current state on load,\" so this\nstream only has to carry the live tail. That also means the generator below\nmust never touch `session` — it is request-scoped and already closed by the\ntime a `StreamingResponse` generator body runs; everything it needs comes\nfrom `publisher.subscribe_notifications`, which is pure Redis.",
+        "operationId": "stream_notifications_v1_notifications_stream_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -8602,6 +9497,406 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts": {
+      "post": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Create Script",
+        "operationId": "create_script_v1_scripts_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "List Scripts",
+        "operationId": "list_scripts_v1_scripts_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScriptSummaryResponse"
+                  },
+                  "title": "Response List Scripts V1 Scripts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}": {
+      "get": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Get Script",
+        "operationId": "get_script_v1_scripts__episode_id__get",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/turns/{turn_id}/snapshot": {
+      "get": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Get Turn Snapshot",
+        "operationId": "get_turn_snapshot_v1_scripts__episode_id__turns__turn_id__snapshot_get",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "turn_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Turn Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptTurnSnapshotResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/links": {
+      "patch": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Update Script Links",
+        "description": "Links characters/scene headings to reusable `Character`/`Scene`\nassets. Unlike every other route in this file, this is a plain\nrequest/response — it is a structural edit, not a content revision, so\nit never touches the SSE turn machinery (see `update_links`'s docstring).",
+        "operationId": "update_script_links_v1_scripts__episode_id__links_patch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptLinksUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptDocument"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/turns": {
+      "post": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Create Turn",
+        "operationId": "create_turn_v1_scripts__episode_id__turns_post",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -14544,6 +15839,130 @@
         }
       }
     },
+    "/v1/admin/statistics/costs": {
+      "get": {
+        "tags": [
+          "admin:statistics"
+        ],
+        "summary": "Costs Timeseries",
+        "description": "Daily spend on model vendors, split into text and media.\n\nEvery point was priced when the call happened, so re-reading an old\nwindow never changes what it says. Calls served by an endpoint with no\nconfigured price contribute nothing — unknown, not free.",
+        "operationId": "costs_timeseries_v1_admin_statistics_costs_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 180,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostTimeseriesView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/statistics/costs/breakdown": {
+      "get": {
+        "tags": [
+          "admin:statistics"
+        ],
+        "summary": "Costs Breakdown",
+        "description": "The same window, cut by vendor endpoint and by model.\n\nEndpoint names come from the live config, so an endpoint deleted since\nthe spend happened still reports its id with a blank name rather than\ndropping the money it cost.",
+        "operationId": "costs_breakdown_v1_admin_statistics_costs_breakdown_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 180,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostBreakdownView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/statistics/users": {
       "get": {
         "tags": [
@@ -15093,6 +16512,22 @@
             }
           },
           {
+            "name": "asset_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ImageAssetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asset Kind"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -15213,6 +16648,22 @@
             "required": true,
             "schema": {
               "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "asset_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ImageAssetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asset Kind"
             }
           },
           {
@@ -16839,18 +18290,6 @@
             ],
             "title": "Backup Endpoint Id"
           },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 160
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
-          },
           "reasoning_model": {
             "anyOf": [
               {
@@ -16861,6 +18300,22 @@
               }
             ],
             "title": "Reasoning Model"
+          },
+          "default_for_asset_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "scene",
+                  "cover"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default For Asset Kind"
           }
         },
         "type": "object",
@@ -16958,18 +18413,6 @@
             ],
             "title": "Backup Endpoint Id"
           },
-          "model": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 160
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
-          },
           "reasoning_model": {
             "anyOf": [
               {
@@ -16980,11 +18423,27 @@
               }
             ],
             "title": "Reasoning Model"
+          },
+          "default_for_asset_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "scene",
+                  "cover"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default For Asset Kind"
           }
         },
         "type": "object",
         "title": "AgentProfileUpdateRequest",
-        "description": "Partial AgentProfile update.\n\nEndpoint/model pins use an empty string to clear. `reasoning_model`\ndistinguishes omission (keep the current override) from explicit null\n(inherit the role's default Agent)."
+        "description": "Partial AgentProfile update.\n\nEndpoint pins use an empty string to clear. `reasoning_model`\ndistinguishes omission (keep the current override) from explicit null\n(inherit the role's default Agent)."
       },
       "AgentProfileView": {
         "properties": {
@@ -17027,6 +18486,22 @@
           "is_default": {
             "type": "boolean",
             "title": "Is Default"
+          },
+          "default_for_asset_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "scene",
+                  "cover"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default For Asset Kind"
           },
           "enabled": {
             "type": "boolean",
@@ -17988,6 +19463,18 @@
         "title": "AsyncProviderTaskView",
         "description": "One in-flight external render, surfaced so an operator can see what a\n`RUNNING` job with no Celery task in flight is actually waiting on."
       },
+      "AudioPricingPayload": {
+        "properties": {
+          "per_10k_characters_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Per 10K Characters Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "AudioPricingPayload"
+      },
       "AuditLogView": {
         "properties": {
           "id": {
@@ -18294,6 +19781,137 @@
         ],
         "title": "CharacterCreateRequest"
       },
+      "CharacterPublishRequest": {
+        "properties": {
+          "portrait_consent": {
+            "type": "boolean",
+            "title": "Portrait Consent",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "CharacterPublishRequest"
+      },
+      "CharacterReferenceAsset": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "view": {
+            "type": "string",
+            "title": "View",
+            "default": "general"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "CharacterReferenceAsset"
+      },
+      "CharacterReferenceAssetAdminView": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "view": {
+            "type": "string",
+            "title": "View",
+            "default": "general"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "CharacterReferenceAssetAdminView"
+      },
+      "CharacterReferenceAssetUpdateRequest": {
+        "properties": {
+          "view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CharacterViewAngle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "CharacterReferenceAssetUpdateRequest"
+      },
       "CharacterResponse": {
         "properties": {
           "created_at": {
@@ -18325,19 +19943,12 @@
             ],
             "title": "Description"
           },
-          "reference_asset_ids": {
+          "reference_assets": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/CharacterReferenceAsset"
             },
             "type": "array",
-            "title": "Reference Asset Ids"
-          },
-          "reference_asset_urls": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Reference Asset Urls"
+            "title": "Reference Assets"
           },
           "voice_description": {
             "anyOf": [
@@ -18349,6 +19960,19 @@
               }
             ],
             "title": "Voice Description"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreationSkillStatus",
+            "default": "draft"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CreationSkillVisibility",
+            "default": "private"
+          },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
           }
         },
         "type": "object",
@@ -18417,6 +20041,17 @@
         },
         "type": "object",
         "title": "CharacterUpdateRequest"
+      },
+      "CharacterViewAngle": {
+        "type": "string",
+        "enum": [
+          "general",
+          "front",
+          "side",
+          "back"
+        ],
+        "title": "CharacterViewAngle",
+        "description": "Which pose/angle one of a character's reference images is for.\n\nNamed `*Angle` (not plain `CharacterView`) to avoid colliding with\n`app.domain.characters.service.CharacterView`, the unrelated\n`CreationSkill` projection type. Independent of `ImageAssetKind`: a\n`CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing\nvia `GenerationParams.character_views` (see\n`app.workflows.nodes.execute_asset_output_advance`), one at a time,\nlooping the shared `image_asset_graph` back to `asset_planning` between\neach. `GENERAL` is reserved for a plain uploaded reference with no fixed\npose (`characters.service._entries_from_flat_ids`) — a generation job\nnever targets it."
       },
       "CheckoutRequest": {
         "properties": {
@@ -18978,6 +20613,100 @@
         ],
         "title": "ContentTimeseriesView"
       },
+      "CostBreakdownView": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "window_days": {
+            "type": "integer",
+            "title": "Window Days"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderCostSeriesView"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCostView"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "window_days"
+        ],
+        "title": "CostBreakdownView"
+      },
+      "CostDailyPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "llm_micro_usd": {
+            "type": "integer",
+            "title": "Llm Micro Usd",
+            "default": 0
+          },
+          "media_micro_usd": {
+            "type": "integer",
+            "title": "Media Micro Usd",
+            "default": 0
+          },
+          "total_micro_usd": {
+            "type": "integer",
+            "title": "Total Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "date"
+        ],
+        "title": "CostDailyPoint",
+        "description": "One day of model spend, in micro-USD (1e-6 USD) integers.\n\nMicro rather than cents because vendor prices go far below a cent; the\nconsole divides by 1_000_000 to display dollars. This is what we pay\nvendors — unrelated to the credits a user spends."
+      },
+      "CostTimeseriesView": {
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "window_days": {
+            "type": "integer",
+            "title": "Window Days"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CostDailyPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          },
+          "total_micro_usd": {
+            "type": "integer",
+            "title": "Total Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "generated_at",
+          "window_days"
+        ],
+        "title": "CostTimeseriesView"
+      },
       "CountResponse": {
         "properties": {
           "count": {
@@ -19070,6 +20799,32 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "character_reference_assets": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterReferenceAssetAdminView"
+            },
+            "type": "array",
+            "title": "Character Reference Assets"
+          },
+          "character_portrait_consent_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Portrait Consent At"
+          },
+          "scene_reference_assets": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterReferenceAssetAdminView"
+            },
+            "type": "array",
+            "title": "Scene Reference Assets"
           }
         },
         "type": "object",
@@ -19092,6 +20847,9 @@
           "scene",
           "lens",
           "style",
+          "character",
+          "scene_asset",
+          "cover_asset",
           "other"
         ],
         "title": "CreationSkillCategory"
@@ -21184,6 +22942,58 @@
               }
             ]
           },
+          "output_asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Asset Ids"
+          },
+          "output_urls": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Urls"
+          },
+          "asset_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageAssetKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "character_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterViewAngle"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Views"
+          },
           "draft_id": {
             "anyOf": [
               {
@@ -21194,6 +23004,17 @@
               }
             ],
             "title": "Draft Id"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
           },
           "failure_code": {
             "anyOf": [
@@ -21365,6 +23186,14 @@
             "maxItems": 4,
             "title": "Character Ids"
           },
+          "scene_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Scene Ids"
+          },
           "skill_ids": {
             "items": {
               "type": "string"
@@ -21384,6 +23213,54 @@
               }
             ],
             "title": "Style Gallery Id"
+          },
+          "asset_kind": {
+            "$ref": "#/components/schemas/ImageAssetKind",
+            "default": "general"
+          },
+          "character_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterViewAngle"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Views"
+          },
+          "target_character_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Character Id"
+          },
+          "target_scene_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Scene Id"
+          },
+          "auto_attach_asset": {
+            "type": "boolean",
+            "title": "Auto Attach Asset",
+            "default": true
           },
           "extra": {
             "additionalProperties": true,
@@ -21409,6 +23286,35 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImageAssetKind": {
+        "type": "string",
+        "enum": [
+          "general",
+          "character",
+          "scene",
+          "cover"
+        ],
+        "title": "ImageAssetKind",
+        "description": "What a `text_to_image`/`image_to_image` job's output is *for*.\n\nOrthogonal to `Operation`: this is the extra dimension\n`GenerationWorkflowTemplate.asset_kind` and `GenerationParams.asset_kind`\nadd on top of it. `GENERAL` is the default and means \"a plain, freeform\nimage\" — today's behaviour, unchanged. `CHARACTER` covers all three of a\ncharacter's turnaround views (front/side/back) — see `CharacterView` for\nwhich one(s) a given job actually produces\n(`GenerationParams.character_views`) — and `SCENE`/`COVER` each double as\nthe `view` tag on a scene's reference-asset entries\n(`reference_assets: [{\"asset_id\", \"view\", \"label\"}]`) the same way\n`CharacterView` does for a character's, so a generated image can be\ntraced back to exactly which pose/shot it was made for."
+      },
+      "ImagePricingPayload": {
+        "properties": {
+          "input_per_image_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Input Per Image Micro Usd",
+            "default": 0
+          },
+          "generation_per_image_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Generation Per Image Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ImagePricingPayload"
       },
       "JobAnswerItem": {
         "properties": {
@@ -21490,6 +23396,17 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
           }
         },
         "type": "object",
@@ -22669,13 +24586,6 @@
             "title": "Kind",
             "default": "general"
           },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Models"
-          },
           "role": {
             "type": "string",
             "enum": [
@@ -22695,8 +24605,8 @@
           "model": {
             "type": "string",
             "maxLength": 200,
-            "title": "Model",
-            "default": ""
+            "minLength": 1,
+            "title": "Model"
           },
           "input_modalities": {
             "items": {
@@ -22750,12 +24660,33 @@
             "type": "boolean",
             "title": "Enabled",
             "default": true
+          },
+          "context_length": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": 0.0,
+            "title": "Context Length",
+            "default": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Max Output Tokens",
+            "default": 0
+          },
+          "token_pricing": {
+            "$ref": "#/components/schemas/TokenPricingPayload"
+          },
+          "media_pricing": {
+            "$ref": "#/components/schemas/MediaPricingPayload"
           }
         },
         "type": "object",
         "required": [
           "name",
-          "base_url"
+          "base_url",
+          "model"
         ],
         "title": "LlmProviderEndpointUpsertRequest"
       },
@@ -22796,13 +24727,6 @@
             ],
             "title": "Kind",
             "default": "general"
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Models"
           },
           "model": {
             "type": "string",
@@ -22873,6 +24797,22 @@
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
+          },
+          "context_length": {
+            "type": "integer",
+            "title": "Context Length",
+            "default": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "title": "Max Output Tokens",
+            "default": 0
+          },
+          "token_pricing": {
+            "$ref": "#/components/schemas/TokenPricingPayload"
+          },
+          "media_pricing": {
+            "$ref": "#/components/schemas/MediaPricingPayload"
           },
           "concurrency_in_use": {
             "type": "integer",
@@ -23396,6 +25336,43 @@
         ],
         "title": "MeResponse"
       },
+      "MediaPricingPayload": {
+        "properties": {
+          "image": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImagePricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioPricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "video": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoPricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "MediaPricingPayload",
+        "description": "Sections a media endpoint's capabilities do not cover are dropped\nserver-side, so a stale price cannot outlive the capability it billed."
+      },
       "MediaType": {
         "type": "string",
         "enum": [
@@ -23404,6 +25381,49 @@
           "audio"
         ],
         "title": "MediaType"
+      },
+      "ModelCostView": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "endpoint_id": {
+            "type": "string",
+            "title": "Endpoint Id",
+            "default": ""
+          },
+          "endpoint_name": {
+            "type": "string",
+            "title": "Endpoint Name",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "media"
+            ],
+            "title": "Kind",
+            "default": "general"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls",
+            "default": 0
+          },
+          "total_micro_usd": {
+            "type": "integer",
+            "title": "Total Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "ModelCostView",
+        "description": "Window total for one model. Cumulative rather than a trend: with more\nthan a handful of models configured, per-model lines stop being legible."
       },
       "ModerationDecisionRequest": {
         "properties": {
@@ -25961,6 +27981,47 @@
         ],
         "title": "PromptClarifyResponse"
       },
+      "PromptDimensionView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "subject",
+              "scene",
+              "action",
+              "camera",
+              "lighting",
+              "mood",
+              "pacing",
+              "composition",
+              "style",
+              "detail"
+            ],
+            "title": "Key"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "weak",
+              "ok"
+            ],
+            "title": "Status"
+          },
+          "hint": {
+            "type": "string",
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "status",
+          "hint"
+        ],
+        "title": "PromptDimensionView",
+        "description": "One diagnosed aspect of the description, rendered as a checklist row."
+      },
       "PromptEnhanceRequest": {
         "properties": {
           "prompt": {
@@ -25968,13 +28029,104 @@
             "maxLength": 600,
             "minLength": 1,
             "title": "Prompt"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Operation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 600.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "quality_tier": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityTier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "style_hint": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Style Hint",
+            "default": ""
+          },
+          "has_reference": {
+            "type": "boolean",
+            "title": "Has Reference",
+            "default": false
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "more_specific",
+                  "more_concise",
+                  "stronger_camera",
+                  "stronger_lighting",
+                  "more_dramatic"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "instruction": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Instruction",
+            "default": ""
+          },
+          "asset_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageAssetKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "required": [
           "prompt"
         ],
-        "title": "PromptEnhanceRequest"
+        "title": "PromptEnhanceRequest",
+        "description": "A polish request, plus whatever the studio already knows about the job.\n\nEverything past `prompt` is optional: the context only sharpens the\nadvice (camera notes belong on a video, not a poster), and a caller that\nhas not picked an aspect ratio yet must still be able to ask."
       },
       "PromptEnhanceResponse": {
         "properties": {
@@ -25995,17 +28147,26 @@
             "type": "string",
             "title": "Feedback"
           },
-          "degraded": {
-            "type": "boolean",
-            "title": "Degraded"
+          "dimensions": {
+            "items": {
+              "$ref": "#/components/schemas/PromptDimensionView"
+            },
+            "type": "array",
+            "title": "Dimensions"
+          },
+          "additions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Additions"
           }
         },
         "type": "object",
         "required": [
           "prompt",
           "detail_level",
-          "feedback",
-          "degraded"
+          "feedback"
         ],
         "title": "PromptEnhanceResponse"
       },
@@ -26147,6 +28308,37 @@
         ],
         "title": "ProviderAttemptView"
       },
+      "ProviderCostSeriesView": {
+        "properties": {
+          "endpoint_id": {
+            "type": "string",
+            "title": "Endpoint Id"
+          },
+          "endpoint_name": {
+            "type": "string",
+            "title": "Endpoint Name",
+            "default": ""
+          },
+          "total_micro_usd": {
+            "type": "integer",
+            "title": "Total Micro Usd",
+            "default": 0
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CostDailyPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint_id"
+        ],
+        "title": "ProviderCostSeriesView",
+        "description": "One endpoint's daily spend. A media endpoint's per-capability attempts\nare rolled back up to the endpoint, because that is what gets billed."
+      },
       "ProviderDailyPoint": {
         "properties": {
           "date": {
@@ -26221,9 +28413,9 @@
             "type": "integer",
             "title": "P95 Latency Ms"
           },
-          "effective_cost": {
+          "effective_cost_micro_usd": {
             "type": "integer",
-            "title": "Effective Cost"
+            "title": "Effective Cost Micro Usd"
           },
           "enabled": {
             "type": "boolean",
@@ -26240,7 +28432,7 @@
           "success_rate",
           "p50_latency_ms",
           "p95_latency_ms",
-          "effective_cost",
+          "effective_cost_micro_usd",
           "enabled"
         ],
         "title": "ProviderStatView"
@@ -26661,6 +28853,25 @@
             "minimum": 0.0,
             "title": "Duration Seconds",
             "default": 0
+          },
+          "asset_kind": {
+            "$ref": "#/components/schemas/ImageAssetKind",
+            "default": "general"
+          },
+          "character_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterViewAngle"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Views"
           }
         },
         "type": "object",
@@ -27432,6 +29643,630 @@
           "job_id"
         ],
         "title": "RoutingReplayResponse"
+      },
+      "SceneCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "reference_asset_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Reference Asset Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SceneCreateRequest"
+      },
+      "SceneReferenceAsset": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "view": {
+            "type": "string",
+            "title": "View",
+            "default": "general"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "SceneReferenceAsset"
+      },
+      "SceneReferenceAssetUpdateRequest": {
+        "properties": {
+          "view": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "SceneReferenceAssetUpdateRequest"
+      },
+      "SceneResponse": {
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "reference_assets": {
+            "items": {
+              "$ref": "#/components/schemas/SceneReferenceAsset"
+            },
+            "type": "array",
+            "title": "Reference Assets"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CreationSkillStatus",
+            "default": "draft"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/CreationSkillVisibility",
+            "default": "private"
+          },
+          "access_credits": {
+            "type": "integer",
+            "title": "Access Credits",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "created_at",
+          "updated_at",
+          "id",
+          "name"
+        ],
+        "title": "SceneResponse"
+      },
+      "SceneUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "reference_asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 4
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Asset Ids"
+          }
+        },
+        "type": "object",
+        "title": "SceneUpdateRequest"
+      },
+      "ScriptBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "character": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "ScriptBlock"
+      },
+      "ScriptCharacter": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "traits": {
+            "type": "string",
+            "title": "Traits",
+            "default": ""
+          },
+          "character_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ScriptCharacter"
+      },
+      "ScriptCharacterLinkUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "character_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ScriptCharacterLinkUpdate"
+      },
+      "ScriptCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 60,
+            "title": "Title",
+            "default": ""
+          },
+          "idea": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Idea"
+          },
+          "referenced_skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Referenced Skill Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "idea"
+        ],
+        "title": "ScriptCreateRequest"
+      },
+      "ScriptDetailResponse": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "series_id": {
+            "type": "string",
+            "title": "Series Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "script": {
+            "$ref": "#/components/schemas/ScriptDocument"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptTurnSummary"
+            },
+            "type": "array",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "episode_id",
+          "series_id",
+          "title",
+          "status",
+          "script",
+          "turns"
+        ],
+        "title": "ScriptDetailResponse"
+      },
+      "ScriptDocument": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "logline": {
+            "type": "string",
+            "title": "Logline",
+            "default": ""
+          },
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptCharacter"
+            },
+            "type": "array",
+            "title": "Characters"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptScene"
+            },
+            "type": "array",
+            "title": "Scenes"
+          }
+        },
+        "type": "object",
+        "title": "ScriptDocument"
+      },
+      "ScriptLinksUpdateRequest": {
+        "properties": {
+          "characters": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptCharacterLinkUpdate"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Characters"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptSceneLinkUpdate"
+            },
+            "type": "array",
+            "maxItems": 40,
+            "title": "Scenes"
+          }
+        },
+        "type": "object",
+        "title": "ScriptLinksUpdateRequest",
+        "description": "A structural edit, not a content revision — never goes through the\nLLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched\nby `name`/`heading` against the episode's current `script_json` rather\nthan by index, since either list can be reordered by a revision turn\nthat runs concurrently with a link update landing."
+      },
+      "ScriptScene": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptBlock"
+            },
+            "type": "array",
+            "title": "Blocks"
+          },
+          "ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading",
+          "blocks"
+        ],
+        "title": "ScriptScene"
+      },
+      "ScriptSceneLinkUpdate": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading"
+        ],
+        "title": "ScriptSceneLinkUpdate"
+      },
+      "ScriptSummaryResponse": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "logline": {
+            "type": "string",
+            "title": "Logline",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "turn_count": {
+            "type": "integer",
+            "title": "Turn Count"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "episode_id",
+          "title",
+          "status",
+          "turn_count",
+          "updated_at"
+        ],
+        "title": "ScriptSummaryResponse"
+      },
+      "ScriptTurnRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "referenced_skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Referenced Skill Ids"
+          },
+          "current_script": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScriptDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ScriptTurnRequest"
+      },
+      "ScriptTurnSnapshotResponse": {
+        "properties": {
+          "turn_id": {
+            "type": "string",
+            "title": "Turn Id"
+          },
+          "turn_no": {
+            "type": "integer",
+            "title": "Turn No"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "script": {
+            "$ref": "#/components/schemas/ScriptDocument"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn_id",
+          "turn_no",
+          "summary",
+          "script"
+        ],
+        "title": "ScriptTurnSnapshotResponse"
+      },
+      "ScriptTurnSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "turn_no": {
+            "type": "integer",
+            "title": "Turn No"
+          },
+          "user_message": {
+            "type": "string",
+            "title": "User Message"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "referenced_skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced Skill Ids"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "turn_no",
+          "user_message",
+          "summary",
+          "created_at"
+        ],
+        "title": "ScriptTurnSummary"
       },
       "SeedRequest": {
         "properties": {
@@ -28475,6 +31310,25 @@
         ],
         "title": "TimelineSummaryResponse"
       },
+      "TokenPricingPayload": {
+        "properties": {
+          "input_per_million_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Input Per Million Micro Usd",
+            "default": 0
+          },
+          "output_per_million_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Output Per Million Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "TokenPricingPayload",
+        "description": "`kind=\"general\"` list price, in micro-USD (1e-6 USD) per million tokens.\n\n$0.060 per million is 60_000 here. Integers rather than a decimal string\nso the contract has one representation; the console does the conversion\nfrom what an operator types in dollars."
+      },
       "TokenResponse": {
         "properties": {
           "access_token": {
@@ -28967,6 +31821,40 @@
         "type": "object",
         "title": "VideoGenerationOptions",
         "description": "Typed H3 options; arbitrary provider JSON and webhooks are forbidden."
+      },
+      "VideoPricingPayload": {
+        "properties": {
+          "generation_per_second_micro_usd": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Generation Per Second Micro Usd"
+          },
+          "input_material_per_second_micro_usd": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Input Material Per Second Micro Usd"
+          },
+          "reference_image_free_count": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Reference Image Free Count",
+            "default": 5
+          },
+          "extra_reference_image_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Extra Reference Image Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "VideoPricingPayload",
+        "description": "Keyed by output resolution, because vendors price 2K and 768P apart."
       },
       "Visibility": {
         "type": "string",
@@ -29663,6 +32551,16 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Graph"
+          },
+          "asset_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageAssetKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -29727,6 +32625,17 @@
           "operation": {
             "type": "string",
             "title": "Operation"
+          },
+          "asset_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Kind"
           },
           "version": {
             "type": "integer",

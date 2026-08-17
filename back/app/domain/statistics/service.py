@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import Integer, case, func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models import (
     AgentRun,
@@ -44,7 +46,7 @@ def _window(days: int) -> tuple[dt.date, list[dt.date]]:
     return start, [start + dt.timedelta(days=offset) for offset in range(days)]
 
 
-def _day_bucket(column: object) -> object:
+def _day_bucket(column: Any) -> ColumnElement[Any]:
     """Truncate a timestamptz column to its UTC calendar day.
 
     The explicit `'UTC'` argument matters: plain `date_trunc('day', col)`
@@ -71,9 +73,9 @@ def jobs_daily(session: Session, days: int) -> list[JobsDailyStat]:
         select(
             _day_bucket(GenerationJob.created_at).label("day"),
             func.count().label("total"),
-            func.sum(
-                case((GenerationJob.status == JobStatus.SUCCEEDED.value, 1), else_=0)
-            ).label("succeeded"),
+            func.sum(case((GenerationJob.status == JobStatus.SUCCEEDED.value, 1), else_=0)).label(
+                "succeeded"
+            ),
             func.sum(case((GenerationJob.status.in_(FAILED_JOB_STATUSES), 1), else_=0)).label(
                 "failed"
             ),
@@ -125,9 +127,7 @@ def providers_daily(session: Session, days: int) -> list[ProviderDailyStat]:
             _day_bucket(ProviderAttempt.created_at).label("day"),
             func.count().label("attempts"),
             func.sum(
-                case(
-                    (ProviderAttempt.status == ProviderAttemptStatus.SUCCEEDED.value, 1), else_=0
-                )
+                case((ProviderAttempt.status == ProviderAttemptStatus.SUCCEEDED.value, 1), else_=0)
             ).label("successes"),
             func.avg(
                 case(
@@ -300,6 +300,182 @@ def content_daily(session: Session, days: int) -> list[ContentDailyStat]:
     ]
 
 
+# --------------------------------------------------------------------------
+# What the platform spends on models
+# --------------------------------------------------------------------------
+#
+# Two independent ledgers add up to one number. Text spend lives on
+# `AgentRun.cost_micro_usd`, media spend on `ProviderAttempt.cost_micro_usd`,
+# and both were priced when the call happened rather than being derived here —
+# so re-reading a past month never changes what it says.
+#
+# Everything is micro-USD (1e-6 USD) integers; formatting into dollars is the
+# console's job. A row of 0 means the endpoint had no configured price, which
+# is why the panel labels the total as covering priced calls only.
+
+
+@dataclass(slots=True)
+class CostDailyStat:
+    date: dt.date
+    llm_micro_usd: int = 0
+    media_micro_usd: int = 0
+
+    @property
+    def total_micro_usd(self) -> int:
+        return self.llm_micro_usd + self.media_micro_usd
+
+
+def cost_daily(session: Session, days: int) -> list[CostDailyStat]:
+    """Total daily model spend, split by what produced it."""
+    start, all_days = _window(days)
+    llm_rows = session.execute(
+        select(
+            _day_bucket(AgentRun.created_at).label("day"),
+            func.sum(AgentRun.cost_micro_usd).label("cost"),
+        )
+        .where(AgentRun.created_at >= start)
+        .group_by("day")
+    ).all()
+    media_rows = session.execute(
+        select(
+            _day_bucket(ProviderAttempt.created_at).label("day"),
+            func.sum(ProviderAttempt.cost_micro_usd).label("cost"),
+        )
+        .where(ProviderAttempt.created_at >= start)
+        .group_by("day")
+    ).all()
+
+    llm_by_day = {row.day.date(): int(row.cost or 0) for row in llm_rows}
+    media_by_day = {row.day.date(): int(row.cost or 0) for row in media_rows}
+    return [
+        CostDailyStat(
+            date=day,
+            llm_micro_usd=llm_by_day.get(day, 0),
+            media_micro_usd=media_by_day.get(day, 0),
+        )
+        for day in all_days
+    ]
+
+
+@dataclass(slots=True)
+class ProviderCostSeries:
+    """One vendor endpoint's spend over the window, zero-filled like the rest."""
+
+    endpoint_id: str
+    points: list[CostDailyStat] = field(default_factory=list)
+
+    @property
+    def total_micro_usd(self) -> int:
+        return sum(point.total_micro_usd for point in self.points)
+
+
+def cost_by_provider_daily(session: Session, days: int) -> list[ProviderCostSeries]:
+    """Daily spend per configured endpoint, biggest spender first.
+
+    A media attempt records its provider as `"{endpoint_id}:{capability}"`,
+    because one endpoint can serve several capabilities independently. Costs
+    roll back up to the endpoint here: an operator deciding whether a vendor
+    is worth keeping cares about the bill from that vendor, not per feature.
+    """
+    start, all_days = _window(days)
+    llm_rows = session.execute(
+        select(
+            _day_bucket(AgentRun.created_at).label("day"),
+            AgentRun.endpoint_id.label("endpoint_id"),
+            func.sum(AgentRun.cost_micro_usd).label("cost"),
+        )
+        .where(AgentRun.created_at >= start, AgentRun.endpoint_id.is_not(None))
+        .group_by("day", AgentRun.endpoint_id)
+    ).all()
+    media_endpoint = func.split_part(ProviderAttempt.provider, ":", 1)
+    media_rows = session.execute(
+        select(
+            _day_bucket(ProviderAttempt.created_at).label("day"),
+            media_endpoint.label("endpoint_id"),
+            func.sum(ProviderAttempt.cost_micro_usd).label("cost"),
+        )
+        .where(ProviderAttempt.created_at >= start)
+        .group_by("day", media_endpoint)
+    ).all()
+
+    series: dict[str, dict[dt.date, CostDailyStat]] = {}
+
+    def _bucket(endpoint_id: str, day: dt.date) -> CostDailyStat:
+        days_for_endpoint = series.setdefault(endpoint_id, {})
+        return days_for_endpoint.setdefault(day, CostDailyStat(date=day))
+
+    for row in llm_rows:
+        _bucket(str(row.endpoint_id), row.day.date()).llm_micro_usd = int(row.cost or 0)
+    for row in media_rows:
+        _bucket(str(row.endpoint_id), row.day.date()).media_micro_usd = int(row.cost or 0)
+
+    result = [
+        ProviderCostSeries(
+            endpoint_id=endpoint_id,
+            points=[by_day.get(day) or CostDailyStat(date=day) for day in all_days],
+        )
+        for endpoint_id, by_day in series.items()
+    ]
+    result.sort(key=lambda item: (-item.total_micro_usd, item.endpoint_id))
+    return result
+
+
+@dataclass(slots=True)
+class ModelCostStat:
+    """Cumulative spend on one model over the window."""
+
+    model: str
+    endpoint_id: str
+    kind: str
+    calls: int = 0
+    total_micro_usd: int = 0
+
+
+def cost_by_model(session: Session, days: int) -> list[ModelCostStat]:
+    """Window totals per model, most expensive first.
+
+    Cumulative rather than a series: this answers "which models are the money
+    going to", which a trend line per model would bury once more than a
+    handful are configured.
+    """
+    start, _ = _window(days)
+    llm_rows = session.execute(
+        select(
+            AgentRun.model.label("model"),
+            AgentRun.endpoint_id.label("endpoint_id"),
+            func.count().label("calls"),
+            func.sum(AgentRun.cost_micro_usd).label("cost"),
+        )
+        .where(AgentRun.created_at >= start, AgentRun.model.is_not(None))
+        .group_by(AgentRun.model, AgentRun.endpoint_id)
+    ).all()
+    media_endpoint = func.split_part(ProviderAttempt.provider, ":", 1)
+    media_rows = session.execute(
+        select(
+            ProviderAttempt.model_or_workflow_version.label("model"),
+            media_endpoint.label("endpoint_id"),
+            func.count().label("calls"),
+            func.sum(ProviderAttempt.cost_micro_usd).label("cost"),
+        )
+        .where(ProviderAttempt.created_at >= start)
+        .group_by(ProviderAttempt.model_or_workflow_version, media_endpoint)
+    ).all()
+
+    result = [
+        ModelCostStat(
+            model=str(row.model),
+            endpoint_id=str(row.endpoint_id or ""),
+            kind=kind,
+            calls=int(row.calls or 0),
+            total_micro_usd=int(row.cost or 0),
+        )
+        for kind, rows in (("general", llm_rows), ("media", media_rows))
+        for row in rows
+    ]
+    result.sort(key=lambda item: (-item.total_micro_usd, item.model, item.endpoint_id))
+    return result
+
+
 @dataclass(slots=True)
 class UserGrowthDailyStat:
     date: dt.date
@@ -329,12 +505,8 @@ def users_growth(session: Session, days: int) -> UserGrowthStats:
     total_users = int(session.scalar(select(func.count()).select_from(User)) or 0)
     suspended_users = int(
         session.scalar(
-            select(func.count())
-            .select_from(User)
-            .where(User.status == UserStatus.SUSPENDED.value)
+            select(func.count()).select_from(User).where(User.status == UserStatus.SUSPENDED.value)
         )
         or 0
     )
-    return UserGrowthStats(
-        points=points, total_users=total_users, suspended_users=suspended_users
-    )
+    return UserGrowthStats(points=points, total_users=total_users, suspended_users=suspended_users)

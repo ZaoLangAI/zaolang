@@ -83,6 +83,43 @@ class EpisodeCut(Base, TimestampMixin):
     )
 
 
+class EpisodeScriptTurn(Base, TimestampMixin):
+    """One conversational turn of script writing. Immutable, append-only —
+    each turn snapshots the *entire* script document as it stood after that
+    turn, mirroring `CutRevision`'s revision chain but for
+    `DramaEpisode.script_json` instead of a cut's timeline.
+
+    `DramaEpisode.script_json` always holds the latest turn's
+    `script_snapshot_json` (the "head"); this table exists purely so a user
+    can click back into any earlier turn and see the exact script that turn
+    produced.
+    """
+
+    __tablename__ = "episode_script_turns"
+
+    id: Mapped[str] = id_column("est")
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("drama_episodes.id", ondelete="CASCADE"), nullable=False
+    )
+    turn_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("episode_script_turns.id", ondelete="SET NULL"), nullable=True
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    user_message: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    script_snapshot_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    referenced_skill_ids_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
+    agent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("episode_id", "turn_no", name="uq_episode_script_turns_episode_turn"),
+        Index("ix_episode_script_turns_episode_id", "episode_id"),
+    )
+
+
 class CutRevision(Base):
     """Immutable timeline snapshot. Mutation always inserts a new row."""
 

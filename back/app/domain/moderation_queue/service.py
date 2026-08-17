@@ -57,7 +57,11 @@ def enqueue_for_review(
         )
     )
     priority = _priority_for(
-        session, subject_type=subject_type, subject_id=subject_id, stage=stage, categories=categories
+        session,
+        subject_type=subject_type,
+        subject_id=subject_id,
+        stage=stage,
+        categories=categories,
     )
 
     if item is None:

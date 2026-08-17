@@ -8,7 +8,7 @@ from app.models.access import AccessGrant
 from app.models.agent_skills import AgentNode, AgentProfile, AgentSkill
 from app.models.async_tasks import AsyncProviderTask
 from app.models.base import Base, TimestampMixin, new_id, utcnow
-from app.models.characters import Character, Series
+from app.models.characters import Series
 from app.models.credits import (
     CreditAccount,
     CreditLedgerEntry,
@@ -22,12 +22,13 @@ from app.models.editor import (
     CutRevision,
     DeliveryVariant,
     DramaEpisode,
-    EditPlan,
     EditorCommandEvent,
     EditorExport,
     EditorLease,
     EditorOperationEvent,
+    EditPlan,
     EpisodeCut,
+    EpisodeScriptTurn,
     McpTokenGrant,
     MediaAnalysis,
 )
@@ -101,7 +102,6 @@ __all__ = [
     "BackupRecord",
     "Base",
     "Bookmark",
-    "Character",
     "Collection",
     "CollectionItem",
     "ContentFingerprint",
@@ -121,6 +121,7 @@ __all__ = [
     "EditorLease",
     "EditorOperationEvent",
     "EpisodeCut",
+    "EpisodeScriptTurn",
     "Follow",
     "GenerationJob",
     "GenerationWorkflowTemplate",

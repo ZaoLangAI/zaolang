@@ -56,6 +56,27 @@ def test_image_to_image_and_audio_generation_are_priced_without_a_duration_surch
         assert priced.credits == priced.breakdown["base"]
 
 
+def test_output_count_multiplies_the_base_price_not_the_video_surcharge() -> None:
+    """`output_count` only ever comes from a multi-view `character` job — an
+    image operation with no duration surcharge to worry about."""
+    single = quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    triple = quote(
+        operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD, output_count=3
+    )
+    assert triple.credits == single.credits * 3
+    assert triple.breakdown["additional_outputs"] == single.breakdown["base"] * 2
+    assert triple.estimated_seconds == single.estimated_seconds * 3
+
+
+def test_output_count_of_one_is_the_same_as_omitting_it() -> None:
+    omitted = quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    explicit = quote(
+        operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD, output_count=1
+    )
+    assert omitted == explicit
+    assert "additional_outputs" not in explicit.breakdown
+
+
 def test_unpriced_combination_is_rejected() -> None:
     with pytest.raises(ValueError, match="未定价"):
         quote(operation="unknown_op", quality_tier=QualityTier.STANDARD)

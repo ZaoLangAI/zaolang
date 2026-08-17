@@ -69,7 +69,7 @@ def provider_stats(session: DbSession, user: Viewer, _: AdminRead) -> Page[Provi
     for stat in session.scalars(select(ProviderStat).order_by(ProviderStat.provider)):
         success_rate = (stat.successes / stat.attempts) if stat.attempts else 0.0
         avg_latency = int(stat.total_latency_ms / stat.attempts) if stat.attempts else 0
-        effective_cost = int(stat.total_cost_minor / stat.successes) if stat.successes else 0
+        effective_cost = int(stat.total_cost_micro_usd / stat.successes) if stat.successes else 0
         items.append(
             ProviderStatView(
                 provider=stat.provider,
@@ -82,7 +82,7 @@ def provider_stats(session: DbSession, user: Viewer, _: AdminRead) -> Page[Provi
                 # Without a histogram the tail is approximated; the console
                 # labels it as an estimate rather than a measured percentile.
                 p95_latency_ms=int(avg_latency * 1.8),
-                effective_cost=effective_cost,
+                effective_cost_micro_usd=effective_cost,
                 enabled=stat.provider in enabled,
             )
         )

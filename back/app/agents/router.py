@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import intent_router
+from app.domain.costs import service as costs_service
 from app.models import ProviderStat
 from app.providers.base import ProviderCapability
 from app.providers.media_endpoints import dynamic_capabilities
@@ -65,7 +66,14 @@ class Candidate:
     filter_reason: str | None = None
     success_rate: float = 0.0
     avg_latency_ms: int = 0
-    effective_cost: int = 0
+    # A representative call's price inflated by how often this provider has to
+    # be retried, in micro-USD.
+    effective_cost_micro_usd: int = 0
+    # This request's own price, from its duration/resolution/reference count.
+    estimated_cost_micro_usd: int = 0
+    # Both figures above rest on a built-in prior rather than a configured
+    # price. Without this flag an unpriced provider reads as a cheap one.
+    cost_is_estimated: bool = False
 
     def to_trace(self) -> dict[str, object]:
         return asdict(self)
@@ -157,9 +165,13 @@ def route(
         # really costs about 1.5 attempts per success. Still shown to the
         # LLM (and the replay console) even though nothing here ranks by it
         # any more.
-        candidate.effective_cost = int(
-            capability.unit_cost_minor * RETRY_COST_AMPLIFICATION / max(success_rate, 0.05)
+        candidate.effective_cost_micro_usd = int(
+            capability.unit_cost_micro_usd * RETRY_COST_AMPLIFICATION / max(success_rate, 0.05)
         )
+        candidate.estimated_cost_micro_usd = costs_service.estimate_media_request_cost_micro_usd(
+            capability.pricing, capability=operation, params=request_params or {}
+        )
+        candidate.cost_is_estimated = capability.cost_is_estimated
         candidate.success_rate = round(success_rate, 4)
         candidate.avg_latency_ms = _avg_latency_ms(stat, capability)
         candidates.append(candidate)
@@ -240,13 +252,22 @@ def _request_constraint_failure(
 
 
 def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> dict[str, Any]:
+    """What the selecting agent is shown about one candidate.
+
+    Context, not a ranking: nothing here is combined into a score. The two
+    cost figures answer different questions — `effective_cost_micro_usd`
+    compares providers in general, `estimated_cost_micro_usd` prices *this*
+    request — and `cost_is_estimated` says whether either can be trusted.
+    """
     return {
         "provider": candidate.provider,
         "kind": capability.kind.value,
         "quality_prior": capability.quality_prior,
         "success_rate": candidate.success_rate,
         "avg_latency_ms": candidate.avg_latency_ms,
-        "effective_cost": candidate.effective_cost,
+        "effective_cost_micro_usd": candidate.effective_cost_micro_usd,
+        "estimated_cost_micro_usd": candidate.estimated_cost_micro_usd,
+        "cost_is_estimated": candidate.cost_is_estimated,
     }
 
 
@@ -285,8 +306,15 @@ def record_attempt_outcome(
     succeeded: bool,
     latency_ms: int,
     cost_minor: int,
+    cost_micro_usd: int = 0,
 ) -> None:
-    """Feeds real outcomes back into the statistics the router reads."""
+    """Feeds real outcomes back into the statistics the router reads.
+
+    `cost_minor` is what the provider adapter reported; `cost_micro_usd` is
+    the same attempt priced against the endpoint's configured rate. They are
+    accumulated separately because the first is whole cents and rounds a
+    sub-cent call away entirely.
+    """
     stat = session.scalar(
         select(ProviderStat).where(
             ProviderStat.provider == provider,
@@ -303,4 +331,5 @@ def record_attempt_outcome(
     stat.successes += 1 if succeeded else 0
     stat.total_latency_ms += latency_ms
     stat.total_cost_minor += cost_minor
+    stat.total_cost_micro_usd += cost_micro_usd
     session.flush()

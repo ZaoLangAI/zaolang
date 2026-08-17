@@ -513,11 +513,81 @@ export function ModerationQueue({ configAction }: { configAction?: React.ReactNo
                     { label: t('fieldCategory'), value: detail.skill.category },
                     { label: t('fieldOwner'), value: detail.skill.owner_user_id },
                     { label: t('fieldUsage'), value: String(detail.skill.usage_count) },
+                    ...(detail.skill.category === 'character'
+                      ? [
+                          {
+                            label: t('fieldPortraitConsent'),
+                            value: detail.skill.character_portrait_consent_at ? (
+                              <Badge tone="success">
+                                {formatDateTime(detail.skill.character_portrait_consent_at, locale)}
+                              </Badge>
+                            ) : (
+                              <Badge tone="danger">{t('fieldPortraitConsentMissing')}</Badge>
+                            ),
+                          },
+                        ]
+                      : []),
                     ...(detail.skill.reject_reason
                       ? [{ label: t('fieldRejectReason'), value: detail.skill.reject_reason }]
                       : []),
                   ]}
                 />
+
+                {detail.skill.category === 'character' &&
+                (detail.skill.character_reference_assets?.length ?? 0) > 0 ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-muted">
+                      {t('fieldCharacterReferenceAssets')}
+                    </p>
+                    <ul className="flex flex-wrap gap-2">
+                      {(detail.skill.character_reference_assets ?? []).map((asset) => (
+                        <li
+                          key={asset.asset_id}
+                          className="flex w-24 flex-col gap-1 rounded-[var(--radius-sm)] border border-border p-1"
+                        >
+                          {asset.url ? (
+                            <Poster
+                              src={asset.url}
+                              alt={asset.label ?? asset.view}
+                              aspect="square"
+                            />
+                          ) : null}
+                          <span className="truncate text-center text-[10px] text-muted">
+                            {asset.label || t(`characterView_${asset.view}`)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {detail.skill.category === 'scene_asset' &&
+                (detail.skill.scene_reference_assets?.length ?? 0) > 0 ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-muted">
+                      {t('fieldSceneReferenceAssets')}
+                    </p>
+                    <ul className="flex flex-wrap gap-2">
+                      {(detail.skill.scene_reference_assets ?? []).map((asset) => (
+                        <li
+                          key={asset.asset_id}
+                          className="flex w-24 flex-col gap-1 rounded-[var(--radius-sm)] border border-border p-1"
+                        >
+                          {asset.url ? (
+                            <Poster
+                              src={asset.url}
+                              alt={asset.label ?? asset.view}
+                              aspect="square"
+                            />
+                          ) : null}
+                          <span className="truncate text-center text-[10px] text-muted">
+                            {asset.label || asset.view}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

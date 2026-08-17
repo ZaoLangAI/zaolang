@@ -64,7 +64,10 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="safety-default",
         label="安全审核 · 平台默认",
-        description="当前代码内置的安全审核提示词，18+ 艺术表达放行、未成年人性化等一票否决，写实暴力/血腥内容转人工复核。",
+        description=(
+            "当前代码内置的安全审核提示词，18+ 艺术表达放行、未成年人性化等一票否决，"
+            "写实暴力/血腥内容转人工复核。"
+        ),
         category=JUDGMENT,
         prompt_template=safety.SYSTEM_PROMPT,
         role="safety",
@@ -86,6 +89,15 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         prompt_template=planner.CLARIFY_SYSTEM_PROMPT,
         role="planner",
         slot=planner.CLARIFY_SLOT,
+    ),
+    SkillTemplate(
+        key="planner-asset-plan",
+        label="任务规划 · 图片资产规划",
+        description="为角色三视图/场景图/封面规划提示词，保持同一角色跨视角的一致性。",
+        category=JUDGMENT,
+        prompt_template=planner.ASSET_PLAN_SYSTEM_PROMPT,
+        role="planner",
+        slot=planner.ASSET_PLAN_SLOT,
     ),
     SkillTemplate(
         key="quality-default",
@@ -122,6 +134,24 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         prompt_template=copywriter.CLARIFY_SYSTEM_PROMPT,
         role="copy",
         slot=copywriter.CLARIFY_SLOT,
+    ),
+    SkillTemplate(
+        key="copy-script-draft",
+        label="文案生成 · 剧本创作",
+        description="根据创意生成完整分场短剧剧本，含场景、动作、运镜、对话与建议切分点。",
+        category=ASSIST,
+        prompt_template=copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT,
+        role="copy",
+        slot=copywriter.SCRIPT_DRAFT_SLOT,
+    ),
+    SkillTemplate(
+        key="copy-script-revise",
+        label="文案生成 · 剧本修改",
+        description="根据修改意见更新剧本并给出本次修改摘要，同步维护建议切分点。",
+        category=ASSIST,
+        prompt_template=copywriter.SCRIPT_REVISE_SYSTEM_PROMPT,
+        role="copy",
+        slot=copywriter.SCRIPT_REVISE_SLOT,
     ),
     SkillTemplate(
         key="intent-router-classify",

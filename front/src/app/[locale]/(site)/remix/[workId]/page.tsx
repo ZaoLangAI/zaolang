@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 
 import { RemixUnlockGate } from '@/components/marketplace/remix-unlock-gate';
-import { GenerationStudio } from '@/components/studio/generation-studio';
+import { VideoGenerationStudio } from '@/components/studio/video-generation-studio';
 import { BackLink } from '@/components/ui/back-link';
 import { getWork } from '@/lib/api/work-loaders';
 
@@ -37,7 +37,7 @@ export default async function RemixPage({ params }: Params) {
       </header>
 
       {work.can_remix && work.reusable_params ? (
-        <GenerationStudio
+        <VideoGenerationStudio
           operation="image_to_video"
           source={{ work, params: work.reusable_params }}
         />

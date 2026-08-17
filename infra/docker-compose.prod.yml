@@ -1,0 +1,228 @@
+name: zaolang-prod
+
+# Single-host remote deployment. Only `nginx` publishes a host port (80); every
+# other service — postgres/redis/minio/api/web — is reachable only on the
+# compose network. Bring up with:
+#
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
+#
+# `infra/.env.prod` is never committed (see infra/.env.prod.example for the
+# template) — it carries real secrets and the server's public IP/host.
+
+x-backend: &backend
+  build:
+    context: ../back
+    args:
+      # Both empty by default. On a host where Debian/PyPI are slow/throttled,
+      # set these in infra/.env.prod — this only affects the build, never the
+      # app itself.
+      APT_MIRROR: ${APT_MIRROR:-}
+      PIP_INDEX_URL: ${PIP_INDEX_URL:-}
+  image: zaolang-back:prod
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zaolang}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-zaolang}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-zaolang} -d ${POSTGRES_DB:-zaolang}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MEDIA_BUCKET: ${S3_BUCKET:-zaolang-media}
+    entrypoint: ['/bin/sh', '/scripts/minio-init.sh']
+    volumes:
+      - ./scripts:/scripts:ro
+
+  # Runs to completion before api/worker/poller/beat start, so the schema is
+  # never raced by the processes that read it.
+  migrate:
+    <<: *backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &backend-env
+      APP_ENV: production
+      # Decoupled from APP_ENV: this is an HTTP-only deployment (no TLS
+      # terminator), so a `Secure` cookie would never be sent back by the
+      # browser and login would silently break. Every other production
+      # behaviour (e.g. the seed-endpoint refusal) stays on.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-zaolang}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zaolang}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET}
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      S3_ENDPOINT_URL: http://minio:9000
+      # Must be browser-reachable: MinIO signs with path-style addressing, so
+      # this host is the one every presigned GET/PUT URL is minted against.
+      # nginx proxies /${S3_BUCKET}/ through to MinIO on the same origin.
+      S3_PUBLIC_ENDPOINT_URL: http://${PUBLIC_HOST}
+      S3_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-zaolang-media}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      # openai_compatible: no silent stub fallback. Until a real endpoint is
+      # configured at /admin/models, agent calls and media generation fail
+      # loudly instead of returning placeholder content.
+      LLM_MODE: ${LLM_MODE:-openai_compatible}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://aihubmix.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      CORS_ORIGINS: http://${PUBLIC_HOST}
+      APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+      WEB_BASE_URL: http://${PUBLIC_HOST}
+      API_BASE_URL: http://${PUBLIC_HOST}
+    command: ['alembic', 'upgrade', 'head']
+    restart: 'no'
+
+  api:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment: *backend-env
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend-env
+    # Mirrors `make dev-worker` — keep this queue list in sync with it and
+    # with the admin health page's queue list.
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - worker
+      - -Q
+      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis
+      - --loglevel=info
+    restart: unless-stopped
+
+  # Dedicated to provider_task_polling so a busy render/quality-check queue
+  # never starves the tick that resumes suspended async video jobs — mirrors
+  # `make dev-poller`.
+  poller:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - worker
+      - -Q
+      - provider_task_polling
+      - --concurrency=1
+      - --loglevel=info
+    restart: unless-stopped
+
+  beat:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - beat
+      # /app is owned by root (only the files COPY --chown'd into it belong to
+      # `zaolang`); the non-root runtime user can't write the schedule file
+      # into its cwd, so pin it to somewhere it can write instead.
+      - --schedule=/tmp/celerybeat-schedule
+      - --loglevel=info
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../front
+      args:
+        NEXT_PUBLIC_API_URL: http://${PUBLIC_HOST}
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+    image: zaolang-front:prod
+    depends_on:
+      - api
+    environment:
+      # Server components talk to the API over the compose network; the
+      # browser bundle uses the URL baked in at image build time above.
+      API_INTERNAL_URL: http://api:8000
+      # Skips next/image's optimisation fetch — see next.config.ts. Without a
+      # domain, signed media URLs point at this host's bare public IP, and the
+      # web container looping back to its own host's public IP is not
+      # something to rely on.
+      NEXT_IMAGES_UNOPTIMIZED: '1'
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api
+      - web
+      - minio
+    environment:
+      MEDIA_BUCKET: ${S3_BUCKET:-zaolang-media}
+    volumes:
+      - ./nginx/prod.conf.template:/etc/nginx/templates/prod.conf.template:ro
+    ports:
+      - '80:80'
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.llm import capabilities, failover
 from app.llm.normalize import NormalizedResponse, normalize_completion
-from app.llm.stub import stub_completion
+from app.llm.stub import stub_completion, stub_stream_completion
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
@@ -54,6 +54,27 @@ class LlmCallResult:
     degrade_reason: str | None
     latency_ms: int
     endpoint_id: str = NO_ENDPOINT_ID
+
+
+@dataclass(slots=True)
+class StreamResult:
+    """Populated in place by `stream_complete` as its generator is drained.
+
+    Unlike `LlmCallResult`, which is returned once `complete()` finishes, a
+    streaming caller needs to read text as it arrives — so the caller passes
+    this container in and only reads it back after the generator is fully
+    exhausted (mirrors how `run_agent_stream` uses it in `app.agents.base`).
+    """
+
+    text: str = ""
+    mode: str = ""
+    degraded: bool = False
+    degrade_reason: str | None = None
+    latency_ms: int = 0
+    endpoint_id: str = NO_ENDPOINT_ID
+    model: str = ""
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 @lru_cache(maxsize=64)
@@ -102,6 +123,11 @@ def complete(
     `preferred_endpoint_ids` is the provider order an `AgentProfile` pinned
     (default, then backup). When present, no unselected provider may serve
     the call; an unbound profile uses the compatible shared pool.
+
+    `model` is where the call starts — the model declared on the binding's
+    default endpoint. Each endpoint serves exactly one model, so failing over
+    to the next candidate runs *that* endpoint's model rather than skipping it
+    for naming something different.
     """
     settings = get_settings()
     mode = settings.llm_mode
@@ -131,20 +157,20 @@ def complete(
 
     budget = max(max_tokens, REASONING_TOKEN_FLOOR) if reasoning_model else max_tokens
     provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
-    endpoints = failover.eligible_candidates(
-        provider_config, preferred_ids=preferred_endpoint_ids, model=chosen
-    )
+    endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
 
     last_error: Exception | None = None
     tried_endpoint = False
 
     for endpoint_id, endpoint in endpoints:
+        if not endpoint.model:
+            continue
         tried_endpoint = True
         with failover.lease(endpoint_id):
             response, budget, error = _attempt_endpoint(
                 client=client_for_endpoint(endpoint),
                 max_retries=MAX_TRANSPORT_RETRIES,
-                model=chosen,
+                model=endpoint.model,
                 messages=messages,
                 budget=budget,
                 temperature=temperature,
@@ -318,6 +344,193 @@ def _call_gateway(
         kwargs["response_format"] = {"type": "json_object"}
 
     return client.chat.completions.create(**kwargs)
+
+
+def stream_complete(
+    *,
+    session: Session,
+    agent_name: str,
+    model: str,
+    messages: list[dict[str, str]],
+    result: StreamResult,
+    max_tokens: int = 2048,
+    temperature: float = 0.4,
+    reasoning_model: bool = False,
+    preferred_endpoint_ids: Sequence[str] = (),
+) -> Iterator[str]:
+    """Streams text deltas for one agent turn, filling `result` as it goes.
+
+    This is a separate path from `complete()`, not a mode of it: JSON-mode
+    responses are parsed as one blob (`normalize_completion`), but a
+    streaming turn is plain/mixed text handed to the caller token-by-token,
+    so there is nothing to normalize until the generator is exhausted.
+
+    Deliberately no mid-stream failover: once a chunk has been yielded from
+    an endpoint, that endpoint is used for the rest of the turn even if it
+    later errors, because a chat bubble that is already mid-sentence cannot
+    silently restart on a different provider without a visibly broken UI. A
+    connection that fails before yielding anything still moves on to the
+    next candidate, same as `complete()`.
+    """
+    settings = get_settings()
+    mode = settings.llm_mode
+    started = time.perf_counter()
+    chosen = (model or "").strip()
+    prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
+
+    def _finalize(
+        *,
+        text: str,
+        result_mode: str,
+        degraded: bool,
+        reason: str | None,
+        endpoint_id: str,
+        served_model: str | None = None,
+    ) -> None:
+        result.text = text
+        result.mode = result_mode
+        result.degraded = degraded
+        result.degrade_reason = reason
+        result.endpoint_id = endpoint_id
+        # Whichever endpoint answered decides the model — on failover that is
+        # not the one the binding started with.
+        result.model = served_model or chosen
+        result.prompt_tokens = prompt_tokens
+        result.completion_tokens = len(text) // 4
+        result.latency_ms = int((time.perf_counter() - started) * 1000)
+
+    if not chosen:
+        text = stub_stream_completion(agent_name=agent_name, messages=messages)
+        yield text
+        _finalize(
+            text=text,
+            result_mode=mode if mode == "stub" else "auto",
+            degraded=True,
+            reason=NO_MODEL_BOUND,
+            endpoint_id=NO_ENDPOINT_ID,
+        )
+        return
+
+    if mode == "stub":
+        text = stub_stream_completion(agent_name=agent_name, messages=messages)
+        yield text
+        _finalize(
+            text=text, result_mode="stub", degraded=False, reason=None, endpoint_id=NO_ENDPOINT_ID
+        )
+        result.model = f"stub:{chosen}"
+        return
+
+    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    endpoints = failover.eligible_candidates(provider_config, preferred_ids=preferred_endpoint_ids)
+
+    last_error: Exception | None = None
+    tried_endpoint = False
+
+    for endpoint_id, endpoint in endpoints:
+        if not endpoint.model:
+            continue
+        tried_endpoint = True
+        client = client_for_endpoint(endpoint)
+        accumulated: list[str] = []
+        error: Exception | None = None
+        with failover.lease(endpoint_id):
+            try:
+                for delta in _stream_gateway(
+                    client=client,
+                    model=endpoint.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ):
+                    accumulated.append(delta)
+                    yield delta
+            except (OpenAIError, TimeoutError, ConnectionError) as exc:
+                error = exc
+                logger.warning(
+                    "llm gateway stream failed for %s (endpoint=%s): %s",
+                    endpoint.model,
+                    endpoint_id,
+                    exc,
+                )
+        if accumulated or error is None:
+            failover.record_outcome(
+                endpoint_id,
+                success=True,
+                failure_threshold=CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+                cooldown_s=CIRCUIT_BREAKER_COOLDOWN_SECONDS,
+            )
+            _finalize(
+                text="".join(accumulated),
+                result_mode="openai_compatible",
+                degraded=error is not None,
+                reason=type(error).__name__ if error else None,
+                endpoint_id=endpoint_id,
+                served_model=endpoint.model,
+            )
+            return
+        failover.record_outcome(
+            endpoint_id,
+            success=False,
+            failure_threshold=CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+            cooldown_s=CIRCUIT_BREAKER_COOLDOWN_SECONDS,
+        )
+        last_error = error
+
+    if not tried_endpoint:
+        reason = "no_endpoint_configured"
+        if mode == "openai_compatible":
+            from app.domain.errors import ProviderTemporaryFailure
+
+            raise ProviderTemporaryFailure("未配置任何可用的 LLM 网关端点。")
+        text = stub_stream_completion(agent_name=agent_name, messages=messages)
+        yield text
+        _finalize(
+            text=text, result_mode="auto", degraded=True, reason=reason, endpoint_id=NO_ENDPOINT_ID
+        )
+        return
+
+    reason = type(last_error).__name__ if last_error else "unknown_error"
+    if mode == "openai_compatible":
+        from app.domain.errors import ProviderTemporaryFailure
+
+        raise ProviderTemporaryFailure(f"LLM 网关不可用: {reason}")
+
+    text = stub_stream_completion(agent_name=agent_name, messages=messages)
+    yield text
+    _finalize(
+        text=text, result_mode="auto", degraded=True, reason=reason, endpoint_id=NO_ENDPOINT_ID
+    )
+
+
+def _stream_gateway(
+    *,
+    client: OpenAI,
+    model: str,
+    messages: list[dict[str, str]],
+    max_tokens: int,
+    temperature: float,
+) -> Iterator[str]:
+    """One streamed request, no retry/failover — `stream_complete` owns that."""
+    caps = capabilities.get(model)
+    kwargs: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+
+    if caps.uses_max_completion_tokens:
+        kwargs["max_completion_tokens"] = max_tokens
+    else:
+        kwargs["max_tokens"] = max_tokens
+
+    if caps.supports_temperature:
+        kwargs["temperature"] = temperature
+    elif caps.forced_temperature is not None:
+        kwargs["temperature"] = caps.forced_temperature
+
+    stream = client.chat.completions.create(**kwargs)
+    for chunk in stream:
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta
 
 
 def probe(session: Session) -> dict[str, Any]:

@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
+from app.domain.costs import service as costs_service
 from app.models.enums import ProviderKind
 from app.platform_config import service as config_service
 from app.platform_config.schemas import IMPLEMENTED_MEDIA_PROTOCOLS, LlmProviderConfig
@@ -39,19 +40,21 @@ _TYPICAL_LATENCY_MS: dict[str, int] = {
     "image_to_video": 90_000,
     "video_to_video": 100_000,
 }
-# Minor-currency (matches `unit_cost_minor` elsewhere) rough per-call cost,
-# used only for the router's cost score until real spend accrues.
-_UNIT_COST_MINOR: dict[str, int] = {
-    "text_to_image": 15,
-    "image_to_image": 15,
-    "audio_generation": 4,
-    "text_to_video": 120,
-    "image_to_video": 120,
-    "video_to_video": 140,
+# Fallback per-call cost in micro-USD, used only when an operator has not
+# configured a price for the endpoint. Setting these to zero instead would be
+# worse than a rough guess: an unpriced endpoint would look free and pull
+# every selection towards itself. Candidates carrying one of these are marked
+# `cost_is_estimated` so the selecting agent knows the number is a prior.
+_FALLBACK_UNIT_COST_MICRO_USD: dict[str, int] = {
+    "text_to_image": 150_000,
+    "image_to_image": 150_000,
+    "audio_generation": 40_000,
+    "text_to_video": 1_200_000,
+    "image_to_video": 1_200_000,
+    "video_to_video": 1_400_000,
 }
+_FALLBACK_DEFAULT_MICRO_USD = 200_000
 _ALL_TIERS = frozenset({"preview", "standard", "cinematic"})
-
-
 def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
     """One `ProviderCapability` per enabled capability of every enabled
     `kind="media"` endpoint, keyed `f"{endpoint_id}:{capability_tag}"`.
@@ -74,6 +77,9 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 "image_to_video",
                 "video_to_video",
             }
+            configured_cost = costs_service.nominal_media_call_cost_micro_usd(
+                endpoint.media_pricing, capability=tag
+            )
             catalog[catalog_key] = ProviderCapability(
                 name=catalog_key,
                 kind=ProviderKind.COMMERCIAL_API,
@@ -81,7 +87,10 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 tiers=_ALL_TIERS,
                 quality_prior=_QUALITY_PRIOR,
                 typical_latency_ms=_TYPICAL_LATENCY_MS.get(tag, 30_000),
-                unit_cost_minor=_UNIT_COST_MINOR.get(tag, 20),
+                unit_cost_micro_usd=configured_cost
+                or _FALLBACK_UNIT_COST_MICRO_USD.get(tag, _FALLBACK_DEFAULT_MICRO_USD),
+                cost_is_estimated=not configured_cost,
+                pricing=endpoint.media_pricing,
                 model_or_workflow=endpoint.model,
                 min_duration_seconds=H3_MIN_DURATION_SECONDS if is_h3_video else None,
                 max_duration_seconds=H3_MAX_DURATION_SECONDS if is_h3_video else None,
@@ -97,7 +106,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                     base_url=endpoint.base_url,
                     api_key=endpoint.api_key,
                     timeout_ms=endpoint.timeout_ms,
-                ),
+                )
             )
     return catalog
 

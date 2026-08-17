@@ -157,13 +157,19 @@ def check_compliance(
     return report
 
 
-def enhance_prompt(session: Session, *, user_id: str, prompt: str) -> prompts.PromptEnhancement:
+def enhance_prompt(
+    session: Session,
+    *,
+    user_id: str,
+    prompt: str,
+    context: prompts.PromptContext | None = None,
+) -> prompts.PromptEnhancement:
     """Hands a scene description to the copy agent.
 
     Thin wrapper kept for call-site stability — the actual logic is shared
     with `GenerationStudio`'s polish button in `app.domain.prompts`.
     """
-    return prompts.enhance(session, user_id=user_id, prompt=prompt)
+    return prompts.enhance(session, user_id=user_id, prompt=prompt, context=context)
 
 
 def clarify_prompt(session: Session, *, user_id: str, prompt: str) -> clarify.ClarifyResult:

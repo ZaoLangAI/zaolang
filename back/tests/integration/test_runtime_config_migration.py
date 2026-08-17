@@ -6,10 +6,6 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-from sqlalchemy.orm import Session
-
-from app.domain.agent_skills import service as agent_skills_service
-
 
 def _migration() -> ModuleType:
     path = (
@@ -25,50 +21,38 @@ def _migration() -> ModuleType:
     return module
 
 
-def test_legacy_agent_binding_moves_to_the_role_default_profile(db: Session) -> None:
+def test_a_legacy_binding_resolves_to_the_primary_endpoint_serving_its_model() -> None:
+    """`_migrate_agent_bindings` itself is no longer exercisable here: it writes
+    `agent_profiles.model`, a column a later revision drops, and the test schema
+    is built from today's metadata. Its endpoint-resolution half is a pure
+    function, and that is the part that still maps onto how agents bind now.
+    """
     migration = _migration()
-    agent_skills_service.ensure_default_nodes(db)
-    agent_skills_service.ensure_default_profiles(db)
-
-    migration._migrate_agent_bindings(
-        db.connection(),
-        {
-            "bindings": {
-                "safety": {
-                    "model": "safe-model",
-                    "max_tokens": 2048,
-                    "temperature": 0.15,
-                    "reasoning_model": True,
-                }
-            }
+    endpoints = {
+        "backup": {
+            "kind": "general",
+            "enabled": True,
+            "models": ["safe-model"],
+            "role": "backup",
+            "backup_order": 10,
         },
-        {
-            "endpoints": {
-                "backup": {
-                    "kind": "general",
-                    "enabled": True,
-                    "models": ["safe-model"],
-                    "role": "backup",
-                    "backup_order": 10,
-                },
-                "primary": {
-                    "kind": "general",
-                    "enabled": True,
-                    "models": ["safe-model"],
-                    "role": "primary",
-                },
-            }
+        "primary": {
+            "kind": "general",
+            "enabled": True,
+            "models": ["safe-model"],
+            "role": "primary",
         },
-    )
-    db.expire_all()
+        "disabled": {
+            "kind": "general",
+            "enabled": False,
+            "models": ["safe-model"],
+            "role": "primary",
+        },
+    }
 
-    profile = agent_skills_service.default_profile(db, "safety")
-    assert profile is not None
-    assert profile.model == "safe-model"
-    assert profile.default_endpoint_id == "primary"
-    assert profile.max_tokens == 2048
-    assert profile.temperature_milli == 150
-    assert profile.reasoning_model is True
+    assert migration._compatible_endpoint(endpoints, "safe-model") == "primary"
+    assert migration._compatible_endpoint(endpoints, "unknown-model") is None
+    assert migration._compatible_endpoint(endpoints, None) is None
 
 
 def test_migration_normalizes_words_and_removes_illegal_flags() -> None:

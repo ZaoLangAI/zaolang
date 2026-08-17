@@ -4,15 +4,14 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
-import { NOTIFICATIONS_CHANGED } from '@/components/notifications/notification-list';
 import { Brand } from '@/components/layout/brand';
 import { CreateMenu } from '@/components/layout/create-menu';
 import { PreferenceMenu } from '@/components/layout/preference-menu';
 import { SearchBox } from '@/components/layout/search-box';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { Button } from '@/components/ui/button';
-import { IconBell, IconChevronDown, IconClose, IconMenu, IconUser } from '@/components/ui/icons';
+import { IconChevronDown, IconClose, IconMenu, IconUser } from '@/components/ui/icons';
 import { Link, usePathname } from '@/i18n/navigation';
-import { api } from '@/lib/api/client';
 import { cn } from '@/lib/cn';
 
 const NAV = [
@@ -29,7 +28,6 @@ export function TopBar() {
   const { user, status, openLogin, signOut } = useSession();
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
   const [menuPath, setMenuPath] = useState(pathname);
 
   // Navigating away closes the mobile menu. Adjusting during render rather
@@ -39,19 +37,6 @@ export function TopBar() {
     setMenuPath(pathname);
     setMobileOpen(false);
   }
-
-  useEffect(() => {
-    if (status !== 'authenticated') return;
-    const refresh = () => {
-      void api
-        .get<{ count: number }>('/v1/notifications/unread-count')
-        .then((body) => setUnread(body.count))
-        .catch(() => undefined);
-    };
-    refresh();
-    window.addEventListener(NOTIFICATIONS_CHANGED, refresh);
-    return () => window.removeEventListener(NOTIFICATIONS_CHANGED, refresh);
-  }, [status, pathname]);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur">
@@ -105,18 +90,7 @@ export function TopBar() {
 
           <CreateMenu />
 
-          {status === 'authenticated' ? (
-            <Link
-              href="/notifications"
-              aria-label={t('nav.notifications')}
-              className="relative inline-flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-muted hover:bg-surface-soft hover:text-text"
-            >
-              <IconBell className="size-5" />
-              {status === 'authenticated' && unread > 0 ? (
-                <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary ring-2 ring-bg" />
-              ) : null}
-            </Link>
-          ) : null}
+          {status === 'authenticated' ? <NotificationBell /> : null}
 
           {status === 'authenticated' && user ? (
             <UserMenu

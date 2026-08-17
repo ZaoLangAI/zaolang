@@ -74,9 +74,7 @@ def _after_published(anchor: Work) -> ColumnElement[bool]:
 
 def _apply_access_filter(stmt: Select[tuple[Work, WorkVersion]], access: str | None):
     if access == "free":
-        return stmt.where(
-            Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits == 0
-        )
+        return stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits == 0)
     if access == "paid":
         return stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits > 0)
     return stmt

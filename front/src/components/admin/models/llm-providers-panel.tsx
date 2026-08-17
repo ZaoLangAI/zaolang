@@ -8,9 +8,10 @@ import { DangerConfirm } from '@/components/admin/danger-confirm';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextInput } from '@/components/ui/field';
-import { IconPlay, IconRefresh } from '@/components/ui/icons';
+import { IconFlask, IconRefresh, IconTrash } from '@/components/ui/icons';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
+import { dollarsToMicroUsd, microUsdToDollars } from '@/lib/admin/micro-usd';
 import { cn } from '@/lib/cn';
 import {
   MEDIA_INPUT_MODALITIES,
@@ -24,7 +25,11 @@ import {
   constrainModalities,
   operationLabelKey,
 } from '@/lib/admin/operations';
-import type { MediaInputModality, MediaOutputModality, MediaProtocol } from '@/lib/admin/operations';
+import type {
+  MediaInputModality,
+  MediaOutputModality,
+  MediaProtocol,
+} from '@/lib/admin/operations';
 import { atLeast } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
@@ -36,14 +41,20 @@ import type {
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
 
+/**
+ * Prices are held as the dollar strings the operator typed, not as numbers.
+ * Parsing on every keystroke would fight the caret: `"0."` is not yet a
+ * number, and `microUsdToDollars(dollarsToMicroUsd("0."))` is `""`, which
+ * would erase the decimal point as it was typed. Conversion happens once, on
+ * save.
+ */
 interface EndpointFormState {
   id: string;
   name: string;
   base_url: string;
   api_key: string;
   kind: LlmProviderKind;
-  models: string;
-  // `kind="media"` only: one model id plus the modalities it supports.
+  // The one model id this endpoint serves, whatever its kind.
   model: string;
   input_modalities: MediaInputModality[];
   output_modalities: MediaOutputModality[];
@@ -53,6 +64,36 @@ interface EndpointFormState {
   max_concurrency: string;
   timeout_ms: string;
   enabled: boolean;
+  // `kind="general"` pricing and limits.
+  context_length: string;
+  max_output_tokens: string;
+  input_per_million: string;
+  output_per_million: string;
+  // `kind="media"` pricing, by section.
+  image_input: string;
+  image_generation: string;
+  audio_per_10k: string;
+  video_generation: Record<string, string>;
+  video_input_material: Record<string, string>;
+  video_reference_free_count: string;
+  video_extra_reference: string;
+}
+
+/** Mirrors `VIDEO_RESOLUTIONS` in `app/platform_config/schemas.py`; the API
+ * rejects any other key, so the form offers exactly these. */
+const VIDEO_RESOLUTIONS = ['2K', '768P'] as const;
+
+function emptyResolutionPrices(): Record<string, string> {
+  return Object.fromEntries(VIDEO_RESOLUTIONS.map((resolution) => [resolution, '']));
+}
+
+function resolutionPricesFrom(prices: Record<string, number> | undefined): Record<string, string> {
+  return Object.fromEntries(
+    VIDEO_RESOLUTIONS.map((resolution) => [
+      resolution,
+      microUsdToDollars(prices?.[resolution] ?? 0),
+    ]),
+  );
 }
 
 type ValidationInFlight = {
@@ -126,7 +167,6 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     base_url: '',
     api_key: '',
     kind,
-    models: '',
     model: '',
     input_modalities: [],
     output_modalities: [],
@@ -136,17 +176,29 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     max_concurrency: '4',
     timeout_ms: kind === 'media' ? '90000' : '30000',
     enabled: true,
+    context_length: '',
+    max_output_tokens: '',
+    input_per_million: '',
+    output_per_million: '',
+    image_input: '',
+    image_generation: '',
+    audio_per_10k: '',
+    video_generation: emptyResolutionPrices(),
+    video_input_material: emptyResolutionPrices(),
+    video_reference_free_count: '5',
+    video_extra_reference: '',
   };
 }
 
 function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
+  const tokens = endpoint.token_pricing;
+  const media = endpoint.media_pricing;
   return {
     id: endpoint.id,
     name: endpoint.name,
     base_url: endpoint.base_url,
     api_key: '',
     kind: endpoint.kind,
-    models: (endpoint.models ?? []).join(', '),
     model: endpoint.model ?? '',
     input_modalities: (endpoint.input_modalities ?? []) as MediaInputModality[],
     output_modalities: (endpoint.output_modalities ?? []) as MediaOutputModality[],
@@ -156,35 +208,95 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     max_concurrency: String(endpoint.max_concurrency),
     timeout_ms: String(endpoint.timeout_ms),
     enabled: endpoint.enabled,
+    context_length: endpoint.context_length ? String(endpoint.context_length) : '',
+    max_output_tokens: endpoint.max_output_tokens ? String(endpoint.max_output_tokens) : '',
+    input_per_million: microUsdToDollars(tokens?.input_per_million_micro_usd ?? 0),
+    output_per_million: microUsdToDollars(tokens?.output_per_million_micro_usd ?? 0),
+    image_input: microUsdToDollars(media?.image?.input_per_image_micro_usd ?? 0),
+    image_generation: microUsdToDollars(media?.image?.generation_per_image_micro_usd ?? 0),
+    audio_per_10k: microUsdToDollars(media?.audio?.per_10k_characters_micro_usd ?? 0),
+    video_generation: resolutionPricesFrom(media?.video?.generation_per_second_micro_usd),
+    video_input_material: resolutionPricesFrom(media?.video?.input_material_per_second_micro_usd),
+    video_reference_free_count: String(media?.video?.reference_image_free_count ?? 5),
+    video_extra_reference: microUsdToDollars(media?.video?.extra_reference_image_micro_usd ?? 0),
   };
 }
 
-function splitList(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+/** Every price field on the form, so validation and payload building agree on
+ * what has to parse. */
+function priceFields(form: EndpointFormState): string[] {
+  return form.kind === 'general'
+    ? [form.input_per_million, form.output_per_million]
+    : [
+        form.image_input,
+        form.image_generation,
+        form.audio_per_10k,
+        form.video_extra_reference,
+        ...Object.values(form.video_generation),
+        ...Object.values(form.video_input_material),
+      ];
+}
+
+function resolutionPricePayload(prices: Record<string, string>): Record<string, number> {
+  const payload: Record<string, number> = {};
+  for (const resolution of VIDEO_RESOLUTIONS) {
+    const micros = dollarsToMicroUsd(prices[resolution] ?? '');
+    // Only priced resolutions are sent; a zero would claim the vendor charges
+    // nothing for a resolution the operator simply has not filled in.
+    if (micros) payload[resolution] = micros;
+  }
+  return payload;
 }
 
 /** Shared shape for `PUT /admin/llm-providers/{id}`, used both by the full
  * editor save and by the list row's quick enable/disable toggle so the two
  * never drift on what a "no-op except one field" write looks like. */
 function buildUpsertPayload(form: EndpointFormState) {
+  const micros = (value: string) => dollarsToMicroUsd(value) ?? 0;
   return {
     name: form.name,
     base_url: form.base_url,
     api_key: form.api_key.trim() ? form.api_key.trim() : undefined,
     kind: form.kind,
-    models: form.kind === 'general' ? splitList(form.models) : [],
     role: form.role,
     backup_order: Number(form.backup_order),
-    model: form.kind === 'media' ? form.model.trim() : '',
+    model: form.model.trim(),
     input_modalities: form.kind === 'media' ? form.input_modalities : [],
     output_modalities: form.kind === 'media' ? form.output_modalities : [],
     protocol: form.kind === 'media' ? form.protocol : null,
     max_concurrency: Number(form.max_concurrency),
     timeout_ms: Number(form.timeout_ms),
     enabled: form.enabled,
+    context_length: form.kind === 'general' ? Number(form.context_length || 0) : 0,
+    max_output_tokens: form.kind === 'general' ? Number(form.max_output_tokens || 0) : 0,
+    token_pricing:
+      form.kind === 'general'
+        ? {
+            input_per_million_micro_usd: micros(form.input_per_million),
+            output_per_million_micro_usd: micros(form.output_per_million),
+          }
+        : { input_per_million_micro_usd: 0, output_per_million_micro_usd: 0 },
+    // The server drops sections the endpoint's capabilities do not cover, so
+    // the form can send all three without stale prices surviving a capability
+    // change.
+    media_pricing:
+      form.kind === 'media'
+        ? {
+            image: {
+              input_per_image_micro_usd: micros(form.image_input),
+              generation_per_image_micro_usd: micros(form.image_generation),
+            },
+            audio: { per_10k_characters_micro_usd: micros(form.audio_per_10k) },
+            video: {
+              generation_per_second_micro_usd: resolutionPricePayload(form.video_generation),
+              input_material_per_second_micro_usd: resolutionPricePayload(
+                form.video_input_material,
+              ),
+              reference_image_free_count: Number(form.video_reference_free_count || 0),
+              extra_reference_image_micro_usd: micros(form.video_extra_reference),
+            },
+          }
+        : {},
   };
 }
 
@@ -283,27 +395,24 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
     setBusy(true);
     setError(null);
     try {
-      if (editing.kind === 'media') {
-        if (!editing.model.trim()) {
-          setError(t('mediaModelRequired'));
-          setBusy(false);
-          return;
-        }
-        if (
-          capabilitiesForModalities(editing.input_modalities, editing.output_modalities).length ===
-          0
-        ) {
-          setError(t('modalitiesRequired'));
-          setBusy(false);
-          return;
-        }
-      } else if (
-        editing.models
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean).length === 0
+      if (!editing.model.trim()) {
+        setError(editing.kind === 'media' ? t('mediaModelRequired') : t('endpointModelHint'));
+        setBusy(false);
+        return;
+      }
+      if (
+        editing.kind === 'media' &&
+        capabilitiesForModalities(editing.input_modalities, editing.output_modalities).length === 0
       ) {
-        setError(t('endpointModelsHint'));
+        setError(t('modalitiesRequired'));
+        setBusy(false);
+        return;
+      }
+      // A price that does not parse is rejected here rather than coerced to
+      // zero, which would silently register the model as free and drag the
+      // router's cost context toward it.
+      if (priceFields(editing).some((value) => dollarsToMicroUsd(value) === null)) {
+        setError(t('pricingInvalid'));
         setBusy(false);
         return;
       }
@@ -530,27 +639,18 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
               }
             />
 
-            {editing.kind === 'general' ? (
-              <TextInput
-                layout="inline"
-                label={t('endpointModels')}
-                hint={t('endpointModelsHint')}
-                value={editing.models}
-                onChange={(event) =>
-                  setEditing((current) => current && { ...current, models: event.target.value })
-                }
-              />
-            ) : (
+            <TextInput
+              layout="inline"
+              label={editing.kind === 'general' ? t('endpointModel') : t('mediaModelName')}
+              hint={editing.kind === 'general' ? t('endpointModelHint') : t('mediaModelNameHint')}
+              value={editing.model}
+              onChange={(event) =>
+                setEditing((current) => current && { ...current, model: event.target.value })
+              }
+            />
+
+            {editing.kind === 'media' ? (
               <>
-                <TextInput
-                  layout="inline"
-                  label={t('mediaModelName')}
-                  hint={t('mediaModelNameHint')}
-                  value={editing.model}
-                  onChange={(event) =>
-                    setEditing((current) => current && { ...current, model: event.target.value })
-                  }
-                />
                 <Select
                   layout="inline"
                   label={t('mediaProtocol')}
@@ -583,7 +683,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                   onChange={(next) => setEditing((current) => current && { ...current, ...next })}
                 />
               </>
-            )}
+            ) : null}
 
             {editing.kind === 'general' ? (
               <>
@@ -644,6 +744,12 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                 }
               />
             </div>
+
+            <PricingFields
+              form={editing}
+              onChange={(patch) => setEditing((current) => current && { ...current, ...patch })}
+            />
+
             {error ? <ErrorNotice title={error} /> : null}
           </div>
         ) : null}
@@ -682,6 +788,198 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
         onConfirm={remove}
       />
     </section>
+  );
+}
+
+/**
+ * The price block, which follows the endpoint's declared output modalities
+ * rather than showing all four vendor price shapes at once: an image endpoint
+ * has no per-second video rate to fill in, and offering the field invites a
+ * price that the server would drop on save anyway.
+ *
+ * Everything is entered in dollars per the vendor's own quoted unit — per
+ * million tokens, per image, per 10K characters, per second of video — and
+ * converted to micro-USD on save.
+ */
+function PricingFields({
+  form,
+  onChange,
+}: {
+  form: EndpointFormState;
+  onChange: (patch: Partial<EndpointFormState>) => void;
+}) {
+  const t = useTranslations('adminProviders');
+  const outputs = new Set(form.output_modalities);
+
+  if (form.kind === 'general') {
+    return (
+      <PricingSection title={t('pricingGeneralTitle')} hint={t('pricingGeneralHint')}>
+        <TextInput
+          layout="inline"
+          label={t('contextLength')}
+          hint={t('contextLengthHint')}
+          type="number"
+          min="0"
+          value={form.context_length}
+          onChange={(event) => onChange({ context_length: event.target.value })}
+        />
+        <TextInput
+          layout="inline"
+          label={t('maxOutputTokens')}
+          hint={t('maxOutputTokensHint')}
+          type="number"
+          min="0"
+          value={form.max_output_tokens}
+          onChange={(event) => onChange({ max_output_tokens: event.target.value })}
+        />
+        <PriceInput
+          label={t('priceInputTokens')}
+          hint={t('pricePerMillionHint')}
+          value={form.input_per_million}
+          onChange={(value) => onChange({ input_per_million: value })}
+        />
+        <PriceInput
+          label={t('priceOutputTokens')}
+          hint={t('pricePerMillionHint')}
+          value={form.output_per_million}
+          onChange={(value) => onChange({ output_per_million: value })}
+        />
+      </PricingSection>
+    );
+  }
+
+  if (outputs.size === 0) {
+    return (
+      <PricingSection title={t('pricingMediaTitle')} hint={t('pricingNeedsModalities')}>
+        {null}
+      </PricingSection>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {outputs.has('image') ? (
+        <PricingSection title={t('pricingImageTitle')} hint={t('pricingImageHint')}>
+          <PriceInput
+            label={t('priceImageInput')}
+            hint={t('pricePerImageHint')}
+            value={form.image_input}
+            onChange={(value) => onChange({ image_input: value })}
+          />
+          <PriceInput
+            label={t('priceImageGeneration')}
+            hint={t('pricePerImageHint')}
+            value={form.image_generation}
+            onChange={(value) => onChange({ image_generation: value })}
+          />
+        </PricingSection>
+      ) : null}
+
+      {outputs.has('audio') ? (
+        <PricingSection title={t('pricingAudioTitle')} hint={t('pricingAudioHint')}>
+          <PriceInput
+            label={t('priceAudio')}
+            hint={t('pricePer10kCharactersHint')}
+            value={form.audio_per_10k}
+            onChange={(value) => onChange({ audio_per_10k: value })}
+          />
+        </PricingSection>
+      ) : null}
+
+      {outputs.has('video') ? (
+        <PricingSection title={t('pricingVideoTitle')} hint={t('pricingVideoHint')}>
+          {VIDEO_RESOLUTIONS.map((resolution) => (
+            <PriceInput
+              key={`gen-${resolution}`}
+              label={t('priceVideoGeneration', { resolution })}
+              hint={t('pricePerSecondHint')}
+              value={form.video_generation[resolution] ?? ''}
+              onChange={(value) =>
+                onChange({ video_generation: { ...form.video_generation, [resolution]: value } })
+              }
+            />
+          ))}
+          {VIDEO_RESOLUTIONS.map((resolution) => (
+            <PriceInput
+              key={`input-${resolution}`}
+              label={t('priceVideoInputMaterial', { resolution })}
+              hint={t('pricePerSecondHint')}
+              value={form.video_input_material[resolution] ?? ''}
+              onChange={(value) =>
+                onChange({
+                  video_input_material: { ...form.video_input_material, [resolution]: value },
+                })
+              }
+            />
+          ))}
+          <TextInput
+            layout="inline"
+            label={t('videoFreeReferenceImages')}
+            hint={t('videoFreeReferenceImagesHint')}
+            type="number"
+            min="0"
+            max="100"
+            value={form.video_reference_free_count}
+            onChange={(event) => onChange({ video_reference_free_count: event.target.value })}
+          />
+          <PriceInput
+            label={t('priceVideoExtraReferenceImage')}
+            hint={t('pricePerImageHint')}
+            value={form.video_extra_reference}
+            onChange={(value) => onChange({ video_extra_reference: value })}
+          />
+        </PricingSection>
+      ) : null}
+    </div>
+  );
+}
+
+function PricingSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+      <div>
+        <p className="text-xs font-semibold">{title}</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">{hint}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** A dollar amount. Free text rather than `type="number"`, because a spinner
+ * on a six-decimal price is useless and browsers localise the decimal
+ * separator on numeric inputs. */
+function PriceInput({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const t = useTranslations('adminProviders');
+  const invalid = value.trim() !== '' && dollarsToMicroUsd(value) === null;
+  return (
+    <TextInput
+      layout="inline"
+      label={label}
+      hint={invalid ? t('pricingInvalid') : hint}
+      inputMode="decimal"
+      placeholder="0.00"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }
 
@@ -833,6 +1131,101 @@ function InlineToggle({
   );
 }
 
+/**
+ * The row's price line. An unpriced model is called out rather than left
+ * blank, because the router treats a missing price as an estimate and the
+ * operator is the only one who can turn that into a real number.
+ */
+function PricingSummary({ endpoint }: { endpoint: LlmProviderEndpoint }) {
+  const t = useTranslations('adminProviders');
+  const parts: string[] = [];
+
+  if (endpoint.kind === 'general') {
+    const tokens = endpoint.token_pricing;
+    if (tokens?.input_per_million_micro_usd) {
+      parts.push(
+        `${t('priceInputTokens')} $${microUsdToDollars(tokens.input_per_million_micro_usd)}/M`,
+      );
+    }
+    if (tokens?.output_per_million_micro_usd) {
+      parts.push(
+        `${t('priceOutputTokens')} $${microUsdToDollars(tokens.output_per_million_micro_usd)}/M`,
+      );
+    }
+    if (endpoint.context_length) {
+      parts.push(`${t('contextLength')} ${endpoint.context_length.toLocaleString()}`);
+    }
+    if (endpoint.max_output_tokens) {
+      parts.push(`${t('maxOutputTokens')} ${endpoint.max_output_tokens.toLocaleString()}`);
+    }
+  } else {
+    const media = endpoint.media_pricing;
+    if (media?.image?.generation_per_image_micro_usd) {
+      parts.push(
+        `${t('priceImageGeneration')} $${microUsdToDollars(media.image.generation_per_image_micro_usd)}`,
+      );
+    }
+    if (media?.image?.input_per_image_micro_usd) {
+      parts.push(
+        `${t('priceImageInput')} $${microUsdToDollars(media.image.input_per_image_micro_usd)}`,
+      );
+    }
+    if (media?.audio?.per_10k_characters_micro_usd) {
+      parts.push(
+        `${t('priceAudio')} $${microUsdToDollars(media.audio.per_10k_characters_micro_usd)}`,
+      );
+    }
+    for (const [resolution, price] of Object.entries(
+      media?.video?.generation_per_second_micro_usd ?? {},
+    )) {
+      parts.push(`${t('priceVideoGeneration', { resolution })} $${microUsdToDollars(price)}/s`);
+    }
+  }
+
+  return (
+    <p className="mt-1 truncate text-[11px] text-muted" title={parts.join(' · ')}>
+      {parts.length > 0 ? parts.join(' · ') : t('pricingUnset')}
+    </p>
+  );
+}
+
+/** A square icon-only action. The label is the accessible name and the
+ * hover tooltip, so nothing is lost by dropping the visible text. */
+function IconAction({
+  label,
+  tone = 'neutral',
+  busy,
+  onClick,
+  children,
+}: {
+  label: string;
+  tone?: 'neutral' | 'danger';
+  busy?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={busy}
+      onClick={onClick}
+      className={cn(
+        'inline-flex size-8 items-center justify-center rounded-[var(--radius-sm)] border border-border bg-surface transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+        busy ? 'animate-pulse cursor-progress opacity-70' : '',
+        tone === 'danger'
+          ? 'text-danger hover:border-danger hover:bg-danger/10'
+          : 'text-muted hover:border-accent hover:text-accent',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function NodeRow({
   endpoint,
   editable,
@@ -859,7 +1252,6 @@ function NodeRow({
   onValidate: (endpoint: LlmProviderEndpoint) => void;
 }) {
   const t = useTranslations('adminProviders');
-  const tAdmin = useTranslations('admin');
   const capabilityTags = endpoint.kind === 'media' ? (endpoint.capabilities ?? []) : [];
   const errorLabels: Record<string, string> = {
     no_model: t('validationErrorNoModel'),
@@ -886,8 +1278,25 @@ function NodeRow({
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-text">{endpoint.name}</span>
-          <span className="font-mono text-[11px] text-muted">{endpoint.id}</span>
+          {/* The name and id are the way into the editor now — a separate
+              "detail" button spent a whole slot in the action strip saying
+              what clicking the row's title already says. */}
+          {editable ? (
+            <button
+              type="button"
+              onClick={() => onEdit(endpoint)}
+              className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm)] text-left transition-colors hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              title={t('editModel')}
+            >
+              <span className="truncate font-medium">{endpoint.name}</span>
+              <span className="font-mono text-[11px] text-muted">{endpoint.id}</span>
+            </button>
+          ) : (
+            <>
+              <span className="font-medium text-text">{endpoint.name}</span>
+              <span className="font-mono text-[11px] text-muted">{endpoint.id}</span>
+            </>
+          )}
           <Badge tone="neutral">
             {endpoint.kind === 'general' ? t('modelTypeGeneral') : t('modelTypeMedia')}
           </Badge>
@@ -906,12 +1315,7 @@ function NodeRow({
           </Badge>
         </div>
         <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{endpoint.base_url}</p>
-        {endpoint.kind === 'general' && (endpoint.models ?? []).length > 0 ? (
-          <p className="mt-0.5 truncate text-[11px] text-muted">
-            {(endpoint.models ?? []).join(', ')}
-          </p>
-        ) : null}
-        {endpoint.kind === 'media' && endpoint.model ? (
+        {endpoint.model ? (
           <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{endpoint.model}</p>
         ) : null}
         {capabilityTags.length > 0 ? (
@@ -926,6 +1330,7 @@ function NodeRow({
             })}
           </div>
         ) : null}
+        <PricingSummary endpoint={endpoint} />
         <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted">
           <span>
             {t('colConcurrency')}: {endpoint.concurrency_in_use} / {endpoint.max_concurrency}
@@ -987,28 +1392,29 @@ function NodeRow({
         ) : null}
       </div>
       {editable ? (
-        <div className="flex w-full flex-wrap items-center justify-end gap-2 border-t border-border pt-3 lg:w-auto lg:flex-nowrap lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
+        // The toggle takes its own line so the two icon buttons read as one
+        // group; before, four full-width buttons wrapped unpredictably and
+        // "remove" could land next to "validate" on one row and under it on
+        // the next.
+        <div className="flex w-full flex-col items-end gap-2 border-t border-border pt-3 lg:w-auto lg:border-t-0 lg:border-l lg:pt-0 lg:pl-4">
           <InlineToggle
             label={`${endpoint.name} · ${t('modelEnabled')}`}
             checked={endpoint.enabled}
             disabled={toggling}
             onChange={() => onToggleEnabled(endpoint)}
           />
-          <Button
-            size="sm"
-            variant="primary"
-            icon={<IconPlay className="size-3.5" />}
-            loading={validating}
-            onClick={() => onValidate(endpoint)}
-          >
-            {t('validateModel')}
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => onEdit(endpoint)}>
-            {tAdmin('detail')}
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => onRemove(endpoint)}>
-            {t('removeModel')}
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <IconAction
+              label={t('validateModel')}
+              onClick={() => onValidate(endpoint)}
+              busy={validating}
+            >
+              <IconFlask className="size-4" />
+            </IconAction>
+            <IconAction label={t('removeModel')} tone="danger" onClick={() => onRemove(endpoint)}>
+              <IconTrash className="size-4" />
+            </IconAction>
+          </div>
         </div>
       ) : null}
     </div>

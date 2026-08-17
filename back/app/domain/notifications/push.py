@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
-    Character,
+    CreationSkill,
     CutRevision,
     DeliveryVariant,
     Device,
@@ -33,11 +33,13 @@ from app.models import (
 )
 from app.models.base import utcnow
 from app.models.enums import (
+    CreationSkillCategory,
     EditorExportStatus,
     JobOrigin,
     JobStatus,
     NotificationType,
 )
+from app.realtime import publisher
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,7 @@ def notify(
     session.add(record)
     session.flush()
     _dispatch_push(session, user_id=user_id, title_key=title_key, payload=payload or {})
+    _publish(record)
     return record
 
 
@@ -185,6 +188,7 @@ def sync_creation_notification(
             session.flush()
         if dispatch_push:
             _dispatch_push(session, user_id=user_id, title_key=title_key, payload=payload)
+        _publish(record)
         return record
 
     _apply_creation_update(
@@ -193,6 +197,7 @@ def sync_creation_notification(
     session.flush()
     if dispatch_push:
         _dispatch_push(session, user_id=user_id, title_key=title_key, payload=payload)
+    _publish(record)
     return record
 
 
@@ -276,9 +281,12 @@ def job_payload(session: Session, job: GenerationJob) -> dict[str, Any]:
             payload["style_name"] = entry.label_zh
     character_ids = params.get("character_ids") or []
     if isinstance(character_ids, list) and character_ids:
-        character = session.get(Character, str(character_ids[0]))
-        if character is not None:
-            payload["character_name"] = character.name
+        # Characters are stored as `CreationSkill(category=character)` — see
+        # `app.domain.characters.service`. Read the title straight off the
+        # row rather than importing the characters domain here.
+        character = session.get(CreationSkill, str(character_ids[0]))
+        if character is not None and character.category == CreationSkillCategory.CHARACTER:
+            payload["character_name"] = character.title
     return payload
 
 
@@ -353,6 +361,30 @@ def _apply_creation_update(
     record.updated_at = utcnow()
     if bump_unread:
         record.read_at = None
+
+
+def _publish(record: Notification) -> None:
+    """Best-effort live push over the per-user SSE channel.
+
+    Mirrors `NotificationResponse`'s shape so the frontend can reuse the same
+    rendering code for a stream frame as for a polled list item. Fires
+    alongside `_dispatch_push` rather than gating on the caller's eventual
+    commit — same rationale as `publisher.publish_job_event`.
+    """
+    publisher.publish_notification(
+        record.user_id,
+        {
+            "id": record.id,
+            "type": record.type,
+            "title_key": record.title_key,
+            "payload": record.payload_json,
+            "target_type": record.target_type,
+            "target_id": record.target_id,
+            "read": record.read_at is not None,
+            "created_at": record.created_at.isoformat(),
+            "updated_at": record.updated_at.isoformat(),
+        },
+    )
 
 
 def _dispatch_push(

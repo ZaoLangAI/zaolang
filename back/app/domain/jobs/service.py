@@ -28,10 +28,11 @@ from app.domain.errors import (
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
 from app.domain.notifications import push as notifications
+from app.domain.scenes import service as scenes_service
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, JobEvent
-from app.models.enums import JobEventType, JobOrigin, JobStatus
+from app.models.enums import ImageAssetKind, JobEventType, JobOrigin, JobStatus
 from app.platform_config import service as config_service
 from app.platform_config.schemas import PricingConfig
 
@@ -46,7 +47,12 @@ class SubmissionResult:
 
 
 def quote_for(
-    session: Session, *, operation: str, quality_tier: str, duration_seconds: int = 0
+    session: Session,
+    *,
+    operation: str,
+    quality_tier: str,
+    duration_seconds: int = 0,
+    output_count: int = 1,
 ) -> Quote:
     """Prices a job using the live config, falling back to code defaults."""
     pricing = config_service.get_typed(session, "pricing", PricingConfig)
@@ -57,7 +63,20 @@ def quote_for(
         pricing=pricing.tier_pricing,
         per_second_surcharge=pricing.video_per_second_surcharge,
         base_seconds=pricing.video_base_seconds,
+        output_count=output_count,
     )
+
+
+def character_output_count(*, asset_kind: str | None, character_views: list[Any] | None) -> int:
+    """How many images one job's `character_views` actually asks for.
+
+    `1` for everything except an `asset_kind=character` job that named more
+    than one view — the only case `GenerationParams.character_views` is ever
+    longer than one entry (a "补全侧面/背面" completion request).
+    """
+    if asset_kind != ImageAssetKind.CHARACTER.value or not character_views:
+        return 1
+    return len(character_views)
 
 
 def skips_credits(job: GenerationJob) -> bool:
@@ -109,6 +128,7 @@ def submit(
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
     characters_service.apply_character_refs(session, user_id=user_id, params=params)
+    scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
     media_service.validate_generation_references(
         session, user_id=user_id, operation=operation, params=params
     )
@@ -119,6 +139,9 @@ def submit(
         operation=operation,
         quality_tier=quality_tier,
         duration_seconds=int(params.get("duration_seconds") or 0),
+        output_count=character_output_count(
+            asset_kind=params.get("asset_kind"), character_views=params.get("character_views")
+        ),
     )
     sandbox = origin == JobOrigin.SANDBOX
     if not sandbox and max_credits is not None and priced.credits > max_credits:
@@ -144,8 +167,11 @@ def submit(
     # the code-level default graph for those. A sandbox draft snapshot must
     # not pin (or later backfill) the live template, or a publish mid-run
     # would change what the try-it walked.
+    asset_kind = params.get("asset_kind") if isinstance(params.get("asset_kind"), str) else None
     active_template = (
-        None if graph_override_json else workflow_templates_service.get_active(session, operation)
+        None
+        if graph_override_json
+        else workflow_templates_service.get_active(session, operation, asset_kind)
     )
 
     job = GenerationJob(

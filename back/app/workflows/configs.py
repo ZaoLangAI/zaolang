@@ -57,6 +57,48 @@ class IntentRouterConfig(NodeConfig):
     agent_id: str | None = Field(default=None, max_length=40)
 
 
+class AssetPlanningConfig(NodeConfig):
+    """Runs the planner agent's `asset_plan` slot for an image asset job.
+
+    Only meaningful when `ctx.params["asset_kind"]` is a non-`GENERAL`
+    `ImageAssetKind` — see `image_asset_graph` (`app.workflows.defaults`),
+    the only place this node type is wired in today. A `GENERAL` job (or one
+    with no `asset_kind` at all) is a no-op pass-through, so a graph that
+    accidentally includes this node for plain image generation degrades
+    gracefully instead of erroring.
+    """
+
+    agent_id: str | None = Field(default=None, max_length=40)
+    output_key: str = Field(default="asset_plan", min_length=1, max_length=40)
+
+
+class AssetOutputAdvanceConfig(NodeConfig):
+    """Records one iteration's output and decides whether to loop back.
+
+    Sits between `quality_check` and `asset_output_link` in
+    `image_asset_graph` (`app.workflows.defaults`). A no-op single pass for
+    `scene`/`cover`/`general` jobs — only a `CHARACTER`-kind job whose
+    `GenerationParams.character_views` names more than one view actually
+    loops, back to `asset_planning`, once per remaining view. See
+    `app.workflows.nodes.execute_asset_output_advance`.
+    """
+
+
+class AssetOutputLinkConfig(NodeConfig):
+    """Attaches a succeeded image job's output to its target character/scene.
+
+    Runs after `quality_check` passes: `ctx.state["asset_id"]` must already
+    be set. A job with no `target_character_id`/`target_scene_id` (or whose
+    `asset_kind` is `GENERAL`) is a no-op — see
+    `app.workflows.nodes.execute_asset_output_link`.
+    """
+
+    # When true and `asset_kind` is a character view with no
+    # `target_character_id`, creates a brand-new character skill from the
+    # plan's subject instead of leaving the output unlinked.
+    auto_create_character: bool = True
+
+
 class CustomAgentStepConfig(NodeConfig):
     """Runs an operator-created judgment role.
 
@@ -136,11 +178,14 @@ NODE_CONFIG_SCHEMAS: dict[str, type[NodeConfig]] = {
     "skill_context": SkillContextConfig,
     "planning": PlanningConfig,
     "intent_router": IntentRouterConfig,
+    "asset_planning": AssetPlanningConfig,
     "custom_agent": CustomAgentStepConfig,
     "copy_generate": CopyGenerateConfig,
     "route_score": RouteScoreConfig,
     "provider_generate": ProviderGenerateConfig,
     "quality_check": QualityCheckConfig,
+    "asset_output_advance": AssetOutputAdvanceConfig,
+    "asset_output_link": AssetOutputLinkConfig,
     "join": JoinConfig,
     "settle_success": SettleSuccessConfig,
     "fail": FailConfig,

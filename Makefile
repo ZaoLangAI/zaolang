@@ -49,6 +49,22 @@ logs: ## 跟踪容器日志
 release-up: ## 本地构建镜像并启动一键体验编排
 	docker compose -f infra/docker-compose.release.yml up -d --build
 
+# --- remote production deployment ----------------------------------------
+# Needs infra/.env.prod on the target host (see infra/.env.prod.example);
+# that file carries real secrets and is never committed.
+
+.PHONY: prod-up
+prod-up: ## 构建镜像并启动生产编排（需要 infra/.env.prod）
+	docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
+
+.PHONY: prod-down
+prod-down: ## 停止生产编排
+	docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod down
+
+.PHONY: prod-logs
+prod-logs: ## 跟踪生产编排日志
+	docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs -f
+
 # --- database ------------------------------------------------------------
 
 .PHONY: migrate

@@ -30,6 +30,32 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   /** Cast picked from the character library; merged server-side into the job's
    * reference images and voice hints (see `characters.service.apply_character_refs`). */
   characterIds?: string[];
+  /**
+   * What a `text_to_image`/`image_to_image` output is *for* — orthogonal to
+   * `operation`. Selects the `(operation, asset_kind)` workflow template and,
+   * for `character`/`scene`, what `execute_asset_output_link` auto-attaches
+   * the succeeded output(s) to. Absent (or `'general'`) is today's plain,
+   * freeform image — unchanged.
+   */
+  assetKind?: 'general' | 'character' | 'scene' | 'cover';
+  /**
+   * Only meaningful with `assetKind: 'character'`: which of front/side/back
+   * this job produces, one at a time. Omitted means `['front']` — a plain
+   * single-view request. The character library's "补全侧面/背面" button is
+   * the one caller that names `['side', 'back']` explicitly.
+   */
+  characterViews?: ('front' | 'side' | 'back')[];
+  /** The character skill this output auto-attaches to. Unset with a
+   * character `assetKind` creates a brand-new character skill instead. */
+  targetCharacterId?: string | null;
+  /** The scene this output auto-attaches to. Unset with `assetKind: 'scene'`
+   * leaves the output unattached — scenes have no auto-create path. */
+  targetSceneId?: string | null;
+  /**
+   * Opts out of the auto-attach above while still letting `assetKind` shape
+   * the generation itself. Defaults to `true`.
+   */
+  autoAttachAsset?: boolean;
   /** Free-form provider hints, e.g. `{ sound: true }`. */
   extra?: Record<string, unknown>;
   /**
@@ -45,6 +71,15 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   /** Ceiling sent to the API; the job is refused rather than trimmed. */
   maxCredits?: number;
   draftTitle?: string | null;
+  /**
+   * Reuses an existing draft instead of creating a new one — the image
+   * studio's inline "continue refining" flow passes the draft id from its
+   * previous submission so every iteration of the same creative idea stays
+   * on one draft (and therefore shows up together in
+   * `GenerationVersionHistory`), rather than each generate click spawning
+   * its own unpublishable draft.
+   */
+  draftId?: string;
   /**
    * Names a `shortform.profiles` entry. The API refuses the job when it
    * contradicts the aspect ratio or the duration, so it travels with them.
@@ -77,15 +112,32 @@ const QUOTE_DEBOUNCE_MS = 250;
 /**
  * Quoting and submitting a generation, shared by every studio shell.
  *
- * `/create/new` and `/remix/[workId]` deliberately share one component so the
- * remix path cannot drift from the create path. A shell whose layout differs
- * too much to share the component still has to share *this*: the debounce, the
- * login wall, the draft, the idempotency key and the destination are the parts
- * that would drift silently and expensively.
+ * `ImageGenerationStudio`, `VideoGenerationStudio` and `AudioGenerationStudio`
+ * are independent top-level components — their params panels differ enough
+ * (asset kind vs. duration/frames vs. voice) that forcing them into one
+ * component meant branching on operation type everywhere. But `/create/new`
+ * and `/remix/[workId]` still submit the same job with the same pricing
+ * rules, so all three shells call this one hook rather than each growing
+ * their own copy: the debounce, the login wall, the draft, the idempotency
+ * key and the destination are the parts that would drift silently and
+ * expensively if duplicated.
  */
 export function useGenerationSubmit(
   quoteInput: GenerationQuoteInput,
-  { label }: { label: string },
+  {
+    label,
+    onSubmitted,
+  }: {
+    label: string;
+    /**
+     * When provided, a successful submission calls this instead of
+     * navigating to `/jobs/[jobId]` — the image studio's inline flow uses
+     * this to stay on the studio page and stream progress into its own
+     * preview slot. Video/audio studios don't pass it, so their
+     * navigate-away behaviour is unchanged.
+     */
+    onSubmitted?: (job: GenerationJob) => void;
+  },
 ): GenerationSubmit {
   const tStates = useTranslations('states');
   const router = useRouter();
@@ -140,6 +192,11 @@ export function useGenerationSubmit(
         setError(null);
         setFieldErrors({});
         try {
+          // An explicit `draftId` (the image studio reusing its own earlier
+          // draft across iterations) always wins over a draft left over from
+          // a previous failed attempt.
+          if (input.draftId) pendingDraft.current = input.draftId;
+
           // The draft is what `/publish/[draftId]` and the job page's publish
           // button hang off; a job submitted without one produces a result the
           // user cannot publish.
@@ -182,6 +239,11 @@ export function useGenerationSubmit(
                 shortform_profile: input.shortformProfile,
                 skill_ids: input.skillIds ?? [],
                 style_gallery_id: input.styleGalleryId ?? null,
+                asset_kind: input.assetKind ?? 'general',
+                character_views: input.characterViews ?? null,
+                target_character_id: input.targetCharacterId ?? null,
+                target_scene_id: input.targetSceneId ?? null,
+                auto_attach_asset: input.autoAttachAsset ?? true,
                 extra: input.extra ?? {},
               },
               max_credits: input.maxCredits,
@@ -190,7 +252,12 @@ export function useGenerationSubmit(
             { idempotencyKey: newIdempotencyKey() },
           );
           pendingDraft.current = null;
-          router.push(`/jobs/${job.id}`);
+          if (onSubmitted) {
+            onSubmitted(job);
+            setSubmitting(false);
+          } else {
+            router.push(`/jobs/${job.id}`);
+          }
         } catch (caught) {
           setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
           if (caught instanceof ApiError) setFieldErrors(caught.fieldErrors);

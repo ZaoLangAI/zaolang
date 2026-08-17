@@ -4210,71 +4210,71 @@
         }
       }
     },
-    "createPage.modeImageToImageDesc": {
+    "createPage.modeImageCreationDesc": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Upload an image and describe the change: swap the background, adjust the style or touch up details."
+            "value": "Generate character front/side/back views, scene stills or covers for your short drama; attach a reference to keep a character or scene consistent."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "画像をアップロードして変更内容を記述し、背景の変更やスタイル調整、細部の修正を行います。"
+            "value": "短編ドラマ用のキャラクター正面/側面/背面、シーン画像、カバー画像を生成します。参考画像を添付すると人物やシーンの一貫性を保てます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "上传一张图片并描述改动，替换背景、调整风格或修饰细节。"
+            "value": "生成角色正/侧/背面、场景图或封面等短剧创作用图；上传参考图即可保持人物或场景一致。"
           }
         }
       }
     },
-    "createPage.modeImageToImageTag": {
+    "createPage.modeImageCreationTag": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Image to image · 12+ credits"
+            "value": "Image creation · 8+ credits"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "画像から画像 · 12+ クレジット"
+            "value": "画像創作 · 8+ クレジット"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "图生图 · 12+ 积分"
+            "value": "图片创作 · 8+ 积分"
           }
         }
       }
     },
-    "createPage.modeImageToImageTitle": {
+    "createPage.modeImageCreationTitle": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Image editing"
+            "value": "Image creation"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "画像編集"
+            "value": "画像創作"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "图片编辑"
+            "value": "图片创作"
           }
         }
       }
@@ -4486,6 +4486,75 @@
         }
       }
     },
+    "createPage.modeScriptDesc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn one idea into a full scene-by-scene script, then refine scenes, camera moves and lines in conversation."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイデアひとつから場面構成の台本を生成し、対話しながらシーン・カメラワーク・セリフを練り上げます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从一句创意生成完整分场剧本，边对话边打磨场景、运镜与台词。"
+          }
+        }
+      }
+    },
+    "createPage.modeScriptTag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversational · version history"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対話形式 · バージョン管理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话式 · 支持版本回溯"
+          }
+        }
+      }
+    },
+    "createPage.modeScriptTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Script writing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "台本づくり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文案创作"
+          }
+        }
+      }
+    },
     "createPage.modeShortformDesc": {
       "extractionState": "manual",
       "localizations": {
@@ -4551,75 +4620,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "短视频创作"
-          }
-        }
-      }
-    },
-    "createPage.modeTextToImageDesc": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Describe the subject, style and framing to generate a still from nothing."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "被写体・スタイル・構図を描写し、ゼロから一枚の画像を生成します。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "描述主体、风格与构图，从零生成一张新图。"
-          }
-        }
-      }
-    },
-    "createPage.modeTextToImageTag": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Text to image · 8+ credits"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テキストから画像 · 8+ クレジット"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文生图 · 8+ 积分"
-          }
-        }
-      }
-    },
-    "createPage.modeTextToImageTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Text to image"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テキストから画像"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字生成图片"
           }
         }
       }
@@ -10673,6 +10673,29 @@
         }
       }
     },
+    "notificationsPage.dismiss": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭"
+          }
+        }
+      }
+    },
     "notificationsPage.empty": {
       "extractionState": "manual",
       "localizations": {
@@ -11060,6 +11083,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "{count} 条未读"
+          }
+        }
+      }
+    },
+    "notificationsPage.viewAll": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View all"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて見る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看全部"
           }
         }
       }
@@ -12927,6 +12973,167 @@
         }
       }
     },
+    "remixPage.assetKind": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creation type"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "創作タイプ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创作类型"
+          }
+        }
+      }
+    },
+    "remixPage.assetKindCharacter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Character"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクター画像"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "角色图"
+          }
+        }
+      }
+    },
+    "remixPage.assetKindCharacterHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generates the front view first; once it's done, complete the side and back from the character library in one click."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まず正面立ち絵を生成し、完了後にキャラクターライブラリで側面・背面をワンクリックで補完できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先生成正面立绘，成功后可在角色库一键补全侧面与背面。"
+          }
+        }
+      }
+    },
+    "remixPage.assetKindCover": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cover"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カバー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面"
+          }
+        }
+      }
+    },
+    "remixPage.assetKindGeneral": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freeform"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自由創作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自由创作"
+          }
+        }
+      }
+    },
+    "remixPage.assetKindHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What this image is for decides the generation flow and prompt planning used."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この画像の用途を選ぶと、使用する生成フローとプロンプト設計が決まります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择这张图片的用途，将决定使用的生成流程与提示词规划。"
+          }
+        }
+      }
+    },
+    "remixPage.assetKindScene": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scene shot"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーン画像"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "场景图"
+          }
+        }
+      }
+    },
     "remixPage.audioPreviewHint": {
       "extractionState": "manual",
       "localizations": {
@@ -12950,6 +13157,52 @@
         }
       }
     },
+    "remixPage.autoAttachToRoster": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add this to the character's reference images automatically"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成後にこのキャラクターの参考画像へ自動追加する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成后自动加入该角色的参考图"
+          }
+        }
+      }
+    },
+    "remixPage.autoAttachToRosterOffHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only borrows a reference for consistency — nothing is written back to the roster."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一貫性のために参考画像を借用するだけで、キャラクターライブラリには書き込まれません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅借用参考图保持一致性，不会写入角色图库。"
+          }
+        }
+      }
+    },
     "remixPage.backToSource": {
       "extractionState": "manual",
       "localizations": {
@@ -12969,6 +13222,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "返回原作"
+          }
+        }
+      }
+    },
+    "remixPage.characterNamePlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Character name"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクター名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "角色名称"
+          }
+        }
+      }
+    },
+    "remixPage.completeViews": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Complete side/back"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "側面・背面を補完"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补全侧面/背面"
+          }
+        }
+      }
+    },
+    "remixPage.completeViewsFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to complete side/back views. Please try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "側面・背面の補完に失敗しました。しばらくしてから再試行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "补全侧面/背面失败，请稍后重试。"
+          }
+        }
+      }
+    },
+    "remixPage.descriptionPlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description (optional)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述（可选）"
           }
         }
       }
@@ -13433,6 +13778,52 @@
         }
       }
     },
+    "remixPage.manageCharactersLink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage character library"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクターライブラリを管理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理角色库"
+          }
+        }
+      }
+    },
+    "remixPage.manageScenesLink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage scene library"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーンライブラリを管理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理场景库"
+          }
+        }
+      }
+    },
     "remixPage.materialLimit": {
       "extractionState": "manual",
       "localizations": {
@@ -13521,6 +13912,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "作者为二创设置了积分价格。解锁一次后可无限二创。"
+          }
+        }
+      }
+    },
+    "remixPage.newCharacterTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New character"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいキャラクター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建角色"
+          }
+        }
+      }
+    },
+    "remixPage.newSceneTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New scene"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいシーン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建场景"
           }
         }
       }
@@ -13916,6 +14353,29 @@
         }
       }
     },
+    "remixPage.sceneNamePlaceholder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scene name"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーン名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "场景名称"
+          }
+        }
+      }
+    },
     "remixPage.seed": {
       "extractionState": "manual",
       "localizations": {
@@ -13981,6 +14441,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入 0 到 2147483647 之间的整数。"
+          }
+        }
+      }
+    },
+    "remixPage.selectCharacterTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a character"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクターを選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择角色"
+          }
+        }
+      }
+    },
+    "remixPage.selectSceneTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a scene"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーンを選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择场景"
           }
         }
       }
@@ -14349,6 +14855,121 @@
           "stringUnit": {
             "state": "translated",
             "value": "灵感和允许复用的信息已带入，你只需说出想改变的部分。"
+          }
+        }
+      }
+    },
+    "remixPage.targetCharacter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target character"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対象キャラクター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标角色"
+          }
+        }
+      }
+    },
+    "remixPage.targetCharacterAutoCreate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a new character automatically"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいキャラクターを自動作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动创建新角色"
+          }
+        }
+      }
+    },
+    "remixPage.targetCharacterHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave blank to create a new character automatically once this finishes."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄のままにすると、生成完了後に新しいキャラクターが自動作成されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空将在生成完成后自动创建一个新角色。"
+          }
+        }
+      }
+    },
+    "remixPage.targetScene": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target scene"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対象シーン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标场景"
+          }
+        }
+      }
+    },
+    "remixPage.targetSceneNone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't link to the scene library"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーンライブラリと関連付けない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不关联场景库"
           }
         }
       }

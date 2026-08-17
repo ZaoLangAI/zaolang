@@ -20,6 +20,7 @@ import { ApiError } from '@/lib/api/errors';
 export function WorkflowPublishDialog({
   open,
   operation,
+  assetKind,
   graph,
   defaultName,
   onClose,
@@ -28,6 +29,9 @@ export function WorkflowPublishDialog({
 }: {
   open: boolean;
   operation: string;
+  /** `null` publishes the generic (asset_kind-less) template; a value scopes
+   * this publish to that one image-asset purpose (see `operationHasAssetKinds`). */
+  assetKind?: string | null;
   graph: WorkflowGraphJson;
   defaultName: string;
   onClose: () => void;
@@ -92,6 +96,7 @@ export function WorkflowPublishDialog({
         graph,
         reason,
         confirm: true,
+        asset_kind: assetKind ?? null,
       });
       setReason('');
       onValidated?.([]);
@@ -122,7 +127,12 @@ export function WorkflowPublishDialog({
           <Button variant="ghost" onClick={() => void validate()} loading={busy}>
             {t('validateGraph')}
           </Button>
-          <Button variant="primary" disabled={!canPublish} loading={busy} onClick={() => void publish()}>
+          <Button
+            variant="primary"
+            disabled={!canPublish}
+            loading={busy}
+            onClick={() => void publish()}
+          >
             {t('publishAndActivate')}
           </Button>
         </>

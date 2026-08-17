@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, DbSession, rate_limited
 from app.api.schemas.characters import (
     CharacterCreateRequest,
+    CharacterPublishRequest,
+    CharacterReferenceAsset,
+    CharacterReferenceAssetUpdateRequest,
     CharacterResponse,
     CharacterUpdateRequest,
     SeriesAddCharacterRequest,
@@ -20,7 +23,7 @@ from app.api.schemas.characters import (
     SeriesResponse,
 )
 from app.domain.characters import service as characters
-from app.models import Character, Series, Work, WorkVersion
+from app.models import Series, Work, WorkVersion
 from app.presenters import media_urls
 
 router = APIRouter(tags=["characters"])
@@ -98,6 +101,76 @@ def delete_character(
 ) -> None:
     characters.delete_character(session, user_id=user.id, character_id=character_id)
     session.commit()
+
+
+@router.patch(
+    "/characters/{character_id}/reference-assets/{asset_id}", response_model=CharacterResponse
+)
+def update_character_reference_asset(
+    character_id: str,
+    asset_id: str,
+    payload: CharacterReferenceAssetUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> CharacterResponse:
+    character = characters.update_reference_asset(
+        session,
+        user_id=user.id,
+        character_id=character_id,
+        asset_id=asset_id,
+        view=payload.view.value if payload.view is not None else None,
+        label=payload.label,
+    )
+    session.commit()
+    return _character_response(session, character)
+
+
+@router.delete(
+    "/characters/{character_id}/reference-assets/{asset_id}", response_model=CharacterResponse
+)
+def delete_character_reference_asset(
+    character_id: str,
+    asset_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> CharacterResponse:
+    character = characters.remove_reference_asset(
+        session, user_id=user.id, character_id=character_id, asset_id=asset_id
+    )
+    session.commit()
+    return _character_response(session, character)
+
+
+@router.post("/characters/{character_id}/publish", response_model=CharacterResponse)
+def publish_character(
+    character_id: str,
+    payload: CharacterPublishRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> CharacterResponse:
+    character = characters.publish_character(
+        session,
+        user_id=user.id,
+        character_id=character_id,
+        portrait_consent=payload.portrait_consent,
+    )
+    session.commit()
+    return _character_response(session, character)
+
+
+@router.post("/characters/{character_id}/withdraw", response_model=CharacterResponse)
+def withdraw_character(
+    character_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> CharacterResponse:
+    character = characters.withdraw_character(session, user_id=user.id, character_id=character_id)
+    session.commit()
+    return _character_response(session, character)
 
 
 @router.post("/series", response_model=SeriesResponse, status_code=201)
@@ -182,21 +255,26 @@ def remove_character_from_series(
     return _series_response(session, series)
 
 
-def _character_response(session: Session, character: Character) -> CharacterResponse:
+def _character_response(session: Session, character: characters.CharacterView) -> CharacterResponse:
     return CharacterResponse(
         id=character.id,
         name=character.name,
         description=character.description,
-        reference_asset_ids=list(character.reference_asset_ids_json),
-        reference_asset_urls=[
-            url
-            for url in (
-                media_urls.asset_url(session, asset_id)
-                for asset_id in character.reference_asset_ids_json
+        reference_assets=[
+            CharacterReferenceAsset(
+                asset_id=str(entry.get("asset_id")),
+                view=str(entry.get("view") or "general"),
+                label=entry.get("label"),
+                url=media_urls.asset_url(session, str(entry.get("asset_id"))),
+                created_at=entry.get("created_at"),
             )
-            if url
+            for entry in character.reference_assets
+            if entry.get("asset_id")
         ],
         voice_description=character.voice_description,
+        status=character.status,
+        visibility=character.visibility,
+        access_credits=character.access_credits,
         created_at=character.created_at,
         updated_at=character.updated_at,
     )

@@ -12,7 +12,7 @@ item is what calls `approve()`/`reject()` here — see
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from app.domain.moderation_queue import service as moderation_queue
 from app.models import Asset, CreationSkill, ModerationQueueItem
 from app.models.base import utcnow
 from app.models.enums import (
+    IMAGE_ASSET_SKILL_CATEGORIES,
     CreationSkillCategory,
     CreationSkillStatus,
     CreationSkillVisibility,
@@ -31,6 +32,8 @@ from app.models.enums import (
     ModerationStatus,
     Operation,
 )
+
+ContentType = Literal["template", "image_asset"]
 
 MAX_DESCRIPTION_LENGTH = 300
 QUEUE_STAGE = ModerationStage.SKILL_REVIEW
@@ -200,9 +203,7 @@ def viewer_has_access(session: Session, skill: CreationSkill, viewer_id: str | N
     return access_service.viewer_unlocked_skill(session, skill, viewer_id)
 
 
-def assert_unlocked_for_use(
-    session: Session, skill: CreationSkill, viewer_id: str | None
-) -> None:
+def assert_unlocked_for_use(session: Session, skill: CreationSkill, viewer_id: str | None) -> None:
     access_service.assert_skill_unlocked(session, skill, viewer_id)
 
 
@@ -213,9 +214,18 @@ def record_usage(session: Session, *, skill: CreationSkill) -> CreationSkill:
 
 
 def list_mine(session: Session, *, owner_user_id: str, limit: int = 60) -> ListPage:
+    """The generic "我的技能" tab (`ManageSkillDialog`-backed) only knows how
+    to edit the flat `prompt`/`aspect_ratio`/... template shape — an
+    `IMAGE_ASSET_SKILL_CATEGORIES` skill (character/scene_asset/cover_asset)
+    is always excluded here in favor of its dedicated maintenance page
+    (`/create/characters`, `/create/scenes`), same as `list_public`'s default
+    landing view."""
     stmt = (
         select(CreationSkill)
-        .where(CreationSkill.owner_user_id == owner_user_id)
+        .where(
+            CreationSkill.owner_user_id == owner_user_id,
+            CreationSkill.category.notin_(IMAGE_ASSET_SKILL_CATEGORIES),
+        )
         .order_by(CreationSkill.created_at.desc(), CreationSkill.id.desc())
         .limit(limit + 1)
     )
@@ -228,10 +238,21 @@ def list_public(
     session: Session,
     *,
     category: CreationSkillCategory | None = None,
+    content_type: ContentType | None = None,
     access: str | None = None,
     cursor: str | None = None,
     limit: int = 24,
 ) -> ListPage:
+    """Browses published skills for the marketplace.
+
+    `category` (an exact match) always wins when given. Otherwise
+    `content_type` picks a side of the marketplace's two-tier filter: a
+    "template" (`scene`/`lens`/`style`/`other`, `SkillCard`-rendered from
+    flat `prompt`/`aspect_ratio`/... params) or an "image_asset" (`character`
+    /`scene_asset`/`cover_asset`, each purchasable but not template-shaped —
+    see `IMAGE_ASSET_SKILL_CATEGORIES`). `None` (the plaza's default landing
+    view, same as before this parameter existed) behaves like `"template"`.
+    """
     anchor: CreationSkill | None = None
     if cursor:
         anchor = session.get(CreationSkill, cursor)
@@ -241,6 +262,10 @@ def list_public(
     stmt = select(CreationSkill).where(CreationSkill.status == CreationSkillStatus.PUBLISHED)
     if category:
         stmt = stmt.where(CreationSkill.category == category)
+    elif content_type == "image_asset":
+        stmt = stmt.where(CreationSkill.category.in_(IMAGE_ASSET_SKILL_CATEGORIES))
+    else:
+        stmt = stmt.where(CreationSkill.category.notin_(IMAGE_ASSET_SKILL_CATEGORIES))
     if access == "free":
         stmt = stmt.where(CreationSkill.access_credits == 0)
     elif access == "paid":

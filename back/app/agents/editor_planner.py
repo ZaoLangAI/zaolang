@@ -14,7 +14,8 @@ from app.models.enums import AgentName
 
 SLOT = "timeline_edit_plan"
 
-SYSTEM_PROMPT = f"""你是造浪平台的短剧时间线规划器。根据当前规范化时间线摘要与用户目标，产出可执行的 EditCommand 列表。
+SYSTEM_PROMPT = f"""你是造浪平台的短剧时间线规划器。根据当前规范化时间线摘要与用户目标，
+产出可执行的 EditCommand 列表。
 规则：
 - 只使用这些 type: insert_clip, delete_elements, move_elements, trim_element, split_element,
   set_clip_volume, set_clip_speed, insert_caption, update_caption, set_canvas, set_brand_overlay
@@ -63,6 +64,8 @@ def plan_timeline(
     else:
         outcome.data["commands"] = commands[: max(1, min(100, max_commands))]
     warnings = outcome.data.get("warnings")
-    outcome.data["warnings"] = [str(item) for item in warnings] if isinstance(warnings, list) else []
+    outcome.data["warnings"] = (
+        [str(item) for item in warnings] if isinstance(warnings, list) else []
+    )
     outcome.data["summary"] = str(outcome.data.get("summary") or goal)[:500]
     return outcome

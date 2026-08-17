@@ -16,6 +16,7 @@ from app.models.enums import (
     CreationSkillCategory,
     CreationSkillStatus,
     CreationSkillVisibility,
+    ImageAssetKind,
     JobOrigin,
     JobStatus,
     LearnPostStatus,
@@ -221,6 +222,56 @@ class UserGrowthTimeseriesView(ApiModel):
     suspended_users: int = 0
 
 
+class CostDailyPoint(ApiModel):
+    """One day of model spend, in micro-USD (1e-6 USD) integers.
+
+    Micro rather than cents because vendor prices go far below a cent; the
+    console divides by 1_000_000 to display dollars. This is what we pay
+    vendors — unrelated to the credits a user spends.
+    """
+
+    date: dt.date
+    llm_micro_usd: int = 0
+    media_micro_usd: int = 0
+    total_micro_usd: int = 0
+
+
+class CostTimeseriesView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    points: list[CostDailyPoint] = Field(default_factory=list)
+    total_micro_usd: int = 0
+
+
+class ProviderCostSeriesView(ApiModel):
+    """One endpoint's daily spend. A media endpoint's per-capability attempts
+    are rolled back up to the endpoint, because that is what gets billed."""
+
+    endpoint_id: str
+    endpoint_name: str = ""
+    total_micro_usd: int = 0
+    points: list[CostDailyPoint] = Field(default_factory=list)
+
+
+class ModelCostView(ApiModel):
+    """Window total for one model. Cumulative rather than a trend: with more
+    than a handful of models configured, per-model lines stop being legible."""
+
+    model: str
+    endpoint_id: str = ""
+    endpoint_name: str = ""
+    kind: Literal["general", "media"] = "general"
+    calls: int = 0
+    total_micro_usd: int = 0
+
+
+class CostBreakdownView(ApiModel):
+    generated_at: dt.datetime
+    window_days: int
+    providers: list[ProviderCostSeriesView] = Field(default_factory=list)
+    models: list[ModelCostView] = Field(default_factory=list)
+
+
 class ProviderAttemptView(ApiModel):
     id: str
     attempt_number: int
@@ -321,7 +372,8 @@ class ProviderStatView(ApiModel):
     success_rate: float
     p50_latency_ms: int
     p95_latency_ms: int
-    effective_cost: int
+    # Average micro-USD (1e-6 USD) actually spent per successful generation.
+    effective_cost_micro_usd: int
     enabled: bool
 
 
@@ -496,6 +548,13 @@ class LearnPostDecisionRequest(ApiModel):
     reason: str | None = None
 
 
+class CharacterReferenceAssetAdminView(ApiModel):
+    asset_id: str
+    view: str = "general"
+    label: str | None = None
+    url: str | None = None
+
+
 class CreationSkillAdminView(ApiModel):
     id: str
     owner_user_id: str
@@ -511,6 +570,15 @@ class CreationSkillAdminView(ApiModel):
     access_credits: int = 0
     reject_reason: str | None = None
     created_at: dt.datetime
+    # Populated only when `category == CHARACTER` — a reviewer needs to see
+    # every reference image (not just `cover_url`) and confirm portrait
+    # consent was actually captured before approving a public character.
+    character_reference_assets: list[CharacterReferenceAssetAdminView] = Field(default_factory=list)
+    character_portrait_consent_at: dt.datetime | None = None
+    # Populated only when `category == SCENE_ASSET` — same rationale as
+    # `character_reference_assets` above, minus the portrait-consent field a
+    # setting has no use for.
+    scene_reference_assets: list[CharacterReferenceAssetAdminView] = Field(default_factory=list)
 
 
 class FingerprintDuplicateGroup(ApiModel):
@@ -651,6 +719,45 @@ class ConfigDiffResponse(ApiModel):
     entries: list[ConfigDiffEntry]
 
 
+class TokenPricingPayload(ApiModel):
+    """`kind="general"` list price, in micro-USD (1e-6 USD) per million tokens.
+
+    $0.060 per million is 60_000 here. Integers rather than a decimal string
+    so the contract has one representation; the console does the conversion
+    from what an operator types in dollars.
+    """
+
+    input_per_million_micro_usd: int = Field(default=0, ge=0)
+    output_per_million_micro_usd: int = Field(default=0, ge=0)
+
+
+class ImagePricingPayload(ApiModel):
+    input_per_image_micro_usd: int = Field(default=0, ge=0)
+    generation_per_image_micro_usd: int = Field(default=0, ge=0)
+
+
+class AudioPricingPayload(ApiModel):
+    per_10k_characters_micro_usd: int = Field(default=0, ge=0)
+
+
+class VideoPricingPayload(ApiModel):
+    """Keyed by output resolution, because vendors price 2K and 768P apart."""
+
+    generation_per_second_micro_usd: dict[str, int] = Field(default_factory=dict)
+    input_material_per_second_micro_usd: dict[str, int] = Field(default_factory=dict)
+    reference_image_free_count: int = Field(default=5, ge=0, le=100)
+    extra_reference_image_micro_usd: int = Field(default=0, ge=0)
+
+
+class MediaPricingPayload(ApiModel):
+    """Sections a media endpoint's capabilities do not cover are dropped
+    server-side, so a stale price cannot outlive the capability it billed."""
+
+    image: ImagePricingPayload | None = None
+    audio: AudioPricingPayload | None = None
+    video: VideoPricingPayload | None = None
+
+
 class LlmProviderEndpointView(ApiModel):
     """Read model for one model-provider endpoint.
 
@@ -668,8 +775,7 @@ class LlmProviderEndpointView(ApiModel):
     api_key_configured: bool
     api_key_preview: str | None = None
     kind: Literal["general", "media"] = "general"
-    models: list[str] = Field(default_factory=list)
-    # `kind="media"` only.
+    # The one model id this endpoint serves, whatever its kind.
     model: str = ""
     input_modalities: list[str] = Field(default_factory=list)
     output_modalities: list[str] = Field(default_factory=list)
@@ -682,6 +788,13 @@ class LlmProviderEndpointView(ApiModel):
     backup_order: int
     timeout_ms: int
     enabled: bool
+    # `kind="general"` only. 0 means undeclared, shown as unknown rather than
+    # enforced — the provider is the authority on its own ceiling.
+    context_length: int = 0
+    max_output_tokens: int = 0
+    token_pricing: TokenPricingPayload = Field(default_factory=TokenPricingPayload)
+    # `kind="media"` only.
+    media_pricing: MediaPricingPayload = Field(default_factory=MediaPricingPayload)
     concurrency_in_use: int = 0
     circuit_breaker_open: bool = False
     recent_attempts: int = 0
@@ -744,13 +857,12 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     # None keeps the stored key unchanged; "" clears it; anything else replaces it.
     api_key: str | None = None
     kind: Literal["general", "media"] = "general"
-    # `kind="general"` only.
-    models: list[str] = Field(default_factory=list)
     role: Literal["primary", "backup"] = "backup"
     backup_order: int = Field(default=100, ge=1, le=1000)
-    # `kind="media"` only: one model id plus the modalities it supports.
-    # Capability tags are derived server-side, not submitted here.
-    model: str = Field(default="", max_length=200)
+    # The one model id this endpoint serves, required for both kinds. For
+    # media it pairs with the modalities below; capability tags are derived
+    # server-side, not submitted here.
+    model: str = Field(min_length=1, max_length=200)
     input_modalities: list[str] = Field(default_factory=list)
     output_modalities: list[str] = Field(default_factory=list)
     # `kind="media"` only. Null lets the domain schema infer from modalities.
@@ -758,6 +870,10 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     max_concurrency: int = Field(default=4, ge=1, le=256)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
+    context_length: int = Field(default=0, ge=0, le=100_000_000)
+    max_output_tokens: int = Field(default=0, ge=0, le=10_000_000)
+    token_pricing: TokenPricingPayload = Field(default_factory=TokenPricingPayload)
+    media_pricing: MediaPricingPayload = Field(default_factory=MediaPricingPayload)
 
 
 class PromptSlotView(ApiModel):
@@ -833,11 +949,17 @@ class AgentProfileView(ApiModel):
     category: Literal["judgment", "assist"] = "judgment"
     operations: list[str] = Field(default_factory=list)
     is_default: bool
+    # Only ever set on a `copy`-role profile — which `ImageAssetKind` bucket
+    # "AI 润色" routes to this agent for. `None` means this agent is not a
+    # kind-specific default (it may still be the role's ordinary default).
+    default_for_asset_kind: Literal["character", "scene", "cover"] | None = None
     enabled: bool
     # Null means the agent draws from the shared `kind="general"` pool,
     # which is what every agent did before per-agent bindings existed.
     default_endpoint_id: str | None = None
     backup_endpoint_id: str | None = None
+    # Read-only, derived from `default_endpoint_id`: an endpoint declares
+    # exactly one model, so binding the provider is what picks the model.
     model: str | None = None
     max_tokens: int | None = None
     temperature: float | None = None
@@ -860,16 +982,19 @@ class AgentProfileCreateRequest(ApiModel):
     operations: list[str] = Field(default_factory=list)
     default_endpoint_id: str | None = Field(default=None, max_length=64)
     backup_endpoint_id: str | None = Field(default=None, max_length=64)
-    model: str | None = Field(default=None, max_length=160)
-    # No max_tokens/temperature here on purpose: sampling is a generic
-    # runtime fallback, not an operator input or a per-model table.
+    # No model here on purpose: an endpoint serves exactly one model, so the
+    # provider pin picks it. No max_tokens/temperature either: sampling is a
+    # generic runtime fallback, not an operator input or a per-model table.
     reasoning_model: bool | None = None
+    # Validated service-side to only apply to `role == "copy"`; setting it
+    # clears whichever other profile previously held that bucket.
+    default_for_asset_kind: Literal["character", "scene", "cover"] | None = None
 
 
 class AgentProfileUpdateRequest(ApiModel):
     """Partial AgentProfile update.
 
-    Endpoint/model pins use an empty string to clear. `reasoning_model`
+    Endpoint pins use an empty string to clear. `reasoning_model`
     distinguishes omission (keep the current override) from explicit null
     (inherit the role's default Agent).
     """
@@ -881,10 +1006,14 @@ class AgentProfileUpdateRequest(ApiModel):
     enabled: bool | None = None
     default_endpoint_id: str | None = Field(default=None, max_length=64)
     backup_endpoint_id: str | None = Field(default=None, max_length=64)
-    model: str | None = Field(default=None, max_length=160)
-    # No max_tokens/temperature here on purpose: sampling is a generic
-    # runtime fallback, not an operator input or a per-model table.
+    # No model here on purpose: an endpoint serves exactly one model, so the
+    # provider pin picks it. No max_tokens/temperature either: sampling is a
+    # generic runtime fallback, not an operator input or a per-model table.
     reasoning_model: bool | None = None
+    # Omission keeps the current value; explicit `null` clears it; a bucket
+    # value promotes this agent and demotes whichever profile held it before
+    # — same tri-state distinction as `reasoning_model` above.
+    default_for_asset_kind: Literal["character", "scene", "cover"] | None = None
 
 
 class SkillTemplateView(ApiModel):
@@ -1132,6 +1261,9 @@ class NodeTypeView(ApiModel):
 class WorkflowTemplateView(ApiModel):
     id: str
     operation: str
+    # `None` = the operation's generic graph. Only `text_to_image`/
+    # `image_to_image` ever carry a value here — see `ImageAssetKind`.
+    asset_kind: str | None = None
     version: int
     name: str
     graph: dict[str, Any]
@@ -1144,6 +1276,7 @@ class WorkflowTemplateView(ApiModel):
 class WorkflowTemplatePublishRequest(DangerousAction):
     name: str = Field(min_length=1, max_length=120)
     graph: dict[str, Any]
+    asset_kind: ImageAssetKind | None = None
 
 
 class WorkflowTemplateValidateRequest(ApiModel):

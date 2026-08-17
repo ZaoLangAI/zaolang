@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import time
+from collections.abc import Iterator
+
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -36,8 +41,12 @@ from app.models import (
 from app.models.base import utcnow
 from app.models.enums import NotificationType
 from app.presenters import media_urls
+from app.realtime import publisher
 
 router = APIRouter(tags=["community"])
+
+NOTIFICATION_STREAM_HEARTBEAT_SECONDS = 15
+NOTIFICATION_STREAM_MAX_DURATION_SECONDS = 600
 
 
 # --- collections ---------------------------------------------------------
@@ -219,25 +228,29 @@ def list_notifications(
         stmt = stmt.where(Notification.read_at.is_(None))
 
     rows = list(session.scalars(stmt))
-    job_ids = [
-        n.target_id for n in rows if n.target_type == "generation_job" and n.target_id
-    ]
-    export_ids = [
-        n.target_id for n in rows if n.target_type == "editor_export" and n.target_id
-    ]
-    jobs = {
-        job.id: job
-        for job in session.scalars(select(GenerationJob).where(GenerationJob.id.in_(job_ids)))
-    } if job_ids else {}
-    exports = {
-        export.id: export
-        for export in session.scalars(select(EditorExport).where(EditorExport.id.in_(export_ids)))
-    } if export_ids else {}
+    job_ids = [n.target_id for n in rows if n.target_type == "generation_job" and n.target_id]
+    export_ids = [n.target_id for n in rows if n.target_type == "editor_export" and n.target_id]
+    jobs = (
+        {
+            job.id: job
+            for job in session.scalars(select(GenerationJob).where(GenerationJob.id.in_(job_ids)))
+        }
+        if job_ids
+        else {}
+    )
+    exports = (
+        {
+            export.id: export
+            for export in session.scalars(
+                select(EditorExport).where(EditorExport.id.in_(export_ids))
+            )
+        }
+        if export_ids
+        else {}
+    )
 
     return Page(
-        items=[
-            _notification_response(session, n, jobs=jobs, exports=exports) for n in rows
-        ]
+        items=[_notification_response(session, n, jobs=jobs, exports=exports) for n in rows]
     )
 
 
@@ -268,6 +281,43 @@ def mark_read(
         marked += 1
     session.commit()
     return CountResponse(count=marked)
+
+
+@router.get("/notifications/stream")
+def stream_notifications(user: CurrentUser) -> StreamingResponse:
+    """Live tail of this user's notifications, for the bell badge/popover and
+    the right-side creation-status toasts.
+
+    Unlike `/generation-jobs/{id}/events`, there is no `Last-Event-ID` backfill
+    here: `GET /notifications` already covers "current state on load," so this
+    stream only has to carry the live tail. That also means the generator below
+    must never touch `session` — it is request-scoped and already closed by the
+    time a `StreamingResponse` generator body runs; everything it needs comes
+    from `publisher.subscribe_notifications`, which is pure Redis.
+    """
+
+    def generate() -> Iterator[str]:
+        started = time.monotonic()
+        last_heartbeat = started
+        for payload in publisher.subscribe_notifications(user.id):
+            if time.monotonic() - started > NOTIFICATION_STREAM_MAX_DURATION_SECONDS:
+                break
+            if not payload:
+                if time.monotonic() - last_heartbeat > NOTIFICATION_STREAM_HEARTBEAT_SECONDS:
+                    last_heartbeat = time.monotonic()
+                    yield ": heartbeat\n\n"
+                continue
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "cache-control": "no-cache",
+            "connection": "keep-alive",
+            "x-accel-buffering": "no",
+        },
+    )
 
 
 # --- social --------------------------------------------------------------

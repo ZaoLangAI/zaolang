@@ -103,14 +103,12 @@ class AgentProfile(Base):
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     operations_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
-    # `llm_providers` endpoint ids. A judgment agent also chooses one model
-    # declared by its default and backup endpoints; NULL on a non-default
-    # profile means "inherit the role default", then use the compatible pool.
+    # `llm_providers` endpoint ids. NULL on a non-default profile means
+    # "inherit the role default", then use the compatible pool. There is no
+    # model column: an endpoint declares exactly one model, so binding the
+    # provider binds the model and the two cannot drift apart.
     default_endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     backup_endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Model id selected for this agent. It must be declared by every pinned
-    # general endpoint, so the provider and model cannot drift independently.
-    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
     max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Stored per mille (0-2000) because floats are not used for persisted
     # numbers anywhere in this schema; 200 means temperature 0.2.
@@ -120,6 +118,13 @@ class AgentProfile(Base):
     # a partial index so the invariant lives next to the code that can
     # repair it.
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Which `ImageAssetKind` (`character`/`scene`/`cover`) this agent is the
+    # `copy` role's default for when "AI 润色" is asked for that kind of
+    # image job — `NULL` means "not a kind-specific default". At most one
+    # `copy` profile per kind, enforced in `agent_skills.service` the same
+    # way `is_default` is. Free string rather than an FK/enum column so a
+    # future kind never needs a migration here, mirroring `role`/`key` above.
+    default_for_asset_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

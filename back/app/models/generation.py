@@ -72,6 +72,12 @@ class GenerationWorkflowTemplate(Base, TimestampMixin):
 
     id: Mapped[str] = id_column("gwt")
     operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    # `None` = "generic", the only value that existed before this column did.
+    # Only `text_to_image`/`image_to_image` currently seed anything else —
+    # see `ImageAssetKind`. Kept on this table (not folded into `operation`)
+    # because every other operation has exactly one purpose and gets no
+    # value here at all.
+    asset_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     # {"nodes": [{"id","type","config","position"}],
@@ -86,9 +92,17 @@ class GenerationWorkflowTemplate(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint(
-            "operation", "version", name="uq_generation_workflow_templates_op_version"
+            "operation",
+            "asset_kind",
+            "version",
+            name="uq_generation_workflow_templates_op_kind_version",
         ),
-        Index("ix_generation_workflow_templates_operation_active", "operation", "is_active"),
+        Index(
+            "ix_generation_workflow_templates_operation_kind_active",
+            "operation",
+            "asset_kind",
+            "is_active",
+        ),
     )
 
 
@@ -140,6 +154,14 @@ class GenerationJob(Base, TimestampMixin):
     output_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
+    # Every asset this job produced, in generation order — `output_asset_id`
+    # above stays the first entry (or the job's only one) for every existing
+    # single-output caller. Only ever more than one entry for an
+    # `asset_kind=character` job whose `character_views` named more than one
+    # view (see `app.workflows.nodes.execute_asset_output_advance`); `None`
+    # for a row from before this column existed. Plain JSON, not FK-checked,
+    # matching `routing_trace_json`'s style for a list column on this table.
+    output_asset_ids_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     output_work_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     estimated_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -214,6 +236,11 @@ class ProviderAttempt(Base):
         String(24), default=ProviderAttemptStatus.SUBMITTED, nullable=False
     )
     cost_minor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # What the vendor charged us, snapshotted from the endpoint's configured
+    # price at call time. In micro-USD because `cost_minor` (whole cents)
+    # rounds a $0.00286 image down to nothing. 0 means the endpoint declared
+    # no price — unknown, not free.
+    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Redacted before persistence: no keys, no signed URLs, no payment data.
@@ -243,6 +270,7 @@ class ProviderStat(Base, TimestampMixin):
     successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_latency_ms: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     total_cost_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    total_cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
     __table_args__ = (
         UniqueConstraint(
@@ -281,6 +309,10 @@ class AgentRun(Base):
     degrade_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Token spend priced against the serving endpoint's configured rate at
+    # call time, in micro-USD. Snapshotted rather than derived at query time
+    # so a later price change does not rewrite what last month cost.
+    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # Which `llm_providers` config entry actually served this call, or the
     # literal "legacy" when the failover pool was empty. Not a foreign key:

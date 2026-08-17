@@ -4,7 +4,7 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
 
-import type { StudioSource } from '@/components/studio/generation-studio';
+import type { StudioSource } from '@/components/studio/generation-studio-shell';
 import { IconClose, IconSparkle, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';

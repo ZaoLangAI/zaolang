@@ -45,7 +45,7 @@ Backend layering: `api/v1` (the HTTP contract) → `domain/*` (where invariants 
 | The iOS client (SwiftUI screens, ZaolangKit, XcodeGen, colour/string generation scripts) | `zaolang-ios-client` |
 | Local gates, Docker images, the docs site | `zaolang-ci-release` |
 | Writing tests, running E2E, accessibility and visual QA | `zaolang-testing-qa` |
-| The drama timeline, EditCommand, leases, browser export, editor_planner, Remote MCP | `zaolang-editor-drama` |
+| The drama timeline, EditCommand, leases, browser export, editor_planner, Remote MCP, conversational script writing (文案创作) | `zaolang-editor-drama` |
 
 For a change spanning modules, load in dependency order: `data-model` → `domain/*` → `api-contract` → frontend.
 

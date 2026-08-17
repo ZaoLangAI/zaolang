@@ -27,13 +27,20 @@ def _configured_models() -> list[str]:
 MODELS = _configured_models()
 
 
+def _endpoint_id(model: str) -> str:
+    return f"{LIVE_ENDPOINT_ID}-{MODELS.index(model)}"
+
+
 @pytest.fixture(autouse=True)
 def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
-    """Bootstraps a DB-backed endpoint from `.env` for the duration of the test.
+    """Bootstraps DB-backed endpoints from `.env` for the duration of the test.
 
     Endpoints only ever come from the database now; `LLM_BASE_URL`/
     `LLM_API_KEY`/`LLM_MODEL` are read here purely so this manual suite can
     still be pointed at a real gateway without an `/admin/models` round trip.
+    A comma-separated `LLM_MODEL` becomes one endpoint per model, because an
+    endpoint serves exactly one — pinning `preferred_endpoint_ids` is how a
+    test says which model it wants.
     """
     key = os.getenv("LLM_API_KEY", "")
     if not key:
@@ -46,19 +53,22 @@ def _require_key(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
     get_settings.cache_clear()
     client.reset_client_cache()
 
+    base_url = os.getenv("LLM_BASE_URL", "https://aihubmix.com/v1")
     config_service.set_value(
         db,
         "llm_providers",
         {
             "endpoints": {
-                LIVE_ENDPOINT_ID: {
-                    "name": "真实网关连通性测试端点",
-                    "base_url": os.getenv("LLM_BASE_URL", "https://aihubmix.com/v1"),
+                _endpoint_id(model): {
+                    "name": f"真实网关连通性测试端点 {model}",
+                    "base_url": base_url,
                     "api_key": key,
                     "kind": "general",
-                    "models": MODELS,
-                    "role": "primary",
+                    "model": model,
+                    "role": "primary" if index == 0 else "backup",
+                    "backup_order": index,
                 }
+                for index, model in enumerate(MODELS)
             }
         },
         actor_user_id=None,
@@ -70,7 +80,7 @@ def _current_endpoint(db: Session):  # type: ignore[no-untyped-def]
     from app.platform_config.schemas import LlmProviderConfig
 
     config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
-    return config.endpoints[LIVE_ENDPOINT_ID]
+    return config.endpoints[_endpoint_id(MODELS[0])]
 
 
 def test_gateway_is_reachable(db: Session) -> None:
@@ -101,6 +111,7 @@ def test_each_model_returns_parseable_json(db: Session, model: str) -> None:
         temperature=0.0,
         expect_json=True,
         reasoning_model=True,
+        preferred_endpoint_ids=(_endpoint_id(model),),
     )
 
     assert result.degraded is False, f"{model} 降级了: {result.degrade_reason}"
@@ -122,6 +133,7 @@ def test_thinking_output_is_stripped(db: Session) -> None:
         max_tokens=1024,
         expect_json=True,
         reasoning_model=True,
+        preferred_endpoint_ids=(_endpoint_id(model),),
     )
 
     assert "<think>" not in result.response.text
@@ -143,6 +155,7 @@ def test_reasoning_model_with_a_tiny_budget_still_produces_output(db: Session) -
         max_tokens=16,
         expect_json=True,
         reasoning_model=True,
+        preferred_endpoint_ids=(_endpoint_id(model),),
     )
 
     assert result.response.text != ""

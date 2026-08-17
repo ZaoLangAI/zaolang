@@ -49,9 +49,7 @@ def acquire(
     # unique index only allows one revoked_at IS NULL row per cut, so close
     # it out here instead of waiting up to 60s for expire_editor_leases.
     stale = session.scalar(
-        select(EditorLease).where(
-            EditorLease.cut_id == cut.id, EditorLease.revoked_at.is_(None)
-        )
+        select(EditorLease).where(EditorLease.cut_id == cut.id, EditorLease.revoked_at.is_(None))
     )
     if stale is not None:
         stale.revoked_at = moment

@@ -65,11 +65,18 @@ export function PageHeading({
   eyebrow,
   title,
   description,
+  descriptionClassName,
   actions,
 }: {
   eyebrow?: string;
   title: string;
   description?: string;
+  /**
+   * Overrides the default `max-w-2xl` clamp. A page whose subtitle reads as
+   * one sentence rather than a paragraph passes `truncate` here so it uses
+   * the width it has instead of wrapping into a second line.
+   */
+  descriptionClassName?: string;
   actions?: React.ReactNode;
 }) {
   return (
@@ -77,7 +84,14 @@ export function PageHeading({
       <div className="min-w-0">
         {eyebrow ? <p className="eyebrow mb-2">{eyebrow}</p> : null}
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
-        {description ? <p className="mt-2 max-w-2xl text-sm text-muted">{description}</p> : null}
+        {description ? (
+          <p
+            className={cn('mt-2 text-sm text-muted', descriptionClassName ?? 'max-w-2xl')}
+            title={descriptionClassName ? description : undefined}
+          >
+            {description}
+          </p>
+        ) : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-3">{actions}</div> : null}
     </header>

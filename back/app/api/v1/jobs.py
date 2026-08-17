@@ -39,7 +39,14 @@ from app.domain.jobs.cancellation import (
 from app.domain.licensing import service as licensing
 from app.models import Draft, GenerationJob, Work, WorkVersion
 from app.models.base import new_id
-from app.models.enums import JobOrigin, JobStatus, Operation, QualityTier
+from app.models.enums import (
+    CharacterViewAngle,
+    ImageAssetKind,
+    JobOrigin,
+    JobStatus,
+    Operation,
+    QualityTier,
+)
 from app.presenters import media_urls
 from app.realtime import publisher
 
@@ -59,6 +66,9 @@ def quote(payload: QuoteRequest, user: CurrentUser, session: DbSession) -> Quote
         operation=payload.operation,
         quality_tier=payload.quality_tier,
         duration_seconds=payload.duration_seconds,
+        output_count=jobs_service.character_output_count(
+            asset_kind=payload.asset_kind.value, character_views=payload.character_views
+        ),
     )
     account = credits_service.get_or_create_account(session, user.id)
     session.commit()
@@ -119,8 +129,16 @@ def list_jobs(
     user: CurrentUser,
     session: DbSession,
     status: JobStatus | None = None,
+    draft_id: str | None = None,
     limit: int = Query(default=20, ge=1, le=50),
 ) -> Page[GenerationJobResponse]:
+    """Lists the user's own jobs, optionally scoped to one draft.
+
+    `draft_id` is how the image studio's inline version-history strip lists
+    every iteration generated under the same creative draft — the
+    `user_id`/`origin` filters below already keep this from leaking another
+    user's jobs even if a foreign draft id is passed.
+    """
     stmt = (
         select(GenerationJob)
         .where(
@@ -132,6 +150,8 @@ def list_jobs(
     )
     if status is not None:
         stmt = stmt.where(GenerationJob.status == status)
+    if draft_id is not None:
+        stmt = stmt.where(GenerationJob.draft_id == draft_id)
     jobs = list(session.scalars(stmt))
     return Page(items=[_job_response(session, job) for job in jobs])
 
@@ -244,9 +264,7 @@ def promote_job(
     return _job_response(session, result.job, include_events=True)
 
 
-@router.get(
-    "/generation-jobs/{job_id}/input-request", response_model=JobInputRequestResponse
-)
+@router.get("/generation-jobs/{job_id}/input-request", response_model=JobInputRequestResponse)
 def get_input_request(
     job_id: str, user: CurrentUser, session: DbSession
 ) -> JobInputRequestResponse:
@@ -315,6 +333,7 @@ def stream_events(
             "status": event.status,
             "progress": event.progress,
             "message": event.public_message,
+            "node_id": event.node_id,
         }
         for event in sm.events_since(session, job_id, after)
     ]
@@ -416,6 +435,7 @@ def _job_response(
                 message=e.public_message,
                 internal_code=e.internal_code,
                 created_at=e.created_at,
+                node_id=e.node_id,
             )
             for e in sm.events_since(session, job.id, 0)
         ]
@@ -434,7 +454,21 @@ def _job_response(
         output_asset_id=job.output_asset_id,
         output_url=media_urls.asset_url(session, job.output_asset_id),
         output_media_type=media_urls.media_type_of(session, job.output_asset_id),
+        output_asset_ids=job.output_asset_ids_json or None,
+        output_urls=(
+            [
+                url
+                for asset_id in job.output_asset_ids_json
+                if (url := media_urls.asset_url(session, asset_id))
+            ]
+            or None
+        )
+        if job.output_asset_ids_json
+        else None,
+        asset_kind=_asset_kind_of(job),
+        character_views=_character_views_of(job),
         draft_id=job.draft_id,
+        prompt=_prompt_of(job),
         failure_code=job.failure_code,
         failure_message=job.failure_message,
         cancel_requested=job.cancel_requested_at is not None,
@@ -443,3 +477,29 @@ def _job_response(
         finished_at=job.finished_at,
         events=events,
     )
+
+
+def _prompt_of(job: GenerationJob) -> str | None:
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    prompt = params.get("prompt")
+    return prompt if isinstance(prompt, str) else None
+
+
+def _asset_kind_of(job: GenerationJob) -> ImageAssetKind | None:
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    raw = params.get("asset_kind")
+    try:
+        return ImageAssetKind(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def _character_views_of(job: GenerationJob) -> list[CharacterViewAngle] | None:
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    raw = params.get("character_views")
+    if not isinstance(raw, list) or not raw:
+        return None
+    try:
+        return [CharacterViewAngle(value) for value in raw]
+    except ValueError:
+        return None

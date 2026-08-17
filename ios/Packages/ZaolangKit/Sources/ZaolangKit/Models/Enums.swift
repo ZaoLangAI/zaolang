@@ -35,17 +35,57 @@ public enum QualityTier: String, Codable, Sendable, CaseIterable {
 
 public enum Operation: String, Codable, Sendable, CaseIterable {
     case textToImage = "text_to_image"
+    case imageToImage = "image_to_image"
     case textToVideo = "text_to_video"
     case imageToVideo = "image_to_video"
     case videoToVideo = "video_to_video"
+    case audioGeneration = "audio_generation"
 
     public var isVideo: Bool {
         switch self {
         case .textToVideo, .imageToVideo, .videoToVideo: true
-        case .textToImage: false
+        case .textToImage, .imageToImage, .audioGeneration: false
+        }
+    }
+
+    public var isImage: Bool {
+        switch self {
+        case .textToImage, .imageToImage: true
+        case .textToVideo, .imageToVideo, .videoToVideo, .audioGeneration: false
         }
     }
 }
+
+/// What a `text_to_image`/`image_to_image` output is *for* — orthogonal to
+/// `Operation`. Mirrors `back/app/models/enums.py::ImageAssetKind`. `general`
+/// is today's plain, freeform image; `character` covers all three of a
+/// character's turnaround views (see `CharacterViewAngle` for which one(s) a
+/// given job actually produces); `scene`/`cover` double as the `view` tag on
+/// a scene's reference-asset entries.
+public enum ImageAssetKind: String, Codable, Sendable, CaseIterable {
+    case general
+    case character
+    case scene
+    case cover
+}
+
+/// Which pose/angle one of a character's reference images is for. Mirrors
+/// `back/app/models/enums.py::CharacterViewAngle` — independent of
+/// `ImageAssetKind`: a `character`-kind job names which of `front`/`side`/
+/// `back` it is producing via `GenerationParams.characterViews`, one at a
+/// time. `general` is reserved for a plain uploaded reference with no fixed
+/// pose; a generation job never targets it.
+public enum CharacterViewAngle: String, Codable, Sendable, CaseIterable {
+    case general
+    case front
+    case side
+    case back
+}
+
+/// The views one `assetKind == .character` job may be asked to produce, in
+/// the canonical front → side → back order the backend's
+/// `execute_asset_output_advance` walks regardless of the order named.
+public let characterJobViews: [CharacterViewAngle] = [.front, .side, .back]
 
 public enum JobStatus: String, Codable, Sendable, CaseIterable {
     case created

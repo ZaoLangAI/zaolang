@@ -232,9 +232,7 @@ class WorkflowRunner:
             return None
         if ctx.job.cancel_requested_at is None:
             return None
-        ctx.job = honor_user_cancel(
-            ctx.session, ctx.job, node_id=ctx.state.get("_current_node_id")
-        )
+        ctx.job = honor_user_cancel(ctx.session, ctx.job, node_id=ctx.state.get("_current_node_id"))
         return NodeResult(port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED))
 
     @staticmethod

@@ -317,9 +317,7 @@ def expire_stale_input_requests() -> int:
                 try:
                     honor_user_cancel(session, job, node_id=request.node_id)
                 except Exception:
-                    logger.exception(
-                        "could not honour cancel for job %s awaiting input", job.id
-                    )
+                    logger.exception("could not honour cancel for job %s awaiting input", job.id)
                     continue
                 session.commit()
                 expired += 1

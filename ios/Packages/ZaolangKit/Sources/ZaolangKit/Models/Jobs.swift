@@ -13,6 +13,24 @@ public struct GenerationParams: Codable, Sendable, Equatable {
     public var shortformProfile: String?
     public var characterIDs: [String]
     public var styleGalleryID: String?
+    /// What a `text_to_image`/`image_to_image` output is *for* — selects the
+    /// `(operation, asset_kind)` workflow template and, for `character`/
+    /// `scene`, what the backend auto-attaches the succeeded output(s) to.
+    public var assetKind: ImageAssetKind
+    /// Only meaningful with `assetKind == .character`: which of front/side/
+    /// back this job produces, one at a time. `nil` means `[.front]` — a
+    /// plain single-view request. The character library's "补全侧面/背面"
+    /// completion action is the one caller that names `[.side, .back]`.
+    public var characterViews: [CharacterViewAngle]?
+    /// The character skill this output auto-attaches to. Unset with a
+    /// character `assetKind` creates a brand-new character skill instead.
+    public var targetCharacterID: String?
+    /// The scene this output auto-attaches to. Unset with `assetKind: .scene`
+    /// leaves the output unattached — scenes have no auto-create path.
+    public var targetSceneID: String?
+    /// Opts out of the auto-attach above while a borrowed reference (for
+    /// side/back consistency) still shapes the generation itself.
+    public var autoAttachAsset: Bool
 
     public init(
         prompt: String,
@@ -24,7 +42,12 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         stylePresetID: String? = nil,
         shortformProfile: String? = nil,
         characterIDs: [String] = [],
-        styleGalleryID: String? = nil
+        styleGalleryID: String? = nil,
+        assetKind: ImageAssetKind = .general,
+        characterViews: [CharacterViewAngle]? = nil,
+        targetCharacterID: String? = nil,
+        targetSceneID: String? = nil,
+        autoAttachAsset: Bool = true
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -36,6 +59,11 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         self.shortformProfile = shortformProfile
         self.characterIDs = characterIDs
         self.styleGalleryID = styleGalleryID
+        self.assetKind = assetKind
+        self.characterViews = characterViews
+        self.targetCharacterID = targetCharacterID
+        self.targetSceneID = targetSceneID
+        self.autoAttachAsset = autoAttachAsset
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -49,6 +77,11 @@ public struct GenerationParams: Codable, Sendable, Equatable {
         case shortformProfile = "shortform_profile"
         case characterIDs = "character_ids"
         case styleGalleryID = "style_gallery_id"
+        case assetKind = "asset_kind"
+        case characterViews = "character_views"
+        case targetCharacterID = "target_character_id"
+        case targetSceneID = "target_scene_id"
+        case autoAttachAsset = "auto_attach_asset"
     }
 }
 
@@ -170,6 +203,11 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
     public let route: RouteSummary?
     public let outputAssetID: String?
     public let outputURL: String?
+    /// Populated instead of (well, alongside) the singular fields above for a
+    /// multi-view `character` completion job — one entry per produced view,
+    /// front→side→back order (mirrors `execute_asset_output_advance`).
+    public let outputAssetIDs: [String]?
+    public let outputURLs: [String]?
     public let draftID: String?
     public let failureCode: String?
     public let failureMessage: String?
@@ -189,6 +227,8 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         case route
         case outputAssetID = "output_asset_id"
         case outputURL = "output_url"
+        case outputAssetIDs = "output_asset_ids"
+        case outputURLs = "output_urls"
         case draftID = "draft_id"
         case failureCode = "failure_code"
         case failureMessage = "failure_message"
@@ -212,6 +252,8 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         route = try c.decodeIfPresent(RouteSummary.self, forKey: .route)
         outputAssetID = try c.decodeIfPresent(String.self, forKey: .outputAssetID)
         outputURL = try c.decodeIfPresent(String.self, forKey: .outputURL)
+        outputAssetIDs = try c.decodeIfPresent([String].self, forKey: .outputAssetIDs)
+        outputURLs = try c.decodeIfPresent([String].self, forKey: .outputURLs)
         draftID = try c.decodeIfPresent(String.self, forKey: .draftID)
         failureCode = try c.decodeIfPresent(String.self, forKey: .failureCode)
         failureMessage = try c.decodeIfPresent(String.self, forKey: .failureMessage)
@@ -236,6 +278,8 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         route: RouteSummary?,
         outputAssetID: String?,
         outputURL: String?,
+        outputAssetIDs: [String]? = nil,
+        outputURLs: [String]? = nil,
         draftID: String?,
         failureCode: String?,
         failureMessage: String?,
@@ -256,6 +300,8 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
         self.route = route
         self.outputAssetID = outputAssetID
         self.outputURL = outputURL
+        self.outputAssetIDs = outputAssetIDs
+        self.outputURLs = outputURLs
         self.draftID = draftID
         self.failureCode = failureCode
         self.failureMessage = failureMessage
@@ -282,6 +328,8 @@ public struct GenerationJobResponse: Codable, Sendable, Equatable, Identifiable 
             route: route,
             outputAssetID: outputAssetID,
             outputURL: outputURL,
+            outputAssetIDs: outputAssetIDs,
+            outputURLs: outputURLs,
             draftID: draftID,
             failureCode: failureCode,
             failureMessage: failureMessage,

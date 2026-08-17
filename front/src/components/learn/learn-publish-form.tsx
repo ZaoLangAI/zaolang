@@ -163,8 +163,11 @@ export function LearnPublishForm({ initialEditId }: { initialEditId: string | nu
       } finally {
         if (editRequestRef.current === id) setEditLoading(false);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
+    // `tStates` (a next-intl translator, stable per locale but not by
+    // reference) is deliberately omitted below to avoid recreating this on
+    // every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [router],
   );
 

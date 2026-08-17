@@ -70,7 +70,7 @@ def login(
         max_age=settings.admin_token_ttl_seconds,
         httponly=True,
         samesite="strict",
-        secure=settings.is_production,
+        secure=settings.cookie_secure,
         path="/",
     )
     user.last_login_at = utcnow()

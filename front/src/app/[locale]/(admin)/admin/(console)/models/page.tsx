@@ -19,7 +19,7 @@ export default async function AdminProvidersPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title={t('title')} description={t('subtitle')} />
+      <PageHeading title={t('title')} description={t('subtitle')} descriptionClassName="truncate" />
       {llmPool ? <LlmProvidersPanel initial={llmPool} /> : null}
     </div>
   );

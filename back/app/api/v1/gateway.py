@@ -80,7 +80,7 @@ def _savings_percent(session: DbSession) -> int:
     """
     baseline_unit = max(
         (
-            c.unit_cost_minor
+            c.unit_cost_micro_usd
             for c in build_catalog(session).values()
             if c.kind == ProviderKind.COMMERCIAL_API
         ),
@@ -92,7 +92,7 @@ def _savings_percent(session: DbSession) -> int:
     row = session.execute(
         select(
             func.coalesce(func.sum(ProviderStat.attempts), 0),
-            func.coalesce(func.sum(ProviderStat.total_cost_minor), 0),
+            func.coalesce(func.sum(ProviderStat.total_cost_micro_usd), 0),
         )
     ).one()
     attempts, spent = int(row[0]), int(row[1])

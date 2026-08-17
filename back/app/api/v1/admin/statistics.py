@@ -18,10 +18,15 @@ from app.api.schemas.admin import (
     AgentTimeseriesView,
     ContentDailyPoint,
     ContentTimeseriesView,
+    CostBreakdownView,
+    CostDailyPoint,
+    CostTimeseriesView,
     CreditFlowDailyPoint,
     CreditFlowTimeseriesView,
     JobsDailyPoint,
     JobsTimeseriesView,
+    ModelCostView,
+    ProviderCostSeriesView,
     ProviderDailyPoint,
     ProviderTimeseriesView,
     UserGrowthDailyPoint,
@@ -30,6 +35,8 @@ from app.api.schemas.admin import (
 from app.api.v1.admin.deps import AdminRead, Viewer
 from app.domain.statistics import service as statistics_service
 from app.models.base import utcnow
+from app.platform_config import service as config_service
+from app.platform_config.schemas import LlmProviderConfig
 
 router = APIRouter(prefix="/statistics", tags=["admin:statistics"])
 
@@ -106,6 +113,78 @@ def content_timeseries(
         generated_at=utcnow(),
         window_days=days,
         points=[ContentDailyPoint(**asdict(point)) for point in points],
+    )
+
+
+@router.get("/costs", response_model=CostTimeseriesView)
+def costs_timeseries(
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    days: int = Query(default=30, ge=1, le=180),
+) -> CostTimeseriesView:
+    """Daily spend on model vendors, split into text and media.
+
+    Every point was priced when the call happened, so re-reading an old
+    window never changes what it says. Calls served by an endpoint with no
+    configured price contribute nothing — unknown, not free.
+    """
+    points = statistics_service.cost_daily(session, days)
+    return CostTimeseriesView(
+        generated_at=utcnow(),
+        window_days=days,
+        points=[_cost_point(point) for point in points],
+        total_micro_usd=sum(point.total_micro_usd for point in points),
+    )
+
+
+@router.get("/costs/breakdown", response_model=CostBreakdownView)
+def costs_breakdown(
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    days: int = Query(default=30, ge=1, le=180),
+) -> CostBreakdownView:
+    """The same window, cut by vendor endpoint and by model.
+
+    Endpoint names come from the live config, so an endpoint deleted since
+    the spend happened still reports its id with a blank name rather than
+    dropping the money it cost.
+    """
+    config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    names = {endpoint_id: e.name for endpoint_id, e in config.endpoints.items()}
+    return CostBreakdownView(
+        generated_at=utcnow(),
+        window_days=days,
+        providers=[
+            ProviderCostSeriesView(
+                endpoint_id=series.endpoint_id,
+                endpoint_name=names.get(series.endpoint_id, ""),
+                total_micro_usd=series.total_micro_usd,
+                points=[_cost_point(point) for point in series.points],
+            )
+            for series in statistics_service.cost_by_provider_daily(session, days)
+        ],
+        models=[
+            ModelCostView(
+                model=stat.model,
+                endpoint_id=stat.endpoint_id,
+                endpoint_name=names.get(stat.endpoint_id, ""),
+                kind=stat.kind,
+                calls=stat.calls,
+                total_micro_usd=stat.total_micro_usd,
+            )
+            for stat in statistics_service.cost_by_model(session, days)
+        ],
+    )
+
+
+def _cost_point(point: statistics_service.CostDailyStat) -> CostDailyPoint:
+    return CostDailyPoint(
+        date=point.date,
+        llm_micro_usd=point.llm_micro_usd,
+        media_micro_usd=point.media_micro_usd,
+        total_micro_usd=point.total_micro_usd,
     )
 
 

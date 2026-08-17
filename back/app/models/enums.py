@@ -619,10 +619,108 @@ class LearnPostStatus(StrEnum):
 
 
 class CreationSkillCategory(StrEnum):
+    # A shareable generation-parameter *template* — a scene/lens/style
+    # "recipe" (prompt/prompt_suffix/aspect_ratio/...) folded into a job by
+    # `execute_skill_context`. Not to be confused with `SCENE_ASSET` below,
+    # which is an actual reusable reference-image bundle.
     SCENE = "scene"
     LENS = "lens"
     STYLE = "style"
+    # The three "image creation" asset kinds (`ImageAssetKind`) each get their
+    # own category once shared/sold as a `CreationSkill`, rather than the
+    # flat `prompt`/`aspect_ratio`/... template shape every category above
+    # uses — see `IMAGE_ASSET_SKILL_CATEGORIES` and `zaolang-overview`'s
+    # routing note for why these three alone get special handling in
+    # `execute_skill_context`.
+    #
+    # A reusable cast member (`app.domain.characters.service`), stored under
+    # `params_json["character"]["reference_assets"]` — see `ImageAssetKind`
+    # below for the view tags those entries carry.
+    CHARACTER = "character"
+    # A reusable setting (`app.domain.scenes.service`), stored under
+    # `params_json["scene"]["reference_assets"]`. Named `*_ASSET` (not plain
+    # `SCENE`) to stay distinct from the prompt-template category above —
+    # the two used to be a table (`Scene`) and a `CreationSkillCategory`
+    # respectively with no relation to each other; folding the table in
+    # required a name of its own.
+    SCENE_ASSET = "scene_asset"
+    # A single shareable cover image, created directly from an
+    # `asset_kind=cover` job's output — see
+    # `app.domain.skill_library.service.create` (no dedicated
+    # `app.domain.covers` module or CRUD surface: unlike a character/scene, a
+    # cover has no roster to maintain, just one `cover_asset_id` and this
+    # category on an otherwise ordinary `CreationSkill`).
+    COVER_ASSET = "cover_asset"
     OTHER = "other"
+
+
+class ImageAssetKind(StrEnum):
+    """What a `text_to_image`/`image_to_image` job's output is *for*.
+
+    Orthogonal to `Operation`: this is the extra dimension
+    `GenerationWorkflowTemplate.asset_kind` and `GenerationParams.asset_kind`
+    add on top of it. `GENERAL` is the default and means "a plain, freeform
+    image" — today's behaviour, unchanged. `CHARACTER` covers all three of a
+    character's turnaround views (front/side/back) — see `CharacterView` for
+    which one(s) a given job actually produces
+    (`GenerationParams.character_views`) — and `SCENE`/`COVER` each double as
+    the `view` tag on a scene's reference-asset entries
+    (`reference_assets: [{"asset_id", "view", "label"}]`) the same way
+    `CharacterView` does for a character's, so a generated image can be
+    traced back to exactly which pose/shot it was made for.
+    """
+
+    GENERAL = "general"
+    CHARACTER = "character"
+    SCENE = "scene"
+    COVER = "cover"
+
+
+# The `CreationSkillCategory` values a generated image asset can end up
+# filed under once shared/sold — one per non-`GENERAL` `ImageAssetKind`.
+# `execute_skill_context` skips all three when folding `skill_ids` into a
+# job (their `params_json` is asset-shaped, not template-shaped); the skill
+# marketplace (`skill_library.service.list_public`) excludes all three from
+# the unfiltered "browse templates" default and groups them under the
+# `content_type="image_asset"` filter instead.
+IMAGE_ASSET_SKILL_CATEGORIES: frozenset[CreationSkillCategory] = frozenset(
+    {
+        CreationSkillCategory.CHARACTER,
+        CreationSkillCategory.SCENE_ASSET,
+        CreationSkillCategory.COVER_ASSET,
+    }
+)
+
+
+class CharacterViewAngle(StrEnum):
+    """Which pose/angle one of a character's reference images is for.
+
+    Named `*Angle` (not plain `CharacterView`) to avoid colliding with
+    `app.domain.characters.service.CharacterView`, the unrelated
+    `CreationSkill` projection type. Independent of `ImageAssetKind`: a
+    `CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing
+    via `GenerationParams.character_views` (see
+    `app.workflows.nodes.execute_asset_output_advance`), one at a time,
+    looping the shared `image_asset_graph` back to `asset_planning` between
+    each. `GENERAL` is reserved for a plain uploaded reference with no fixed
+    pose (`characters.service._entries_from_flat_ids`) — a generation job
+    never targets it.
+    """
+
+    GENERAL = "general"
+    FRONT = "front"
+    SIDE = "side"
+    BACK = "back"
+
+
+# The views one `asset_kind=character` job may be asked to produce, in the
+# canonical front → side → back order `execute_asset_output_advance` walks
+# regardless of the order a caller lists them in.
+CHARACTER_JOB_VIEWS: tuple[CharacterViewAngle, ...] = (
+    CharacterViewAngle.FRONT,
+    CharacterViewAngle.SIDE,
+    CharacterViewAngle.BACK,
+)
 
 
 class CreationSkillVisibility(StrEnum):

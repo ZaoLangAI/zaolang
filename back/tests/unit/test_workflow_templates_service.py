@@ -12,8 +12,8 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import User
-from app.models.enums import Operation
-from app.workflows.defaults import default_graph
+from app.models.enums import ImageAssetKind, Operation
+from app.workflows.defaults import default_graph, image_asset_graph
 
 
 def _minimal_graph() -> dict:
@@ -298,3 +298,267 @@ def test_ensure_default_templates_does_not_override_an_already_customized_operat
     # Every other operation still gets seeded.
     other_active = workflow_templates_service.get_active(db, Operation.AUDIO_GENERATION.value)
     assert other_active is not None
+
+
+# --------------------------------------------------------------------------
+# `asset_kind` dimension
+# --------------------------------------------------------------------------
+
+
+def test_get_active_falls_back_to_the_generic_template_for_an_unseeded_asset_kind(
+    db: Session, author: User
+) -> None:
+    generic = workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="通用流程",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="通用",
+    )
+    resolved = workflow_templates_service.get_active(
+        db, Operation.TEXT_TO_IMAGE.value, ImageAssetKind.SCENE.value
+    )
+    assert resolved is not None
+    assert resolved.id == generic.id
+
+
+def test_get_active_prefers_the_specific_asset_kind_template(db: Session, author: User) -> None:
+    workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="通用流程",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="通用",
+    )
+    specific = workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="角色正面流程",
+        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        actor_user_id=author.id,
+        reason="角色正面专用",
+        asset_kind=ImageAssetKind.CHARACTER.value,
+    )
+    resolved = workflow_templates_service.get_active(
+        db, Operation.TEXT_TO_IMAGE.value, ImageAssetKind.CHARACTER.value
+    )
+    assert resolved.id == specific.id
+    # A different, unseeded kind still falls back to the generic template.
+    other_kind = workflow_templates_service.get_active(
+        db, Operation.TEXT_TO_IMAGE.value, ImageAssetKind.SCENE.value
+    )
+    assert other_kind is not None
+    assert other_kind.id != specific.id
+
+
+def test_general_asset_kind_is_treated_the_same_as_no_asset_kind(db: Session, author: User) -> None:
+    generic = workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="通用流程",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="通用",
+    )
+    assert (
+        workflow_templates_service.get_active(
+            db, Operation.TEXT_TO_IMAGE.value, ImageAssetKind.GENERAL.value
+        ).id
+        == generic.id
+    )
+
+
+def test_publishing_an_asset_kind_template_for_a_non_image_operation_is_refused(
+    db: Session, author: User
+) -> None:
+    with pytest.raises(ValidationFailed):
+        workflow_templates_service.publish(
+            db,
+            operation=Operation.TEXT_TO_VIDEO.value,
+            name="不支持资产用途",
+            graph_json=_minimal_graph(),
+            actor_user_id=author.id,
+            reason="视频不区分资产用途",
+            asset_kind=ImageAssetKind.SCENE.value,
+        )
+
+
+def test_publishing_two_asset_kinds_does_not_deactivate_each_other(
+    db: Session, author: User
+) -> None:
+    front = workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="角色正面",
+        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        actor_user_id=author.id,
+        reason="正面",
+        asset_kind=ImageAssetKind.CHARACTER.value,
+    )
+    scene = workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="场景图",
+        graph_json=image_asset_graph(db, ImageAssetKind.SCENE.value),
+        actor_user_id=author.id,
+        reason="场景",
+        asset_kind=ImageAssetKind.SCENE.value,
+    )
+    db.refresh(front)
+    db.refresh(scene)
+    assert front.is_active is True
+    assert scene.is_active is True
+
+
+def test_list_versions_is_scoped_to_one_asset_kind(db: Session, author: User) -> None:
+    workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="通用 v1",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="通用",
+    )
+    workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="角色正面 v1",
+        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        actor_user_id=author.id,
+        reason="正面",
+        asset_kind=ImageAssetKind.CHARACTER.value,
+    )
+    generic_versions = workflow_templates_service.list_versions(db, Operation.TEXT_TO_IMAGE.value)
+    front_versions = workflow_templates_service.list_versions(
+        db, Operation.TEXT_TO_IMAGE.value, asset_kind=ImageAssetKind.CHARACTER.value
+    )
+    assert [v.name for v in generic_versions] == ["通用 v1"]
+    assert [v.name for v in front_versions] == ["角色正面 v1"]
+
+
+def test_ensure_default_templates_seeds_one_template_per_non_general_asset_kind_for_images(
+    db: Session,
+) -> None:
+    workflow_templates_service.ensure_default_templates(db)
+
+    for operation in (Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE):
+        for kind in ImageAssetKind:
+            active = workflow_templates_service.get_active(db, operation.value, kind.value)
+            assert active is not None
+            if kind == ImageAssetKind.GENERAL:
+                assert active.asset_kind is None
+                assert active.graph_json == default_graph(db)
+            else:
+                assert active.asset_kind == kind.value
+                assert active.graph_json == image_asset_graph(db, kind.value)
+
+    # A non-image operation never gets asset-kind-specific templates.
+    assert (
+        workflow_templates_service.get_active(
+            db, Operation.TEXT_TO_VIDEO.value, ImageAssetKind.SCENE.value
+        ).asset_kind
+        is None
+    )
+
+
+# --------------------------------------------------------------------------
+# `text_to_image`/`image_to_image` merge (`canonical_operation`)
+# --------------------------------------------------------------------------
+
+
+def test_image_to_image_resolves_the_same_active_template_as_text_to_image(
+    db: Session, author: User
+) -> None:
+    published = workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="共享流程",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="仅在 text_to_image 下发布",
+    )
+    resolved = workflow_templates_service.get_active(db, Operation.IMAGE_TO_IMAGE.value)
+    assert resolved is not None
+    assert resolved.id == published.id
+    assert resolved.operation == Operation.TEXT_TO_IMAGE.value
+
+
+def test_publishing_under_image_to_image_lands_on_the_text_to_image_row(
+    db: Session, author: User
+) -> None:
+    """An operator working from the `image_to_image` tab still edits the one
+    shared graph, not a second independent history."""
+    published = workflow_templates_service.publish(
+        db,
+        operation=Operation.IMAGE_TO_IMAGE.value,
+        name="从图生图发布",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="仅在 image_to_image 下发布",
+    )
+    assert published.operation == Operation.TEXT_TO_IMAGE.value
+    assert (
+        workflow_templates_service.get_active(db, Operation.TEXT_TO_IMAGE.value).id == published.id
+    )
+    assert (
+        workflow_templates_service.get_active(db, Operation.IMAGE_TO_IMAGE.value).id == published.id
+    )
+
+
+def test_list_versions_is_shared_between_text_to_image_and_image_to_image(
+    db: Session, author: User
+) -> None:
+    workflow_templates_service.publish(
+        db,
+        operation=Operation.TEXT_TO_IMAGE.value,
+        name="v1",
+        graph_json=_minimal_graph(),
+        actor_user_id=author.id,
+        reason="v1",
+    )
+    workflow_templates_service.publish(
+        db,
+        operation=Operation.IMAGE_TO_IMAGE.value,
+        name="v2",
+        graph_json=default_graph(db),
+        actor_user_id=author.id,
+        reason="v2",
+    )
+    text_to_image_versions = workflow_templates_service.list_versions(
+        db, Operation.TEXT_TO_IMAGE.value
+    )
+    image_to_image_versions = workflow_templates_service.list_versions(
+        db, Operation.IMAGE_TO_IMAGE.value
+    )
+    assert [v.version for v in text_to_image_versions] == [2, 1]
+    assert [v.id for v in image_to_image_versions] == [v.id for v in text_to_image_versions]
+
+
+def test_ensure_default_templates_seeds_the_image_family_exactly_once(db: Session) -> None:
+    """Four rows total (one generic + three asset kinds), not eight — the old
+    per-operation seeding would have created a duplicate set under
+    `image_to_image`."""
+    workflow_templates_service.ensure_default_templates(db)
+
+    text_to_image_ids = {
+        workflow_templates_service.get_active(db, Operation.TEXT_TO_IMAGE.value, kind.value).id
+        for kind in ImageAssetKind
+    }
+    assert len(text_to_image_ids) == len(list(ImageAssetKind))
+
+    all_active = [
+        t
+        for t in workflow_templates_service.list_versions(db, Operation.TEXT_TO_IMAGE.value)
+        if t.is_active
+    ] + [
+        t
+        for kind in ImageAssetKind
+        if kind != ImageAssetKind.GENERAL
+        for t in workflow_templates_service.list_versions(
+            db, Operation.TEXT_TO_IMAGE.value, asset_kind=kind.value
+        )
+        if t.is_active
+    ]
+    assert all(row.operation == Operation.TEXT_TO_IMAGE.value for row in all_active)

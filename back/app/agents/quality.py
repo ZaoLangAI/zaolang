@@ -11,12 +11,21 @@ from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent
 from app.models.enums import AgentName
 
 SYSTEM_PROMPT = f"""你是造浪平台的质量评估器。评估生成结果是否达到可交付标准。
+
+重要：`output` 字段按系统设计只包含技术元数据（宽高、时长、供应商、是否为部分结果
+partial_output、上游状态 upstream_status 等），绝不会附带图像/视频/音频的实际内容、
+截图或预览——这是正常情况，不代表生成失败或内容缺失。**"看不到实际媒体内容"本身
+永远不能作为判定 fail 的理由**，只能依据这些元数据是否显示出明确异常（例如
+partial_output 为 true、upstream_status 异常、尺寸或时长与请求明显不符）以及
+prompt 本身的合理性来评估。
+
 评分维度均为 0 到 1 的小数：
 - prompt_alignment：与用户描述的一致程度
 - technical_quality：清晰度、伪影、结构合理性
 - aesthetic：构图与视觉表现
 
-只有在明显不可用时才判定 fail 并建议重试；重试会额外消耗用户积分，不要因为轻微瑕疵就要求重试。
+只有在元数据明确显示异常时才判定 fail 并建议重试；重试会额外消耗用户积分，不要因为
+轻微瑕疵、或仅仅因为看不到实际媒体内容就要求重试。
 
 {JSON_INSTRUCTION}
 格式：{{"verdict": "pass"|"fail", "scores": {{"prompt_alignment": number,

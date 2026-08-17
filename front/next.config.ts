@@ -34,6 +34,13 @@ const config: NextConfig = {
     // is run locally for the Playwright suites, so `NODE_ENV` cannot decide it.
     // A real deployment points at a real object store and leaves this unset.
     dangerouslyAllowLocalIP: process.env.ALLOW_LOCAL_IMAGE_HOSTS === '1',
+    // A single-host deployment with no domain signs media URLs with the
+    // server's bare public IP. Optimising those would make the Next server
+    // fetch that same public IP from inside its own container — whether that
+    // loops back depends on the host's NAT and isn't something to rely on.
+    // Skipping optimisation also bypasses the `remotePatterns` allow-list, so
+    // the browser fetches the signed URL directly instead.
+    unoptimized: process.env.NEXT_IMAGES_UNOPTIMIZED === '1',
   },
 };
 

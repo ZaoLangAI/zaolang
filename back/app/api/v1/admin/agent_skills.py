@@ -94,7 +94,8 @@ def list_agent_profiles(
 ) -> Page[AgentProfileView]:
     profiles = agent_skills_service.list_profiles(session, role=role)
     usage = workflow_templates_service.agent_usage(session)
-    return Page(items=[_profile_view(p, usage) for p in profiles])
+    provider_config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    return Page(items=[_profile_view(p, usage, provider_config) for p in profiles])
 
 
 @router.get("/agent-skill-tools", response_model=Page[AgentSkillToolView])
@@ -135,8 +136,8 @@ def create_agent_profile(
         operations=payload.operations,
         default_endpoint_id=payload.default_endpoint_id,
         backup_endpoint_id=payload.backup_endpoint_id,
-        model=payload.model,
         reasoning_model=payload.reasoning_model,
+        default_for_asset_kind=payload.default_for_asset_kind,
     )
     audit.record(
         session,
@@ -148,7 +149,11 @@ def create_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(row, workflow_templates_service.agent_usage(session))
+    return _profile_view(
+        row,
+        workflow_templates_service.agent_usage(session),
+        config_service.get_typed(session, "llm_providers", LlmProviderConfig),
+    )
 
 
 @router.patch("/agent-profiles/{profile_id}", response_model=AgentProfileView)
@@ -178,10 +183,14 @@ def update_agent_profile(
         enabled=payload.enabled,
         default_endpoint_id=payload.default_endpoint_id,
         backup_endpoint_id=payload.backup_endpoint_id,
-        model=payload.model,
         reasoning_model=(
             payload.reasoning_model
             if "reasoning_model" in payload.model_fields_set
+            else agent_skills_service.UNSET_BINDING
+        ),
+        default_for_asset_kind=(
+            payload.default_for_asset_kind
+            if "default_for_asset_kind" in payload.model_fields_set
             else agent_skills_service.UNSET_BINDING
         ),
     )
@@ -200,7 +209,11 @@ def update_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(row, workflow_templates_service.agent_usage(session))
+    return _profile_view(
+        row,
+        workflow_templates_service.agent_usage(session),
+        config_service.get_typed(session, "llm_providers", LlmProviderConfig),
+    )
 
 
 @router.post("/agent-profiles/{profile_id}/disable", response_model=AgentProfileView)
@@ -231,7 +244,11 @@ def disable_agent_profile(
         request=request,
     )
     session.commit()
-    return _profile_view(row, workflow_templates_service.agent_usage(session))
+    return _profile_view(
+        row,
+        workflow_templates_service.agent_usage(session),
+        config_service.get_typed(session, "llm_providers", LlmProviderConfig),
+    )
 
 
 @router.post("/agent-profiles/{profile_id}/delete", status_code=204)
@@ -438,7 +455,13 @@ def _node_view(node, provider_config: LlmProviderConfig) -> AgentNodeView:  # ty
     )
 
 
-def _profile_view(profile, usage: dict[str, list[str]]) -> AgentProfileView:  # type: ignore[no-untyped-def]
+def _profile_view(  # type: ignore[no-untyped-def]
+    profile,
+    usage: dict[str, list[str]],
+    provider_config: LlmProviderConfig,
+) -> AgentProfileView:
+    # Read-only: the agent binds a provider, and the provider names the model.
+    bound = provider_config.endpoints.get(profile.default_endpoint_id or "")
     return AgentProfileView(
         id=profile.id,
         role=profile.role,
@@ -448,10 +471,11 @@ def _profile_view(profile, usage: dict[str, list[str]]) -> AgentProfileView:  # 
         category=role_presets.category_for(profile.role),
         operations=list(profile.operations_json),
         is_default=profile.is_default,
+        default_for_asset_kind=profile.default_for_asset_kind,
         enabled=profile.enabled,
         default_endpoint_id=profile.default_endpoint_id,
         backup_endpoint_id=profile.backup_endpoint_id,
-        model=profile.model,
+        model=bound.model if bound is not None else None,
         max_tokens=profile.max_tokens,
         temperature=(
             None if profile.temperature_milli is None else profile.temperature_milli / 1000

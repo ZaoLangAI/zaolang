@@ -43,6 +43,23 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+const IMAGE_DRAFT_OPERATIONS = new Set(['text_to_image', 'image_to_image']);
+
+/**
+ * An image-creation draft reopens straight into the studio's inline flow
+ * (full version history, continue refining — see `ImageGenerationStudio`)
+ * instead of the publish form; every other draft (video/audio/shortform)
+ * still has no "resume the studio" concept, so it keeps going to
+ * `/publish/{id}` as before.
+ */
+function draftResumeHref(draft: Draft): string {
+  const operation = draft.params?.operation;
+  if (typeof operation === 'string' && IMAGE_DRAFT_OPERATIONS.has(operation)) {
+    return `/create/new?mode=image_creation&draftId=${draft.id}`;
+  }
+  return `/publish/${draft.id}`;
+}
+
 /**
  * Tabbed library.
  *
@@ -242,7 +259,7 @@ export function LibraryTabs({
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {shownDrafts.map((draft) => (
               <li key={draft.id}>
-                <Link href={`/publish/${draft.id}`} className="block">
+                <Link href={draftResumeHref(draft)} className="block">
                   <DraftPoster
                     draft={draft}
                     alt={draft.title ?? t('tabDrafts')}

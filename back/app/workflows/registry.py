@@ -14,6 +14,9 @@ from typing import Any
 from app.models.enums import JobEventType
 from app.workflows import nodes
 from app.workflows.configs import (
+    AssetOutputAdvanceConfig,
+    AssetOutputLinkConfig,
+    AssetPlanningConfig,
     CopyGenerateConfig,
     CustomAgentStepConfig,
     FailConfig,
@@ -149,6 +152,19 @@ NODE_TYPES: dict[str, NodeSpec] = {
         agent_bindings=(AgentBinding("agent_id", "intent_router", "classify"),),
         event_type=JobEventType.INTENT_ROUTING,
     ),
+    "asset_planning": NodeSpec(
+        category="planning",
+        label="图片资产规划",
+        description="为角色三视图/场景图/封面等图片资产规划提示词，"
+        "保持同一角色跨视角的一致性；asset_kind 为空或 general 时直接放行。",
+        config_schema=AssetPlanningConfig,
+        executor=nodes.execute_asset_planning,
+        output_ports=("ok",),
+        is_agent=True,
+        agent_role="planner",
+        agent_bindings=(AgentBinding("agent_id", "planner", "asset_plan"),),
+        event_type=JobEventType.PLANNING,
+    ),
     "custom_agent": NodeSpec(
         category="planning",
         label="自定义智能体判断",
@@ -211,6 +227,24 @@ NODE_TYPES: dict[str, NodeSpec] = {
         agent_role="quality",
         agent_bindings=(AgentBinding("agent_id", "quality", "default"),),
         event_type=JobEventType.QUALITY_CHECK,
+    ),
+    "asset_output_advance": NodeSpec(
+        category="quality",
+        label="多视角推进",
+        description="登记本轮产出资产；若 asset_kind=character 且 character_views 还有"
+        "剩余视角，回到图片资产规划节点继续生成下一张，否则放行到资产回填。",
+        config_schema=AssetOutputAdvanceConfig,
+        executor=nodes.execute_asset_output_advance,
+        output_ports=("next", "done"),
+    ),
+    "asset_output_link": NodeSpec(
+        category="quality",
+        label="资产回填",
+        description="把通过质检的图片资产自动关联到目标角色技能/场景库；"
+        "asset_kind 为空或 general，或没有产出资产时直接放行。",
+        config_schema=AssetOutputLinkConfig,
+        executor=nodes.execute_asset_output_link,
+        output_ports=("ok",),
     ),
     "join": NodeSpec(
         category="control",

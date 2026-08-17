@@ -6,31 +6,31 @@ import { useSession } from '@/components/auth/session-provider';
 import {
   AudioGenerationIllustration,
   DramaIllustration,
-  ImageToImageIllustration,
+  ImageCreationIllustration,
   ImageToVideoIllustration,
   RemixIllustration,
+  ScriptIllustration,
   ShortformIllustration,
-  TextToImageIllustration,
   TextToVideoIllustration,
 } from '@/components/create/mode-illustrations';
 import {
   IconArrowRight,
   IconImage,
+  IconMessage,
   IconMic,
   IconPhone,
   IconRemix,
   IconSparkle,
   IconVideo,
-  IconWand,
 } from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
 
 type ModeId =
-  | 'text_to_image'
+  | 'script'
+  | 'image_creation'
   | 'text_to_video'
   | 'image_to_video'
-  | 'image_to_image'
   | 'audio_generation'
   | 'shortform'
   | 'drama'
@@ -45,10 +45,18 @@ const MODES: Array<{
   accent: string;
 }> = [
   {
-    id: 'text_to_image',
+    id: 'script',
+    icon: <IconMessage className="size-5" />,
+    illustration: <ScriptIllustration className="size-full" />,
+    href: '/create/script',
+    tone: 'bg-amber/15 text-amber',
+    accent: 'text-amber',
+  },
+  {
+    id: 'image_creation',
     icon: <IconSparkle className="size-5" />,
-    illustration: <TextToImageIllustration className="size-full" />,
-    href: '/create/new?mode=text_to_image',
+    illustration: <ImageCreationIllustration className="size-full" />,
+    href: '/create/new?mode=image_creation',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
   },
@@ -65,14 +73,6 @@ const MODES: Array<{
     icon: <IconImage className="size-5" />,
     illustration: <ImageToVideoIllustration className="size-full" />,
     href: '/create/new?mode=image_to_video',
-    tone: 'bg-amber/15 text-amber',
-    accent: 'text-amber',
-  },
-  {
-    id: 'image_to_image',
-    icon: <IconWand className="size-5" />,
-    illustration: <ImageToImageIllustration className="size-full" />,
-    href: '/create/new?mode=image_to_image',
     tone: 'bg-amber/15 text-amber',
     accent: 'text-amber',
   },
@@ -123,10 +123,15 @@ export function CreateModeCards({ className }: { className?: string }) {
   const { requireAuth } = useSession();
 
   const labels: Record<ModeId, { title: string; desc: string; tag: string }> = {
-    text_to_image: {
-      title: t('modeTextToImageTitle'),
-      desc: t('modeTextToImageDesc'),
-      tag: t('modeTextToImageTag'),
+    script: {
+      title: t('modeScriptTitle'),
+      desc: t('modeScriptDesc'),
+      tag: t('modeScriptTag'),
+    },
+    image_creation: {
+      title: t('modeImageCreationTitle'),
+      desc: t('modeImageCreationDesc'),
+      tag: t('modeImageCreationTag'),
     },
     text_to_video: {
       title: t('modeTextToVideoTitle'),
@@ -137,11 +142,6 @@ export function CreateModeCards({ className }: { className?: string }) {
       title: t('modeImageToVideoTitle'),
       desc: t('modeImageToVideoDesc'),
       tag: t('modeImageToVideoTag'),
-    },
-    image_to_image: {
-      title: t('modeImageToImageTitle'),
-      desc: t('modeImageToImageDesc'),
-      tag: t('modeImageToImageTag'),
     },
     audio_generation: {
       title: t('modeAudioGenerationTitle'),
@@ -188,7 +188,7 @@ export function CreateModeCards({ className }: { className?: string }) {
               <p
                 className={cn(
                   'text-[11px]',
-                  mode.id === 'text_to_video' || mode.id === 'text_to_image'
+                  mode.id === 'text_to_video' || mode.id === 'image_creation'
                     ? 'text-muted'
                     : 'text-amber',
                 )}

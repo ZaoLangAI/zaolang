@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.models.enums import ProviderKind
+from app.platform_config.schemas import MediaPricing
 
 
 @dataclass(slots=True)
@@ -133,12 +134,21 @@ class ProviderCapability:
     # 0-1 baseline used before enough real samples exist.
     quality_prior: float
     typical_latency_ms: int
-    unit_cost_minor: int
+    # What one representative call costs us, in micro-USD (1e-6 USD). Micro
+    # rather than minor units because a $0.00286 image is 0 cents.
+    unit_cost_micro_usd: int
     model_or_workflow: str
     # Deferred so building the catalog never constructs a provider (and
     # therefore never opens a client/connection) for a route that ends up
     # not winning.
     provider_factory: Callable[[], GenerationProvider]
+    # True when `unit_cost_micro_usd` came from a built-in prior instead of a
+    # price the operator configured. Shown to the selecting agent so an
+    # unpriced endpoint does not read as a cheap one.
+    cost_is_estimated: bool = False
+    # The endpoint's configured list prices, for costing a concrete request.
+    # `None` when the route has no pricing block at all.
+    pricing: MediaPricing | None = None
     min_duration_seconds: int | None = None
     max_duration_seconds: int | None = None
     aspect_ratios: frozenset[str] | None = None

@@ -208,7 +208,7 @@ def _issue_session(user: User, response: Response) -> TokenResponse:
         max_age=settings.refresh_token_ttl_seconds,
         httponly=True,
         samesite="lax",
-        secure=settings.is_production,
+        secure=settings.cookie_secure,
         path="/",
     )
     return TokenResponse(access_token=access, expires_at=expires_at)

@@ -19,6 +19,8 @@ from app.agents import copywriter, planner, quality, router, safety
 from app.agents import custom as custom_agent
 from app.agents import intent_router as intent_router_agent
 from app.config import get_settings
+from app.domain.characters import service as characters_service
+from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
 from app.domain.errors import NotFound
 from app.domain.jobs import service as jobs_service
@@ -26,11 +28,15 @@ from app.domain.jobs import state_machine as sm
 from app.domain.jobs.cancellation import honor_user_cancel
 from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
+from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.domain.style_gallery import service as style_gallery_service
 from app.models import Draft, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
+    IMAGE_ASSET_SKILL_CATEGORIES,
+    CharacterViewAngle,
+    ImageAssetKind,
     JobEventType,
     JobStatus,
     ModerationStage,
@@ -43,6 +49,9 @@ from app.providers.base import GenerationProvider, GenerationRequest, Generation
 from app.realtime import publisher
 from app.storage import s3
 from app.workflows.configs import (
+    AssetOutputAdvanceConfig,
+    AssetOutputLinkConfig,
+    AssetPlanningConfig,
     CopyGenerateConfig,
     CustomAgentStepConfig,
     FailConfig,
@@ -75,7 +84,11 @@ _VIDEO_OPERATIONS = frozenset(
 )
 _REFERENCE_REQUIRED = frozenset(
     {
-        Operation.IMAGE_TO_IMAGE.value,
+        # `image_to_image` deliberately excluded: the prompt is what's
+        # mandatory, a reference image is only optional extra context that
+        # rides along with it (see `workflow_templates_service
+        # .canonical_operation`) — unlike video reference/first-frame input,
+        # which the provider genuinely cannot proceed without.
         Operation.IMAGE_TO_VIDEO.value,
         Operation.VIDEO_TO_VIDEO.value,
     }
@@ -107,7 +120,7 @@ def _emit(
         event_type=event_type,
         status=status,
         public_message=message,
-        progress=progress,
+        progress=_scale_for_character_views(ctx, progress),
         internal_code=internal_code,
         payload=payload,
         node_id=ctx.state.get("_current_node_id"),
@@ -205,6 +218,17 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
     the user's own explicit params (non-`None`) always win over every
     template. A skill whose `applicable_operations` doesn't include this
     job's operation is skipped, same as an unusable/missing skill or style.
+
+    A skill whose category is in `IMAGE_ASSET_SKILL_CATEGORIES` (character/
+    scene_asset/cover_asset) is always skipped here even if referenced by
+    id: its `params_json` is shaped `{"<category>": {..., "reference_assets"}}`,
+    not the flat `prompt`/`aspect_ratio`/... template shape every other
+    category uses, so folding it in here would inject a meaningless key
+    instead of anything usable. A character/scene is referenced through the
+    dedicated `character_ids`/`scene_ids`/`target_*_id` params and
+    `characters_service.apply_character_refs` / `scenes_service.apply_scene_refs`
+    (called by `jobs.service.submit` before this node ever runs) instead; a
+    cover has no such reuse path at all.
     """
     style_gallery_id = ctx.params.get("style_gallery_id")
     skill_ids = ctx.params.get("skill_ids") or []
@@ -230,12 +254,18 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
             skill = skill_library_service.get_usable(
                 ctx.session, skill_id=str(skill_id), viewer_id=ctx.job.user_id
             )
-            if not skill_library_service.viewer_has_access(
-                ctx.session, skill, ctx.job.user_id
-            ):
+            if not skill_library_service.viewer_has_access(ctx.session, skill, ctx.job.user_id):
                 raise NotFound("技能未解锁。")
         except NotFound:
             logger.warning("job %s referenced an unusable skill %s; ignoring", ctx.job.id, skill_id)
+            continue
+        if skill.category in IMAGE_ASSET_SKILL_CATEGORIES:
+            logger.warning(
+                "job %s referenced image-asset skill %s (category=%s) via skill_ids; ignoring",
+                ctx.job.id,
+                skill_id,
+                skill.category,
+            )
             continue
         declared = skill.applicable_operations_json
         if declared and ctx.job.operation not in declared:
@@ -345,6 +375,262 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
     suggested = outcome.data.get("suggested_quality_tier")
     return NodeResult(port="ok", summary=f"建议档位：{suggested}" if suggested else None)
+
+
+ASSET_PLAN_STATE_KEY = "asset_plan"
+ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
+_ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
+
+
+def _current_character_view(ctx: WorkflowContext) -> str:
+    """Which view a `CHARACTER`-kind job's current loop iteration targets.
+
+    Before `execute_asset_output_advance` ever runs (the job's first pass),
+    this is the first entry of `character_views` (defaulting to `front` for
+    a plain single-view job — see `GenerationParams.character_views`); once
+    it has run, the advance node has already stashed the next view under
+    `_current_character_view`, which takes priority here.
+    """
+    stashed = ctx.state.get("_current_character_view")
+    if stashed:
+        return str(stashed)
+    views = ctx.params.get("character_views")
+    if isinstance(views, list) and views:
+        return str(views[0])
+    return CharacterViewAngle.FRONT.value
+
+
+def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
+    """Rescales a node's fixed progress constant for a multi-view `CHARACTER`
+    job, so the overall bar climbs once per produced view instead of
+    restarting from the same per-node constant on every loop-back through
+    `asset_planning` (see `execute_asset_output_advance`).
+
+    A no-op for every job that isn't `asset_kind=CHARACTER` with more than
+    one `character_views` entry — every other job's progress numbers are
+    unchanged. Safe to apply to *every* emitted event unconditionally
+    (including `queued`/`safety`, which only ever fire once before the loop
+    even starts, and the terminal `succeeded`/`failed` events, whose raw
+    stored value doesn't matter since `progress_for` and the frontend both
+    already force 100 for a terminal status regardless of what's stored).
+    """
+    if ctx.params.get("asset_kind") != ImageAssetKind.CHARACTER.value:
+        return progress
+    raw_views = ctx.params.get("character_views")
+    views = [str(v) for v in raw_views] if isinstance(raw_views, list) and raw_views else []
+    if len(views) <= 1:
+        return progress
+    try:
+        view_index = views.index(_current_character_view(ctx))
+    except ValueError:
+        view_index = 0
+    return round((view_index * 100 + progress) / len(views))
+
+
+def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) -> NodeResult:
+    """Runs the planner agent's `asset_plan` slot for a character/scene/cover
+    image job, folding its guidance into `ctx.prompt`.
+
+    A no-op when `asset_kind` is unset or `GENERAL` — see `AssetPlanningConfig`.
+    Re-entered once per remaining `character_views` entry (via
+    `execute_asset_output_advance`'s loop-back edge) for a multi-view
+    `CHARACTER` job — `ctx.prompt` is reset to the request's original prompt
+    on every entry first, so the second/third pass enhances that, not
+    whatever the previous view's pass already appended to it.
+    """
+    asset_kind = ctx.params.get("asset_kind")
+    if not asset_kind or asset_kind == ImageAssetKind.GENERAL.value:
+        return NodeResult(port="ok")
+
+    if _ORIGINAL_PROMPT_STATE_KEY not in ctx.state:
+        ctx.state[_ORIGINAL_PROMPT_STATE_KEY] = ctx.prompt
+    ctx.prompt = ctx.state[_ORIGINAL_PROMPT_STATE_KEY]
+
+    is_character = asset_kind == ImageAssetKind.CHARACTER.value
+    character_view = _current_character_view(ctx) if is_character else None
+
+    _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划图片资产生成方案", 16)
+    outcome = planner.plan_asset(
+        ctx.session,
+        intent=ctx.prompt,
+        asset_kind=str(asset_kind),
+        character_view=character_view,
+        target_character_id=ctx.params.get("target_character_id"),
+        target_scene_id=ctx.params.get("target_scene_id"),
+        source_params=ctx.params,
+        job_id=ctx.agent_job_id,
+        user_id=ctx.job.user_id,
+        agent_id=config.agent_id,
+    )
+    ctx.state[config.output_key] = outcome.data
+    ctx.state["_last_agent_run_id"] = outcome.agent_run_id
+
+    enhancements = outcome.data.get("prompt_enhancements")
+    if isinstance(enhancements, list) and enhancements:
+        addition = "，".join(str(item) for item in enhancements if item)
+        if addition and addition not in ctx.prompt:
+            ctx.prompt = f"{ctx.prompt}，{addition}" if ctx.prompt else addition
+    subject_name = outcome.data.get("subject_name")
+    label = character_view or config.output_key
+    return NodeResult(port="ok", summary=f"资产规划 → {subject_name or label}")
+
+
+def execute_asset_output_advance(
+    ctx: WorkflowContext, config: AssetOutputAdvanceConfig
+) -> NodeResult:
+    """Records this pass's output, then decides whether another view is due.
+
+    Sits between `quality_check` and `asset_output_link`. A single pass for
+    anything but a `CHARACTER`-kind job — `scene`/`cover`/`general` take the
+    `done` port immediately, exactly like before this node type existed. A
+    `CHARACTER` job with more than one `character_views` entry loops back to
+    `asset_planning` (the `next` port) once per remaining view; `asset_id`
+    is unset only in a dry run with no registered output, in which case
+    nothing is recorded but the loop still advances so a sandbox try-it
+    walks the whole graph.
+    """
+    asset_kind = ctx.params.get("asset_kind")
+    outputs: list[dict[str, str]] = ctx.state.setdefault(ASSET_OUTPUTS_STATE_KEY, [])
+    asset_id = ctx.state.get("asset_id")
+    is_character = asset_kind == ImageAssetKind.CHARACTER.value
+    view = _current_character_view(ctx) if is_character else str(asset_kind or "")
+    if asset_id:
+        outputs.append({"asset_id": str(asset_id), "view": view})
+
+    if not is_character:
+        return NodeResult(port="done")
+
+    raw_views = ctx.params.get("character_views")
+    views = (
+        [str(v) for v in raw_views]
+        if isinstance(raw_views, list) and raw_views
+        else [CharacterViewAngle.FRONT.value]
+    )
+    try:
+        next_index = views.index(view) + 1
+    except ValueError:
+        next_index = len(views)
+    if next_index >= len(views):
+        return NodeResult(port="done")
+
+    ctx.state["_current_character_view"] = views[next_index]
+    return NodeResult(
+        port="next",
+        summary=f"继续生成第 {next_index + 1}/{len(views)} 张（{views[next_index]}）",
+    )
+
+
+def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfig) -> NodeResult:
+    """Attaches every output `execute_asset_output_advance` recorded to its
+    character/scene target — one entry for a plain single-view job, one per
+    produced view for a multi-view `CHARACTER` completion job.
+
+    Falls back to `ctx.state["asset_id"]` alone when nothing populated
+    `asset_outputs` — a hand-edited graph may wire this node directly after
+    `quality_check` without `asset_output_advance` in between, same as every
+    graph did before that node type existed.
+
+    Never fails the job: an attach problem (an unowned/deleted target, a
+    full reference-asset list) is logged and skipped rather than turning a
+    successful generation into a failure this late in the graph.
+    """
+    asset_kind = ctx.params.get("asset_kind")
+    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY)
+    if not outputs:
+        fallback_id = ctx.state.get("asset_id")
+        is_character = asset_kind == ImageAssetKind.CHARACTER.value
+        view = _current_character_view(ctx) if is_character else str(asset_kind or "")
+        outputs = [{"asset_id": str(fallback_id), "view": view}] if fallback_id else []
+    if ctx.dry_run or not outputs or not asset_kind or asset_kind == ImageAssetKind.GENERAL.value:
+        return NodeResult(port="ok")
+    if ctx.params.get("auto_attach_asset") is False:
+        return NodeResult(port="ok")
+
+    plan = ctx.state.get(ASSET_PLAN_STATE_KEY) or {}
+    subject_name = str(plan.get("subject_name") or "新角色")
+
+    try:
+        if asset_kind == ImageAssetKind.CHARACTER.value:
+            target_id = ctx.params.get("target_character_id")
+            for entry in outputs:
+                target_id = _link_character_output(
+                    ctx,
+                    config,
+                    asset_id=str(entry.get("asset_id")),
+                    view=str(entry.get("view") or CharacterViewAngle.FRONT.value),
+                    subject_name=subject_name,
+                    target_id=target_id,
+                )
+        elif asset_kind == ImageAssetKind.SCENE.value:
+            for entry in outputs:
+                _link_scene_output(
+                    ctx, asset_id=str(entry.get("asset_id")), view=str(entry.get("view") or "")
+                )
+        # `COVER` has no library to attach to today — the output stays a
+        # plain generated asset (see the plan's "补充功能建议" for a future
+        # series/episode cover slot).
+    except Exception:
+        logger.exception(
+            "job %s asset_output_link failed for asset_kind=%s", ctx.job.id, asset_kind
+        )
+    return NodeResult(port="ok")
+
+
+def _link_character_output(
+    ctx: WorkflowContext,
+    config: AssetOutputLinkConfig,
+    *,
+    asset_id: str,
+    view: str,
+    subject_name: str,
+    target_id: str | None,
+) -> str | None:
+    """Attaches one output to `target_id`, auto-creating a character from
+    scratch on the first call if there was none.
+
+    Returns the id actually used (whichever was passed in, or the one just
+    created) — `execute_asset_output_link` threads it through the loop over
+    `outputs` so a multi-view completion job's later views land on the exact
+    same character its first view did, rather than each auto-creating its
+    own.
+    """
+    if target_id:
+        characters_service.append_reference_asset(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            character_id=str(target_id),
+            asset_id=asset_id,
+            view=view,
+        )
+        return target_id
+    if not config.auto_create_character:
+        return None
+    character = characters_service.create_character(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        name=subject_name,
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    characters_service.append_reference_asset(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        character_id=character.id,
+        asset_id=asset_id,
+        view=view,
+    )
+    ctx.state["created_character_id"] = character.id
+    return character.id
+
+
+def _link_scene_output(ctx: WorkflowContext, *, asset_id: str, view: str) -> None:
+    target_id = ctx.params.get("target_scene_id")
+    if not target_id:
+        return
+    scenes_service.append_reference_asset(
+        ctx.session, user_id=ctx.job.user_id, scene_id=str(target_id), asset_id=asset_id, view=view
+    )
 
 
 def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfig) -> NodeResult:
@@ -824,6 +1110,12 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             extra=dict(ctx.params.get("extra") or {}),
         )
         result = decision.provider.submit(request)
+        # Priced here, against the endpoint's configuration as it stands right
+        # now. Deriving it at report time instead would let tomorrow's price
+        # change rewrite what today's generation cost.
+        attempt_cost_micro_usd = costs_service.generation_attempt_cost_micro_usd(
+            capability.pricing, capability=ctx.job.operation, request=request
+        )
         attempt = ProviderAttempt(
             job_id=ctx.job.id,
             provider=capability.name,
@@ -833,6 +1125,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             attempt_number=attempt_number,
             status=_attempt_status(result),
             cost_minor=result.cost_minor,
+            cost_micro_usd=attempt_cost_micro_usd,
             latency_ms=result.latency_ms,
             failure_code=result.failure_code,
             raw_metadata_redacted_json=result.metadata,
@@ -847,9 +1140,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
                 try:
                     decision.provider.cancel(result.external_task_id)
                 except Exception:
-                    logger.exception(
-                        "provider.cancel failed after submit for job %s", ctx.job.id
-                    )
+                    logger.exception("provider.cancel failed after submit for job %s", ctx.job.id)
             attempt.status = ProviderAttemptStatus.CANCELLED
             ctx.session.flush()
             ctx.job = honor_user_cancel(ctx.session, ctx.job)
@@ -894,6 +1185,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             succeeded=result.succeeded,
             latency_ms=result.latency_ms,
             cost_minor=result.cost_minor,
+            cost_micro_usd=attempt_cost_micro_usd,
         )
         ctx.session.flush()
 
@@ -1031,8 +1323,22 @@ def execute_join(ctx: WorkflowContext, config: JoinConfig) -> NodeResult:
 
 
 def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) -> NodeResult:
-    asset_id = ctx.state.get("asset_id")
-    terminal = PipelineOutcome(status=JobStatus.SUCCEEDED, asset_id=asset_id)
+    # `asset_outputs` (populated by `execute_asset_output_advance`) is the
+    # richer source once an asset-kind job set it — usually one entry, up to
+    # `len(character_views)` for a multi-view `CHARACTER` completion job.
+    # Every other operation (video, audio, plain `general` image) never
+    # reaches that node type, so `ctx.state["asset_id"]` alone is unchanged.
+    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY)
+    if outputs:
+        asset_ids = [str(o["asset_id"]) for o in outputs if o.get("asset_id")]
+        asset_id = asset_ids[0] if asset_ids else None
+    else:
+        asset_id = ctx.state.get("asset_id")
+        asset_ids = [str(asset_id)] if asset_id else []
+
+    terminal = PipelineOutcome(
+        status=JobStatus.SUCCEEDED, asset_id=asset_id, asset_ids=asset_ids or None
+    )
     if ctx.dry_run:
         return NodeResult(port="_terminal", terminal=terminal)
 
@@ -1046,6 +1352,7 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
         JobStatus.SUCCEEDED,
         actual_credits=actual,
         output_asset_id=asset_id,
+        output_asset_ids=asset_ids or None,
     )
     _emit(
         ctx,

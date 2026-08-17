@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.agents import copywriter as copywriter_agent
 from app.agents import safety as safety_agent
 from app.config import get_settings
 from app.db import session_scope
@@ -229,9 +230,7 @@ SEED_TAGS: tuple[tuple[str, str, str, str], ...] = (
 # Curated style-picker catalogue (studio dialog + create page's inspiration
 # section share this one table). Fields: slug, 中/英/日 label, description,
 # default aspect ratio, prompt suffix injected on apply, style tag slugs.
-SEED_STYLE_GALLERY: tuple[
-    tuple[str, str, str, str, str, str, str, tuple[str, ...]], ...
-] = (
+SEED_STYLE_GALLERY: tuple[tuple[str, str, str, str, str, str, str, tuple[str, ...]], ...] = (
     (
         "anime-japanese",
         "日漫",
@@ -679,6 +678,7 @@ def run(*, reset: bool = False) -> dict[str, int]:
         users = _seed_users(session)
         agent_skills_service.ensure_default_nodes(session)
         agent_skills_service.ensure_default_profiles(session)
+        ensure_default_enhance_asset_agents(session)
         _seed_agent_profiles(session)
         workflow_templates_service.ensure_default_templates(session)
         _seed_llm_providers(session)
@@ -761,6 +761,67 @@ def _seed_users(session: Session) -> dict[str, User]:
     return users
 
 
+_ENHANCE_ASSET_AGENT_SPECS: dict[str, tuple[str, str, str, str]] = {
+    "character": (
+        "enhance-character",
+        "文案润色 · 角色",
+        "角色资产的画面描述润色，额外关注人物一致性与表情神态。",
+        copywriter_agent.ENHANCE_SYSTEM_PROMPT_CHARACTER,
+    ),
+    "scene": (
+        "enhance-scene",
+        "文案润色 · 场景",
+        "场景资产的画面描述润色，额外关注环境细节与氛围。",
+        copywriter_agent.ENHANCE_SYSTEM_PROMPT_SCENE,
+    ),
+    "cover": (
+        "enhance-cover",
+        "文案润色 · 封面",
+        "封面资产的画面描述润色，额外关注视觉焦点与文字安全区。",
+        copywriter_agent.ENHANCE_SYSTEM_PROMPT_COVER,
+    ),
+}
+
+
+def ensure_default_enhance_asset_agents(session: Session) -> None:
+    """Gives "AI 润色" a dedicated `copy` agent per image asset kind.
+
+    Idempotent and additive, mirroring `ensure_default_profiles`: a bucket
+    that already has a specific default agent — an operator's own, or one
+    this function created on an earlier run — is left untouched. Each
+    profile publishes its bucket's specialised system prompt
+    (`app.agents.copywriter.ENHANCE_SYSTEM_PROMPT_*`) to the `enhance` slot,
+    so `agent_skills_service.resolve_prompt` finds a real published version
+    rather than falling back to the code-level constant `enhance_prompt`
+    also passes as a default.
+    """
+    for bucket, spec in _ENHANCE_ASSET_AGENT_SPECS.items():
+        key, display_name, description, system_prompt = spec
+        if agent_skills_service.default_profile_for_asset_kind(session, "copy", bucket) is not None:
+            continue
+        if agent_skills_service.find_profile(session, "copy", key) is not None:
+            continue
+        profile = agent_skills_service.create_profile(
+            session,
+            role="copy",
+            key=key,
+            display_name=display_name,
+            description=description,
+            operations=[],
+            default_for_asset_kind=bucket,
+        )
+        agent_skills_service.publish(
+            session,
+            profile_id=profile.id,
+            slot=copywriter_agent.ENHANCE_SLOT,
+            prompt_template=system_prompt,
+            tool_grants=[],
+            actor_user_id=None,
+            reason=f"seed: {bucket} 资产的润色专属智能体",
+        )
+    session.flush()
+
+
 def _seed_agent_profiles(session: Session) -> None:
     """Adds one non-default agent so the agents console has something to show.
 
@@ -799,11 +860,11 @@ def _seed_agent_profiles(session: Session) -> None:
 
 
 def _catalog_general_model(session: Session) -> str | None:
-    """The first model declared on an enabled general endpoint, if any."""
+    """The model declared on the first enabled general endpoint, if any."""
     config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     for endpoint in config.endpoints.values():
-        if endpoint.enabled and endpoint.kind == "general" and endpoint.models:
-            return endpoint.models[0]
+        if endpoint.enabled and endpoint.kind == "general" and endpoint.model:
+            return endpoint.model
     return None
 
 
@@ -837,7 +898,7 @@ def _seed_llm_providers(session: Session) -> None:
         api_key=api_key,
         kind="general",
         role="primary",
-        models=[model],
+        model=model,
     )
     config_service.set_value(
         session,
@@ -860,6 +921,7 @@ def _seed_editor_flags(session: Session) -> None:
         and current.variant_export_enabled
         and current.editor_ai_enabled
         and current.editor_mcp_enabled
+        and current.script_studio_enabled
     ):
         return
     value = current.model_dump(mode="json")
@@ -870,6 +932,7 @@ def _seed_editor_flags(session: Session) -> None:
             "variant_export_enabled": True,
             "editor_ai_enabled": True,
             "editor_mcp_enabled": True,
+            "script_studio_enabled": True,
         }
     )
     config_service.set_value(

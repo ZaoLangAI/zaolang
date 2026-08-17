@@ -55,13 +55,7 @@ def _resolve_endpoint(
     AgentOS console with an empty `llm_providers` pool needs a clear reason
     it failed to mount, not a confusing model error.
     """
-    if not binding.model:
-        raise ValueError("智能体未绑定模型，无法构建 AgentOS 团队")
-    candidates = [
-        pair
-        for pair in failover.general_candidates(provider_config)
-        if binding.model in pair[1].models
-    ]
+    candidates = failover.general_candidates(provider_config)
     if binding.preferred_endpoint_ids:
         rank = {value: index for index, value in enumerate(binding.preferred_endpoint_ids)}
         candidates = [pair for pair in candidates if pair[0] in rank]
@@ -75,9 +69,10 @@ def _model_for(binding: agent_base.EffectiveBinding, endpoint: LlmProviderEndpoi
     from agno.models.openai.like import OpenAILike
 
     # `client_for_endpoint` already bakes base_url/api_key/timeout into the
-    # OpenAI SDK client, so there is nothing left to configure here.
+    # OpenAI SDK client, so there is nothing left to configure here. The model
+    # name comes from the endpoint itself — an agent binds providers, not names.
     return OpenAILike(
-        id=binding.model,
+        id=endpoint.model,
         client=llm_client.client_for_endpoint(endpoint),
         max_tokens=binding.max_tokens,
         temperature=binding.temperature,

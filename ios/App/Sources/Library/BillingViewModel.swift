@@ -66,6 +66,8 @@ extension LedgerEntryType {
         case .adjustment: "billingPage.typeAdjustment"
         case .royaltyIn: "billingPage.typeRoyaltyIn"
         case .royaltyOut: "billingPage.typeRoyaltyOut"
+        case .accessIn: "billingPage.typeAccessIn"
+        case .accessOut: "billingPage.typeAccessOut"
         }
     }
 }

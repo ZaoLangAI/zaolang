@@ -25,7 +25,7 @@ export default async function AdminRoutingPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeading title={t('title')} description={t('subtitle')} />
+      <PageHeading title={t('title')} />
       <AgentCatalogProvider
         seed={{
           nodes: agentNodes.items,

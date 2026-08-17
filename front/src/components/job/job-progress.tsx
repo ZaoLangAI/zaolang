@@ -4,9 +4,19 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
+import {
+  CHARACTER_VIEW_LABEL_KEY,
+  STAGE_FOR_EVENT,
+  STAGES,
+  stageLabelKey,
+  type Stage,
+} from '@/components/job/job-stages';
+import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { DevicePreview } from '@/components/media/device-preview';
+import { OutputGallery } from '@/components/media/output-gallery';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { TextArea, TextInput } from '@/components/ui/field';
 import { IconCheck, IconClock, IconCopy, IconSparkle } from '@/components/ui/icons';
 import { Badge, ErrorNotice, type BadgeTone } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -16,7 +26,7 @@ import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { GenerationJob } from '@/lib/api/types';
+import type { CreationSkillDetail, GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDateTime } from '@/lib/format';
 import { loadAnime, useReducedMotion } from '@/lib/motion';
@@ -26,47 +36,13 @@ import { useJobStream } from '@/lib/use-job-stream';
 const PROGRESS_DURATION = 650;
 const STAGE_POP_DURATION = 420;
 
-/** Ordered stages aligned with the generation pipeline, mapped from event types. */
-const STAGES = ['queued', 'safety', 'planning', 'generating', 'sound', 'quality', 'done'] as const;
-type Stage = (typeof STAGES)[number];
-
-const STAGE_LABEL = {
-  queued: 'stageQueued',
-  safety: 'stageSafety',
-  planning: 'stagePlanning',
-  generating: 'stageGenerating',
-  sound: 'stageSound',
-  quality: 'stageQuality',
-  done: 'stageDone',
-} as const satisfies Record<Stage, string>;
-
-const STAGE_FOR_EVENT: Record<string, Stage> = {
-  created: 'queued',
-  queued: 'queued',
-  safety: 'safety',
-  safety_checked: 'safety',
-  planning: 'planning',
-  planned: 'planning',
-  intent_routing: 'planning',
-  routing: 'generating',
-  routed: 'generating',
-  generating: 'generating',
-  provider_started: 'generating',
-  progress: 'generating',
-  awaiting_input: 'generating',
-  audio: 'sound',
-  sound: 'sound',
-  quality_check: 'quality',
-  quality_checked: 'quality',
-  settled: 'done',
-  succeeded: 'done',
-};
-
 export function JobProgress({ jobId, initial }: { jobId: string; initial: GenerationJob }) {
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
   const tEditor = useTranslations('editor');
   const tActions = useTranslations('actions');
+  const tSkills = useTranslations('skillLibrary');
+  const tCharacters = useTranslations('characters');
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { notify } = useToast();
@@ -76,6 +52,11 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const [cancelling, setCancelling] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
   const [editorAvailable, setEditorAvailable] = useState<boolean | null>(null);
+  const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
+  const [coverSkillTitle, setCoverSkillTitle] = useState('');
+  const [coverSkillDescription, setCoverSkillDescription] = useState('');
+  const [coverSkillCredits, setCoverSkillCredits] = useState(0);
+  const [coverSkillBusy, setCoverSkillBusy] = useState(false);
 
   const current = job ?? initial;
   const reached = new Set<Stage>();
@@ -93,6 +74,22 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
     finished && current.status !== 'succeeded'
       ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
       : (STAGES[activeIndex] ?? 'done');
+
+  // A multi-view `CHARACTER` job loops back through `asset_planning` once
+  // per remaining view (see `execute_asset_output_advance`) — one `node_id
+  // === 'asset_planning'` event fires per view attempt, in `character_views`
+  // order, so counting them tells us which view is currently in flight
+  // without guessing from the (loop-restarting) stage dots above.
+  const characterViews = current.character_views ?? null;
+  const isMultiViewCharacter =
+    current.asset_kind === 'character' && (characterViews?.length ?? 0) > 1;
+  const assetPlanningEntries = isMultiViewCharacter
+    ? events.filter((event) => event.node_id === 'asset_planning').length
+    : 0;
+  const currentViewIndex = Math.min(
+    Math.max(assetPlanningEntries - 1, 0),
+    (characterViews?.length ?? 1) - 1,
+  );
 
   const reduced = useReducedMotion();
   // Frozen at mount so React never rewrites `style.width` on a later render —
@@ -202,10 +199,56 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
 
   const showEnterEditor = canEnterEditor && editorAvailable !== false;
 
+  // A cover-kind job's output is a single, standalone image with no roster
+  // to maintain (unlike a character/scene) — see `CreationSkillCategory.
+  // COVER_ASSET`'s own note on why it has no dedicated CRUD surface, just
+  // this `POST /v1/skills` call with the job's own output as the thumbnail.
+  const canSaveCoverSkill =
+    current.status === 'succeeded' && current.asset_kind === 'cover' && Boolean(current.output_asset_id);
+
+  const openSaveCoverSkill = () => {
+    setCoverSkillTitle('');
+    setCoverSkillDescription('');
+    setCoverSkillCredits(0);
+    setSavingCoverSkillOpen(true);
+  };
+
+  const saveCoverSkill = async () => {
+    if (!current.output_asset_id) return;
+    const title = coverSkillTitle.trim();
+    if (!title) return;
+    setCoverSkillBusy(true);
+    try {
+      await api.post<CreationSkillDetail>('/v1/skills', {
+        title,
+        description: coverSkillDescription.trim(),
+        category: 'cover_asset',
+        cover_asset_id: current.output_asset_id,
+        params: { cover_asset_id: current.output_asset_id },
+        access_credits: coverSkillCredits,
+      });
+      notify(t('saveCoverSkillDone'), 'success');
+      setSavingCoverSkillOpen(false);
+    } catch {
+      notify(t('saveCoverSkillFailed'), 'error');
+    } finally {
+      setCoverSkillBusy(false);
+    }
+  };
+
   const refreshOutputSrc = useCallback(async () => {
     if (current.output_asset_id) return refreshAssetUrl(current.output_asset_id);
     return refreshJobOutputUrl(jobId);
   }, [current.output_asset_id, jobId]);
+
+  const hasMultipleOutputs = (current.output_urls?.length ?? 0) > 1;
+  // Labels line up with `output_urls`/`output_asset_ids` only for a
+  // multi-view character job — both lists are recorded in the same
+  // front → side → back order (see `execute_asset_output_advance`).
+  const outputLabels =
+    characterViews && characterViews.length === current.output_urls?.length
+      ? characterViews.map((view) => tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewFront'))
+      : undefined;
 
   const progressBar = (
     <div
@@ -253,7 +296,16 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
-          {current.output_url ? (
+          {hasMultipleOutputs && current.output_urls ? (
+            <OutputGallery
+              urls={current.output_urls}
+              assetIds={current.output_asset_ids}
+              mediaType={current.output_media_type ?? 'image'}
+              title={t('title')}
+              labels={outputLabels}
+              itemLabel={(index, total) => t('outputItemLabel', { index, total })}
+            />
+          ) : current.output_url ? (
             current.output_media_type === 'audio' ? (
               <audio
                 src={current.output_url}
@@ -281,7 +333,9 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                   >
                     {current.progress}%
                   </p>
-                  <p className="text-sm text-text">{t(STAGE_LABEL[displayStage])}</p>
+                  <p className="text-sm text-text">
+                    {t(stageLabelKey(displayStage, current.operation))}
+                  </p>
                   {latestEvent?.message ? (
                     <p className="max-w-md text-sm text-muted">{latestEvent.message}</p>
                   ) : null}
@@ -326,11 +380,42 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                     >
                       {done ? <IconCheck className="size-2.5" /> : null}
                     </span>
-                    {t(STAGE_LABEL[stage])}
+                    {t(stageLabelKey(stage, current.operation))}
                   </li>
                 );
               })}
             </ol>
+
+            {isMultiViewCharacter && characterViews ? (
+              <ol className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                <li className="text-muted">
+                  {t('characterViewsTitle', {
+                    current: currentViewIndex + 1,
+                    total: characterViews.length,
+                  })}
+                </li>
+                {characterViews.map((view, index) => {
+                  const viewDone = index < currentViewIndex || current.status === 'succeeded';
+                  const viewActive = index === currentViewIndex && !finished && !viewDone;
+                  return (
+                    <li
+                      key={view}
+                      className={cn(
+                        'flex items-center gap-1 rounded-full border px-2 py-0.5',
+                        viewDone
+                          ? 'border-success text-success'
+                          : viewActive
+                            ? 'border-primary text-text'
+                            : 'border-border text-muted',
+                      )}
+                    >
+                      {viewDone ? <IconCheck className="size-2.5" /> : null}
+                      {tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewFront')}
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : null}
           </div>
 
           {current.status === 'failed' ? (
@@ -350,7 +435,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
           ) : null}
 
           {current.status === 'awaiting_input' && !current.cancel_requested ? (
-            <AwaitingInputPanel jobId={jobId} />
+            <AwaitingInputPanel key={jobId} jobId={jobId} />
           ) : null}
           {current.cancel_requested && !finished ? (
             <p role="status" className="text-sm text-muted">
@@ -375,6 +460,11 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                 onClick={() => router.push(`/publish/${current.draft_id}`)}
               >
                 {tJob('publish')}
+              </Button>
+            ) : null}
+            {canSaveCoverSkill ? (
+              <Button variant="secondary" onClick={openSaveCoverSkill}>
+                {t('saveCoverSkill')}
               </Button>
             ) : null}
             {!finished ? (
@@ -475,6 +565,56 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
         }
       >
         <p className="text-sm text-muted">{t('failedHint')}</p>
+      </Dialog>
+
+      <Dialog
+        open={savingCoverSkillOpen}
+        onClose={() => {
+          if (!coverSkillBusy) setSavingCoverSkillOpen(false);
+        }}
+        title={t('saveCoverSkillTitle')}
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => setSavingCoverSkillOpen(false)}
+              disabled={coverSkillBusy}
+            >
+              {tActions('cancel')}
+            </Button>
+            <Button
+              loading={coverSkillBusy}
+              disabled={coverSkillTitle.trim().length === 0}
+              onClick={() => void saveCoverSkill()}
+            >
+              {tActions('save')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-muted">{t('saveCoverSkillHint')}</p>
+          <TextInput
+            label={t('saveCoverSkillTitleLabel')}
+            required
+            maxLength={80}
+            value={coverSkillTitle}
+            onChange={(event) => setCoverSkillTitle(event.target.value)}
+          />
+          <TextArea
+            label={t('saveCoverSkillDescriptionLabel')}
+            maxLength={300}
+            value={coverSkillDescription}
+            onChange={(event) => setCoverSkillDescription(event.target.value)}
+          />
+          <AccessPriceField
+            value={coverSkillCredits}
+            onChange={setCoverSkillCredits}
+            label={tSkills('priceLabel')}
+            hint={tSkills('priceHint')}
+          />
+        </div>
       </Dialog>
     </div>
   );

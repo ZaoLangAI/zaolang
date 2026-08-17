@@ -68,7 +68,7 @@ def validate_endpoint(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
 def _validate_general(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
     started = time.perf_counter()
     client = llm_client.client_for_endpoint(endpoint)
-    target_model = endpoint.models[0] if endpoint.models else None
+    target_model = endpoint.model or None
 
     try:
         if target_model is None:

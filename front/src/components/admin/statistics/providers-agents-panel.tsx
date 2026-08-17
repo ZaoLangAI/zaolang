@@ -11,6 +11,7 @@ import type {
   ProviderStat,
   ProviderTimeseries,
 } from '@/lib/api/admin-types';
+import { formatMicroUsd } from '@/lib/admin/micro-usd';
 import { formatNumber } from '@/lib/format';
 
 export function ProvidersAgentsPanel({
@@ -90,7 +91,7 @@ export function ProvidersAgentsPanel({
                     {formatNumber(stat.p50_latency_ms, locale)}ms
                   </td>
                   <td className="tabular px-3 py-2.5 text-right text-xs text-muted">
-                    {formatNumber(stat.effective_cost, locale)}
+                    {formatMicroUsd(stat.effective_cost_micro_usd, 4)}
                   </td>
                 </tr>
               ))}

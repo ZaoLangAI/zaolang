@@ -10,11 +10,20 @@ import type { Locale } from '@/i18n/routing';
 
 const CATEGORY_LABEL_KEY: Record<
   CreationSkillSummary['category'],
-  'categoryScene' | 'categoryLens' | 'categoryStyle' | 'categoryOther'
+  | 'categoryScene'
+  | 'categoryLens'
+  | 'categoryStyle'
+  | 'categoryCharacter'
+  | 'categorySceneAsset'
+  | 'categoryCoverAsset'
+  | 'categoryOther'
 > = {
   scene: 'categoryScene',
   lens: 'categoryLens',
   style: 'categoryStyle',
+  character: 'categoryCharacter',
+  scene_asset: 'categorySceneAsset',
+  cover_asset: 'categoryCoverAsset',
   other: 'categoryOther',
 };
 

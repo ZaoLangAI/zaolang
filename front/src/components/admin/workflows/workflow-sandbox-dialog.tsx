@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
   SandboxRunInspector,
@@ -22,11 +22,40 @@ export type { SandboxTraceStep };
 const TIERS = ['preview', 'standard', 'cinematic'] as const;
 type Source = 'draft' | 'published';
 
-const REFERENCE_OPS = new Set(['image_to_image', 'image_to_video', 'video_to_video']);
+// `image_to_image` deliberately excluded — a reference is optional there,
+// the prompt is what's mandatory (see backend `canonical_operation`).
+const REFERENCE_OPS = new Set(['image_to_video', 'video_to_video']);
 const VIDEO_OPS = new Set(['text_to_video', 'image_to_video', 'video_to_video']);
 const VIDEO_DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
 const DEFAULT_VIDEO_DURATION = 8;
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
+
+/** Best-effort parse of the freeform params textarea — used only to preview
+ * which operation a dry-run will route as; `run()` re-parses for real and
+ * surfaces JSON errors properly. */
+function tryParseParams(paramsText: string): Record<string, unknown> {
+  if (!paramsText.trim()) return {};
+  try {
+    const parsed = JSON.parse(paramsText) as unknown;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The workflow editor merges `text_to_image`/`image_to_image` into one
+ * "图片创作" tab (see `WORKFLOW_EDITOR_OPERATIONS`) since they share a graph —
+ * attaching `reference_asset_ids` is what turns a dry-run into an edit, the
+ * same derivation the consumer studio does in `generation-studio.tsx`. This
+ * only matters for provider-capability routing (`execute_route_score` keys
+ * off the literal job operation); the graph itself is identical either way. */
+function deriveSandboxOperation(operation: string, params: Record<string, unknown>): string {
+  if (operation !== 'text_to_image') return operation;
+  const refs = params.reference_asset_ids;
+  return Array.isArray(refs) && refs.length > 0 ? 'image_to_image' : operation;
+}
 
 /**
  * Sandbox try-it dialog: form on the left, live node stream and final
@@ -35,12 +64,15 @@ const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
 export function WorkflowSandboxDialog({
   open,
   operation,
+  assetKind,
   draftGraph,
   onClose,
   onTrace,
 }: {
   open: boolean;
   operation: string;
+  /** Injected into `params.asset_kind` on run — see `operationHasAssetKinds`. */
+  assetKind?: string | null;
   draftGraph: WorkflowGraphJson;
   onClose: () => void;
   onTrace?: (trace: SandboxTraceStep[] | null) => void;
@@ -61,6 +93,11 @@ export function WorkflowSandboxDialog({
   const jobStatus = stream.detail?.status ?? stream.events.at(-1)?.status ?? null;
   const inFlight = Boolean(jobId) && (jobStatus == null || !TERMINAL.has(jobStatus));
 
+  const derivedOperation = useMemo(
+    () => deriveSandboxOperation(operation, tryParseParams(paramsText)),
+    [operation, paramsText],
+  );
+
   const run = async () => {
     let params: Record<string, unknown> = {};
     if (paramsText.trim()) {
@@ -79,6 +116,10 @@ export function WorkflowSandboxDialog({
     if (VIDEO_OPS.has(operation)) {
       params = { ...params, duration_seconds: durationSeconds };
     }
+    if (assetKind) {
+      params = { ...params, asset_kind: assetKind };
+    }
+    const effectiveOperation = deriveSandboxOperation(operation, params);
 
     setBusy(true);
     setError(null);
@@ -86,7 +127,7 @@ export function WorkflowSandboxDialog({
     onTrace?.(null);
     try {
       const outcome = await adminApi.post<{ job_id: string }>(
-        `/v1/admin/workflow-templates/${operation}/sandbox-run`,
+        `/v1/admin/workflow-templates/${effectiveOperation}/sandbox-run`,
         {
           prompt,
           quality_tier: qualityTier,
@@ -122,6 +163,9 @@ export function WorkflowSandboxDialog({
     >
       <div className="grid min-h-[28rem] gap-6 lg:grid-cols-2 lg:items-start lg:gap-8">
         <div className="flex flex-col gap-4">
+          {assetKind ? (
+            <p className="text-xs text-muted">{t('dryRunAssetKindHint', { kind: assetKind })}</p>
+          ) : null}
           <Select
             label={t('dryRunSource')}
             value={source}
@@ -162,9 +206,13 @@ export function WorkflowSandboxDialog({
             hint={
               REFERENCE_OPS.has(operation)
                 ? t('dryRunParamsHintReference')
-                : VIDEO_OPS.has(operation)
-                  ? t('dryRunParamsHintVideo')
-                  : t('dryRunParamsHint')
+                : operation === 'text_to_image'
+                  ? t('dryRunParamsHintImageCreation')
+                  : operation === 'image_to_image'
+                    ? t('dryRunParamsHintOptionalReference')
+                    : VIDEO_OPS.has(operation)
+                      ? t('dryRunParamsHintVideo')
+                      : t('dryRunParamsHint')
             }
             value={paramsText}
             maxLength={2000}
@@ -175,6 +223,13 @@ export function WorkflowSandboxDialog({
               setParamsError(null);
             }}
           />
+          {operation === 'text_to_image' ? (
+            <p className="text-xs text-muted">
+              {derivedOperation === 'image_to_image'
+                ? t('dryRunRouteAsImageToImage')
+                : t('dryRunRouteAsTextToImage')}
+            </p>
+          ) : null}
           <p className="text-xs text-muted">{t('dryRunCreditsHint')}</p>
           {error ? <ErrorNotice title={error} /> : null}
         </div>

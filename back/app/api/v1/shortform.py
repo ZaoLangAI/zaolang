@@ -23,6 +23,7 @@ from app.api.schemas.shortform import (
     ShortformProfileResponse,
     ShortformProfilesResponse,
 )
+from app.api.v1.prompt_enhance import context_from, enhanced_response
 from app.domain.errors import ValidationFailed
 from app.domain.shortform import service as shortform
 from app.models import PublicationIntent
@@ -91,16 +92,12 @@ def enhance_prompt(
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> PromptEnhanceResponse:
-    """把画面描述交给文案 Agent 评估详细度并润色，保留用户核心意图。"""
+    """把画面描述交给文案 Agent 逐维度诊断并润色，保留用户核心意图。"""
     _assert_shortform_enabled(session, user.id)
-    result = shortform.enhance_prompt(session, user_id=user.id, prompt=payload.prompt)
-    session.commit()
-    return PromptEnhanceResponse(
-        prompt=result.prompt,
-        detail_level=result.detail_level,
-        feedback=result.feedback,
-        degraded=result.degraded,
+    result = shortform.enhance_prompt(
+        session, user_id=user.id, prompt=payload.prompt, context=context_from(payload)
     )
+    return enhanced_response(session, result)
 
 
 @router.post("/shortform/prompt/clarify", response_model=PromptClarifyResponse)

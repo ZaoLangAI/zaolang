@@ -26,7 +26,7 @@ def _general_payload(**overrides: object) -> dict:
         "base_url": "https://gateway.invalid/v1",
         "api_key": "sk-test",
         "kind": "general",
-        "models": ["test-llm"],
+        "model": "test-llm",
         "role": "backup",
         "backup_order": 100,
         "max_concurrency": 4,
@@ -49,7 +49,6 @@ def _media_payload(
         "base_url": "https://aihubmix.invalid",
         "api_key": "sk-media",
         "kind": "media",
-        "models": [],
         "role": "backup",
         "backup_order": 100,
         "model": model,
@@ -139,6 +138,75 @@ def test_media_requires_a_model_name(client: TestClient, admin: User) -> None:
         json=_media_payload(model="", input_modalities=["text"], output_modalities=["image"]),
         headers=admin_header(admin),
     )
+    assert response.status_code == 422
+
+
+def test_a_general_endpoint_round_trips_its_context_limits_and_token_prices(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-priced",
+        _general_payload(
+            context_length=128_000,
+            max_output_tokens=16_384,
+            token_pricing={
+                "input_per_million_micro_usd": 60_000,
+                "output_per_million_micro_usd": 220_000,
+            },
+        ),
+    )
+
+    endpoint = body["endpoints"][0]
+    assert endpoint["context_length"] == 128_000
+    assert endpoint["max_output_tokens"] == 16_384
+    assert endpoint["token_pricing"]["input_per_million_micro_usd"] == 60_000
+    assert endpoint["token_pricing"]["output_per_million_micro_usd"] == 220_000
+
+
+def test_a_media_endpoint_keeps_only_the_prices_its_capabilities_can_bill(
+    client: TestClient, admin: User
+) -> None:
+    """The console submits all three sections; the server is what decides
+    which ones this endpoint can actually charge against."""
+    body = _upsert(
+        client,
+        admin,
+        "ep-image-priced",
+        _media_payload(
+            model="gpt-image-1",
+            input_modalities=["text"],
+            output_modalities=["image"],
+            media_pricing={
+                "image": {
+                    "input_per_image_micro_usd": 2_860,
+                    "generation_per_image_micro_usd": 25_350,
+                },
+                "audio": {"per_10k_characters_micro_usd": 141_000},
+                "video": {"generation_per_second_micro_usd": {"2K": 123_970}},
+            },
+        ),
+    )
+
+    pricing = body["endpoints"][0]["media_pricing"]
+    assert pricing["image"]["generation_per_image_micro_usd"] == 25_350
+    assert pricing["audio"] is None
+    assert pricing["video"] is None
+
+
+def test_an_unsupported_video_resolution_is_rejected(client: TestClient, admin: User) -> None:
+    response = client.put(
+        "/v1/admin/llm-providers/ep-bad-resolution",
+        json=_media_payload(
+            model="video-1",
+            input_modalities=["text"],
+            output_modalities=["video"],
+            media_pricing={"video": {"generation_per_second_micro_usd": {"4K": 123_970}}},
+        ),
+        headers=admin_header(admin),
+    )
+
     assert response.status_code == 422
 
 

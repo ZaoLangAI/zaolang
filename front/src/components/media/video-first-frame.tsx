@@ -41,20 +41,21 @@ export function VideoFirstFrame({
   onMediaSize?: (width: number, height: number) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [ready, setReady] = useState(!lazy);
+  // Only tracks the observer's "became visible" signal — a non-`lazy` element
+  // never needs it set, so `ready` below is derived rather than seeded from
+  // `lazy` and then reconciled again inside the effect.
+  const [visible, setVisible] = useState(false);
+  const ready = !lazy || visible;
 
   useEffect(() => {
-    if (!lazy) {
-      setReady(true);
-      return;
-    }
+    if (!lazy) return;
     const node = videoRef.current;
     if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
         observer.disconnect();
-        setReady(true);
+        setVisible(true);
       },
       { rootMargin: '80px', threshold: 0.01 },
     );

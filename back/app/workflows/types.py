@@ -21,6 +21,10 @@ class PipelineOutcome:
     status: JobStatus
     failure_code: str | None = None
     asset_id: str | None = None
+    # Every asset produced, in generation order — `asset_id` above is always
+    # `asset_ids[0]` when this is set. `None` for the overwhelming majority
+    # of jobs that only ever make one asset; see `GenerationJob.output_asset_ids_json`.
+    asset_ids: list[str] | None = None
 
 
 @dataclass(slots=True)

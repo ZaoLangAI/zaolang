@@ -19,7 +19,7 @@ TEST_LLM_ENDPOINT_ID = "test-general"
 def seed_test_llm_catalog(
     session: Session,
     *,
-    models: list[str] | None = None,
+    model: str = TEST_LLM_MODEL,
     endpoint_id: str = TEST_LLM_ENDPOINT_ID,
 ) -> None:
     current = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
@@ -32,7 +32,7 @@ def seed_test_llm_catalog(
         "base_url": "https://example.invalid/v1",
         "api_key": "test-key",
         "kind": "general",
-        "models": models or [TEST_LLM_MODEL],
+        "model": model,
         "role": "primary",
     }
     config_service.set_value(
@@ -50,15 +50,15 @@ def bind_default_agents_to_catalog(
     model: str = TEST_LLM_MODEL,
     endpoint_id: str = TEST_LLM_ENDPOINT_ID,
 ) -> None:
-    """Seeds nodes/profiles and pins every default agent to `model`."""
+    """Seeds nodes/profiles and pins every default agent to the endpoint
+    serving `model` — the endpoint is the binding, the model comes with it."""
     agent_skills_service.ensure_default_nodes(session)
     agent_skills_service.ensure_default_profiles(session)
-    seed_test_llm_catalog(session, models=[model], endpoint_id=endpoint_id)
+    seed_test_llm_catalog(session, model=model, endpoint_id=endpoint_id)
     for profile in agent_skills_service.list_profiles(session):
         if profile.is_default:
             agent_skills_service.update_profile(
                 session,
                 profile.id,
                 default_endpoint_id=endpoint_id,
-                model=model,
             )

@@ -10,6 +10,9 @@ from pydantic import Field, ValidationError, model_validator
 
 from app.api.schemas.common import ApiModel
 from app.models.enums import (
+    CHARACTER_JOB_VIEWS,
+    CharacterViewAngle,
+    ImageAssetKind,
     JobStatus,
     LedgerEntryType,
     MediaType,
@@ -18,6 +21,10 @@ from app.models.enums import (
     QualityTier,
 )
 from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
+
+IMAGE_OPERATIONS: frozenset[Operation] = frozenset(
+    {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
+)
 
 # Fixed voice roster for `audio_generation`, mirrored by the creative studio's
 # voice picker and passed through verbatim to the AiHubMix `/v1/audio/speech`
@@ -73,13 +80,22 @@ def validate_generation_params(
     aspect_ratio: str = "16:9",
     reference_asset_ids: Sequence[str] | None = None,
     character_ids: Sequence[str] | None = None,
+    scene_ids: Sequence[str] | None = None,
     video_options: VideoGenerationOptions | None = None,
+    asset_kind: ImageAssetKind | None = None,
     extra: Mapping[str, Any] | None = None,
 ) -> None:
     """Shared C-end / sandbox rules. Raises `ValueError` on illegal combinations."""
     references = list(reference_asset_ids or [])
     characters = list(character_ids or [])
+    scenes = list(scene_ids or [])
     extras = extra or {}
+    if (
+        asset_kind is not None
+        and asset_kind != ImageAssetKind.GENERAL
+        and operation not in IMAGE_OPERATIONS
+    ):
+        raise ValueError("asset_kind 仅适用于文生图/图生图。")
     if operation in VIDEO_OPERATIONS and duration_seconds <= 0:
         raise ValueError("视频生成必须指定时长。")
     if operation not in VIDEO_OPERATIONS and video_options is not None:
@@ -92,8 +108,8 @@ def validate_generation_params(
         if video_options.reference_mode == "frame_images":
             if not video_options.first_frame_asset_id:
                 raise ValueError("首尾帧模式必须提供首帧图片。")
-            if references or characters:
-                raise ValueError("首尾帧与普通参考素材、角色参考图互斥。")
+            if references or characters or scenes:
+                raise ValueError("首尾帧与普通参考素材、角色参考图、场景参考图互斥。")
             if operation != Operation.IMAGE_TO_VIDEO:
                 raise ValueError("首尾帧模式必须使用 image_to_video 操作。")
         elif video_options.first_frame_asset_id or video_options.last_frame_asset_id:
@@ -101,8 +117,11 @@ def validate_generation_params(
     has_frame_input = bool(video_options and video_options.first_frame_asset_id)
     if operation == Operation.IMAGE_TO_VIDEO and not references and not has_frame_input:
         raise ValueError("图生视频必须提供参考图。")
-    if operation == Operation.IMAGE_TO_IMAGE and not references:
-        raise ValueError("图生图必须提供参考图。")
+    # `image_to_image` does NOT require a reference — the prompt is what's
+    # mandatory; an attached image is optional extra context that rides
+    # along with it (see `workflow_templates_service.canonical_operation`).
+    # Whether the client calls this `text_to_image` or `image_to_image` is a
+    # runtime detail, not a different validation regime.
     if operation == Operation.AUDIO_GENERATION:
         voice = extras.get("voice")
         if voice not in AUDIO_VOICES:
@@ -140,10 +159,20 @@ def prepare_sandbox_generation_params(
         aspect_ratio=str(prepared.get("aspect_ratio") or "16:9"),
         reference_asset_ids=list(prepared.get("reference_asset_ids") or []),
         character_ids=list(prepared.get("character_ids") or []),
+        scene_ids=list(prepared.get("scene_ids") or []),
         video_options=options,
+        asset_kind=_parsed_asset_kind(prepared.get("asset_kind")),
         extra=prepared.get("extra") if isinstance(prepared.get("extra"), dict) else {},
     )
     return prepared
+
+
+def _parsed_asset_kind(raw: Any) -> ImageAssetKind | None:
+    if isinstance(raw, ImageAssetKind):
+        return raw
+    if isinstance(raw, str) and raw in {kind.value for kind in ImageAssetKind}:
+        return ImageAssetKind(raw)
+    return None
 
 
 class GenerationParams(ApiModel):
@@ -162,6 +191,10 @@ class GenerationParams(ApiModel):
     # descriptions are merged into `reference_asset_ids` / `extra` in
     # `characters.service.apply_character_refs` before the job is priced.
     character_ids: list[str] = Field(default_factory=list, max_length=4)
+    # Settings picked from the scene library. Their reference stills/clips are
+    # merged into `reference_asset_ids` in `scenes.service.apply_scene_refs`,
+    # sharing the same 9-slot budget with `character_ids`' references above.
+    scene_ids: list[str] = Field(default_factory=list, max_length=4)
     # Which `CreationSkill`s (if any) the client applied to this request, in
     # pick order. Not trusted blindly: the `skill_context` workflow node
     # re-fetches and re-merges each skill's own params server-side before
@@ -171,13 +204,63 @@ class GenerationParams(ApiModel):
     # unlike `skill_ids`. The same `skill_context` node re-fetches it so a
     # bare API client that never merged locally still gets `prompt_suffix`.
     style_gallery_id: str | None = Field(default=None, max_length=40)
+    # What a `text_to_image`/`image_to_image` output is *for* — orthogonal to
+    # `operation`. Selects both which `GenerationWorkflowTemplate` runs
+    # (`workflow_templates_service.get_active`) and, for `CHARACTER`/`SCENE`,
+    # which asset the successful output(s) auto-attach to
+    # (`app.workflows.nodes.execute_asset_output_link`). Meaningless (and
+    # rejected — see `validate_generation_params`) for any other operation.
+    asset_kind: ImageAssetKind = ImageAssetKind.GENERAL
+    # Only meaningful when `asset_kind == CHARACTER`: which of front/side/back
+    # this job produces, one at a time (`app.workflows.nodes
+    # .execute_asset_output_advance` loops the shared graph back to
+    # `asset_planning` between each). Defaults to `["front"]` when omitted —
+    # a plain single-view request. A "补全侧面/背面" completion request names
+    # `["side", "back"]` explicitly, producing both from one job.
+    character_views: list[CharacterViewAngle] | None = Field(default=None, max_length=3)
+    # The character skill / scene to auto-attach this job's output(s) to, for
+    # `asset_kind == CHARACTER` / `== SCENE` respectively. Left unset, a
+    # `CHARACTER` job creates a brand-new character skill named after the
+    # plan's subject instead of updating an existing one.
+    target_character_id: str | None = Field(default=None, max_length=40)
+    target_scene_id: str | None = Field(default=None, max_length=40)
+    # Lets the client opt out of `execute_asset_output_link` entirely — e.g.
+    # borrowing an existing character's front view for side/back consistency
+    # without also writing the new output back into that character's roster.
+    # Ignored (treated as `True`) when `asset_kind` is `GENERAL`, since that
+    # node is already a no-op in that case.
+    auto_attach_asset: bool = True
     extra: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _character_views_scoped_to_character_kind(self) -> GenerationParams:
+        if self.asset_kind != ImageAssetKind.CHARACTER:
+            if self.character_views:
+                raise ValueError("character_views 仅适用于 asset_kind=character。")
+            return self
+        views = self.character_views or [CharacterViewAngle.FRONT]
+        deduped: list[CharacterViewAngle] = []
+        for view in views:
+            if view == CharacterViewAngle.GENERAL:
+                raise ValueError("character_views 只能是 front/side/back。")
+            if view not in deduped:
+                deduped.append(view)
+        # Canonical order regardless of what the caller listed, matching
+        # `execute_asset_output_advance`'s own front → side → back walk.
+        self.character_views = [view for view in CHARACTER_JOB_VIEWS if view in deduped]
+        return self
 
 
 class QuoteRequest(ApiModel):
     operation: Operation
     quality_tier: QualityTier
     duration_seconds: int = Field(default=0, ge=0, le=MAX_GENERATION_DURATION_SECONDS)
+    # Same fields `GenerationParams` carries — optional here so a quote taken
+    # before the rest of the form is filled in still prices correctly.
+    # `character_views` having more than one entry is what makes a "补全
+    # 侧面/背面" completion job cost more than one image (see `pricing.quote`).
+    asset_kind: ImageAssetKind = ImageAssetKind.GENERAL
+    character_views: list[CharacterViewAngle] | None = Field(default=None, max_length=3)
 
 
 class QuoteResponse(ApiModel):
@@ -206,7 +289,9 @@ class GenerationJobCreateRequest(ApiModel):
             aspect_ratio=self.params.aspect_ratio,
             reference_asset_ids=self.params.reference_asset_ids,
             character_ids=self.params.character_ids,
+            scene_ids=self.params.scene_ids,
             video_options=self.params.video_options,
+            asset_kind=self.params.asset_kind,
             extra=self.params.extra,
         )
         return self
@@ -273,7 +358,12 @@ class RoutingCandidate(ApiModel):
     filter_reason: str | None = None
     success_rate: float = 0.0
     avg_latency_ms: int = 0
-    effective_cost: int = 0
+    # Micro-USD (1e-6 USD): a typical call's retry-amplified cost, and what
+    # this particular request was projected to cost.
+    effective_cost_micro_usd: int = 0
+    estimated_cost_micro_usd: int = 0
+    # Both figures came from a built-in prior, not a configured price.
+    cost_is_estimated: bool = False
 
 
 class JobEventResponse(ApiModel):
@@ -284,6 +374,12 @@ class JobEventResponse(ApiModel):
     message: str
     internal_code: str | None = None
     created_at: dt.datetime
+    # Which graph node actually wrote this event (see `zaolang-generation-jobs`
+    # invariant #13). Already carried by the admin stream; exposed here too so
+    # a multi-view `CHARACTER` job's client can tell an `asset_planning` re-entry
+    # (one per produced view) apart from every other `planning`-type event,
+    # without matching on `message` text.
+    node_id: str | None = None
 
 
 class GenerationJobResponse(ApiModel):
@@ -300,7 +396,28 @@ class GenerationJobResponse(ApiModel):
     output_asset_id: str | None = None
     output_url: str | None = None
     output_media_type: MediaType | None = None
+    # Every asset the job produced, in generation order — `output_asset_id`/
+    # `output_url` above are always this list's first entry. `None` for the
+    # overwhelming majority of jobs that only ever made one asset; more than
+    # one only for an `asset_kind=character` job whose `character_views`
+    # named more than one view (see `execute_asset_output_advance`).
+    output_asset_ids: list[str] | None = None
+    output_urls: list[str] | None = None
+    # Echoes `GenerationParams.asset_kind` back so a client can, e.g., offer
+    # "save as a shareable cover skill" on a succeeded `cover` job's detail
+    # page without having kept the original request around.
+    asset_kind: ImageAssetKind | None = None
+    # Echoes `GenerationParams.character_views` back — only meaningful with
+    # `asset_kind=character`. Lets a client show upfront how many views this
+    # job produces (e.g. "第 2/3 张") without re-deriving it from the event
+    # stream, and to label `output_asset_ids`/`output_urls`' entries, which
+    # are recorded in the same front → side → back order as this list.
+    character_views: list[CharacterViewAngle] | None = None
     draft_id: str | None = None
+    # Echoes `GenerationParams.prompt` back. Lets a client (the image studio's
+    # inline version-history strip) show what prompt produced each past
+    # iteration without keeping a separate client-side copy of the request.
+    prompt: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None
     cancel_requested: bool = False

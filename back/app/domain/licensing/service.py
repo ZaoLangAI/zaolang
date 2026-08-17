@@ -70,8 +70,7 @@ def can_view(work: Work, viewer_user_id: str | None, viewer_is_staff: bool = Fal
 def visibility_allows_remix(work: Work) -> bool:
     """Whether the work is offered for remix, ignoring price and grants."""
     return (
-        work.lifecycle_status == LifecycleStatus.ACTIVE
-        and Visibility(work.visibility).allows_remix
+        work.lifecycle_status == LifecycleStatus.ACTIVE and Visibility(work.visibility).allows_remix
     )
 
 

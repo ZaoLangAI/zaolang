@@ -68,10 +68,16 @@ export function SandboxRunInspector({
     onTrace?.(trace.length ? trace : null);
   }, [trace, onTrace]);
 
-  useEffect(() => {
+  // Adjusted during render — the React-documented "storing information from
+  // previous renders" pattern (a ref can't be read/written during render) —
+  // rather than in an effect, so switching jobs never flashes the previous
+  // one's selection before a reset effect would have caught up.
+  const [previousJobId, setPreviousJobId] = useState(jobId);
+  if (previousJobId !== jobId) {
+    setPreviousJobId(jobId);
     setSelectedSequence(null);
     setInspectDetail(null);
-  }, [jobId]);
+  }
 
   useEffect(() => {
     if (!jobId || !selectedNodeId) return;
@@ -229,7 +235,7 @@ export function SandboxRunInspector({
       ) : null}
 
       {jobId && jobStatus === 'awaiting_input' ? (
-        <AwaitingInputPanel jobId={jobId} client={adminApi} basePath="/v1/admin/jobs" />
+        <AwaitingInputPanel key={jobId} jobId={jobId} client={adminApi} basePath="/v1/admin/jobs" />
       ) : null}
     </>
   );

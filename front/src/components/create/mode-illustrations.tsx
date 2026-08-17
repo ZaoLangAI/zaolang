@@ -27,19 +27,6 @@ function Scene({ className, children }: IllustrationProps & { children: React.Re
   );
 }
 
-/** A frame with a mountain-and-sun snapshot, sparking into being from text. */
-export function TextToImageIllustration(props: IllustrationProps) {
-  return (
-    <Scene {...props}>
-      <rect x="44" y="18" width="82" height="56" rx="6" fillOpacity="0.06" fill="currentColor" />
-      <circle cx="68" cy="38" r="6" />
-      <path d="M50 62 68 44l12 12 10-10 18 16" />
-      <path d="M18 30h16M18 40h22M18 50h14" strokeOpacity="0.55" />
-      <path d="M132 22 135.4 29.5 143 32.8 135.4 36.1 132 43.5 128.6 36.1 121 32.8 128.6 29.5Z" />
-    </Scene>
-  );
-}
-
 /** A film frame with a play mark, unspooling from the same text lines. */
 export function TextToVideoIllustration(props: IllustrationProps) {
   return (
@@ -70,16 +57,19 @@ export function ImageToVideoIllustration(props: IllustrationProps) {
   );
 }
 
-/** Two overlapping frames with a wand redrawing the top one. */
-export function ImageToImageIllustration(props: IllustrationProps) {
+/** A character bust portrait beside a small landscape frame, standing in for
+ * the three asset purposes this card fans out to (character views, scene
+ * stills, covers) once inside the studio. */
+export function ImageCreationIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>
-      <rect x="18" y="30" width="70" height="50" rx="6" fillOpacity="0.05" fill="currentColor" />
-      <rect x="40" y="16" width="70" height="50" rx="6" fillOpacity="0.08" fill="currentColor" />
-      <circle cx="60" cy="32" r="5" />
-      <path d="M46 54 60 40l8 8 8-8 10 8" />
-      <path d="M118 58 132 44" />
-      <path d="M136 40 138 44 142 46 138 48 136 52 134 48 130 46 134 44Z" fill="currentColor" />
+      <rect x="16" y="12" width="62" height="76" rx="8" fillOpacity="0.06" fill="currentColor" />
+      <circle cx="47" cy="38" r="12" />
+      <path d="M27 80c2-17 10-25 20-25s18 8 20 25" />
+      <rect x="92" y="24" width="54" height="40" rx="6" fillOpacity="0.06" fill="currentColor" />
+      <circle cx="112" cy="36" r="4" />
+      <path d="M98 56 112 42l8 8 10-10 14 12" />
+      <path d="M132 10 135.4 17.5 143 20.8 135.4 24.1 132 31.5 128.6 24.1 121 20.8 128.6 17.5Z" />
     </Scene>
   );
 }
@@ -117,8 +107,26 @@ export function ShortformIllustration(props: IllustrationProps) {
       <path d="M74 10h12" strokeWidth="3" strokeOpacity="0.6" />
       <circle cx="80" cy="42" r="13" />
       <path d="M76 35 90 42 76 49Z" fill="currentColor" strokeLinejoin="round" />
-      <rect x="66" y="66" width="28" height="4" rx="2" fill="currentColor" stroke="none" fillOpacity="0.5" />
-      <rect x="66" y="74" width="18" height="4" rx="2" fill="currentColor" stroke="none" fillOpacity="0.35" />
+      <rect
+        x="66"
+        y="66"
+        width="28"
+        height="4"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.5"
+      />
+      <rect
+        x="66"
+        y="74"
+        width="18"
+        height="4"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.35"
+      />
     </Scene>
   );
 }
@@ -129,11 +137,84 @@ export function DramaIllustration(props: IllustrationProps) {
     <Scene {...props}>
       <rect x="58" y="8" width="44" height="52" rx="8" fillOpacity="0.06" fill="currentColor" />
       <path d="M72 8h16" strokeWidth="3" strokeOpacity="0.55" />
-      <rect x="18" y="70" width="28" height="12" rx="2" fill="currentColor" stroke="none" fillOpacity="0.45" />
-      <rect x="50" y="70" width="40" height="12" rx="2" fill="currentColor" stroke="none" fillOpacity="0.75" />
-      <rect x="94" y="70" width="22" height="12" rx="2" fill="currentColor" stroke="none" fillOpacity="0.4" />
-      <rect x="120" y="70" width="22" height="12" rx="2" fill="currentColor" stroke="none" fillOpacity="0.55" />
+      <rect
+        x="18"
+        y="70"
+        width="28"
+        height="12"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.45"
+      />
+      <rect
+        x="50"
+        y="70"
+        width="40"
+        height="12"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.75"
+      />
+      <rect
+        x="94"
+        y="70"
+        width="22"
+        height="12"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.4"
+      />
+      <rect
+        x="120"
+        y="70"
+        width="22"
+        height="12"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.55"
+      />
       <path d="M18 88h124" strokeOpacity="0.35" />
+    </Scene>
+  );
+}
+
+/** A script page with lines of text, alongside a chat bubble for the
+ * conversation that refines it. */
+export function ScriptIllustration(props: IllustrationProps) {
+  return (
+    <Scene {...props}>
+      <rect x="18" y="10" width="70" height="80" rx="6" fillOpacity="0.06" fill="currentColor" />
+      <path d="M30 26h46M30 36h46M30 46h30" strokeOpacity="0.55" />
+      <rect
+        x="30"
+        y="58"
+        width="34"
+        height="4"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.5"
+      />
+      <rect
+        x="30"
+        y="68"
+        width="20"
+        height="4"
+        rx="2"
+        fill="currentColor"
+        stroke="none"
+        fillOpacity="0.35"
+      />
+      <path
+        d="M104 20h30a8 8 0 0 1 8 8v14a8 8 0 0 1-8 8h-14l-10 10v-10h-6a8 8 0 0 1-8-8V28a8 8 0 0 1 8-8Z"
+        fillOpacity="0.08"
+        fill="currentColor"
+      />
+      <path d="M114 32h20M114 40h14" strokeOpacity="0.6" />
     </Scene>
   );
 }

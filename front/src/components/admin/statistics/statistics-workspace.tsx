@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 import { ContentPanel } from '@/components/admin/statistics/content-panel';
+import { CostsPanel } from '@/components/admin/statistics/costs-panel';
 import { CreditsPanel } from '@/components/admin/statistics/credits-panel';
 import { JobsPanel } from '@/components/admin/statistics/jobs-panel';
 import { OverviewPanel } from '@/components/admin/statistics/overview-panel';
@@ -15,6 +16,8 @@ import type {
   AgentTimeseries,
   AgentUsage,
   ContentTimeseries,
+  CostBreakdown,
+  CostTimeseries,
   CreditFlowTimeseries,
   JobStats,
   JobsTimeseries,
@@ -25,7 +28,7 @@ import type {
   UserGrowthTimeseries,
 } from '@/lib/api/admin-types';
 
-const TABS = ['overview', 'jobs', 'providers', 'credits', 'content', 'users'] as const;
+const TABS = ['overview', 'jobs', 'providers', 'costs', 'credits', 'content', 'users'] as const;
 type Tab = (typeof TABS)[number];
 
 const RANGES = [7, 30, 90] as const;
@@ -35,6 +38,8 @@ interface Timeseries {
   jobs: JobsTimeseries;
   providers: ProviderTimeseries;
   agents: AgentTimeseries;
+  costs: CostTimeseries;
+  costBreakdown: CostBreakdown;
   credits: CreditFlowTimeseries;
   content: ContentTimeseries;
   users: UserGrowthTimeseries;
@@ -82,25 +87,32 @@ export function StatisticsWorkspace({
       adminApi.get<JobsTimeseries>('/v1/admin/statistics/jobs', { query }),
       adminApi.get<ProviderTimeseries>('/v1/admin/statistics/providers', { query }),
       adminApi.get<AgentTimeseries>('/v1/admin/statistics/agents', { query }),
+      adminApi.get<CostTimeseries>('/v1/admin/statistics/costs', { query }),
+      adminApi.get<CostBreakdown>('/v1/admin/statistics/costs/breakdown', { query }),
       adminApi.get<CreditFlowTimeseries>('/v1/admin/statistics/credits', { query }),
       adminApi.get<ContentTimeseries>('/v1/admin/statistics/content', { query }),
       adminApi.get<UserGrowthTimeseries>('/v1/admin/statistics/users', { query }),
-    ]).then(([jobs, providers, agents, credits, content, users]) => {
+    ]).then(([jobs, providers, agents, costs, costBreakdown, credits, content, users]) => {
       if (cancelled) return;
-      setFetched({ range, series: { jobs, providers, agents, credits, content, users } });
+      setFetched({
+        range,
+        series: { jobs, providers, agents, costs, costBreakdown, credits, content, users },
+      });
     });
     return () => {
       cancelled = true;
     };
   }, [range, initialRange]);
 
-  const series = range === initialRange || fetched?.range !== range ? initialSeries : fetched.series;
+  const series =
+    range === initialRange || fetched?.range !== range ? initialSeries : fetched.series;
   const loading = range !== initialRange && fetched?.range !== range;
 
   const labels: Record<Tab, string> = {
     overview: t('tabOverview'),
     jobs: t('tabJobs'),
     providers: t('tabProviders'),
+    costs: t('tabCosts'),
     credits: t('tabCredits'),
     content: t('tabContent'),
     users: t('tabUsers'),
@@ -140,9 +152,7 @@ export function StatisticsWorkspace({
                   onClick={() => setRange(option)}
                   className={cn(
                     'rounded-full px-3 py-1 text-xs transition-colors',
-                    range === option
-                      ? 'bg-primary text-on-primary'
-                      : 'text-muted hover:text-text',
+                    range === option ? 'bg-primary text-on-primary' : 'text-muted hover:text-text',
                   )}
                 >
                   {t(`range${option}d` as 'range7d' | 'range30d' | 'range90d')}
@@ -171,6 +181,9 @@ export function StatisticsWorkspace({
           providerSeries={series.providers}
           agentSeries={series.agents}
         />
+      ) : null}
+      {tab === 'costs' ? (
+        <CostsPanel timeseries={series.costs} breakdown={series.costBreakdown} />
       ) : null}
       {tab === 'credits' ? (
         <CreditsPanel reconciliation={reconciliation} timeseries={series.credits} />

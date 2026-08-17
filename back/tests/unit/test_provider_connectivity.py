@@ -18,7 +18,7 @@ def _general(**overrides: object) -> LlmProviderEndpoint:
         "base_url": "https://gateway.invalid/v1",
         "api_key": "secret",
         "kind": "general",
-        "models": ["model-a"],
+        "model": "model-a",
     }
     values.update(overrides)
     return LlmProviderEndpoint.model_validate(values)
@@ -38,7 +38,7 @@ def _media(**overrides: object) -> LlmProviderEndpoint:
     return LlmProviderEndpoint.model_validate(values)
 
 
-def test_general_probe_uses_the_first_configured_model_and_production_request_shape(
+def test_general_probe_uses_the_configured_model_and_production_request_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_client = object()
@@ -52,7 +52,7 @@ def test_general_probe_uses_the_first_configured_model_and_production_request_sh
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))])
 
     monkeypatch.setattr(connectivity.llm_client, "call_gateway_once", fake_call)
-    result = connectivity.validate_endpoint(_general(models=["first", "second"]))
+    result = connectivity.validate_endpoint(_general(model="first"))
 
     assert result.usable is True
     assert result.target_model == "first"
@@ -61,9 +61,24 @@ def test_general_probe_uses_the_first_configured_model_and_production_request_sh
     assert captured["expect_json"] is False
 
 
-def test_general_endpoint_requires_at_least_one_declared_model() -> None:
+def test_general_endpoint_requires_a_declared_model() -> None:
     with pytest.raises(ValueError):
-        _general(models=[])
+        _general(model="")
+
+
+def test_a_legacy_multi_model_endpoint_collapses_to_its_first_model() -> None:
+    """Config written before one-model-per-endpoint must still load."""
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "General",
+            "base_url": "https://gateway.invalid/v1",
+            "api_key": "secret",
+            "kind": "general",
+            "models": ["first", "second"],
+        }
+    )
+
+    assert endpoint.model == "first"
 
 
 def test_media_video_probe_uses_official_h3_shape_without_undocumented_cancel(
@@ -144,7 +159,9 @@ def test_media_image_to_image_probe_sends_a_data_uri_not_multipart(
     def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
         calls.append((path, kwargs))
         request = httpx.Request("POST", f"https://media.invalid{path}")
-        return httpx.Response(200, json={"data": [{"url": "https://cdn.invalid/out.png"}]}, request=request)
+        return httpx.Response(
+            200, json={"data": [{"url": "https://cdn.invalid/out.png"}]}, request=request
+        )
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     result = connectivity.validate_endpoint(

@@ -34,7 +34,7 @@ from app.domain.agent_skills import presets
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import AgentNode, AgentProfile, AgentSkill
 from app.models.base import utcnow
-from app.models.enums import Operation
+from app.models.enums import AgentName, ImageAssetKind, Operation
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
@@ -42,6 +42,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PROFILE_KEY = "default"
 UNSET_BINDING = object()
+
+# `default_for_asset_kind` only makes sense for the role that runs "AI 润色"
+# (`app.agents.copywriter.enhance_prompt`) and only for the three
+# `ImageAssetKind` values that have a roster/library of their own — `general`
+# image jobs, and every non-image operation, keep using the role's ordinary
+# `is_default` agent instead of a kind-specific one.
+ASSET_KIND_AGENT_ROLE = AgentName.COPY.value
+ASSET_KIND_BUCKETS: frozenset[str] = frozenset(
+    {ImageAssetKind.CHARACTER.value, ImageAssetKind.SCENE.value, ImageAssetKind.COVER.value}
+)
 
 # The roles the shipped pipeline invokes by name.
 DEFAULT_NODES: list[dict[str, Any]] = [
@@ -181,9 +191,9 @@ def create_profile(
     is_default: bool = False,
     default_endpoint_id: str | None = None,
     backup_endpoint_id: str | None = None,
-    model: str | None = None,
     reasoning_model: bool | None = None,
     allow_unbound_default: bool = False,
+    default_for_asset_kind: str | None = None,
 ) -> AgentProfile:
     """Creates one agent under a preset role.
 
@@ -201,6 +211,7 @@ def create_profile(
         description=description,
         operations_json=_validated_operations(operations),
         is_default=False,
+        default_for_asset_kind=None,
         enabled=True,
         created_at=utcnow(),
     )
@@ -209,7 +220,6 @@ def create_profile(
         row,
         default_endpoint_id=default_endpoint_id,
         backup_endpoint_id=backup_endpoint_id,
-        model=model,
         reasoning_model=reasoning_model,
     )
     if (
@@ -222,6 +232,9 @@ def create_profile(
     session.flush()
     if is_default or default_profile(session, role) is None:
         _promote_default(session, row)
+    if default_for_asset_kind is not None:
+        bucket = _validated_asset_kind_bucket(role, default_for_asset_kind)
+        _promote_default_for_asset_kind(session, row, bucket)
     return row
 
 
@@ -236,14 +249,20 @@ def update_profile(
     enabled: bool | None = None,
     default_endpoint_id: str | None = None,
     backup_endpoint_id: str | None = None,
-    model: str | None = None,
     reasoning_model: bool | object | None = UNSET_BINDING,
+    default_for_asset_kind: str | object | None = UNSET_BINDING,
 ) -> AgentProfile:
     """Edits an agent's metadata.
 
     `role` is immutable because a graph binds an agent for a specific stage
     and changing the role underneath it would run the wrong kind of agent
-    there. `key` is immutable so audit history stays legible."""
+    there. `key` is immutable so audit history stays legible.
+
+    `default_for_asset_kind` follows `reasoning_model`'s tri-state: the
+    sentinel default leaves it untouched, an explicit `None` clears it, and a
+    bucket value both validates and promotes it (clearing any other profile
+    that held that bucket, the same way `is_default` clears its siblings).
+    """
     row = get_profile(session, profile_id)
     if display_name is not None:
         row.display_name = display_name
@@ -256,7 +275,6 @@ def update_profile(
         row,
         default_endpoint_id=default_endpoint_id,
         backup_endpoint_id=backup_endpoint_id,
-        model=model,
         reasoning_model=reasoning_model,
     )
     if enabled is not None:
@@ -269,6 +287,12 @@ def update_profile(
         _promote_default(session, row)
     elif is_default is False and row.is_default:
         raise ValidationFailed("请把另一个智能体设为默认，而不是取消当前默认智能体。")
+    if default_for_asset_kind is not UNSET_BINDING:
+        if isinstance(default_for_asset_kind, str):
+            bucket = _validated_asset_kind_bucket(row.role, default_for_asset_kind)
+            _promote_default_for_asset_kind(session, row, bucket)
+        else:
+            row.default_for_asset_kind = None
     session.flush()
     return row
 
@@ -298,15 +322,18 @@ def _apply_bindings(
     *,
     default_endpoint_id: str | None,
     backup_endpoint_id: str | None,
-    model: str | None,
     reasoning_model: bool | object | None,
 ) -> None:
-    """Validates and writes an agent's model bindings.
+    """Validates and writes an agent's provider bindings.
 
     `None` means "leave as is" on every argument, following the rest of
-    `update_profile`. An **empty string** is how a caller clears a model pin —
+    `update_profile`. An **empty string** is how a caller clears a pin —
     without that distinction there would be no way to go back to the shared
     pool once an endpoint had been pinned.
+
+    There is no model argument: an endpoint declares exactly one model, so
+    picking the provider picks the model. The backup is free to serve a
+    different one, which is the whole point of having a backup.
 
     `max_tokens`/`temperature_milli` are deliberately not parameters here: an
     operator no longer fills them in. A bound model gets the generic sampling
@@ -327,22 +354,6 @@ def _apply_bindings(
         raise ValidationFailed("备用模型不能与默认模型相同。")
     if row.backup_endpoint_id is not None and row.default_endpoint_id is None:
         raise ValidationFailed("先选择默认模型，才能配置备用模型。")
-
-    if model is not None:
-        row.model = model.strip() or None
-    if row.model is not None:
-        bound_ids = [
-            endpoint_id
-            for endpoint_id in (row.default_endpoint_id, row.backup_endpoint_id)
-            if endpoint_id
-        ]
-        for endpoint_id in bound_ids:
-            endpoint = endpoints[endpoint_id]
-            if row.model not in endpoint.models:
-                raise ValidationFailed(f"供应商 {endpoint.name} 不支持模型 {row.model}。")
-    elif row.default_endpoint_id is not None:
-        endpoint = endpoints[row.default_endpoint_id]
-        row.model = endpoint.models[0]
 
     row.max_tokens = None
     row.temperature_milli = None
@@ -369,6 +380,48 @@ def _promote_default(session: Session, row: AgentProfile) -> None:
         .values(is_default=False)
     )
     row.is_default = True
+    session.flush()
+
+
+def default_profile_for_asset_kind(session: Session, role: str, kind: str) -> AgentProfile | None:
+    """The `role`'s agent that "AI 润色" should route to for this image kind.
+
+    Returns `None` for an unrecognised or unconfigured kind — the caller
+    (`app.agents.copywriter.enhance_prompt`) falls back to `default_profile`
+    in that case, exactly as if no `asset_kind` had been supplied at all.
+    """
+    if kind not in ASSET_KIND_BUCKETS:
+        return None
+    return session.scalar(
+        select(AgentProfile).where(
+            AgentProfile.role == role,
+            AgentProfile.enabled.is_(True),
+            AgentProfile.default_for_asset_kind == kind,
+        )
+    )
+
+
+def _validated_asset_kind_bucket(role: str, kind: str) -> str:
+    if role != ASSET_KIND_AGENT_ROLE:
+        raise ValidationFailed(
+            f"只有 {ASSET_KIND_AGENT_ROLE} 角色的智能体可以设为资产类型专属默认。"
+        )
+    if kind not in ASSET_KIND_BUCKETS:
+        raise ValidationFailed(f"未知的资产类型: {kind}，可选值为 {sorted(ASSET_KIND_BUCKETS)}。")
+    return kind
+
+
+def _promote_default_for_asset_kind(session: Session, row: AgentProfile, kind: str) -> None:
+    session.execute(
+        update(AgentProfile)
+        .where(
+            AgentProfile.role == row.role,
+            AgentProfile.default_for_asset_kind == kind,
+            AgentProfile.id != row.id,
+        )
+        .values(default_for_asset_kind=None)
+    )
+    row.default_for_asset_kind = kind
     session.flush()
 
 

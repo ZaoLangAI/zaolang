@@ -4,19 +4,54 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import { IconClose, IconPlus, IconUpload } from '@/components/ui/icons';
-import { Card, EmptyState } from '@/components/ui/primitives';
+import { Badge, type BadgeTone, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
-import { api } from '@/lib/api/client';
+import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character } from '@/lib/api/types';
+import type { Character, CreationSkillStatus, GenerationJob } from '@/lib/api/types';
 import { uploadFile } from '@/lib/upload';
 
 const MAX_REFERENCE_ASSETS = 4;
+
+/** Terminal `JobStatus` values — anything else means the completion job
+ * (see `completeViews` below) is still in flight. */
+const TERMINAL_JOB_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
+const COMPLETION_POLL_INTERVAL_MS = 3000;
+const COMPLETION_POLL_MAX_ATTEMPTS = 40;
+
+const VIEW_LABEL_KEY: Record<string, 'viewFront' | 'viewSide' | 'viewBack'> = {
+  front: 'viewFront',
+  side: 'viewSide',
+  back: 'viewBack',
+};
+
+// Reuses `skillLibrary`'s own status vocabulary rather than duplicating it —
+// a character is a `CreationSkillCategory.CHARACTER` skill under the hood
+// (see `app.domain.characters.service.CharacterView`), so "draft / pending
+// review / published / rejected" means exactly the same thing here.
+const STATUS_TONE: Record<CreationSkillStatus, BadgeTone> = {
+  draft: 'neutral',
+  pending_review: 'amber',
+  published: 'success',
+  rejected: 'danger',
+};
+
+const STATUS_LABEL_KEY: Record<
+  CreationSkillStatus,
+  'statusDraft' | 'statusPendingReview' | 'statusPublished' | 'statusRejected'
+> = {
+  draft: 'statusDraft',
+  pending_review: 'statusPendingReview',
+  published: 'statusPublished',
+  rejected: 'statusRejected',
+};
 
 /** Only what the form needs to render a thumbnail and send an id back. */
 interface ReferenceImage {
@@ -29,6 +64,7 @@ interface CharacterForm {
   description: string;
   voiceDescription: string;
   referenceAssets: ReferenceImage[];
+  accessCredits: number;
 }
 
 const EMPTY_FORM: CharacterForm = {
@@ -36,6 +72,7 @@ const EMPTY_FORM: CharacterForm = {
   description: '',
   voiceDescription: '',
   referenceAssets: [],
+  accessCredits: 0,
 };
 
 /**
@@ -60,6 +97,14 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const tSkills = useTranslations('skillLibrary');
+  const [publishTarget, setPublishTarget] = useState<Character | null>(null);
+  const [portraitConsent, setPortraitConsent] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
+
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
@@ -73,10 +118,11 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       name: character.name,
       description: character.description ?? '',
       voiceDescription: character.voice_description ?? '',
-      referenceAssets: (character.reference_asset_ids ?? []).map((id, index) => ({
-        id,
-        url: character.reference_asset_urls?.[index] ?? '',
+      referenceAssets: (character.reference_assets ?? []).map((asset) => ({
+        id: asset.asset_id,
+        url: asset.url ?? '',
       })),
+      accessCredits: character.access_credits,
     });
     setFormError(null);
     setSheetOpen(true);
@@ -124,11 +170,26 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         reference_asset_ids: form.referenceAssets.map((asset) => asset.id),
         voice_description: form.voiceDescription.trim() || null,
       };
-      const saved = editing
+      let saved = editing
         ? await api.patch<Character>(`/v1/characters/${editing.id}`, payload)
         : await api.post<Character>('/v1/characters', payload);
+      // Pricing goes through the generic skill endpoint (a character is a
+      // `CreationSkill` under the hood and shares its id), which responds
+      // with a `CreationSkillDetail`, not a `CharacterResponse` — refetch
+      // the character shape rather than trust that response. Only called
+      // when the price actually changed, since `update_pricing` never
+      // unpublishes (unlike the content patch above) and a plain content
+      // edit shouldn't touch it.
+      if (form.accessCredits !== (editing?.access_credits ?? 0)) {
+        await api.patch(`/v1/skills/${saved.id}/pricing`, {
+          access_credits: form.accessCredits,
+        });
+        saved = await api.get<Character>(`/v1/characters/${saved.id}`);
+      }
       setCharacters((current) =>
-        editing ? current.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...current],
+        editing
+          ? current.map((item) => (item.id === saved.id ? saved : item))
+          : [saved, ...current],
       );
       setSheetOpen(false);
     } catch (caught) {
@@ -147,6 +208,119 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       notify(tStates('error'), 'error');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const openPublish = (character: Character) => {
+    setPublishTarget(character);
+    setPortraitConsent(false);
+    setPublishError(null);
+  };
+
+  const closePublish = () => {
+    if (publishBusy) return;
+    setPublishTarget(null);
+  };
+
+  // Requires a fresh, explicit consent flag on every publish — sharing (and
+  // potentially selling, via `access_credits`) a character is publishing a
+  // depicted persona, so it cannot inherit whatever consent covered the
+  // original generation request (see `characters.service.publish_character`).
+  const publish = async () => {
+    if (!publishTarget || !portraitConsent) return;
+    setPublishBusy(true);
+    setPublishError(null);
+    try {
+      const saved = await api.post<Character>(`/v1/characters/${publishTarget.id}/publish`, {
+        portrait_consent: true,
+      });
+      setCharacters((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      notify(tSkills('publishDone'), 'success');
+      setPublishTarget(null);
+    } catch (caught) {
+      setPublishError(caught instanceof ApiError ? caught.message : tSkills('saveFailed'));
+    } finally {
+      setPublishBusy(false);
+    }
+  };
+
+  const withdraw = async (character: Character) => {
+    setWithdrawingId(character.id);
+    try {
+      const saved = await api.post<Character>(`/v1/characters/${character.id}/withdraw`);
+      setCharacters((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      notify(tSkills('withdrawDone'), 'success');
+    } catch {
+      notify(tSkills('saveFailed'), 'error');
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
+
+  const referenceByView = (character: Character, view: 'front' | 'side' | 'back') =>
+    character.reference_assets?.find((asset) => asset.view === view);
+
+  // Step two of the guided flow (`ImageGenerationStudio`'s "角色图" option only
+  // ever produces the front view — see its `assetKindCharacterHint`): shown
+  // once a front reference exists and either the side or back is still
+  // missing, and always asks for both regardless of which one is missing.
+  const canCompleteViews = (character: Character) =>
+    Boolean(referenceByView(character, 'front')) &&
+    (!referenceByView(character, 'side') || !referenceByView(character, 'back'));
+
+  const pollCompletionJob = async (jobId: string): Promise<GenerationJob> => {
+    for (let attempt = 0; attempt < COMPLETION_POLL_MAX_ATTEMPTS; attempt += 1) {
+      const job = await api.get<GenerationJob>(`/v1/generation-jobs/${jobId}`);
+      if (TERMINAL_JOB_STATUSES.has(job.status)) return job;
+      await new Promise((resolve) => setTimeout(resolve, COMPLETION_POLL_INTERVAL_MS));
+    }
+    throw new Error('generation job polling timed out');
+  };
+
+  // Borrows the front reference and asks the shared image-asset graph for
+  // both remaining views in one job (`character_views: ['side', 'back']`) —
+  // `execute_asset_output_advance` loops it twice, `execute_asset_output_link`
+  // attaches both outputs back to this same character (see `zaolang-
+  // generation-jobs` invariant on multi-output character jobs).
+  const completeViews = async (character: Character) => {
+    const front = referenceByView(character, 'front');
+    if (!front) {
+      notify(t('completeViewsNeedsFront'), 'error');
+      return;
+    }
+    setCompletingId(character.id);
+    try {
+      const job = await api.post<GenerationJob>(
+        '/v1/generation-jobs',
+        {
+          operation: 'image_to_image',
+          quality_tier: 'standard',
+          params: {
+            prompt: character.description?.trim() || character.name,
+            aspect_ratio: '3:4',
+            reference_asset_ids: [front.asset_id],
+            asset_kind: 'character',
+            character_views: ['side', 'back'],
+            target_character_id: character.id,
+            auto_attach_asset: true,
+          },
+        },
+        { idempotencyKey: newIdempotencyKey() },
+      );
+      const finished = await pollCompletionJob(job.id);
+      if (finished.status !== 'succeeded') {
+        notify(t('completeViewsFailed'), 'error');
+        return;
+      }
+      const refreshed = await api.get<Character>(`/v1/characters/${character.id}`);
+      setCharacters((current) =>
+        current.map((item) => (item.id === refreshed.id ? refreshed : item)),
+      );
+      notify(t('completeViewsDone'), 'success');
+    } catch {
+      notify(t('completeViewsFailed'), 'error');
+    } finally {
+      setCompletingId(null);
     }
   };
 
@@ -170,13 +344,29 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
             <li key={character.id}>
               <Card className="flex h-full flex-col gap-3 p-4">
                 <div className="flex gap-2 overflow-x-auto">
-                  {character.reference_asset_urls && character.reference_asset_urls.length > 0 ? (
-                    character.reference_asset_urls.map((url) => (
+                  {character.reference_assets && character.reference_assets.length > 0 ? (
+                    character.reference_assets.map((asset) => (
                       <div
-                        key={url}
+                        key={asset.asset_id}
                         className="relative size-16 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft"
                       >
-                        <Image src={url} alt="" fill sizes="64px" className="object-cover" />
+                        {asset.url ? (
+                          <Image
+                            src={asset.url}
+                            alt=""
+                            fill
+                            sizes="64px"
+                            className="object-cover"
+                          />
+                        ) : null}
+                        {(() => {
+                          const labelKey = VIEW_LABEL_KEY[asset.view];
+                          return labelKey ? (
+                            <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 text-[9px] leading-tight text-white">
+                              {t(labelKey)}
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
                     ))
                   ) : (
@@ -186,7 +376,17 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-semibold">{character.name}</h3>
+                  <div className="flex items-center gap-1.5">
+                    <Badge tone={STATUS_TONE[character.status]}>
+                      {tSkills(STATUS_LABEL_KEY[character.status])}
+                    </Badge>
+                    {character.access_credits > 0 ? (
+                      <Badge tone="primary">
+                        {tSkills('priceCredits', { credits: character.access_credits })}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <h3 className="mt-1.5 truncate text-sm font-semibold">{character.name}</h3>
                   {character.description ? (
                     <p className="mt-1 line-clamp-2 text-xs text-muted">{character.description}</p>
                   ) : null}
@@ -196,10 +396,38 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                     </p>
                   ) : null}
                 </div>
-                <div className="mt-auto flex gap-2">
+                <div className="mt-auto flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={() => openEdit(character)}>
                     {tActions('edit')}
                   </Button>
+                  {canCompleteViews(character) ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={completingId === character.id}
+                      disabled={completingId !== null && completingId !== character.id}
+                      onClick={() => void completeViews(character)}
+                    >
+                      {completingId === character.id
+                        ? t('completingViews')
+                        : t('completeViews')}
+                    </Button>
+                  ) : null}
+                  {character.status === 'draft' || character.status === 'rejected' ? (
+                    <Button size="sm" variant="ghost" onClick={() => openPublish(character)}>
+                      {t('publishCharacter')}
+                    </Button>
+                  ) : null}
+                  {character.status === 'pending_review' || character.status === 'published' ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      loading={withdrawingId === character.id}
+                      onClick={() => void withdraw(character)}
+                    >
+                      {tSkills('withdraw')}
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -232,7 +460,11 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           </>
         }
       >
-        <form id="character-form" onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
+        <form
+          id="character-form"
+          onSubmit={(event) => void submit(event)}
+          className="flex flex-col gap-4"
+        >
           <TextInput
             label={t('nameLabel')}
             value={form.name}
@@ -293,8 +525,49 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
               ) : null}
             </div>
           </div>
+          <AccessPriceField
+            value={form.accessCredits}
+            onChange={(value) => setForm((current) => ({ ...current, accessCredits: value }))}
+            label={t('priceLabel')}
+            hint={t('priceHint')}
+          />
         </form>
       </Sheet>
+
+      <Dialog
+        open={publishTarget !== null}
+        onClose={closePublish}
+        title={t('publishCharacter')}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closePublish} disabled={publishBusy}>
+              {tActions('cancel')}
+            </Button>
+            <Button
+              loading={publishBusy}
+              disabled={!portraitConsent}
+              onClick={() => void publish()}
+            >
+              {tSkills('publish')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted">{t('publishCharacterHint')}</p>
+          <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
+            <input
+              type="checkbox"
+              checked={portraitConsent}
+              onChange={(event) => setPortraitConsent(event.target.checked)}
+              className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
+            />
+            {t('portraitConsentLabel')}
+          </label>
+          {publishError ? <ErrorNotice title={publishError} /> : null}
+        </div>
+      </Dialog>
     </div>
   );
 }

@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.credits import service as credits_service
 from app.domain.jobs import service as jobs_service
-from app.models import GenerationJob, User, Work
+from app.models import AgentRun, GenerationJob, ProviderAttempt, User, Work
 from app.models.base import new_id, utcnow
 from app.models.enums import Operation, QualityTier
+from app.platform_config import service as config_service
 from app.workers import pipeline
 from tests.conftest import admin_header
 
@@ -142,6 +143,147 @@ def test_credits_timeseries_counts_todays_grant_and_capture(
     assert today["net"] != 0
 
 
+# --- model spend -----------------------------------------------------------
+
+
+@pytest.fixture
+def priced_spend(db: Session, admin: User, finished_job: GenerationJob) -> None:
+    """One text call and one media call, each with a cost already snapshotted.
+
+    Written directly rather than run through a priced provider, because the
+    point being tested is the aggregation: the pricing arithmetic itself is
+    covered in `tests/unit/test_model_pricing.py`.
+    """
+    config_service.set_value(
+        db,
+        "llm_providers",
+        {
+            "endpoints": {
+                "ep-text": {
+                    "name": "文本供应商",
+                    "base_url": "https://text.test",
+                    "kind": "general",
+                    "model": "gpt-4o-mini",
+                    "role": "primary",
+                },
+                "ep-image": {
+                    "name": "图片供应商",
+                    "base_url": "https://image.test",
+                    "kind": "media",
+                    "model": "gpt-image-1",
+                    "protocol": "openai",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["image"],
+                    "role": "primary",
+                },
+            }
+        },
+        actor_user_id=admin.id,
+    )
+    db.add(
+        AgentRun(
+            job_id=finished_job.id,
+            agent_name="planner",
+            mode="live",
+            model="gpt-4o-mini",
+            status="succeeded",
+            prompt_tokens=1_000,
+            completion_tokens=500,
+            cost_micro_usd=170,
+            endpoint_id="ep-text",
+            created_at=utcnow(),
+        )
+    )
+    db.add(
+        ProviderAttempt(
+            job_id=finished_job.id,
+            provider="ep-image:text_to_image",
+            model_or_workflow_version="gpt-image-1",
+            attempt_number=99,
+            status="succeeded",
+            cost_micro_usd=25_350,
+            created_at=utcnow(),
+        )
+    )
+    db.flush()
+    db.commit()
+
+
+def test_cost_timeseries_splits_todays_spend_into_text_and_media(
+    client: TestClient, admin: User, priced_spend: None
+) -> None:
+    body = client.get(
+        "/v1/admin/statistics/costs", params={"days": 7}, headers=admin_header(admin)
+    ).json()
+
+    today = body["points"][-1]
+    assert today["llm_micro_usd"] >= 170
+    assert today["media_micro_usd"] >= 25_350
+    assert today["total_micro_usd"] == today["llm_micro_usd"] + today["media_micro_usd"]
+    assert body["total_micro_usd"] >= today["total_micro_usd"]
+
+
+def test_cost_timeseries_zero_fills_days_without_spend(
+    client: TestClient, admin: User, priced_spend: None
+) -> None:
+    body = client.get(
+        "/v1/admin/statistics/costs", params={"days": 7}, headers=admin_header(admin)
+    ).json()
+
+    assert len(body["points"]) == 7
+    for point in body["points"][:-1]:
+        assert point["total_micro_usd"] == 0
+
+
+def test_cost_breakdown_names_each_endpoint_and_rolls_capabilities_up(
+    client: TestClient, admin: User, priced_spend: None
+) -> None:
+    body = client.get(
+        "/v1/admin/statistics/costs/breakdown", params={"days": 7}, headers=admin_header(admin)
+    ).json()
+
+    by_id = {series["endpoint_id"]: series for series in body["providers"]}
+    # The attempt was recorded as "ep-image:text_to_image"; an operator asking
+    # what a vendor costs wants one number per vendor, not one per capability.
+    assert by_id["ep-image"]["endpoint_name"] == "图片供应商"
+    assert by_id["ep-image"]["total_micro_usd"] >= 25_350
+    assert by_id["ep-text"]["endpoint_name"] == "文本供应商"
+    assert by_id["ep-text"]["total_micro_usd"] >= 170
+
+
+def test_cost_breakdown_lists_the_costliest_model_first(
+    client: TestClient, admin: User, priced_spend: None
+) -> None:
+    body = client.get(
+        "/v1/admin/statistics/costs/breakdown", params={"days": 7}, headers=admin_header(admin)
+    ).json()
+
+    models = body["models"]
+    assert models[0]["model"] == "gpt-image-1"
+    assert models[0]["kind"] == "media"
+    assert models[0]["total_micro_usd"] >= 25_350
+    text = next(item for item in models if item["model"] == "gpt-4o-mini")
+    assert text["kind"] == "general"
+    assert text["calls"] >= 1
+
+
+def test_spend_older_than_the_window_is_not_counted(
+    client: TestClient, db: Session, admin: User, priced_spend: None
+) -> None:
+    db.query(AgentRun).update({AgentRun.created_at: utcnow() - dt.timedelta(days=30)})
+    db.query(ProviderAttempt).update(
+        {ProviderAttempt.created_at: utcnow() - dt.timedelta(days=30)}
+    )
+    db.flush()
+    db.commit()
+
+    body = client.get(
+        "/v1/admin/statistics/costs", params={"days": 7}, headers=admin_header(admin)
+    ).json()
+
+    assert body["total_micro_usd"] == 0
+
+
 # --- content ---------------------------------------------------------------
 
 
@@ -188,6 +330,8 @@ def test_statistics_timeseries_are_closed_to_anonymous_callers(client: TestClien
         "/v1/admin/statistics/credits",
         "/v1/admin/statistics/content",
         "/v1/admin/statistics/users",
+        "/v1/admin/statistics/costs",
+        "/v1/admin/statistics/costs/breakdown",
     ):
         response = client.get(path)
         assert response.status_code == 401

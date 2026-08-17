@@ -90,7 +90,7 @@ def _decision_for(
         tiers=frozenset({QualityTier.STANDARD.value}),
         quality_prior=0.9,
         typical_latency_ms=typical_latency_ms,
-        unit_cost_minor=1,
+        unit_cost_micro_usd=10000,
         model_or_workflow="mock",
         provider_factory=lambda: provider,
     )
@@ -156,6 +156,24 @@ def test_live_sandbox_image_to_image_with_reference_returns_preview_url(
     result = execute_provider_generate(ctx, ProviderGenerateConfig())
     assert result.port == "succeeded"
     assert ctx.state["_preview_mime_type"] == "image/png"
+    assert provider.submit_calls == 1
+
+
+@pytest.mark.usefixtures("_presign")
+def test_live_sandbox_image_to_image_without_reference_still_succeeds(
+    db: Session, author: User
+) -> None:
+    """`image_to_image` shares one workflow graph with `text_to_image` — the
+    prompt is mandatory, a reference image is only optional extra context
+    (see `workflow_templates_service.canonical_operation`). Unlike the video
+    reference ops, it must not hit `_REFERENCE_REQUIRED`."""
+    provider = _ScriptedProvider(
+        [GenerationResult(succeeded=True, object_key="sandbox/edit.png", mime_type="image/png")]
+    )
+    ctx = _sandbox_ctx(db, author, operation=Operation.IMAGE_TO_IMAGE)
+    ctx.state["decision"] = _decision_for(provider, operation=Operation.IMAGE_TO_IMAGE)
+    result = execute_provider_generate(ctx, ProviderGenerateConfig())
+    assert result.port == "succeeded"
     assert provider.submit_calls == 1
 
 
@@ -273,7 +291,7 @@ def test_live_sandbox_poll_budget_uses_endpoint_timeout_not_typical_latency(
 
 @pytest.mark.parametrize(
     "operation",
-    [Operation.IMAGE_TO_IMAGE, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO],
+    [Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO],
 )
 def test_live_sandbox_reference_ops_fail_without_a_reference(
     db: Session, author: User, operation: Operation

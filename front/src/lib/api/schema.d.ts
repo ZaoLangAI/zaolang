@@ -758,7 +758,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Jobs */
+        /**
+         * List Jobs
+         * @description Lists the user's own jobs, optionally scoped to one draft.
+         *
+         *     `draft_id` is how the image studio's inline version-history strip lists
+         *     every iteration generated under the same creative draft — the
+         *     `user_id`/`origin` filters below already keep this from leaking another
+         *     user's jobs even if a foreign draft id is passed.
+         */
         get: operations["list_jobs_v1_generation_jobs_get"];
         put?: never;
         /**
@@ -945,7 +953,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Enhance Generation Prompt */
+        /**
+         * Enhance Generation Prompt
+         * @description 把画面描述交给文案 Agent 逐维度诊断并润色，保留用户核心意图。
+         */
         post: operations["enhance_generation_prompt_v1_generation_prompts_enhance_post"];
         delete?: never;
         options?: never;
@@ -1004,7 +1015,7 @@ export interface paths {
         put?: never;
         /**
          * Enhance Prompt
-         * @description 把画面描述交给文案 Agent 评估详细度并润色，保留用户核心意图。
+         * @description 把画面描述交给文案 Agent 逐维度诊断并润色，保留用户核心意图。
          */
         post: operations["enhance_prompt_v1_shortform_prompt_enhance_post"];
         delete?: never;
@@ -1094,6 +1105,58 @@ export interface paths {
         patch: operations["update_character_v1_characters__character_id__patch"];
         trace?: never;
     };
+    "/v1/characters/{character_id}/reference-assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Character Reference Asset */
+        delete: operations["delete_character_reference_asset_v1_characters__character_id__reference_assets__asset_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Character Reference Asset */
+        patch: operations["update_character_reference_asset_v1_characters__character_id__reference_assets__asset_id__patch"];
+        trace?: never;
+    };
+    "/v1/characters/{character_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Character */
+        post: operations["publish_character_v1_characters__character_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/characters/{character_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw Character */
+        post: operations["withdraw_character_v1_characters__character_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/series": {
         parameters: {
             query?: never;
@@ -1158,6 +1221,95 @@ export interface paths {
         post?: never;
         /** Remove Character From Series */
         delete: operations["remove_character_from_series_v1_series__series_id__characters__character_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scenes */
+        get: operations["list_scenes_v1_scenes_get"];
+        put?: never;
+        /** Create Scene */
+        post: operations["create_scene_v1_scenes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{scene_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scene */
+        get: operations["get_scene_v1_scenes__scene_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Scene */
+        delete: operations["delete_scene_v1_scenes__scene_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Scene */
+        patch: operations["update_scene_v1_scenes__scene_id__patch"];
+        trace?: never;
+    };
+    "/v1/scenes/{scene_id}/reference-assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Scene Reference Asset */
+        delete: operations["delete_scene_reference_asset_v1_scenes__scene_id__reference_assets__asset_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Scene Reference Asset */
+        patch: operations["update_scene_reference_asset_v1_scenes__scene_id__reference_assets__asset_id__patch"];
+        trace?: never;
+    };
+    "/v1/scenes/{scene_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Scene */
+        post: operations["publish_scene_v1_scenes__scene_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scenes/{scene_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw Scene */
+        post: operations["withdraw_scene_v1_scenes__scene_id__withdraw_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1534,6 +1686,34 @@ export interface paths {
         put?: never;
         /** Mark Read */
         post: operations["mark_read_v1_notifications_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Notifications
+         * @description Live tail of this user's notifications, for the bell badge/popover and
+         *     the right-side creation-status toasts.
+         *
+         *     Unlike `/generation-jobs/{id}/events`, there is no `Last-Event-ID` backfill
+         *     here: `GET /notifications` already covers "current state on load," so this
+         *     stream only has to carry the live tail. That also means the generator below
+         *     must never touch `session` — it is request-scoped and already closed by the
+         *     time a `StreamingResponse` generator body runs; everything it needs comes
+         *     from `publisher.subscribe_notifications`, which is pure Redis.
+         */
+        get: operations["stream_notifications_v1_notifications_stream_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2139,6 +2319,98 @@ export interface paths {
         post?: never;
         /** Revoke Mcp Token */
         delete: operations["revoke_mcp_token_v1_mcp_tokens__grant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scripts */
+        get: operations["list_scripts_v1_scripts_get"];
+        put?: never;
+        /** Create Script */
+        post: operations["create_script_v1_scripts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Script */
+        get: operations["get_script_v1_scripts__episode_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/turns/{turn_id}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Turn Snapshot */
+        get: operations["get_turn_snapshot_v1_scripts__episode_id__turns__turn_id__snapshot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Script Links
+         * @description Links characters/scene headings to reusable `Character`/`Scene`
+         *     assets. Unlike every other route in this file, this is a plain
+         *     request/response — it is a structural edit, not a content revision, so
+         *     it never touches the SSE turn machinery (see `update_links`'s docstring).
+         */
+        patch: operations["update_script_links_v1_scripts__episode_id__links_patch"];
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Turn */
+        post: operations["create_turn_v1_scripts__episode_id__turns_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3736,6 +4008,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/statistics/costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Costs Timeseries
+         * @description Daily spend on model vendors, split into text and media.
+         *
+         *     Every point was priced when the call happened, so re-reading an old
+         *     window never changes what it says. Calls served by an endpoint with no
+         *     configured price contribute nothing — unknown, not free.
+         */
+        get: operations["costs_timeseries_v1_admin_statistics_costs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/statistics/costs/breakdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Costs Breakdown
+         * @description The same window, cut by vendor endpoint and by model.
+         *
+         *     Endpoint names come from the live config, so an endpoint deleted since
+         *     the spend happened still reports its id with a blank name rather than
+         *     dropping the money it cost.
+         */
+        get: operations["costs_breakdown_v1_admin_statistics_costs_breakdown_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/statistics/users": {
         parameters: {
             query?: never;
@@ -4532,16 +4852,16 @@ export interface components {
             default_endpoint_id?: string | null;
             /** Backup Endpoint Id */
             backup_endpoint_id?: string | null;
-            /** Model */
-            model?: string | null;
             /** Reasoning Model */
             reasoning_model?: boolean | null;
+            /** Default For Asset Kind */
+            default_for_asset_kind?: ("character" | "scene" | "cover") | null;
         };
         /**
          * AgentProfileUpdateRequest
          * @description Partial AgentProfile update.
          *
-         *     Endpoint/model pins use an empty string to clear. `reasoning_model`
+         *     Endpoint pins use an empty string to clear. `reasoning_model`
          *     distinguishes omission (keep the current override) from explicit null
          *     (inherit the role's default Agent).
          */
@@ -4560,10 +4880,10 @@ export interface components {
             default_endpoint_id?: string | null;
             /** Backup Endpoint Id */
             backup_endpoint_id?: string | null;
-            /** Model */
-            model?: string | null;
             /** Reasoning Model */
             reasoning_model?: boolean | null;
+            /** Default For Asset Kind */
+            default_for_asset_kind?: ("character" | "scene" | "cover") | null;
         };
         /**
          * AgentProfileView
@@ -4596,6 +4916,8 @@ export interface components {
             operations?: string[];
             /** Is Default */
             is_default: boolean;
+            /** Default For Asset Kind */
+            default_for_asset_kind?: ("character" | "scene" | "cover") | null;
             /** Enabled */
             enabled: boolean;
             /** Default Endpoint Id */
@@ -4927,6 +5249,14 @@ export interface components {
             /** Provider Attempt Id */
             provider_attempt_id?: string | null;
         };
+        /** AudioPricingPayload */
+        AudioPricingPayload: {
+            /**
+             * Per 10K Characters Micro Usd
+             * @default 0
+             */
+            per_10k_characters_micro_usd: number;
+        };
         /** AuditLogView */
         AuditLogView: {
             /** Id */
@@ -5031,6 +5361,50 @@ export interface components {
             /** Voice Description */
             voice_description?: string | null;
         };
+        /** CharacterPublishRequest */
+        CharacterPublishRequest: {
+            /**
+             * Portrait Consent
+             * @default false
+             */
+            portrait_consent: boolean;
+        };
+        /** CharacterReferenceAsset */
+        CharacterReferenceAsset: {
+            /** Asset Id */
+            asset_id: string;
+            /**
+             * View
+             * @default general
+             */
+            view: string;
+            /** Label */
+            label?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** CharacterReferenceAssetAdminView */
+        CharacterReferenceAssetAdminView: {
+            /** Asset Id */
+            asset_id: string;
+            /**
+             * View
+             * @default general
+             */
+            view: string;
+            /** Label */
+            label?: string | null;
+            /** Url */
+            url?: string | null;
+        };
+        /** CharacterReferenceAssetUpdateRequest */
+        CharacterReferenceAssetUpdateRequest: {
+            view?: components["schemas"]["CharacterViewAngle"] | null;
+            /** Label */
+            label?: string | null;
+        };
         /** CharacterResponse */
         CharacterResponse: {
             /**
@@ -5049,12 +5423,19 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
-            /** Reference Asset Ids */
-            reference_asset_ids?: string[];
-            /** Reference Asset Urls */
-            reference_asset_urls?: string[];
+            /** Reference Assets */
+            reference_assets?: components["schemas"]["CharacterReferenceAsset"][];
             /** Voice Description */
             voice_description?: string | null;
+            /** @default draft */
+            status: components["schemas"]["CreationSkillStatus"];
+            /** @default private */
+            visibility: components["schemas"]["CreationSkillVisibility"];
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
         };
         /** CharacterUpdateRequest */
         CharacterUpdateRequest: {
@@ -5067,6 +5448,23 @@ export interface components {
             /** Voice Description */
             voice_description?: string | null;
         };
+        /**
+         * CharacterViewAngle
+         * @description Which pose/angle one of a character's reference images is for.
+         *
+         *     Named `*Angle` (not plain `CharacterView`) to avoid colliding with
+         *     `app.domain.characters.service.CharacterView`, the unrelated
+         *     `CreationSkill` projection type. Independent of `ImageAssetKind`: a
+         *     `CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing
+         *     via `GenerationParams.character_views` (see
+         *     `app.workflows.nodes.execute_asset_output_advance`), one at a time,
+         *     looping the shared `image_asset_graph` back to `asset_planning` between
+         *     each. `GENERAL` is reserved for a plain uploaded reference with no fixed
+         *     pose (`characters.service._entries_from_flat_ids`) — a generation job
+         *     never targets it.
+         * @enum {string}
+         */
+        CharacterViewAngle: "general" | "front" | "side" | "back";
         /** CheckoutRequest */
         CheckoutRequest: {
             /** Package Id */
@@ -5295,6 +5693,67 @@ export interface components {
             /** Points */
             points?: components["schemas"]["ContentDailyPoint"][];
         };
+        /** CostBreakdownView */
+        CostBreakdownView: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Window Days */
+            window_days: number;
+            /** Providers */
+            providers?: components["schemas"]["ProviderCostSeriesView"][];
+            /** Models */
+            models?: components["schemas"]["ModelCostView"][];
+        };
+        /**
+         * CostDailyPoint
+         * @description One day of model spend, in micro-USD (1e-6 USD) integers.
+         *
+         *     Micro rather than cents because vendor prices go far below a cent; the
+         *     console divides by 1_000_000 to display dollars. This is what we pay
+         *     vendors — unrelated to the credits a user spends.
+         */
+        CostDailyPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /**
+             * Llm Micro Usd
+             * @default 0
+             */
+            llm_micro_usd: number;
+            /**
+             * Media Micro Usd
+             * @default 0
+             */
+            media_micro_usd: number;
+            /**
+             * Total Micro Usd
+             * @default 0
+             */
+            total_micro_usd: number;
+        };
+        /** CostTimeseriesView */
+        CostTimeseriesView: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Window Days */
+            window_days: number;
+            /** Points */
+            points?: components["schemas"]["CostDailyPoint"][];
+            /**
+             * Total Micro Usd
+             * @default 0
+             */
+            total_micro_usd: number;
+        };
         /** CountResponse */
         CountResponse: {
             /** Count */
@@ -5332,12 +5791,18 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Character Reference Assets */
+            character_reference_assets?: components["schemas"]["CharacterReferenceAssetAdminView"][];
+            /** Character Portrait Consent At */
+            character_portrait_consent_at?: string | null;
+            /** Scene Reference Assets */
+            scene_reference_assets?: components["schemas"]["CharacterReferenceAssetAdminView"][];
         };
         /**
          * CreationSkillCategory
          * @enum {string}
          */
-        CreationSkillCategory: "scene" | "lens" | "style" | "other";
+        CreationSkillCategory: "scene" | "lens" | "style" | "character" | "scene_asset" | "cover_asset" | "other";
         /** CreationSkillCreateRequest */
         CreationSkillCreateRequest: {
             /** Title */
@@ -6175,8 +6640,17 @@ export interface components {
             /** Output Url */
             output_url?: string | null;
             output_media_type?: components["schemas"]["MediaType"] | null;
+            /** Output Asset Ids */
+            output_asset_ids?: string[] | null;
+            /** Output Urls */
+            output_urls?: string[] | null;
+            asset_kind?: components["schemas"]["ImageAssetKind"] | null;
+            /** Character Views */
+            character_views?: components["schemas"]["CharacterViewAngle"][] | null;
             /** Draft Id */
             draft_id?: string | null;
+            /** Prompt */
+            prompt?: string | null;
             /** Failure Code */
             failure_code?: string | null;
             /** Failure Message */
@@ -6225,10 +6699,25 @@ export interface components {
             shortform_profile?: string | null;
             /** Character Ids */
             character_ids?: string[];
+            /** Scene Ids */
+            scene_ids?: string[];
             /** Skill Ids */
             skill_ids?: string[];
             /** Style Gallery Id */
             style_gallery_id?: string | null;
+            /** @default general */
+            asset_kind: components["schemas"]["ImageAssetKind"];
+            /** Character Views */
+            character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Target Character Id */
+            target_character_id?: string | null;
+            /** Target Scene Id */
+            target_scene_id?: string | null;
+            /**
+             * Auto Attach Asset
+             * @default true
+             */
+            auto_attach_asset: boolean;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -6238,6 +6727,37 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImageAssetKind
+         * @description What a `text_to_image`/`image_to_image` job's output is *for*.
+         *
+         *     Orthogonal to `Operation`: this is the extra dimension
+         *     `GenerationWorkflowTemplate.asset_kind` and `GenerationParams.asset_kind`
+         *     add on top of it. `GENERAL` is the default and means "a plain, freeform
+         *     image" — today's behaviour, unchanged. `CHARACTER` covers all three of a
+         *     character's turnaround views (front/side/back) — see `CharacterView` for
+         *     which one(s) a given job actually produces
+         *     (`GenerationParams.character_views`) — and `SCENE`/`COVER` each double as
+         *     the `view` tag on a scene's reference-asset entries
+         *     (`reference_assets: [{"asset_id", "view", "label"}]`) the same way
+         *     `CharacterView` does for a character's, so a generated image can be
+         *     traced back to exactly which pose/shot it was made for.
+         * @enum {string}
+         */
+        ImageAssetKind: "general" | "character" | "scene" | "cover";
+        /** ImagePricingPayload */
+        ImagePricingPayload: {
+            /**
+             * Input Per Image Micro Usd
+             * @default 0
+             */
+            input_per_image_micro_usd: number;
+            /**
+             * Generation Per Image Micro Usd
+             * @default 0
+             */
+            generation_per_image_micro_usd: number;
         };
         /** JobAnswerItem */
         JobAnswerItem: {
@@ -6269,6 +6789,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Node Id */
+            node_id?: string | null;
         };
         /** JobEventView */
         JobEventView: {
@@ -6771,8 +7293,6 @@ export interface components {
              * @enum {string}
              */
             kind: "general" | "media";
-            /** Models */
-            models?: string[];
             /**
              * Role
              * @default backup
@@ -6784,10 +7304,7 @@ export interface components {
              * @default 100
              */
             backup_order: number;
-            /**
-             * Model
-             * @default
-             */
+            /** Model */
             model: string;
             /** Input Modalities */
             input_modalities?: string[];
@@ -6810,6 +7327,18 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+            /**
+             * Context Length
+             * @default 0
+             */
+            context_length: number;
+            /**
+             * Max Output Tokens
+             * @default 0
+             */
+            max_output_tokens: number;
+            token_pricing?: components["schemas"]["TokenPricingPayload"];
+            media_pricing?: components["schemas"]["MediaPricingPayload"];
         };
         /**
          * LlmProviderEndpointView
@@ -6839,8 +7368,6 @@ export interface components {
              * @enum {string}
              */
             kind: "general" | "media";
-            /** Models */
-            models?: string[];
             /**
              * Model
              * @default
@@ -6867,6 +7394,18 @@ export interface components {
             timeout_ms: number;
             /** Enabled */
             enabled: boolean;
+            /**
+             * Context Length
+             * @default 0
+             */
+            context_length: number;
+            /**
+             * Max Output Tokens
+             * @default 0
+             */
+            max_output_tokens: number;
+            token_pricing?: components["schemas"]["TokenPricingPayload"];
+            media_pricing?: components["schemas"]["MediaPricingPayload"];
             /**
              * Concurrency In Use
              * @default 0
@@ -7065,10 +7604,55 @@ export interface components {
             reserved_credits: number;
         };
         /**
+         * MediaPricingPayload
+         * @description Sections a media endpoint's capabilities do not cover are dropped
+         *     server-side, so a stale price cannot outlive the capability it billed.
+         */
+        MediaPricingPayload: {
+            image?: components["schemas"]["ImagePricingPayload"] | null;
+            audio?: components["schemas"]["AudioPricingPayload"] | null;
+            video?: components["schemas"]["VideoPricingPayload"] | null;
+        };
+        /**
          * MediaType
          * @enum {string}
          */
         MediaType: "image" | "video" | "audio";
+        /**
+         * ModelCostView
+         * @description Window total for one model. Cumulative rather than a trend: with more
+         *     than a handful of models configured, per-model lines stop being legible.
+         */
+        ModelCostView: {
+            /** Model */
+            model: string;
+            /**
+             * Endpoint Id
+             * @default
+             */
+            endpoint_id: string;
+            /**
+             * Endpoint Name
+             * @default
+             */
+            endpoint_name: string;
+            /**
+             * Kind
+             * @default general
+             * @enum {string}
+             */
+            kind: "general" | "media";
+            /**
+             * Calls
+             * @default 0
+             */
+            calls: number;
+            /**
+             * Total Micro Usd
+             * @default 0
+             */
+            total_micro_usd: number;
+        };
         /** ModerationDecisionRequest */
         ModerationDecisionRequest: {
             /**
@@ -7971,10 +8555,59 @@ export interface components {
             /** Degraded */
             degraded: boolean;
         };
-        /** PromptEnhanceRequest */
+        /**
+         * PromptDimensionView
+         * @description One diagnosed aspect of the description, rendered as a checklist row.
+         */
+        PromptDimensionView: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "subject" | "scene" | "action" | "camera" | "lighting" | "mood" | "pacing" | "composition" | "style" | "detail";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "missing" | "weak" | "ok";
+            /** Hint */
+            hint: string;
+        };
+        /**
+         * PromptEnhanceRequest
+         * @description A polish request, plus whatever the studio already knows about the job.
+         *
+         *     Everything past `prompt` is optional: the context only sharpens the
+         *     advice (camera notes belong on a video, not a poster), and a caller that
+         *     has not picked an aspect ratio yet must still be able to ask.
+         */
         PromptEnhanceRequest: {
             /** Prompt */
             prompt: string;
+            operation?: components["schemas"]["Operation"] | null;
+            /** Aspect Ratio */
+            aspect_ratio?: string | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
+            quality_tier?: components["schemas"]["QualityTier"] | null;
+            /**
+             * Style Hint
+             * @default
+             */
+            style_hint: string;
+            /**
+             * Has Reference
+             * @default false
+             */
+            has_reference: boolean;
+            /** Direction */
+            direction?: ("more_specific" | "more_concise" | "stronger_camera" | "stronger_lighting" | "more_dramatic") | null;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+            asset_kind?: components["schemas"]["ImageAssetKind"] | null;
         };
         /** PromptEnhanceResponse */
         PromptEnhanceResponse: {
@@ -7987,8 +8620,10 @@ export interface components {
             detail_level: "sparse" | "adequate" | "detailed";
             /** Feedback */
             feedback: string;
-            /** Degraded */
-            degraded: boolean;
+            /** Dimensions */
+            dimensions?: components["schemas"]["PromptDimensionView"][];
+            /** Additions */
+            additions?: string[];
         };
         /**
          * PromptSlotView
@@ -8055,6 +8690,27 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * ProviderCostSeriesView
+         * @description One endpoint's daily spend. A media endpoint's per-capability attempts
+         *     are rolled back up to the endpoint, because that is what gets billed.
+         */
+        ProviderCostSeriesView: {
+            /** Endpoint Id */
+            endpoint_id: string;
+            /**
+             * Endpoint Name
+             * @default
+             */
+            endpoint_name: string;
+            /**
+             * Total Micro Usd
+             * @default 0
+             */
+            total_micro_usd: number;
+            /** Points */
+            points?: components["schemas"]["CostDailyPoint"][];
+        };
         /** ProviderDailyPoint */
         ProviderDailyPoint: {
             /**
@@ -8098,8 +8754,8 @@ export interface components {
             p50_latency_ms: number;
             /** P95 Latency Ms */
             p95_latency_ms: number;
-            /** Effective Cost */
-            effective_cost: number;
+            /** Effective Cost Micro Usd */
+            effective_cost_micro_usd: number;
             /** Enabled */
             enabled: boolean;
         };
@@ -8273,6 +8929,10 @@ export interface components {
              * @default 0
              */
             duration_seconds: number;
+            /** @default general */
+            asset_kind: components["schemas"]["ImageAssetKind"];
+            /** Character Views */
+            character_views?: components["schemas"]["CharacterViewAngle"][] | null;
         };
         /** QuoteResponse */
         QuoteResponse: {
@@ -8582,6 +9242,235 @@ export interface components {
             candidates?: {
                 [key: string]: unknown;
             }[];
+        };
+        /** SceneCreateRequest */
+        SceneCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Reference Asset Ids */
+            reference_asset_ids?: string[];
+        };
+        /** SceneReferenceAsset */
+        SceneReferenceAsset: {
+            /** Asset Id */
+            asset_id: string;
+            /**
+             * View
+             * @default general
+             */
+            view: string;
+            /** Label */
+            label?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** SceneReferenceAssetUpdateRequest */
+        SceneReferenceAssetUpdateRequest: {
+            /** View */
+            view?: string | null;
+            /** Label */
+            label?: string | null;
+        };
+        /** SceneResponse */
+        SceneResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Reference Assets */
+            reference_assets?: components["schemas"]["SceneReferenceAsset"][];
+            /** @default draft */
+            status: components["schemas"]["CreationSkillStatus"];
+            /** @default private */
+            visibility: components["schemas"]["CreationSkillVisibility"];
+            /**
+             * Access Credits
+             * @default 0
+             */
+            access_credits: number;
+        };
+        /** SceneUpdateRequest */
+        SceneUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Reference Asset Ids */
+            reference_asset_ids?: string[] | null;
+        };
+        /** ScriptBlock */
+        ScriptBlock: {
+            /** Type */
+            type: string;
+            /** Character */
+            character?: string | null;
+            /** Text */
+            text: string;
+        };
+        /** ScriptCharacter */
+        ScriptCharacter: {
+            /** Name */
+            name: string;
+            /**
+             * Traits
+             * @default
+             */
+            traits: string;
+            /** Character Ref Id */
+            character_ref_id?: string | null;
+        };
+        /** ScriptCharacterLinkUpdate */
+        ScriptCharacterLinkUpdate: {
+            /** Name */
+            name: string;
+            /** Character Ref Id */
+            character_ref_id?: string | null;
+        };
+        /** ScriptCreateRequest */
+        ScriptCreateRequest: {
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Idea */
+            idea: string;
+            /** Referenced Skill Ids */
+            referenced_skill_ids?: string[];
+        };
+        /** ScriptDetailResponse */
+        ScriptDetailResponse: {
+            /** Episode Id */
+            episode_id: string;
+            /** Series Id */
+            series_id: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            script: components["schemas"]["ScriptDocument"];
+            /** Turns */
+            turns: components["schemas"]["ScriptTurnSummary"][];
+        };
+        /** ScriptDocument */
+        ScriptDocument: {
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Logline
+             * @default
+             */
+            logline: string;
+            /** Characters */
+            characters?: components["schemas"]["ScriptCharacter"][];
+            /** Scenes */
+            scenes?: components["schemas"]["ScriptScene"][];
+        };
+        /**
+         * ScriptLinksUpdateRequest
+         * @description A structural edit, not a content revision — never goes through the
+         *     LLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched
+         *     by `name`/`heading` against the episode's current `script_json` rather
+         *     than by index, since either list can be reordered by a revision turn
+         *     that runs concurrently with a link update landing.
+         */
+        ScriptLinksUpdateRequest: {
+            /** Characters */
+            characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
+            /** Scenes */
+            scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
+        };
+        /** ScriptScene */
+        ScriptScene: {
+            /** Heading */
+            heading: string;
+            /** Blocks */
+            blocks: components["schemas"]["ScriptBlock"][];
+            /** Ref Id */
+            ref_id?: string | null;
+        };
+        /** ScriptSceneLinkUpdate */
+        ScriptSceneLinkUpdate: {
+            /** Heading */
+            heading: string;
+            /** Ref Id */
+            ref_id?: string | null;
+        };
+        /** ScriptSummaryResponse */
+        ScriptSummaryResponse: {
+            /** Episode Id */
+            episode_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Logline
+             * @default
+             */
+            logline: string;
+            /** Status */
+            status: string;
+            /** Turn Count */
+            turn_count: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ScriptTurnRequest */
+        ScriptTurnRequest: {
+            /** Message */
+            message: string;
+            /** Referenced Skill Ids */
+            referenced_skill_ids?: string[];
+            current_script?: components["schemas"]["ScriptDocument"] | null;
+        };
+        /** ScriptTurnSnapshotResponse */
+        ScriptTurnSnapshotResponse: {
+            /** Turn Id */
+            turn_id: string;
+            /** Turn No */
+            turn_no: number;
+            /** Summary */
+            summary: string;
+            script: components["schemas"]["ScriptDocument"];
+        };
+        /** ScriptTurnSummary */
+        ScriptTurnSummary: {
+            /** Id */
+            id: string;
+            /** Turn No */
+            turn_no: number;
+            /** User Message */
+            user_message: string;
+            /** Summary */
+            summary: string;
+            /** Referenced Skill Ids */
+            referenced_skill_ids?: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** SeedRequest */
         SeedRequest: {
@@ -9001,6 +9890,26 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * TokenPricingPayload
+         * @description `kind="general"` list price, in micro-USD (1e-6 USD) per million tokens.
+         *
+         *     $0.060 per million is 60_000 here. Integers rather than a decimal string
+         *     so the contract has one representation; the console does the conversion
+         *     from what an operator types in dollars.
+         */
+        TokenPricingPayload: {
+            /**
+             * Input Per Million Micro Usd
+             * @default 0
+             */
+            input_per_million_micro_usd: number;
+            /**
+             * Output Per Million Micro Usd
+             * @default 0
+             */
+            output_per_million_micro_usd: number;
+        };
         /** TokenResponse */
         TokenResponse: {
             /** Access Token */
@@ -9226,6 +10135,30 @@ export interface components {
             first_frame_asset_id?: string | null;
             /** Last Frame Asset Id */
             last_frame_asset_id?: string | null;
+        };
+        /**
+         * VideoPricingPayload
+         * @description Keyed by output resolution, because vendors price 2K and 768P apart.
+         */
+        VideoPricingPayload: {
+            /** Generation Per Second Micro Usd */
+            generation_per_second_micro_usd?: {
+                [key: string]: number;
+            };
+            /** Input Material Per Second Micro Usd */
+            input_material_per_second_micro_usd?: {
+                [key: string]: number;
+            };
+            /**
+             * Reference Image Free Count
+             * @default 5
+             */
+            reference_image_free_count: number;
+            /**
+             * Extra Reference Image Micro Usd
+             * @default 0
+             */
+            extra_reference_image_micro_usd: number;
         };
         /**
          * Visibility
@@ -9497,6 +10430,7 @@ export interface components {
             graph: {
                 [key: string]: unknown;
             };
+            asset_kind?: components["schemas"]["ImageAssetKind"] | null;
         };
         /** WorkflowTemplateValidateRequest */
         WorkflowTemplateValidateRequest: {
@@ -9522,6 +10456,8 @@ export interface components {
             id: string;
             /** Operation */
             operation: string;
+            /** Asset Kind */
+            asset_kind?: string | null;
             /** Version */
             version: number;
             /** Name */
@@ -10676,6 +11612,7 @@ export interface operations {
         parameters: {
             query?: {
                 category?: components["schemas"]["CreationSkillCategory"] | null;
+                content_type?: ("template" | "image_asset") | null;
                 access?: "free" | "paid" | "all";
                 cursor?: string | null;
                 limit?: number;
@@ -11254,6 +12191,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["JobStatus"] | null;
+                draft_id?: string | null;
                 limit?: number;
             };
             header?: {
@@ -11973,6 +12911,148 @@ export interface operations {
             };
         };
     };
+    delete_character_reference_asset_v1_characters__character_id__reference_assets__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_character_reference_asset_v1_characters__character_id__reference_assets__asset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterReferenceAssetUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_character_v1_characters__character_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_character_v1_characters__character_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                character_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_series_v1_series_get: {
         parameters: {
             query?: never;
@@ -12130,6 +13210,311 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scenes_v1_scenes_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_scene_v1_scenes_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scene_v1_scenes__scene_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_v1_scenes__scene_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_v1_scenes__scene_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scene_reference_asset_v1_scenes__scene_id__reference_assets__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scene_reference_asset_v1_scenes__scene_id__reference_assets__asset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SceneReferenceAssetUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_scene_v1_scenes__scene_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_scene_v1_scenes__scene_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                scene_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SceneResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12890,6 +14275,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_notifications_v1_notifications_stream_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -14264,6 +15680,215 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scripts_v1_scripts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptSummaryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_script_v1_scripts_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_script_v1_scripts__episode_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_turn_snapshot_v1_scripts__episode_id__turns__turn_id__snapshot_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+                turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptTurnSnapshotResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_script_links_v1_scripts__episode_id__links_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptLinksUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_turn_v1_scripts__episode_id__turns_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
@@ -17178,6 +18803,72 @@ export interface operations {
             };
         };
     };
+    costs_timeseries_v1_admin_statistics_costs_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostTimeseriesView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    costs_breakdown_v1_admin_statistics_costs_breakdown_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostBreakdownView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     users_timeseries_v1_admin_statistics_users_get: {
         parameters: {
             query?: {
@@ -17489,7 +19180,9 @@ export interface operations {
     };
     get_active_template_v1_admin_workflow_templates__operation__get: {
         parameters: {
-            query?: never;
+            query?: {
+                asset_kind?: components["schemas"]["ImageAssetKind"] | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -17559,7 +19252,9 @@ export interface operations {
     };
     list_template_versions_v1_admin_workflow_templates__operation__versions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                asset_kind?: components["schemas"]["ImageAssetKind"] | null;
+            };
             header?: {
                 authorization?: string | null;
             };

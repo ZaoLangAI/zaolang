@@ -15,7 +15,15 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
-import { OPERATION_LABEL_KEYS, OPERATIONS, type OperationValue } from '@/lib/admin/operations';
+import {
+  IMAGE_ASSET_KIND_LABEL_KEYS,
+  IMAGE_ASSET_KINDS,
+  OPERATION_LABEL_KEYS,
+  WORKFLOW_EDITOR_OPERATIONS,
+  operationHasAssetKinds,
+  type ImageAssetKindValue,
+  type OperationValue,
+} from '@/lib/admin/operations';
 import { atLeast, type AdminRole } from '@/lib/admin/rbac';
 import { adminApi } from '@/lib/api/admin-client';
 import type {
@@ -54,7 +62,11 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
   const tProviders = useTranslations('adminProviders');
   const { role } = useAdminSession();
 
-  const [operation, setOperationState] = useState<OperationValue>(OPERATIONS[0]);
+  const [operation, setOperationState] = useState<OperationValue>(WORKFLOW_EDITOR_OPERATIONS[0]);
+  // Only meaningful for text_to_image/image_to_image — every other operation
+  // always runs the one generic template. `null` means "generic" (backend
+  // `asset_kind=NULL`), matching `GenerationWorkflowTemplate.asset_kind`.
+  const [assetKind, setAssetKind] = useState<ImageAssetKindValue | null>(null);
   const [dirty, setDirty] = useState(false);
   // A navigation the operator asked for while the canvas has unpublished
   // edits — held here until they confirm discarding or cancel.
@@ -86,6 +98,15 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
     guardNavigation(() => {
       setDirty(false);
       setOperationState(next);
+      setAssetKind(null);
+    });
+  };
+
+  const switchAssetKind = (next: ImageAssetKindValue | null) => {
+    if (next === assetKind) return;
+    guardNavigation(() => {
+      setDirty(false);
+      setAssetKind(next);
     });
   };
 
@@ -96,12 +117,13 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
         aria-label={t('operations')}
         className="flex flex-wrap items-center gap-2 border-b border-border pb-2"
       >
-        {OPERATIONS.map((op) => (
+        {WORKFLOW_EDITOR_OPERATIONS.map((op) => (
           <button
             key={op}
             role="tab"
             type="button"
             aria-selected={operation === op}
+            title={op === 'text_to_image' ? t('tabImageCreationHint') : undefined}
             onClick={() => switchOperation(op)}
             className={
               operation === op
@@ -109,7 +131,7 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
                 : 'rounded-[var(--radius-sm)] px-3 py-1.5 text-sm text-muted hover:bg-surface-soft hover:text-text'
             }
           >
-            {tProviders(OPERATION_LABEL_KEYS[op])}
+            {op === 'text_to_image' ? t('tabImageCreation') : tProviders(OPERATION_LABEL_KEYS[op])}
           </button>
         ))}
         {dirty ? (
@@ -120,8 +142,10 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
       </div>
 
       <WorkflowOperationTab
-        key={operation}
+        key={`${operation}:${assetKind ?? ''}`}
         operation={operation}
+        assetKind={operationHasAssetKinds(operation) ? assetKind : null}
+        onAssetKindChange={switchAssetKind}
         nodeTypeCatalog={nodeTypeCatalog}
         role={role}
         onDirtyChange={setDirty}
@@ -159,12 +183,19 @@ export function WorkflowEditor({ nodeTypeCatalog }: { nodeTypeCatalog: NodeTypeV
 
 function WorkflowOperationTab({
   operation,
+  assetKind,
+  onAssetKindChange,
   nodeTypeCatalog,
   role,
   onDirtyChange,
   guardNavigation,
 }: {
   operation: OperationValue;
+  /** `null` both for "no asset-kind split on this operation" and for the
+   * generic (`asset_kind=NULL`) template within a split operation — the
+   * picker is only rendered at all when `operationHasAssetKinds(operation)`. */
+  assetKind: ImageAssetKindValue | null;
+  onAssetKindChange: (next: ImageAssetKindValue | null) => void;
   nodeTypeCatalog: NodeTypeView[];
   role: AdminRole;
   onDirtyChange: (dirty: boolean) => void;
@@ -194,15 +225,17 @@ function WorkflowOperationTab({
 
   useEffect(() => {
     let cancelled = false;
+    const query = assetKind ? { asset_kind: assetKind } : undefined;
     Promise.all([
       adminApi
-        .get<WorkflowTemplateView>(`/v1/admin/workflow-templates/${operation}`)
+        .get<WorkflowTemplateView>(`/v1/admin/workflow-templates/${operation}`, { query })
         .catch((caught) => {
           if (caught instanceof ApiError && caught.isNotFound) return null;
           throw caught;
         }),
       adminApi.get<{ items: WorkflowTemplateView[] }>(
         `/v1/admin/workflow-templates/${operation}/versions`,
+        { query },
       ),
     ])
       .then(([active, versionPage]) => {
@@ -236,7 +269,12 @@ function WorkflowOperationTab({
     const since = new Date(Date.now() - HOTSPOT_WINDOW_DAYS * 86_400_000).toISOString();
     adminApi
       .get<Page<LogEntry>>('/v1/admin/logs', {
-        query: { source: 'pipeline', q: 'workflow_engine_failure', created_after: since, limit: 200 },
+        query: {
+          source: 'pipeline',
+          q: 'workflow_engine_failure',
+          created_after: since,
+          limit: 200,
+        },
       })
       .then((page) => {
         if (cancelled) return;
@@ -245,7 +283,10 @@ function WorkflowOperationTab({
         );
         const counts = new Map<string, number>();
         for (const entry of page.items) {
-          const nodeId = entry.details && typeof entry.details.node_id === 'string' ? entry.details.node_id : null;
+          const nodeId =
+            entry.details && typeof entry.details.node_id === 'string'
+              ? entry.details.node_id
+              : null;
           if (!nodeId || !graphNodeIds.has(nodeId)) continue;
           counts.set(nodeId, (counts.get(nodeId) ?? 0) + (entry.occurrence_count ?? 1));
         }
@@ -286,7 +327,29 @@ function WorkflowOperationTab({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => guardNavigation(() => setVersionsOpen(true))}>
+          {operationHasAssetKinds(operation) ? (
+            <select
+              aria-label={t('assetKind')}
+              title={t('assetKindHint')}
+              value={assetKind ?? ''}
+              onChange={(event) =>
+                onAssetKindChange((event.target.value || null) as ImageAssetKindValue | null)
+              }
+              className="h-9 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2.5 text-sm text-text"
+            >
+              <option value="">{t('assetKindGeneral')}</option>
+              {IMAGE_ASSET_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {t(IMAGE_ASSET_KIND_LABEL_KEYS[kind])}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => guardNavigation(() => setVersionsOpen(true))}
+          >
             {t('versionHistory')}
           </Button>
           <Button
@@ -364,6 +427,7 @@ function WorkflowOperationTab({
         <WorkflowSandboxDialog
           open={sandboxOpen}
           operation={operation}
+          assetKind={assetKind}
           draftGraph={workingGraph}
           onClose={() => setSandboxOpen(false)}
           onTrace={setSandboxTrace}
@@ -374,6 +438,7 @@ function WorkflowOperationTab({
         <WorkflowPublishDialog
           open={publishOpen}
           operation={operation}
+          assetKind={assetKind}
           graph={workingGraph}
           defaultName={template?.name ?? t('defaultTemplateName')}
           onClose={() => setPublishOpen(false)}

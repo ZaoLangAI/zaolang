@@ -140,9 +140,15 @@ test.describe('creation', () => {
   });
 
   test('a signed-in user can open the text-to-image studio', async ({ page }) => {
-    await page.goto('/zh-CN/create/new?mode=text_to_image', { waitUntil: 'networkidle' });
-    await expect(page.getByRole('heading', { name: '文字生成图片' })).toBeVisible();
+    await page.goto('/zh-CN/create/new?mode=image_creation', { waitUntil: 'networkidle' });
+    await expect(page.getByRole('heading', { name: '图片创作' })).toBeVisible();
     await expect(page.getByRole('button', { name: '生成我的版本' })).toBeVisible();
+
+    // Polishing used to be video-only; an image prompt needs the same help.
+    // Not clicked — that would spend a real model call, same discipline as
+    // the submit buttons above.
+    await page.getByLabel('说说你想怎么改').fill('女孩在海边');
+    await expect(page.getByRole('button', { name: 'AI 润色' })).toBeEnabled();
   });
 
   test('the library shows the seeded draft awaiting publication', async ({ page }) => {
@@ -191,7 +197,11 @@ test.describe('creation', () => {
     await expect(page.getByRole('heading', { name: SEEDED_PAID_SKILL })).toBeVisible();
     await expect(page.getByText('8 积分').first()).toBeVisible();
 
-    await page.goto('/zh-CN/create/new?mode=text_to_image', { waitUntil: 'networkidle' });
+    // The seeded paid skill is a `lens` (镜头) skill, and the creation-skill
+    // picker (`useStyleAndSkillPicker`) only exists on the video/audio
+    // studios — `ImageGenerationStudio` deliberately has no skill picker at
+    // all — so this exercises the video studio, not the image one.
+    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'networkidle' });
     await page.getByLabel('创作技能').selectOption({ label: '黄金时刻镜头 · 8 积分' });
     const unlock = page.getByRole('dialog');
     await expect(unlock).toContainText('积分解锁');

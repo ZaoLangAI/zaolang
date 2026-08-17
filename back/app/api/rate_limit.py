@@ -34,6 +34,10 @@ RULES: dict[str, RateLimitRule] = {
     "upload_presign": RateLimitRule(limit=30, window_seconds=60),
     "editor_write": RateLimitRule(limit=60, window_seconds=60),
     "editor_export": RateLimitRule(limit=20, window_seconds=60),
+    # Each call is a real LLM turn (draft or revise), not a cheap metadata
+    # write — priced between `editor_write` and the much stricter
+    # `generation_submit`.
+    "script_studio_write": RateLimitRule(limit=20, window_seconds=60),
     "mcp_tool": RateLimitRule(limit=60, window_seconds=60),
     # Back office gets its own budget so consumer traffic can never starve an
     # operator during an incident.

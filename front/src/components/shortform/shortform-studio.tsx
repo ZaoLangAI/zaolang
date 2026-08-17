@@ -337,7 +337,8 @@ export function ShortformStudio({
   };
 
   const addableCharacters = characterLibrary.filter(
-    (character) => !(currentSeriesDetail?.characters ?? []).some((cast) => cast.id === character.id),
+    (character) =>
+      !(currentSeriesDetail?.characters ?? []).some((cast) => cast.id === character.id),
   );
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
@@ -346,7 +347,13 @@ export function ShortformStudio({
   const tierOptions = [
     ...(previewEnabled
       ? []
-      : [{ value: 'preview' as const, label: tRemix('tierPreview'), hint: tRemix('tierPreviewDesc') }]),
+      : [
+          {
+            value: 'preview' as const,
+            label: tRemix('tierPreview'),
+            hint: tRemix('tierPreviewDesc'),
+          },
+        ]),
     { value: 'standard' as const, label: tRemix('tierStandard'), hint: tRemix('tierStandardDesc') },
     {
       value: 'cinematic' as const,
@@ -505,6 +512,12 @@ export function ShortformStudio({
               className="mt-2"
               endpoint="/v1/shortform/prompt/enhance"
               prompt={prompt}
+              context={{
+                operation: 'text_to_video',
+                aspectRatio: profile.aspect_ratio,
+                durationSeconds: duration,
+                qualityTier: tier,
+              }}
               onAccept={setPrompt}
             />
             {clarifyEnabled ? (

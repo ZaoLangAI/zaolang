@@ -1,33 +1,43 @@
 import { getTranslations } from 'next-intl/server';
 
-import { GenerationStudio } from '@/components/studio/generation-studio';
+import { AudioGenerationStudio } from '@/components/studio/audio-generation-studio';
+import { ImageGenerationStudio } from '@/components/studio/image-generation-studio';
+import { VideoGenerationStudio } from '@/components/studio/video-generation-studio';
 import { BackLink } from '@/components/ui/back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
-import type { StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
+import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
 
-const MODES = [
-  'text_to_image',
-  'text_to_video',
-  'image_to_video',
-  'image_to_image',
-  'audio_generation',
-] as const;
+// `image_creation` is a URL-level mode only — the merged "图片创作" card from
+// `create-mode-cards.tsx` — not a backend `Operation`. It always starts the
+// studio on `text_to_image`; `ImageGenerationStudio` itself derives
+// `image_to_image` the moment a reference image is attached (see
+// `VideoGenerationStudio`'s own `text_to_video → image_to_video/video_to_video`
+// derivation for the same pattern on the video side).
+const MODES = ['image_creation', 'text_to_video', 'image_to_video', 'audio_generation'] as const;
 type Mode = (typeof MODES)[number];
 
+const OPERATION_BY_MODE: Record<
+  Mode,
+  'text_to_image' | 'text_to_video' | 'image_to_video' | 'audio_generation'
+> = {
+  image_creation: 'text_to_image',
+  text_to_video: 'text_to_video',
+  image_to_video: 'image_to_video',
+  audio_generation: 'audio_generation',
+};
+
 const TITLE_KEYS: Record<Mode, string> = {
-  text_to_image: 'modeTextToImageTitle',
+  image_creation: 'modeImageCreationTitle',
   text_to_video: 'modeTextToVideoTitle',
   image_to_video: 'modeImageToVideoTitle',
-  image_to_image: 'modeImageToImageTitle',
   audio_generation: 'modeAudioGenerationTitle',
 };
 
 const DESCRIPTION_KEYS: Record<Mode, string> = {
-  text_to_image: 'modeTextToImageDesc',
+  image_creation: 'modeImageCreationDesc',
   text_to_video: 'modeTextToVideoDesc',
   image_to_video: 'modeImageToVideoDesc',
-  image_to_image: 'modeImageToImageDesc',
   audio_generation: 'modeAudioGenerationDesc',
 };
 
@@ -41,14 +51,21 @@ export async function generateMetadata() {
 export default async function NewCreationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mode?: string; prompt?: string; ref?: string; styleId?: string }>;
+  searchParams: Promise<{
+    mode?: string;
+    prompt?: string;
+    ref?: string;
+    styleId?: string;
+    draftId?: string;
+  }>;
 }) {
-  const { mode, prompt, ref, styleId } = await searchParams;
+  const { mode, prompt, ref, styleId, draftId } = await searchParams;
   const t = await getTranslations('createPage');
 
-  const operation: Mode = MODES.includes(mode as Mode) ? (mode as Mode) : 'text_to_video';
-  const title = t(TITLE_KEYS[operation]);
-  const description = t(DESCRIPTION_KEYS[operation]);
+  const resolvedMode: Mode = MODES.includes(mode as Mode) ? (mode as Mode) : 'text_to_video';
+  const operation = OPERATION_BY_MODE[resolvedMode];
+  const title = t(TITLE_KEYS[resolvedMode]);
+  const description = t(DESCRIPTION_KEYS[resolvedMode]);
 
   // `ref` is inspiration, not a remix source: it seeds the prompt and shows the
   // work the idea came from, but it never becomes `source_work_id`. Remixing
@@ -62,17 +79,39 @@ export default async function NewCreationPage({
     ? await serverFetchOrNull<StyleGalleryEntry>(`/v1/style-gallery/${styleId}`)
     : null;
 
+  // `draftId` resumes an image-creation session — its full version history
+  // and latest output (see `GenerationVersionHistory`) — only meaningful for
+  // `text_to_image`; video/audio still only ever land on `/jobs/[jobId]`.
+  const initialDraft =
+    draftId && operation === 'text_to_image'
+      ? ((await serverFetchOrNull<Draft>(`/v1/drafts/${draftId}`, { authenticated: true })) ??
+        undefined)
+      : undefined;
+
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
       <BackLink href="/create">{t('backToCreate')}</BackLink>
       <PageHeading eyebrow={t('eyebrow')} title={title} description={description} />
-      <GenerationStudio
-        operation={operation}
-        initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
-        reference={reference ?? undefined}
-        initialStyleParams={style?.params}
-        initialStyleGalleryId={style?.id}
-      />
+      {operation === 'audio_generation' ? (
+        <AudioGenerationStudio
+          initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
+          reference={reference ?? undefined}
+        />
+      ) : operation === 'text_to_image' ? (
+        <ImageGenerationStudio
+          initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
+          reference={reference ?? undefined}
+          initialDraft={initialDraft}
+        />
+      ) : (
+        <VideoGenerationStudio
+          operation={operation}
+          initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
+          reference={reference ?? undefined}
+          initialStyleParams={style?.params}
+          initialStyleGalleryId={style?.id}
+        />
+      )}
     </div>
   );
 }

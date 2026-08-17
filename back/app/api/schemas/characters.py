@@ -1,4 +1,10 @@
-"""Character library and series payloads."""
+"""Character library and series payloads.
+
+A character is stored as a `CreationSkill` (`category=character`) — see
+`app.domain.characters.service.CharacterView` — so `CharacterResponse` also
+surfaces the skill lifecycle fields (`status`/`visibility`/`access_credits`)
+a character library UI needs to show "draft / 审核中 / 已发布".
+"""
 
 from __future__ import annotations
 
@@ -7,6 +13,7 @@ import datetime as dt
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel, Timestamped
+from app.models.enums import CharacterViewAngle, CreationSkillStatus, CreationSkillVisibility
 
 
 class CharacterCreateRequest(ApiModel):
@@ -23,13 +30,33 @@ class CharacterUpdateRequest(ApiModel):
     voice_description: str | None = Field(default=None, max_length=500)
 
 
+class CharacterReferenceAssetUpdateRequest(ApiModel):
+    view: CharacterViewAngle | None = None
+    label: str | None = Field(default=None, max_length=60)
+
+
+class CharacterPublishRequest(ApiModel):
+    # Explicit, per-publish opt-in — see `characters.service.publish_character`.
+    portrait_consent: bool = False
+
+
+class CharacterReferenceAsset(ApiModel):
+    asset_id: str
+    view: str = CharacterViewAngle.GENERAL.value
+    label: str | None = None
+    url: str | None = None
+    created_at: dt.datetime | None = None
+
+
 class CharacterResponse(Timestamped):
     id: str
     name: str
     description: str | None = None
-    reference_asset_ids: list[str] = Field(default_factory=list)
-    reference_asset_urls: list[str] = Field(default_factory=list)
+    reference_assets: list[CharacterReferenceAsset] = Field(default_factory=list)
     voice_description: str | None = None
+    status: CreationSkillStatus = CreationSkillStatus.DRAFT
+    visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
+    access_credits: int = 0
 
 
 class SeriesCreateRequest(ApiModel):

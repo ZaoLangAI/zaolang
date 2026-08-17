@@ -8,6 +8,7 @@ an agent returns is a fact until a caller persists it through a domain service.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.agents.slots import DEFAULT_SLOT
 from app.domain.agent_skills import service as agent_skills_service
+from app.domain.costs import service as costs_service
 from app.llm import client as llm_client
+from app.llm import failover
 from app.llm.model_defaults import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from app.models import AgentProfile, AgentRun
 from app.models.base import utcnow
@@ -52,12 +55,13 @@ class EffectiveBinding:
 def effective_binding(
     session: Session, agent_name: str, profile: AgentProfile | None
 ) -> EffectiveBinding:
-    """Resolves provider/model selection from AgentProfile.
+    """Resolves provider selection from AgentProfile.
 
     Non-default profiles inherit empty values from the role's default profile.
-    The model id is only whatever an administrator stored on the profile —
-    never a code-level default name. A pin that drifted off the catalog is
-    treated as unbound rather than guessed.
+    An agent binds *endpoints*, never a model name: every endpoint declares
+    exactly one model, so the name follows from the provider and the two can no
+    longer drift apart. A pin that drifted off the catalog is treated as
+    unbound rather than guessed.
     """
     role_default = agent_skills_service.default_profile(session, agent_name)
     inherited = (
@@ -70,19 +74,15 @@ def effective_binding(
         own = getattr(profile, name, None) if profile is not None else None
         return own if own is not None and own != "" else getattr(inherited, name, None)
 
-    endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
+    config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     default_endpoint_id = value("default_endpoint_id")
     backup_endpoint_id = value("backup_endpoint_id")
     preferred = tuple(
         endpoint_id for endpoint_id in (default_endpoint_id, backup_endpoint_id) if endpoint_id
     )
-    model = value("model") or ""
-    pinned = endpoints.get(default_endpoint_id) if default_endpoint_id else None
-    if pinned is not None and model and model not in pinned.models:
-        model = ""
 
     return EffectiveBinding(
-        model=model,
+        model=_bound_model(config, preferred),
         max_tokens=value("max_tokens") or DEFAULT_MAX_TOKENS,
         temperature=(
             value("temperature_milli") / 1000
@@ -94,11 +94,110 @@ def effective_binding(
     )
 
 
+def _bound_model(config: LlmProviderConfig, preferred: tuple[str, ...]) -> str:
+    """The model this binding starts on.
+
+    Failover may still finish on the backup endpoint's own model — this is only
+    where the call begins, and the name the stub reports when no gateway is
+    reachable. An agent pinned to endpoints that have since been removed counts
+    as unbound rather than quietly borrowing someone else's provider.
+    """
+    if preferred:
+        for endpoint_id in preferred:
+            endpoint = config.endpoints.get(endpoint_id)
+            if endpoint is not None and endpoint.kind == "general" and endpoint.model:
+                return endpoint.model
+        return ""
+    for _, endpoint in failover.general_candidates(config):
+        if endpoint.model:
+            return endpoint.model
+    return ""
+
+
+def _token_cost_micro_usd(
+    session: Session,
+    *,
+    endpoint_id: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+) -> int:
+    """Prices this call's tokens against the endpoint that actually served it.
+
+    Snapshotted at call time rather than derived when a report is read: an
+    operator correcting a price next month must not silently rewrite what
+    last month's traffic cost. A degraded call served by the stub has no real
+    endpoint and therefore no cost.
+    """
+    config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
+    endpoint = config.endpoints.get(endpoint_id)
+    if endpoint is None:
+        return 0
+    return costs_service.llm_call_cost_micro_usd(
+        endpoint.token_pricing,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
+
+
 def _recorded_model(result: llm_client.LlmCallResult, binding: EffectiveBinding) -> str | None:
     """Persists the catalog model that ran, or nothing when none was bound."""
     if result.degrade_reason == llm_client.NO_MODEL_BOUND:
         return None
     return result.response.model or binding.model or None
+
+
+def _record_agent_run(
+    session: Session,
+    *,
+    agent_name: str,
+    profile_id: str | None,
+    slot: str,
+    job_id: str | None,
+    user_id: str | None,
+    mode: str,
+    model: str | None,
+    status: str,
+    degraded: bool,
+    degrade_reason: str | None,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    latency_ms: int,
+    endpoint_id: str,
+    input_json: dict[str, Any],
+    output_json: dict[str, Any],
+) -> AgentRun:
+    """Shared `AgentRun` bookkeeping for both `run_agent` and
+    `run_agent_stream` — every agent call, streamed or not, must be recorded
+    the same way for the ops console's invocation list and replay."""
+    run = AgentRun(
+        cost_micro_usd=_token_cost_micro_usd(
+            session,
+            endpoint_id=endpoint_id,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        ),
+        job_id=job_id,
+        user_id=user_id,
+        agent_name=agent_name,
+        agent_profile_id=profile_id,
+        prompt_slot=slot,
+        mode=mode,
+        model=model,
+        status=status,
+        degraded=degraded,
+        degrade_reason=degrade_reason,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        latency_ms=latency_ms,
+        endpoint_id=endpoint_id,
+        input_json=input_json,
+        output_json=output_json,
+        request_id=get_request_id() or None,
+        created_at=utcnow(),
+    )
+    session.add(run)
+    session.flush()
+    return run
 
 
 def run_agent(
@@ -112,12 +211,20 @@ def run_agent(
     user_id: str | None = None,
     agent_id: str | None = None,
     slot: str = DEFAULT_SLOT,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> AgentOutcome:
     """Runs one agent turn and always returns usable structured data.
 
     `fallback` is what the caller gets when the model produces nothing
     parseable. Callers must choose a fallback that is safe by default — for the
     safety agent that means "needs human review", never "approve".
+
+    `max_tokens`/`temperature` override the generic sampling fallback for slots
+    whose output genuinely differs in shape — a verdict and a rewritten scene
+    description do not want the same budget or the same creativity. They are a
+    code-level property of the slot, not an operator setting: `/admin/agents`
+    deliberately stopped asking for them (see `agent_skills.service`).
 
     `system_prompt` is each agent module's own hardcoded constant. It is used
     verbatim only until an operator publishes an `AgentSkill` for this node;
@@ -142,8 +249,8 @@ def run_agent(
             {"role": "system", "content": resolved.text},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=binding.max_tokens,
-        temperature=binding.temperature,
+        max_tokens=max_tokens if max_tokens is not None else binding.max_tokens,
+        temperature=temperature if temperature is not None else binding.temperature,
         expect_json=True,
         reasoning_model=binding.reasoning_model,
         preferred_endpoint_ids=binding.preferred_endpoint_ids,
@@ -162,12 +269,13 @@ def run_agent(
     elif parse_failed:
         status = AgentRunStatus.FAILED
 
-    run = AgentRun(
+    run = _record_agent_run(
+        session,
+        agent_name=agent_name,
+        profile_id=profile_id,
+        slot=slot,
         job_id=job_id,
         user_id=user_id,
-        agent_name=agent_name,
-        agent_profile_id=profile_id,
-        prompt_slot=slot,
         mode=result.mode,
         model=_recorded_model(result, binding),
         status=status,
@@ -179,11 +287,7 @@ def run_agent(
         endpoint_id=result.endpoint_id,
         input_json={"system_prompt": resolved.text, "user_prompt": user_prompt},
         output_json=data,
-        request_id=get_request_id() or None,
-        created_at=utcnow(),
     )
-    session.add(run)
-    session.flush()
 
     return AgentOutcome(
         data=data,
@@ -192,6 +296,95 @@ def run_agent(
         model=run.model or binding.model or "",
         agent_run_id=run.id,
     )
+
+
+@dataclass(slots=True)
+class StreamOutcome:
+    raw_text: str
+    degraded: bool
+    model: str
+    agent_run_id: str
+
+
+def run_agent_stream(
+    session: Session,
+    *,
+    agent_name: str,
+    system_prompt: str,
+    user_prompt: str,
+    job_id: str | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+    slot: str = DEFAULT_SLOT,
+) -> tuple[Iterator[str], Callable[[], StreamOutcome]]:
+    """Streaming counterpart to `run_agent`.
+
+    Returns `(chunks, finalize)`. The caller must fully drain `chunks` before
+    calling `finalize()` — only then has the reply text and the endpoint that
+    served it settled. `finalize()` writes the `AgentRun` (same invariant as
+    `run_agent`) and returns the accumulated text plus its bookkeeping.
+
+    There is no `fallback`/`data` here: a streaming turn returns mixed
+    prose+JSON text, not one parsed JSON blob, so extracting and validating
+    structure out of it is the caller's job (see
+    `app.agents.copywriter.stream_script_turn`), not this wrapper's.
+    """
+    resolved = agent_skills_service.resolve_prompt(
+        session, agent_name, system_prompt, agent_id=agent_id, slot=slot
+    )
+    profile = resolved.profile
+    profile_id = profile.id if profile is not None else None
+    binding = effective_binding(session, agent_name, profile)
+
+    result = llm_client.StreamResult()
+    chunks = llm_client.stream_complete(
+        session=session,
+        agent_name=agent_name,
+        model=binding.model or "",
+        messages=[
+            {"role": "system", "content": resolved.text},
+            {"role": "user", "content": user_prompt},
+        ],
+        result=result,
+        max_tokens=binding.max_tokens,
+        temperature=binding.temperature,
+        reasoning_model=binding.reasoning_model,
+        preferred_endpoint_ids=binding.preferred_endpoint_ids,
+    )
+
+    def finalize() -> StreamOutcome:
+        model = (
+            None
+            if result.degrade_reason == llm_client.NO_MODEL_BOUND
+            else (result.model or binding.model or None)
+        )
+        run = _record_agent_run(
+            session,
+            agent_name=agent_name,
+            profile_id=profile_id,
+            slot=slot,
+            job_id=job_id,
+            user_id=user_id,
+            mode=result.mode,
+            model=model,
+            status=AgentRunStatus.DEGRADED if result.degraded else AgentRunStatus.SUCCEEDED,
+            degraded=result.degraded,
+            degrade_reason=result.degrade_reason,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            latency_ms=result.latency_ms,
+            endpoint_id=result.endpoint_id,
+            input_json={"system_prompt": resolved.text, "user_prompt": user_prompt},
+            output_json={"raw_text": result.text},
+        )
+        return StreamOutcome(
+            raw_text=result.text,
+            degraded=run.degraded,
+            model=run.model or binding.model or "",
+            agent_run_id=run.id,
+        )
+
+    return chunks, finalize
 
 
 @dataclass(slots=True)

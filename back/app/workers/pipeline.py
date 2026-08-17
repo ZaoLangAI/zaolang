@@ -102,9 +102,7 @@ def resume_after_input(
     Shared by the C-end and admin answer endpoints so a sandbox try-it
     resumes the same way a C-end job does, including `graph_override_json`.
     """
-    return WorkflowRunner(resolve_graph(ctx.session, job)).resume(
-        ctx, node_id=node_id, port="ok"
-    )
+    return WorkflowRunner(resolve_graph(ctx.session, job)).resume(ctx, node_id=node_id, port="ok")
 
 
 def resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:

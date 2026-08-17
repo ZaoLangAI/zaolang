@@ -79,9 +79,7 @@ class Settings(BaseSettings):
     @classmethod
     def _hmac_secrets_meet_hs256_minimum(cls, value: str) -> str:
         if len(value.encode("utf-8")) < 32:
-            raise ValueError(
-                "must be at least 32 bytes for HS256 (RFC 7518 Section 3.2)"
-            )
+            raise ValueError("must be at least 32 bytes for HS256 (RFC 7518 Section 3.2)")
         return value
 
     @field_validator("cors_origins", mode="before")
@@ -91,9 +89,22 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    # HTTP-only deployments (no TLS terminator in front of the API) cannot set
+    # a `Secure` cookie: the browser will accept it but never send it back, so
+    # login silently breaks. Leave unset to inherit `is_production`; set
+    # explicitly to decouple the cookie flag from the rest of production
+    # hardening (e.g. the seed-endpoint refusal), which must stay on.
+    cookie_secure_override: bool | None = Field(default=None, alias="COOKIE_SECURE")
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def cookie_secure(self) -> bool:
+        if self.cookie_secure_override is None:
+            return self.is_production
+        return self.cookie_secure_override
 
 
 @lru_cache

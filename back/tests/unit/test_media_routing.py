@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.agents import router
 from app.models.enums import Operation, QualityTier
 from app.platform_config import service as config_service
+from app.platform_config.schemas import LlmProviderConfig
 from app.providers.aihubmix_media import AiHubMixMediaProvider
 from tests.llm_catalog import bind_default_agents_to_catalog
 
@@ -19,24 +20,35 @@ def _seed_media_endpoint(
     input_modalities: list[str] | None = None,
     output_modalities: list[str] | None = None,
     enabled: bool = True,
+    media_pricing: dict | None = None,
 ) -> None:
+    """Adds a media endpoint without disturbing anything already configured.
+
+    Merging rather than replacing matters because the router's own selection
+    runs through an agent, and that agent needs a general endpoint to be
+    bound — wiping the pool here would make routing degrade for reasons
+    unrelated to what the test is checking.
+    """
+    current = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+    endpoints = {
+        existing_id: endpoint.model_dump(mode="json")
+        for existing_id, endpoint in current.endpoints.items()
+    }
+    endpoints[endpoint_id] = {
+        "name": "AiHubMix 测试端点",
+        "base_url": "https://aihubmix.invalid",
+        "api_key": "test-key",
+        "kind": "media",
+        "enabled": enabled,
+        "model": model,
+        "input_modalities": input_modalities or ["image"],
+        "output_modalities": output_modalities or ["image"],
+        "media_pricing": media_pricing or {},
+    }
     config_service.set_value(
         db,
         "llm_providers",
-        {
-            "endpoints": {
-                endpoint_id: {
-                    "name": "AiHubMix 测试端点",
-                    "base_url": "https://aihubmix.invalid",
-                    "api_key": "test-key",
-                    "kind": "media",
-                    "enabled": enabled,
-                    "model": model,
-                    "input_modalities": input_modalities or ["image"],
-                    "output_modalities": output_modalities or ["image"],
-                }
-            }
-        },
+        {"endpoints": endpoints},
         actor_user_id=None,
         note="test bootstrap",
     )
@@ -145,3 +157,64 @@ def test_h3_is_hard_filtered_when_video_parameters_exceed_its_contract(db: Sessi
     )
     assert accepted.selected is not None
     assert accepted.selected.provider == provider_name
+
+
+def test_a_configured_price_replaces_the_built_in_cost_estimate(db: Session) -> None:
+    """Until an operator prices an endpoint the router works from a hardcoded
+    prior, and says so — `cost_is_estimated` is what stops the LLM reading a
+    guess as a quote."""
+    _seed_media_endpoint(db)
+    bind_default_agents_to_catalog(db)
+    unpriced = router.route(
+        db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    )
+    guess = next(
+        item for item in unpriced.candidates if item.provider == "media-ep:image_to_image"
+    )
+    assert guess.cost_is_estimated is True
+
+    _seed_media_endpoint(
+        db,
+        media_pricing={
+            "image": {
+                "input_per_image_micro_usd": 2_860,
+                "generation_per_image_micro_usd": 25_350,
+            }
+        },
+    )
+    priced = router.route(
+        db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    )
+    quoted = next(item for item in priced.candidates if item.provider == "media-ep:image_to_image")
+    assert quoted.cost_is_estimated is False
+    assert quoted.estimated_cost_micro_usd == 25_350
+
+
+def test_cost_informs_the_llm_without_deciding_for_it(db: Session) -> None:
+    """Two endpoints priced an order of magnitude apart both stay eligible.
+
+    Cost is context on the candidate, not a filter: the hard filter is code
+    (capability, modality, contract limits) and the choice is the agent's.
+    """
+    _seed_media_endpoint(
+        db,
+        endpoint_id="cheap-ep",
+        media_pricing={"image": {"generation_per_image_micro_usd": 2_860}},
+    )
+    _seed_media_endpoint(
+        db,
+        endpoint_id="pricey-ep",
+        media_pricing={"image": {"generation_per_image_micro_usd": 253_500}},
+    )
+    bind_default_agents_to_catalog(db)
+
+    decision = router.route(
+        db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    )
+
+    by_provider = {item.provider: item for item in decision.candidates}
+    cheap = by_provider["cheap-ep:image_to_image"]
+    pricey = by_provider["pricey-ep:image_to_image"]
+    assert cheap.eligible is True
+    assert pricey.eligible is True
+    assert cheap.effective_cost_micro_usd < pricey.effective_cost_micro_usd

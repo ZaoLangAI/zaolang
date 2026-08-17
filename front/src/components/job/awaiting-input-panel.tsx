@@ -21,6 +21,11 @@ type JobHttp = {
  * C-end (`/v1/generation-jobs/{id}`) and admin (`/v1/admin/jobs/{id}`) share
  * the same question shapes; they only differ in which client and path prefix
  * they talk to. The parent un-renders this once SSE reports a different status.
+ *
+ * Every caller renders this with `key={jobId}`, so a different job is a fresh
+ * mount rather than a prop change on the same instance — the `useState`
+ * initializers are the reset, and the fetch effect never needs to zero out
+ * the previous job's answers/error itself.
  */
 export function AwaitingInputPanel({
   jobId,
@@ -44,10 +49,6 @@ export function AwaitingInputPanel({
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setSubmitted(false);
-    setError(null);
-    setRequest(null);
     client
       .get<JobInputRequest>(`${basePath}/${jobId}/input-request`)
       .then((body) => {

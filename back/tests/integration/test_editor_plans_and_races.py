@@ -344,7 +344,9 @@ def test_export_heartbeat_cannot_reopen_a_terminal_export(
     db.add(export)
     db.flush()
     with pytest.raises(OperationTerminal):
-        export_service.heartbeat(db, user_id=author.id, export_id=export.id, progress=50, stage="encoding")
+        export_service.heartbeat(
+            db, user_id=author.id, export_id=export.id, progress=50, stage="encoding"
+        )
 
 
 # --- concurrency races, exercised against real committed transactions ------
@@ -356,7 +358,9 @@ def _second_session() -> Session:
     return Session(bind=get_engine(), expire_on_commit=False)
 
 
-def test_concurrent_apply_commands_yields_one_winner_and_one_conflict(committed_db: Session) -> None:
+def test_concurrent_apply_commands_yields_one_winner_and_one_conflict(
+    committed_db: Session,
+) -> None:
     # `admin`/`author` are seeded through the rolled-back `db` fixture; a
     # `committed_db` test needs its own users so every row is visible across
     # the separate connections the race below opens.
@@ -432,7 +436,9 @@ def test_concurrent_apply_commands_yields_one_winner_and_one_conflict(committed_
     conflicts = [item for item in results if item == "conflict"]
     winners = [item for item in results if isinstance(item, str) and item != "conflict"]
     errors = [item for item in results if isinstance(item, Exception)]
-    assert not errors, f"race produced an unexpected exception instead of a domain conflict: {errors}"
+    assert not errors, (
+        f"race produced an unexpected exception instead of a domain conflict: {errors}"
+    )
     assert len(winners) == 1
     assert len(conflicts) == 1
 

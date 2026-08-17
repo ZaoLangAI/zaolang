@@ -158,6 +158,13 @@ export const IconArrowRight = (p: IconProps) => (
   </Icon>
 );
 
+/** An upward arrow: the send action in a chat composer. */
+export const IconArrowUp = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
+
 export const IconCopy = (p: IconProps) => (
   <Icon {...p}>
     <rect x="9" y="9" width="11" height="11" rx="2.5" />
@@ -368,6 +375,15 @@ export const IconMessage = (p: IconProps) => (
 );
 
 /** A trash can: a destructive, hard-delete action. */
+/** Conical flask — a connectivity probe against a live provider is an
+ * experiment on the real thing, not a settings action. */
+export const IconFlask = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 3h6M10 3v6.2L5.2 17.4A2 2 0 0 0 6.9 20.5h10.2a2 2 0 0 0 1.7-3.1L14 9.2V3" />
+    <path d="M7.6 15h8.8" />
+  </Icon>
+);
+
 export const IconTrash = (p: IconProps) => (
   <Icon {...p}>
     <path d="M5 7h14M10 7V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" />

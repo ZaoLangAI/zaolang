@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent
 from app.agents.slots import DEFAULT_SLOT
-from app.models.enums import AgentName, Operation, QualityTier
+from app.models.enums import AgentName, CharacterViewAngle, ImageAssetKind, Operation, QualityTier
 
 SYSTEM_PROMPT = f"""你是造浪平台的创作规划器。根据用户意图与来源作品参数，产出一个可执行的生成计划。
 规则：
@@ -179,3 +179,112 @@ def _sanitize_clarify_question(raw: Any) -> dict[str, Any] | None:
         "options": options,
         "required": bool(raw.get("required")),
     }
+
+
+ASSET_PLAN_SLOT = "asset_plan"
+
+_ASSET_KIND_BRIEF: dict[str, str] = {
+    ImageAssetKind.CHARACTER.value: (
+        "角色立绘：清晰展示人物五官、发型、服装与体型，中性背景，避免杂物/多人遮挡关键特征。"
+        "具体是正面、侧面还是背面见 character_view。"
+    ),
+    ImageAssetKind.SCENE.value: "短剧场景图：一个具体地点的空镜或建立镜头，无主要角色遮挡构图。",
+    ImageAssetKind.COVER.value: (
+        "短剧/系列封面：突出主视觉与氛围，适合竖版封面裁切，避免杂乱前景遮挡标题区。"
+    ),
+}
+
+# Only consulted when `asset_kind == character` — the specific angle each of
+# `GenerationParams.character_views`' entries asks for, one call at a time
+# (see `app.workflows.nodes.execute_asset_planning`'s loop over them).
+_CHARACTER_VIEW_BRIEF: dict[str, str] = {
+    CharacterViewAngle.FRONT.value: ("正面视角：全身或半身正面，五官、发型、服装清晰可辨。"),
+    CharacterViewAngle.SIDE.value: (
+        "侧面视角：与正面同一人物的 90 度侧面，姿态、服装与正面保持一致。"
+    ),
+    CharacterViewAngle.BACK.value: ("背面视角：与正面同一人物的背面，发型/服装背面细节清晰。"),
+}
+
+_ASSET_KIND_BRIEF_LINES = chr(10).join(f"- {k}: {v}" for k, v in _ASSET_KIND_BRIEF.items())
+_CHARACTER_VIEW_BRIEF_LINES = chr(10).join(f"- {k}: {v}" for k, v in _CHARACTER_VIEW_BRIEF.items())
+
+ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
+负责把用户意图整理成适合特定用途的图片生成方案。
+资产用途说明（asset_kind -> 要求）：
+{_ASSET_KIND_BRIEF_LINES}
+当 asset_kind 是 character 时，character_view 进一步说明这一张具体要哪个角度：
+{_CHARACTER_VIEW_BRIEF_LINES}
+规则：
+- prompt_enhancements 只补充镜头、构图、光线、一致性相关的描述，不要改变用户描述的角色/场景本身特征
+- 当 asset_kind 是 character 且用户之前已经生成过同一角色的其他视角时
+  （source_params 里会带出该角色已有的描述），prompt_enhancements 必须包含足以保持发型、
+  服装、体型一致的关键特征，不要遗漏
+- subject_name 是这个角色/场景适合作为库内条目名称的简短命名（4-12 个字），
+  没有更具体的名字时可以用一个概括性的称呼（例如"神秘女侦探"），但不要留空
+- negative_prompt_suggestions 给出会破坏该用途可用性的反面描述
+  （例如角色立绘要规避"多人入镜/半身裁切"）
+
+{JSON_INSTRUCTION}
+格式：{{"subject_name": string, "prompt_enhancements": string[],
+"negative_prompt_suggestions": string[]}}"""
+
+ASSET_PLAN_FALLBACK: dict[str, Any] = {
+    "subject_name": "新角色",
+    "prompt_enhancements": [],
+    "negative_prompt_suggestions": [],
+}
+
+
+def plan_asset(
+    session: Session,
+    *,
+    intent: str,
+    asset_kind: str,
+    character_view: str | None = None,
+    target_character_id: str | None = None,
+    target_scene_id: str | None = None,
+    source_params: dict[str, Any] | None = None,
+    job_id: str | None = None,
+    user_id: str | None = None,
+    agent_id: str | None = None,
+) -> AgentOutcome:
+    """Plans a `text_to_image`/`image_to_image` job whose output is meant for
+    the character/scene/cover library rather than a one-off image — see
+    `app.workflows.nodes.execute_asset_planning`.
+
+    `character_view` only matters when `asset_kind == "character"`: which of
+    `front`/`side`/`back` this particular call's output is for, one call per
+    entry in `GenerationParams.character_views` for a multi-view completion
+    job (see `_CHARACTER_VIEW_BRIEF`).
+    """
+    payload = {
+        "intent": intent,
+        "asset_kind": asset_kind,
+        "character_view": character_view,
+        "target_character_id": target_character_id,
+        "target_scene_id": target_scene_id,
+        "source_params": source_params or {},
+    }
+    fallback = dict(ASSET_PLAN_FALLBACK)
+    outcome = run_agent(
+        session,
+        agent_name=AgentName.PLANNER,
+        system_prompt=ASSET_PLAN_SYSTEM_PROMPT,
+        user_prompt=json.dumps(payload, ensure_ascii=False),
+        fallback=fallback,
+        job_id=job_id,
+        user_id=user_id,
+        agent_id=agent_id,
+        slot=ASSET_PLAN_SLOT,
+    )
+    subject = outcome.data.get("subject_name")
+    outcome.data["subject_name"] = str(subject).strip()[:60] if subject else "新角色"
+    enhancements = outcome.data.get("prompt_enhancements")
+    outcome.data["prompt_enhancements"] = (
+        [str(item)[:200] for item in enhancements[:8]] if isinstance(enhancements, list) else []
+    )
+    negatives = outcome.data.get("negative_prompt_suggestions")
+    outcome.data["negative_prompt_suggestions"] = (
+        [str(item)[:200] for item in negatives[:8]] if isinstance(negatives, list) else []
+    )
+    return outcome

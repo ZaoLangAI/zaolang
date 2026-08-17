@@ -43,6 +43,7 @@ export type RouteSummary = S['RouteSummary'];
 export type ShortformProfile = S['ShortformProfileResponse'];
 export type ShortformProfiles = S['ShortformProfilesResponse'];
 export type PromptEnhanceResult = S['PromptEnhanceResponse'];
+export type PromptEnhancePayload = S['PromptEnhanceRequest'];
 export type ClarifyQuestion = S['ClarifyQuestionResponse'];
 export type ClarifyResult = S['PromptClarifyResponse'];
 export type JobInputQuestion = S['JobInputQuestionView'];
@@ -55,6 +56,7 @@ export type DistributionChannel = S['DistributionChannel'];
 export type PublicationStatus = S['PublicationStatus'];
 
 export type Character = S['CharacterResponse'];
+export type Scene = S['SceneResponse'];
 export type Series = S['SeriesResponse'];
 export type SeriesDetail = S['SeriesDetailResponse'];
 export type SeriesEpisode = S['SeriesEpisodeSummary'];

@@ -34,6 +34,7 @@ def transition(
     failure_message: str | None = None,
     actual_credits: int | None = None,
     output_asset_id: str | None = None,
+    output_asset_ids: list[str] | None = None,
     now: dt.datetime | None = None,
 ) -> GenerationJob:
     """Moves a job to `target`, or raises if the move is illegal.
@@ -61,6 +62,8 @@ def transition(
         values["actual_credits"] = actual_credits
     if output_asset_id is not None:
         values["output_asset_id"] = output_asset_id
+    if output_asset_ids is not None:
+        values["output_asset_ids_json"] = output_asset_ids
 
     matched = rows_affected(
         session,

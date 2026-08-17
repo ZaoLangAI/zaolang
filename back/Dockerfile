@@ -5,10 +5,19 @@
 # single-stage build ends up several hundred megabytes larger.
 FROM python:3.12-slim-bookworm AS builder
 
+# Both empty by default (upstream Debian/PyPI). Set at build time on a host
+# where those are slow/throttled, e.g.
+# `--build-arg APT_MIRROR=mirrors.tencentyun.com --build-arg PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple`.
+ARG APT_MIRROR=
+ARG PIP_INDEX_URL=
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=${PIP_INDEX_URL}
 
-RUN apt-get update \
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && apt-get update \
     && apt-get install -y --no-install-recommends build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,9 +30,14 @@ RUN python -m venv /opt/venv \
 
 FROM python:3.12-slim-bookworm AS runtime
 
+ARG APT_MIRROR=
+
 # `pg_dump` is not optional: the admin backup endpoint shells out to it, so an
 # image without it would fail only when an operator triggers a backup.
-RUN apt-get update \
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
+    fi \
+    && apt-get update \
     && apt-get install -y --no-install-recommends curl postgresql-client ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 zaolang

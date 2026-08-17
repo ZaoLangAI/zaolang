@@ -42,9 +42,7 @@ def get_profile(handle: str, session: DbSession, viewer: OptionalUser) -> Public
             Work,
             and_(
                 Work.owner_user_id == profile.user_id,
-                Work.lifecycle_status.notin_(
-                    [LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED]
-                ),
+                Work.lifecycle_status.notin_([LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED]),
             ),
         ),
         follower_count=_count(session, Follow, Follow.followed_user_id == profile.user_id),
@@ -70,9 +68,7 @@ def profile_works(
         select(Work, WorkVersion)
         .join(WorkVersion, WorkVersion.id == Work.current_version_id)
         .where(Work.owner_user_id == profile.user_id)
-        .where(
-            Work.lifecycle_status.notin_([LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED])
-        )
+        .where(Work.lifecycle_status.notin_([LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED]))
         .order_by(Work.published_at.desc().nullslast(), Work.id.desc())
         .limit(limit)
     )

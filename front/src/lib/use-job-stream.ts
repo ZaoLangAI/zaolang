@@ -54,7 +54,33 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
     initial?.events?.reduce((max, event) => Math.max(max, event.sequence), 0) ?? 0,
   );
 
+  // Every existing caller mounts this hook once per job (a new page instance
+  // per navigation), so `job`/`events` only ever needed their `useState`
+  // initializer. The image studio's inline preview instead keeps one long-
+  // lived hook instance and swaps `jobId` in place when the user submits a
+  // new iteration or clicks an older version in the history strip — without
+  // this reset, the previous job's state (and its `Last-Event-ID` position)
+  // would leak into the next one.
+  const previousJobId = useRef(jobId);
   useEffect(() => {
+    if (previousJobId.current === jobId) return;
+    previousJobId.current = jobId;
+    setJob(initial);
+    setEvents(initial?.events ?? []);
+    lastEventId.current =
+      initial?.events?.reduce((max, event) => Math.max(max, event.sequence), 0) ?? 0;
+    // `initial` is only meaningful at the moment `jobId` changes — it is not
+    // itself a dependency, or a caller passing a fresh object each render
+    // (`initial ?? undefined`-style props) would reset state every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+
+  useEffect(() => {
+    // An empty id means "nothing selected yet" — the image studio's inline
+    // preview calls this hook unconditionally (hooks can't be called
+    // conditionally) before a job exists, so this has to be a safe no-op
+    // rather than opening a stream against `/generation-jobs//events`.
+    if (!jobId) return;
     if (initial && isTerminal(initial.status)) return;
 
     const controller = new AbortController();
@@ -70,7 +96,7 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
     };
 
     const applyLatest = (latest: GenerationJob) => {
-      setJob(latest);
+      setJob((current) => clampProgress(current, latest));
       if (!latest.events?.length) return;
       setEvents((current) => mergeEvents(current, latest.events ?? []));
       rememberSequences(latest.events);
@@ -189,7 +215,7 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
   }, [jobId, initial]);
 
   const applyJob = (next: GenerationJob) => {
-    setJob(next);
+    setJob((current) => clampProgress(current, next));
     if (!next.events?.length) return;
     setEvents((current) => mergeEvents(current, next.events ?? []));
     lastEventId.current = Math.max(
@@ -199,6 +225,19 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
   };
 
   return { job, events, connected, reconnecting, applyJob };
+}
+
+/**
+ * A multi-view `CHARACTER` job's progress constants restart lower on each
+ * loop back through `asset_planning` before the backend's own rescaling (see
+ * `zaolang-generation-jobs`) catches up — and a REST re-fetch (unlike the SSE
+ * frame path below) has no per-event ordering guarantee to lean on. Once a
+ * higher number has been shown, never show a lower one for the same job
+ * before it reaches a terminal status.
+ */
+function clampProgress(current: GenerationJob | null, next: GenerationJob): GenerationJob {
+  if (!current || current.id !== next.id || isTerminal(next.status)) return next;
+  return { ...next, progress: Math.max(current.progress, next.progress) };
 }
 
 function patchJobFromEvent(

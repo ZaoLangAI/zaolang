@@ -15,6 +15,7 @@ from app.api.schemas.admin import CreationSkillAdminView, TombstoneRequest
 from app.api.schemas.common import Page
 from app.api.v1.admin.deps import AdminDangerous, AdminRead, Operator, Viewer, require_confirmation
 from app.domain.audit import service as audit
+from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound
 from app.domain.notifications import push as notifications
 from app.domain.skill_library import service as skill_library
@@ -93,4 +94,6 @@ def _view(session: DbSession, skill: CreationSkill) -> CreationSkillAdminView:
         access_credits=skill.access_credits,
         reject_reason=skill.reject_reason,
         created_at=skill.created_at,
+        character_reference_assets=characters_service.admin_reference_assets(session, skill),
+        character_portrait_consent_at=characters_service.admin_portrait_consent_at(skill),
     )

@@ -31,6 +31,8 @@ from app.api.schemas.admin import (
     LlmProviderPoolView,
     LlmProviderValidationJob,
     LlmProviderValidationResult,
+    MediaPricingPayload,
+    TokenPricingPayload,
 )
 from app.api.v1.admin.deps import (
     Admin,
@@ -97,16 +99,19 @@ def upsert_llm_provider(
             base_url=payload.base_url,
             api_key=api_key,
             kind=payload.kind,
-            models=payload.models if payload.kind == "general" else [],
             role=payload.role if payload.kind == "general" else "backup",
             backup_order=payload.backup_order if payload.kind == "general" else 100,
-            model=payload.model if payload.kind == "media" else "",
+            model=payload.model,
             input_modalities=list(payload.input_modalities) if payload.kind == "media" else [],
             output_modalities=list(payload.output_modalities) if payload.kind == "media" else [],
             protocol=payload.protocol if payload.kind == "media" else None,
             max_concurrency=payload.max_concurrency if payload.kind == "general" else 1,
             timeout_ms=payload.timeout_ms,
             enabled=payload.enabled,
+            context_length=payload.context_length,
+            max_output_tokens=payload.max_output_tokens,
+            token_pricing=payload.token_pricing.model_dump(),
+            media_pricing=payload.media_pricing.model_dump(exclude_none=True),
         )
         _assert_agent_bindings_compatible(session, endpoint_id, endpoint)
         config.endpoints[endpoint_id] = endpoint
@@ -128,7 +133,7 @@ def upsert_llm_provider(
             "enabled": payload.enabled,
             "kind": payload.kind,
             "role": payload.role,
-            "model": payload.model if payload.kind == "media" else None,
+            "model": payload.model,
             "protocol": endpoint.protocol if payload.kind == "media" else None,
             "input_modalities": sorted(payload.input_modalities) if payload.kind == "media" else [],
             "output_modalities": sorted(payload.output_modalities)
@@ -249,7 +254,7 @@ def _run_validation(
         result = LlmProviderValidationResult(
             endpoint_id=endpoint_id,
             kind=endpoint.kind,
-            target_model=endpoint.model or (endpoint.models[0] if endpoint.models else None),
+            target_model=endpoint.model or None,
             probe_type="media_generation" if endpoint.kind == "media" else "chat_completion",
             reachable=False,
             usable=False,
@@ -325,7 +330,6 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         api_key_configured=bool(endpoint.api_key),
         api_key_preview=_mask(endpoint.api_key),
         kind=endpoint.kind,
-        models=endpoint.models,
         model=endpoint.model,
         input_modalities=list(endpoint.input_modalities),
         output_modalities=list(endpoint.output_modalities),
@@ -336,6 +340,14 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         backup_order=endpoint.backup_order,
         timeout_ms=endpoint.timeout_ms,
         enabled=endpoint.enabled,
+        context_length=endpoint.context_length,
+        max_output_tokens=endpoint.max_output_tokens,
+        token_pricing=TokenPricingPayload.model_validate(
+            endpoint.token_pricing.model_dump(mode="json")
+        ),
+        media_pricing=MediaPricingPayload.model_validate(
+            endpoint.media_pricing.model_dump(mode="json")
+        ),
         concurrency_in_use=status.concurrency_in_use,
         circuit_breaker_open=status.circuit_breaker_open,
         recent_attempts=status.recent_attempts,
@@ -365,11 +377,7 @@ def _assert_agent_bindings_compatible(
     endpoint_id: str,
     endpoint: LlmProviderEndpoint,
 ) -> None:
+    if endpoint.kind == "general":
+        return
     for profile in _referencing_profiles(session, endpoint_id):
-        if endpoint_id in (profile.default_endpoint_id, profile.backup_endpoint_id):
-            if endpoint.kind != "general":
-                raise ValidationFailed(f"{profile.display_name} 将该端点作为通用模型供应商使用。")
-            if profile.model and profile.model not in endpoint.models:
-                raise ValidationFailed(
-                    f"{profile.display_name} 绑定的模型 {profile.model} 不在端点模型列表中。"
-                )
+        raise ValidationFailed(f"{profile.display_name} 将该端点作为通用模型供应商使用。")

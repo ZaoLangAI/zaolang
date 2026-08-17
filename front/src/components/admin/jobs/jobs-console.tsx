@@ -331,6 +331,7 @@ export function JobsConsole() {
           <div className="flex flex-col gap-6">
             {job.status === 'awaiting_input' && !followUpAnswered && canOperate ? (
               <AwaitingInputPanel
+                key={job.id}
                 jobId={job.id}
                 client={adminApi}
                 basePath="/v1/admin/jobs"

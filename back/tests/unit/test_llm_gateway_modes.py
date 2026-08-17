@@ -44,7 +44,7 @@ def seed_endpoint(db: Session):  # type: ignore[no-untyped-def]
                         "base_url": "https://example.invalid/v1",
                         "api_key": "test-key",
                         "kind": "general",
-                        "models": ["test-llm"],
+                        "model": "test-llm",
                         "role": "primary",
                     }
                 }

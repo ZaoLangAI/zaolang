@@ -72,12 +72,12 @@ export function AgentProfileDialog({
   const [isDefault, setIsDefault] = useState(profile?.is_default ?? false);
   const [defaultEndpointId, setDefaultEndpointId] = useState(profile?.default_endpoint_id ?? '');
   const [backupEndpointId, setBackupEndpointId] = useState(profile?.backup_endpoint_id ?? '');
-  const [model, setModel] = useState(profile?.model ?? '');
   const [reasoningModel, setReasoningModel] = useState(
     profile?.reasoning_model === null || profile?.reasoning_model === undefined
       ? ''
       : String(profile.reasoning_model),
   );
+  const [assetKindDefault, setAssetKindDefault] = useState(profile?.default_for_asset_kind ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,9 +106,6 @@ export function AgentProfileDialog({
   );
   const selectedDefault = generalEndpoints.find((endpoint) => endpoint.id === defaultEndpointId);
   const selectedBackup = generalEndpoints.find((endpoint) => endpoint.id === backupEndpointId);
-  const modelOptions = (selectedDefault?.models ?? []).filter(
-    (name) => !selectedBackup || (selectedBackup.models ?? []).includes(name),
-  );
 
   const toggleOperation = (operation: string) =>
     setManualOperations((current) =>
@@ -119,18 +116,21 @@ export function AgentProfileDialog({
 
   const keyValid = /^[a-z0-9][a-z0-9-]*$/.test(key);
   const providerRequired = !isEdit || profile?.is_default;
-  const bindingsValid = providerRequired
-    ? Boolean(defaultEndpointId) && model.length > 0 && modelOptions.includes(model)
-    : !defaultEndpointId || (model.length > 0 && modelOptions.includes(model));
+  const bindingsValid = !providerRequired || Boolean(defaultEndpointId);
   const canSave =
     displayName.trim().length > 0 && role.length > 0 && (isEdit || keyValid) && bindingsValid;
 
   /** `""` clears a pin server-side; `undefined` leaves it alone. Sending the
-   * unchanged value back is harmless and keeps the two branches symmetric. */
+   * unchanged value back is harmless and keeps the two branches symmetric.
+   *
+   * No `model`: an endpoint now serves exactly one model, so the agent binds
+   * endpoints and whichever one answers the call decides the model. That is
+   * also what makes a backup on another vendor useful — it no longer has to
+   * carry an identical model id.
+   */
   const bindingPayload = () => ({
     default_endpoint_id: defaultEndpointId,
     backup_endpoint_id: defaultEndpointId ? backupEndpointId : '',
-    model: defaultEndpointId ? model : '',
     reasoning_model: reasoningModel === '' ? null : reasoningModel === 'true',
   });
 
@@ -147,6 +147,7 @@ export function AgentProfileDialog({
           // how you move it — so only ever send the promotion.
           is_default: isDefault && !profile.is_default ? true : undefined,
           ...bindingPayload(),
+          ...(role === 'copy' ? { default_for_asset_kind: assetKindDefault || null } : {}),
         });
       } else {
         await adminApi.post<AgentProfile>('/v1/admin/agent-profiles', {
@@ -156,6 +157,7 @@ export function AgentProfileDialog({
           description,
           operations,
           ...bindingPayload(),
+          ...(role === 'copy' ? { default_for_asset_kind: assetKindDefault || null } : {}),
         });
       }
       notify(isEdit ? t('agentSaved') : t('agentCreated'), 'success');
@@ -254,17 +256,14 @@ export function AgentProfileDialog({
             label={t('defaultProvider')}
             value={defaultEndpointId}
             onChange={(event) => {
-              const next = event.target.value;
-              setDefaultEndpointId(next);
+              setDefaultEndpointId(event.target.value);
               setBackupEndpointId('');
-              const endpoint = generalEndpoints.find((item) => item.id === next);
-              setModel(endpoint?.models?.[0] ?? '');
             }}
             options={[
               { value: '', label: t('modelInherit') },
               ...generalEndpoints.map((endpoint) => ({
                 value: endpoint.id,
-                label: endpoint.name,
+                label: endpoint.model ? `${endpoint.name} · ${endpoint.model}` : endpoint.name,
               })),
             ]}
           />
@@ -273,36 +272,25 @@ export function AgentProfileDialog({
             hint={t('backupModelHint')}
             value={backupEndpointId}
             disabled={defaultEndpointId === ''}
-            onChange={(event) => {
-              const next = event.target.value;
-              setBackupEndpointId(next);
-              const backup = generalEndpoints.find((item) => item.id === next);
-              if (backup && !(backup.models ?? []).includes(model)) {
-                setModel(
-                  (selectedDefault?.models ?? []).find((name) =>
-                    (backup.models ?? []).includes(name),
-                  ) ?? '',
-                );
-              }
-            }}
+            onChange={(event) => setBackupEndpointId(event.target.value)}
             options={[
               { value: '', label: t('backupModelNone') },
               ...generalEndpoints
                 .filter((endpoint) => endpoint.id !== defaultEndpointId)
-                .map((endpoint) => ({ value: endpoint.id, label: endpoint.name })),
+                .map((endpoint) => ({
+                  value: endpoint.id,
+                  label: endpoint.model ? `${endpoint.name} · ${endpoint.model}` : endpoint.name,
+                })),
             ]}
           />
-          <Select
-            label={t('model')}
-            hint={t('modelHint')}
-            value={model}
-            disabled={!defaultEndpointId}
-            onChange={(event) => setModel(event.target.value)}
-            options={[
-              { value: '', label: t('modelPlaceholder') },
-              ...modelOptions.map((name) => ({ value: name, label: name })),
-            ]}
-          />
+          {selectedDefault ? (
+            <p className="text-xs text-muted">
+              {t('modelDerived', {
+                model: selectedDefault.model || t('modelPlaceholder'),
+                backup: selectedBackup?.model || t('backupModelNone'),
+              })}
+            </p>
+          ) : null}
           <p className="text-xs text-muted">{t('samplingInherited')}</p>
           <Select
             label={t('reasoningModel')}
@@ -323,6 +311,21 @@ export function AgentProfileDialog({
             description={t('makeDefaultHint')}
             checked={isDefault}
             onChange={setIsDefault}
+          />
+        ) : null}
+
+        {role === 'copy' ? (
+          <Select
+            label={t('assetKindDefaultLabel')}
+            hint={t('assetKindDefaultHint')}
+            value={assetKindDefault}
+            onChange={(event) => setAssetKindDefault(event.target.value)}
+            options={[
+              { value: '', label: t('assetKindDefaultNone') },
+              { value: 'character', label: t('assetKindDefaultCharacter') },
+              { value: 'scene', label: t('assetKindDefaultScene') },
+              { value: 'cover', label: t('assetKindDefaultCover') },
+            ]}
           />
         ) : null}
 

@@ -97,7 +97,9 @@ class WorkAppeal(Base, TimestampMixin):
     __tablename__ = "work_appeals"
 
     id: Mapped[str] = id_column("apl")
-    work_id: Mapped[str] = mapped_column(ForeignKey("works.id", ondelete="RESTRICT"), nullable=False)
+    work_id: Mapped[str] = mapped_column(
+        ForeignKey("works.id", ondelete="RESTRICT"), nullable=False
+    )
     owner_user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )

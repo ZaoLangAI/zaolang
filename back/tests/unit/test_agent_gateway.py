@@ -160,7 +160,7 @@ def test_a_route_that_cannot_do_the_operation_is_filtered_not_scored(db: Session
     open_workflow = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
     assert open_workflow.eligible is False
     assert open_workflow.filter_reason == "operation_not_supported"
-    assert open_workflow.effective_cost == 0
+    assert open_workflow.effective_cost_micro_usd == 0
 
 
 def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> None:
@@ -206,8 +206,8 @@ def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
     flaky = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
-    catalogue_cost = router.build_catalog(db)["fake_open_workflow"].unit_cost_minor
-    assert flaky.effective_cost > catalogue_cost
+    catalogue_cost = router.build_catalog(db)["fake_open_workflow"].unit_cost_micro_usd
+    assert flaky.effective_cost_micro_usd > catalogue_cost
 
 
 def test_llm_picks_the_lowest_effective_cost_among_eligible_candidates(db: Session) -> None:
@@ -219,7 +219,7 @@ def test_llm_picks_the_lowest_effective_cost_among_eligible_candidates(db: Sessi
     )
     assert decision.selected is not None
     eligible = [c for c in decision.candidates if c.eligible]
-    cheapest = min(eligible, key=lambda c: (c.effective_cost, c.provider))
+    cheapest = min(eligible, key=lambda c: (c.effective_cost_micro_usd, c.provider))
     assert decision.selected.provider == cheapest.provider
     assert decision.reason.startswith("llm_selected")
 
@@ -525,6 +525,133 @@ def test_an_agent_of_another_role_is_refused_at_run_time_too(db: Session) -> Non
     assert resolved_id == default.id
 
 
+def test_default_for_asset_kind_is_rejected_outside_the_copy_role(db: Session) -> None:
+    """Only "AI 润色" (the `copy` role) routes by `ImageAssetKind` — a judgment
+    role has no notion of a character/scene/cover asset to specialise for."""
+    _seeded(db)
+    with pytest.raises(ValidationFailed):
+        agent_skills_service.create_profile(
+            db,
+            role="safety",
+            key="video-strict",
+            display_name="严格版",
+            default_for_asset_kind="character",
+        )
+
+
+def test_default_for_asset_kind_rejects_a_kind_outside_the_three_buckets(db: Session) -> None:
+    """`general` is deliberately not a bucket: a plain image job keeps using
+    the role's ordinary default agent, never a kind-specific one."""
+    _seeded(db)
+    with pytest.raises(ValidationFailed):
+        agent_skills_service.create_profile(
+            db,
+            role="copy",
+            key="enhance-general",
+            display_name="通用润色",
+            default_for_asset_kind="general",
+        )
+
+
+def test_promoting_a_second_asset_kind_default_demotes_the_first(db: Session) -> None:
+    """Mirrors `is_default`: at most one profile per `(role, bucket)`."""
+    _seeded(db)
+    first = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-character-a",
+        display_name="角色润色 A",
+        default_for_asset_kind="character",
+    )
+    assert first.default_for_asset_kind == "character"
+
+    second = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-character-b",
+        display_name="角色润色 B",
+        default_for_asset_kind="character",
+    )
+    db.refresh(first)
+    assert first.default_for_asset_kind is None
+    assert second.default_for_asset_kind == "character"
+    assert (
+        agent_skills_service.default_profile_for_asset_kind(db, "copy", "character").id == second.id
+    )
+
+
+def test_update_profile_can_explicitly_clear_the_asset_kind_default(db: Session) -> None:
+    """Unlike `is_default`, clearing this one directly is allowed — there is
+    no invariant requiring some profile always hold a given bucket."""
+    _seeded(db)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-scene",
+        display_name="场景润色",
+        default_for_asset_kind="scene",
+    )
+    agent_skills_service.update_profile(db, profile.id, default_for_asset_kind=None)
+    db.refresh(profile)
+    assert profile.default_for_asset_kind is None
+    assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "scene") is None
+
+
+def test_update_profile_leaves_the_asset_kind_default_untouched_when_omitted(
+    db: Session,
+) -> None:
+    """The sentinel default (`UNSET_BINDING`) must behave like `reasoning_model`'s
+    — an update that does not mention the field must not silently clear it."""
+    _seeded(db)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-cover",
+        display_name="封面润色",
+        default_for_asset_kind="cover",
+    )
+    agent_skills_service.update_profile(db, profile.id, display_name="封面润色 · 改名")
+    db.refresh(profile)
+    assert profile.default_for_asset_kind == "cover"
+
+
+def test_default_profile_for_asset_kind_is_none_for_an_unclaimed_bucket(db: Session) -> None:
+    _seeded(db)
+    assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "cover") is None
+    # An unrecognised kind (e.g. `general`, or empty) never resolves either,
+    # regardless of what happens to be configured.
+    assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "general") is None
+    assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "") is None
+
+
+def test_ensure_default_enhance_asset_agents_is_idempotent(db: Session) -> None:
+    """Mirrors `ensure_default_profiles`'s own idempotency test: safe to call
+    on every startup, and an operator's later edit is not clobbered."""
+    from app.scripts import seed as seed_script
+
+    _seeded(db)
+    seed_script.ensure_default_enhance_asset_agents(db)
+
+    buckets = {"character", "scene", "cover"}
+    profiles_by_bucket = {
+        bucket: agent_skills_service.default_profile_for_asset_kind(db, "copy", bucket)
+        for bucket in buckets
+    }
+    assert all(profile is not None for profile in profiles_by_bucket.values())
+    assert len({profile.id for profile in profiles_by_bucket.values()}) == 3
+
+    # An operator demotes one and repoints it manually; a second run must not
+    # re-seed the bucket out from under that choice.
+    character_profile = profiles_by_bucket["character"]
+    assert character_profile is not None
+    agent_skills_service.update_profile(db, character_profile.id, default_for_asset_kind=None)
+
+    seed_script.ensure_default_enhance_asset_agents(db)
+    db.refresh(character_profile)
+    assert character_profile.default_for_asset_kind is None
+    assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "character") is None
+
+
 def test_intent_routers_two_prompts_do_not_overwrite_each_other(db: Session) -> None:
     """The defect prompt slots exist to fix: `classify` and `select_provider`
     are one agent identity making two unrelated calls, so publishing one used
@@ -607,12 +734,14 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
     a caller using an undeclared slot cannot be edited at all."""
     called = {
         AgentName.SAFETY.value: {"default"},
-        AgentName.PLANNER.value: {"default", planner.CLARIFY_SLOT},
+        AgentName.PLANNER.value: {"default", planner.CLARIFY_SLOT, planner.ASSET_PLAN_SLOT},
         AgentName.QUALITY.value: {"default"},
         AgentName.COPY.value: {
             copywriter.SUGGEST_SLOT,
             copywriter.ENHANCE_SLOT,
             copywriter.CLARIFY_SLOT,
+            copywriter.SCRIPT_DRAFT_SLOT,
+            copywriter.SCRIPT_REVISE_SLOT,
         },
         AgentName.INTENT_ROUTER.value: {
             intent_router.CLASSIFY_SLOT,
@@ -641,7 +770,7 @@ def _seed_general_endpoints(db: Session) -> None:
                     "base_url": "https://pinned.invalid",
                     "api_key": "k",
                     "kind": "general",
-                    "models": ["pinned-model"],
+                    "model": "pinned-model",
                     "role": "primary",
                 },
                 "backup-ep": {
@@ -649,7 +778,9 @@ def _seed_general_endpoints(db: Session) -> None:
                     "base_url": "https://backup.invalid",
                     "api_key": "k",
                     "kind": "general",
-                    "models": ["pinned-model", "backup-model"],
+                    # Deliberately a different model: a backup exists to keep
+                    # serving when the default is down, not to mirror its name.
+                    "model": "backup-model",
                     "role": "backup",
                 },
             }
@@ -660,7 +791,11 @@ def _seed_general_endpoints(db: Session) -> None:
 
 
 def test_a_variant_that_pins_nothing_still_draws_from_the_shared_pool(db: Session) -> None:
-    """The behaviour every variant had before per-variant bindings existed."""
+    """The behaviour every variant had before per-variant bindings existed.
+
+    Unpinned means "whatever the pool offers first", so the model comes from
+    the primary endpoint rather than being empty.
+    """
     _seeded(db)
     _seed_general_endpoints(db)
     profile = agent_skills_service.default_profile(db, "safety")
@@ -668,7 +803,7 @@ def test_a_variant_that_pins_nothing_still_draws_from_the_shared_pool(db: Sessio
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
     assert binding.preferred_endpoint_ids == ()
-    assert binding.model == ""
+    assert binding.model == "pinned-model"
 
 
 def test_a_pinned_variant_tries_its_own_endpoints_first(db: Session) -> None:
@@ -681,14 +816,31 @@ def test_a_pinned_variant_tries_its_own_endpoints_first(db: Session) -> None:
         display_name="钉模型版",
         default_endpoint_id="pinned-ep",
         backup_endpoint_id="backup-ep",
-        model="pinned-model",
     )
 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
     assert binding.preferred_endpoint_ids == ("pinned-ep", "backup-ep")
-    # The model is selected together with the provider and validated against
-    # both the default and backup endpoint.
+    # No model was pinned because none can be: the default endpoint names it.
     assert binding.model == "pinned-model"
+
+
+def test_a_binding_whose_endpoints_all_vanished_counts_as_unbound(db: Session) -> None:
+    """A pin that drifted off the catalog must not borrow the shared pool."""
+    _seeded(db)
+    _seed_general_endpoints(db)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="orphaned",
+        display_name="失效绑定版",
+        default_endpoint_id="pinned-ep",
+    )
+    config_service.set_value(
+        db, "llm_providers", {"endpoints": {}}, actor_user_id=None, note="drop the pool"
+    )
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert binding.model == ""
 
 
 def test_pinning_an_endpoint_restricts_the_provider_pool(db: Session) -> None:
@@ -722,7 +874,6 @@ def test_a_profile_without_sampling_overrides_uses_generic_defaults(db: Session)
         role="safety",
         key="hot",
         display_name="高温版",
-        model=TEST_LLM_MODEL,
         reasoning_model=True,
     )
     assert (profile.max_tokens, profile.temperature_milli) == (None, None)
@@ -811,12 +962,7 @@ def test_pinning_an_endpoint_that_no_longer_exists_does_not_change_provider(db: 
     binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
     assert binding.preferred_endpoint_ids == ("pinned-ep",)
     config = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
-    assert (
-        failover.eligible_candidates(
-            config, preferred_ids=binding.preferred_endpoint_ids, model=binding.model
-        )
-        == []
-    )
+    assert failover.eligible_candidates(config, preferred_ids=binding.preferred_endpoint_ids) == []
 
 
 def test_every_agent_binding_names_a_real_role_field_and_slot() -> None:

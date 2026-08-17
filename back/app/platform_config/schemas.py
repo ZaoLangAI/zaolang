@@ -166,6 +166,10 @@ class FeatureFlags(ConfigSection):
     editor_ai_enabled: bool = False
     editor_mcp_enabled: bool = False
     marketplace_enabled: bool = True
+    # Independent of `drama_studio_enabled`: script writing can ship before
+    # the full episode/cut editor does, and gating it on the bigger flag
+    # would block that staged rollout.
+    script_studio_enabled: bool = False
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
@@ -180,6 +184,7 @@ class FeatureFlags(ConfigSection):
             "editor_ai_enabled",
             "editor_mcp_enabled",
             "marketplace_enabled",
+            "script_studio_enabled",
         }
         for name, pct in self.rollout_percentages.items():
             if name not in allowed:
@@ -322,6 +327,140 @@ def infer_media_protocol(capabilities: Iterable[str]) -> MediaProtocol:
     return "openai"
 
 
+# --------------------------------------------------------------------------
+# Provider list prices
+# --------------------------------------------------------------------------
+#
+# What we pay a vendor, in **micro-USD** (1e-6 USD) integers. Distinct from
+# `PricingConfig` above, which is what a *user* pays us in credits — these two
+# never convert into one another.
+#
+# Micro-USD because vendor list prices go well below a cent: $0.00286 per image
+# is 2_860, and rounding it into `cost_minor` would make it free. Every price a
+# vendor publishes today lands on an exact integer here, so nothing is lost:
+#
+#   $0.060 / M tokens     ->      60_000 per million
+#   $0.220 / M tokens     ->     220_000 per million
+#   $0.00286 / image      ->       2_860
+#   $0.02535 / image      ->      25_350
+#   $0.141 / 10K chars    ->     141_000 per 10K
+#   $0.12397 / second     ->     123_970
+#   $0.0282 / image       ->      28_200
+#
+# Zero means "not declared" rather than "free": the router treats an unpriced
+# endpoint as unknown-cost and falls back to a prior, and cost statistics skip
+# it rather than reporting a spend of nothing.
+
+MICRO_USD_PER_USD = 1_000_000
+# Guards a fat-fingered decimal point: $1000 for one unit is not a real price.
+_MAX_UNIT_PRICE_MICRO_USD = 1_000 * MICRO_USD_PER_USD
+# Vendors quote video by output resolution. `2K` is the only resolution a job
+# can request today (`VideoGenerationOptions`); `768P` is priceable ahead of
+# the provider adapter supporting it, which is why this list is wider.
+VIDEO_RESOLUTIONS: tuple[str, ...] = ("2K", "768P")
+
+_MicroUsd = Field(default=0, ge=0, le=_MAX_UNIT_PRICE_MICRO_USD)
+
+
+def _validated_resolution_prices(prices: dict[str, int]) -> dict[str, int]:
+    unknown = sorted(set(prices) - set(VIDEO_RESOLUTIONS))
+    if unknown:
+        raise ValueError(f"不支持的视频分辨率: {unknown}")
+    for resolution, price in prices.items():
+        if price < 0 or price > _MAX_UNIT_PRICE_MICRO_USD:
+            raise ValueError(f"分辨率 {resolution} 的单价超出允许范围。")
+    return prices
+
+
+class TokenPricing(ConfigSection):
+    """Text-model list price, quoted per million tokens like every vendor."""
+
+    input_per_million_micro_usd: int = _MicroUsd
+    output_per_million_micro_usd: int = _MicroUsd
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(self.input_per_million_micro_usd or self.output_per_million_micro_usd)
+
+
+class ImagePricing(ConfigSection):
+    """Charged per image on both sides: references sent in are not free."""
+
+    input_per_image_micro_usd: int = _MicroUsd
+    generation_per_image_micro_usd: int = _MicroUsd
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(self.input_per_image_micro_usd or self.generation_per_image_micro_usd)
+
+
+class AudioPricing(ConfigSection):
+    """Speech synthesis is billed by input text length, not by output duration."""
+
+    per_10k_characters_micro_usd: int = _MicroUsd
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(self.per_10k_characters_micro_usd)
+
+
+class VideoPricing(ConfigSection):
+    """Per-second, per-resolution, plus a per-image allowance for references.
+
+    Generated output and supplied input material are priced separately even
+    when a vendor happens to charge the same for both — one of them changing
+    later must not silently move the other.
+    """
+
+    generation_per_second_micro_usd: dict[str, int] = Field(default_factory=dict)
+    input_material_per_second_micro_usd: dict[str, int] = Field(default_factory=dict)
+    # The first N reference images come with the request; extras are billed.
+    reference_image_free_count: int = Field(default=5, ge=0, le=100)
+    extra_reference_image_micro_usd: int = _MicroUsd
+
+    @field_validator("generation_per_second_micro_usd", "input_material_per_second_micro_usd")
+    @classmethod
+    def _known_resolutions(cls, value: dict[str, int]) -> dict[str, int]:
+        return _validated_resolution_prices(value)
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(
+            self.generation_per_second_micro_usd
+            or self.input_material_per_second_micro_usd
+            or self.extra_reference_image_micro_usd
+        )
+
+
+class MediaPricing(ConfigSection):
+    """The price sections a media endpoint declares.
+
+    Each is optional because an endpoint only pays for what it can produce —
+    the endpoint validator drops sections its capabilities do not cover, so an
+    audio-only provider cannot carry a stale video price into a cost report.
+    """
+
+    image: ImagePricing | None = None
+    audio: AudioPricing | None = None
+    video: VideoPricing | None = None
+
+
+# Which pricing section each capability tag bills against.
+_CAPABILITY_PRICING_SECTION: dict[str, str] = {
+    Operation.TEXT_TO_IMAGE.value: "image",
+    Operation.IMAGE_TO_IMAGE.value: "image",
+    Operation.AUDIO_GENERATION.value: "audio",
+    Operation.TEXT_TO_VIDEO.value: "video",
+    Operation.IMAGE_TO_VIDEO.value: "video",
+    Operation.VIDEO_TO_VIDEO.value: "video",
+}
+
+
+def pricing_section_for(capability: str) -> str | None:
+    """Which `MediaPricing` field prices this capability tag."""
+    return _CAPABILITY_PRICING_SECTION.get(capability)
+
+
 class LlmProviderEndpoint(ConfigSection):
     """One OpenAI/AiHubMix-compatible model provider endpoint.
 
@@ -340,17 +479,17 @@ class LlmProviderEndpoint(ConfigSection):
     # Accepted as plaintext on write; the admin API never echoes it back.
     api_key: str = ""
     kind: Literal["general", "media"] = "general"
-    # `kind="general"` only.
-    models: list[str] = Field(default_factory=list)
     # Exactly one endpoint should hold "primary" among endpoints of the same
     # `kind`; the admin API enforces that by demoting the previous primary on
     # write.
     role: Literal["primary", "backup"] = "backup"
     # Only meaningful when role == "backup": lower tries first among backups.
     backup_order: int = Field(default=100, ge=1, le=1000)
-    # `kind="media"` only: the single model id every derived capability below
-    # dispatches to. One credential serving several different model ids means
-    # several endpoints, not several entries here.
+    # The single model id this endpoint serves — for `kind="general"` the model
+    # every bound agent call runs on, for `kind="media"` the model every derived
+    # capability dispatches to. One credential serving several different model
+    # ids means several endpoints, not several entries here: pricing, context
+    # limits and cost accounting all hang off this one name.
     model: str = ""
     # `kind="media"` only: subsets of `MEDIA_INPUT_MODALITIES`/`_OUTPUT_MODALITIES`.
     input_modalities: list[str] = Field(default_factory=list)
@@ -361,6 +500,15 @@ class LlmProviderEndpoint(ConfigSection):
     max_concurrency: int = Field(default=4, ge=1, le=256)
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
+    # `kind="general"` only: what the model can hold and emit. Zero means the
+    # operator has not declared it — displayed as unknown, never enforced as a
+    # limit, because the provider is the authority on its own ceiling.
+    context_length: int = Field(default=0, ge=0, le=100_000_000)
+    max_output_tokens: int = Field(default=0, ge=0, le=10_000_000)
+    # `kind="general"` only: what this model's tokens cost us.
+    token_pricing: TokenPricing = Field(default_factory=TokenPricing)
+    # `kind="media"` only: per-capability list prices.
+    media_pricing: MediaPricing = Field(default_factory=MediaPricing)
 
     @property
     def capabilities(self) -> set[str]:
@@ -377,17 +525,14 @@ class LlmProviderEndpoint(ConfigSection):
 
     @model_validator(mode="after")
     def _media_model_and_modalities_are_coherent(self) -> LlmProviderEndpoint:
+        self.model = self.model.strip()
         if self.kind != "media":
-            if not self.models:
-                raise ValueError("通用模型端点至少需要声明一个模型。")
-            self.models = list(
-                dict.fromkeys(model.strip() for model in self.models if model.strip())
-            )
-            if not self.models:
-                raise ValueError("通用模型端点至少需要声明一个模型。")
+            if not self.model:
+                raise ValueError("通用模型端点必须填写模型名称。")
             self.protocol = None
+            self.media_pricing = MediaPricing()
             return self
-        if not self.model.strip():
+        if not self.model:
             raise ValueError("媒体模型必须填写模型名称。")
         bad_inputs = set(self.input_modalities) - set(MEDIA_INPUT_MODALITIES)
         bad_outputs = set(self.output_modalities) - set(MEDIA_OUTPUT_MODALITIES)
@@ -407,14 +552,26 @@ class LlmProviderEndpoint(ConfigSection):
         self.role = "backup"
         self.backup_order = 100
         self.max_concurrency = 1
+        self.context_length = 0
+        self.max_output_tokens = 0
+        self.token_pricing = TokenPricing()
+        # A price for something this endpoint cannot produce would still show
+        # up in cost reports and router estimates, so it is dropped rather
+        # than carried along as dead configuration.
+        priced = {pricing_section_for(tag) for tag in self.capabilities}
+        self.media_pricing = MediaPricing(
+            image=self.media_pricing.image if "image" in priced else None,
+            audio=self.media_pricing.audio if "audio" in priced else None,
+            video=self.media_pricing.video if "video" in priced else None,
+        )
         return self
 
     @model_validator(mode="before")
     @classmethod
     def _migrate_legacy_fields(cls, data: Any) -> Any:
-        """Reads pre-migration rows saved before `role`/`kind` existed, and
-        drops the pre-modality `capabilities` shape (each tag carrying its own
-        `model`/`enabled`).
+        """Reads pre-migration rows saved before `role`/`kind` existed, drops
+        the pre-modality `capabilities` shape (each tag carrying its own
+        `model`/`enabled`), and collapses the old multi-model `models` list.
 
         `priority == 1` becomes the primary; anything else becomes a backup
         ordered by its old priority value. `scenario_tags` (the old Agent-role
@@ -425,12 +582,31 @@ class LlmProviderEndpoint(ConfigSection):
         dropped rather than guessed at; an operator re-declares the endpoint
         once in the new form. Without this, `extra="forbid"` would make
         `get_typed` raise on any endpoint saved before this migration.
+
+        An endpoint now serves exactly one model, so a legacy `models` list
+        keeps its first entry — the same one `providers/connectivity.py` always
+        treated as the endpoint's representative model. Dropping the rest is
+        loud rather than silent: an operator re-adds them as their own
+        endpoints, which is what per-model pricing needs anyway.
         """
         if not isinstance(data, dict):
             return data
         migrated = dict(data)
         migrated.pop("scenario_tags", None)
         migrated.pop("capabilities", None)
+        legacy_models = migrated.pop("models", None)
+        if isinstance(legacy_models, list) and not str(migrated.get("model") or "").strip():
+            named = [str(name).strip() for name in legacy_models if str(name).strip()]
+            if named:
+                migrated["model"] = named[0]
+                if len(named) > 1:
+                    logger.warning(
+                        "llm_providers endpoint declared %d models (%s); keeping %s — "
+                        "re-add the others as their own endpoints",
+                        len(named),
+                        ", ".join(named),
+                        named[0],
+                    )
         if "priority" in migrated:
             legacy_priority = migrated.pop("priority")
             migrated.setdefault("role", "primary" if legacy_priority <= 1 else "backup")
@@ -525,6 +701,7 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "editor_ai_enabled": False,
         "editor_mcp_enabled": False,
         "marketplace_enabled": True,
+        "script_studio_enabled": False,
         "rollout_percentages": {},
     },
     "content_moderation": {"blocked_keywords": []},

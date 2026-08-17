@@ -7,6 +7,8 @@ import type {
   AgentTimeseries,
   AgentUsage,
   ContentTimeseries,
+  CostBreakdown,
+  CostTimeseries,
   CreditFlowTimeseries,
   JobStats,
   JobsTimeseries,
@@ -30,7 +32,11 @@ export default async function AdminStatisticsPage() {
   const t = await getTranslations('adminStatistics');
 
   const generatedAt = new Date().toISOString();
-  const emptySeries = { generated_at: generatedAt, window_days: DEFAULT_TIMESERIES_DAYS, points: [] };
+  const emptySeries = {
+    generated_at: generatedAt,
+    window_days: DEFAULT_TIMESERIES_DAYS,
+    points: [],
+  };
 
   const [
     providerStats,
@@ -41,6 +47,8 @@ export default async function AdminStatisticsPage() {
     jobsTimeseries,
     providersTimeseries,
     agentsTimeseries,
+    costsTimeseries,
+    costsBreakdown,
     creditsTimeseries,
     contentTimeseries,
     usersTimeseries,
@@ -49,7 +57,9 @@ export default async function AdminStatisticsPage() {
     adminFetchOrNull<Page<AgentUsage>>('/v1/admin/agent-runs/usage', {
       query: { hours: JOB_STATS_WINDOW_HOURS },
     }),
-    adminFetchOrNull<JobStats>('/v1/admin/jobs/stats', { query: { hours: JOB_STATS_WINDOW_HOURS } }),
+    adminFetchOrNull<JobStats>('/v1/admin/jobs/stats', {
+      query: { hours: JOB_STATS_WINDOW_HOURS },
+    }),
     adminFetchOrNull<Reconciliation>('/v1/admin/credits/reconciliation'),
     adminFetchOrNull<SystemHealth>('/v1/admin/health'),
     adminFetchOrNull<JobsTimeseries>('/v1/admin/statistics/jobs', {
@@ -59,6 +69,12 @@ export default async function AdminStatisticsPage() {
       query: { days: DEFAULT_TIMESERIES_DAYS },
     }),
     adminFetchOrNull<AgentTimeseries>('/v1/admin/statistics/agents', {
+      query: { days: DEFAULT_TIMESERIES_DAYS },
+    }),
+    adminFetchOrNull<CostTimeseries>('/v1/admin/statistics/costs', {
+      query: { days: DEFAULT_TIMESERIES_DAYS },
+    }),
+    adminFetchOrNull<CostBreakdown>('/v1/admin/statistics/costs/breakdown', {
       query: { days: DEFAULT_TIMESERIES_DAYS },
     }),
     adminFetchOrNull<CreditFlowTimeseries>('/v1/admin/statistics/credits', {
@@ -81,7 +97,11 @@ export default async function AdminStatisticsPage() {
         providerStats={providerStats?.items ?? []}
         agentUsage={agentUsage?.items ?? []}
         jobStats={
-          jobStats ?? { generated_at: generatedAt, window_hours: JOB_STATS_WINDOW_HOURS, total_jobs: 0 }
+          jobStats ?? {
+            generated_at: generatedAt,
+            window_hours: JOB_STATS_WINDOW_HOURS,
+            total_jobs: 0,
+          }
         }
         reconciliation={
           reconciliation ?? {
@@ -104,6 +124,13 @@ export default async function AdminStatisticsPage() {
           jobs: jobsTimeseries ?? emptySeries,
           providers: providersTimeseries ?? emptySeries,
           agents: agentsTimeseries ?? emptySeries,
+          costs: costsTimeseries ?? { ...emptySeries, total_micro_usd: 0 },
+          costBreakdown: costsBreakdown ?? {
+            generated_at: generatedAt,
+            window_days: DEFAULT_TIMESERIES_DAYS,
+            providers: [],
+            models: [],
+          },
           credits: creditsTimeseries ?? emptySeries,
           content: contentTimeseries ?? emptySeries,
           users: usersTimeseries ?? { ...emptySeries, total_users: 0, suspended_users: 0 },

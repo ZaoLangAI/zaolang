@@ -1,6 +1,6 @@
 ---
 name: zaolang-editor-drama
-description: Browser-based drama editor — the canonical timeline (integer ticks), immutable EpisodeCut revisions, single-writer leases, sequential export, editor_planner, Remote MCP, and the Series.kind / character-roster isolation. Use when working on /create/drama, EditCommand, cut revisions, editor leases, DeliveryVariant, EditorExport, bind-editor-export, editor_planner, /mcp, or Series kind=drama vs kind=cast.
+description: Browser-based drama editor — the canonical timeline (integer ticks), immutable EpisodeCut revisions, single-writer leases, sequential export, editor_planner, Remote MCP, and the Series.kind / character-roster isolation — plus conversational script writing (文案创作), which reuses these same Series/DramaEpisode models. Use when working on /create/drama, /create/script, EditCommand, cut revisions, editor leases, DeliveryVariant, EditorExport, bind-editor-export, editor_planner, script_writing, episode_script_turns, /mcp, or Series kind=drama vs kind=cast.
 disable-model-invocation: true
 ---
 
@@ -18,13 +18,18 @@ Both the product surface and the editing engine live in this repo. The only thin
 | `front/src/features/editor/from-job.ts` | the single entry point for "enter editing" from a job page — never statically pull the whole editor from the `features/editor` barrel file |
 | `front/src/app/[locale]/(site)/create/drama/` | desktop Chrome/Edge gate; narrow screens get a read-only notice and are excluded from `a11y-mobile` |
 | `back/app/models/editor.py` | `drama_episodes` / `episode_cuts` / `cut_revisions` / leases / variants / exports / `MediaAnalysis` |
-| `back/app/models/characters.py` | `Series.kind` (`cast` \| `drama`) and production-project fields — never build a second episode table |
+| `back/app/models/characters.py` | `Series.kind` (`cast` \| `drama`) and production-project fields — never build a second episode table. `Series.character_ids_json` holds `CreationSkill.id` values now, not a foreign key into a dropped `characters` table (see `zaolang-data-model` invariant #9) |
+| `front/src/features/script/script-link-picker.tsx` | the "关联角色卡/关联场景卡" affordance on a `script-document-view.tsx` character chip or scene heading — a lightweight picker over the existing `/v1/characters`/`/v1/scenes` library (writes `ScriptCharacter.character_ref_id`/`ScriptScene.ref_id` via `PATCH /v1/scripts/{episode_id}/links`), not an inline create form; creating a new character/scene stays on the full library page (`manageHref` in the picker's footer) |
 | `back/app/domain/editor/` | revision CAS, command validation, leases, export completion (HEAD + checksum + ffprobe), analysis enqueueing |
 | `back/app/domain/characters/service.py` | `/v1/series` recognizes only `kind=cast`; a drama id 404s against the roster API |
 | `back/app/api/v1/editor.py` | `/v1/drama-series`, cuts, leases, revisions, exports, `bind-editor-export`, `episode-cuts:from-job` |
 | `back/app/mcp/` | a self-implemented `POST /mcp` Streamable HTTP endpoint; must use FastAPI's `DbSession` — never `session_scope()` |
 | `back/app/agents/editor_planner.py` | an independent, read-only-tools planner whose result is recorded as an `AgentRun` — it never creates a fake `GenerationJob` |
-| `back/app/scripts/seed.py` | `_seed_editor_flags` flips five local flags on; `_seed_editor_demo` gives `linhai` a drama project |
+| `back/app/domain/script_writing/service.py` | conversational script writing (文案创作, `/create/script`): turns an idea into a full scene-by-scene script via the `copy` agent's streaming `script_draft`/`script_revise` slots (see `zaolang-agent-gateway`), then revises it turn by turn. Reuses `Series`/`DramaEpisode` rather than a new entity — see invariant #16 |
+| `back/app/models/editor.py` | also `episode_script_turns` — an append-only turn history mirroring `cut_revisions`' shape, but for `DramaEpisode.script_json` instead of a cut's timeline |
+| `back/app/api/v1/scripts.py` | `/v1/scripts` — every write is `text/event-stream` (SSE), not a JSON response; see invariant #17 |
+| `front/src/features/script/` | the script-writing UI: left conversation panel + right colour-coded script view, mirroring `features/editor/`'s structure but with no WASM/mediabunny dependency |
+| `back/app/scripts/seed.py` | `_seed_editor_flags` flips six local flags on (five editor flags plus `script_studio_enabled`); `_seed_editor_demo` gives `linhai` a drama project |
 | `docs/editor.md` | the product path and Phase 0 scope boundary |
 
 ## Invariants
@@ -44,19 +49,24 @@ Both the product surface and the editing engine live in this repo. The only thin
 13. **A job page must import only `from-job.ts`.** Never `import … from '@/features/editor'` — that pulls the WASM/mediabunny bundle into the job page. `export-runner.ts` dynamically imports `mediabunny`.
 14. **Analysis runs on its own queue, `media_analysis`.** Beat also owns `expire_editor_leases` / `expire_orphan_editor_uploads` (hung off `webhook_reconcile`). `make dev-worker`'s `-Q` list must include `media_analysis`.
 15. **`make seed --reset` deletes empty drama shells while keeping the cast roster.** `Series` is excluded from `RESET_TABLES`; `_reset` additionally runs `DELETE FROM series WHERE kind = 'drama'`, while editor sub-tables are inside `RESET_TABLES`.
+16. **`script_studio_enabled` is its own flag, deliberately not `drama_studio_enabled`.** Script writing can ship (or be turned off) independently of the full editor, even though `create_script`/`send_turn` write to the same `series`/`drama_episodes` tables `create_episode` does — they just don't call `editor_service.create_episode` (which hardcodes the `FLAG_DRAMA` check) or `editor_flags.require_flag` at all. `DramaEpisode.script_json` always holds the *latest* turn's script; `episode_script_turns` is what makes history browsable. A script written this way is a normal `DramaEpisode` — it can later be opened in the drama editor to generate cuts from.
+17. **A script turn's SSE stream can only report failure inside the stream itself.** By the time a turn fails (a bad model reply, a DB error), the `200`/`202` header and `delta` frames are already sent — there is no HTTP status left to change, so the route emits `event: error` as the last frame instead. `app.domain.script_writing.service` opens its own DB session per turn via `session_scope()` (a request-scoped `DbSession` is already closed by the time a `StreamingResponse` generator runs), and every exception path there must `session.rollback()` before returning — skipping it leaves the session unable to commit, which raises `PendingRollbackError` while the generator is closing and kills the stream with no closing frame at all instead of a clean `error` event.
 
 ## Product Path
 
 Generation succeeds → "Enter editing" → `/create/drama/{cutId}` → sequential export → `POST /v1/drafts/{id}/bind-editor-export` → the eight-step publish flow.
 
+Script writing is a separate, earlier path: `/create/script` → write an idea → streamed first draft → `/create/script/{episodeId}` → streamed revision turns, any turn's version browsable → (optional, not yet wired) open the resulting `DramaEpisode` in the drama editor above.
+
 ## Local Database State
 
-Trust `alembic heads`, not a revision id cited in a doc, as current. The editor tables land in `20260814_0200_add_drama_editor.py`; later migrations include `20260814_0900_add_work_appeals_and_hide_reason.py` (`works.hide_reason` + `work_appeals`) and `20260814_1400_add_editor_lease_active_unique_index.py` (a partial unique index on active leases). Run `make migrate` after pulling. The `alembic check` noise on `agent_nodes.category` / `provider_async_tasks`'s server_default is a known pre-existing issue — don't open a new migration for it. Don't run `make reset` unless you intend to destroy the data volume.
+Trust `alembic heads`, not a revision id cited in a doc, as current. The editor tables land in `20260814_0200_add_drama_editor.py`; later migrations include `20260814_0900_add_work_appeals_and_hide_reason.py` (`works.hide_reason` + `work_appeals`), `20260814_1400_add_editor_lease_active_unique_index.py` (a partial unique index on active leases), and `20260815_1000_add_episode_script_turns.py` (`episode_script_turns`, for script writing). Run `make migrate` after pulling. The `alembic check` noise on `agent_nodes.category` / `provider_async_tasks`'s server_default is a known pre-existing issue — don't open a new migration for it. Don't run `make reset` unless you intend to destroy the data volume.
 
 ## Verify
 
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_editor_commands.py tests/integration/test_editor.py tests/integration/test_editor_mcp.py tests/integration/test_series.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_script_writing_agent.py tests/integration/test_scripts.py -v
 make openapi-check
 make messages
 ```

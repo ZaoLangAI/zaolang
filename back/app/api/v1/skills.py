@@ -19,6 +19,7 @@ from app.api.schemas.skill_library import (
 )
 from app.api.schemas.works import AccessGrantView, AccessUnlockResponse, AuthorSummary
 from app.domain.access import service as access_service
+from app.domain.errors import ValidationFailed
 from app.domain.skill_library import service as skill_library
 from app.models import CreationSkill, Profile
 from app.models.enums import (
@@ -41,6 +42,7 @@ def list_public_skills(
     viewer: OptionalUser,
     _: Annotated[None, Depends(rate_limited("public_read"))],
     category: CreationSkillCategory | None = None,
+    content_type: Literal["template", "image_asset"] | None = None,
     access: Literal["free", "paid", "all"] = "all",
     cursor: str | None = None,
     limit: int = Query(default=24, ge=1, le=60),
@@ -48,6 +50,7 @@ def list_public_skills(
     page = skill_library.list_public(
         session,
         category=category,
+        content_type=content_type,
         access=None if access == "all" else access,
         cursor=cursor,
         limit=limit,
@@ -177,6 +180,17 @@ def publish_skill(
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CreationSkillDetail:
     skill = _require_owned(session, skill_id, user.id)
+    # A character skill's publish needs a fresh portrait/likeness consent
+    # flag this generic route has no field for — `POST /v1/characters/{id}
+    # /publish` is the only legal way to share one (see
+    # `characters.service.publish_character`). Scene/cover image-asset
+    # skills carry no such gate and publish through this route like any
+    # template.
+    if skill.category == CreationSkillCategory.CHARACTER:
+        raise ValidationFailed(
+            "角色技能请通过角色发布接口分享（需要肖像授权确认）。",
+            fields={"category": "character skills publish via /v1/characters/{id}/publish"},
+        )
     skill = skill_library.publish(session, skill=skill, actor_user_id=user.id)
     session.commit()
     return _detail(session, skill, user.id)

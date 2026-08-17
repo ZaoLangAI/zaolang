@@ -126,7 +126,9 @@ def appeal(db: Session, work: Work) -> WorkAppeal:
     work.hide_reason = "疑似侵权"
     db.add(work)
     item = WorkAppeal(
-        work_id=work.id, owner_user_id=work.owner_user_id, reason="这是我的原创作品，附创作过程录屏。"
+        work_id=work.id,
+        owner_user_id=work.owner_user_id,
+        reason="这是我的原创作品，附创作过程录屏。",
     )
     db.add(item)
     db.commit()
@@ -482,6 +484,62 @@ def test_rejecting_a_skill_notifies_its_owner(
     assert note is not None
     assert note.payload_json["title"] == skill.title
     assert note.payload_json["reason"] == "示例效果不达标。"
+
+
+def test_moderation_detail_surfaces_a_character_skills_reference_images_and_consent(
+    client: TestClient, db: Session, admin: User, author: User
+) -> None:
+    """A `category=CHARACTER` skill's `params_json` is otherwise opaque to a
+    reviewer — the moderation detail must resolve its reference images (not
+    just `cover_url`) and confirm the owner actually captured portrait
+    consent before this ever reached `PENDING_REVIEW`."""
+    from app.domain.characters import service as characters_service
+    from app.models import Asset
+    from app.models.enums import MediaType
+
+    asset = Asset(
+        owner_user_id=author.id,
+        object_key=f"test/{author.id}/{new_id('obj')}.bin",
+        media_type=MediaType.IMAGE,
+        mime_type="image/png",
+        size_bytes=1024,
+        checksum_sha256="b" * 64,
+        role="generation_output",
+    )
+    db.add(asset)
+    db.flush()
+
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="女主角",
+        description=None,
+        reference_asset_ids=[asset.id],
+        voice_description=None,
+    )
+    characters_service.publish_character(
+        db, user_id=author.id, character_id=character.id, portrait_consent=True
+    )
+    item = ModerationQueueItem(
+        stage=ModerationStage.PRE_PUBLISH,
+        subject_type="skill",
+        subject_id=character.id,
+        status=ModerationStatus.NEEDS_REVIEW,
+        priority=5,
+    )
+    db.add(item)
+    db.commit()
+
+    body = client.get(
+        f"/v1/admin/moderation/queue/{item.id}/detail", headers=admin_header(admin)
+    ).json()
+
+    assert body["skill"]["category"] == "character"
+    assert len(body["skill"]["character_reference_assets"]) == 1
+    ref = body["skill"]["character_reference_assets"][0]
+    assert ref["asset_id"] == asset.id
+    assert ref["url"]
+    assert body["skill"]["character_portrait_consent_at"] is not None
 
 
 def test_moderation_detail_exposes_a_generation_job_and_decide_does_not_hide(
@@ -1368,7 +1426,7 @@ def _seed_endpoints(db: Session) -> None:
                     "base_url": "https://general.invalid",
                     "api_key": "k",
                     "kind": "general",
-                    "models": ["test-llm"],
+                    "model": "test-llm",
                     "role": "primary",
                 },
                 "video-ep": {

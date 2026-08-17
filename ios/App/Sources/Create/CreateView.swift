@@ -43,6 +43,14 @@ struct CreateView: View {
     private var modeCards: some View {
         VStack(spacing: 12) {
             modeCard(
+                title: L10n.t("createPage.modeImageCreationTitle"),
+                description: L10n.t("createPage.modeImageCreationDesc"),
+                tag: L10n.t("createPage.modeImageCreationTag"),
+                systemImage: "person.crop.rectangle.stack"
+            ) {
+                start(.new(operation: .textToImage, initialPrompt: nil))
+            }
+            modeCard(
                 title: L10n.t("createPage.modeTextToVideoTitle"),
                 description: L10n.t("createPage.modeTextToVideoDesc"),
                 tag: L10n.t("createPage.modeTextToVideoTag"),

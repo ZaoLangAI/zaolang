@@ -45,11 +45,15 @@ export function TrendChart<T extends { date: string }>({
   series,
   emptyTitle,
   height = 220,
+  valueFormatter,
 }: {
   data: T[];
   series: TrendSeriesDef[];
   emptyTitle: string;
   height?: number;
+  /** Overrides plain number formatting on the axis and tooltip — money is
+   * stored in micro-USD, which is unreadable as a raw count. */
+  valueFormatter?: (value: number) => string;
 }) {
   const locale = useLocale() as Locale;
   const hasActivity = data.some((point) =>
@@ -59,6 +63,8 @@ export function TrendChart<T extends { date: string }>({
   if (!hasActivity) {
     return <EmptyState title={emptyTitle} />;
   }
+
+  const format = valueFormatter ?? ((value: number) => formatNumber(value, locale));
 
   return (
     <div style={{ height }}>
@@ -77,12 +83,12 @@ export function TrendChart<T extends { date: string }>({
             tick={{ fontSize: 11, fill: 'var(--color-muted)' }}
             axisLine={false}
             tickLine={false}
-            width={44}
-            tickFormatter={(value: number) => formatNumber(value, locale)}
+            width={valueFormatter ? 60 : 44}
+            tickFormatter={format}
           />
           <Tooltip
             labelFormatter={(label) => formatDate(String(label ?? ''), locale)}
-            formatter={(value, name) => [formatNumber(Number(value ?? 0), locale), String(name ?? '')]}
+            formatter={(value, name) => [format(Number(value ?? 0)), String(name ?? '')]}
             contentStyle={{
               background: 'var(--color-surface)',
               border: '1px solid var(--color-border)',

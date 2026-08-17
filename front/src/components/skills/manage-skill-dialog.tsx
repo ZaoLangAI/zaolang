@@ -13,14 +13,29 @@ import { api } from '@/lib/api/client';
 import type { CreationSkillCategory, CreationSkillDetail, CreationSkillSummary } from '@/lib/api/types';
 import { useResource } from '@/lib/use-resource';
 
+// `character`/`scene_asset`/`cover_asset` are excluded from the re-file
+// dropdown: an `IMAGE_ASSET_SKILL_CATEGORIES` skill is only ever managed
+// from its own dedicated page (`/create/characters`, `/create/scenes`),
+// which never opens this generic dialog on one — see `list_mine`'s matching
+// exclusion, which keeps one from ever reaching this dialog in the first
+// place.
 const CATEGORIES: CreationSkillCategory[] = ['scene', 'lens', 'style', 'other'];
 const CATEGORY_LABEL_KEY: Record<
   CreationSkillCategory,
-  'categoryScene' | 'categoryLens' | 'categoryStyle' | 'categoryOther'
+  | 'categoryScene'
+  | 'categoryLens'
+  | 'categoryStyle'
+  | 'categoryCharacter'
+  | 'categorySceneAsset'
+  | 'categoryCoverAsset'
+  | 'categoryOther'
 > = {
   scene: 'categoryScene',
   lens: 'categoryLens',
   style: 'categoryStyle',
+  character: 'categoryCharacter',
+  scene_asset: 'categorySceneAsset',
+  cover_asset: 'categoryCoverAsset',
   other: 'categoryOther',
 };
 

@@ -23,7 +23,7 @@ enum NotificationGroup {
         case .workLiked: self = .like
         case .newFollower: self = .follow
         case .jobProgress, .jobSucceeded, .jobFailed, .jobCancelled: self = .job
-        case .royaltyReceived: self = .royalty
+        case .royaltyReceived, .accessSold: self = .royalty
         case .moderation: self = .moderation
         case .system, nil: self = .system
         }
@@ -141,7 +141,7 @@ extension NotificationResponse {
         case .workRemixed: return "arrow.triangle.branch"
         case .workLiked: return "heart.fill"
         case .newFollower: return "person.fill"
-        case .royaltyReceived: return "banknote"
+        case .royaltyReceived, .accessSold: return "banknote"
         case .moderation: return "shield.fill"
         case .jobSucceeded: return "checkmark.circle"
         case .jobFailed: return "exclamationmark.triangle"

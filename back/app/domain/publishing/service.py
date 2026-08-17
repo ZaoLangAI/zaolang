@@ -170,9 +170,7 @@ def publish(
         raise ModerationRejected(verdict.public_message or "内容未通过安全检查。")
 
     # 3. Work and its immutable first version.
-    priced = access_service.normalize_access_credits(
-        session, access_credits, actor_user_id=user_id
-    )
+    priced = access_service.normalize_access_credits(session, access_credits, actor_user_id=user_id)
     if not Visibility(visibility).allows_remix:
         priced = 0
     work = Work(
@@ -406,9 +404,7 @@ def purge(session: Session, *, user_id: str, work_id: str) -> str:
     if referenced:
         _detach_version_media(session, work.id)
         tombstone(session, work_id=work_id, reason="author_purged", actor_user_id=user_id)
-        media_service.delete_exclusive_assets(
-            session, asset_ids=asset_ids, except_work_id=work_id
-        )
+        media_service.delete_exclusive_assets(session, asset_ids=asset_ids, except_work_id=work_id)
         audit.record(
             session,
             actor=actor,

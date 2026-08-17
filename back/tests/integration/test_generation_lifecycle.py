@@ -787,7 +787,7 @@ def test_an_externally_rendered_video_reports_progress_before_it_finishes(
                 tiers=frozenset({QualityTier.STANDARD}),
                 quality_prior=0.9,
                 typical_latency_ms=90_000,
-                unit_cost_minor=20,
+                unit_cost_micro_usd=200000,
                 model_or_workflow="minimax-h3",
                 provider_factory=lambda: upstream,
             )

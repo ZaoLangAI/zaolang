@@ -114,7 +114,9 @@ class WorkflowGraph:
         }
 
 
-def validate(graph: WorkflowGraph, *, output_ports_by_type: dict[str, tuple[str, ...]]) -> list[str]:
+def validate(
+    graph: WorkflowGraph, *, output_ports_by_type: dict[str, tuple[str, ...]]
+) -> list[str]:
     """Structural checks a graph must pass before it can be published.
 
     Returns human-readable problems; an empty list means the graph is safe to

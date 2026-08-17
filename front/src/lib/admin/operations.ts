@@ -33,6 +33,47 @@ export function operationLabelKey(operation: string): string | null {
 }
 
 /**
+ * `ImageAssetKind` — the extra "what is this image *for*" dimension layered
+ * on top of `text_to_image`/`image_to_image` (mirrors the backend enum in
+ * `app/models/enums.py`). `general` is the default/legacy behaviour and is
+ * represented as `null` everywhere a workflow template or job param is
+ * addressed, matching `GenerationWorkflowTemplate.asset_kind` being nullable.
+ */
+export const IMAGE_ASSET_KINDS = ['character', 'scene', 'cover'] as const;
+export type ImageAssetKindValue = (typeof IMAGE_ASSET_KINDS)[number];
+
+export const IMAGE_ASSET_KIND_LABEL_KEYS: Record<ImageAssetKindValue, string> = {
+  character: 'assetKindCharacter',
+  scene: 'assetKindScene',
+  cover: 'assetKindCover',
+};
+
+/** Only `text_to_image`/`image_to_image` have a meaningful asset-kind split
+ * — every other operation always runs the one generic workflow. */
+export function operationHasAssetKinds(operation: OperationValue): boolean {
+  return operation === 'text_to_image' || operation === 'image_to_image';
+}
+
+/**
+ * Tabs for the workflow *editor* specifically: `text_to_image` and
+ * `image_to_image` resolve to exactly one `GenerationWorkflowTemplate`
+ * (backend `canonical_operation`) and are mandatory-prompt/optional-reference
+ * variants of the same graph, so the editor shows a single merged "图片创作"
+ * tab under the `text_to_image` key instead of two. Everywhere else that uses
+ * `OPERATIONS` keeps them distinct — the provider capability matrix and agent
+ * variant chips still need to say a provider/agent supports pure generation
+ * without supporting editing, or vice versa. Kept as its own literal tuple
+ * (rather than `OPERATIONS.filter(...)`) so indexing it stays a plain
+ * `OperationValue`, not `OperationValue | undefined`. */
+export const WORKFLOW_EDITOR_OPERATIONS = [
+  'text_to_image',
+  'text_to_video',
+  'image_to_video',
+  'video_to_video',
+  'audio_generation',
+] as const satisfies readonly OperationValue[];
+
+/**
  * The two modality axes a `kind="media"` endpoint is configured along, mirroring
  * `MEDIA_INPUT_MODALITIES`/`MEDIA_OUTPUT_MODALITIES` in
  * `app/platform_config/schemas.py`. `audio` is a valid input (e.g. voice-driven
@@ -96,7 +137,10 @@ export const MEDIA_PROTOCOLS = [
 ] as const;
 export type MediaProtocol = (typeof MEDIA_PROTOCOLS)[number];
 
-export const IMPLEMENTED_MEDIA_PROTOCOLS: ReadonlySet<MediaProtocol> = new Set(['openai', 'minimax']);
+export const IMPLEMENTED_MEDIA_PROTOCOLS: ReadonlySet<MediaProtocol> = new Set([
+  'openai',
+  'minimax',
+]);
 
 export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
   openai: 'protocolOpenAI',
@@ -111,13 +155,7 @@ export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
 const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
   openai: ['text_to_image', 'image_to_image', 'audio_generation'],
   minimax: ['text_to_video', 'image_to_video', 'video_to_video'],
-  comfyui: [
-    'text_to_image',
-    'image_to_image',
-    'text_to_video',
-    'image_to_video',
-    'video_to_video',
-  ],
+  comfyui: ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'video_to_video'],
   google: [],
   dashscope: [],
   ark: [],

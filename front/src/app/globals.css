@@ -29,6 +29,18 @@
   --danger: #ef6d6d;
   --focus: #ffd0c4;
 
+  /* Script block legend (文案创作): four content types, not status colours —
+     deliberately distinct hues from primary/amber/success/danger above, so
+     "this line is a warning" and "this line is a camera direction" never
+     read as the same signal. */
+  --script-scene: #6fa8e0;
+  --script-action: #c090e8;
+  --script-camera: #5cc9cf;
+  --script-dialogue: #e88ec0;
+  /* Not a content type — a structural cut marker, so it deliberately reads
+     as neutral/muted rather than joining the four saturated content hues. */
+  --script-breakpoint: #9a958c;
+
   /* Cinematic media sits on a dark page, so overlays only need to deepen it. */
   --poster-scrim: linear-gradient(180deg, rgb(8 11 13 / 0%) 38%, rgb(8 11 13 / 88%) 100%);
   --poster-tint: rgb(8 11 13 / 35%);
@@ -63,6 +75,15 @@
   --danger: #b4271f;
   --focus: #7a2a14;
 
+  /* Same four content-type hues as the dark block, darkened/saturated for
+     AA contrast on the pale page — same treatment as `--success`/`--danger`
+     above, not just the dark values lightened. */
+  --script-scene: #1d5f96;
+  --script-action: #7a3aa8;
+  --script-camera: #146b70;
+  --script-dialogue: #a8296e;
+  --script-breakpoint: #726b60;
+
   /* The same poster on a pale page needs a stronger scrim for legible captions. */
   --poster-scrim: linear-gradient(180deg, rgb(26 23 20 / 0%) 30%, rgb(26 23 20 / 82%) 100%);
   --poster-tint: rgb(26 23 20 / 8%);
@@ -91,6 +112,11 @@
   --color-success: var(--success);
   --color-danger: var(--danger);
   --color-focus: var(--focus);
+  --color-script-scene: var(--script-scene);
+  --color-script-action: var(--script-action);
+  --color-script-camera: var(--script-camera);
+  --color-script-dialogue: var(--script-dialogue);
+  --color-script-breakpoint: var(--script-breakpoint);
   --color-skeleton: var(--skeleton);
   --color-track: var(--track);
 

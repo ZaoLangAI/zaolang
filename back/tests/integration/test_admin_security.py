@@ -450,6 +450,35 @@ def test_rolling_back_to_an_earlier_version_republishes_its_graph(
     assert body["is_active"] is True
 
 
+def test_rolling_back_from_the_image_to_image_tab_finds_the_shared_template(
+    client: TestClient, db: Session, admin: User
+) -> None:
+    """`text_to_image`/`image_to_image` share one template family
+    (`canonical_operation`), so rolling back from either tab's URL must
+    resolve the same row rather than 422 on an operation mismatch."""
+    first = client.put(
+        "/v1/admin/workflow-templates/text_to_image",
+        json={"name": "v1", "graph": _sample_graph(db), "reason": "首次发布", "confirm": True},
+        headers=admin_header(admin),
+    ).json()
+    client.put(
+        "/v1/admin/workflow-templates/image_to_image",
+        json={"name": "v2", "graph": _sample_graph(db), "reason": "从图生图发布", "confirm": True},
+        headers=admin_header(admin),
+    )
+
+    rollback = client.post(
+        f"/v1/admin/workflow-templates/image_to_image/activate/{first['id']}",
+        json={"reason": "从图生图回滚", "confirm": True},
+        headers=admin_header(admin),
+    )
+    assert rollback.status_code == 200, rollback.text
+    body = rollback.json()
+    assert body["operation"] == "text_to_image"
+    assert body["version"] == 3
+    assert body["is_active"] is True
+
+
 def test_an_operator_can_sandbox_run_a_workflow_template(
     client: TestClient, db: Session, operator: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

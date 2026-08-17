@@ -72,9 +72,7 @@ def suspend(
 
 
 def find_for_job(session: Session, job_id: str) -> WorkflowInputRequest | None:
-    return session.scalar(
-        select(WorkflowInputRequest).where(WorkflowInputRequest.job_id == job_id)
-    )
+    return session.scalar(select(WorkflowInputRequest).where(WorkflowInputRequest.job_id == job_id))
 
 
 def due_for_expiry(
@@ -251,4 +249,3 @@ def answer(
     session.commit()
     session.refresh(accepted.job)
     return accepted.job
-

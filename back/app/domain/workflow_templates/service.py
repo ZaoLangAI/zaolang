@@ -25,9 +25,9 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import GenerationWorkflowTemplate
 from app.models.base import utcnow
-from app.models.enums import Operation
+from app.models.enums import ImageAssetKind, Operation
 from app.workflows import registry
-from app.workflows.defaults import default_graph
+from app.workflows.defaults import default_graph, image_asset_graph
 from app.workflows.graph import WorkflowGraph, WorkflowNode
 from app.workflows.graph import validate as validate_graph
 
@@ -37,13 +37,80 @@ _OUTPUT_PORTS_BY_TYPE = {
 
 DEFAULT_TEMPLATE_NAME = "默认生成流程"
 
+# Only these two operations currently seed anything beyond the generic
+# `asset_kind=None` template — see `ImageAssetKind`.
+IMAGE_ASSET_OPERATIONS: frozenset[Operation] = frozenset(
+    {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
+)
 
-def get_active(session: Session, operation: str) -> GenerationWorkflowTemplate | None:
+
+def canonical_operation(operation: str) -> str:
+    """`text_to_image`/`image_to_image` share exactly one workflow graph.
+
+    Whether a job ends up as one or the other is a runtime detail — whether
+    the requester attached a reference image — not a different generation
+    pipeline: the prompt is mandatory either way and an attached image is
+    only extra reference input (see `GenerationStudio`'s "derive the
+    operation" pattern on the frontend). Storing/resolving both under the
+    single `text_to_image` key is what makes "configure the graph once, both
+    entry points pick it up" true, instead of an operator having to publish
+    the same graph twice. Every other operation is returned unchanged.
+    """
+    if operation == Operation.IMAGE_TO_IMAGE.value:
+        return Operation.TEXT_TO_IMAGE.value
+    return operation
+
+
+def get_active(
+    session: Session, operation: str, asset_kind: str | None = None
+) -> GenerationWorkflowTemplate | None:
+    """Resolves the active template for `(operation, asset_kind)`.
+
+    Falls back to the operation's generic (`asset_kind=None`) template when
+    no template was ever published for this specific asset kind — the
+    normal state for every non-image operation, and for `GENERAL` images,
+    which is why `asset_kind=None`/`GENERAL` are treated the same here.
+    `operation` is canonicalized first, so `image_to_image` resolves the
+    same row as `text_to_image` — see `canonical_operation`.
+    """
+    operation = canonical_operation(operation)
+    normalized = asset_kind if asset_kind and asset_kind != ImageAssetKind.GENERAL else None
+    if normalized is not None:
+        specific = session.scalar(
+            select(GenerationWorkflowTemplate).where(
+                GenerationWorkflowTemplate.operation == operation,
+                GenerationWorkflowTemplate.asset_kind == normalized,
+                GenerationWorkflowTemplate.is_active.is_(True),
+            )
+        )
+        if specific is not None:
+            return specific
     return session.scalar(
         select(GenerationWorkflowTemplate).where(
             GenerationWorkflowTemplate.operation == operation,
+            GenerationWorkflowTemplate.asset_kind.is_(None),
             GenerationWorkflowTemplate.is_active.is_(True),
         )
+    )
+
+
+def _has_specific_active_template(session: Session, operation: str, asset_kind: str) -> bool:
+    """Unlike `get_active`, never falls back to the generic template — used
+    only to decide whether a *specific* `(operation, asset_kind)` template
+    was ever published. `get_active` itself cannot answer that: once the
+    generic template exists, it always resolves truthy for every kind via
+    its own fallback, which would make `ensure_default_templates`'s "already
+    seeded?" check for each kind vacuously true and it would never seed any
+    of them."""
+    return (
+        session.scalar(
+            select(GenerationWorkflowTemplate.id).where(
+                GenerationWorkflowTemplate.operation == canonical_operation(operation),
+                GenerationWorkflowTemplate.asset_kind == asset_kind,
+                GenerationWorkflowTemplate.is_active.is_(True),
+            )
+        )
+        is not None
     )
 
 
@@ -55,15 +122,19 @@ def get_by_id(session: Session, template_id: str) -> GenerationWorkflowTemplate:
 
 
 def list_versions(
-    session: Session, operation: str, limit: int = 50
+    session: Session,
+    operation: str,
+    limit: int = 50,
+    *,
+    asset_kind: str | None = None,
 ) -> list[GenerationWorkflowTemplate]:
+    stmt = select(GenerationWorkflowTemplate).where(
+        GenerationWorkflowTemplate.operation == canonical_operation(operation)
+    )
+    normalized = asset_kind if asset_kind and asset_kind != ImageAssetKind.GENERAL else None
+    stmt = stmt.where(GenerationWorkflowTemplate.asset_kind == normalized)
     return list(
-        session.scalars(
-            select(GenerationWorkflowTemplate)
-            .where(GenerationWorkflowTemplate.operation == operation)
-            .order_by(GenerationWorkflowTemplate.version.desc())
-            .limit(limit)
-        )
+        session.scalars(stmt.order_by(GenerationWorkflowTemplate.version.desc()).limit(limit))
     )
 
 
@@ -99,6 +170,7 @@ def collect_warnings(session: Session, *, operation: str, graph_json: dict[str, 
     except (KeyError, TypeError, ValueError):
         return []
 
+    operation = canonical_operation(operation)
     warnings: list[str] = []
     for binding in _iter_agent_bindings(graph):
         if binding.agent_id is None:
@@ -235,9 +307,7 @@ def _binding_errors(session: Session, graph: WorkflowGraph) -> list[str]:
             role = binding.expected_role
             assert role is not None  # `_dynamic_role_errors` rejects `None`
             if binding.slot is not None and not is_known_slot(role, binding.slot):
-                errors.append(
-                    f"节点 {node.id} 指定的提示词槽位 {binding.slot} 不属于角色 {role}。"
-                )
+                errors.append(f"节点 {node.id} 指定的提示词槽位 {binding.slot} 不属于角色 {role}。")
 
         if binding.agent_id is None:
             continue
@@ -266,9 +336,18 @@ def publish(
     graph_json: dict[str, Any],
     actor_user_id: str | None,
     reason: str | None,
+    asset_kind: str | None = None,
 ) -> GenerationWorkflowTemplate:
     if operation not in {op.value for op in Operation}:
         raise ValidationFailed(f"未知的 operation: {operation}")
+
+    normalized_kind = asset_kind if asset_kind and asset_kind != ImageAssetKind.GENERAL else None
+    if normalized_kind is not None and Operation(operation) not in IMAGE_ASSET_OPERATIONS:
+        raise ValidationFailed(f"{operation} 不支持按资产用途区分工作流。")
+
+    # `image_to_image` publishes into the same row family as `text_to_image`
+    # from here on — see `canonical_operation`.
+    operation = canonical_operation(operation)
 
     errors = validate_graph_json(graph_json, session=session)
     if errors:
@@ -276,7 +355,10 @@ def publish(
 
     latest_version = session.scalar(
         select(GenerationWorkflowTemplate.version)
-        .where(GenerationWorkflowTemplate.operation == operation)
+        .where(
+            GenerationWorkflowTemplate.operation == operation,
+            GenerationWorkflowTemplate.asset_kind == normalized_kind,
+        )
         .order_by(GenerationWorkflowTemplate.version.desc())
         .limit(1)
     )
@@ -286,12 +368,14 @@ def publish(
         update(GenerationWorkflowTemplate)
         .where(
             GenerationWorkflowTemplate.operation == operation,
+            GenerationWorkflowTemplate.asset_kind == normalized_kind,
             GenerationWorkflowTemplate.is_active.is_(True),
         )
         .values(is_active=False)
     )
     row = GenerationWorkflowTemplate(
         operation=operation,
+        asset_kind=normalized_kind,
         version=next_version,
         name=name,
         graph_json=graph_json,
@@ -321,23 +405,48 @@ def activate_version(
         graph_json=target.graph_json,
         actor_user_id=actor_user_id,
         reason=reason or f"回滚到版本 {target.version}",
+        asset_kind=target.asset_kind,
     )
 
 
 def ensure_default_templates(session: Session) -> None:
-    """Idempotently seeds one active v1 template per `Operation`.
+    """Idempotently seeds one active v1 template per `(Operation, asset_kind)`.
 
-    Safe to call on every startup/seed run: an operation that already has an
-    active template (including one an operator hand-edited) is left alone.
+    Every `Operation` gets the generic (`asset_kind=None`) template it always
+    had; the image family additionally gets one per non-`GENERAL`
+    `ImageAssetKind` (`character`/`scene`/`cover`), each running the
+    `asset_planning`/`asset_output_link`-augmented graph — the `character`
+    one also looping through `asset_output_advance` when the job asks for
+    more than one `character_views` entry. `image_to_image` is folded into
+    `text_to_image` by `get_active`/`canonical_operation`, so this loop only
+    ever creates rows under `text_to_image` for the pair — four total, not
+    eight. Safe to call on every startup/seed run: any `(operation,
+    asset_kind)` that already has an active template (including one an
+    operator hand-edited) is left alone.
     """
     for operation in Operation:
-        if get_active(session, operation.value) is not None:
+        if get_active(session, operation.value) is None:
+            publish(
+                session,
+                operation=operation.value,
+                name=DEFAULT_TEMPLATE_NAME,
+                graph_json=default_graph(session),
+                actor_user_id=None,
+                reason="seed: 初始默认模板",
+            )
+        if operation not in IMAGE_ASSET_OPERATIONS:
             continue
-        publish(
-            session,
-            operation=operation.value,
-            name=DEFAULT_TEMPLATE_NAME,
-            graph_json=default_graph(session),
-            actor_user_id=None,
-            reason="seed: 初始默认模板",
-        )
+        for kind in ImageAssetKind:
+            if kind == ImageAssetKind.GENERAL:
+                continue
+            if _has_specific_active_template(session, operation.value, kind.value):
+                continue
+            publish(
+                session,
+                operation=operation.value,
+                name=f"{DEFAULT_TEMPLATE_NAME} · {kind.value}",
+                graph_json=image_asset_graph(session, kind.value),
+                actor_user_id=None,
+                reason="seed: 初始默认模板（按资产用途）",
+                asset_kind=kind.value,
+            )

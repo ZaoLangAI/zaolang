@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from typing import Any
 
 from app.llm.normalize import NormalizedResponse
@@ -56,6 +57,108 @@ def stub_completion(
     )
 
 
+def stub_stream_completion(*, agent_name: str, messages: list[dict[str, str]]) -> str:
+    """Deterministic mixed prose+JSON text for a streaming turn.
+
+    Only the `copy` role's `script_draft`/`script_revise` slots stream today
+    (see `app.agents.copywriter.stream_script_turn`) — everything else falls
+    back to the plain JSON-mode stub payload serialised as text, so a
+    misrouted call still gets something deterministic instead of silence.
+    """
+    prompt = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
+    if agent_name == AgentName.COPY:
+        try:
+            payload = json.loads(prompt)
+        except (TypeError, ValueError):
+            payload = {}
+        if isinstance(payload, dict) and "current_script" in payload:
+            return _copy_stream_script_revise(payload)
+        if isinstance(payload, dict) and "idea" in payload:
+            return _copy_stream_script_draft(payload)
+    data = _dispatch(agent_name, prompt)
+    return json.dumps(data, ensure_ascii=False)
+
+
+def _copy_stream_script_draft(payload: dict[str, Any]) -> str:
+    """Mirrors `copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT`'s output shape: a short
+    change summary, then a fenced JSON block with the full script document."""
+    idea = str(payload.get("idea") or "").strip()
+    title = str(payload.get("title") or "").strip()
+    digest = hashlib.sha256(idea.encode()).hexdigest()[:6]
+    script = {
+        "title": title or (idea[:24] if idea else f"未命名短剧 {digest}"),
+        "logline": idea or "一段关于选择与代价的短剧。",
+        "characters": [{"name": "林夏", "traits": "外冷内热的便利店店员，藏着不能说的秘密"}],
+        "scenes": [
+            {
+                "heading": "第一场 · 便利店 - 夜",
+                "blocks": [
+                    {
+                        "type": "scene",
+                        "character": None,
+                        "text": "深夜的便利店，日光灯嗡嗡作响，货架投下长长的影子。",
+                    },
+                    {
+                        "type": "camera",
+                        "character": None,
+                        "text": "镜头缓慢推近，从自动门口移向收银台。",
+                    },
+                    {
+                        "type": "action",
+                        "character": None,
+                        "text": "林夏机械地擦拭着柜台，目光时不时飘向门口。",
+                    },
+                    {
+                        "type": "dialogue",
+                        "character": "林夏",
+                        "text": "（自语）今天，会是最后一天吗。",
+                    },
+                    {
+                        "type": "breakpoint",
+                        "character": None,
+                        "text": "建议在此处切分：前段约 15 秒台词与动作，符合单条生成 ≤30 秒上限。",
+                    },
+                ],
+            }
+        ],
+    }
+    summary = f"已根据你的创意生成剧本初稿（stub:{digest}）。"
+    return f"{summary}\n```json\n{json.dumps(script, ensure_ascii=False)}\n```"
+
+
+def _copy_stream_script_revise(payload: dict[str, Any]) -> str:
+    """Deterministically appends a scene reflecting the user's message, so a
+    test asserting "the revision changed" observes real movement instead of
+    an unchanged echo — unlike `_editor_planner`'s "no commands" stub, a
+    script revision with literally no change would look like a broken turn."""
+    message = str(payload.get("message") or "").strip()
+    current = payload.get("current_script")
+    script: dict[str, Any] = (
+        deepcopy(current)
+        if isinstance(current, dict)
+        else {"title": "", "logline": "", "characters": [], "scenes": []}
+    )
+    scenes = script.get("scenes")
+    if not isinstance(scenes, list):
+        scenes = []
+        script["scenes"] = scenes
+    digest = hashlib.sha256(message.encode()).hexdigest()[:6]
+    scenes.append(
+        {
+            "heading": f"第{len(scenes) + 1}场 · 修改 - 日",
+            "blocks": [
+                {
+                    "type": "action",
+                    "character": None,
+                    "text": message[:160] or "（stub 未提供修改说明）",
+                }
+            ],
+        }
+    )
+    summary = f"已根据你的意见修改剧本（stub:{digest}）。"
+    return f"{summary}\n```json\n{json.dumps(script, ensure_ascii=False)}\n```"
+
+
 def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
     if agent_name == AgentName.SAFETY:
         return _safety(prompt)
@@ -98,13 +201,16 @@ def _safety(prompt: str) -> dict[str, Any]:
 
 
 def _planner(prompt: str) -> dict[str, Any]:
-    # `plan` and `clarify` share one agent identity, so the stub tells them
-    # apart by shape: `plan`'s user turn always carries `requested_operation`
-    # (even when its value is `None`), `clarify`'s carries only `intent`.
+    # `plan`, `clarify` and `asset_plan` share one agent identity, so the stub
+    # tells them apart by shape: `plan`'s user turn always carries
+    # `requested_operation` (even when its value is `None`), `asset_plan`'s
+    # always carries `asset_kind`, `clarify`'s carries only `intent`.
     try:
         payload = json.loads(prompt)
     except (TypeError, ValueError):
         payload = {}
+    if isinstance(payload, dict) and "asset_kind" in payload:
+        return _planner_asset_plan(payload)
     if isinstance(payload, dict) and "requested_operation" not in payload:
         return _planner_clarify(str(payload.get("intent", "")))
     return _planner_plan(prompt)
@@ -161,6 +267,52 @@ def _planner_clarify(text: str) -> dict[str, Any]:
     }
 
 
+# Keyed by `character_view` for `asset_kind == "character"`, by `asset_kind`
+# itself for everything else — mirrors `planner._CHARACTER_VIEW_BRIEF` /
+# `_ASSET_KIND_BRIEF`'s two-tier lookup.
+_CHARACTER_VIEW_NEGATIVES: dict[str, list[str]] = {
+    "front": ["多人入镜", "半身裁切"],
+    "side": ["多人入镜", "半身裁切", "五官被头发遮挡"],
+    "back": ["多人入镜", "露出正面五官"],
+}
+_ASSET_KIND_NEGATIVES: dict[str, list[str]] = {
+    "scene": ["人物遮挡主体", "画面过曝"],
+    "cover": ["文字遮挡关键主体", "画面杂乱"],
+}
+
+
+def _planner_asset_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mirrors `planner.ASSET_PLAN_SYSTEM_PROMPT`'s per-kind rules: a stable
+    subject name, consistency-preserving enhancements when a prior view's
+    description is available in `source_params`, and a kind-appropriate
+    negative list."""
+    intent = str(payload.get("intent") or "").strip()
+    asset_kind = str(payload.get("asset_kind") or "")
+    character_view = payload.get("character_view")
+    source_params = payload.get("source_params")
+    digest = hashlib.sha256(intent.encode()).hexdigest()[:6]
+    subject_name = intent[:12] if intent else f"新角色 {digest}"
+
+    enhancements = ["电影感布光", "浅景深"]
+    if isinstance(source_params, dict):
+        prior_description = source_params.get("subject_description") or source_params.get(
+            "prior_view_description"
+        )
+        if prior_description:
+            enhancements.append(f"保持与已有视角一致：{prior_description}")
+
+    negatives = (
+        _CHARACTER_VIEW_NEGATIVES.get(str(character_view), [])
+        if asset_kind == "character" and character_view
+        else _ASSET_KIND_NEGATIVES.get(asset_kind, [])
+    )
+    return {
+        "subject_name": subject_name,
+        "prompt_enhancements": enhancements,
+        "negative_prompt_suggestions": list(negatives),
+    }
+
+
 def _quality(prompt: str) -> dict[str, Any]:
     failed = "损坏" in prompt or "corrupt" in prompt.lower()
     return {
@@ -200,7 +352,7 @@ def _intent_router(prompt: str) -> dict[str, Any]:
         # like the weighted router that was removed on purpose.
         winner = min(
             candidates,
-            key=lambda c: (c.get("effective_cost", 0), str(c.get("provider", ""))),
+            key=lambda c: (c.get("effective_cost_micro_usd", 0), str(c.get("provider", ""))),
         )
         return {
             "selected_provider": winner.get("provider"),
@@ -237,7 +389,7 @@ def _copy(prompt: str) -> dict[str, Any]:
         payload = {}
     if isinstance(payload, dict):
         if "max_length" in payload:
-            return _copy_enhance(str(payload.get("prompt", "")))
+            return _copy_enhance(payload)
         if "locale" in payload:
             digest = hashlib.sha256(prompt.encode()).hexdigest()[:6]
             return {
@@ -256,22 +408,87 @@ def _copy(prompt: str) -> dict[str, Any]:
     }
 
 
-def _copy_enhance(text: str) -> dict[str, Any]:
-    """Mirrors `copywriter.ENHANCE_SYSTEM_PROMPT`'s detail-assessment rule."""
-    stripped = text.strip()
+# Mirrors `copywriter.VIDEO_DIMENSIONS` / `.IMAGE_DIMENSIONS`. Duplicated rather
+# than imported because `app.agents` imports this module's package, not the
+# other way round; `tests/unit/test_prompt_enhance.py` asserts they stay equal.
+_ENHANCE_VIDEO_DIMENSIONS = ("subject", "scene", "action", "camera", "lighting", "mood", "pacing")
+_ENHANCE_IMAGE_DIMENSIONS = ("subject", "scene", "composition", "lighting", "style", "detail")
+
+# One deterministic phrase per direction, so an iterating test can tell which
+# round it is looking at. `more_concise` adds nothing on purpose: shortening is
+# the one direction that must not append.
+_ENHANCE_DIRECTION_PHRASES = {
+    "more_specific": "主体轮廓与材质纹理清晰可辨",
+    "more_concise": "",
+    "stronger_camera": "镜头缓慢推近",
+    "stronger_lighting": "逆光轮廓光",
+    "more_dramatic": "明暗对比强烈",
+}
+
+
+def _copy_enhance(payload: dict[str, Any]) -> dict[str, Any]:
+    """Mirrors `copywriter.ENHANCE_SYSTEM_PROMPT`'s diagnosis rules.
+
+    Length stands in for the real model's judgement, but everything derived
+    from it follows the same rules the prompt states: the dimension set
+    depends on the medium, and `detail_level` follows from the statuses
+    (two or more `missing` is sparse, any `weak` is adequate, all `ok` is
+    detailed) rather than being decided separately.
+    """
+    stripped = str(payload.get("prompt", "")).strip()
+    operation = str(payload.get("operation") or "")
+    direction = str(payload.get("direction") or "")
+    instruction = str(payload.get("instruction") or "").strip()
+    keys = (
+        _ENHANCE_IMAGE_DIMENSIONS
+        if operation in ("text_to_image", "image_to_image")
+        else _ENHANCE_VIDEO_DIMENSIONS
+    )
+
     if len(stripped) < 20:
         detail_level = "sparse"
-        feedback = "描述比较简略，建议补充主体动作、场景与镜头细节。"
-        enhanced = f"{stripped}，特写镜头，柔和自然光，浅景深，画面细节丰富" if stripped else stripped
+        feedback = "描述比较简略，先把主体动作、场景与镜头补上，生成结果会稳定很多。"
+        additions = ["特写镜头", "柔和自然光", "浅景深", "画面细节丰富"]
+        # Two `missing` is exactly what makes this bucket sparse.
+        statuses = ["missing", "missing"] + ["weak"] * (len(keys) - 2)
     elif len(stripped) < 60:
         detail_level = "adequate"
-        feedback = "已有基本画面信息，补充一些氛围与镜头语言会更具体。"
-        enhanced = f"{stripped}，运镜舒缓，光影层次分明"
+        feedback = "基本画面信息已经齐了，再补一点氛围与镜头语言会更具体。"
+        additions = ["运镜舒缓", "光影层次分明"]
+        statuses = ["ok", "ok"] + ["weak"] * (len(keys) - 2)
     else:
         detail_level = "detailed"
         feedback = "描述已经足够具体，这里只做措辞上的微调。"
-        enhanced = stripped
-    return {"detail_level": detail_level, "feedback": feedback, "prompt": enhanced}
+        additions = []
+        statuses = ["ok"] * len(keys)
+
+    # An iterating round follows the requested direction only, instead of
+    # re-running the first-round padding.
+    if direction or instruction:
+        phrase = _ENHANCE_DIRECTION_PHRASES.get(direction, "") if direction else ""
+        if instruction and not phrase:
+            phrase = instruction[:20]
+        additions = [phrase] if phrase else []
+        feedback = "已按你这一轮的要求调整。"
+
+    enhanced = "，".join([stripped, *additions]) if stripped and additions else stripped
+    return {
+        "detail_level": detail_level,
+        "feedback": feedback,
+        "prompt": enhanced,
+        "dimensions": [
+            {"key": key, "status": status, "hint": _ENHANCE_HINTS[status]}
+            for key, status in zip(keys, statuses, strict=True)
+        ],
+        "additions": additions,
+    }
+
+
+_ENHANCE_HINTS = {
+    "missing": "这一项还没写，补一句具体的就能明显改善画面。",
+    "weak": "这一项写了但还笼统，可以再具体一层。",
+    "ok": "这一项已经足够具体，可以直接生成。",
+}
 
 
 def _copy_clarify(text: str) -> dict[str, Any]:

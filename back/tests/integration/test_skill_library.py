@@ -5,6 +5,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.domain.characters import service as characters_service
+from app.domain.scenes import service as scenes_service
 from app.models import CreationSkill, User
 from app.models.enums import CreationSkillStatus, Operation
 from tests.conftest import auth_header
@@ -64,6 +66,36 @@ def test_the_owner_can_delete_their_own_skill(
     assert db.get(CreationSkill, skill_id) is None
 
 
+def test_list_mine_excludes_image_asset_skills(
+    client: TestClient, db: Session, author: User
+) -> None:
+    """The generic "我的技能" list (`GET /v1/skills`) is `ManageSkillDialog`
+    territory, which cannot edit a character/scene's structured reference
+    assets — those stay confined to their own maintenance pages."""
+    template = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    template_id = template.json()["id"]
+
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="深夜便利店", description=None, reference_asset_ids=[]
+    )
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    db.commit()
+
+    mine = client.get("/v1/skills", headers=auth_header(author))
+    assert mine.status_code == 200, mine.text
+    ids = {item["id"] for item in mine.json()["items"]}
+    assert ids == {template_id}
+    assert scene.id not in ids
+    assert character.id not in ids
+
+
 def test_you_cannot_delete_someone_elses_skill(
     client: TestClient, db: Session, author: User, remixer: User
 ) -> None:
@@ -98,3 +130,68 @@ def test_public_listing_only_shows_published_skills(
     assert listed["title"] == "电影感夜景"
     assert listed["applicable_operations"] == []
     assert listed["cover_media_type"] is None
+
+
+# ---- content_type filtering (template vs. image_asset) --------------------
+
+
+def test_content_type_filter_separates_templates_from_image_assets(
+    client: TestClient, db: Session, author: User
+) -> None:
+    template = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    template_id = template.json()["id"]
+    db.get(CreationSkill, template_id).status = CreationSkillStatus.PUBLISHED
+
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="深夜便利店", description=None, reference_asset_ids=[]
+    )
+    scenes_service.publish_scene(db, user_id=author.id, scene_id=scene.id)
+    db.get(CreationSkill, scene.id).status = CreationSkillStatus.PUBLISHED
+    db.commit()
+
+    templates_only = client.get("/v1/skills/public", params={"content_type": "template"})
+    assert templates_only.status_code == 200, templates_only.text
+    ids = {item["id"] for item in templates_only.json()["items"]}
+    assert template_id in ids
+    assert scene.id not in ids
+
+    image_assets_only = client.get("/v1/skills/public", params={"content_type": "image_asset"})
+    assert image_assets_only.status_code == 200, image_assets_only.text
+    ids = {item["id"] for item in image_assets_only.json()["items"]}
+    assert scene.id in ids
+    assert template_id not in ids
+
+
+def test_default_public_listing_excludes_image_asset_skills(
+    client: TestClient, db: Session, author: User
+) -> None:
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="深夜便利店", description=None, reference_asset_ids=[]
+    )
+    scenes_service.publish_scene(db, user_id=author.id, scene_id=scene.id)
+    db.get(CreationSkill, scene.id).status = CreationSkillStatus.PUBLISHED
+    db.commit()
+
+    response = client.get("/v1/skills/public")
+    assert response.status_code == 200, response.text
+    assert not any(item["id"] == scene.id for item in response.json()["items"])
+
+
+# ---- character publish must go through the dedicated endpoint -------------
+
+
+def test_generic_publish_route_rejects_character_skills(
+    client: TestClient, db: Session, author: User
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    db.commit()
+
+    response = client.post(f"/v1/skills/{character.id}/publish", headers=auth_header(author))
+    assert response.status_code == 422, response.text

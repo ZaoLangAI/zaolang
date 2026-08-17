@@ -46,7 +46,7 @@ from app.domain.jobs import service as jobs_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import Profile
 from app.models.base import new_id
-from app.models.enums import JobOrigin, JobStatus, Operation
+from app.models.enums import ImageAssetKind, JobOrigin, JobStatus, Operation
 from app.workflows import registry
 
 router = APIRouter(tags=["admin:workflow-templates"])
@@ -116,9 +116,15 @@ def validate_workflow_graph(
 
 @router.get("/workflow-templates/{operation}", response_model=WorkflowTemplateView)
 def get_active_template(
-    operation: Operation, session: DbSession, user: Viewer, _: AdminRead
+    operation: Operation,
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    asset_kind: ImageAssetKind | None = Query(default=None),
 ) -> WorkflowTemplateView:
-    template = workflow_templates_service.get_active(session, operation.value)
+    template = workflow_templates_service.get_active(
+        session, operation.value, asset_kind.value if asset_kind else None
+    )
     if template is None:
         raise NotFound(f"{operation.value} 还没有已发布的工作流模板。")
     return _template_view(template)
@@ -126,9 +132,15 @@ def get_active_template(
 
 @router.get("/workflow-templates/{operation}/versions", response_model=Page[WorkflowTemplateView])
 def list_template_versions(
-    operation: Operation, session: DbSession, user: Viewer, _: AdminRead
+    operation: Operation,
+    session: DbSession,
+    user: Viewer,
+    _: AdminRead,
+    asset_kind: ImageAssetKind | None = Query(default=None),
 ) -> Page[WorkflowTemplateView]:
-    versions = workflow_templates_service.list_versions(session, operation.value)
+    versions = workflow_templates_service.list_versions(
+        session, operation.value, asset_kind=asset_kind.value if asset_kind else None
+    )
     return Page(items=[_template_view(v) for v in versions])
 
 
@@ -155,6 +167,7 @@ def publish_workflow_template(
         graph_json=payload.graph,
         actor_user_id=user.id,
         reason=payload.reason,
+        asset_kind=payload.asset_kind.value if payload.asset_kind else None,
     )
     audit.record(
         session,
@@ -162,7 +175,7 @@ def publish_workflow_template(
         action="workflow_template.publish",
         target_type="generation_workflow_template",
         target_id=row.id,
-        after={"operation": row.operation, "version": row.version},
+        after={"operation": row.operation, "asset_kind": row.asset_kind, "version": row.version},
         reason=payload.reason,
         request=request,
     )
@@ -185,7 +198,7 @@ def activate_workflow_template(
     """Rolls back by re-publishing an earlier version's graph as a new one."""
     require_confirmation(payload.confirm)
     target = workflow_templates_service.get_by_id(session, template_id)
-    if target.operation != operation.value:
+    if target.operation != workflow_templates_service.canonical_operation(operation.value):
         raise ValidationFailed(f"模板 {template_id} 不属于 {operation.value}。")
     row = workflow_templates_service.activate_version(
         session, template_id, actor_user_id=user.id, reason=payload.reason
@@ -324,6 +337,7 @@ def _template_view(row) -> WorkflowTemplateView:  # type: ignore[no-untyped-def]
     return WorkflowTemplateView(
         id=row.id,
         operation=row.operation,
+        asset_kind=row.asset_kind,
         version=row.version,
         name=row.name,
         graph=row.graph_json,

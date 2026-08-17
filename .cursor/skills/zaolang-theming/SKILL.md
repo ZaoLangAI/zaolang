@@ -42,7 +42,7 @@ Dark is the design-acceptance baseline — its values are locked in `front/src/a
 
 ## Extension Points
 
-- **Add a semantic token**: add it to both sets in `globals.css` + add the `@theme inline` mapping. **Adding it to only one set is the most common bug** — light silently falls back to an inherited value.
+- **Add a semantic token**: add it to both sets in `globals.css` + add the `@theme inline` mapping. **Adding it to only one set is the most common bug** — light silently falls back to an inherited value. Recent example: `--script-scene` / `--script-action` / `--script-camera` / `--script-dialogue` (script writing's colour-coded block legend, `front/src/features/script/script-block.tsx`) — added as four new hues rather than reusing `amber`/`success`/`danger`, since those already carry a warning/positive/error meaning that doesn't apply to "this line is a camera direction." Contrast was computed directly (WCAG formula) rather than assumed from the analogy to `--success`/`--danger`'s lightness band: label text at full opacity clears 6.2:1+ against its own theme's `--surface` in both themes, and body text over each colour's 10%-opacity tint clears 11.9:1+ — both far past the 4.5:1 floor. `make test-a11y`'s axe scan doesn't reach `/create/script` (see `zaolang-frontend-ui` invariant #14), so this manual check is the only coverage those four tokens get — recompute it if their hex values ever change.
 - **Add a theme state**: don't. The three states (`system` / `dark` / `light`) are a product decision; a fourth would touch the cookie, the SSR script, the preferences endpoint, and admin all at once.
 - **Adjust dark contrast**: run `make test-a11y` first — it scans both themes and reports the exact offending node for any contrast violation.
 

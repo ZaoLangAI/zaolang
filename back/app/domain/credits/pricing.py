@@ -110,11 +110,18 @@ def quote(
     durations: dict[str, dict[str, int]] | None = None,
     per_second_surcharge: dict[str, int] | None = None,
     base_seconds: int | None = None,
+    output_count: int = 1,
 ) -> Quote:
     """Deterministic price for one job.
 
     The same inputs must always produce the same number: the quote is shown to
     the user before they commit, and the reservation is made against it.
+
+    `output_count` is only ever greater than 1 for a `character`-asset-kind
+    job whose `character_views` names more than one view (a "补全侧面/背面"
+    completion request) — see `app.domain.jobs.service.character_output_count`.
+    It multiplies the tier's base price directly rather than touching the
+    video duration surcharge, since only image jobs ever set it above 1.
     """
     table = pricing or DEFAULT_TIER_PRICING
     seconds_table = durations or DEFAULT_ESTIMATED_SECONDS
@@ -125,9 +132,13 @@ def quote(
     if tiers is None or quality_tier not in tiers:
         raise ValueError(f"未定价的组合: {operation}/{quality_tier}")
 
-    base = tiers[quality_tier]
-    breakdown = {"base": base}
-    total = base
+    unit_base = tiers[quality_tier]
+    breakdown = {"base": unit_base}
+    total = unit_base
+    if output_count > 1:
+        additional = unit_base * (output_count - 1)
+        breakdown["additional_outputs"] = additional
+        total += additional
 
     billable_seconds = 0
     if operation in VIDEO_OPERATIONS and duration_seconds > included_seconds:
@@ -141,6 +152,7 @@ def quote(
 
     estimated = seconds_table.get(operation, {}).get(quality_tier, 30)
     estimated += billable_seconds * 6
+    estimated *= max(output_count, 1)
 
     return Quote(credits=total, estimated_seconds=estimated, breakdown=breakdown)
 
