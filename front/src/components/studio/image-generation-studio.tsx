@@ -66,6 +66,13 @@ export function ImageGenerationStudio({
   reference,
   initialPrompt,
   initialDraft,
+  initialAssetKind,
+  initialTargetCharacterId,
+  initialTargetSceneId,
+  subjectNameHint,
+  returnTo,
+  returnLinkKind,
+  returnLinkLabel,
 }: {
   source?: StudioSource;
   reference?: WorkDetail;
@@ -73,6 +80,25 @@ export function ImageGenerationStudio({
   /** Resumes a previous session — `?draftId=` on `/create/new` — so its full
    * version history and latest output reappear instead of starting blank. */
   initialDraft?: Draft;
+  /**
+   * The next five props are the "文案创作 → 图片创作" deep link's payload
+   * (assembled by `script-document-view.tsx`'s `buildCreateHref`, read back
+   * on `/create/new`): pre-fill this session so a character chip/scene
+   * heading jump-out lands straight on the right asset kind and target
+   * instead of the user re-picking what they just clicked.
+   */
+  initialAssetKind?: AssetKind;
+  initialTargetCharacterId?: string;
+  initialTargetSceneId?: string;
+  /** Names the new character/scene skill exactly when there is no target id
+   * to auto-create one for — see `GenerationParams.subject_name_hint`. */
+  subjectNameHint?: string;
+  /** Where "返回文案创作" (`InlineImageResult`) navigates back to — only
+   * ever a validated internal path (see `parseReturnTo` on `/create/new`),
+   * never rendered directly from the raw query string. */
+  returnTo?: string;
+  returnLinkKind?: 'character' | 'scene';
+  returnLinkLabel?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -89,9 +115,9 @@ export function ImageGenerationStudio({
   // "图片创作" — what this output is for, and which existing character/scene
   // (if any) it should read from and write back to. See section 6.3 of the
   // asset-kind plan.
-  const [assetKind, setAssetKind] = useState<AssetKind>('general');
-  const [targetCharacterId, setTargetCharacterId] = useState('');
-  const [targetSceneId, setTargetSceneId] = useState('');
+  const [assetKind, setAssetKind] = useState<AssetKind>(initialAssetKind ?? 'general');
+  const [targetCharacterId, setTargetCharacterId] = useState(initialTargetCharacterId ?? '');
+  const [targetSceneId, setTargetSceneId] = useState(initialTargetSceneId ?? '');
   const [autoAttachToRoster, setAutoAttachToRoster] = useState(true);
 
   // Inline progress/result + version history state. `draftId` is created on
@@ -236,13 +262,29 @@ export function ImageGenerationStudio({
       targetCharacterId: isCharacterAssetKind ? targetCharacterId || null : undefined,
       targetSceneId: assetKind === 'scene' ? targetSceneId || null : undefined,
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
+      subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
     });
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
 
+  const returnBanner =
+    returnTo && returnLinkLabel ? (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-xs text-muted">
+        <span>
+          {returnLinkKind === 'scene'
+            ? t('returnBannerScene', { name: returnLinkLabel })
+            : t('returnBannerCharacter', { name: returnLinkLabel })}
+        </span>
+        <Link href={returnTo} className="shrink-0 font-medium text-text hover:underline">
+          {t('returnBannerAbandon')}
+        </Link>
+      </div>
+    ) : null;
+
   const paramsPanel = (
     <>
+      {returnBanner}
       <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
         <OptionGroup
           label={t('assetKind')}
@@ -390,6 +432,10 @@ export function ImageGenerationStudio({
           setActiveJobId(job.id);
           setActiveJobSeed(job);
         }}
+        returnTo={returnTo}
+        returnLinkKind={returnLinkKind}
+        returnLinkLabel={returnLinkLabel}
+        fallbackLinkRefId={targetCharacterId || targetSceneId || undefined}
       />
       <GenerationVersionHistory
         draftId={draftId}

@@ -1,12 +1,12 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
-import { Link } from '@/i18n/navigation';
+import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { isApiError } from '@/lib/api/errors';
 
 import * as scriptApi from './api';
@@ -48,14 +48,31 @@ function ScriptDocumentLoading({ label, hint }: { label: string; hint: string })
  * or a page refresh that lost the in-memory stream). `useCreateStream`
  * picks the shared stream back up when it belongs to this `episodeId`.
  */
-export function ScriptEditor({ episodeId }: { episodeId: string }) {
+export function ScriptEditor({
+  episodeId,
+  pendingLink,
+}: {
+  episodeId: string;
+  /**
+   * Carried back from the image studio's "返回文案创作" (`InlineImageResult`)
+   * via `/create/script/{episodeId}?linkKind=...&linkLabel=...&linkRefId=...`
+   * (see `ScriptEditorPage`). Applied once, the moment `detail` first loads,
+   * then stripped from the URL so a refresh never re-applies it.
+   */
+  pendingLink?: { kind: 'character' | 'scene'; label: string; refId: string };
+}) {
   const t = useTranslations('scriptStudio');
   const { notify } = useToast();
+  const router = useRouter();
+  const pathname = usePathname();
   const [detail, setDetail] = useState<ScriptDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [viewedScript, setViewedScript] = useState<ScriptDocument | null>(null);
   const [firstDraftError, setFirstDraftError] = useState<string | null>(null);
+  // A ref, not `useState`: this is purely a run-once guard, never read by
+  // render — same pattern as `WorkflowPublishDialog`'s `wasOpen`.
+  const pendingLinkApplied = useRef(false);
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
 
@@ -151,6 +168,43 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
       notify(isApiError(error) ? error.message : t('unavailable'), 'error');
     }
   };
+
+  // Runs once, the moment `detail` first has a script to match against.
+  // Exact-matches `pendingLink.label` against a character name/scene
+  // heading (never fuzzy — a near-miss silently linking the wrong card
+  // would be worse than not linking at all) and overwrites any existing
+  // link on that entry without confirmation, same as `ScriptLinkPicker`'s
+  // own click-to-link. Either way, the URL is cleaned up immediately after
+  // so a refresh never re-applies (or re-fails) it.
+  useEffect(() => {
+    if (pendingLink && !pendingLinkApplied.current && detail) {
+      pendingLinkApplied.current = true;
+      const script = detail.script;
+      const matched =
+        pendingLink.kind === 'character'
+          ? script.characters.some((character) => character.name === pendingLink.label)
+          : script.scenes.some((scene) => scene.heading === pendingLink.label);
+      if (matched) {
+        // `updateLink` itself only calls `setDetail`/`setViewedScript` after
+        // its own `await`, in response to the PATCH's result — an ordinary
+        // network-triggered update, not a synchronous render-loop setState.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        void updateLink(
+          pendingLink.kind === 'character'
+            ? { kind: 'character', name: pendingLink.label, refId: pendingLink.refId }
+            : { kind: 'scene', heading: pendingLink.label, refId: pendingLink.refId },
+        );
+      } else {
+        notify(t('linkReturnNotFound'), 'error');
+      }
+      router.replace(pathname);
+    }
+    // `updateLink`/`notify`/`router`/`pathname` are stable enough across
+    // renders on this page that omitting them avoids re-running this on
+    // every unrelated re-render; `pendingLinkApplied` is what actually
+    // guards re-entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLink, detail]);
 
   const sendTurn = (message: string, referencedSkillIds: string[]) => {
     if (!detail) return;
@@ -260,6 +314,7 @@ export function ScriptEditor({ episodeId }: { episodeId: string }) {
         ) : (
           <ScriptDocumentView
             document={viewedScript ?? detail.script}
+            episodeId={episodeId}
             onLink={isViewingLatest ? (update) => void updateLink(update) : undefined}
           />
         )}

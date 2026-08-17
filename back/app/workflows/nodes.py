@@ -547,7 +547,15 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
         return NodeResult(port="ok")
 
     plan = ctx.state.get(ASSET_PLAN_STATE_KEY) or {}
-    subject_name = str(plan.get("subject_name") or "新角色")
+    # `subject_name_hint` (only ever sent by a caller that already knows the
+    # exact name — e.g. the script studio's "生成角色图/场景图" jump-out,
+    # which carries the script's own character name/scene heading) wins over
+    # the planner's own guess from the prompt. The fallback text is kind-
+    # specific so a scene auto-create never inherits "新角色".
+    default_subject_name = "新场景" if asset_kind == ImageAssetKind.SCENE.value else "新角色"
+    subject_name = str(
+        ctx.params.get("subject_name_hint") or plan.get("subject_name") or default_subject_name
+    ).strip()[:60] or default_subject_name
 
     try:
         if asset_kind == ImageAssetKind.CHARACTER.value:
@@ -561,11 +569,24 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                     subject_name=subject_name,
                     target_id=target_id,
                 )
+            # Recorded on the job row (not just `ctx.state`) so it survives
+            # into `GenerationJobResponse` — the script studio's "返回文案
+            # 创作" jump-back reads this to know which card to auto-relink.
+            if target_id:
+                ctx.job.linked_character_id = target_id
         elif asset_kind == ImageAssetKind.SCENE.value:
+            target_id = ctx.params.get("target_scene_id")
             for entry in outputs:
-                _link_scene_output(
-                    ctx, asset_id=str(entry.get("asset_id")), view=str(entry.get("view") or "")
+                target_id = _link_scene_output(
+                    ctx,
+                    config,
+                    asset_id=str(entry.get("asset_id")),
+                    view=str(entry.get("view") or ""),
+                    subject_name=subject_name,
+                    target_id=target_id,
                 )
+            if target_id:
+                ctx.job.linked_scene_id = target_id
         # `COVER` has no library to attach to today — the output stays a
         # plain generated asset (see the plan's "补充功能建议" for a future
         # series/episode cover slot).
@@ -624,13 +645,48 @@ def _link_character_output(
     return character.id
 
 
-def _link_scene_output(ctx: WorkflowContext, *, asset_id: str, view: str) -> None:
-    target_id = ctx.params.get("target_scene_id")
-    if not target_id:
-        return
-    scenes_service.append_reference_asset(
-        ctx.session, user_id=ctx.job.user_id, scene_id=str(target_id), asset_id=asset_id, view=view
+def _link_scene_output(
+    ctx: WorkflowContext,
+    config: AssetOutputLinkConfig,
+    *,
+    asset_id: str,
+    view: str,
+    subject_name: str,
+    target_id: str | None,
+) -> str | None:
+    """Attaches one output to `target_id`, auto-creating a scene from
+    scratch on the first call if there was none — mirrors
+    `_link_character_output`'s auto-create branch so a `SCENE` asset-kind
+    job without a `target_scene_id` reaches parity with the character path
+    instead of leaving the output unattached (the previous, deliberate
+    limitation — see `use-generation-submit.ts`'s now-outdated comment).
+
+    Returns the id actually used, same threading pattern as
+    `_link_character_output`.
+    """
+    if target_id:
+        scenes_service.append_reference_asset(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            scene_id=str(target_id),
+            asset_id=asset_id,
+            view=view,
+        )
+        return target_id
+    if not config.auto_create_scene:
+        return None
+    scene = scenes_service.create_scene(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        name=subject_name,
+        description=None,
+        reference_asset_ids=[],
     )
+    scenes_service.append_reference_asset(
+        ctx.session, user_id=ctx.job.user_id, scene_id=scene.id, asset_id=asset_id, view=view
+    )
+    ctx.state["created_scene_id"] = scene.id
+    return scene.id
 
 
 def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfig) -> NodeResult:

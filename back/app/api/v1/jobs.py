@@ -467,6 +467,8 @@ def _job_response(
         else None,
         asset_kind=_asset_kind_of(job),
         character_views=_character_views_of(job),
+        linked_character_id=job.linked_character_id,
+        linked_scene_id=job.linked_scene_id,
         draft_id=job.draft_id,
         prompt=_prompt_of(job),
         failure_code=job.failure_code,

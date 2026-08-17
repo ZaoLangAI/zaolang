@@ -1576,7 +1576,10 @@
     "linkLoading": "加载中…",
     "linkEmpty": "还没有可关联的条目",
     "manageCharacters": "管理角色库",
-    "manageScenes": "管理场景库"
+    "manageScenes": "管理场景库",
+    "generateCharacterImage": "生成角色图",
+    "generateSceneImage": "生成场景图",
+    "linkReturnNotFound": "未找到对应条目，请手动关联"
   },
   "footer": {
     "version": "版本 {version}",
@@ -1987,6 +1990,10 @@
     "assetKindCharacterHint": "先生成正面立绘，成功后可在角色库一键补全侧面与背面。",
     "assetKindScene": "场景图",
     "assetKindCover": "封面",
+    "returnBannerCharacter": "正在为《{name}》生成角色图，完成后可一键关联回文案创作",
+    "returnBannerScene": "正在为《{name}》生成场景图，完成后可一键关联回文案创作",
+    "returnBannerAbandon": "放弃并直接返回",
+    "returnToScript": "返回文案创作",
     "targetCharacter": "目标角色",
     "targetCharacterHint": "留空将在生成完成后自动创建一个新角色。",
     "targetCharacterAutoCreate": "自动创建新角色",

@@ -51,6 +51,10 @@ export function InlineImageResult({
   onCancel,
   onUseAsReference,
   onRetried,
+  returnTo,
+  returnLinkKind,
+  returnLinkLabel,
+  fallbackLinkRefId,
 }: {
   job: GenerationJob;
   events: StreamedEvent[];
@@ -61,6 +65,21 @@ export function InlineImageResult({
   onCancel: () => void;
   onUseAsReference: (job: GenerationJob) => void;
   onRetried: (job: GenerationJob) => void;
+  /**
+   * Set only when this session started from the script studio's "生成角色图
+   * /场景图" jump-out (`ImageGenerationStudio`'s own `returnTo` prop,
+   * carried from `/create/new`'s query string). When set, a terminal job —
+   * succeeded, failed, or cancelled — gets a "返回文案创作" button so the
+   * user is never stuck here even on failure (see the plan's "补充建议" #4).
+   */
+  returnTo?: string;
+  returnLinkKind?: 'character' | 'scene';
+  returnLinkLabel?: string;
+  /** `targetCharacterId`/`targetSceneId` as currently selected in the studio
+   * — used only if the job itself never got linked (e.g. `auto_attach_asset`
+   * was off), so the link the user was clearly working towards still makes
+   * it back instead of forcing a bare, unlinked return. */
+  fallbackLinkRefId?: string;
 }) {
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
@@ -102,6 +121,24 @@ export function InlineImageResult({
 
   const refreshOutputSrc = () =>
     job.output_asset_id ? refreshAssetUrl(job.output_asset_id) : refreshJobOutputUrl(job.id);
+
+  // Silently carries the fresh link back — matching `ScriptLinkPicker`'s own
+  // click-to-link behaviour, no confirmation dialog either direction (see
+  // the plan's "补充建议" #5). Falls back to `fallbackLinkRefId` only for a
+  // succeeded job the backend never linked itself (`auto_attach_asset` off);
+  // failed/cancelled always return bare, since there is nothing to link.
+  const returnLinkRefId =
+    job.status === 'succeeded'
+      ? job.linked_character_id ?? job.linked_scene_id ?? fallbackLinkRefId ?? null
+      : null;
+  const returnHref =
+    returnTo && returnLinkRefId && returnLinkKind && returnLinkLabel
+      ? `${returnTo}?${new URLSearchParams({
+          linkKind: returnLinkKind,
+          linkLabel: returnLinkLabel,
+          linkRefId: returnLinkRefId,
+        }).toString()}`
+      : returnTo;
 
   const canUseAsReference = job.status === 'succeeded' && Boolean(job.output_asset_id);
   const canSaveCoverSkill =
@@ -217,6 +254,11 @@ export function InlineImageResult({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
+        {finished && returnHref ? (
+          <Button variant="primary" size="sm" onClick={() => router.push(returnHref)}>
+            {tStudio('returnToScript')}
+          </Button>
+        ) : null}
         {canUseAsReference ? (
           <Button
             variant="secondary"

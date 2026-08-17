@@ -1576,7 +1576,10 @@
     "linkLoading": "Loading…",
     "linkEmpty": "Nothing to link yet",
     "manageCharacters": "Manage characters",
-    "manageScenes": "Manage scenes"
+    "manageScenes": "Manage scenes",
+    "generateCharacterImage": "Generate character image",
+    "generateSceneImage": "Generate scene image",
+    "linkReturnNotFound": "Couldn't find a matching entry — link it manually instead."
   },
   "footer": {
     "version": "Version {version}",
@@ -1987,6 +1990,10 @@
     "assetKindCharacterHint": "Generates the front view first; once it's done, complete the side and back from the character library in one click.",
     "assetKindScene": "Scene shot",
     "assetKindCover": "Cover",
+    "returnBannerCharacter": "Generating a character image for \"{name}\" — link it back to the script once it's done.",
+    "returnBannerScene": "Generating a scene image for \"{name}\" — link it back to the script once it's done.",
+    "returnBannerAbandon": "Discard and go back now",
+    "returnToScript": "Back to script",
     "targetCharacter": "Target character",
     "targetCharacterHint": "Leave blank to create a new character automatically once this finishes.",
     "targetCharacterAutoCreate": "Create a new character automatically",

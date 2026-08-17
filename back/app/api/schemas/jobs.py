@@ -224,6 +224,14 @@ class GenerationParams(ApiModel):
     # plan's subject instead of updating an existing one.
     target_character_id: str | None = Field(default=None, max_length=40)
     target_scene_id: str | None = Field(default=None, max_length=40)
+    # Overrides the planner's own guessed `subject_name` when auto-creating a
+    # new character/scene skill (no `target_character_id`/`target_scene_id`).
+    # Only meaningful for a caller that already knows the exact name — e.g.
+    # the script studio's "生成角色图/场景图" jump-out, which carries the
+    # script's own character name/scene heading rather than letting the
+    # planner guess one from the prompt. Ignored once a target id is set
+    # (there's nothing to name), and ignored for `asset_kind == GENERAL`.
+    subject_name_hint: str | None = Field(default=None, max_length=60)
     # Lets the client opt out of `execute_asset_output_link` entirely — e.g.
     # borrowing an existing character's front view for side/back consistency
     # without also writing the new output back into that character's roster.
@@ -413,6 +421,14 @@ class GenerationJobResponse(ApiModel):
     # stream, and to label `output_asset_ids`/`output_urls`' entries, which
     # are recorded in the same front → side → back order as this list.
     character_views: list[CharacterViewAngle] | None = None
+    # Which character/scene skill this job's output actually landed on —
+    # the target the client passed, or the id of a skill
+    # `execute_asset_output_link` auto-created. `None` for `GENERAL`/`COVER`
+    # jobs and for one that never reached settlement. At most one of the two
+    # is ever set. The script studio's "返回文案创作" jump-back reads this to
+    # auto-relink without the user re-picking from `ScriptLinkPicker`.
+    linked_character_id: str | None = None
+    linked_scene_id: str | None = None
     draft_id: str | None = None
     # Echoes `GenerationParams.prompt` back. Lets a client (the image studio's
     # inline version-history strip) show what prompt produced each past

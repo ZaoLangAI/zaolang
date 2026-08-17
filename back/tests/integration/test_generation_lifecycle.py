@@ -1045,3 +1045,50 @@ def test_job_response_exposes_output_media_type(
     assert body["output_media_type"] == media_type.value
     assert body["output_asset_id"] == asset.id
     assert body["output_url"]
+
+
+def test_job_response_exposes_which_character_a_job_linked_to(
+    client: TestClient, db: Session, author: User
+) -> None:
+    """`execute_asset_output_link` records the target it actually used onto
+    the job row (see `app.workflows.nodes`) — the script studio's "返回文案
+    创作" jump-back reads this field to auto-relink without the user
+    re-picking from `ScriptLinkPicker`."""
+    from app.domain.characters import service as characters_service
+
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    job = make_job(db, author, status=JobStatus.SUCCEEDED)
+    job.linked_character_id = character.id
+    db.flush()
+
+    response = client.get(f"/v1/generation-jobs/{job.id}", headers=auth_header(author))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["linked_character_id"] == character.id
+    assert body["linked_scene_id"] is None
+
+
+def test_job_response_exposes_which_scene_a_job_linked_to(
+    client: TestClient, db: Session, author: User
+) -> None:
+    from app.domain.scenes import service as scenes_service
+
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="深夜便利店", description=None, reference_asset_ids=[]
+    )
+    job = make_job(db, author, status=JobStatus.SUCCEEDED)
+    job.linked_scene_id = scene.id
+    db.flush()
+
+    response = client.get(f"/v1/generation-jobs/{job.id}", headers=auth_header(author))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["linked_scene_id"] == scene.id
+    assert body["linked_character_id"] is None

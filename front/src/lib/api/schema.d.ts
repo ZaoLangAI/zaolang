@@ -6647,6 +6647,10 @@ export interface components {
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Linked Character Id */
+            linked_character_id?: string | null;
+            /** Linked Scene Id */
+            linked_scene_id?: string | null;
             /** Draft Id */
             draft_id?: string | null;
             /** Prompt */
@@ -6713,6 +6717,8 @@ export interface components {
             target_character_id?: string | null;
             /** Target Scene Id */
             target_scene_id?: string | null;
+            /** Subject Name Hint */
+            subject_name_hint?: string | null;
             /**
              * Auto Attach Asset
              * @default true

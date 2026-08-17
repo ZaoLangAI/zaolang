@@ -240,14 +240,69 @@ def test_asset_output_link_attaches_to_an_existing_target_scene(db: Session, aut
     assert refreshed.reference_asset_ids == [asset.id]
 
 
-def test_asset_output_link_scene_kind_without_a_target_is_a_noop(db: Session, author: User) -> None:
-    """Unlike characters, scenes have no auto-create path — no target means
-    the output stays a plain generated asset."""
+def test_asset_output_link_auto_creates_a_scene_when_no_target_is_given(
+    db: Session, author: User
+) -> None:
+    """Scenes now reach parity with characters: no `target_scene_id` auto-
+    creates a brand-new scene skill instead of leaving the output
+    unattached."""
+    asset = _asset(db, author)
+    ctx = _ctx(db, author, params={"asset_kind": ImageAssetKind.SCENE.value})
+    ctx.state["asset_id"] = asset.id
+    ctx.state["asset_plan"] = {"subject_name": "深夜便利店"}
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    created_id = ctx.state["created_scene_id"]
+    scene = scenes_service.get_scene(db, user_id=author.id, scene_id=created_id)
+    assert scene.name == "深夜便利店"
+    assert scene.reference_asset_ids == [asset.id]
+
+
+def test_asset_output_link_auto_created_scene_falls_back_to_a_kind_specific_default_name(
+    db: Session, author: User
+) -> None:
+    """Without a plan or a hint, a scene auto-create must not inherit the
+    character path's "新角色" fallback."""
     asset = _asset(db, author)
     ctx = _ctx(db, author, params={"asset_kind": ImageAssetKind.SCENE.value})
     ctx.state["asset_id"] = asset.id
     execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    created_id = ctx.state["created_scene_id"]
+    scene = scenes_service.get_scene(db, user_id=author.id, scene_id=created_id)
+    assert scene.name == "新场景"
+
+
+def test_asset_output_link_does_not_auto_create_scene_when_disabled(
+    db: Session, author: User
+) -> None:
+    asset = _asset(db, author)
+    ctx = _ctx(db, author, params={"asset_kind": ImageAssetKind.SCENE.value})
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig(auto_create_scene=False))
+
+    assert "created_scene_id" not in ctx.state
     assert scenes_service.list_scenes(db, user_id=author.id) == []
+
+
+def test_asset_output_link_uses_subject_name_hint_over_the_planner_guess(
+    db: Session, author: User
+) -> None:
+    """The script studio's jump-out already knows the exact character name;
+    it must win over whatever the planner guessed from the prompt."""
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={"asset_kind": ImageAssetKind.CHARACTER.value, "subject_name_hint": "林夏"},
+    )
+    ctx.state["asset_id"] = asset.id
+    ctx.state["asset_plan"] = {"subject_name": "神秘女侦探"}
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    created_id = ctx.state["created_character_id"]
+    character = characters_service.get_character(db, user_id=author.id, character_id=created_id)
+    assert character.name == "林夏"
 
 
 def test_asset_output_link_cover_kind_has_no_library_to_attach_to(

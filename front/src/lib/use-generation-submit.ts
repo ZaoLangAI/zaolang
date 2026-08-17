@@ -49,8 +49,17 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    * character `assetKind` creates a brand-new character skill instead. */
   targetCharacterId?: string | null;
   /** The scene this output auto-attaches to. Unset with `assetKind: 'scene'`
-   * leaves the output unattached — scenes have no auto-create path. */
+   * auto-creates a brand-new scene skill instead (parity with the character
+   * path above — see `zaolang-generation-jobs` invariant 15). */
   targetSceneId?: string | null;
+  /**
+   * Overrides the planner's own guessed name when auto-creating a new
+   * character/scene skill (no `targetCharacterId`/`targetSceneId`). Only
+   * meaningful for a caller that already knows the exact name — e.g. the
+   * script studio's "生成角色图/场景图" jump-out, which carries the script's
+   * own character name/scene heading. Ignored once a target id is set.
+   */
+  subjectNameHint?: string;
   /**
    * Opts out of the auto-attach above while still letting `assetKind` shape
    * the generation itself. Defaults to `true`.
@@ -243,6 +252,7 @@ export function useGenerationSubmit(
                 character_views: input.characterViews ?? null,
                 target_character_id: input.targetCharacterId ?? null,
                 target_scene_id: input.targetSceneId ?? null,
+                subject_name_hint: input.subjectNameHint,
                 auto_attach_asset: input.autoAttachAsset ?? true,
                 extra: input.extra ?? {},
               },

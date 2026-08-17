@@ -1576,7 +1576,10 @@
     "linkLoading": "読み込み中…",
     "linkEmpty": "関連付けできる項目がありません",
     "manageCharacters": "キャラクターを管理",
-    "manageScenes": "シーンを管理"
+    "manageScenes": "シーンを管理",
+    "generateCharacterImage": "キャラクター画像を生成",
+    "generateSceneImage": "シーン画像を生成",
+    "linkReturnNotFound": "該当する項目が見つかりません。手動で関連付けてください。"
   },
   "footer": {
     "version": "バージョン {version}",
@@ -1987,6 +1990,10 @@
     "assetKindCharacterHint": "まず正面立ち絵を生成し、完了後にキャラクターライブラリで側面・背面をワンクリックで補完できます。",
     "assetKindScene": "シーン画像",
     "assetKindCover": "カバー",
+    "returnBannerCharacter": "「{name}」のキャラクター画像を生成中です。完了後に脚本作成へ関連付けて戻れます。",
+    "returnBannerScene": "「{name}」のシーン画像を生成中です。完了後に脚本作成へ関連付けて戻れます。",
+    "returnBannerAbandon": "破棄してすぐに戻る",
+    "returnToScript": "脚本作成に戻る",
     "targetCharacter": "対象キャラクター",
     "targetCharacterHint": "空欄のままにすると、生成完了後に新しいキャラクターが自動作成されます。",
     "targetCharacterAutoCreate": "新しいキャラクターを自動作成",

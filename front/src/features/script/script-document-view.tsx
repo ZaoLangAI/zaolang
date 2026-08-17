@@ -2,9 +2,62 @@
 
 import { useTranslations } from 'next-intl';
 
-import type { ScriptDocument } from './api';
+import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import { ScriptBlockRow, ScriptLegend } from './script-block';
 import { ScriptLinkPicker } from './script-link-picker';
+
+/** Seed prompt for a character's auto-created/updated image: the traits the
+ * writer already gave it, falling back to the bare name for a character
+ * with none yet rather than submitting an empty prompt. */
+function characterImagePrompt(character: ScriptCharacter): string {
+  return character.traits.trim() || character.name;
+}
+
+/** Seed prompt for a scene's auto-created/updated image: the heading alone
+ * ("内景·咖啡馆-日") is not evocative enough on its own, so it's paired with
+ * the scene's first non-empty `action` block for actual visual content. */
+function sceneImagePrompt(scene: ScriptScene): string {
+  const action = scene.blocks.find((block) => block.type === 'action' && block.text.trim());
+  return action ? `${scene.heading}，${action.text.trim()}` : scene.heading;
+}
+
+/**
+ * The deep link `ScriptLinkPicker`'s "生成角色图/场景图" footer entry jumps
+ * out to, carrying enough context for `/create/new` to pre-fill the image
+ * studio and, on success, jump back here with the new/updated link already
+ * known (`InlineImageResult`'s "返回文案创作", read back in `ScriptEditor`).
+ *
+ * Already-linked (`targetId` set) reuses that same card instead of creating
+ * another one — `subjectNameHint` is included regardless but only takes
+ * effect when there is no target, i.e. when a brand-new card gets created.
+ */
+function buildCreateHref({
+  episodeId,
+  assetKind,
+  prompt,
+  subjectNameHint,
+  targetId,
+}: {
+  episodeId: string;
+  assetKind: 'character' | 'scene';
+  prompt: string;
+  subjectNameHint: string;
+  targetId: string | null;
+}): string {
+  const params = new URLSearchParams({
+    mode: 'image_creation',
+    assetKind,
+    prompt,
+    subjectNameHint,
+    returnTo: `/create/script/${episodeId}`,
+    returnLinkKind: assetKind,
+    returnLinkLabel: subjectNameHint,
+  });
+  if (targetId) {
+    params.set(assetKind === 'character' ? 'targetCharacterId' : 'targetSceneId', targetId);
+  }
+  return `/create/new?${params.toString()}`;
+}
 
 /**
  * The full script, top to bottom: characters, then every scene in order with
@@ -15,13 +68,16 @@ import { ScriptLinkPicker } from './script-link-picker';
  * `onLink` is only passed while viewing the episode's true latest turn
  * (see `ScriptEditor`) — linking is a structural edit to `episode.script_json`
  * itself, so it makes no sense against a browsed historical snapshot; when
- * omitted, chips/headings render without the picker.
+ * omitted, chips/headings render without the picker (and without the
+ * "生成角色图/场景图" jump-out, which needs `episodeId` for its `returnTo`).
  */
 export function ScriptDocumentView({
   document,
+  episodeId,
   onLink,
 }: {
   document: ScriptDocument;
+  episodeId?: string;
   onLink?: (
     update:
       | { kind: 'character'; name: string; refId: string | null }
@@ -65,6 +121,17 @@ export function ScriptDocumentView({
                     kind="character"
                     refId={character.character_ref_id}
                     onChange={(refId) => onLink({ kind: 'character', name: character.name, refId })}
+                    createHref={
+                      episodeId
+                        ? buildCreateHref({
+                            episodeId,
+                            assetKind: 'character',
+                            prompt: characterImagePrompt(character),
+                            subjectNameHint: character.name,
+                            targetId: character.character_ref_id,
+                          })
+                        : undefined
+                    }
                   />
                 ) : null}
               </div>
@@ -83,6 +150,17 @@ export function ScriptDocumentView({
                   kind="scene"
                   refId={scene.ref_id}
                   onChange={(refId) => onLink({ kind: 'scene', heading: scene.heading, refId })}
+                  createHref={
+                    episodeId
+                      ? buildCreateHref({
+                          episodeId,
+                          assetKind: 'scene',
+                          prompt: sceneImagePrompt(scene),
+                          subjectNameHint: scene.heading,
+                          targetId: scene.ref_id,
+                        })
+                      : undefined
+                  }
                 />
               ) : null}
             </div>

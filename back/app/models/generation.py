@@ -163,6 +163,16 @@ class GenerationJob(Base, TimestampMixin):
     # matching `routing_trace_json`'s style for a list column on this table.
     output_asset_ids_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     output_work_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Which character/scene skill `app.workflows.nodes.execute_asset_output_link`
+    # actually attached this job's output to — the target the client passed
+    # in, or the id of a skill it auto-created. Plain string, not FK-checked
+    # (matching `output_work_version_id`'s style), and set at most one of the
+    # two per job since `asset_kind` is never both at once. `None` for every
+    # non-`CHARACTER`/`SCENE` job and for a row from before this column
+    # existed. Lets a client (the script studio's "返回文案创作" jump-back)
+    # learn which card a succeeded job landed on without re-deriving it.
+    linked_character_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    linked_scene_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     estimated_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -22994,6 +22994,28 @@
             ],
             "title": "Character Views"
           },
+          "linked_character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Character Id"
+          },
+          "linked_scene_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Scene Id"
+          },
           "draft_id": {
             "anyOf": [
               {
@@ -23256,6 +23278,18 @@
               }
             ],
             "title": "Target Scene Id"
+          },
+          "subject_name_hint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Name Hint"
           },
           "auto_attach_asset": {
             "type": "boolean",

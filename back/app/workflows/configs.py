@@ -88,15 +88,22 @@ class AssetOutputLinkConfig(NodeConfig):
     """Attaches a succeeded image job's output to its target character/scene.
 
     Runs after `quality_check` passes: `ctx.state["asset_id"]` must already
-    be set. A job with no `target_character_id`/`target_scene_id` (or whose
-    `asset_kind` is `GENERAL`) is a no-op — see
-    `app.workflows.nodes.execute_asset_output_link`.
+    be set. A job whose `asset_kind` is `GENERAL` (or `COVER`) is a no-op;
+    `CHARACTER`/`SCENE` with no `target_character_id`/`target_scene_id`
+    auto-creates a brand-new skill instead of leaving the output unattached
+    — see `app.workflows.nodes.execute_asset_output_link`.
     """
 
     # When true and `asset_kind` is a character view with no
     # `target_character_id`, creates a brand-new character skill from the
     # plan's subject instead of leaving the output unlinked.
     auto_create_character: bool = True
+    # Same idea, one asset kind over: when true and `asset_kind == SCENE`
+    # with no `target_scene_id`, creates a brand-new scene skill instead of
+    # leaving the output unattached. Kept as its own flag (rather than
+    # reusing `auto_create_character`) so a future caller can turn one off
+    # without the other.
+    auto_create_scene: bool = True
 
 
 class CustomAgentStepConfig(NodeConfig):

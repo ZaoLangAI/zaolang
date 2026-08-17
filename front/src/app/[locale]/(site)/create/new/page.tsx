@@ -43,6 +43,22 @@ const DESCRIPTION_KEYS: Record<Mode, string> = {
 
 const PROMPT_MAX_LENGTH = 600;
 
+// `ImageGenerationStudio`'s own asset-kind union — validated here rather
+// than trusted blindly from the query string.
+const ASSET_KINDS = ['general', 'character', 'scene', 'cover'] as const;
+type AssetKind = (typeof ASSET_KINDS)[number];
+const LINK_KINDS = ['character', 'scene'] as const;
+type LinkKind = (typeof LINK_KINDS)[number];
+
+// The script studio's "生成角色图/场景图" jump-out is the only caller of
+// this deep link today, and it only ever points back at one route shape —
+// keeping the whitelist this narrow (rather than "any same-origin path")
+// is what rules out an open redirect without needing a full URL parse.
+function sanitizeReturnTo(raw: string | undefined): string | undefined {
+  if (!raw || !raw.startsWith('/create/script/')) return undefined;
+  return raw;
+}
+
 export async function generateMetadata() {
   const t = await getTranslations('createPage');
   return { title: t('startCreating') };
@@ -57,9 +73,29 @@ export default async function NewCreationPage({
     ref?: string;
     styleId?: string;
     draftId?: string;
+    assetKind?: string;
+    targetCharacterId?: string;
+    targetSceneId?: string;
+    subjectNameHint?: string;
+    returnTo?: string;
+    returnLinkKind?: string;
+    returnLinkLabel?: string;
   }>;
 }) {
-  const { mode, prompt, ref, styleId, draftId } = await searchParams;
+  const {
+    mode,
+    prompt,
+    ref,
+    styleId,
+    draftId,
+    assetKind,
+    targetCharacterId,
+    targetSceneId,
+    subjectNameHint,
+    returnTo,
+    returnLinkKind,
+    returnLinkLabel,
+  } = await searchParams;
   const t = await getTranslations('createPage');
 
   const resolvedMode: Mode = MODES.includes(mode as Mode) ? (mode as Mode) : 'text_to_video';
@@ -88,6 +124,19 @@ export default async function NewCreationPage({
         undefined)
       : undefined;
 
+  // Only meaningful for the image studio (the script studio's jump-out
+  // always starts one of those) — validated and defaulted here so the
+  // component itself never has to distrust its own props.
+  const sanitizedReturnTo = sanitizeReturnTo(returnTo);
+  const resolvedAssetKind: AssetKind | undefined = ASSET_KINDS.includes(assetKind as AssetKind)
+    ? (assetKind as AssetKind)
+    : undefined;
+  const resolvedReturnLinkKind: LinkKind | undefined = LINK_KINDS.includes(
+    returnLinkKind as LinkKind,
+  )
+    ? (returnLinkKind as LinkKind)
+    : undefined;
+
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
       <BackLink href="/create">{t('backToCreate')}</BackLink>
@@ -102,6 +151,13 @@ export default async function NewCreationPage({
           initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
           reference={reference ?? undefined}
           initialDraft={initialDraft}
+          initialAssetKind={resolvedAssetKind}
+          initialTargetCharacterId={targetCharacterId}
+          initialTargetSceneId={targetSceneId}
+          subjectNameHint={subjectNameHint?.trim().slice(0, 60) || undefined}
+          returnTo={sanitizedReturnTo}
+          returnLinkKind={resolvedReturnLinkKind}
+          returnLinkLabel={returnLinkLabel?.trim().slice(0, 60) || undefined}
         />
       ) : (
         <VideoGenerationStudio
