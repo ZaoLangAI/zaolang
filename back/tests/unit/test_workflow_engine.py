@@ -19,7 +19,16 @@ from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.models import AgentRun, JobEvent, User
 from app.models.base import new_id
-from app.models.enums import JobEventType, JobOrigin, JobStatus, Operation, QualityTier
+from app.models.enums import (
+    CharacterViewAngle,
+    ImageAssetKind,
+    JobEventType,
+    JobOrigin,
+    JobStatus,
+    Operation,
+    QualityTier,
+    VideoAssetKind,
+)
 from app.workflows import registry
 from app.workflows.configs import (
     JoinConfig,
@@ -27,7 +36,7 @@ from app.workflows.configs import (
     ProviderGenerateConfig,
     RouteScoreConfig,
 )
-from app.workflows.defaults import default_graph
+from app.workflows.defaults import asset_graph, default_graph
 from app.workflows.graph import WorkflowGraph
 from app.workflows.graph import validate as validate_graph
 from app.workflows.nodes import (
@@ -697,6 +706,33 @@ def test_planning_with_followup_disabled_never_suspends_even_with_the_marker(
     assert input_requests.find_for_job(db, ctx.job.id) is None
 
 
+def test_asset_kind_graphs_seed_the_planning_node_with_followup_disabled(
+    db: Session, author: User
+) -> None:
+    """Regression: a character/scene/cover job's `planning` node used to be
+    seeded with `config: {}` (`allow_followup_question` defaulting `True`),
+    so a "补全侧面/背面" completion job — whose prompt is often just the
+    character's bare name (see `character-library.tsx`'s `completeViews`) —
+    got misread by the generic clarify slot as missing scene/action/shot
+    info and suspended at `AWAITING_INPUT` asking for exactly what a
+    character asset must NOT have (see `app.agents.planner
+    ._ASSET_KIND_BRIEF`). The image studio never renders `AwaitingInputPanel`
+    for that, so the job hung forever. `asset_graph` must keep opting the
+    `planning` node out, regardless of what the clarify slot would say.
+    """
+    graph = asset_graph(db, ImageAssetKind.CHARACTER.value)
+    planning_config = next(node for node in graph["nodes"] if node["id"] == "planning")["config"]
+
+    # A bare character name, same shape `completeViews` actually submits —
+    # short enough that the real clarify agent (not just the fake gateway's
+    # marker) would very plausibly ask for a scene/action/shot too.
+    ctx = _running_job(db, author, prompt=f"{PLANNER_CLARIFY_MARKER}：叶文洁")
+    outcome = execute_planning(ctx, PlanningConfig(**planning_config))
+
+    assert outcome.suspend is False
+    assert input_requests.find_for_job(db, ctx.job.id) is None
+
+
 def test_provider_generate_folds_the_plan_into_the_effective_prompt(
     db: Session, author: User, monkeypatch: pytest.MonkeyPatch, fake_media_catalog: None
 ) -> None:
@@ -726,3 +762,55 @@ def test_provider_generate_folds_the_plan_into_the_effective_prompt(
     assert "浅景深" in request.prompt
     assert request.negative_prompt is not None
     assert "肢体畸变" in request.negative_prompt
+
+
+@pytest.mark.parametrize(
+    "asset_params",
+    [
+        {"asset_kind": ImageAssetKind.CHARACTER.value, "character_view": CharacterViewAngle.SIDE.value},
+        {"video_asset_kind": VideoAssetKind.SCENE.value},
+    ],
+    ids=["image_asset_kind", "video_asset_kind"],
+)
+def test_provider_generate_ignores_the_generic_plan_for_an_asset_kind_job(
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_media_catalog: None,
+    asset_params: dict[str, str],
+) -> None:
+    """The bug: a multi-view `CHARACTER` completion job's generic `planning`
+    node runs once, before the per-view loop starts, already describing
+    every remaining view at once (real dev-DB `agent_runs` row: a "side"/
+    "back" job's generic plan enhancement literally read "侧面图展示...
+    背面图展示..."). Re-folding that same cached plan into *every* loop
+    pass leaked the other view's description into this pass's prompt, and
+    could also override the real reference photo with a physical
+    description the context-blind planner invented from text alone.
+    `_plan_enhancements` must ignore the generic plan for any asset-kind job
+    (image or video), regardless of what the fake gateway's planner stub
+    says — `execute_asset_planning` owns prompt guidance for these kinds.
+    """
+    ctx = _running_job(db, author, prompt="海边的黄昏，长镜头")
+    ctx.params.update(asset_params)
+    execute_planning(ctx, PlanningConfig(allow_followup_question=False))
+    execute_route_score(ctx, RouteScoreConfig())
+    decision = ctx.state["decision"]
+    assert decision.provider is not None
+
+    captured: dict[str, object] = {}
+    real_submit = decision.provider.submit
+
+    def capture_submit(request):  # type: ignore[no-untyped-def]
+        captured["request"] = request
+        return real_submit(request)
+
+    monkeypatch.setattr(decision.provider, "submit", capture_submit)
+
+    execute_provider_generate(ctx, ProviderGenerateConfig())
+
+    request = captured["request"]
+    assert request.prompt == "海边的黄昏，长镜头"
+    assert "电影感布光" not in request.prompt
+    assert "浅景深" not in request.prompt
+    assert request.negative_prompt is None

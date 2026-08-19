@@ -40,6 +40,7 @@ Security boundary, RBAC, shell, and component family: see `zaolang-admin-console
 10. **`seed` / `reset` must be refused in production**, guarded by a dedicated test. A backup restore must leave a `BackupRecord`.
 11. **Announcements split into site-wide and maintenance categories**; maintenance announcements must be prominently shown at the top of the consumer app.
 12. **The product sandbox is tracked in job ops and content moderation but never charges credits.** See `zaolang-generation-jobs` invariant #14. Never revert the product sandbox back to an in-process `dry_run`.
+13. **Editing `defaults.py`'s seeded graph shape never touches an already-published `(operation, asset_kind)` row.** `ensure_default_templates` only seeds a bucket that has no active template yet, so a code change there is invisible to every environment that already ran the seed once (any local/test/production database past its first boot). Ship a data migration alongside the code change — read every affected active row's `graph_json`, patch it in place, write it back (see `zaolang-generation-jobs` invariant #21 for a worked example: disabling the generic `planning` node's follow-up question on every `character`/`scene`/`cover` template). Rewrite the row directly rather than going through `publish()` — these rows are auto-seeded, not an operator's hand-edited history worth a new version for.
 
 ## Extension Points
 

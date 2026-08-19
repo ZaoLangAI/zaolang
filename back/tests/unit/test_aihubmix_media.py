@@ -9,6 +9,7 @@ import httpx
 import pytest
 from PIL import Image
 
+from app.config import get_settings
 from app.models.enums import Operation
 from app.providers.aihubmix_media import AiHubMixMediaProvider
 from app.providers.base import GenerationRequest, ProviderReference
@@ -80,6 +81,10 @@ def test_text_to_image_generates_and_stores_output(monkeypatch: pytest.MonkeyPat
 def test_image_to_image_calls_generations_with_a_signed_reference(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A real (non-`local`/`test`) deployment's publicly reachable bucket
+    stays on the cheap presigned-URL path — see the base64 test below for
+    the `local`/`test` path this same helper takes by default."""
+    monkeypatch.setattr(get_settings(), "app_env", "production", raising=False)
     reference_key = "test/reference-for-edit.png"
     s3.put_object(reference_key, base64.b64decode(_png_b64((90, 5, 5))), content_type="image/png")
     b64 = _png_b64()
@@ -105,6 +110,74 @@ def test_image_to_image_calls_generations_with_a_signed_reference(
     assert [url for url, _ in calls] == ["/v1/images/generations"]
     assert calls[0][1]["json"]["image"] == f"https://signed.invalid/{reference_key}"
     assert "files" not in calls[0][1]
+
+
+def test_image_to_image_embeds_the_reference_as_base64_in_local_and_test_envs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bug: aihubmix (a real external HTTP API) can never reach
+    `http://localhost:9000` (`local`/`test`'s default `s3_public_endpoint_
+    url`), so a presigned URL there is silently unfetchable and the
+    provider quietly generates from the prompt alone with no actual
+    reference — see `Settings.embed_reference_images_as_base64`. This is
+    already the default test-suite `app_env` (`tests/conftest.py`), so no
+    monkeypatching of settings is needed here, unlike the signed-URL test
+    above."""
+    assert get_settings().embed_reference_images_as_base64 is True
+    reference_key = "test/reference-for-edit-base64.png"
+    reference_bytes = base64.b64decode(_png_b64((90, 5, 5)))
+    s3.put_object(reference_key, reference_bytes, content_type="image/png")
+    b64 = _png_b64()
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((url, kwargs))
+        return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value)
+    result = provider.submit(
+        _request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=[reference_key])
+    )
+
+    assert result.succeeded is True
+    image_field = calls[0][1]["json"]["image"]
+    assert isinstance(image_field, str)
+    assert image_field.startswith("data:image/png;base64,")
+    encoded = image_field.removeprefix("data:image/png;base64,")
+    assert base64.b64decode(encoded) == reference_bytes
+
+
+def test_a_reference_over_the_base64_limit_falls_back_to_a_signed_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.providers import aihubmix_media
+
+    monkeypatch.setattr(aihubmix_media, "_MAX_BASE64_REFERENCE_BYTES", 8)
+    reference_key = "test/reference-too-big-for-base64.png"
+    s3.put_object(
+        reference_key, base64.b64decode(_png_b64((1, 2, 3))), content_type="image/png"
+    )
+    monkeypatch.setattr(
+        s3,
+        "presign_get",
+        lambda key, **kwargs: f"https://signed.invalid/{key}",
+    )
+    b64 = _png_b64()
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((url, kwargs))
+        return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value)
+    result = provider.submit(
+        _request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=[reference_key])
+    )
+
+    assert result.succeeded is True
+    assert calls[0][1]["json"]["image"] == f"https://signed.invalid/{reference_key}"
 
 
 def test_text_to_image_downloads_a_url_response(monkeypatch: pytest.MonkeyPatch) -> None:

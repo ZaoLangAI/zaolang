@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbSession, rate_limited
 from app.api.schemas.characters import (
+    CharacterActionClip,
     CharacterCreateRequest,
     CharacterPublishRequest,
     CharacterReferenceAsset,
@@ -269,6 +270,16 @@ def _character_response(session: Session, character: characters.CharacterView) -
                 created_at=entry.get("created_at"),
             )
             for entry in character.reference_assets
+            if entry.get("asset_id")
+        ],
+        action_clips=[
+            CharacterActionClip(
+                asset_id=str(entry.get("asset_id")),
+                label=entry.get("label"),
+                url=media_urls.asset_url(session, str(entry.get("asset_id"))),
+                created_at=entry.get("created_at"),
+            )
+            for entry in character.action_clips
             if entry.get("asset_id")
         ],
         voice_description=character.voice_description,

@@ -19,6 +19,10 @@ from app.domain.errors import ProviderTemporaryFailure
 
 
 def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
+    # `PromptContext.asset_kind` is a bare string that can carry either axis's
+    # value — `video_asset_kind` wins when present, since a video job's
+    # `asset_kind` is never meaningfully set (see the field's own docstring).
+    resolved_asset_kind = payload.video_asset_kind or payload.asset_kind or ""
     return prompts.PromptContext(
         operation=payload.operation or "",
         aspect_ratio=payload.aspect_ratio or "",
@@ -28,7 +32,7 @@ def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
         has_reference=payload.has_reference,
         direction=payload.direction or "",
         instruction=payload.instruction,
-        asset_kind=payload.asset_kind or "",
+        asset_kind=resolved_asset_kind,
     )
 
 

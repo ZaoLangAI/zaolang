@@ -58,14 +58,14 @@ class IntentRouterConfig(NodeConfig):
 
 
 class AssetPlanningConfig(NodeConfig):
-    """Runs the planner agent's `asset_plan` slot for an image asset job.
+    """Runs the planner agent's `asset_plan` slot for an image or video asset job.
 
-    Only meaningful when `ctx.params["asset_kind"]` is a non-`GENERAL`
-    `ImageAssetKind` — see `image_asset_graph` (`app.workflows.defaults`),
-    the only place this node type is wired in today. A `GENERAL` job (or one
-    with no `asset_kind` at all) is a no-op pass-through, so a graph that
-    accidentally includes this node for plain image generation degrades
-    gracefully instead of erroring.
+    Only meaningful when `ctx.params["asset_kind"]`/`ctx.params["video_asset_kind"]`
+    is a non-`GENERAL` `ImageAssetKind`/`VideoAssetKind` — see `asset_graph`
+    (`app.workflows.defaults`), the only place this node type is wired in
+    today. A `GENERAL` job (or one with neither set) is a no-op
+    pass-through, so a graph that accidentally includes this node for plain
+    generation degrades gracefully instead of erroring.
     """
 
     agent_id: str | None = Field(default=None, max_length=40)
@@ -75,23 +75,24 @@ class AssetPlanningConfig(NodeConfig):
 class AssetOutputAdvanceConfig(NodeConfig):
     """Records one iteration's output and decides whether to loop back.
 
-    Sits between `quality_check` and `asset_output_link` in
-    `image_asset_graph` (`app.workflows.defaults`). A no-op single pass for
-    `scene`/`cover`/`general` jobs — only a `CHARACTER`-kind job whose
-    `GenerationParams.character_views` names more than one view actually
-    loops, back to `asset_planning`, once per remaining view. See
-    `app.workflows.nodes.execute_asset_output_advance`.
+    Sits between `quality_check` and `asset_output_link` in `asset_graph`
+    (`app.workflows.defaults`). A no-op single pass for `scene`/`cover`/
+    `general` image jobs and every video kind — only an image `CHARACTER`-
+    kind job whose `GenerationParams.character_views` names more than one
+    view actually loops, back to `asset_planning`, once per remaining view.
+    See `app.workflows.nodes.execute_asset_output_advance`.
     """
 
 
 class AssetOutputLinkConfig(NodeConfig):
-    """Attaches a succeeded image job's output to its target character/scene.
+    """Attaches a succeeded image/video job's output to its target character/scene.
 
     Runs after `quality_check` passes: `ctx.state["asset_id"]` must already
-    be set. A job whose `asset_kind` is `GENERAL` (or `COVER`) is a no-op;
-    `CHARACTER`/`SCENE` with no `target_character_id`/`target_scene_id`
-    auto-creates a brand-new skill instead of leaving the output unattached
-    — see `app.workflows.nodes.execute_asset_output_link`.
+    be set. A job whose asset kind is `GENERAL` (or image `COVER`/video
+    `TRANSITION`/`COVER`) is a no-op; image `CHARACTER`/`SCENE` and video
+    `CHARACTER_ACTION`/`SCENE` with no `target_character_id`/
+    `target_scene_id` auto-creates a brand-new skill instead of leaving the
+    output unattached — see `app.workflows.nodes.execute_asset_output_link`.
     """
 
     # When true and `asset_kind` is a character view with no

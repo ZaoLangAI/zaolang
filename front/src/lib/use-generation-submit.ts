@@ -39,6 +39,18 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    */
   assetKind?: 'general' | 'character' | 'scene' | 'cover';
   /**
+   * The video-side equivalent of `assetKind` — what a `text_to_video`/
+   * `image_to_video`/`video_to_video` output is *for*, orthogonal to
+   * `operation` the same way. Selects the `(operation, video_asset_kind)`
+   * workflow template and, for `character_action`/`scene_video`, what
+   * `execute_asset_output_link` auto-attaches the succeeded output to (a
+   * character's `action_clips` or a scene's `clips`, not a still reference).
+   * Absent (or `'general'`) is today's plain video generation, unchanged.
+   * A submit sets at most one of `assetKind`/`videoAssetKind`.
+   */
+  videoAssetKind?:
+    'general' | 'scene_video' | 'character_action' | 'transition_video' | 'cover_video';
+  /**
    * Only meaningful with `assetKind: 'character'`: which of front/side/back
    * this job produces, one at a time. Omitted means `['front']` — a plain
    * single-view request. The character library's "补全侧面/背面" button is
@@ -46,11 +58,13 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    */
   characterViews?: ('front' | 'side' | 'back')[];
   /** The character skill this output auto-attaches to. Unset with a
-   * character `assetKind` creates a brand-new character skill instead. */
+   * character `assetKind`/`videoAssetKind: 'character_action'` creates a
+   * brand-new character skill instead. */
   targetCharacterId?: string | null;
-  /** The scene this output auto-attaches to. Unset with `assetKind: 'scene'`
-   * auto-creates a brand-new scene skill instead (parity with the character
-   * path above — see `zaolang-generation-jobs` invariant 15). */
+  /** The scene this output auto-attaches to. Unset with `assetKind: 'scene'`/
+   * `videoAssetKind: 'scene_video'` auto-creates a brand-new scene skill
+   * instead (parity with the character path above — see
+   * `zaolang-generation-jobs` invariant 15). */
   targetSceneId?: string | null;
   /**
    * Overrides the planner's own guessed name when auto-creating a new
@@ -61,8 +75,8 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    */
   subjectNameHint?: string;
   /**
-   * Opts out of the auto-attach above while still letting `assetKind` shape
-   * the generation itself. Defaults to `true`.
+   * Opts out of the auto-attach above while still letting `assetKind`/
+   * `videoAssetKind` shape the generation itself. Defaults to `true`.
    */
   autoAttachAsset?: boolean;
   /** Free-form provider hints, e.g. `{ sound: true }`. */
@@ -249,6 +263,7 @@ export function useGenerationSubmit(
                 skill_ids: input.skillIds ?? [],
                 style_gallery_id: input.styleGalleryId ?? null,
                 asset_kind: input.assetKind ?? 'general',
+                video_asset_kind: input.videoAssetKind ?? 'general',
                 character_views: input.characterViews ?? null,
                 target_character_id: input.targetCharacterId ?? null,
                 target_scene_id: input.targetSceneId ?? null,

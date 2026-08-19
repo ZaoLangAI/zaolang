@@ -9740,6 +9740,73 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Update Script Content",
+        "description": "Persists a user's direct hand-edit of the script text (title,\nlogline, character traits, block text). Same shape as\n`update_script_links` above — a plain request/response, not the SSE turn\nmachinery, since this is a manual edit rather than a model-driven\nrevision.",
+        "operationId": "update_script_content_v1_scripts__episode_id__patch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScriptContentUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptDocument"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/scripts/{episode_id}/turns/{turn_id}/snapshot": {
@@ -19783,6 +19850,54 @@
         ],
         "title": "BindEditorExportRequest"
       },
+      "CharacterActionClip": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "CharacterActionClip",
+        "description": "A generated `video_asset_kind=character_action` clip — see\n`characters.service.CHARACTER_ACTION_CLIPS_KEY`. No `view` field (unlike\n`CharacterReferenceAsset`): a video clip has no fixed pose/angle."
+      },
       "CharacterCreateRequest": {
         "properties": {
           "name": {
@@ -19999,6 +20114,13 @@
             "type": "array",
             "title": "Reference Assets"
           },
+          "action_clips": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterActionClip"
+            },
+            "type": "array",
+            "title": "Action Clips"
+          },
           "voice_description": {
             "anyOf": [
               {
@@ -20100,7 +20222,7 @@
           "back"
         ],
         "title": "CharacterViewAngle",
-        "description": "Which pose/angle one of a character's reference images is for.\n\nNamed `*Angle` (not plain `CharacterView`) to avoid colliding with\n`app.domain.characters.service.CharacterView`, the unrelated\n`CreationSkill` projection type. Independent of `ImageAssetKind`: a\n`CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing\nvia `GenerationParams.character_views` (see\n`app.workflows.nodes.execute_asset_output_advance`), one at a time,\nlooping the shared `image_asset_graph` back to `asset_planning` between\neach. `GENERAL` is reserved for a plain uploaded reference with no fixed\npose (`characters.service._entries_from_flat_ids`) — a generation job\nnever targets it."
+        "description": "Which pose/angle one of a character's reference images is for.\n\nNamed `*Angle` (not plain `CharacterView`) to avoid colliding with\n`app.domain.characters.service.CharacterView`, the unrelated\n`CreationSkill` projection type. Independent of `ImageAssetKind`: a\n`CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing\nvia `GenerationParams.character_views` (see\n`app.workflows.nodes.execute_asset_output_advance`), one at a time,\nlooping the shared `asset_graph` back to `asset_planning` between\neach. `GENERAL` is reserved for a plain uploaded reference with no fixed\npose (`characters.service._entries_from_flat_ids`) — a generation job\nnever targets it."
       },
       "CheckoutRequest": {
         "properties": {
@@ -23024,6 +23146,16 @@
               }
             ]
           },
+          "video_asset_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoAssetKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "character_views": {
             "anyOf": [
               {
@@ -23339,6 +23471,10 @@
             "type": "boolean",
             "title": "Auto Attach Asset",
             "default": true
+          },
+          "video_asset_kind": {
+            "$ref": "#/components/schemas/VideoAssetKind",
+            "default": "general"
           },
           "extra": {
             "additionalProperties": true,
@@ -28197,6 +28333,16 @@
                 "type": "null"
               }
             ]
+          },
+          "video_asset_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoAssetKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -29722,6 +29868,54 @@
         ],
         "title": "RoutingReplayResponse"
       },
+      "SceneClip": {
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id"
+        ],
+        "title": "SceneClip",
+        "description": "A generated `video_asset_kind=scene_video` clip — see\n`scenes.service.SCENE_CLIPS_KEY`. No `view` field (unlike\n`SceneReferenceAsset`): a video clip has no fixed shot tag."
+      },
       "SceneCreateRequest": {
         "properties": {
           "name": {
@@ -29877,6 +30071,13 @@
             "type": "array",
             "title": "Reference Assets"
           },
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/SceneClip"
+            },
+            "type": "array",
+            "title": "Clips"
+          },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
             "default": "draft"
@@ -30027,6 +30228,19 @@
           "name"
         ],
         "title": "ScriptCharacterLinkUpdate"
+      },
+      "ScriptContentUpdateRequest": {
+        "properties": {
+          "script": {
+            "$ref": "#/components/schemas/ScriptDocument"
+          }
+        },
+        "type": "object",
+        "required": [
+          "script"
+        ],
+        "title": "ScriptContentUpdateRequest",
+        "description": "A direct hand-edit of the script text — bypasses the LLM turn\nmachinery, same as `ScriptLinksUpdateRequest`. The full document, not a\nper-field patch, so `app.agents.copywriter._sanitize_script` can do all\nthe bounds/shape validation the same way it does for every other write\npath into `script_json`."
       },
       "ScriptCreateRequest": {
         "properties": {
@@ -31842,6 +32056,18 @@
           "entries"
         ],
         "title": "VersionDiffResponse"
+      },
+      "VideoAssetKind": {
+        "type": "string",
+        "enum": [
+          "general",
+          "scene_video",
+          "character_action",
+          "transition_video",
+          "cover_video"
+        ],
+        "title": "VideoAssetKind",
+        "description": "What a `text_to_video`/`image_to_video`/`video_to_video` job's output\nis *for* — the video-side equivalent of `ImageAssetKind`.\n\nDeliberately its own enum, not a reuse of `ImageAssetKind`: values are\nspelled differently on purpose (`scene_video`/`character_action`/\n`transition_video`/`cover_video`, not `scene`/`character`/`cover`) so a\nvideo kind can never collide with an image kind wherever the two get\nlooked up by bare string key (`copywriter._VIDEO_ENHANCE_SYSTEM_PROMPTS`,\n`GenerationWorkflowTemplate.asset_kind` rows, agent-skill default-profile\nbuckets). There is no `CharacterViewAngle` equivalent here — a\n`CHARACTER_ACTION` job always produces exactly one clip per submission,\nnever a multi-view loop (see `app.workflows.nodes.execute_asset_output_advance`).\n\n`TRANSITION`/`COVER` cover short-drama-specific building blocks images\nhave no equivalent for: a transition/insert clip and a trailer/cover\nclip respectively. Neither attaches to a character/scene library (same\nas `ImageAssetKind.COVER` today) — see `execute_asset_output_link`."
       },
       "VideoGenerationOptions": {
         "properties": {

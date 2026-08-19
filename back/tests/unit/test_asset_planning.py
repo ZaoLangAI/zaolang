@@ -1,4 +1,4 @@
-"""`asset_planning`/`asset_output_link` — the two nodes `image_asset_graph`
+"""`asset_planning`/`asset_output_link` — the two nodes `asset_graph`
 (`app.workflows.defaults`) adds on top of the generic image graph: one folds
 per-asset-kind guidance into the prompt before generation, the other attaches
 a succeeded output to its character/scene target afterwards.
@@ -22,6 +22,8 @@ from app.workflows.configs import (
     AssetPlanningConfig,
 )
 from app.workflows.nodes import (
+    _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT,
+    _CHARACTER_COMPLETION_FIXED_PROMPTS,
     execute_asset_output_advance,
     execute_asset_output_link,
     execute_asset_planning,
@@ -88,6 +90,49 @@ def test_asset_planning_folds_enhancements_into_the_prompt(db: Session, author: 
     assert ctx.state["_last_agent_run_id"]
 
 
+def test_asset_planning_folds_negative_prompt_suggestions_for_a_front_pass(
+    db: Session, author: User
+) -> None:
+    """Root cause C: `plan_asset`'s own `negative_prompt_suggestions` used to
+    be silently discarded — `ctx.params["negative_prompt"]` stayed `None`
+    even though the planner agent run itself produced a real list (see
+    `tests.fake_llm_gateway._planner_asset_plan`'s `front` entry)."""
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    negative_prompt = ctx.params["negative_prompt"]
+    assert negative_prompt is not None
+    assert "多人入镜" in negative_prompt
+    assert "半身裁切" in negative_prompt
+
+
+def test_asset_planning_preserves_a_caller_supplied_negative_prompt(
+    db: Session, author: User
+) -> None:
+    """A caller-supplied `negative_prompt` must survive alongside the
+    planner's own suggestions, the same "extend, never overwrite" contract
+    `_plan_enhancements` already applies to a plain `GENERAL` job's plan."""
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value],
+            "negative_prompt": "水印",
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    negative_prompt = ctx.params["negative_prompt"]
+    assert "水印" in negative_prompt
+    assert "多人入镜" in negative_prompt
+
+
 def test_asset_planning_stores_the_plan_under_a_custom_output_key(
     db: Session, author: User
 ) -> None:
@@ -111,6 +156,111 @@ def test_asset_planning_carries_prior_view_description_for_consistency(
     )
     execute_asset_planning(ctx, AssetPlanningConfig())
     assert "银色短发、黑色风衣" in ctx.prompt
+
+
+@pytest.mark.parametrize(
+    "view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value]
+)
+def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
+    db: Session, author: User, view: str
+) -> None:
+    """A "补全侧面/背面" completion job must never let the caller's own
+    prompt — in every one of the three callers that submit this job shape
+    (`character-library.tsx`, `image-generation-studio.tsx`, iOS's
+    `StudioViewModel.completeViews`), a character's name/description —
+    compete with the attached front reference image. The intent handed to
+    the planner is always the fixed, view-specific reference-only
+    instruction instead, regardless of what free text the caller sent as
+    `ctx.prompt` — and it must never mention the *other* view (the old
+    shared "侧面/背面" wording literally sat at the start of both passes'
+    final prompt in a real job's `job_events`, ambiguous about which single
+    angle it wanted)."""
+    other_view = (
+        CharacterViewAngle.BACK.value if view == CharacterViewAngle.SIDE.value
+        else CharacterViewAngle.SIDE.value
+    )
+    ctx = _ctx(
+        db,
+        author,
+        prompt="一位神秘的女侦探",
+        params={"asset_kind": ImageAssetKind.CHARACTER.value, "character_views": [view]},
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.prompt.startswith(_CHARACTER_COMPLETION_FIXED_PROMPTS[view])
+    assert "一位神秘的女侦探" not in ctx.prompt
+    assert _CHARACTER_COMPLETION_FIXED_PROMPTS[other_view] not in ctx.prompt
+
+
+@pytest.mark.parametrize(
+    "view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value]
+)
+def test_asset_planning_seeds_the_anti_collage_negative_for_a_completion_pass(
+    db: Session, author: User, view: str
+) -> None:
+    """Defense-in-depth for root cause A/B: even if the reference image
+    still doesn't land for some reason, a hardcoded negative rules out the
+    multi-panel turnaround-sheet layout the model actually produced in a
+    real job."""
+    ctx = _ctx(
+        db,
+        author,
+        params={"asset_kind": ImageAssetKind.CHARACTER.value, "character_views": [view]},
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT in ctx.params["negative_prompt"]
+
+
+def test_asset_planning_resets_prompt_and_negative_prompt_between_loop_passes(
+    db: Session, author: User
+) -> None:
+    """The second pass of a multi-view completion job must not inherit the
+    first pass's view-specific prompt or negative prompt — the same class
+    of cross-view leakage as root cause B, but for `execute_asset_planning`
+    being re-entered directly (`execute_asset_output_advance`'s loop-back
+    edge) rather than through the generic planner."""
+    ctx = _ctx(
+        db,
+        author,
+        prompt="一位神秘的女侦探",
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [
+                CharacterViewAngle.SIDE.value,
+                CharacterViewAngle.BACK.value,
+            ],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.prompt.startswith(_CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value])
+    side_negative = ctx.params["negative_prompt"]
+    assert "五官被头发遮挡" in side_negative
+
+    ctx.state["_current_character_view"] = CharacterViewAngle.BACK.value
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.prompt.startswith(_CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.BACK.value])
+    assert (
+        _CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value] not in ctx.prompt
+    )
+    back_negative = ctx.params["negative_prompt"]
+    assert "五官被头发遮挡" not in back_negative
+    assert "露出正面五官" in back_negative
+
+
+def test_asset_planning_leaves_the_front_view_prompt_untouched(db: Session, author: User) -> None:
+    """The `front` pass — including a plain single-view job with no
+    `character_views` at all — must keep using the caller's real prompt;
+    only a side/back completion pass gets the fixed override above."""
+    ctx = _ctx(
+        db,
+        author,
+        prompt="一位神秘的女侦探",
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.prompt.startswith("一位神秘的女侦探")
 
 
 # ---- execute_asset_output_link --------------------------------------------
@@ -180,6 +330,27 @@ def test_asset_output_link_auto_creates_a_character_when_no_target_is_given(
     character = characters_service.get_character(db, user_id=author.id, character_id=created_id)
     assert character.name == "神秘女侦探"
     assert character.reference_asset_ids == [asset.id]
+
+
+def test_asset_output_link_records_linked_character_id_across_a_refresh(
+    db: Session, author: User
+) -> None:
+    """`ctx.job.linked_character_id` must survive `db.refresh(ctx.job)` — the
+    exact thing `WorkflowEngine._execute_node`'s `_cancel_if_requested` does
+    right after every node runs (`app.workflows.runner`). The session is
+    `autoflush=False` (`app.db`), so a mutation the node forgets to flush is
+    silently discarded by that refresh, reverting the field back to `None`
+    even though the character/reference-asset attach itself (a separate,
+    already-flushed write) went through fine.
+    """
+    asset = _asset(db, author)
+    ctx = _ctx(db, author, params={"asset_kind": ImageAssetKind.CHARACTER.value})
+    ctx.state["asset_id"] = asset.id
+    ctx.state["asset_plan"] = {"subject_name": "神秘女侦探"}
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    db.refresh(ctx.job)
+    assert ctx.job.linked_character_id == ctx.state["created_character_id"]
 
 
 def test_asset_output_link_does_not_auto_create_when_disabled(db: Session, author: User) -> None:
@@ -316,9 +487,75 @@ def test_asset_output_link_cover_kind_has_no_library_to_attach_to(
     assert characters_service.list_characters(db, user_id=author.id) == []
 
 
-def test_asset_output_link_swallows_a_missing_target_character_instead_of_failing(
+def test_asset_output_link_falls_back_to_a_new_character_when_the_target_is_gone(
     db: Session, author: User
 ) -> None:
+    """`target_character_id` may be stale — e.g. the script studio cached it
+    before the user deleted that character from the library. Rather than
+    losing the generated output, the node must auto-create a replacement
+    the same way it would have with no target at all, and thread the new
+    id back onto `ctx.job.linked_character_id` so the "返回文案创作" jump-back
+    can re-link the script to it."""
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "target_character_id": "ch_does_not_exist",
+            "subject_name_hint": "叶文洁",
+        },
+    )
+    ctx.state["asset_id"] = asset.id
+    with pytest.raises(NotFound):
+        characters_service.get_character(db, user_id=author.id, character_id="ch_does_not_exist")
+
+    result = execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    assert result.port == "ok"
+    created_id = ctx.state["created_character_id"]
+    assert created_id != "ch_does_not_exist"
+    character = characters_service.get_character(db, user_id=author.id, character_id=created_id)
+    assert character.name == "叶文洁"
+    assert character.reference_asset_ids == [asset.id]
+    assert ctx.job.linked_character_id == created_id
+
+
+def test_asset_output_link_falls_back_to_a_new_scene_when_the_target_is_gone(
+    db: Session, author: User
+) -> None:
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "target_scene_id": "sc_does_not_exist",
+            "subject_name_hint": "深夜便利店",
+        },
+    )
+    ctx.state["asset_id"] = asset.id
+    with pytest.raises(NotFound):
+        scenes_service.get_scene(db, user_id=author.id, scene_id="sc_does_not_exist")
+
+    result = execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    assert result.port == "ok"
+    created_id = ctx.state["created_scene_id"]
+    assert created_id != "sc_does_not_exist"
+    scene = scenes_service.get_scene(db, user_id=author.id, scene_id=created_id)
+    assert scene.name == "深夜便利店"
+    assert scene.reference_asset_ids == [asset.id]
+    assert ctx.job.linked_scene_id == created_id
+
+
+def test_asset_output_link_stays_a_noop_when_target_is_gone_and_auto_create_is_disabled(
+    db: Session, author: User
+) -> None:
+    """A caller that explicitly opted out of auto-create (`auto_attach_asset`'s
+    sibling flag) must still see a plain no-op, not a fallback character —
+    same "never fail the job" contract as before, just also covering a
+    stale target rather than only a missing one."""
     asset = _asset(db, author)
     ctx = _ctx(
         db,
@@ -329,10 +566,31 @@ def test_asset_output_link_swallows_a_missing_target_character_instead_of_failin
         },
     )
     ctx.state["asset_id"] = asset.id
-    with pytest.raises(NotFound):
-        characters_service.get_character(db, user_id=author.id, character_id="ch_does_not_exist")
-    result = execute_asset_output_link(ctx, AssetOutputLinkConfig())
+    result = execute_asset_output_link(ctx, AssetOutputLinkConfig(auto_create_character=False))
+
     assert result.port == "ok"
+    assert "created_character_id" not in ctx.state
+    assert characters_service.list_characters(db, user_id=author.id) == []
+
+
+def test_asset_output_link_stays_a_noop_when_scene_target_is_gone_and_auto_create_is_disabled(
+    db: Session, author: User
+) -> None:
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.SCENE.value,
+            "target_scene_id": "sc_does_not_exist",
+        },
+    )
+    ctx.state["asset_id"] = asset.id
+    result = execute_asset_output_link(ctx, AssetOutputLinkConfig(auto_create_scene=False))
+
+    assert result.port == "ok"
+    assert "created_scene_id" not in ctx.state
+    assert scenes_service.list_scenes(db, user_id=author.id) == []
 
 
 # ---- execute_asset_output_advance -----------------------------------------

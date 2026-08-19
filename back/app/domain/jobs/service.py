@@ -32,7 +32,7 @@ from app.domain.scenes import service as scenes_service
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, JobEvent
-from app.models.enums import ImageAssetKind, JobEventType, JobOrigin, JobStatus
+from app.models.enums import ImageAssetKind, JobEventType, JobOrigin, JobStatus, VideoAssetKind
 from app.platform_config import service as config_service
 from app.platform_config.schemas import PricingConfig
 
@@ -167,7 +167,20 @@ def submit(
     # the code-level default graph for those. A sandbox draft snapshot must
     # not pin (or later backfill) the live template, or a publish mid-run
     # would change what the try-it walked.
-    asset_kind = params.get("asset_kind") if isinstance(params.get("asset_kind"), str) else None
+    # Whichever of the two orthogonal asset-kind axes is actually meaningful
+    # for this job's operation — `validate_generation_params` already
+    # guarantees at most one of them is non-`GENERAL` (image kinds are
+    # rejected outside `IMAGE_OPERATIONS`, video kinds outside
+    # `VIDEO_OPERATIONS`), so checking the video field first and falling back
+    # to the image field is safe: a video job's `asset_kind` is always still
+    # sitting at its `GENERAL` default. `get_active` itself already treats a
+    # `"general"` value the same as `None` (see its own `normalized` check).
+    raw_video_kind = params.get("video_asset_kind")
+    asset_kind = (
+        raw_video_kind
+        if isinstance(raw_video_kind, str) and raw_video_kind != VideoAssetKind.GENERAL.value
+        else (params.get("asset_kind") if isinstance(params.get("asset_kind"), str) else None)
+    )
     active_template = (
         None
         if graph_override_json

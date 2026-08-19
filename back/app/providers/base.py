@@ -45,6 +45,15 @@ class GenerationRequest:
     # them to ``ProviderReference(media_type="image")`` at call time.
     reference_object_keys: list[str] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
+    # Which `route_score` pass this is within the job (see `nodes.py::
+    # execute_route_score`) — monotonically increasing and never reused
+    # across the whole job, including across a multi-view `CHARACTER` job's
+    # loop-back through `asset_planning`. A provider must fold this into its
+    # output `object_key` (default 1 is still fine for every job that never
+    # loops): reusing `generated/{job_id}/output.png` verbatim for a second
+    # view collides with the first view's already-registered `Asset` row on
+    # `uq_assets_object_key`, since both views share the same `job_id`.
+    attempt_number: int = 1
 
     def __post_init__(self) -> None:
         # JSON checkpoints turn nested dataclasses back into dictionaries.

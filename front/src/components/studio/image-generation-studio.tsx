@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
@@ -21,7 +21,21 @@ import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { Character, Draft, GenerationJob, QualityTier, Scene, WorkDetail } from '@/lib/api/types';
+import type {
+  Character,
+  Draft,
+  GenerationJob,
+  Page,
+  QualityTier,
+  Scene,
+  WorkDetail,
+} from '@/lib/api/types';
+import {
+  CHARACTER_COMPLETION_PROMPT,
+  canCompleteViews,
+  findCompletionJobFor,
+  missingReferenceViews,
+} from '@/lib/characters';
 import { formatCount, formatDuration } from '@/lib/format';
 import type { Asset } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
@@ -35,7 +49,8 @@ type Operation = 'text_to_image' | 'image_to_image';
  * defaults to `['front']`); the remaining two views are a separate,
  * standalone completion action on the character library card, not a studio
  * option (see `CharacterLibrary`'s "补全侧面/背面" button). */
-type AssetKind = 'general' | 'character' | 'scene' | 'cover';
+const ASSET_KINDS = ['general', 'character', 'scene', 'cover'] as const;
+type AssetKind = (typeof ASSET_KINDS)[number];
 type Orientation = 'landscape' | 'portrait';
 
 // No `1:1`: every framing the studio offers is either wider or taller than
@@ -108,10 +123,30 @@ export function ImageGenerationStudio({
   const { notify } = useToast();
 
   const [prompt, setPrompt] = useState(source?.params.prompt ?? initialPrompt ?? '');
-  const [aspect, setAspect] = useState<string>('16:9');
+  // A resumed draft's `params.aspect_ratio` (written once at draft creation,
+  // see `use-generation-submit.ts`) is already on hand synchronously via
+  // `initialDraft` — no need to wait on a job fetch the way `assetKind`/
+  // `uploads` below do.
+  const [aspect, setAspect] = useState<string>(() => {
+    const draftParams = initialDraft?.params as Record<string, unknown> | undefined;
+    const ratio = typeof draftParams?.aspect_ratio === 'string' ? draftParams.aspect_ratio : null;
+    return ratio && ([...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS] as string[]).includes(ratio)
+      ? ratio
+      : '16:9';
+  });
   const [tier, setTier] = useState<QualityTier>('standard');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [uploads, setUploads] = useState<Asset[]>([]);
+  // Which uploaded reference the user clicked in `SourceMaterialRail` — shown
+  // enlarged in the preview area until a job exists (see `previewSlot`
+  // below) or the user picks a different one. Derived from `uploads` by id
+  // rather than storing the `Asset` itself, so removing/re-adding the same
+  // upload can't leave a stale object around.
+  const [selectedUploadId, setSelectedUploadId] = useState<string | null>(null);
+  // A counter, not a boolean: `PromptPolish` only reacts to this *changing*,
+  // so every "生成我的版本" click needs a new value even if the drawer was
+  // already closed — see `PromptPolish`'s `closeSignal` prop.
+  const [polishCloseSignal, setPolishCloseSignal] = useState(0);
   // "图片创作" — what this output is for, and which existing character/scene
   // (if any) it should read from and write back to. See section 6.3 of the
   // asset-kind plan.
@@ -143,10 +178,15 @@ export function ImageGenerationStudio({
   );
   // Adjusted during render rather than in an effect (same pattern as
   // `command-palette.tsx`) — guarded by `!activeJobId` so it only ever fires
-  // once, the moment the resumed job's data arrives.
+  // once, the moment the resumed job's data arrives. `asset_kind` rides
+  // along here too — unlike `aspect` above it isn't on `Draft.params`, only
+  // on the job response, so it can't be seeded from `initialDraft` alone.
   if (!activeJobId && resumedJob.status === 'ready' && resumedJob.data) {
     setActiveJobId(resumedJob.data.id);
     setActiveJobSeed(resumedJob.data);
+    if (resumedJob.data.asset_kind && ASSET_KINDS.includes(resumedJob.data.asset_kind)) {
+      setAssetKind(resumedJob.data.asset_kind);
+    }
   }
 
   const {
@@ -160,6 +200,151 @@ export function ImageGenerationStudio({
   // `useJobStream`'s own reset effect catching up (see `use-job-stream.ts`) —
   // without this, switching jobs could flash the previous job's data.
   const displayJob = liveJob && liveJob.id === activeJobId ? liveJob : activeJobSeed;
+
+  // Every job seen under this draft so far — seeded once from the draft's
+  // job list, then additively kept up to date below as jobs are submitted,
+  // streamed, or picked from history. Fed to `GenerationVersionHistory`
+  // (instead of just `activeJob`) so a version never disappears just
+  // because it stopped being the one currently shown — the bug this state
+  // exists to fix.
+  const [knownJobsById, setKnownJobsById] = useState<Record<string, GenerationJob>>({});
+  const knownJobs = useMemo(() => Object.values(knownJobsById), [knownJobsById]);
+
+  const draftJobsHistory = useResource<Page<GenerationJob>>(
+    draftId ? `/v1/generation-jobs?draft_id=${draftId}` : null,
+  );
+  // Guarded by a ref (same shape as `use-job-stream.ts`'s own reset effect)
+  // rather than just the dependency, so it only ever seeds once, the
+  // moment the one-shot fetch's data arrives. It only ever *fills in* jobs
+  // this session hasn't observed directly yet, never overwrites a job's
+  // already-known (necessarily fresher) local state.
+  const historySeededRef = useRef(false);
+  useEffect(() => {
+    if (historySeededRef.current || !draftJobsHistory.data) return;
+    historySeededRef.current = true;
+    const seeded: Record<string, GenerationJob> = {};
+    for (const job of draftJobsHistory.data.items) seeded[job.id] = job;
+    setKnownJobsById((current) => ({ ...seeded, ...current }));
+  }, [draftJobsHistory.data]);
+  // Remembers `displayJob`'s latest state every time its identity changes
+  // (a new submit, a stream update, or picking a different version) — the
+  // ref guard is what a bare `[displayJob]` dependency already gives an
+  // effect for free, kept explicit so a second render triggered by anything
+  // else in this component never replays the same remember.
+  const lastRememberedDisplayJobRef = useRef<GenerationJob | null>(null);
+  useEffect(() => {
+    if (!displayJob || displayJob === lastRememberedDisplayJobRef.current) return;
+    lastRememberedDisplayJobRef.current = displayJob;
+    setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
+  }, [displayJob]);
+
+  // Only a single-view character job (the front view, `character_views`
+  // unset or `['front']`) can still be missing side/back — a multi-view
+  // completion job already produced everything one job can, so this (and
+  // therefore the "补全侧面/背面" button below) goes back to `null` the
+  // moment such a job becomes `displayJob`, with no extra state to reset.
+  const completionCharacterId =
+    displayJob?.asset_kind === 'character' &&
+    displayJob.status === 'succeeded' &&
+    (!displayJob.character_views || displayJob.character_views.length <= 1)
+      ? displayJob.linked_character_id ?? (targetCharacterId || null)
+      : null;
+
+  // Which already-submitted completion job (in flight or long since
+  // succeeded, this session or a prior one) supplements `displayJob`,
+  // derived purely from `knownJobs` — see `findCompletionJobFor`. This is
+  // the primary signal for both the gallery merge (`InlineImageResult`)
+  // and the button's availability below, so it works correctly even before
+  // (or without ever needing) the character-record fetch beneath it.
+  const resolvedCompletionJob = displayJob ? findCompletionJobFor(knownJobs, displayJob) : null;
+
+  // The "补全侧面/背面" completion job gets its own submit/streaming state
+  // rather than reusing the main `submit()`/`activeJobId` — otherwise its
+  // `onSubmitted` would swap `activeJobId` to the completion job itself,
+  // making it look like a second version of the *same* draft (the original
+  // bug). The selected version stays whichever front-view job it already
+  // was; the completion job's outputs are merged into that version's own
+  // gallery instead (see `InlineImageResult`).
+  const [completionJobId, setCompletionJobId] = useState<string | null>(null);
+  const [completionJobSeed, setCompletionJobSeed] = useState<GenerationJob | null>(null);
+  const { job: completionLiveJob } = useJobStream(completionJobId ?? '', completionJobSeed);
+  const completionDisplayJob =
+    completionLiveJob && completionLiveJob.id === completionJobId
+      ? completionLiveJob
+      : completionJobSeed;
+  const lastRememberedCompletionJobRef = useRef<GenerationJob | null>(null);
+  useEffect(() => {
+    if (!completionDisplayJob || completionDisplayJob === lastRememberedCompletionJobRef.current) {
+      return;
+    }
+    lastRememberedCompletionJobRef.current = completionDisplayJob;
+    setKnownJobsById((current) => ({
+      ...current,
+      [completionDisplayJob.id]: completionDisplayJob,
+    }));
+  }, [completionDisplayJob]);
+
+  // Fetched by id rather than trusted from `charactersResource`'s list
+  // snapshot below — a character this very job just auto-created might not
+  // be in that list yet. Kept as a plain fetch (not `useResource`) so it can
+  // be forced to refetch via `characterRefreshNonce` once a completion
+  // succeeds — a fallback safety net for "this character was already
+  // completed elsewhere, outside any job this draft knows about".
+  const [completionCharacterData, setCompletionCharacterData] = useState<Character | null>(null);
+  const [characterRefreshNonce, setCharacterRefreshNonce] = useState(0);
+  // Bumps the nonce the moment `completionDisplayJob` first reports
+  // `succeeded` — the ref guard (same shape as the effects above) makes
+  // sure this only fires on that one transition, not every render.
+  const lastCompletionStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const status = completionDisplayJob?.status ?? null;
+    const justSucceeded = status === 'succeeded' && lastCompletionStatusRef.current !== 'succeeded';
+    lastCompletionStatusRef.current = status;
+    if (!justSucceeded) return;
+    setCharacterRefreshNonce((n) => n + 1);
+  }, [completionDisplayJob?.status]);
+  useEffect(() => {
+    if (!completionCharacterId) return;
+    let cancelled = false;
+    void api
+      .get<Character>(`/v1/characters/${completionCharacterId}`)
+      .then((data) => {
+        if (!cancelled) setCompletionCharacterData(data);
+      })
+      .catch(() => {
+        if (!cancelled) setCompletionCharacterData(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completionCharacterId, characterRefreshNonce]);
+  // `completionCharacterData` only ever reflects whichever character the
+  // effect above most recently fetched (or is about to) — once
+  // `completionCharacterId` itself goes back to `null`, stop trusting
+  // whatever that last fetch left behind rather than clearing it with a
+  // second render.
+  const effectiveCompletionCharacterData = completionCharacterId ? completionCharacterData : null;
+  const canOfferCompleteViews = Boolean(
+    completionCharacterId &&
+      !resolvedCompletionJob &&
+      effectiveCompletionCharacterData &&
+      canCompleteViews(effectiveCompletionCharacterData),
+  );
+
+  const { submitting: completionSubmitting, submit: submitCompletion } = useGenerationSubmit(
+    { operation: 'image_to_image', qualityTier: tier, durationSeconds: 0 },
+    {
+      label: t('submit'),
+      onSubmitted: (job) => {
+        setCompletionJobId(job.id);
+        setCompletionJobSeed(job);
+      },
+    },
+  );
+  const completingCharacterViews =
+    completionSubmitting ||
+    (completionDisplayJob != null &&
+      !['succeeded', 'failed', 'cancelled', 'expired'].includes(completionDisplayJob.status));
 
   const cancelActiveJob = async () => {
     if (!activeJobId) return;
@@ -179,24 +364,56 @@ export function ImageGenerationStudio({
     setActiveJobSeed(job);
   };
 
-  const handleUseAsReference = async (job: GenerationJob) => {
-    const assetIds = job.output_asset_ids?.length
-      ? job.output_asset_ids
-      : job.output_asset_id
-        ? [job.output_asset_id]
-        : [];
-    if (assetIds.length === 0) return;
-    try {
-      const assets = await Promise.all(assetIds.map((id) => api.get<Asset>(`/v1/assets/${id}`)));
-      // Replaces rather than appends: "基于这张图" means this becomes the new
-      // base image, not one more reference alongside whatever was there.
-      setUploads(assets);
-    } catch (caught) {
-      notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
-      return;
-    }
-    if (job.prompt) setPrompt(job.prompt);
-  };
+  const handleUseAsReference = useCallback(
+    async (job: GenerationJob) => {
+      const assetIds = job.output_asset_ids?.length
+        ? job.output_asset_ids
+        : job.output_asset_id
+          ? [job.output_asset_id]
+          : [];
+      if (assetIds.length === 0) return;
+      try {
+        const assets = await Promise.all(assetIds.map((id) => api.get<Asset>(`/v1/assets/${id}`)));
+        // Replaces rather than appends: "基于这张图" means this becomes the new
+        // base image, not one more reference alongside whatever was there.
+        setUploads(assets);
+      } catch (caught) {
+        notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+        return;
+      }
+      if (job.prompt) setPrompt(job.prompt);
+    },
+    [notify, tStates],
+  );
+
+  // Resuming a draft (`?draftId=` — the "最近草稿"/"草稿" tab's edit entry
+  // points, and image job notifications) means the user wants to keep
+  // working on it: pull its latest output into `uploads` and its prompt back
+  // into the field, exactly like clicking "基于此图继续微调" on it would —
+  // once, the moment the resumed job's data is in. Guarded by a ref (not
+  // `resumedJob.data` itself) so a later version pick from
+  // `GenerationVersionHistory` never re-triggers this.
+  //
+  // Doesn't just delegate to `handleUseAsReference`: that helper bails out
+  // entirely when the job has no output (nothing to base an edit on), which
+  // is right for its own "基于此图继续微调" button but wrong here — a failed
+  // or still-running draft has no output yet either, and the prompt the
+  // user originally typed is still worth restoring for a retry.
+  // Keyed off `activeJobSeed` rather than `resumedJob.data` — the moment the
+  // render-time block above sets `activeJobId`, `resumedJob`'s own query
+  // switches to `null` (its `!activeJobId` guard) and its `data` reverts to
+  // `undefined`, but `activeJobSeed` was already copied from it and stays
+  // put, so it's the reliable read once a resumed job exists.
+  const draftMaterialSeededRef = useRef(false);
+  useEffect(() => {
+    if (draftMaterialSeededRef.current || !initialDraft || !activeJobSeed) return;
+    draftMaterialSeededRef.current = true;
+    const job = activeJobSeed;
+    void (async () => {
+      if (job.prompt) setPrompt(job.prompt);
+      await handleUseAsReference(job);
+    })();
+  }, [initialDraft, activeJobSeed, handleUseAsReference]);
 
   const charactersResource = useResource<Character[]>(
     sessionStatus === 'authenticated' ? '/v1/characters' : null,
@@ -243,10 +460,12 @@ export function ImageGenerationStudio({
 
   const removeUpload = (assetId: string) => {
     setUploads((current) => current.filter((asset) => asset.id !== assetId));
+    setSelectedUploadId((current) => (current === assetId ? null : current));
   };
 
-  const runSubmit = () =>
-    submit({
+  const runSubmit = () => {
+    setPolishCloseSignal((n) => n + 1);
+    return submit({
       operation,
       qualityTier: tier,
       durationSeconds: 0,
@@ -264,6 +483,43 @@ export function ImageGenerationStudio({
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
     });
+  };
+
+  // Mirrors `CharacterLibrary`'s own "补全侧面/背面" request (same fixed
+  // `3:4` aspect, same fixed reference-only prompt) but through this
+  // studio's own, independent completion submit/stream state
+  // (`submitCompletion`) rather than the main `submit()` — see the state
+  // above. The reference image attached (the front view) keeps side/back
+  // visually consistent; the backend (`execute_asset_planning`) hard-
+  // overrides whatever prompt is sent here for a side/back pass anyway, but
+  // sending the same fixed instruction keeps this request's own intent
+  // self-explanatory instead of silently relying on that override.
+  //
+  // Requests only whichever of side/back `completionCharacterData` still
+  // lacks (`missingReferenceViews`) rather than always both — otherwise
+  // clicking this after already regenerating just one of them (e.g. right
+  // after deleting it in the character library) would silently overwrite
+  // the other, already-approved view too.
+  const completeCharacterViews = () => {
+    if (!displayJob?.output_asset_id || !completionCharacterId) return;
+    const views: Array<'side' | 'back'> = effectiveCompletionCharacterData
+      ? missingReferenceViews(effectiveCompletionCharacterData)
+      : ['side', 'back'];
+    if (views.length === 0) return;
+    submitCompletion({
+      operation: 'image_to_image',
+      qualityTier: tier,
+      durationSeconds: 0,
+      prompt: CHARACTER_COMPLETION_PROMPT,
+      aspectRatio: '3:4',
+      referenceAssetIds: [displayJob.output_asset_id],
+      assetKind: 'character',
+      characterViews: views,
+      targetCharacterId: completionCharacterId,
+      autoAttachAsset: true,
+      draftId: draftId ?? undefined,
+    });
+  };
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
@@ -368,6 +624,7 @@ export function ImageGenerationStudio({
           assetKind,
         }}
         onPolishAccept={setPrompt}
+        closePolishSignal={polishCloseSignal}
       />
 
       {isImageEdit ? <p className="text-xs text-muted">{t('referenceRequiredHint')}</p> : null}
@@ -413,6 +670,11 @@ export function ImageGenerationStudio({
     </>
   );
 
+  // Only consulted by the shell while there's no `previewSlot` yet (before
+  // the first submit) — once a job exists, the result takes over the
+  // preview area regardless of what was last clicked in the source rail.
+  const selectedUpload = uploads.find((asset) => asset.id === selectedUploadId) ?? null;
+
   // Undefined before the first submit (and while a resumed draft's job is
   // still loading), so the shell falls back to its default cover/poster —
   // once set, it fully replaces that block with the live/finished result
@@ -436,12 +698,12 @@ export function ImageGenerationStudio({
         returnLinkKind={returnLinkKind}
         returnLinkLabel={returnLinkLabel}
         fallbackLinkRefId={targetCharacterId || targetSceneId || undefined}
+        completionJob={resolvedCompletionJob}
+        canCompleteCharacterViews={canOfferCompleteViews}
+        completingCharacterViews={completingCharacterViews}
+        onCompleteCharacterViews={completeCharacterViews}
       />
-      <GenerationVersionHistory
-        draftId={draftId}
-        activeJob={displayJob}
-        onSelect={selectVersion}
-      />
+      <GenerationVersionHistory jobs={knownJobs} activeJob={displayJob} onSelect={selectVersion} />
     </>
   ) : undefined;
 
@@ -452,8 +714,12 @@ export function ImageGenerationStudio({
       uploads={uploads}
       onUploaded={(asset) => setUploads((current) => [...current, asset])}
       onRemove={removeUpload}
+      onSelectUpload={(asset) => setSelectedUploadId(asset.id)}
       isPortraitPreview={aspect === PORTRAIT_ASPECT}
       previewSlot={previewSlot}
+      previewOverrideUrl={selectedUpload?.url ?? null}
+      previewPlaceholder={t('previewAreaLabel')}
+      hideDirectHint
       canSubmit={canSubmit}
       submitting={submitting}
       onSubmit={runSubmit}

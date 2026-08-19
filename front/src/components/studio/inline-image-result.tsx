@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import {
   CHARACTER_VIEW_LABEL_KEY,
   STAGE_FOR_EVENT,
@@ -26,6 +27,20 @@ import type { CreationSkillDetail, GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { refreshAssetUrl, refreshJobOutputUrl } from '@/lib/refresh-media-src';
 import type { StreamedEvent } from '@/lib/use-job-stream';
+
+/**
+ * Caps the media stage well below `DevicePreview`'s own remaining-viewport
+ * sizing (see `useAvailableStage`), which otherwise grows a portrait
+ * character/scene still to fill whatever viewport height is left below it —
+ * fine for a standalone preview with nothing else to show, but here the
+ * status line, the action row (including "补全侧面/背面"), and the version
+ * history strip all sit directly below the stage in the same scroll
+ * container. Without this cap, that whole action row lands just past the
+ * fold on a fresh page load (e.g. resuming a draft from "最近草稿" → 编辑),
+ * making it easy to miss even though it's technically reachable by
+ * scrolling.
+ */
+const RESULT_STAGE_MAX_HEIGHT = 380;
 
 /**
  * The image studio's preview-area result — replaces the standalone
@@ -55,6 +70,10 @@ export function InlineImageResult({
   returnLinkKind,
   returnLinkLabel,
   fallbackLinkRefId,
+  completionJob,
+  canCompleteCharacterViews,
+  completingCharacterViews,
+  onCompleteCharacterViews,
 }: {
   job: GenerationJob;
   events: StreamedEvent[];
@@ -80,6 +99,30 @@ export function InlineImageResult({
    * was off), so the link the user was clearly working towards still makes
    * it back instead of forcing a bare, unlinked return. */
   fallbackLinkRefId?: string;
+  /**
+   * The "补全侧面/背面" completion job supplementing `job`, if any —
+   * resolved by `ImageGenerationStudio` from the draft's full job list
+   * (`findCompletionJobFor`), not a version of its own (see
+   * `GenerationVersionHistory`). Once it has succeeded, its outputs are
+   * merged into `job`'s own gallery below — front, then side, then back,
+   * all one `OutputGallery` carousel — so a completed version still shows
+   * as a single card in the version history while its preview lets the
+   * user flip through all three angles.
+   */
+  completionJob?: GenerationJob | null;
+  /**
+   * True when `job` is a succeeded, single-view `asset_kind: 'character'`
+   * job (the front view) whose target character is still missing a side or
+   * back reference — computed by `ImageGenerationStudio` (it alone knows
+   * the character's current reference-asset state), not derived from `job`
+   * alone. Shows the "补全侧面/背面" button below instead of forcing the
+   * user out to the character library page for it.
+   */
+  canCompleteCharacterViews?: boolean;
+  /** Whether `completionJob` is still in flight (submitting or not yet
+   * terminal) — independent of `job`'s own state. */
+  completingCharacterViews?: boolean;
+  onCompleteCharacterViews?: () => void;
 }) {
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
@@ -112,12 +155,37 @@ export function InlineImageResult({
       ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
       : (STAGES[activeIndex] ?? 'done');
 
-  const characterViews = job.character_views ?? null;
-  const hasMultipleOutputs = (job.output_urls?.length ?? 0) > 1;
-  const outputLabels =
-    characterViews && characterViews.length === job.output_urls?.length
-      ? characterViews.map((view) => tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewFront'))
-      : undefined;
+  // `job`'s own output(s) — front view only, or every view for a native
+  // multi-view character job that never needed a separate completion job.
+  const jobUrls = job.output_urls?.length ? job.output_urls : job.output_url ? [job.output_url] : [];
+  const jobAssetIds = job.output_asset_ids?.length
+    ? job.output_asset_ids
+    : job.output_asset_id
+      ? [job.output_asset_id]
+      : [];
+  const jobViews = job.character_views ?? null;
+  const jobLabels: (string | null)[] =
+    jobViews && jobViews.length === jobUrls.length
+      ? jobViews.map((view) => tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewFront'))
+      : jobUrls.map(() => null);
+
+  // The completion job's side/back outputs, appended after `job`'s own —
+  // only once it has actually succeeded; still in flight, it has nothing
+  // to show yet and the button below carries the "补全侧面/背面" progress
+  // state instead.
+  const completionSucceeded = completionJob?.status === 'succeeded';
+  const completionUrls = completionSucceeded ? completionJob?.output_urls ?? [] : [];
+  const completionAssetIds = completionSucceeded ? completionJob?.output_asset_ids ?? [] : [];
+  const completionViews = completionSucceeded ? completionJob?.character_views ?? [] : [];
+  const completionLabels: (string | null)[] =
+    completionViews.length === completionUrls.length
+      ? completionViews.map((view) => tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewSide'))
+      : completionUrls.map(() => null);
+
+  const galleryUrls = [...jobUrls, ...completionUrls];
+  const galleryAssetIds = [...jobAssetIds, ...completionAssetIds];
+  const galleryLabels = [...jobLabels, ...completionLabels];
+  const hasMultipleOutputs = galleryUrls.length > 1;
 
   const refreshOutputSrc = () =>
     job.output_asset_id ? refreshAssetUrl(job.output_asset_id) : refreshJobOutputUrl(job.id);
@@ -143,6 +211,7 @@ export function InlineImageResult({
   const canUseAsReference = job.status === 'succeeded' && Boolean(job.output_asset_id);
   const canSaveCoverSkill =
     job.status === 'succeeded' && job.asset_kind === 'cover' && Boolean(job.output_asset_id);
+  const showCompleteCharacterViews = Boolean(canCompleteCharacterViews && onCompleteCharacterViews);
 
   const retry = async () => {
     setRetrying(true);
@@ -188,14 +257,15 @@ export function InlineImageResult({
 
   return (
     <div className="flex flex-col gap-3">
-      {hasMultipleOutputs && job.output_urls ? (
+      {hasMultipleOutputs ? (
         <OutputGallery
-          urls={job.output_urls}
-          assetIds={job.output_asset_ids}
+          urls={galleryUrls}
+          assetIds={galleryAssetIds}
           mediaType={job.output_media_type ?? 'image'}
           title={t('title')}
-          labels={outputLabels}
+          labels={galleryLabels}
           itemLabel={(index, total) => t('outputItemLabel', { index, total })}
+          maxHeight={RESULT_STAGE_MAX_HEIGHT}
         />
       ) : job.output_url ? (
         <DevicePreview
@@ -203,6 +273,7 @@ export function InlineImageResult({
           title={t('title')}
           mediaType="image"
           refreshSrc={refreshOutputSrc}
+          maxHeight={RESULT_STAGE_MAX_HEIGHT}
         />
       ) : (
         <div className="relative aspect-video overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface-soft">
@@ -226,6 +297,20 @@ export function InlineImageResult({
           </div>
         </div>
       )}
+
+      {!finished ? (
+        <div className="flex justify-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            loading={cancelling}
+            disabled={job.cancel_requested}
+          >
+            {job.cancel_requested ? tJob('cancelRequested') : tJob('cancel')}
+          </Button>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className={cn('font-medium', statusColor(job.status))}>{tJob(job.status)}</span>
@@ -253,6 +338,19 @@ export function InlineImageResult({
         <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
       ) : null}
 
+      {/* `job`/`completionJob` are both plain `GenerationJob`s that can
+        suspend at `awaiting_input` — mirrors `job-progress.tsx`'s own
+        rendering (the only other place `AwaitingInputPanel` is used), so a
+        job suspended here isn't stuck with no way to see or answer its
+        follow-up question just because image creation never navigates to
+        `/jobs/[jobId]`. */}
+      {job.status === 'awaiting_input' && !job.cancel_requested ? (
+        <AwaitingInputPanel key={job.id} jobId={job.id} />
+      ) : null}
+      {completionJob?.status === 'awaiting_input' && !completionJob.cancel_requested ? (
+        <AwaitingInputPanel key={completionJob.id} jobId={completionJob.id} />
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         {finished && returnHref ? (
           <Button variant="primary" size="sm" onClick={() => router.push(returnHref)}>
@@ -267,6 +365,18 @@ export function InlineImageResult({
             onClick={() => onUseAsReference(job)}
           >
             {tStudio('useAsReference')}
+          </Button>
+        ) : null}
+        {showCompleteCharacterViews ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={completingCharacterViews}
+            onClick={onCompleteCharacterViews}
+          >
+            {completingCharacterViews
+              ? tCharacters('completingViews')
+              : tCharacters('completeViews')}
           </Button>
         ) : null}
         {job.status === 'succeeded' && draftId ? (
@@ -286,17 +396,6 @@ export function InlineImageResult({
         {job.status === 'failed' || job.status === 'cancelled' ? (
           <Button variant="secondary" size="sm" loading={retrying} onClick={() => void retry()}>
             {tJob('retry')}
-          </Button>
-        ) : null}
-        {!finished ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-            loading={cancelling}
-            disabled={job.cancel_requested}
-          >
-            {job.cancel_requested ? tJob('cancelRequested') : tJob('cancel')}
           </Button>
         ) : null}
       </div>

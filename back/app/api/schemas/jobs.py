@@ -19,6 +19,7 @@ from app.models.enums import (
     NotificationType,
     Operation,
     QualityTier,
+    VideoAssetKind,
 )
 from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
 
@@ -83,6 +84,7 @@ def validate_generation_params(
     scene_ids: Sequence[str] | None = None,
     video_options: VideoGenerationOptions | None = None,
     asset_kind: ImageAssetKind | None = None,
+    video_asset_kind: VideoAssetKind | None = None,
     extra: Mapping[str, Any] | None = None,
 ) -> None:
     """Shared C-end / sandbox rules. Raises `ValueError` on illegal combinations."""
@@ -96,6 +98,12 @@ def validate_generation_params(
         and operation not in IMAGE_OPERATIONS
     ):
         raise ValueError("asset_kind 仅适用于文生图/图生图。")
+    if (
+        video_asset_kind is not None
+        and video_asset_kind != VideoAssetKind.GENERAL
+        and operation not in VIDEO_OPERATIONS
+    ):
+        raise ValueError("video_asset_kind 仅适用于视频生成。")
     if operation in VIDEO_OPERATIONS and duration_seconds <= 0:
         raise ValueError("视频生成必须指定时长。")
     if operation not in VIDEO_OPERATIONS and video_options is not None:
@@ -162,6 +170,7 @@ def prepare_sandbox_generation_params(
         scene_ids=list(prepared.get("scene_ids") or []),
         video_options=options,
         asset_kind=_parsed_asset_kind(prepared.get("asset_kind")),
+        video_asset_kind=_parsed_video_asset_kind(prepared.get("video_asset_kind")),
         extra=prepared.get("extra") if isinstance(prepared.get("extra"), dict) else {},
     )
     return prepared
@@ -172,6 +181,14 @@ def _parsed_asset_kind(raw: Any) -> ImageAssetKind | None:
         return raw
     if isinstance(raw, str) and raw in {kind.value for kind in ImageAssetKind}:
         return ImageAssetKind(raw)
+    return None
+
+
+def _parsed_video_asset_kind(raw: Any) -> VideoAssetKind | None:
+    if isinstance(raw, VideoAssetKind):
+        return raw
+    if isinstance(raw, str) and raw in {kind.value for kind in VideoAssetKind}:
+        return VideoAssetKind(raw)
     return None
 
 
@@ -236,8 +253,24 @@ class GenerationParams(ApiModel):
     # borrowing an existing character's front view for side/back consistency
     # without also writing the new output back into that character's roster.
     # Ignored (treated as `True`) when `asset_kind` is `GENERAL`, since that
-    # node is already a no-op in that case.
+    # node is already a no-op in that case. Shared by the video asset-kind
+    # path too (`video_asset_kind` below) via the same
+    # `execute_asset_output_link` opt-out check.
     auto_attach_asset: bool = True
+    # What a `text_to_video`/`image_to_video`/`video_to_video` output is
+    # *for* — the video-side equivalent of `asset_kind` above, orthogonal to
+    # `operation` the same way. Selects both which `GenerationWorkflowTemplate`
+    # runs and, for `CHARACTER_ACTION`/`SCENE`, which character/scene the
+    # successful output auto-attaches to as a clip (`action_clips`/`clips`,
+    # not `reference_assets` — see `app.workflows.nodes._link_character_action_output`
+    # / `_link_scene_clip_output`). Deliberately a separate field/enum from
+    # `asset_kind` rather than a shared one: video has no `CharacterViewAngle`
+    # multi-view loop, and mixing the two into one field would let a video
+    # job's kind value collide with an image kind's string in any lookup
+    # keyed by bare `asset_kind` string (see `VideoAssetKind`'s docstring).
+    # Meaningless (and rejected — see `validate_generation_params`) for any
+    # non-video operation.
+    video_asset_kind: VideoAssetKind = VideoAssetKind.GENERAL
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -300,6 +333,7 @@ class GenerationJobCreateRequest(ApiModel):
             scene_ids=self.params.scene_ids,
             video_options=self.params.video_options,
             asset_kind=self.params.asset_kind,
+            video_asset_kind=self.params.video_asset_kind,
             extra=self.params.extra,
         )
         return self
@@ -415,6 +449,9 @@ class GenerationJobResponse(ApiModel):
     # "save as a shareable cover skill" on a succeeded `cover` job's detail
     # page without having kept the original request around.
     asset_kind: ImageAssetKind | None = None
+    # Echoes `GenerationParams.video_asset_kind` back — the video-side
+    # equivalent of `asset_kind` above, `None` for every non-video operation.
+    video_asset_kind: VideoAssetKind | None = None
     # Echoes `GenerationParams.character_views` back — only meaningful with
     # `asset_kind=character`. Lets a client show upfront how many views this
     # job produces (e.g. "第 2/3 张") without re-deriving it from the event

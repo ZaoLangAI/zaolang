@@ -42,11 +42,27 @@ class SceneReferenceAsset(ApiModel):
     created_at: dt.datetime | None = None
 
 
+class SceneClip(ApiModel):
+    """A generated `video_asset_kind=scene_video` clip — see
+    `scenes.service.SCENE_CLIPS_KEY`. No `view` field (unlike
+    `SceneReferenceAsset`): a video clip has no fixed shot tag."""
+
+    asset_id: str
+    label: str | None = None
+    url: str | None = None
+    created_at: dt.datetime | None = None
+
+
 class SceneResponse(Timestamped):
     id: str
     name: str
     description: str | None = None
     reference_assets: list[SceneReferenceAsset] = Field(default_factory=list)
+    # Generated video clips (`video_asset_kind=scene_video`) — separate from
+    # `reference_assets` above for the same reason
+    # `CharacterResponse.action_clips` is (see `scenes.service
+    # .SCENE_CLIPS_KEY`'s docstring).
+    clips: list[SceneClip] = Field(default_factory=list)
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0

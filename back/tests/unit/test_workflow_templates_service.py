@@ -13,7 +13,7 @@ from app.domain.errors import NotFound, ValidationFailed
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import User
 from app.models.enums import ImageAssetKind, Operation
-from app.workflows.defaults import default_graph, image_asset_graph
+from app.workflows.defaults import asset_graph, default_graph
 
 
 def _minimal_graph() -> dict:
@@ -336,7 +336,7 @@ def test_get_active_prefers_the_specific_asset_kind_template(db: Session, author
         db,
         operation=Operation.TEXT_TO_IMAGE.value,
         name="角色正面流程",
-        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        graph_json=asset_graph(db, ImageAssetKind.CHARACTER.value),
         actor_user_id=author.id,
         reason="角色正面专用",
         asset_kind=ImageAssetKind.CHARACTER.value,
@@ -392,7 +392,7 @@ def test_publishing_two_asset_kinds_does_not_deactivate_each_other(
         db,
         operation=Operation.TEXT_TO_IMAGE.value,
         name="角色正面",
-        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        graph_json=asset_graph(db, ImageAssetKind.CHARACTER.value),
         actor_user_id=author.id,
         reason="正面",
         asset_kind=ImageAssetKind.CHARACTER.value,
@@ -401,7 +401,7 @@ def test_publishing_two_asset_kinds_does_not_deactivate_each_other(
         db,
         operation=Operation.TEXT_TO_IMAGE.value,
         name="场景图",
-        graph_json=image_asset_graph(db, ImageAssetKind.SCENE.value),
+        graph_json=asset_graph(db, ImageAssetKind.SCENE.value),
         actor_user_id=author.id,
         reason="场景",
         asset_kind=ImageAssetKind.SCENE.value,
@@ -425,7 +425,7 @@ def test_list_versions_is_scoped_to_one_asset_kind(db: Session, author: User) ->
         db,
         operation=Operation.TEXT_TO_IMAGE.value,
         name="角色正面 v1",
-        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        graph_json=asset_graph(db, ImageAssetKind.CHARACTER.value),
         actor_user_id=author.id,
         reason="正面",
         asset_kind=ImageAssetKind.CHARACTER.value,
@@ -452,7 +452,7 @@ def test_ensure_default_templates_seeds_one_template_per_non_general_asset_kind_
                 assert active.graph_json == default_graph(db)
             else:
                 assert active.asset_kind == kind.value
-                assert active.graph_json == image_asset_graph(db, kind.value)
+                assert active.graph_json == asset_graph(db, kind.value)
 
     # A non-image operation never gets asset-kind-specific templates.
     assert (
@@ -461,6 +461,32 @@ def test_ensure_default_templates_seeds_one_template_per_non_general_asset_kind_
         ).asset_kind
         is None
     )
+
+
+def _planning_node(graph: dict) -> dict:
+    return next(node for node in graph["nodes"] if node["id"] == "planning")
+
+
+def test_asset_graph_disables_the_generic_planning_node_followup_question(db: Session) -> None:
+    """An asset-kind graph's `asset_planning` node already runs a dedicated,
+    `asset_kind`/`character_view`-aware plan right after this one — the
+    generic `planning` node's own clarify slot has neither, so left at its
+    default it judges a bare completion-job prompt (just a character's name,
+    see `character-library.tsx`'s "补全侧面/背面") as missing scene/action/
+    shot info and asks for exactly what a character/scene/cover asset must
+    NOT have (see `app.agents.planner._ASSET_KIND_BRIEF`) — a job the image
+    studio can never recover from (it never renders `AwaitingInputPanel`).
+    """
+    for kind in ImageAssetKind:
+        if kind == ImageAssetKind.GENERAL:
+            continue
+        planning = _planning_node(asset_graph(db, kind.value))
+        assert planning["config"]["allow_followup_question"] is False
+
+    # The plain graph is unaffected — a `GENERAL` text-to-image job still
+    # gets the "ask for free" behaviour `PlanningConfig` documents.
+    generic_planning = _planning_node(default_graph(db))
+    assert "allow_followup_question" not in generic_planning["config"]
 
 
 # --------------------------------------------------------------------------

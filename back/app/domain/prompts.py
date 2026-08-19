@@ -44,9 +44,11 @@ class PromptContext:
     # suggestion rather than asking for the first one.
     direction: str = ""
     instruction: str = ""
-    # The image job's `ImageAssetKind` (`character`/`scene`/`cover`/`general`),
-    # empty for a video/audio polish or a caller that has not picked one yet.
-    # Routes to that kind's dedicated default agent — see
+    # Whichever asset-kind axis is active — an `ImageAssetKind` value
+    # (`character`/`scene`/`cover`/`general`) or a `VideoAssetKind` value
+    # (`scene_video`/`character_action`/`transition_video`/`cover_video`/
+    # `general`) — empty for an audio polish or a caller that has not picked
+    # one yet. Routes to that kind's dedicated default agent — see
     # `app.agents.copywriter.enhance_prompt`.
     asset_kind: str = ""
 

@@ -42,12 +42,25 @@ MAX_REFERENCE_ASSETS = 4
 # reaches the API schema.
 MAX_JOB_REFERENCE_ASSETS = 9
 MAX_SELECTED_CHARACTERS = 4
+# `action_clips` is an accumulating list (no "one per view" replacement rule
+# like `reference_assets`' non-general views) — a generous but bounded cap.
+MAX_ACTION_CLIPS = 12
 
 # Sub-key inside `CreationSkill.params_json` a character skill's structured
 # data lives under, kept apart from the generic `prompt`/`prompt_suffix`/
 # `aspect_ratio` keys other skill categories use (see
 # `app.workflows.nodes.execute_skill_context`).
 CHARACTER_PARAMS_KEY = "character"
+# Sub-key holding this character's generated video clips
+# (`{"asset_id", "label", "created_at"}`), written by
+# `app.workflows.nodes._link_character_action_output` for a succeeded
+# `video_asset_kind=character_action` job. Deliberately separate from
+# `reference_assets` above, not a video-typed entry inside it: every entry
+# in `reference_assets` flows unfiltered into a *future* job's
+# `reference_asset_ids` via `apply_character_refs` below, and that path must
+# never hand a video clip to a plain image generation call as if it were a
+# still reference.
+CHARACTER_ACTION_CLIPS_KEY = "action_clips"
 
 _REFERENCE_MEDIA_TYPES = (MediaType.IMAGE, MediaType.VIDEO)
 
@@ -86,6 +99,16 @@ class CharacterView:
     @property
     def reference_asset_ids(self) -> list[str]:
         return [str(entry["asset_id"]) for entry in self.reference_assets if entry.get("asset_id")]
+
+    @property
+    def action_clips(self) -> list[dict[str, Any]]:
+        """Generated `character_action` video clips — see `CHARACTER_ACTION_CLIPS_KEY`.
+
+        Deliberately not merged into `reference_assets`/`reference_asset_ids`
+        above: those feed `apply_character_refs`, which must never hand a
+        video clip to a plain image-generation job as a still reference.
+        """
+        return list(_action_clips(self.skill))
 
     @property
     def status(self) -> str:
@@ -147,6 +170,15 @@ def _reference_assets(skill: CreationSkill) -> list[dict[str, Any]]:
     would still be shared with (and therefore corrupt) whatever `params_json`
     was loaded with."""
     raw = _payload(skill).get("reference_assets")
+    return (
+        [dict(entry) for entry in raw if isinstance(entry, dict)] if isinstance(raw, list) else []
+    )
+
+
+def _action_clips(skill: CreationSkill) -> list[dict[str, Any]]:
+    """Copies of each `action_clips` entry — same copy-not-reference
+    contract as `_reference_assets` (see `_payload`'s docstring)."""
+    raw = _payload(skill).get(CHARACTER_ACTION_CLIPS_KEY)
     return (
         [dict(entry) for entry in raw if isinstance(entry, dict)] if isinstance(raw, list) else []
     )
@@ -359,6 +391,45 @@ def append_reference_asset(
     if len(entries) > MAX_REFERENCE_ASSETS:
         entries = entries[-MAX_REFERENCE_ASSETS:]
     payload["reference_assets"] = entries
+    _set_payload(skill, payload)
+    session.flush()
+    return CharacterView(skill)
+
+
+def append_action_clip(
+    session: Session,
+    *,
+    user_id: str,
+    character_id: str,
+    asset_id: str,
+    label: str | None = None,
+) -> CharacterView:
+    """Adds one generated video clip to the character's `action_clips` list.
+
+    Called by `app.workflows.nodes._link_character_action_output` when a
+    `video_asset_kind=character_action` job succeeds. Unlike
+    `append_reference_asset`, this always accumulates (no "one per view"
+    replacement — a character has no fixed set of named action shots) up to
+    `MAX_ACTION_CLIPS`, dropping the oldest entry once full.
+    """
+    skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
+    asset = session.get(Asset, asset_id)
+    if asset is None or asset.owner_user_id != user_id:
+        raise NotFound("视频素材不存在。")
+    if asset.media_type != MediaType.VIDEO:
+        raise ValidationFailed("动作片段必须是视频。", fields={"asset_id": "必须是视频素材"})
+    payload = _payload(skill)
+    entries = [e for e in _action_clips(skill) if e.get("asset_id") != asset_id]
+    entries.append(
+        {
+            "asset_id": asset_id,
+            "label": (label or "").strip() or None,
+            "created_at": utcnow().isoformat(),
+        }
+    )
+    if len(entries) > MAX_ACTION_CLIPS:
+        entries = entries[-MAX_ACTION_CLIPS:]
+    payload[CHARACTER_ACTION_CLIPS_KEY] = entries
     _set_payload(skill, payload)
     session.flush()
     return CharacterView(skill)

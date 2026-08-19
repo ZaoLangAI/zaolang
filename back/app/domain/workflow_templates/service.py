@@ -25,9 +25,9 @@ from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import GenerationWorkflowTemplate
 from app.models.base import utcnow
-from app.models.enums import ImageAssetKind, Operation
+from app.models.enums import ImageAssetKind, Operation, VideoAssetKind
 from app.workflows import registry
-from app.workflows.defaults import default_graph, image_asset_graph
+from app.workflows.defaults import asset_graph, default_graph
 from app.workflows.graph import WorkflowGraph, WorkflowNode
 from app.workflows.graph import validate as validate_graph
 
@@ -37,27 +37,40 @@ _OUTPUT_PORTS_BY_TYPE = {
 
 DEFAULT_TEMPLATE_NAME = "默认生成流程"
 
-# Only these two operations currently seed anything beyond the generic
-# `asset_kind=None` template — see `ImageAssetKind`.
+# The two operations that currently seed anything beyond the generic
+# `asset_kind=None` template for images — see `ImageAssetKind`.
 IMAGE_ASSET_OPERATIONS: frozenset[Operation] = frozenset(
     {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
+)
+# All three video operations seed per-`VideoAssetKind` templates, but they
+# all canonicalize onto `TEXT_TO_VIDEO` (see `canonical_operation`), so this
+# only ever produces rows under that one key — same shape as the image pair
+# above collapsing onto `TEXT_TO_IMAGE`.
+VIDEO_ASSET_OPERATIONS: frozenset[Operation] = frozenset(
+    {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
 )
 
 
 def canonical_operation(operation: str) -> str:
-    """`text_to_image`/`image_to_image` share exactly one workflow graph.
+    """`text_to_image`/`image_to_image`, and all three video operations,
+    each share exactly one workflow graph per family.
 
-    Whether a job ends up as one or the other is a runtime detail — whether
-    the requester attached a reference image — not a different generation
-    pipeline: the prompt is mandatory either way and an attached image is
-    only extra reference input (see `GenerationStudio`'s "derive the
-    operation" pattern on the frontend). Storing/resolving both under the
-    single `text_to_image` key is what makes "configure the graph once, both
-    entry points pick it up" true, instead of an operator having to publish
-    the same graph twice. Every other operation is returned unchanged.
+    Whether an image job ends up as `text_to_image` or `image_to_image` — or
+    a video job as `text_to_video`/`image_to_video`/`video_to_video` — is a
+    runtime detail — whether the requester attached a reference image/video
+    — not a different generation pipeline: the prompt is mandatory either
+    way and an attached reference is only extra input (see
+    `VideoGenerationStudio`'s "derive the operation" pattern on the
+    frontend, the same one `ImageGenerationStudio` uses). Storing/resolving
+    every operation in a family under one canonical key is what makes
+    "configure the graph once, every entry point picks it up" true, instead
+    of an operator having to publish the same graph two or three times.
+    Every other operation is returned unchanged.
     """
     if operation == Operation.IMAGE_TO_IMAGE.value:
         return Operation.TEXT_TO_IMAGE.value
+    if operation in (Operation.IMAGE_TO_VIDEO.value, Operation.VIDEO_TO_VIDEO.value):
+        return Operation.TEXT_TO_VIDEO.value
     return operation
 
 
@@ -341,9 +354,28 @@ def publish(
     if operation not in {op.value for op in Operation}:
         raise ValidationFailed(f"未知的 operation: {operation}")
 
-    normalized_kind = asset_kind if asset_kind and asset_kind != ImageAssetKind.GENERAL else None
-    if normalized_kind is not None and Operation(operation) not in IMAGE_ASSET_OPERATIONS:
-        raise ValidationFailed(f"{operation} 不支持按资产用途区分工作流。")
+    normalized_kind = (
+        asset_kind
+        if asset_kind and asset_kind not in (ImageAssetKind.GENERAL, VideoAssetKind.GENERAL)
+        else None
+    )
+    if normalized_kind is not None:
+        op = Operation(operation)
+        is_image_kind = normalized_kind in {kind.value for kind in ImageAssetKind}
+        is_video_kind = normalized_kind in {kind.value for kind in VideoAssetKind}
+        # Not just "does this operation support *an* asset kind" — the kind's
+        # own value must belong to the matching family too, or an image
+        # kind (`scene`) could be published against a video operation and
+        # vice versa. `ensure_default_templates` never does this itself
+        # (each loop only ever pairs `ImageAssetKind` with an image
+        # operation, `VideoAssetKind` with a video one), so this only ever
+        # fires on a hand-built admin/API call.
+        if (is_image_kind and op not in IMAGE_ASSET_OPERATIONS) or (
+            is_video_kind and op not in VIDEO_ASSET_OPERATIONS
+        ):
+            raise ValidationFailed(f"{operation} 不支持按资产用途区分工作流。")
+        if not is_image_kind and not is_video_kind:
+            raise ValidationFailed(f"未知的 asset_kind: {asset_kind}")
 
     # `image_to_image` publishes into the same row family as `text_to_image`
     # from here on — see `canonical_operation`.
@@ -414,15 +446,18 @@ def ensure_default_templates(session: Session) -> None:
 
     Every `Operation` gets the generic (`asset_kind=None`) template it always
     had; the image family additionally gets one per non-`GENERAL`
-    `ImageAssetKind` (`character`/`scene`/`cover`), each running the
-    `asset_planning`/`asset_output_link`-augmented graph — the `character`
-    one also looping through `asset_output_advance` when the job asks for
-    more than one `character_views` entry. `image_to_image` is folded into
-    `text_to_image` by `get_active`/`canonical_operation`, so this loop only
-    ever creates rows under `text_to_image` for the pair — four total, not
-    eight. Safe to call on every startup/seed run: any `(operation,
-    asset_kind)` that already has an active template (including one an
-    operator hand-edited) is left alone.
+    `ImageAssetKind` (`character`/`scene`/`cover`), and the video family one
+    per non-`GENERAL` `VideoAssetKind` (`scene_video`/`character_action`/
+    `transition_video`/`cover_video`), each running the `asset_planning`/
+    `asset_output_link`-augmented graph — the image `character` kind also
+    loops through `asset_output_advance` when the job asks for more than one
+    `character_views` entry (no video kind ever loops). `image_to_image` is
+    folded into `text_to_image`, and `image_to_video`/`video_to_video` into
+    `text_to_video`, by `get_active`/`canonical_operation`, so this loop only
+    ever creates rows under `text_to_image`/`text_to_video` for each family —
+    four image rows plus four video rows, not sixteen. Safe to call on every
+    startup/seed run: any `(operation, asset_kind)` that already has an
+    active template (including one an operator hand-edited) is left alone.
     """
     for operation in Operation:
         if get_active(session, operation.value) is None:
@@ -434,19 +469,33 @@ def ensure_default_templates(session: Session) -> None:
                 actor_user_id=None,
                 reason="seed: 初始默认模板",
             )
-        if operation not in IMAGE_ASSET_OPERATIONS:
-            continue
-        for kind in ImageAssetKind:
-            if kind == ImageAssetKind.GENERAL:
-                continue
-            if _has_specific_active_template(session, operation.value, kind.value):
-                continue
-            publish(
-                session,
-                operation=operation.value,
-                name=f"{DEFAULT_TEMPLATE_NAME} · {kind.value}",
-                graph_json=image_asset_graph(session, kind.value),
-                actor_user_id=None,
-                reason="seed: 初始默认模板（按资产用途）",
-                asset_kind=kind.value,
-            )
+        if operation in IMAGE_ASSET_OPERATIONS:
+            for kind in ImageAssetKind:
+                if kind == ImageAssetKind.GENERAL:
+                    continue
+                if _has_specific_active_template(session, operation.value, kind.value):
+                    continue
+                publish(
+                    session,
+                    operation=operation.value,
+                    name=f"{DEFAULT_TEMPLATE_NAME} · {kind.value}",
+                    graph_json=asset_graph(session, kind.value),
+                    actor_user_id=None,
+                    reason="seed: 初始默认模板（按资产用途）",
+                    asset_kind=kind.value,
+                )
+        if operation in VIDEO_ASSET_OPERATIONS:
+            for video_kind in VideoAssetKind:
+                if video_kind == VideoAssetKind.GENERAL:
+                    continue
+                if _has_specific_active_template(session, operation.value, video_kind.value):
+                    continue
+                publish(
+                    session,
+                    operation=operation.value,
+                    name=f"{DEFAULT_TEMPLATE_NAME} · {video_kind.value}",
+                    graph_json=asset_graph(session, video_kind.value),
+                    actor_user_id=None,
+                    reason="seed: 初始默认模板（按资产用途）",
+                    asset_kind=video_kind.value,
+                )

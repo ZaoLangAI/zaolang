@@ -34,7 +34,7 @@ from app.domain.agent_skills import presets
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import AgentNode, AgentProfile, AgentSkill
 from app.models.base import utcnow
-from app.models.enums import AgentName, ImageAssetKind, Operation
+from app.models.enums import AgentName, ImageAssetKind, Operation, VideoAssetKind
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
@@ -44,13 +44,23 @@ DEFAULT_PROFILE_KEY = "default"
 UNSET_BINDING = object()
 
 # `default_for_asset_kind` only makes sense for the role that runs "AI 润色"
-# (`app.agents.copywriter.enhance_prompt`) and only for the three
-# `ImageAssetKind` values that have a roster/library of their own — `general`
-# image jobs, and every non-image operation, keep using the role's ordinary
-# `is_default` agent instead of a kind-specific one.
+# (`app.agents.copywriter.enhance_prompt`) and only for the asset-kind
+# values that have a roster/library of their own — `general` jobs on either
+# axis keep using the role's ordinary `is_default` agent instead of a
+# kind-specific one. Image and video buckets share this one frozenset:
+# their string values are deliberately distinct (see `VideoAssetKind`'s
+# docstring), so there is no collision risk letting them share one lookup.
 ASSET_KIND_AGENT_ROLE = AgentName.COPY.value
 ASSET_KIND_BUCKETS: frozenset[str] = frozenset(
-    {ImageAssetKind.CHARACTER.value, ImageAssetKind.SCENE.value, ImageAssetKind.COVER.value}
+    {
+        ImageAssetKind.CHARACTER.value,
+        ImageAssetKind.SCENE.value,
+        ImageAssetKind.COVER.value,
+        VideoAssetKind.SCENE.value,
+        VideoAssetKind.CHARACTER_ACTION.value,
+        VideoAssetKind.TRANSITION.value,
+        VideoAssetKind.COVER.value,
+    }
 )
 
 # The roles the shipped pipeline invokes by name.

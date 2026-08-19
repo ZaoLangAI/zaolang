@@ -181,7 +181,13 @@ ENHANCE_SYSTEM_PROMPT_CHARACTER = f"""{ENHANCE_SYSTEM_PROMPT}
 足以支撑后续正面/侧面/背面三视图长得像同一个人
 - 表情与神态要给出具体描述（例如嘴角弧度、眼神方向），不要只写情绪词
 - 不要引入会让三视图冲突的细节，例如只在这一轮出现的临时姿势或道具
-- feedback 里如果人物一致性维度弱，要点名指出"这些细节要在多张图里保持一致\""""
+- 硬性要求，不是"用户没提到才补"的可选项：画面必须全身入镜（不裁切头脚）、背景必须是\
+单一纯色（不要任何场景、环境、地面纹理或散落物）——这样才能直接当参考图导入视频生成。\
+即使用户描述里写了具体场景、环境细节或半身/中景/近景这类景别，改写后的 prompt 也要把\
+背景替换成单一纯色、把景别改成全身，不能保留会和这条要求冲突的场景描述；这不算改变角色\
+本身的特征——人物的外貌、服装、姿态、表情这些才是要保留的"本身特征"，背景与取景范围不算
+- feedback 里如果人物一致性维度弱，要点名指出"这些细节要在多张图里保持一致"；如果原描述\
+写了会冲突的场景或景别，也要点一句"已替换为全身 + 纯色背景，方便导入视频\""""
 
 ENHANCE_SYSTEM_PROMPT_SCENE = f"""{ENHANCE_SYSTEM_PROMPT}
 
@@ -203,6 +209,53 @@ _ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
     "character": ENHANCE_SYSTEM_PROMPT_CHARACTER,
     "scene": ENHANCE_SYSTEM_PROMPT_SCENE,
     "cover": ENHANCE_SYSTEM_PROMPT_COVER,
+}
+
+# Video-side equivalents, one per non-`GENERAL` `VideoAssetKind`. Kept in a
+# separate dict from `_ENHANCE_SYSTEM_PROMPTS` above — even though the two
+# never collide by key (`VideoAssetKind`'s values are spelled distinctly,
+# `scene_video`/`character_action`/... — see its docstring) — so it stays
+# explicit in the code that this is the video-language table, not something
+# that could silently pick up an image-worded prompt for a video job.
+ENHANCE_SYSTEM_PROMPT_SCENE_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
+
+补充规则（本次是场景空镜视频 video_asset_kind=scene_video）：
+- 额外看一个隐含维度：运镜设计——推/拉/摇/移/环绕这类具体运镜方式是否写清楚，
+不要只写"镜头缓缓移动"这类模糊描述
+- 环境氛围要落在光影随时间推进的变化上，不要只写静态的"氛围感强"
+- 不要引入会让画面变成人物特写的描述，场景空镜的主体是空间本身
+- feedback 里如果运镜设计维度弱，要点名指出当前描述缺了哪种具体运镜方式"""
+
+ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION = f"""{ENHANCE_SYSTEM_PROMPT}
+
+补充规则（本次是角色动作片段 video_asset_kind=character_action）：
+- 额外看一个隐含维度：动作可执行性——动作的起幅与落幅是否写清楚，是否是单一主体可以\
+实际完成的具体动作，不要写抽象的情绪化描述（如"霸气登场"）
+- has_reference 为 true 时不要重复描述角色外貌，把笔墨放在动作细节与镜头跟随方式上
+- 不要引入需要多人协同、容易在生成中出现肢体穿模的复杂互动动作
+- feedback 里如果动作可执行性维度弱，要点名指出动作的起止节点需要写得更具体"""
+
+ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
+
+补充规则（本次是转场/运镜衔接片段 video_asset_kind=transition_video）：
+- 额外看一个隐含维度：节奏与可拼接性——是否写清楚了纯运镜/光效/过渡元素，\
+而不是带有明确叙事内容的镜头
+- 不要引入具体角色或场景的叙事描述，这类片段的作用是衔接前后正片镜头，不是讲故事
+- feedback 里如果节奏与可拼接性维度弱，要点名指出当前描述里哪部分更像正片叙事而非转场"""
+
+ENHANCE_SYSTEM_PROMPT_COVER_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
+
+补充规则（本次是预告/封面视频 video_asset_kind=cover_video）：
+- 额外看一个隐含维度：视觉冲击与节奏——开场 1-2 秒是否有足够抓人的画面，\
+节奏是否紧凑不拖沓
+- 提醒可以暗示剧情钩子但不要写出会剧透关键转折的具体情节
+- feedback 里如果视觉冲击与节奏维度弱，要点名指出当前描述哪里显得平淡或拖沓"""
+
+_VIDEO_ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
+    "scene_video": ENHANCE_SYSTEM_PROMPT_SCENE_VIDEO,
+    "character_action": ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
+    "transition_video": ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
+    "cover_video": ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,
 }
 
 
@@ -229,14 +282,19 @@ def enhance_prompt(
     imagination: the same sentence needs different advice at 4 seconds than at
     15, and camera direction is noise on a still image.
 
-    `asset_kind` is the image job's `ImageAssetKind` (`character`/`scene`/
-    `cover`/`general`, or empty for a video/audio polish). When it names one
-    of the three asset buckets and the caller has not pinned an `agent_id`
-    itself, this routes to that bucket's dedicated default agent — see
-    `agent_skills.service.default_profile_for_asset_kind` — and always uses
-    that bucket's specialised system prompt as the code-level fallback, so
-    the extra diagnostic rules apply even before an operator has published a
-    matching `AgentSkill`.
+    `asset_kind` is the job's `ImageAssetKind` (`character`/`scene`/`cover`/
+    `general`) or `VideoAssetKind` (`scene_video`/`character_action`/
+    `transition_video`/`cover_video`/`general`) value, whichever axis is
+    active — empty for an audio polish, and the two never collide (see
+    `VideoAssetKind`'s docstring). When it names one of the asset buckets
+    (`agent_skills.service.ASSET_KIND_BUCKETS`, spanning both axes) and the
+    caller has not pinned an `agent_id` itself, this routes to that bucket's
+    dedicated default agent — see `agent_skills.service
+    .default_profile_for_asset_kind` — and always uses that bucket's
+    specialised system prompt (image: `_ENHANCE_SYSTEM_PROMPTS`; video:
+    `_VIDEO_ENHANCE_SYSTEM_PROMPTS`) as the code-level fallback, so the extra
+    diagnostic rules apply even before an operator has published a matching
+    `AgentSkill`.
 
     The fallback keeps the caller's own text rather than a static placeholder,
     so a degraded model call never empties the field it was meant to improve.
@@ -244,16 +302,21 @@ def enhance_prompt(
     text is not a polish (see `app.domain.prompts.enhance`).
     """
     resolved_agent_id = agent_id
-    if resolved_agent_id is None and asset_kind in _ENHANCE_SYSTEM_PROMPTS:
+    if resolved_agent_id is None and asset_kind in agent_skills_service.ASSET_KIND_BUCKETS:
         specific = agent_skills_service.default_profile_for_asset_kind(
             session, agent_skills_service.ASSET_KIND_AGENT_ROLE, asset_kind
         )
         if specific is not None:
             resolved_agent_id = specific.id
+    enhance_system_prompt = (
+        _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
+        or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
+        or ENHANCE_SYSTEM_PROMPT
+    )
     outcome = run_agent(
         session,
         agent_name=AgentName.COPY,
-        system_prompt=_ENHANCE_SYSTEM_PROMPTS.get(asset_kind, ENHANCE_SYSTEM_PROMPT),
+        system_prompt=enhance_system_prompt,
         user_prompt=json.dumps(
             {
                 "prompt": prompt,

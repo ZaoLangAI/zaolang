@@ -44,6 +44,7 @@ from app.models.enums import (
     Operation,
     ProviderAttemptStatus,
     QualityTier,
+    VideoAssetKind,
 )
 from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
 from app.realtime import publisher
@@ -380,6 +381,47 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
 ASSET_PLAN_STATE_KEY = "asset_plan"
 ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
+_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
+
+# The intent fed to `planner.plan_asset` for a side/back completion pass —
+# deliberately *not* whatever free-text prompt the caller sent (a character's
+# own description or name, in every one of the three callers that submit
+# this job shape: `character-library.tsx`, `image-generation-studio.tsx`,
+# and iOS's `StudioViewModel.completeViews`). The front reference image is
+# already forwarded unchanged into every loop pass via `reference_asset_ids`
+# (see `execute_provider_generate`'s `media_service.provider_references_for`
+# call) — the *only* thing this instruction needs to do is tell the model to
+# use that image as material, so it never competes with a caller's own
+# (possibly inconsistent, possibly irrelevant) description text.
+#
+# Keyed per view rather than one shared "侧面/背面" string: a real job's
+# `job_events` payload showed that ambiguous slash sitting verbatim at the
+# start of *both* the side pass's and the back pass's final prompt (still
+# "生成侧面/背面图" even on the pass that only wanted "back") — exactly the
+# kind of phrasing that nudges an image model toward producing both angles
+# in one image instead of the one this specific pass asked for.
+_CHARACTER_COMPLETION_FIXED_PROMPTS: dict[str, str] = {
+    CharacterViewAngle.SIDE.value: "参考本图生成侧面图",
+    CharacterViewAngle.BACK.value: "参考本图生成背面图",
+}
+
+# Guaranteed regardless of what the planner's own `negative_prompt_
+# suggestions` come up with (see `execute_asset_planning`) — a real side/
+# back completion job's actual output came back as a multi-panel character
+# turnaround sheet (sometimes literally labelled "FRONT VIEW"/"SIDE
+# VIEW"/"BACK VIEW"), the model's apparent default association for this
+# kind of "consistent with the other views" phrasing when it has no real
+# reference photo to anchor on (see `Settings.embed_reference_images_as_
+# base64` for the reference-reachability half of that fix). This is
+# defense-in-depth on top of that fix, not a replacement for it.
+_CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT = (
+    "多视角拼接图、对比图、分格或并排画面、同一画面出现两个以上角度、画面中出现视角文字标注"
+    "（如FRONT VIEW/SIDE VIEW/BACK VIEW）"
+)
+
+
+def _merge_negative(base: str | None, addition: str) -> str:
+    return f"{base}，{addition}" if base else addition
 
 
 def _current_character_view(ctx: WorkflowContext) -> str:
@@ -427,41 +469,101 @@ def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
     return round((view_index * 100 + progress) / len(views))
 
 
+def _asset_axis(ctx: WorkflowContext) -> tuple[str, str] | None:
+    """Which of the two orthogonal asset-kind axes is active on this job.
+
+    Returns `("image", kind_value)` / `("video", kind_value)`, or `None` for
+    a plain `GENERAL`/unset job on both axes. `validate_generation_params`
+    (`app.api.schemas.jobs`) already guarantees at most one axis is
+    non-`GENERAL` at a time (image kinds are rejected outside
+    `IMAGE_OPERATIONS`, video kinds outside `VIDEO_OPERATIONS`), so checking
+    `asset_kind` first and falling back to `video_asset_kind` is safe — a
+    video job's `asset_kind` always still sits at its `GENERAL` default.
+    """
+    image_kind = ctx.params.get("asset_kind")
+    if image_kind and image_kind != ImageAssetKind.GENERAL.value:
+        return "image", str(image_kind)
+    video_kind = ctx.params.get("video_asset_kind")
+    if video_kind and video_kind != VideoAssetKind.GENERAL.value:
+        return "video", str(video_kind)
+    return None
+
+
 def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) -> NodeResult:
     """Runs the planner agent's `asset_plan` slot for a character/scene/cover
-    image job, folding its guidance into `ctx.prompt`.
+    image job — or its video-side equivalent for a scene/character-action/
+    transition/cover *video* job — folding its guidance into `ctx.prompt`.
 
-    A no-op when `asset_kind` is unset or `GENERAL` — see `AssetPlanningConfig`.
-    Re-entered once per remaining `character_views` entry (via
-    `execute_asset_output_advance`'s loop-back edge) for a multi-view
-    `CHARACTER` job — `ctx.prompt` is reset to the request's original prompt
+    A no-op when neither asset-kind axis is set or both are `GENERAL` — see
+    `AssetPlanningConfig`. Re-entered once per remaining `character_views`
+    entry (via `execute_asset_output_advance`'s loop-back edge) for a
+    multi-view `CHARACTER` *image* job only — no video kind ever loops (see
+    `_asset_axis`) — `ctx.prompt` is reset to the request's original prompt
     on every entry first, so the second/third pass enhances that, not
     whatever the previous view's pass already appended to it.
+
+    For a `CHARACTER` pass whose `character_view` is `side`/`back`, that
+    reset prompt is then immediately overridden with the matching entry of
+    `_CHARACTER_COMPLETION_FIXED_PROMPTS` — a "补全侧面/背面" completion job
+    must be driven by the attached front reference image, not by whatever
+    free-text prompt the caller happened to send, so this is a hard
+    backend-side override rather than a convention callers are trusted to
+    follow. The `front` pass (including a plain single-view job) is
+    unaffected and still uses the caller's real prompt. `ctx.params[
+    "negative_prompt"]` gets the same reset-then-override treatment (via
+    `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`) so pass 2 of a multi-view job
+    doesn't inherit pass 1's view-specific negative text either.
     """
-    asset_kind = ctx.params.get("asset_kind")
-    if not asset_kind or asset_kind == ImageAssetKind.GENERAL.value:
+    axis = _asset_axis(ctx)
+    if axis is None:
         return NodeResult(port="ok")
+    media_axis, asset_kind = axis
 
     if _ORIGINAL_PROMPT_STATE_KEY not in ctx.state:
         ctx.state[_ORIGINAL_PROMPT_STATE_KEY] = ctx.prompt
     ctx.prompt = ctx.state[_ORIGINAL_PROMPT_STATE_KEY]
+    if _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY not in ctx.state:
+        ctx.state[_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY] = ctx.params.get("negative_prompt")
+    ctx.params["negative_prompt"] = ctx.state[_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY]
 
-    is_character = asset_kind == ImageAssetKind.CHARACTER.value
+    is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     character_view = _current_character_view(ctx) if is_character else None
-
-    _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划图片资产生成方案", 16)
-    outcome = planner.plan_asset(
-        ctx.session,
-        intent=ctx.prompt,
-        asset_kind=str(asset_kind),
-        character_view=character_view,
-        target_character_id=ctx.params.get("target_character_id"),
-        target_scene_id=ctx.params.get("target_scene_id"),
-        source_params=ctx.params,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
+    is_completion_pass = (
+        is_character and character_view in _CHARACTER_COMPLETION_FIXED_PROMPTS
     )
+    if is_completion_pass and character_view:
+        ctx.prompt = _CHARACTER_COMPLETION_FIXED_PROMPTS[character_view]
+        ctx.params["negative_prompt"] = _merge_negative(
+            ctx.params.get("negative_prompt"), _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT
+        )
+
+    if media_axis == "video":
+        _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划视频资产生成方案", 16)
+        outcome = planner.plan_video_asset(
+            ctx.session,
+            intent=ctx.prompt,
+            video_asset_kind=asset_kind,
+            target_character_id=ctx.params.get("target_character_id"),
+            target_scene_id=ctx.params.get("target_scene_id"),
+            source_params=ctx.params,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
+    else:
+        _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划图片资产生成方案", 16)
+        outcome = planner.plan_asset(
+            ctx.session,
+            intent=ctx.prompt,
+            asset_kind=asset_kind,
+            character_view=character_view,
+            target_character_id=ctx.params.get("target_character_id"),
+            target_scene_id=ctx.params.get("target_scene_id"),
+            source_params=ctx.params,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 
@@ -470,6 +572,12 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
         addition = "，".join(str(item) for item in enhancements if item)
         if addition and addition not in ctx.prompt:
             ctx.prompt = f"{ctx.prompt}，{addition}" if ctx.prompt else addition
+    negative_suggestions = outcome.data.get("negative_prompt_suggestions")
+    if isinstance(negative_suggestions, list) and negative_suggestions:
+        addition = "，".join(str(item) for item in negative_suggestions if item)
+        existing = ctx.params.get("negative_prompt")
+        if addition and addition not in (existing or ""):
+            ctx.params["negative_prompt"] = _merge_negative(existing, addition)
     subject_name = outcome.data.get("subject_name")
     label = character_view or config.output_key
     return NodeResult(port="ok", summary=f"资产规划 → {subject_name or label}")
@@ -481,18 +589,22 @@ def execute_asset_output_advance(
     """Records this pass's output, then decides whether another view is due.
 
     Sits between `quality_check` and `asset_output_link`. A single pass for
-    anything but a `CHARACTER`-kind job — `scene`/`cover`/`general` take the
-    `done` port immediately, exactly like before this node type existed. A
-    `CHARACTER` job with more than one `character_views` entry loops back to
-    `asset_planning` (the `next` port) once per remaining view; `asset_id`
-    is unset only in a dry run with no registered output, in which case
-    nothing is recorded but the loop still advances so a sandbox try-it
-    walks the whole graph.
+    anything but an image `CHARACTER`-kind job — `scene`/`cover`/`general`
+    (and every video kind — no video kind ever loops, see `_asset_axis`)
+    take the `done` port immediately, exactly like before this node type
+    existed. A `CHARACTER` job with more than one `character_views` entry
+    loops back to `asset_planning` (the `next` port) once per remaining
+    view; `asset_id` is unset only in a dry run with no registered output,
+    in which case nothing is recorded but the loop still advances so a
+    sandbox try-it walks the whole graph.
     """
-    asset_kind = ctx.params.get("asset_kind")
+    axis = _asset_axis(ctx)
+    asset_kind = axis[1] if axis else None
     outputs: list[dict[str, str]] = ctx.state.setdefault(ASSET_OUTPUTS_STATE_KEY, [])
     asset_id = ctx.state.get("asset_id")
-    is_character = asset_kind == ImageAssetKind.CHARACTER.value
+    is_character = (
+        axis is not None and axis[0] == "image" and asset_kind == ImageAssetKind.CHARACTER.value
+    )
     view = _current_character_view(ctx) if is_character else str(asset_kind or "")
     if asset_id:
         outputs.append({"asset_id": str(asset_id), "view": view})
@@ -523,7 +635,8 @@ def execute_asset_output_advance(
 def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfig) -> NodeResult:
     """Attaches every output `execute_asset_output_advance` recorded to its
     character/scene target — one entry for a plain single-view job, one per
-    produced view for a multi-view `CHARACTER` completion job.
+    produced view for a multi-view `CHARACTER` completion job (image only —
+    a video job's `outputs` always has exactly one entry).
 
     Falls back to `ctx.state["asset_id"]` alone when nothing populated
     `asset_outputs` — a hand-edited graph may wire this node directly after
@@ -534,14 +647,15 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
     full reference-asset list) is logged and skipped rather than turning a
     successful generation into a failure this late in the graph.
     """
-    asset_kind = ctx.params.get("asset_kind")
+    axis = _asset_axis(ctx)
+    media_axis, asset_kind = axis if axis else (None, None)
     outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY)
     if not outputs:
         fallback_id = ctx.state.get("asset_id")
-        is_character = asset_kind == ImageAssetKind.CHARACTER.value
+        is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
         view = _current_character_view(ctx) if is_character else str(asset_kind or "")
         outputs = [{"asset_id": str(fallback_id), "view": view}] if fallback_id else []
-    if ctx.dry_run or not outputs or not asset_kind or asset_kind == ImageAssetKind.GENERAL.value:
+    if ctx.dry_run or not outputs or axis is None:
         return NodeResult(port="ok")
     if ctx.params.get("auto_attach_asset") is False:
         return NodeResult(port="ok")
@@ -552,13 +666,47 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
     # which carries the script's own character name/scene heading) wins over
     # the planner's own guess from the prompt. The fallback text is kind-
     # specific so a scene auto-create never inherits "新角色".
-    default_subject_name = "新场景" if asset_kind == ImageAssetKind.SCENE.value else "新角色"
-    subject_name = str(
-        ctx.params.get("subject_name_hint") or plan.get("subject_name") or default_subject_name
-    ).strip()[:60] or default_subject_name
+    is_scene_kind = asset_kind in (ImageAssetKind.SCENE.value, VideoAssetKind.SCENE.value)
+    default_subject_name = "新场景" if is_scene_kind else "新角色"
+    subject_name = (
+        str(
+            ctx.params.get("subject_name_hint") or plan.get("subject_name") or default_subject_name
+        ).strip()[:60]
+        or default_subject_name
+    )
 
     try:
-        if asset_kind == ImageAssetKind.CHARACTER.value:
+        if media_axis == "video":
+            if asset_kind == VideoAssetKind.CHARACTER_ACTION.value:
+                target_id = ctx.params.get("target_character_id")
+                for entry in outputs:
+                    target_id = _link_character_action_output(
+                        ctx,
+                        config,
+                        asset_id=str(entry.get("asset_id")),
+                        subject_name=subject_name,
+                        target_id=target_id,
+                    )
+                if target_id:
+                    ctx.job.linked_character_id = target_id
+                    ctx.session.flush()
+            elif asset_kind == VideoAssetKind.SCENE.value:
+                target_id = ctx.params.get("target_scene_id")
+                for entry in outputs:
+                    target_id = _link_scene_clip_output(
+                        ctx,
+                        config,
+                        asset_id=str(entry.get("asset_id")),
+                        subject_name=subject_name,
+                        target_id=target_id,
+                    )
+                if target_id:
+                    ctx.job.linked_scene_id = target_id
+                    ctx.session.flush()
+            # `TRANSITION`/`COVER` video have no library to attach to, same
+            # as image `COVER` below — the output stays a plain generated
+            # asset.
+        elif asset_kind == ImageAssetKind.CHARACTER.value:
             target_id = ctx.params.get("target_character_id")
             for entry in outputs:
                 target_id = _link_character_output(
@@ -572,8 +720,16 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
             # Recorded on the job row (not just `ctx.state`) so it survives
             # into `GenerationJobResponse` — the script studio's "返回文案
             # 创作" jump-back reads this to know which card to auto-relink.
+            # Flushed immediately: the session is `autoflush=False`
+            # (`app.db`), and the runner's `_cancel_if_requested` calls
+            # `session.refresh(ctx.job)` right after this node returns —
+            # without an explicit flush that silently discards this
+            # unflushed attribute, reverting it back to `None` (see
+            # `execute_route_score`'s `routing_trace_json`/
+            # `selected_route_summary_json` for the same pattern).
             if target_id:
                 ctx.job.linked_character_id = target_id
+                ctx.session.flush()
         elif asset_kind == ImageAssetKind.SCENE.value:
             target_id = ctx.params.get("target_scene_id")
             for entry in outputs:
@@ -587,12 +743,16 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                 )
             if target_id:
                 ctx.job.linked_scene_id = target_id
+                ctx.session.flush()
         # `COVER` has no library to attach to today — the output stays a
         # plain generated asset (see the plan's "补充功能建议" for a future
         # series/episode cover slot).
     except Exception:
         logger.exception(
-            "job %s asset_output_link failed for asset_kind=%s", ctx.job.id, asset_kind
+            "job %s asset_output_link failed for media_axis=%s asset_kind=%s",
+            ctx.job.id,
+            media_axis,
+            asset_kind,
         )
     return NodeResult(port="ok")
 
@@ -607,23 +767,36 @@ def _link_character_output(
     target_id: str | None,
 ) -> str | None:
     """Attaches one output to `target_id`, auto-creating a character from
-    scratch on the first call if there was none.
+    scratch on the first call if there was none — also the fallback when
+    `target_id` no longer resolves (e.g. the script studio's cached
+    `character_ref_id` outlived the character it pointed at, which a
+    delete leaves dangling rather than cleaning up).
 
-    Returns the id actually used (whichever was passed in, or the one just
-    created) — `execute_asset_output_link` threads it through the loop over
-    `outputs` so a multi-view completion job's later views land on the exact
-    same character its first view did, rather than each auto-creating its
-    own.
+    Returns the id actually used (whichever was passed in, the one just
+    created, or a fresh replacement for a stale target) —
+    `execute_asset_output_link` threads it through the loop over `outputs`
+    so a multi-view completion job's later views land on the exact same
+    character its first view did, rather than each auto-creating its own.
     """
     if target_id:
-        characters_service.append_reference_asset(
-            ctx.session,
-            user_id=ctx.job.user_id,
-            character_id=str(target_id),
-            asset_id=asset_id,
-            view=view,
-        )
-        return target_id
+        try:
+            characters_service.append_reference_asset(
+                ctx.session,
+                user_id=ctx.job.user_id,
+                character_id=str(target_id),
+                asset_id=asset_id,
+                view=view,
+            )
+            return target_id
+        except NotFound:
+            # `target_id` was deleted (or never belonged to this user)
+            # since whoever sent it last saw it — fall through to the
+            # auto-create branch below instead of losing this output.
+            logger.warning(
+                "job %s target_character_id=%s no longer exists; auto-creating a replacement",
+                ctx.job.id,
+                target_id,
+            )
     if not config.auto_create_character:
         return None
     character = characters_service.create_character(
@@ -660,19 +833,28 @@ def _link_scene_output(
     job without a `target_scene_id` reaches parity with the character path
     instead of leaving the output unattached (the previous, deliberate
     limitation — see `use-generation-submit.ts`'s now-outdated comment).
+    Also the fallback when `target_id` no longer resolves, same reason as
+    `_link_character_output`'s.
 
     Returns the id actually used, same threading pattern as
     `_link_character_output`.
     """
     if target_id:
-        scenes_service.append_reference_asset(
-            ctx.session,
-            user_id=ctx.job.user_id,
-            scene_id=str(target_id),
-            asset_id=asset_id,
-            view=view,
-        )
-        return target_id
+        try:
+            scenes_service.append_reference_asset(
+                ctx.session,
+                user_id=ctx.job.user_id,
+                scene_id=str(target_id),
+                asset_id=asset_id,
+                view=view,
+            )
+            return target_id
+        except NotFound:
+            logger.warning(
+                "job %s target_scene_id=%s no longer exists; auto-creating a replacement",
+                ctx.job.id,
+                target_id,
+            )
     if not config.auto_create_scene:
         return None
     scene = scenes_service.create_scene(
@@ -684,6 +866,105 @@ def _link_scene_output(
     )
     scenes_service.append_reference_asset(
         ctx.session, user_id=ctx.job.user_id, scene_id=scene.id, asset_id=asset_id, view=view
+    )
+    ctx.state["created_scene_id"] = scene.id
+    return scene.id
+
+
+def _link_character_action_output(
+    ctx: WorkflowContext,
+    config: AssetOutputLinkConfig,
+    *,
+    asset_id: str,
+    subject_name: str,
+    target_id: str | None,
+) -> str | None:
+    """Attaches one `character_action` video output to `target_id`'s
+    `action_clips` list, auto-creating a character from scratch on the first
+    call if there was none — mirrors `_link_character_output`'s shape, but
+    deliberately calls `characters_service.append_action_clip` (writing
+    `params_json["character"]["action_clips"]`), never
+    `append_reference_asset` (`reference_assets`): the latter feeds
+    `characters_service.apply_character_refs`, which folds every entry
+    unfiltered into a *future* job's `reference_asset_ids` — mixing a video
+    clip in there would hand it to the next image generation as if it were
+    a still reference. Also the fallback when `target_id` no longer
+    resolves, same reason as `_link_character_output`'s.
+    """
+    if target_id:
+        try:
+            characters_service.append_action_clip(
+                ctx.session,
+                user_id=ctx.job.user_id,
+                character_id=str(target_id),
+                asset_id=asset_id,
+            )
+            return target_id
+        except NotFound:
+            logger.warning(
+                "job %s target_character_id=%s no longer exists; auto-creating a replacement",
+                ctx.job.id,
+                target_id,
+            )
+    if not config.auto_create_character:
+        return None
+    character = characters_service.create_character(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        name=subject_name,
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    characters_service.append_action_clip(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        character_id=character.id,
+        asset_id=asset_id,
+    )
+    ctx.state["created_character_id"] = character.id
+    return character.id
+
+
+def _link_scene_clip_output(
+    ctx: WorkflowContext,
+    config: AssetOutputLinkConfig,
+    *,
+    asset_id: str,
+    subject_name: str,
+    target_id: str | None,
+) -> str | None:
+    """Attaches one `scene`-kind video output to `target_id`'s `clips` list,
+    auto-creating a scene from scratch on the first call if there was none —
+    mirrors `_link_character_action_output` one asset type over, calling
+    `scenes_service.append_clip` (`params_json["scene"]["clips"]`) rather
+    than `append_reference_asset`, for the same reason. Also the fallback
+    when `target_id` no longer resolves, same reason as
+    `_link_character_output`'s.
+    """
+    if target_id:
+        try:
+            scenes_service.append_clip(
+                ctx.session, user_id=ctx.job.user_id, scene_id=str(target_id), asset_id=asset_id
+            )
+            return target_id
+        except NotFound:
+            logger.warning(
+                "job %s target_scene_id=%s no longer exists; auto-creating a replacement",
+                ctx.job.id,
+                target_id,
+            )
+    if not config.auto_create_scene:
+        return None
+    scene = scenes_service.create_scene(
+        ctx.session,
+        user_id=ctx.job.user_id,
+        name=subject_name,
+        description=None,
+        reference_asset_ids=[],
+    )
+    scenes_service.append_clip(
+        ctx.session, user_id=ctx.job.user_id, scene_id=scene.id, asset_id=asset_id
     )
     ctx.state["created_scene_id"] = scene.id
     return scene.id
@@ -942,7 +1223,23 @@ def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
     a custom graph that renamed it loses this wiring gracefully (no
     enhancement, no error). `prompt_enhancements` and `negative_prompt_
     suggestions` never overwrite the author's own text, only extend it.
+
+    Skipped entirely once `_asset_axis(ctx)` is set (character/scene/cover
+    image job, or any video-asset-kind job): `execute_asset_planning` already
+    folded its own `asset_kind`/`character_view`-scoped guidance straight
+    into `ctx.prompt` earlier in this exact pass. The generic `planning`
+    node's plan is blind to that context — same reason its `clarify` sub-step
+    is disabled for these kinds (see `zaolang-generation-jobs` invariant #21)
+    — and, for a multi-view `CHARACTER` job, it runs exactly once *before*
+    the per-view loop even starts, already describing every remaining view
+    at once. Folding it in here on every loop pass would leak the other
+    view's description into this pass's prompt (a "side" pass's request
+    ending up mentioning "back" too) and can also override the real
+    reference photo with a physical description the planner invented from
+    text alone, since it never sees the attached image's pixels.
     """
+    if _asset_axis(ctx) is not None:
+        return ctx.prompt, ctx.params.get("negative_prompt")
     plan = ctx.state.get(PLAN_STATE_KEY)
     if not isinstance(plan, dict):
         return ctx.prompt, ctx.params.get("negative_prompt")
@@ -1164,6 +1461,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
                 video_options=ctx.params.get("video_options"),
             ),
             extra=dict(ctx.params.get("extra") or {}),
+            attempt_number=attempt_number,
         )
         result = decision.provider.submit(request)
         # Priced here, against the endpoint's configuration as it stands right

@@ -765,7 +765,7 @@ _ENHANCE_ASSET_AGENT_SPECS: dict[str, tuple[str, str, str, str]] = {
     "character": (
         "enhance-character",
         "文案润色 · 角色",
-        "角色资产的画面描述润色，额外关注人物一致性与表情神态。",
+        "角色资产的画面描述润色，额外关注人物一致性与表情神态，并要求全身入镜、纯色背景。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_CHARACTER,
     ),
     "scene": (

@@ -1,4 +1,4 @@
-"""The seed graphs every `Operation`/`ImageAssetKind` combination starts with.
+"""The seed graphs every `Operation`/asset-kind combination starts with.
 
 `default_graph` is a 1:1 reproduction of the pre-engine hardcoded pipeline
 (`app.workers.pipeline`, now retired) plus the `intent_router` step. Every
@@ -7,17 +7,21 @@ operation currently has any eligible provider is a runtime routing outcome
 (`route_score` -> `no_candidate`), not a structural difference worth encoding
 per operation.
 
-`image_asset_graph` is the same shape with three extra nodes spliced in for
-a non-`GENERAL` `ImageAssetKind` job (character / scene / cover):
-`asset_planning` right before routing, so the planner's guidance can steer
-the actual generation; `asset_output_advance` right after quality passes,
-which loops back to `asset_planning` once per remaining
-`GenerationParams.character_views` entry for a multi-view `CHARACTER` job
-(a no-op single pass for everything else); and `asset_output_link`, once
-every view is done, so the successful output(s) auto-attach to their target
-character skill / scene. See
-`app.domain.workflow_templates.service.ensure_default_templates`, the only
-place all three are seeded.
+`asset_graph` is the same shape with three extra nodes spliced in for a
+non-`GENERAL` `ImageAssetKind`/`VideoAssetKind` job (image: character /
+scene / cover; video: scene_video / character_action / transition_video /
+cover_video): `asset_planning` right before routing, so the planner's
+guidance can steer the actual generation; `asset_output_advance` right after
+quality passes, which loops back to `asset_planning` once per remaining
+`GenerationParams.character_views` entry for a multi-view image `CHARACTER`
+job (a no-op single pass for everything else, including every video kind —
+no video kind ever loops); and `asset_output_link`, once every view is
+done, so the successful output(s) auto-attach to their target character
+skill / scene (an image reference, or a video `action_clips`/`clips`
+entry). See `app.domain.workflow_templates.service.ensure_default_templates`,
+the only place all three are seeded. The graph shape itself is identical for
+both media types — only the node executors (`app.workflows.nodes`) branch
+on which asset-kind axis is active.
 """
 
 from __future__ import annotations
@@ -46,15 +50,16 @@ def default_graph(session: Session) -> dict[str, Any]:
     return _build_graph(session, with_asset_nodes=False)
 
 
-def image_asset_graph(session: Session, asset_kind: str) -> dict[str, Any]:
-    """The image-asset variant of `default_graph`.
+def asset_graph(session: Session, asset_kind: str) -> dict[str, Any]:
+    """The asset-kind variant of `default_graph`, shared by image and video.
 
     `asset_kind` is not baked into the graph itself — every non-`GENERAL`
-    kind shares this exact same shape, since both new nodes read
-    `ctx.params["asset_kind"]` at run time rather than the operator having
-    to author one graph per kind. The parameter exists so a future kind
-    that genuinely needs a different shape can special-case it here without
-    changing `ensure_default_templates`'s call site.
+    kind (image or video) shares this exact same shape, since the extra
+    nodes read `ctx.params["asset_kind"]`/`ctx.params["video_asset_kind"]`
+    at run time rather than the operator having to author one graph per
+    kind. The parameter exists so a future kind that genuinely needs a
+    different shape can special-case it here without changing
+    `ensure_default_templates`'s call site.
     """
     return _build_graph(session, with_asset_nodes=True)
 
@@ -68,7 +73,27 @@ def _build_graph(session: Session, *, with_asset_nodes: bool) -> dict[str, Any]:
             "config": {},
             "position": {"x": 220, "y": 0},
         },
-        {"id": "planning", "type": "planning", "config": {}, "position": {"x": 440, "y": 0}},
+        {
+            "id": "planning",
+            "type": "planning",
+            # An asset-kind graph's own `asset_planning` node already runs a
+            # dedicated, context-aware plan (`asset_kind`/`character_view`
+            # aware) right after this — the generic `planning` node's clarify
+            # slot has neither, so it judges a bare completion-job prompt
+            # (e.g. just a character's name, see `character-library.tsx`'s
+            # "补全侧面/背面") as missing scene/action/shot info and asks for
+            # exactly the things a character/scene/cover asset must NOT have
+            # (see `planner._ASSET_KIND_BRIEF`). Suspending here also can't be
+            # recovered from in the image studio, which never renders
+            # `AwaitingInputPanel` (see `zaolang-frontend-ui` invariant #18).
+            # For the same "no context" reason, this node's own `plan()`
+            # call still runs (unchanged cost/progress/checkpoint) but its
+            # `prompt_enhancements`/`negative_prompt_suggestions` are never
+            # folded into the actual generation request for these kinds —
+            # see `app.workflows.nodes._plan_enhancements`.
+            "config": {"allow_followup_question": False} if with_asset_nodes else {},
+            "position": {"x": 440, "y": 0},
+        },
         {
             "id": "intent_router",
             "type": "intent_router",

@@ -46,6 +46,7 @@ from app.models.enums import (
     JobStatus,
     Operation,
     QualityTier,
+    VideoAssetKind,
 )
 from app.presenters import media_urls
 from app.realtime import publisher
@@ -466,6 +467,7 @@ def _job_response(
         if job.output_asset_ids_json
         else None,
         asset_kind=_asset_kind_of(job),
+        video_asset_kind=_video_asset_kind_of(job),
         character_views=_character_views_of(job),
         linked_character_id=job.linked_character_id,
         linked_scene_id=job.linked_scene_id,
@@ -492,6 +494,15 @@ def _asset_kind_of(job: GenerationJob) -> ImageAssetKind | None:
     raw = params.get("asset_kind")
     try:
         return ImageAssetKind(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def _video_asset_kind_of(job: GenerationJob) -> VideoAssetKind | None:
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    raw = params.get("video_asset_kind")
+    try:
+        return VideoAssetKind(raw) if raw else None
     except ValueError:
         return None
 

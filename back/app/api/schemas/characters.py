@@ -48,11 +48,28 @@ class CharacterReferenceAsset(ApiModel):
     created_at: dt.datetime | None = None
 
 
+class CharacterActionClip(ApiModel):
+    """A generated `video_asset_kind=character_action` clip — see
+    `characters.service.CHARACTER_ACTION_CLIPS_KEY`. No `view` field (unlike
+    `CharacterReferenceAsset`): a video clip has no fixed pose/angle."""
+
+    asset_id: str
+    label: str | None = None
+    url: str | None = None
+    created_at: dt.datetime | None = None
+
+
 class CharacterResponse(Timestamped):
     id: str
     name: str
     description: str | None = None
     reference_assets: list[CharacterReferenceAsset] = Field(default_factory=list)
+    # Generated video clips (`video_asset_kind=character_action`) — separate
+    # from `reference_assets` above, never folded into it: see
+    # `characters.service.CHARACTER_ACTION_CLIPS_KEY`'s docstring for why a
+    # video clip must not be mixed into the still-reference list that feeds
+    # a future *image* generation's `reference_asset_ids`.
+    action_clips: list[CharacterActionClip] = Field(default_factory=list)
     voice_description: str | None = None
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE

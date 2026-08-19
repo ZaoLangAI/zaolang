@@ -14,6 +14,7 @@ from app.models.enums import (
     Operation,
     PublicationStatus,
     QualityTier,
+    VideoAssetKind,
 )
 
 # Mirrors `app.agents.copywriter.DIMENSION_KEYS` / `.ENHANCE_DIRECTIONS`. Spelled
@@ -121,8 +122,16 @@ class PromptEnhanceRequest(ApiModel):
     instruction: str = Field(default="", max_length=200)
     # Only meaningful for an image job — `character`/`scene`/`cover` routes
     # the polish to that kind's dedicated default agent (`general`/omitted
-    # behaves like today, and video/audio callers never set this).
+    # behaves like today, and audio callers never set this).
     asset_kind: ImageAssetKind | None = None
+    # The video-side equivalent — `scene_video`/`character_action`/
+    # `transition_video`/`cover_video` routes the polish to that kind's
+    # dedicated default agent the same way `asset_kind` does for images (see
+    # `agent_skills.service.ASSET_KIND_BUCKETS`, which spans both). A caller
+    # sets at most one of the two — `context_from` prefers this field when
+    # both are somehow present, since `asset_kind` defaults to unset for a
+    # video job the same way `GenerationParams.asset_kind` does.
+    video_asset_kind: VideoAssetKind | None = None
 
 
 class PromptDimensionView(ApiModel):

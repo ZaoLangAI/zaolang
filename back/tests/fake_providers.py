@@ -82,7 +82,7 @@ class FakeOpenWorkflowProvider(GenerationProvider):
                 metadata={"provider": self.name, "simulated": True},
             )
         payload = _render_placeholder(request)
-        object_key = f"generated/{request.job_id}/output.png"
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.png"
         put_object(object_key, payload, content_type="image/png")
         width, height = _dimensions(request.aspect_ratio, request.quality_tier)
         return GenerationResult(
@@ -119,8 +119,8 @@ class FakePaidApiProvider(GenerationProvider):
             )
         is_video = request.operation in {"text_to_video", "image_to_video", "video_to_video"}
         payload = _render_placeholder(request)
-        suffix = "poster.png" if is_video else "output.png"
-        object_key = f"generated/{request.job_id}/{suffix}"
+        suffix = "poster" if is_video else "output"
+        object_key = f"generated/{request.job_id}/{suffix}_{request.attempt_number}.png"
         put_object(object_key, payload, content_type="image/png")
         width, height = _dimensions(request.aspect_ratio, request.quality_tier)
         return GenerationResult(

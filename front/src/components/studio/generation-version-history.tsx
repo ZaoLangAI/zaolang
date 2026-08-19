@@ -4,13 +4,17 @@ import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
-import { IconAlert, IconCheck } from '@/components/ui/icons';
+import { IconCheck } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import type { Locale } from '@/i18n/routing';
-import type { GenerationJob, Page } from '@/lib/api/types';
+import type { GenerationJob } from '@/lib/api/types';
+import { isCharacterCompletionJob } from '@/lib/characters';
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/format';
-import { useResource } from '@/lib/use-resource';
+
+/** A job in one of these statuses never becomes (or stays) a version-history
+ * record — see the `GenerationVersionHistory` doc comment below. */
+const DEAD_JOB_STATUSES = new Set(['failed', 'cancelled', 'expired']);
 
 /**
  * The image studio's version history — every generation job filed under the
@@ -20,17 +24,31 @@ import { useResource } from '@/lib/use-resource';
  * there is nothing to render as a graph — the lineage graph
  * (`zaolang-lineage-graph`) is a different, published-`Work` concept.
  *
- * Fetches the draft's job list once per `draftId` (`useResource` refetches
- * only when the path changes) and merges in `activeJob` locally by id, so
- * the item for a job that is still generating stays live without a second
- * poller — `activeJob` is already streamed by the caller.
+ * Takes the draft's full job list as a prop rather than fetching it itself —
+ * `ImageGenerationStudio` owns that (`knownJobsById`), seeded once from
+ * `GET /v1/generation-jobs?draft_id=` and additively kept up to date with
+ * every job it has seen since (submitted, streamed, or selected from this
+ * very list), so a job never disappears here just because it stopped being
+ * the one currently shown.
+ *
+ * A "补全侧面/背面" completion job (`isCharacterCompletionJob`) is filtered
+ * out entirely, never counted or rendered as a version of its own — it
+ * supplements whichever front-view version it was submitted for instead
+ * (merged into that version's own gallery by `InlineImageResult`, see
+ * `lib/characters.ts#findCompletionJobFor`).
+ *
+ * A failed/cancelled/expired attempt leaves no trace here at all — it is
+ * filtered out entirely, not just excluded from the version count. Its
+ * failure is already visible where it happened (`InlineImageResult`'s error
+ * notice and retry button); this strip only ever shows a *record* worth
+ * picking back up, which a dead attempt never is.
  */
 export function GenerationVersionHistory({
-  draftId,
+  jobs,
   activeJob,
   onSelect,
 }: {
-  draftId: string | null;
+  jobs: GenerationJob[];
   activeJob: GenerationJob | null;
   onSelect: (job: GenerationJob) => void;
 }) {
@@ -38,20 +56,34 @@ export function GenerationVersionHistory({
   const tJob = useTranslations('job');
   const locale = useLocale() as Locale;
 
-  const history = useResource<Page<GenerationJob>>(
-    draftId ? `/v1/generation-jobs?draft_id=${draftId}` : null,
-  );
-
   const versions = useMemo(() => {
     const byId = new Map<string, GenerationJob>();
-    for (const job of history.data?.items ?? []) byId.set(job.id, job);
-    if (activeJob) byId.set(activeJob.id, activeJob);
-    return [...byId.values()].sort(
-      (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
-    );
-  }, [history.data, activeJob]);
+    for (const job of jobs) byId.set(job.id, job);
+    const sorted = [...byId.values()]
+      // A dead attempt (failed/cancelled/expired) never becomes a record —
+      // see the doc comment above. Anything still in flight (queued/running/
+      // awaiting_input) stays, since it may yet succeed and earn its slot.
+      .filter((job) => !DEAD_JOB_STATUSES.has(job.status))
+      // A completion job is a supplement, not a version — see the doc
+      // comment above.
+      .filter((job) => !isCharacterCompletionJob(job))
+      .sort(
+        (left, right) =>
+          new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
+      );
+    // The version number is a count of *successful* generations, not the raw
+    // chronological position — the still-in-flight entry above only claims
+    // the *next* number provisionally; it is not "spent" unless that job
+    // actually succeeds. Written as a `reduce` (rather than a loop mutating
+    // an outer counter) so nothing captured outside the callback is
+    // reassigned across iterations.
+    return sorted.reduce<{ job: GenerationJob; versionNumber: number }[]>((entries, job) => {
+      const succeededCount = entries.filter((entry) => entry.job.status === 'succeeded').length;
+      return [...entries, { job, versionNumber: succeededCount + 1 }];
+    }, []);
+  }, [jobs]);
 
-  if (!draftId || versions.length === 0) return null;
+  if (versions.length === 0) return null;
 
   return (
     <section aria-labelledby="generation-history-heading" className="flex flex-col gap-2">
@@ -59,7 +91,7 @@ export function GenerationVersionHistory({
         {t('generationHistory', { count: versions.length })}
       </h2>
       <ol className="flex gap-3 overflow-x-auto pb-1">
-        {versions.map((job, index) => {
+        {versions.map(({ job, versionNumber }) => {
           const selected = job.id === activeJob?.id;
           const thumbnail = job.output_url ?? null;
           return (
@@ -91,7 +123,7 @@ export function GenerationVersionHistory({
                       'bg-surface-raised/90 text-muted',
                     )}
                   >
-                    V{index + 1}
+                    V{versionNumber}
                   </span>
                 </div>
                 <p className="truncate bg-surface px-1.5 py-1 text-[10px] text-muted">
@@ -108,10 +140,10 @@ export function GenerationVersionHistory({
   );
 }
 
+// Only ever rendered for a `succeeded` job with no thumbnail yet or a job
+// still in flight — `DEAD_JOB_STATUSES` filters everything else out of
+// `versions` before this ever gets a chance to render for them.
 function VersionStatusIcon({ status }: { status: string }) {
-  if (status === 'failed' || status === 'cancelled' || status === 'expired') {
-    return <IconAlert className="size-4 text-danger" />;
-  }
   if (status === 'succeeded') return <IconCheck className="size-4 text-success" />;
   return <Spinner className="size-4 text-muted" />;
 }

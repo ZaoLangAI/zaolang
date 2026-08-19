@@ -46,6 +46,27 @@ class Settings(BaseSettings):
     upload_url_ttl_seconds: int = 60 * 10
     download_url_ttl_seconds: int = 60 * 15
 
+    @property
+    def embed_reference_images_as_base64(self) -> bool:
+        """Whether a provider reference image must be inlined as base64
+        rather than handed over as a presigned `s3_public_endpoint_url`.
+
+        `local`/`test` both default `s3_public_endpoint_url` to
+        `http://localhost:9000` — reachable from this machine's own browser,
+        never from a real external provider's servers (aihubmix, an HTTP
+        API on the public internet). A presigned URL there is silently
+        unfetchable: the provider gets nothing to condition on and falls
+        back to generating from the prompt text alone, exactly the "ignores
+        the reference photo entirely" failure (see
+        `app.providers.aihubmix_media._image_reference_urls`). Every other
+        `app_env` is expected to publish a real internet-reachable
+        `s3_public_endpoint_url` (a CDN/public bucket domain), where handing
+        over a URL instead is strictly cheaper — the provider fetches once
+        instead of every reference byte round-tripping through our own
+        request body.
+        """
+        return self.app_env in ("local", "test")
+
     # The Agno console is an operator tool that exposes model bindings and lets
     # a human drive agents interactively, so it stays off unless asked for.
     agent_os_enabled: bool = False

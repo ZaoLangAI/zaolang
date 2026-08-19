@@ -16,12 +16,14 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import mimetypes
 import time
 from dataclasses import dataclass
 
 import httpx
 from PIL import Image, UnidentifiedImageError
 
+from app.config import get_settings
 from app.models.enums import Operation
 from app.providers.base import (
     GenerationProvider,
@@ -191,7 +193,11 @@ class AiHubMixMediaProvider(GenerationProvider):
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
 
         width, height = _probe_image_size(image_bytes)
-        object_key = f"generated/{request.job_id}/output.png"
+        # `attempt_number` (see `GenerationRequest`) keeps a multi-view
+        # `CHARACTER` job's side/back passes from colliding with the front
+        # pass's already-registered `Asset` row on `uq_assets_object_key` —
+        # both share the same `job_id`.
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.png"
         s3.put_object(object_key, image_bytes, content_type="image/png")
 
         return GenerationResult(
@@ -221,7 +227,7 @@ class AiHubMixMediaProvider(GenerationProvider):
             response.raise_for_status()
             audio_bytes = response.content
 
-        object_key = f"generated/{request.job_id}/output.mp3"
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp3"
         s3.put_object(object_key, audio_bytes, content_type="audio/mpeg")
 
         return GenerationResult(
@@ -339,7 +345,7 @@ class AiHubMixMediaProvider(GenerationProvider):
         if not video_bytes:
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", "empty_video_content")
 
-        object_key = f"generated/{request.job_id}/output.mp4"
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp4"
         s3.put_object(object_key, video_bytes, content_type="video/mp4")
 
         return GenerationResult(
@@ -470,11 +476,23 @@ def build_video_payload(
 
 
 def _image_reference_urls(request: GenerationRequest) -> list[str]:
-    """Signed GET URLs for image-to-image references.
+    """Signed URLs (or inline base64 data URIs) for image-to-image references.
 
     Text-to-image leaves this empty. Image-to-image sends the same OpenAI
     `/v1/images/generations` JSON with an extra `image` field rather than
     switching to the multipart `/v1/images/edits` path.
+
+    `Settings.embed_reference_images_as_base64` (on for `local`/`test`)
+    switches this from a presigned GET URL to an inline `data:` URI —
+    aihubmix is a real external HTTP API and can never reach a
+    `localhost`-only object store, so a presigned URL there is silently
+    unfetchable and the provider quietly falls back to generating from the
+    prompt text alone with no actual reference image. A real deployment's
+    public bucket domain stays on the cheaper URL path (aihubmix fetches
+    once instead of every reference byte round-tripping through our own
+    request body). Scoped to this single-image field only — video's
+    `frame_images`/`input_references` (`build_video_payload`) stay URL-only,
+    since a video reference routinely exceeds any sane inline-body size.
     """
     keys: list[str] = []
     for ref in request.references:
@@ -483,10 +501,30 @@ def _image_reference_urls(request: GenerationRequest) -> list[str]:
     for key in request.reference_object_keys:
         if key not in keys:
             keys.append(key)
-    return [
-        s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS)
-        for key in keys[:_MAX_INPUT_REFERENCES]
-    ]
+    keys = keys[:_MAX_INPUT_REFERENCES]
+    if get_settings().embed_reference_images_as_base64:
+        return [_data_uri_for(key) for key in keys]
+    return [s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS) for key in keys]
+
+
+# aihubmix's documented single-image limit for inline/base64 input
+# (`docs.aihubmix.com/en/api/vision`).
+_MAX_BASE64_REFERENCE_BYTES = 20 * 1024 * 1024
+
+
+def _data_uri_for(object_key: str) -> str:
+    """Inlines an object-store key's bytes as a `data:` URI.
+
+    A reference this large was never going to fit inside aihubmix's own
+    base64 limit either way, so it falls back to the presigned URL — no
+    worse than the pre-fix behaviour for that one oversized edge case.
+    """
+    payload = s3.get_object(object_key)
+    if len(payload) > _MAX_BASE64_REFERENCE_BYTES:
+        return s3.presign_get(object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+    mime = mimetypes.guess_type(object_key)[0] or "image/png"
+    encoded = base64.b64encode(payload).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 def _image_bytes_from_payload(payload: object, client: httpx.Client) -> bytes | None:

@@ -16,7 +16,7 @@ from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import User
 from app.models.base import new_id
 from app.models.enums import ImageAssetKind, Operation, QualityTier
-from app.workflows.defaults import default_graph, image_asset_graph
+from app.workflows.defaults import asset_graph, default_graph
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_submit_prefers_the_asset_kind_specific_template_over_the_generic_one(
         db,
         operation=Operation.TEXT_TO_IMAGE.value,
         name="角色图",
-        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        graph_json=asset_graph(db, ImageAssetKind.CHARACTER.value),
         actor_user_id=funded.id,
         reason="角色图工作流",
         asset_kind=ImageAssetKind.CHARACTER.value,
@@ -114,7 +114,7 @@ def test_submit_treats_the_general_asset_kind_the_same_as_none(db: Session, fund
         db,
         operation=Operation.TEXT_TO_IMAGE.value,
         name="角色图",
-        graph_json=image_asset_graph(db, ImageAssetKind.CHARACTER.value),
+        graph_json=asset_graph(db, ImageAssetKind.CHARACTER.value),
         actor_user_id=funded.id,
         reason="角色图工作流",
         asset_kind=ImageAssetKind.CHARACTER.value,

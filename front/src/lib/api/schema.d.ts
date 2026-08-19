@@ -2357,7 +2357,15 @@ export interface paths {
         delete: operations["delete_script_v1_scripts__episode_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Script Content
+         * @description Persists a user's direct hand-edit of the script text (title,
+         *     logline, character traits, block text). Same shape as
+         *     `update_script_links` above — a plain request/response, not the SSE turn
+         *     machinery, since this is a manual edit rather than a model-driven
+         *     revision.
+         */
+        patch: operations["update_script_content_v1_scripts__episode_id__patch"];
         trace?: never;
     };
     "/v1/scripts/{episode_id}/turns/{turn_id}/snapshot": {
@@ -5351,6 +5359,22 @@ export interface components {
              */
             confirmed: boolean;
         };
+        /**
+         * CharacterActionClip
+         * @description A generated `video_asset_kind=character_action` clip — see
+         *     `characters.service.CHARACTER_ACTION_CLIPS_KEY`. No `view` field (unlike
+         *     `CharacterReferenceAsset`): a video clip has no fixed pose/angle.
+         */
+        CharacterActionClip: {
+            /** Asset Id */
+            asset_id: string;
+            /** Label */
+            label?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** CharacterCreateRequest */
         CharacterCreateRequest: {
             /** Name */
@@ -5426,6 +5450,8 @@ export interface components {
             description?: string | null;
             /** Reference Assets */
             reference_assets?: components["schemas"]["CharacterReferenceAsset"][];
+            /** Action Clips */
+            action_clips?: components["schemas"]["CharacterActionClip"][];
             /** Voice Description */
             voice_description?: string | null;
             /** @default draft */
@@ -5459,7 +5485,7 @@ export interface components {
          *     `CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing
          *     via `GenerationParams.character_views` (see
          *     `app.workflows.nodes.execute_asset_output_advance`), one at a time,
-         *     looping the shared `image_asset_graph` back to `asset_planning` between
+         *     looping the shared `asset_graph` back to `asset_planning` between
          *     each. `GENERAL` is reserved for a plain uploaded reference with no fixed
          *     pose (`characters.service._entries_from_flat_ids`) — a generation job
          *     never targets it.
@@ -6644,6 +6670,7 @@ export interface components {
             /** Output Urls */
             output_urls?: string[] | null;
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
+            video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
             /** Linked Character Id */
@@ -6723,6 +6750,8 @@ export interface components {
              * @default true
              */
             auto_attach_asset: boolean;
+            /** @default general */
+            video_asset_kind: components["schemas"]["VideoAssetKind"];
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -8613,6 +8642,7 @@ export interface components {
              */
             instruction: string;
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
+            video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
         };
         /** PromptEnhanceResponse */
         PromptEnhanceResponse: {
@@ -9248,6 +9278,22 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
+        /**
+         * SceneClip
+         * @description A generated `video_asset_kind=scene_video` clip — see
+         *     `scenes.service.SCENE_CLIPS_KEY`. No `view` field (unlike
+         *     `SceneReferenceAsset`): a video clip has no fixed shot tag.
+         */
+        SceneClip: {
+            /** Asset Id */
+            asset_id: string;
+            /** Label */
+            label?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
         /** SceneCreateRequest */
         SceneCreateRequest: {
             /** Name */
@@ -9300,6 +9346,8 @@ export interface components {
             description?: string | null;
             /** Reference Assets */
             reference_assets?: components["schemas"]["SceneReferenceAsset"][];
+            /** Clips */
+            clips?: components["schemas"]["SceneClip"][];
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -9346,6 +9394,17 @@ export interface components {
             name: string;
             /** Character Ref Id */
             character_ref_id?: string | null;
+        };
+        /**
+         * ScriptContentUpdateRequest
+         * @description A direct hand-edit of the script text — bypasses the LLM turn
+         *     machinery, same as `ScriptLinksUpdateRequest`. The full document, not a
+         *     per-field patch, so `app.agents.copywriter._sanitize_script` can do all
+         *     the bounds/shape validation the same way it does for every other write
+         *     path into `script_json`.
+         */
+        ScriptContentUpdateRequest: {
+            script: components["schemas"]["ScriptDocument"];
         };
         /** ScriptCreateRequest */
         ScriptCreateRequest: {
@@ -10117,6 +10176,28 @@ export interface components {
             /** Entries */
             entries: components["schemas"]["VersionDiffEntry"][];
         };
+        /**
+         * VideoAssetKind
+         * @description What a `text_to_video`/`image_to_video`/`video_to_video` job's output
+         *     is *for* — the video-side equivalent of `ImageAssetKind`.
+         *
+         *     Deliberately its own enum, not a reuse of `ImageAssetKind`: values are
+         *     spelled differently on purpose (`scene_video`/`character_action`/
+         *     `transition_video`/`cover_video`, not `scene`/`character`/`cover`) so a
+         *     video kind can never collide with an image kind wherever the two get
+         *     looked up by bare string key (`copywriter._VIDEO_ENHANCE_SYSTEM_PROMPTS`,
+         *     `GenerationWorkflowTemplate.asset_kind` rows, agent-skill default-profile
+         *     buckets). There is no `CharacterViewAngle` equivalent here — a
+         *     `CHARACTER_ACTION` job always produces exactly one clip per submission,
+         *     never a multi-view loop (see `app.workflows.nodes.execute_asset_output_advance`).
+         *
+         *     `TRANSITION`/`COVER` cover short-drama-specific building blocks images
+         *     have no equivalent for: a transition/insert clip and a trailer/cover
+         *     clip respectively. Neither attaches to a character/scene library (same
+         *     as `ImageAssetKind.COVER` today) — see `execute_asset_output_link`.
+         * @enum {string}
+         */
+        VideoAssetKind: "general" | "scene_video" | "character_action" | "transition_video" | "cover_video";
         /**
          * VideoGenerationOptions
          * @description Typed H3 options; arbitrary provider JSON and webhooks are forbidden.
@@ -15814,6 +15895,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_script_content_v1_scripts__episode_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptContentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptDocument"];
+                };
             };
             /** @description Validation Error */
             422: {
