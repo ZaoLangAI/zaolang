@@ -47,10 +47,9 @@ DEFAULT_LIFECYCLE_RULES = [
 
 @router.get("/storage/usage", response_model=StorageUsageResponse)
 def storage_usage(session: DbSession, user: Viewer, _: AdminRead) -> StorageUsageResponse:
-    settings = get_settings()
     usage = s3.bucket_usage()
     return StorageUsageResponse(
-        bucket=settings.s3_bucket,
+        bucket=s3.active_bucket_name(),
         object_count=int(usage["object_count"]),
         total_bytes=int(usage["total_bytes"]),
         by_prefix=dict(usage.get("by_prefix", {})),
@@ -69,7 +68,7 @@ def apply_lifecycle(
         actor=user,
         action="storage.lifecycle",
         target_type="bucket",
-        target_id=get_settings().s3_bucket,
+        target_id=s3.active_bucket_name(),
         after={"rules": [r["ID"] for r in DEFAULT_LIFECYCLE_RULES]},
         request=request,
     )

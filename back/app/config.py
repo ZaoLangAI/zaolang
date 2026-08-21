@@ -37,21 +37,37 @@ class Settings(BaseSettings):
     refresh_token_ttl_seconds: int = 60 * 60 * 24 * 14
     admin_token_ttl_seconds: int = 60 * 60 * 8
 
+    # Which object storage backend is active. MinIO is the local/dev default;
+    # `tencent_cos` is selected purely by config, no code change, for a
+    # deployment that wants managed storage instead of self-hosted MinIO.
+    storage_backend: Literal["minio", "tencent_cos"] = "minio"
+
     s3_endpoint_url: str = "http://localhost:9000"
     s3_public_endpoint_url: str = "http://localhost:9000"
     s3_region: str = "us-east-1"
     s3_bucket: str = "zaolang-media"
     s3_access_key: str = "zaolang"
     s3_secret_key: str = "zaolang-secret"
+
+    # Tencent COS — only read when storage_backend == "tencent_cos".
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    cos_region: str = "ap-guangzhou"
+    cos_bucket: str = ""  # COS bucket names carry a -<APPID> suffix
+    # Public/CDN domain for presigned URLs, if different from the region
+    # endpoint `cos_region` derives. Plays the same role `s3_public_endpoint_url`
+    # plays for MinIO — see `embed_reference_images_as_base64`.
+    cos_public_endpoint_url: str = ""
+
     upload_url_ttl_seconds: int = 60 * 10
     download_url_ttl_seconds: int = 60 * 15
 
     @property
     def embed_reference_images_as_base64(self) -> bool:
         """Whether a provider reference image must be inlined as base64
-        rather than handed over as a presigned `s3_public_endpoint_url`.
+        rather than handed over as a presigned URL from the active backend.
 
-        `local`/`test` both default `s3_public_endpoint_url` to
+        `local`/`test` both default the MinIO `s3_public_endpoint_url` to
         `http://localhost:9000` — reachable from this machine's own browser,
         never from a real external provider's servers (aihubmix, an HTTP
         API on the public internet). A presigned URL there is silently
@@ -59,10 +75,11 @@ class Settings(BaseSettings):
         back to generating from the prompt text alone, exactly the "ignores
         the reference photo entirely" failure (see
         `app.providers.aihubmix_media._image_reference_urls`). Every other
-        `app_env` is expected to publish a real internet-reachable
-        `s3_public_endpoint_url` (a CDN/public bucket domain), where handing
-        over a URL instead is strictly cheaper — the provider fetches once
-        instead of every reference byte round-tripping through our own
+        `app_env` is expected to publish a real internet-reachable public
+        endpoint (a CDN/public bucket domain, `s3_public_endpoint_url` or
+        `cos_public_endpoint_url` depending on `storage_backend`), where
+        handing over a URL instead is strictly cheaper — the provider fetches
+        once instead of every reference byte round-tripping through our own
         request body.
         """
         return self.app_env in ("local", "test")

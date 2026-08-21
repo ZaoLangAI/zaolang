@@ -38,7 +38,7 @@ Ensure what goes into the bucket is something we allow, that what comes out of i
 - **Allow a new format**: add an entry to `ALLOWED_UPLOAD_MIME_TYPES` (with its extension) → add a probing branch to `_probe` (reject if dimensions/duration can't be read) → update the frontend `accept` attribute and copy → add coverage in `tests/unit/test_media_integrity.py`.
 - **Add a purpose**: `MAX_UPLOAD_BYTES` and `PURPOSE_PREFIXES` must be added together — missing either raises a `KeyError` at presign time.
 - **Change fingerprinting**: `record_fingerprint` and `find_near_duplicates` change together; existing fingerprints don't auto-recompute — write a one-off backfill script.
-- **Swap object storage**: change only `app/storage/s3.py` (the boto3 S3-compatible layer) — the domain layer stays unaware. Lifecycle policy and usage stats live here too.
+- **Swap object storage**: `app/storage/s3.py` is a thin facade over whichever `StorageBackend` `STORAGE_BACKEND` selects (`app/storage/factory.py`) — MinIO (`app/storage/backends/minio.py`, boto3) or Tencent COS (`app/storage/backends/tencent_cos.py`, `cos-python-sdk-v5`). The domain layer only ever imports `app.storage.s3` and stays unaware which backend is active. Lifecycle policy and usage stats are part of the `StorageBackend` interface (`app/storage/base.py`) and are implemented by both backends. Add a third backend by implementing `StorageBackend` and adding a branch in `factory.get_backend()` — no facade or call-site changes needed.
 
 ## Assets Pack
 
