@@ -156,4 +156,4 @@ make restore f=.backups/xxx.dump  # 需要 --confirm，脚本内已带
 make reset       # 销毁数据卷 → 重建 → 迁移 → 种子数据
 ```
 
-种子账号统一密码 `Zaolang2026`，含一个被封禁账号 `driftwood@zaolang.dev`、一个卡死任务、一条悬挂预扣、一条待审批数据请求与一次降级记录——本手册每一节都能在种子数据上演练一遍。
+种子账号统一密码 `Zaolang2026`，含一个被封禁账号 `driftwood@zaolang.dev`。`make seed` 只创建登录账号和系统默认值（Agent 节点/画像、默认工作流模板、Feature Flag），不再预置卡死任务、悬挂预扣、待审批数据请求或降级记录——本手册涉及这些现场的章节，需要先在本地真实跑出一个对应状态的任务/请求，再照着排查。

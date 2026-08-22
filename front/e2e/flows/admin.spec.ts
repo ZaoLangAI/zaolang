@@ -15,9 +15,13 @@ function watchConsumerRefresh(page: Page): () => string[] {
  * The operations console walkthrough: the separate admin session, then the
  * screens an operator actually opens during an incident.
  *
- * The seed script plants a wedged job, an overdue reservation, a pending data
- * request and a degraded agent run precisely so these assertions have something
- * to find; an empty console would let a broken query pass unnoticed.
+ * `make seed` (`back/app/scripts/seed.py`) only creates login accounts and the
+ * system-level defaults (agent nodes/profiles, workflow templates, feature
+ * flags) now — it no longer plants a wedged job, an overdue reservation, a
+ * pending data request, a degraded agent run, or any style-gallery/moderation
+ * content. Assertions that depended on that fixture data are skipped below
+ * with a note; they need a fixture-creation helper to drive real data through
+ * the API before they can come back.
  */
 
 test.describe('session boundary', () => {
@@ -136,7 +140,10 @@ test.describe('operations screens', () => {
     expect(refreshCalls(), 'consumer /v1/auth/refresh on the health page').toEqual([]);
   });
 
-  test('the job console lists the seeded jobs', async ({ page }) => {
+  // Skipped: `make seed` no longer creates any `GenerationJob`, so the job
+  // console has nothing to list. Restore once a fixture-creation helper can
+  // drive a real job through the API.
+  test.skip('the job console lists the seeded jobs', async ({ page }) => {
     await page.goto('/zh-CN/admin', { waitUntil: 'networkidle' });
     await page.getByRole('link', { name: '任务运维' }).click();
     await expect(page.getByRole('heading', { name: '任务运维', level: 1 })).toBeVisible();
@@ -146,7 +153,10 @@ test.describe('operations screens', () => {
     await expect(page.getByText(/^job_/).first()).toBeVisible();
   });
 
-  test('the wedged job detail surfaces its async task and related logs', async ({ page }) => {
+  // Skipped: relies on the seeded wedged job (and Mizuki's ordinary succeeded
+  // jobs to disambiguate it), neither of which `make seed` creates any more.
+  // Restore once a fixture-creation helper can leave a comparable job behind.
+  test.skip('the wedged job detail surfaces its async task and related logs', async ({ page }) => {
     // The seeded async provider task is a best-effort demo fixture: a live
     // `poll_async_provider_tasks` beat tick reaps it (this seed environment has
     // no real media endpoint, so the capability is always "missing from the
@@ -206,14 +216,13 @@ test.describe('operations screens', () => {
     await expect(page.getByText('async_task_deadline_exceeded')).toBeVisible();
   });
 
-  test('the credits console surfaces the overdue reservation', async ({ page }) => {
+  test('the credits console renders and its ledger config opens', async ({ page }) => {
     await page.goto('/zh-CN/admin/credits', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '积分运维', level: 1 })).toBeVisible();
 
-    // The seeded stuck job holds a reservation older than the report's grace
-    // period, so this section must not be empty.
+    // `make seed` no longer leaves a dangling reservation behind, so this
+    // section legitimately renders empty here — only the heading is checked.
     await expect(page.getByRole('heading', { name: '悬挂预扣' })).toBeVisible();
-    await expect(page.getByText(/^job_/).first()).toBeVisible();
 
     const ledger = page.getByRole('heading', { name: '积分账本' }).locator('..');
     const actions = await ledger.getByRole('button').allTextContents();
@@ -241,7 +250,9 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/moderation', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '内容审核', level: 1 })).toBeVisible();
     await expect(page.getByRole('tab', { name: '内容审核', selected: true })).toBeVisible();
-    await expect(page.getByText('Night Tide · Neon').first()).toBeVisible();
+    // `make seed` no longer plants a moderation-queue item — the queue
+    // legitimately renders empty here, only the console's own chrome is
+    // checked.
     await expect(page.getByRole('heading', { name: '内容审核', level: 2 })).toBeVisible();
     await expect(page.getByRole('button', { name: '刷新' })).toBeVisible();
     await expect(page.getByRole('button', { name: '配置' })).toBeVisible();
@@ -265,11 +276,12 @@ test.describe('operations screens', () => {
     await expect(page.getByText(ACCOUNTS.suspended)).toBeVisible();
   });
 
-  test('the agent console reports token spend and degradations', async ({ page }) => {
+  test('the agent console renders', async ({ page }) => {
     await page.goto('/zh-CN/admin/agents', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '智能体', level: 1 })).toBeVisible();
-    // Among the seeded runs is a Copy Agent call that fell back to the stub.
-    await expect(page.getByText('copy').first()).toBeVisible();
+    // `make seed` no longer leaves any `AgentRun` behind (that needed a real
+    // job or the removed ops-material fixtures), so token spend and
+    // degradation reporting can only be exercised with real agent traffic.
   });
 
   test('the statistics console aggregates provider, agent, job and credit metrics', async ({
@@ -283,16 +295,13 @@ test.describe('operations screens', () => {
     await expect(page.getByRole('tab', { name: '总览', selected: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: '系统与基础设施' })).toHaveCount(0);
 
-    // Providers & agents tab: fake providers are test-only, so production seed
-    // data leaves the comparison table empty, but the section always renders.
+    // Providers & agents tab: `make seed` no longer leaves any `AgentRun`
+    // behind, so both the provider comparison table and the agent usage grid
+    // legitimately render empty here; only the section itself is checked.
     await page.getByRole('tab', { name: '供应商与智能体' }).click();
     await expect(page.getByRole('heading', { name: '供应商统计' })).toBeVisible();
-    // Agent usage grid: the seeded intent_router run, same source this feature's
-    // routing decisions now come from.
-    await expect(page.getByText('intent_router').first()).toBeVisible();
 
-    // Jobs tab: renders even though the seeded jobs are older than the 24h
-    // window and legitimately count as zero.
+    // Jobs tab: renders even with zero jobs in the 24h window.
     await page.getByRole('tab', { name: '生成与任务' }).click();
     await expect(page.getByRole('heading', { name: '任务吞吐' })).toBeVisible();
 
@@ -799,16 +808,14 @@ test.describe('operations screens', () => {
     await expect(newRow.getByText('验证成功')).toBeVisible();
   });
 
-  test('the style gallery console lists the seeded catalogue and creates an entry', async ({
-    page,
-  }) => {
+  test('the style gallery console renders and creates an entry', async ({ page }) => {
     await page.goto('/zh-CN/admin/style-gallery', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '画风库', level: 1 })).toBeVisible();
 
-    // Seeded via `back/app/scripts/seed.py`, which is what the studio's style
-    // picker dialog and the create page's inspiration wall both read from.
-    await expect(page.getByText('日漫').first()).toBeVisible();
-
+    // `make seed` (`back/app/scripts/seed.py`) no longer plants any catalogue
+    // entries — the studio's style picker dialog and the create page's
+    // inspiration wall both read from this table, but populating it is now an
+    // admin action, not a seed one. The console must still be usable empty.
     await page.getByRole('button', { name: '新建画风' }).click();
     await expect(page.getByRole('heading', { name: '新建画风' })).toBeVisible();
     const slug = `e2e-style-${Date.now()}`;

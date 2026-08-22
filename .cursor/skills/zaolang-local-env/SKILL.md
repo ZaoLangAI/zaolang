@@ -1,6 +1,6 @@
 ---
 name: zaolang-local-env
-description: Local dev environment and command entry points — dual conda/fnm toolchains, OrbStack containers (pgvector 5433, Redis 6380, MinIO 9000), Makefile targets, env vars, port conventions, seed accounts. Use when starting or fixing the local stack, editing the Makefile, docker-compose, .env files, ports, conda/fnm setup, or when `make up` / `make seed` / `make dev` fails.
+description: Local dev environment and command entry points — dual conda/fnm toolchains, OrbStack containers (pgvector 5433, Redis 6380; MinIO 9000 optional/manual), Makefile targets, env vars, port conventions, seed accounts. Use when starting or fixing the local stack, editing the Makefile, docker-compose, .env files, ports, conda/fnm setup, or when `make up` / `make seed` / `make dev` fails.
 disable-model-invocation: true
 ---
 
@@ -15,8 +15,8 @@ disable-model-invocation: true
 | Path | Purpose |
 | --- | --- |
 | `Makefile` | The single entry point. `make help` lists every target |
-| `infra/docker-compose.yml` | postgres (pgvector/pg17) / redis / minio / minio-init |
-| `infra/.env.example` | compose variables (ports, MinIO credentials, bucket names) |
+| `infra/docker-compose.yml` | postgres (pgvector/pg17) / redis / minio / minio-init — `make up` only starts postgres+redis by default; minio/minio-init are opt-in (`docker compose ... up -d minio`) for whoever still runs `STORAGE_BACKEND=minio` locally |
+| `infra/.env.example` | compose variables (ports, MinIO credentials, bucket names) — only relevant if you opt back into the MinIO container |
 | `back/environment.yml` + `back/requirements*.txt` | conda env `zaolang`, Python 3.12 |
 | `back/.env.example` → `back/.env` | backend config, incl. `LLM_API_KEY`, `CORS_ORIGINS` |
 | `front/.node-version` | Node version read by fnm |
@@ -36,7 +36,7 @@ disable-model-invocation: true
 
 ```bash
 make setup             # create the conda env, install front/back deps, copy .env files
-make up                 # start containers and create MinIO buckets
+make up                 # start postgres/redis containers (COS is the default local object store — no container needed)
 make migrate seed       # create tables + seed data
 make dev                # run API(8000) / Celery worker / Celery beat / Web(3000) in parallel
 make dev-beat           # start only the async-provider-polling and timeout-reclaim scheduler
@@ -52,7 +52,7 @@ Seed accounts share the password `Zaolang2026`: `linhai` (author), `mizuki` (rem
 - **Add an external dependency**: add it to `infra/docker-compose.yml` with a health check (`make up` uses `--wait`) → add a config field + default in `back/app/config.py` → add a probe in `back/app/api/health.py`, otherwise it won't show up on the admin system-health page.
 - **Add an env var**: add the field in `config.py` → add the placeholder in `back/.env.example`. Missing either and a fresh clone won't run.
 - **Add a Celery queue**: register routing in `back/app/workers/celery_app.py`, then sync the Makefile's `dev-worker` `-Q` list and the admin health page's queue list. The drama editor's analysis queue is `media_analysis`, already in `dev-worker -Q` — miss it and analysis jobs on uploaded source assets hang forever.
-- **Enable the drama editor locally**: `make seed`'s `_seed_editor_flags` flips five editor flags to true and gives `linhai` one `kind=drama` demo project. `DEFAULT_CONFIGS` stays false — empty databases and production default to off. Don't write the local seed's `true` back into the schema defaults.
+- **Enable the drama editor locally**: `make seed`'s `_seed_editor_flags` flips five editor flags to true. `DEFAULT_CONFIGS` stays false — empty databases and production default to off. Don't write the local seed's `true` back into the schema defaults.
 
 ## Verify
 

@@ -56,4 +56,4 @@ cd back && conda run -n zaolang pytest tests/integration/test_admin_ops_runtime.
 make test-e2e
 ```
 
-Manual path: after `make seed`, open `/admin` — system health should show all four dependencies green, job ops should show the stuck and failed seed jobs, credit ops should show the dangling reservation, user ops should find the suspended `driftwood`, agent ops should show a degradation record, and the statistics center should show both snapshot numbers and daily trends (zero on empty days). Seed data is built specifically to populate these pages.
+Manual path: after `make seed`, open `/admin` — system health should show all four dependencies green, and user ops should find the suspended `driftwood`. `make seed` only creates login accounts and the system-level defaults (agent nodes/profiles, workflow templates, feature flags) — it plants no business content any more, so job ops, credit ops, moderation, the style gallery, and agent-degradation views stay empty until real jobs/works/reports exist; verifying those pages needs actual data (drive a job through the API, or `tests/integration/test_admin_ops_*.py`'s fixtures) rather than a fresh seed.
