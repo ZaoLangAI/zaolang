@@ -17,7 +17,7 @@ from app.api.schemas.auth import AdminLoginRequest
 from app.api.schemas.common import OkResponse
 from app.config import get_settings
 from app.domain.audit import service as audit
-from app.domain.errors import AuthRequired, Forbidden
+from app.domain.errors import AuthRequired
 from app.domain.system_log import service as system_log
 from app.models import User
 from app.models.base import utcnow
@@ -58,9 +58,10 @@ def login(
             user_id=user.id,
             request=request,
         )
-        # Same wording as a bad password: the response must not reveal that the
-        # account exists but lacks console access.
-        raise Forbidden("没有后台访问权限。")
+        # Same status, code and wording as a bad password: the response must not
+        # let a caller who already knows this account's password distinguish
+        # "wrong password" from "valid password, no console role" by status code.
+        raise AuthRequired("邮箱或密码不正确。")
 
     token, expires_at = issue_admin_token(user.id, list(user.roles))
     settings = get_settings()

@@ -22,6 +22,7 @@ from app.domain.credits.pricing import quote as compute_quote
 from app.domain.errors import (
     Conflict,
     CreditsExceedBudget,
+    IdempotencyConflict,
     InsufficientCredits,
     NotFound,
 )
@@ -64,6 +65,32 @@ def quote_for(
         per_second_surcharge=pricing.video_per_second_surcharge,
         base_seconds=pricing.video_base_seconds,
         output_count=output_count,
+    )
+
+
+# `apply_character_refs`/`apply_scene_refs` (called later in `submit`) only
+# ever merge into these two keys, so a request that is otherwise identical
+# except for server-side reference-merging must not look like a body
+# mismatch below.
+_MUTATED_PARAM_KEYS = frozenset({"reference_asset_ids", "extra"})
+
+
+def _is_replay_of(
+    existing: GenerationJob, *, operation: str, quality_tier: str, params: dict[str, Any]
+) -> bool:
+    """True when a reused idempotency key is replaying the same request.
+
+    Compares the fields that define what the job actually does, not merely
+    that the key matches — a client that reuses a key with a materially
+    different body (a different prompt, operation, or tier) must get
+    `IdempotencyConflict`, not the first request's unrelated job silently
+    handed back.
+    """
+    if existing.operation != operation or existing.quality_tier != quality_tier:
+        return False
+    stored = existing.request_json if isinstance(existing.request_json, dict) else {}
+    return all(
+        stored.get(key) == value for key, value in params.items() if key not in _MUTATED_PARAM_KEYS
     )
 
 
@@ -115,6 +142,10 @@ def submit(
         )
     )
     if existing is not None:
+        if not _is_replay_of(
+            existing, operation=operation, quality_tier=quality_tier, params=params
+        ):
+            raise IdempotencyConflict()
         return SubmissionResult(
             job=existing,
             quote=Quote(

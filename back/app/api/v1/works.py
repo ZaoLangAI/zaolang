@@ -37,6 +37,7 @@ from app.domain.lineage import service as lineage_service
 from app.domain.publishing import service as publishing
 from app.domain.search import service as search_service
 from app.models import (
+    AccessGrant,
     Bookmark,
     LicenseSnapshot,
     Like,
@@ -540,7 +541,7 @@ def _unlock_response(
     *,
     work_id: str,
     access_credits: int,
-    grant,
+    grant: AccessGrant | None,
     already_held: bool,
 ) -> AccessUnlockResponse:
     return AccessUnlockResponse(

@@ -371,6 +371,17 @@ def reconcile_credits() -> str:
         return report.id
 
 
+@celery_app.task(name="app.workers.tasks.purge_expired_exports")
+def purge_expired_exports() -> int:
+    """Deletes the storage object behind export bundles past their retention window."""
+    from app.domain.compliance import service as compliance_service
+
+    with session_scope() as session:
+        purged = compliance_service.purge_expired_exports(session)
+        session.commit()
+        return purged
+
+
 @celery_app.task(name="app.workers.tasks.run_media_analysis")
 def run_media_analysis(analysis_id: str) -> str:
     from app.domain.editor import analysis as media_analysis
@@ -392,17 +403,19 @@ def run_media_analysis(analysis_id: str) -> str:
 def expire_editor_leases() -> int:
     from sqlalchemy import update
 
+    from app.db import rows_affected
     from app.models import EditorLease
     from app.models.base import utcnow as now
 
     with session_scope() as session:
-        matched = session.execute(
+        matched = rows_affected(
+            session,
             update(EditorLease)
             .where(EditorLease.revoked_at.is_(None), EditorLease.expires_at <= now())
-            .values(revoked_at=now())
+            .values(revoked_at=now()),
         )
         session.commit()
-        return int(matched.rowcount or 0)
+        return matched
 
 
 @celery_app.task(name="app.workers.tasks.expire_orphan_editor_uploads")

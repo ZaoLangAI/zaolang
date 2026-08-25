@@ -68,13 +68,19 @@ function applyToDocument(resolved: ResolvedTheme): void {
 /**
  * 是否应该跳过 View Transition，直接硬切。
  *
- * 覆盖三种情况：浏览器不支持该 API（如 Firefox）、应用内"减少动态效果"开关、
- * OS 级 `prefers-reduced-motion`。任意一种为真都不触发转场，从而不产生
- * `::view-transition-*` 伪元素——这比事后用 CSS 覆盖它们更简单可靠。
+ * 覆盖四种情况：浏览器不支持该 API（如 Firefox）、应用内"减少动态效果"开关、
+ * OS 级 `prefers-reduced-motion`、文档当前不可见。任意一种为真都不触发转场，
+ * 从而不产生 `::view-transition-*` 伪元素——这比事后用 CSS 覆盖它们更简单可靠。
+ *
+ * 可见性检查是必须的：`document.startViewTransition()` 在文档
+ * `visibilityState !== 'visible'` 时会同步抛出 `InvalidStateError`（而不是
+ * 优雅地跳过），而不可见并不罕见——后台标签页完成挂载、被预渲染、或者标签页
+ * 切走后系统主题才变化，都会落到这个分支上。
  */
 function shouldSkipViewTransition(reduceMotion: boolean): boolean {
   if (!('startViewTransition' in document)) return true;
   if (reduceMotion) return true;
+  if (document.visibilityState !== 'visible') return true;
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 

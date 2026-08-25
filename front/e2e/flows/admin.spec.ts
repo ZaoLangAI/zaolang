@@ -260,7 +260,7 @@ test.describe('operations screens', () => {
     await page.getByRole('tab', { name: '举报与申诉' }).click();
     await expect(page.getByRole('table').first()).toBeVisible();
 
-    await page.getByRole('tab', { name: '申诉' }).click();
+    await page.getByRole('tab', { name: '申诉', exact: true }).click();
     await expect(page.getByRole('table').first()).toBeVisible();
 
     // The old standalone URL keeps working and lands on the reports tab.
@@ -837,7 +837,7 @@ test.describe('reviewer navigation', () => {
     await page.goto('/zh-CN/admin', { waitUntil: 'networkidle' });
     const nav = page.getByRole('navigation', { name: '造浪运维台' });
 
-    await expect(nav.getByRole('link', { name: '内容审核' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: '内容审核', exact: true })).toBeVisible();
     // Trimming the navigation is a courtesy; the server enforces the same rule
     // regardless of what the client renders, which the API tests cover.
     await expect(nav.getByRole('link', { name: '配置中心' })).toBeHidden();

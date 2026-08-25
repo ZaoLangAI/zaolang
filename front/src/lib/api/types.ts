@@ -31,6 +31,7 @@ export type LineageResponse = S['LineageResponse'];
 export type LineageNode = S['LineageNodeResponse'];
 export type LineageAncestor = S['LineageAncestor'];
 export type VersionDiff = S['VersionDiffResponse'];
+export type VersionDiffEntry = S['VersionDiffEntry'];
 export type WorkAppeal = S['WorkAppealView'];
 
 export type Draft = S['DraftResponse'];

@@ -70,7 +70,9 @@ class Work(Base, TimestampMixin):
     remix_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     # Integer credits to unlock remix. 0 = free. Only meaningful when
     # visibility is `public_remixable`; viewing is never paywalled.
-    access_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    access_credits: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     versions: Mapped[list[WorkVersion]] = relationship(
         back_populates="work", foreign_keys="WorkVersion.work_id"

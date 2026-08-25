@@ -20,6 +20,7 @@ fixed character views.
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
 from typing import Any
 
@@ -110,11 +111,11 @@ class SceneView:
         return self.skill.access_credits
 
     @property
-    def created_at(self):
+    def created_at(self) -> dt.datetime:
         return self.skill.created_at
 
     @property
-    def updated_at(self):
+    def updated_at(self) -> dt.datetime:
         return self.skill.updated_at
 
 

@@ -174,7 +174,10 @@ export function HeroCarousel({ works }: { works: WorkDetail[] }) {
                   <div className="h-full flex-[3] overflow-hidden rounded-[var(--radius-lg)]">
                     <WorkStage work={cardWork} lazyMedia fill className="h-full" />
                   </div>
-                  <aside className="h-full min-w-0 flex-[2] overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-4 lg:p-6">
+                  <aside
+                    tabIndex={0}
+                    className="h-full min-w-0 flex-[2] overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-4 lg:p-6"
+                  >
                     <WorkInfoPanel
                       work={cardWork}
                       compact

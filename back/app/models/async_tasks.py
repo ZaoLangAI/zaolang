@@ -17,7 +17,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
@@ -47,8 +47,12 @@ class AsyncProviderTask(Base, TimestampMixin):
     # The `GenerationRequest` that produced this task and the slice of
     # workflow state the resumed run needs. JSON-safe by construction — see
     # `app.workflows.types.NodeResult.checkpoint`.
-    request_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
-    state_checkpoint_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    request_json: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    state_checkpoint_json: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
     # The `ProviderAttempt` opened at submit time, closed out when the task
     # settles, so a pending render is visible in the ops console immediately
     # rather than only after it finishes.
@@ -56,7 +60,7 @@ class AsyncProviderTask(Base, TimestampMixin):
     next_poll_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # When the render must be declared stuck rather than merely slow.
     deadline_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    poll_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    poll_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     # Set while a scheduler tick is working on this row and cleared when it
     # is done. Two ticks overlapping would otherwise both resume the same
     # workflow — the same reason `state_machine.transition` claims a job

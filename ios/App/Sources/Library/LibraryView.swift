@@ -70,6 +70,14 @@ struct LibraryView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    path.append(LibraryRoute.billing)
+                } label: {
+                    Image(systemName: "creditcard")
+                }
+                .accessibilityLabel(L10n.t("billingPage.title"))
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
                     path.append(LibraryRoute.settings)
                 } label: {
                     Image(systemName: "gearshape")

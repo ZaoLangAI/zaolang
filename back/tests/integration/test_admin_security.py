@@ -114,7 +114,23 @@ def test_a_plain_user_cannot_log_into_the_back_office(client: TestClient, author
     response = client.post(
         "/v1/admin/auth/login", json={"email": author.email, "password": PASSWORD}
     )
-    assert response.status_code in (401, 403)
+    assert response.status_code == 401
+
+
+def test_a_valid_password_without_console_role_looks_like_a_wrong_password(
+    client: TestClient, admin: User, author: User
+) -> None:
+    """A caller who already knows `author`'s password must not learn from the
+    response alone that it is merely console-less rather than wrong outright —
+    same status and error code as an actually wrong password."""
+    no_role = client.post(
+        "/v1/admin/auth/login", json={"email": author.email, "password": PASSWORD}
+    )
+    wrong_password = client.post(
+        "/v1/admin/auth/login", json={"email": admin.email, "password": "nope"}
+    )
+    assert no_role.status_code == wrong_password.status_code == 401
+    assert no_role.json()["error"]["code"] == wrong_password.json()["error"]["code"]
 
 
 def test_a_wrong_password_is_refused(client: TestClient, admin: User) -> None:

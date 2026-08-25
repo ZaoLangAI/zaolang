@@ -102,6 +102,43 @@ def test_unified_logs_pages_with_a_cursor(client: TestClient, db: Session, admin
     assert first_ids.isdisjoint(second_ids)
 
 
+def test_unified_logs_keyword_search_finds_an_older_audit_row(
+    client: TestClient, db: Session, admin: User
+) -> None:
+    """`q` must be applied in the database query, not just to the handful of
+    most-recently-fetched rows: an older audit row matching the keyword has
+    to surface even when it is no longer among the most recent entries."""
+    marker = f"probe.{new_id('t')}"
+    audit.record(
+        db,
+        actor=admin,
+        action=marker,
+        target_type="platform_config",
+        target_id="pricing",
+        after={"version": 1},
+    )
+    # Push enough newer, non-matching rows in front of it that a naive
+    # "filter only the last few rows" implementation would miss the marker.
+    for index in range(20):
+        audit.record(
+            db,
+            actor=admin,
+            action="config.update",
+            target_type="platform_config",
+            target_id=f"unrelated_{index}",
+            after={"version": index},
+        )
+    db.commit()
+
+    body = client.get(
+        "/v1/admin/logs",
+        params={"source": "audit", "q": marker, "limit": 5},
+        headers=admin_header(admin),
+    ).json()
+
+    assert any(item["event"] == marker for item in body["items"])
+
+
 def test_logs_can_be_filtered_by_job_id_across_both_sources(
     client: TestClient, db: Session, admin: User
 ) -> None:

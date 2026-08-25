@@ -61,7 +61,7 @@ export function LineageStrip({
         </button>
       </div>
 
-      <ol className="flex items-start gap-1 overflow-x-auto pb-1">
+      <ol tabIndex={0} className="flex items-start gap-1 overflow-x-auto pb-1">
         {shown.map((ancestor) => (
           <li key={ancestor.work_version_id} className="flex items-start gap-1">
             <Node

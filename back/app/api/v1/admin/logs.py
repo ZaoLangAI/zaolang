@@ -59,6 +59,7 @@ def list_logs(
             actor_user_id=actor_user_id,
             target_type="generation_job" if job_id else None,
             target_id=job_id,
+            q=q,
             since=after,
             until=until,
             before=before,
@@ -82,13 +83,6 @@ def list_logs(
         )
         entries.extend(_from_system(row) for row in system_rows)
 
-    if q and (source is None or source == AUDIT_SOURCE):
-        needle = q.casefold()
-        entries = [
-            entry
-            for entry in entries
-            if needle in entry.event.casefold() or needle in entry.message.casefold()
-        ]
     if level and (source is None or source == AUDIT_SOURCE):
         entries = [entry for entry in entries if entry.level == level]
 

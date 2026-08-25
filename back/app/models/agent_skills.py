@@ -62,7 +62,9 @@ class AgentNode(Base):
     role: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    category: Mapped[str] = mapped_column(String(20), default="judgment", nullable=False)
+    category: Mapped[str] = mapped_column(
+        String(20), default="judgment", server_default="judgment", nullable=False
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Display order in the node topology graph, ascending.
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

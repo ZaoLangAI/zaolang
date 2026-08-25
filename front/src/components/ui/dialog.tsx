@@ -108,32 +108,40 @@ export function Dialog({
     };
   }, [open]);
 
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab') return;
+  // A document-level listener rather than relying on the panel's own
+  // `onKeyDown` bubbling: a focused control that becomes `disabled` mid-dialog
+  // (e.g. a submit button while its request is in flight) gets force-blurred
+  // by the browser straight to `document.body`, which sits outside the
+  // panel's subtree. Keydown events with `document.body` as their target never
+  // bubble down into the panel, so a bubble-phase handler on the panel alone
+  // silently stops catching Escape from that point on.
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
 
-      const focusable = Array.from(
-        panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
-      ).filter((element) => element.offsetParent !== null);
-      if (focusable.length === 0) return;
+  const onKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== 'Tab') return;
 
-      const first = focusable[0]!;
-      const last = focusable[focusable.length - 1]!;
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    },
-    [onClose],
-  );
+    const focusable = Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [],
+    ).filter((element) => element.offsetParent !== null);
+    if (focusable.length === 0) return;
+
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
 
   if (!render || typeof document === 'undefined') return null;
 

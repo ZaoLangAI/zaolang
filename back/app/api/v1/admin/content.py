@@ -206,9 +206,14 @@ def moderation_detail(
     elif item is not None and item.subject_type == "generation_job":
         job_detail = _job_detail_view(session, item.subject_id)
 
-    queue_view = (
-        _queue_view(session, item) if item is not None else _work_as_queue_view(session, work)
-    )
+    if item is not None:
+        queue_view = _queue_view(session, item)
+    else:
+        # `_resolve_subject` only returns `item=None` from its "bare work id"
+        # branch, which already raises `NotFound` when the work lookup fails —
+        # so `work` is guaranteed non-None here by construction.
+        assert work is not None
+        queue_view = _work_as_queue_view(session, work)
     return ModerationSubjectDetailView(
         queue_item=queue_view,
         history=history,
@@ -641,11 +646,8 @@ def _queue_view(session, item: ModerationQueueItem) -> ModerationQueueView:  # t
             return _work_as_queue_view(session, work, item)
     elif item.subject_type == "asset":
         preview = media_urls.asset_url(session, item.subject_id)
-        preview_media_type = (
-            media_urls.media_type_of(session, item.subject_id).value
-            if media_urls.media_type_of(session, item.subject_id)
-            else None
-        )
+        asset_media_type = media_urls.media_type_of(session, item.subject_id)
+        preview_media_type = asset_media_type.value if asset_media_type is not None else None
     elif item.subject_type == "skill":
         skill = session.get(CreationSkill, item.subject_id)
         if skill is not None:

@@ -84,6 +84,7 @@ def search(
     action: str | None = None,
     target_type: str | None = None,
     target_id: str | None = None,
+    q: str | None = None,
     since: dt.datetime | None = None,
     until: dt.datetime | None = None,
     before: dt.datetime | None = None,
@@ -101,6 +102,18 @@ def search(
         stmt = stmt.where(AuditLog.target_type == target_type)
     if target_id:
         stmt = stmt.where(AuditLog.target_id == target_id)
+    if q:
+        # Mirrors what the Log Center actually displays (`action → target`),
+        # so a keyword search matches what an operator can see on screen —
+        # applied in SQL rather than to an already-truncated page of rows,
+        # or a match older than the most recent `limit` rows would never
+        # surface.
+        needle = f"%{q}%"
+        stmt = stmt.where(
+            AuditLog.action.ilike(needle)
+            | AuditLog.target_type.ilike(needle)
+            | AuditLog.target_id.ilike(needle)
+        )
     if since:
         stmt = stmt.where(AuditLog.created_at >= since)
     if until:

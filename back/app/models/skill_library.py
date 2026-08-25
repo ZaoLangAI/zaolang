@@ -52,7 +52,9 @@ class CreationSkill(Base, TimestampMixin):
     )
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # Integer credits to unlock. 0 = free. Only meaningful once published.
-    access_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    access_credits: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
     reject_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True

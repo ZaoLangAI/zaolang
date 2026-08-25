@@ -43,6 +43,11 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
             "图片资产规划",
             "为角色三视图/场景图/封面等图片资产规划提示词，兼顾同一角色多视角的一致性。",
         ),
+        PromptSlot(
+            "video_asset_plan",
+            "视频资产规划",
+            "为角色动作片段/转场/预告封面等视频资产规划提示词，兼顾镜头运镜与节奏。",
+        ),
     ),
     AgentName.QUALITY.value: (
         PromptSlot(DEFAULT_SLOT, "质量评估", "判断生成结果是否达标、是否值得重试。"),

@@ -444,6 +444,11 @@ def run_agent_debug(
         preferred_endpoint_ids=binding.preferred_endpoint_ids,
     )
 
+    # `expect_json=True` above means a `None` payload is a real parse failure,
+    # exactly what `run_agent` treats as degraded — this endpoint's whole
+    # purpose is letting an operator see whether a draft prompt actually
+    # produces valid JSON, so silently reporting success here would defeat it.
+    parse_failed = result.response.data is None
     run = AgentRun(
         job_id=None,
         user_id=None,
@@ -452,9 +457,9 @@ def run_agent_debug(
         prompt_slot=slot,
         mode=GATEWAY_MODE,
         model=_recorded_model(result, binding),
-        status=AgentRunStatus.SUCCEEDED,
-        degraded=False,
-        degrade_reason=None,
+        status=AgentRunStatus.FAILED if parse_failed else AgentRunStatus.SUCCEEDED,
+        degraded=parse_failed,
+        degrade_reason="json_parse_failed" if parse_failed else None,
         prompt_tokens=result.response.prompt_tokens,
         completion_tokens=result.response.completion_tokens,
         latency_ms=result.latency_ms,
@@ -473,7 +478,7 @@ def run_agent_debug(
     return DebugChatOutcome(
         reply_text=result.response.text,
         parsed_json=result.response.data,
-        degraded=False,
+        degraded=parse_failed,
         model=run.model or binding.model or "",
         latency_ms=result.latency_ms,
         prompt_tokens=result.response.prompt_tokens,

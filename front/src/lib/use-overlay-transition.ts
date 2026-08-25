@@ -5,6 +5,13 @@ import { useRef, useState } from 'react';
 import { useIsomorphicLayoutEffect, useReducedMotion } from '@/lib/motion';
 
 /**
+ * Longest real exit animation among this hook's callers (`sheet.tsx`'s
+ * 200ms) plus generous headroom for the `loadAnime()` chunk fetch. Past this,
+ * `animateExit`'s promise is treated as hung rather than merely slow.
+ */
+const EXIT_FALLBACK_TIMEOUT_MS = 1500;
+
+/**
  * Keeps an overlay (dialog, sheet, dropdown) mounted long enough to play its
  * exit animation before it leaves the DOM.
  *
@@ -14,6 +21,14 @@ import { useIsomorphicLayoutEffect, useReducedMotion } from '@/lib/motion';
  * still true, the caller keeps its markup on screen and runs `animateExit`.
  * An `AbortController` is threaded through so a reopen mid-exit, or the
  * component unmounting outright, cannot land a stale `setRender(false)`.
+ *
+ * A fallback timer backstops `animateExit`'s promise the same way
+ * `beginLocaleTransition`'s does for the locale fade: an animation whose
+ * `.then()` never settles (an animejs/WAAPI animation starved by an
+ * unrelated `document.startViewTransition()` elsewhere on the page has been
+ * observed to do exactly this) must not leave the overlay's backdrop
+ * covering the page — pointer-events already passed through by this point,
+ * so it would just sit there fully opaque and inert forever.
  */
 export function useOverlayTransition(
   open: boolean,
@@ -47,10 +62,19 @@ export function useOverlayTransition(
     }
 
     const controller = new AbortController();
-    Promise.resolve(animateExitRef.current(controller.signal)).finally(() => {
+    let settled = false;
+    const unmount = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallback);
       if (!controller.signal.aborted) setRender(false);
-    });
-    return () => controller.abort();
+    };
+    const fallback = setTimeout(unmount, EXIT_FALLBACK_TIMEOUT_MS);
+    Promise.resolve(animateExitRef.current(controller.signal)).finally(unmount);
+    return () => {
+      controller.abort();
+      clearTimeout(fallback);
+    };
   }, [open, reduced]);
 
   return render;

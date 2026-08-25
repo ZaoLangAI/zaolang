@@ -167,6 +167,11 @@ export function LineageGraph({
           {nodes.map((node) => {
             const selected = node.id === selectedVersionId;
             const accented = selected || node.current || node.direction === 'root';
+            // A tombstoned work is a placeholder, not a detail view: it never
+            // had — or has since lost — content a reader could open, so the
+            // node must stay out of the tab order and ignore clicks entirely
+            // rather than select into a diff panel for a work that's gone.
+            const interactive = !node.tombstone;
             return (
               <g
                 key={node.id}
@@ -175,20 +180,37 @@ export function LineageGraph({
                   else nodeRefs.current.delete(node.id);
                 }}
                 transform={`translate(${node.x - NODE_WIDTH / 2}, ${node.y - NODE_HEIGHT / 2})`}
-                tabIndex={0}
-                role="button"
-                aria-label={`${node.title} · ${node.author}`}
+                tabIndex={interactive ? 0 : undefined}
+                role={interactive ? 'button' : undefined}
+                aria-label={interactive ? `${node.title} · ${node.author}` : t('tombstone')}
                 aria-current={selected ? 'true' : undefined}
-                className="cursor-pointer outline-none focus-visible:[&>rect]:stroke-[var(--focus)]"
-                onClick={() =>
-                  onSelect({ workVersionId: node.id, workId: node.workId, title: node.title })
+                aria-disabled={interactive ? undefined : 'true'}
+                className={cn(
+                  'outline-none',
+                  interactive
+                    ? 'cursor-pointer focus-visible:[&>rect]:stroke-[var(--focus)]'
+                    : 'cursor-default',
+                )}
+                onClick={
+                  interactive
+                    ? () =>
+                        onSelect({ workVersionId: node.id, workId: node.workId, title: node.title })
+                    : undefined
                 }
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onSelect({ workVersionId: node.id, workId: node.workId, title: node.title });
-                  }
-                }}
+                onKeyDown={
+                  interactive
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onSelect({
+                            workVersionId: node.id,
+                            workId: node.workId,
+                            title: node.title,
+                          });
+                        }
+                      }
+                    : undefined
+                }
               >
                 {selected ? (
                   <rect

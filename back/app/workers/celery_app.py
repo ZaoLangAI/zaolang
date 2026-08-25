@@ -74,6 +74,7 @@ celery_app.conf.update(
         "app.workers.tasks.run_media_analysis": {"queue": "media_analysis"},
         "app.workers.tasks.expire_editor_leases": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_orphan_editor_uploads": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.purge_expired_exports": {"queue": "webhook_reconcile"},
     },
     beat_schedule={
         "expire-stale-jobs": {
@@ -106,6 +107,12 @@ celery_app.conf.update(
         "expire-orphan-editor-uploads": {
             "task": "app.workers.tasks.expire_orphan_editor_uploads",
             "schedule": 300.0,
+        },
+        # Retention is 30 days (`compliance.purge_expired_exports`'s default);
+        # once a day is plenty to keep expired export bundles from lingering.
+        "purge-expired-exports": {
+            "task": "app.workers.tasks.purge_expired_exports",
+            "schedule": 86400.0,
         },
     },
 )

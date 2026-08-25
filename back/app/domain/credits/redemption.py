@@ -11,10 +11,11 @@ from __future__ import annotations
 import datetime as dt
 import secrets
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.db import rows_affected
 from app.domain.credits import service as credits_service
 from app.domain.errors import Conflict, NotFound, ValidationFailed
 from app.models import RedemptionCode, RedemptionRecord
@@ -80,8 +81,25 @@ def redeem(session: Session, *, code: str, user_id: str) -> RedemptionRecord:
         raise Conflict("兑换码已停用。")
     if entry.expires_at is not None and entry.expires_at < utcnow():
         raise Conflict("兑换码已过期。")
-    if entry.used_count >= entry.max_uses:
+
+    # Claims one use atomically: the WHERE clause re-checks the cap against
+    # the row's current value at UPDATE time, not the possibly-stale value
+    # read above. Two concurrent redeemers of a max_uses=1 code therefore
+    # cannot both pass — the loser's UPDATE matches zero rows instead of
+    # silently overwriting the same stale increment (mirrors the ledger's
+    # `_apply` guard in `app.domain.credits.service`).
+    matched = rows_affected(
+        session,
+        update(RedemptionCode)
+        .where(
+            RedemptionCode.id == entry.id,
+            RedemptionCode.used_count < RedemptionCode.max_uses,
+        )
+        .values(used_count=RedemptionCode.used_count + 1),
+    )
+    if matched != 1:
         raise Conflict("兑换码已达到使用上限。")
+    session.expire(entry, ["used_count"])
 
     record = RedemptionRecord(
         code_id=entry.id, user_id=user_id, credits=entry.credits, created_at=utcnow()
@@ -93,7 +111,6 @@ def redeem(session: Session, *, code: str, user_id: str) -> RedemptionRecord:
         session.rollback()
         raise Conflict("你已经兑换过这个码。") from exc
 
-    entry.used_count += 1
     credits_service.grant(
         session,
         user_id,

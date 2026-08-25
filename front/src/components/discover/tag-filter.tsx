@@ -73,7 +73,11 @@ export function TagFilter({
   const allQuery = feedQuery({ q, sort, access });
 
   return (
-    <nav aria-label={t('filterTags')} className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+    <nav
+      aria-label={t('filterTags')}
+      tabIndex={0}
+      className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+    >
       <Chip href={allQuery ? { pathname, query: allQuery } : pathname} active={!active}>
         {t('allTags')}
       </Chip>
@@ -106,7 +110,11 @@ export function DiscoverSort({
   const active = sort ?? 'popular';
 
   return (
-    <nav aria-label={t('sort')} className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+    <nav
+      aria-label={t('sort')}
+      tabIndex={0}
+      className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+    >
       {SORT_MODES.map((mode) => {
         const query = feedQuery({ q, tag, sort: mode, access });
         return (
@@ -148,7 +156,11 @@ export function DiscoverAccess({
   const active = access ?? 'all';
 
   return (
-    <nav aria-label={t('filterAccess')} className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+    <nav
+      aria-label={t('filterAccess')}
+      tabIndex={0}
+      className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+    >
       {ACCESS_MODES.map((mode) => {
         const query = feedQuery({ q, tag, sort, access: mode });
         return (

@@ -734,7 +734,12 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
     a caller using an undeclared slot cannot be edited at all."""
     called = {
         AgentName.SAFETY.value: {"default"},
-        AgentName.PLANNER.value: {"default", planner.CLARIFY_SLOT, planner.ASSET_PLAN_SLOT},
+        AgentName.PLANNER.value: {
+            "default",
+            planner.CLARIFY_SLOT,
+            planner.ASSET_PLAN_SLOT,
+            planner.VIDEO_ASSET_PLAN_SLOT,
+        },
         AgentName.QUALITY.value: {"default"},
         AgentName.COPY.value: {
             copywriter.SUGGEST_SLOT,
@@ -921,6 +926,54 @@ def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     assert run.job_id is None
     assert run.agent_profile_id == default.id
     assert run.prompt_slot == agent_slots.DEFAULT_SLOT
+
+
+def test_debug_chat_with_unparseable_output_is_recorded_as_degraded(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The debug-chat endpoint exists so an operator can see whether a draft
+    prompt actually produces valid JSON before publishing it — reporting
+    `degraded=False` on a response nothing could parse would hide exactly the
+    failure this tool exists to surface (see `run_agent`'s own handling of
+    the same case in `test_an_unparseable_response_is_recorded_as_a_failed_
+    degraded_run`)."""
+    from app.llm import client as llm_client
+    from app.models.enums import AgentRunStatus
+
+    bind_default_agents_to_catalog(db)
+    default = agent_skills_service.default_profile(db, "safety")
+    assert default is not None
+
+    class _Unparseable:
+        data = None
+        text = "抱歉，我无法回答。"
+        model = "test-llm"
+        prompt_tokens = 10
+        completion_tokens = 5
+        truncated = False
+
+    monkeypatch.setattr(
+        llm_client,
+        "complete",
+        lambda **_: llm_client.LlmCallResult(response=_Unparseable(), latency_ms=12),  # type: ignore[arg-type]
+    )
+
+    outcome = agent_base.run_agent_debug(
+        db,
+        profile=default,
+        slot=agent_slots.DEFAULT_SLOT,
+        prompt_override="DRAFT_SAFETY_PROMPT",
+        history=[{"role": "user", "content": "画面里有血腥场景"}],
+    )
+
+    assert outcome.parsed_json is None
+    assert outcome.degraded is True
+
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.status == AgentRunStatus.FAILED
+    assert run.degraded is True
+    assert run.degrade_reason == "json_parse_failed"
 
 
 @pytest.mark.real_gateway_seams
