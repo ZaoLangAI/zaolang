@@ -28,6 +28,11 @@ export interface PromptPolishContext {
    * dedicated agent (`character`/`scene`/`cover`); omitted or `general`
    * behaves like before. `ShortformStudio` never sets this. */
   assetKind?: PromptEnhancePayload['asset_kind'];
+  /** The video-side equivalent of `assetKind` — routes the polish to that
+   * kind's dedicated agent (`character_action`/`transition_video`/
+   * `cover_video`); omitted or `general` behaves like before. A caller
+   * sets at most one of `assetKind`/`videoAssetKind`. */
+  videoAssetKind?: PromptEnhancePayload['video_asset_kind'];
 }
 
 /**
@@ -47,6 +52,7 @@ export function PromptPolish({
   context,
   onAccept,
   className,
+  closeSignal,
 }: {
   /** Different per studio: shortform's is feature-flag gated, the generation studio's is not. */
   endpoint: string;
@@ -54,6 +60,10 @@ export function PromptPolish({
   context?: PromptPolishContext;
   onAccept: (prompt: string) => void;
   className?: string;
+  /** Bumping this (e.g. on every "生成我的版本" click) closes the drawer if
+   * it happens to be open — the caller owns the counter, this component just
+   * reacts to it changing. `undefined` (the default) never closes it. */
+  closeSignal?: number;
 }) {
   const t = useTranslations('promptPolish');
   const tStates = useTranslations('states');
@@ -64,6 +74,17 @@ export function PromptPolish({
   const [error, setError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<PromptEnhanceResult | null>(null);
   const [instruction, setInstruction] = useState('');
+
+  // Adjusted during render rather than in an effect (same pattern as
+  // `ImageGenerationStudio`'s own resumed-job handling) — closing on a
+  // `closeSignal` change is a pure reaction to a prop, not a side effect to
+  // synchronize with anything external. State, not a ref: refs can't be read
+  // or written during render.
+  const [lastCloseSignal, setLastCloseSignal] = useState(closeSignal);
+  if (closeSignal !== undefined && closeSignal !== lastCloseSignal) {
+    setLastCloseSignal(closeSignal);
+    if (open) setOpen(false);
+  }
 
   const isVideo = !context?.operation || context.operation.endsWith('_video');
   const directions = DIRECTIONS.filter(
@@ -94,6 +115,7 @@ export function PromptPolish({
             direction: extra?.direction,
             instruction: extra?.instruction ?? '',
             asset_kind: context?.assetKind,
+            video_asset_kind: context?.videoAssetKind,
           };
           const result = await api.post<PromptEnhanceResult>(endpoint, body);
           setSuggestion(result);

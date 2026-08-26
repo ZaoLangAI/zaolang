@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -61,7 +62,10 @@ def _video_asset(session: Session, owner: User) -> Asset:
 
 
 def test_editor_routes_are_hidden_when_flags_are_off(client: TestClient, author: User) -> None:
-    response = client.get("/v1/drama-series", headers=auth_header(author))
+    # Drama-series/episode CRUD (`/v1/drama-series`, `/v1/drama-episodes`) is
+    # intentionally open to any authenticated user — only the timeline editor
+    # itself (cuts/leases/edit-plans/exports) stays behind `FLAG_EDITOR`.
+    response = client.get("/v1/episode-cuts/nonexistent", headers=auth_header(author))
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
 
@@ -120,6 +124,67 @@ def test_an_owner_can_create_a_cut_and_apply_a_command(
     )
     assert applied.status_code == 201, applied.text
     assert applied.json()["id"] != head_id
+
+
+def test_add_track_then_insert_clip_round_trips_through_the_api(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    created = client.post(
+        "/v1/drama-series", headers=auth_header(author), json={"title": "多轨测试"}
+    )
+    episode = client.post(
+        f"/v1/drama-series/{created.json()['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    )
+    cut = client.post(
+        f"/v1/drama-episodes/{episode.json()['id']}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": asset.id, "name": "主剪辑"},
+    )
+    cut_id = cut.json()["id"]
+    head_id = cut.json()["head_revision_id"]
+    lease = client.post(
+        f"/v1/episode-cuts/{cut_id}/leases",
+        headers=auth_header(author),
+        json={"browser_instance_id": "browser-a"},
+    )
+    applied = client.post(
+        f"/v1/episode-cuts/{cut_id}/revisions",
+        headers=auth_header(author),
+        json={
+            "schema_version": 1,
+            "batch_id": "bat_track_1",
+            "expected_revision_id": head_id,
+            "lease_id": lease.json()["id"],
+            "lease_token": lease.json()["token"],
+            "commands": [
+                {
+                    "type": "add_track",
+                    "kind": "video",
+                    "track_id": "trk_pip",
+                    "label": "画中画",
+                    "order": -1,
+                },
+                {
+                    "type": "insert_clip",
+                    "track_id": "trk_pip",
+                    "asset_id": asset.id,
+                    "at_ticks": 0,
+                    "duration_ticks": 120_000,
+                },
+            ],
+        },
+    )
+    assert applied.status_code == 201, applied.text
+    document = applied.json()["document"]
+    video_tracks = [track for track in document["tracks"] if track["kind"] == "video"]
+    assert len(video_tracks) == 2
+    # `order: -1` must sort trk_pip ahead of the original trk_video (order 0).
+    assert video_tracks[0]["id"] == "trk_pip"
+    assert len(video_tracks[0]["elements"]) == 1
 
 
 def test_stale_expected_revision_conflicts(
@@ -519,3 +584,174 @@ def test_operation_sse_skips_events_already_seen(
         if line.startswith("id: ")
     ]
     assert resumed_ids == ["2"]
+
+
+def _seed_asr_endpoint(session: Session) -> None:
+    """One enabled media endpoint offering `audio_generation` — `_resolve_asr_endpoint`
+    reuses it for the sibling `/v1/audio/transcriptions` path (see `analysis.py`)."""
+    config_service.set_value(
+        session,
+        "llm_providers",
+        {
+            "endpoints": {
+                "ep-asr-test": {
+                    "name": "ASR Test",
+                    "base_url": "https://asr.invalid",
+                    "api_key": "test-key",
+                    "kind": "media",
+                    "model": "whisper-1",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["audio"],
+                    "enabled": True,
+                }
+            }
+        },
+        actor_user_id=None,
+        note="test",
+    )
+
+
+def _capture_transcription_enqueue(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    from app.db import get_engine
+    from app.models import MediaAnalysis
+
+    seen: list[str] = []
+
+    def fake_send_task(name: str, args: list[str] | None = None, **kwargs: object) -> None:
+        del name, kwargs
+        analysis_id = (args or [""])[0]
+        other = Session(bind=get_engine(), expire_on_commit=False)
+        try:
+            assert other.get(MediaAnalysis, analysis_id) is not None
+        finally:
+            other.close()
+        seen.append(analysis_id)
+
+    monkeypatch.setattr("app.api.v1.editor.celery_app.send_task", fake_send_task)
+    return seen
+
+
+def test_request_transcription_enqueues_only_after_commit(
+    committed_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    author, _admin, asset = _seed_editor_owner(committed_db)
+    seen = _capture_transcription_enqueue(monkeypatch)
+
+    with _committed_client(committed_db) as client:
+        response = client.post(
+            f"/v1/media-assets/{asset.id}/transcriptions", headers=auth_header(author)
+        )
+
+    assert response.status_code == 202, response.text
+    assert response.json()["kind"] == "media_analysis"
+    assert seen
+
+
+def test_request_transcription_rejects_someone_elses_asset(
+    committed_db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _author, _admin, asset = _seed_editor_owner(committed_db)
+    someone_else = make_user(committed_db, email="not-owner@example.com", handle="notowner")
+    committed_db.commit()
+    _capture_transcription_enqueue(monkeypatch)
+
+    with _committed_client(committed_db) as client:
+        response = client.post(
+            f"/v1/media-assets/{asset.id}/transcriptions", headers=auth_header(someone_else)
+        )
+    assert response.status_code == 404, response.text
+
+
+def test_request_transcription_dedupes_by_analyzer_version(db: Session, author: User) -> None:
+    from app.domain.editor import analysis as media_analysis
+
+    asset = _video_asset(db, author)
+    db.flush()
+    first = media_analysis.enqueue_transcription(db, asset_id=asset.id)
+    second = media_analysis.enqueue_transcription(db, asset_id=asset.id)
+    assert first.id == second.id
+
+
+class _FakeAsrResponse:
+    def __init__(self, json_body: dict) -> None:
+        self._json_body = json_body
+        self.status_code = 200
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._json_body
+
+
+def test_run_transcription_populates_transcript_from_a_mocked_asr_call(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.domain.editor import analysis as media_analysis
+    from app.storage import s3
+
+    _seed_asr_endpoint(db)
+    asset = _video_asset(db, author)
+    s3.put_object(asset.object_key, b"fake mp4 bytes", content_type="video/mp4")
+    db.commit()
+    row = media_analysis.enqueue_transcription(db, asset_id=asset.id)
+    db.commit()
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/audio/transcriptions"
+        return _FakeAsrResponse(
+            {
+                "language": "zh",
+                "segments": [
+                    {"start": 0.0, "end": 1.5, "text": "你好"},
+                    {"start": 1.5, "end": 3.0, "text": "世界"},
+                    {"start": 3.0, "end": 3.2, "text": "   "},  # blank — must be dropped
+                ],
+            }
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = media_analysis.run_transcription(db, row.id)
+
+    assert result.status == "succeeded"
+    assert result.transcript_json["language"] == "zh"
+    assert [seg["text"] for seg in result.transcript_json["segments"]] == ["你好", "世界"]
+    assert result.transcript_json["segments"][0] == {"start_ms": 0, "end_ms": 1500, "text": "你好"}
+
+
+def test_run_transcription_fails_gracefully_with_no_configured_endpoint(
+    db: Session, author: User
+) -> None:
+    from app.domain.editor import analysis as media_analysis
+
+    asset = _video_asset(db, author)
+    db.commit()
+    row = media_analysis.enqueue_transcription(db, asset_id=asset.id)
+    db.commit()
+
+    result = media_analysis.run_transcription(db, row.id)
+    assert result.status == "failed"
+    assert result.failure_message
+
+
+def test_get_operation_exposes_transcript_only_to_the_asset_owner(
+    client: TestClient, db: Session, author: User, admin: User, remixer: User
+) -> None:
+    from app.domain.editor import analysis as media_analysis
+    from app.models.enums import MediaAnalysisStatus
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    db.commit()
+    row = media_analysis.enqueue_transcription(db, asset_id=asset.id)
+    row.status = MediaAnalysisStatus.SUCCEEDED
+    row.transcript_json = {"language": "zh", "segments": [{"start_ms": 0, "end_ms": 1000, "text": "hi"}]}
+    db.commit()
+
+    owner_view = client.get(f"/v1/editor-operations/{row.id}", headers=auth_header(author))
+    assert owner_view.status_code == 200, owner_view.text
+    assert owner_view.json()["result"]["transcript"]["segments"][0]["text"] == "hi"
+
+    other_view = client.get(f"/v1/editor-operations/{row.id}", headers=auth_header(remixer))
+    assert other_view.status_code == 200, other_view.text
+    assert other_view.json()["result"] == {}

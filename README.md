@@ -29,7 +29,7 @@
 | 智能体 | Agno AgentOS，经 OpenAI 兼容网关接入模型 |
 | 队列 | Redis · Celery |
 | 数据 | PostgreSQL 17 + pgvector |
-| 对象存储 | MinIO（本地，S3 兼容） |
+| 对象存储 | 腾讯云 COS（默认）或 MinIO（自建，S3 兼容，按需启动） |
 
 前端用 [fnm](https://github.com/Schniz/fnm) 管理 Node 版本，后端用 conda 管理 Python 环境，外部依赖全部跑在本地容器。
 
@@ -37,7 +37,7 @@
 
 ```bash
 make setup     # 创建 conda 环境、安装前后端依赖
-make up        # 启动 postgres / redis / minio 容器
+make up        # 启动 postgres / redis 容器
 make migrate   # 执行数据库迁移
 make seed      # 导入种子数据
 make dev       # 同时启动 API、Worker 与 Web

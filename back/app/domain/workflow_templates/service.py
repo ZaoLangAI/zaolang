@@ -447,7 +447,7 @@ def ensure_default_templates(session: Session) -> None:
     Every `Operation` gets the generic (`asset_kind=None`) template it always
     had; the image family additionally gets one per non-`GENERAL`
     `ImageAssetKind` (`character`/`scene`/`cover`), and the video family one
-    per non-`GENERAL` `VideoAssetKind` (`scene_video`/`character_action`/
+    per non-`GENERAL` `VideoAssetKind` (`character_action`/
     `transition_video`/`cover_video`), each running the `asset_planning`/
     `asset_output_link`-augmented graph — the image `character` kind also
     loops through `asset_output_advance` when the job asks for more than one

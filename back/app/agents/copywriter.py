@@ -194,8 +194,12 @@ ENHANCE_SYSTEM_PROMPT_SCENE = f"""{ENHANCE_SYSTEM_PROMPT}
 补充规则（本次是场景资产 asset_kind=scene）：
 - 额外看一个隐含维度：环境细节——建筑/地貌结构、时间与天气、空间尺度是否写得足够具体
 - 氛围要落在光影、色调、天气这类可画出来的线索上，不要只写"氛围感强"之类的空词
-- 不要引入会让场景显得像瞬间快照的人物动作描写，场景图的主体是空间本身
-- feedback 里如果环境细节维度弱，要点名指出场景里哪个具体元素（建筑/植被/光源等）需要写清楚"""
+- 硬性要求，不是"用户没提到才补"的可选项：画面中不能出现任何人物/角色（包括背影、剪影、\
+局部肢体或人群等任何形式的人物痕迹），场景图必须是纯静态的空镜或建立镜头，主体是空间本身，\
+不需要参演角色。即使用户描述里写了具体人物或人物动作，改写后的 prompt 也要把人物相关描述\
+去掉，只保留环境、光影、氛围等场景要素
+- feedback 里如果环境细节维度弱，要点名指出场景里哪个具体元素（建筑/植被/光源等）需要写清楚；\
+如果原描述包含人物，也要提醒一句"已去除人物描写，仅保留纯场景\""""
 
 ENHANCE_SYSTEM_PROMPT_COVER = f"""{ENHANCE_SYSTEM_PROMPT}
 
@@ -214,18 +218,9 @@ _ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
 # Video-side equivalents, one per non-`GENERAL` `VideoAssetKind`. Kept in a
 # separate dict from `_ENHANCE_SYSTEM_PROMPTS` above — even though the two
 # never collide by key (`VideoAssetKind`'s values are spelled distinctly,
-# `scene_video`/`character_action`/... — see its docstring) — so it stays
-# explicit in the code that this is the video-language table, not something
-# that could silently pick up an image-worded prompt for a video job.
-ENHANCE_SYSTEM_PROMPT_SCENE_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
-
-补充规则（本次是场景空镜视频 video_asset_kind=scene_video）：
-- 额外看一个隐含维度：运镜设计——推/拉/摇/移/环绕这类具体运镜方式是否写清楚，
-不要只写"镜头缓缓移动"这类模糊描述
-- 环境氛围要落在光影随时间推进的变化上，不要只写静态的"氛围感强"
-- 不要引入会让画面变成人物特写的描述，场景空镜的主体是空间本身
-- feedback 里如果运镜设计维度弱，要点名指出当前描述缺了哪种具体运镜方式"""
-
+# `character_action`/... — see its docstring) — so it stays explicit in the
+# code that this is the video-language table, not something that could
+# silently pick up an image-worded prompt for a video job.
 ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION = f"""{ENHANCE_SYSTEM_PROMPT}
 
 补充规则（本次是角色动作片段 video_asset_kind=character_action）：
@@ -252,7 +247,6 @@ ENHANCE_SYSTEM_PROMPT_COVER_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
 - feedback 里如果视觉冲击与节奏维度弱，要点名指出当前描述哪里显得平淡或拖沓"""
 
 _VIDEO_ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
-    "scene_video": ENHANCE_SYSTEM_PROMPT_SCENE_VIDEO,
     "character_action": ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
     "transition_video": ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
     "cover_video": ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,
@@ -283,7 +277,7 @@ def enhance_prompt(
     15, and camera direction is noise on a still image.
 
     `asset_kind` is the job's `ImageAssetKind` (`character`/`scene`/`cover`/
-    `general`) or `VideoAssetKind` (`scene_video`/`character_action`/
+    `general`) or `VideoAssetKind` (`character_action`/
     `transition_video`/`cover_video`/`general`) value, whichever axis is
     active — empty for an audio polish, and the two never collide (see
     `VideoAssetKind`'s docstring). When it names one of the asset buckets
@@ -509,6 +503,29 @@ SCRIPT_JSON_SHAPE = (
     '"character": string|null, "text": string}]}]}'
 )
 
+# Shared between the draft and revise prompts so a color block's meaning
+# never drifts between a script's first turn and a later revision turn.
+# `scene`'s "no people, ever" rule exists because this exact text is what
+# `script-document-view.tsx::sceneImagePrompt` seeds the "生成场景图" jump-out
+# with verbatim — a scene block that mixes in a character produces a seed
+# prompt the scene-asset pipeline (`planner._ASSET_KIND_BRIEF[SCENE]`) then
+# has to strip back out, so it's cheaper to never write it in the first place.
+_BLOCK_TYPE_RULES = """- type 含义与写法：
+  - scene：纯静态环境/氛围描述，只写空间本身——建筑或地貌结构、光线、色调、天气、陈设；\
+不能出现任何人物（含背影、剪影、局部肢体或人群痕迹）、动作或对话内容。这段文字会被直接当作\
+生成场景图的素材使用，混入人物或动作会导致场景图跑出不该出现的角色
+  - action：一个色块只写一个连续的动作节拍（有清楚起止的一个动作），不要把多个动作或场景切换\
+揉进同一个色块；落在具体的身体动作、手势、表情细节上，不写"情绪爆发""气氛紧张"这类模型画不出来\
+的空词
+  - camera：写出具体的景别（远景/全景/中景/近景/特写）+运镜方式（推/拉/摇/移/跟/升降/固定/甩镜）\
+组合，例如「中景固定转特写推镜」，不要只写"镜头缓缓移动"这类模糊描述
+  - dialogue：character 字段填说话人姓名，其余类型 character 为 null
+  - breakpoint：建议的生成/剪辑切分点，不是场景内容本身
+- 每一场戏必须包含至少一个 scene 色块，为这场戏保留一段可以直接拿去生成场景图的干净环境描述；\
+scene 色块之外，同一场戏还要至少覆盖 action、dialogue 两类中的一类
+- 拆分粒度：同一时间点内不同的动作、镜头切换、对话轮次都要拆成独立色块，不要为了减少色块数量把\
+几件事挤进同一句话里——细粒度色块是为了让后续可以逐镜头生成与剪辑"""
+
 # A single generation call can never produce more than this many seconds of
 # footage (`app.platform_config.schemas.MAX_GENERATION_DURATION_SECONDS`) —
 # read live so an admin lowering the platform ceiling is reflected the next
@@ -534,15 +551,14 @@ SCRIPT_DRAFT_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，深�
 剧本 JSON 格式：{SCRIPT_JSON_SHAPE}
 
 规则：
-- type 含义：scene 是场景/环境描述，action 是动作与情节推进，camera 是运镜与镜头语言，\
-dialogue 是台词，breakpoint 是建议的生成/剪辑切分点；dialogue 的 character 字段填说话人姓名，\
-其余类型 character 为 null
-- 剧本至少包含 1 到 3 个场景，每个场景至少覆盖 scene、action、dialogue 三类色块中的两类
+{_BLOCK_TYPE_RULES}
+- 剧本至少包含 1 到 3 个场景
 - characters 至少列出剧本中出现的主要角色及其性格特征
 - 短剧节奏要快：第一场的第一个色块必须已经在建立冲突、悬念或反差，不能用寒暄或环境铺垫开场
 - 每一场戏都要有一个明确的钩子或转折收尾，让人想看下一场——不要写成平铺直叙的流水账
 - 每个镜头默认只安排一到两个正在说话/行动的角色，人物关系与画面在竖屏窄画幅里也能看清楚
-- 台词要短、口语化、有潜台词，避免书面语和大段解释性独白；一句台词说不清楚就拆成前后两句
+- 台词要短、口语化、有潜台词，避免书面语和大段解释性独白；一句台词说不清楚就拆成前后两句；\
+避免连续多轮台词都是长句陈述，适当加入打断、反问、沉默停顿，让对话有真实节奏
 {_BREAKPOINT_RULES}
 - 如果用户提供了参考技能的风格说明，把其中的调性、氛围、叙事手法融入剧本，但不要直接照抄技能描述原文
 - 输出语言与用户输入保持一致"""
@@ -559,6 +575,7 @@ SCRIPT_REVISE_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，正�
 剧本 JSON 格式与当前剧本一致：{SCRIPT_JSON_SHAPE}
 
 规则：
+{_BLOCK_TYPE_RULES}
 - 只按用户这一轮的意见调整，其余场景、角色、台词尽量原样保留，不要做用户没有要求的改写
 - 用户没有要求删除的场景或角色不要删除
 - 调整或新增内容后，重新检查一遍受影响场景的 breakpoint 是否仍然合理：\

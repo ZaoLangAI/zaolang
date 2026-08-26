@@ -198,3 +198,37 @@ class ProjectForbidden(DomainError):
     code = "PROJECT_FORBIDDEN"
     http_status = 403
     default_message = "没有该剧集的访问权限。"
+
+
+class PlatformNotConfigured(DomainError):
+    """That channel's own AppKey/AppSecret are still empty in `Settings`.
+
+    Raised as the very first check in every `PlatformClient` method, before
+    any `httpx` call is attempted — the organisation has not finished that
+    platform's business registration yet.
+    """
+
+    code = "PLATFORM_NOT_CONFIGURED"
+    http_status = 503
+    default_message = "该平台尚未配置，暂时无法使用。"
+
+
+class PlatformAccountNotLinked(DomainError):
+    code = "PLATFORM_ACCOUNT_NOT_LINKED"
+    http_status = 409
+    default_message = "尚未连接该平台账号。"
+
+
+class PlatformOAuthFailed(DomainError):
+    code = "PLATFORM_OAUTH_FAILED"
+    http_status = 502
+    default_message = "平台授权失败，请重试。"
+
+
+class PlatformPublishFailed(DomainError):
+    """Callers are expected to pass `platform_error_code=...` as a detail so
+    the failure is traceable without ever including the raw token."""
+
+    code = "PLATFORM_PUBLISH_FAILED"
+    http_status = 502
+    default_message = "发布失败，请稍后重试。"

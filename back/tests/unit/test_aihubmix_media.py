@@ -148,6 +148,101 @@ def test_image_to_image_embeds_the_reference_as_base64_in_local_and_test_envs(
     assert base64.b64decode(encoded) == reference_bytes
 
 
+def test_image_to_image_routes_a_qwen_model_through_the_edit_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/v1/images/generations` + an ad-hoc `image` field is not a
+    documented AiHubMix contract for Qwen (a 2026-08-19 live check showed it
+    carries the reference through only weakly, if at all). A Qwen model
+    must go through the real editing endpoint instead — see
+    `AiHubMixMediaProvider._submit_qwen_image_edit`."""
+    reference_key = "test/reference-for-qwen-edit.png"
+    reference_bytes = base64.b64decode(_png_b64((90, 5, 5)))
+    s3.put_object(reference_key, reference_bytes, content_type="image/png")
+    output_png = base64.b64decode(_png_b64())
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((url, kwargs))
+        return _FakeResponse(json_body={"output": [{"url": "https://cdn.invalid/edited.png"}]})
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "https://cdn.invalid/edited.png"
+        return _FakeResponse(content=output_png)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value, model="qwen-image-3.0")
+    result = provider.submit(
+        _request(
+            Operation.IMAGE_TO_IMAGE.value,
+            reference_object_keys=[reference_key],
+            aspect_ratio="3:4",
+            seed=7,
+        )
+    )
+
+    assert result.succeeded is True
+    assert s3.get_object(result.object_key) == output_png
+    assert [url for url, _ in calls] == ["/v1/models/qianfan/qwen-image-edit/predictions"]
+    body = calls[0][1]["json"]
+    assert "model" not in body
+    assert body["input"]["prompt"] == "一只在雨夜霓虹街道上奔跑的机械狐狸"
+    assert "size" not in body["input"]
+    assert body["input"]["seed"] == 7
+    image_field = body["input"]["image"]
+    assert isinstance(image_field, str)
+    assert image_field.startswith("data:image/png;base64,")
+    encoded = image_field.removeprefix("data:image/png;base64,")
+    assert base64.b64decode(encoded) == reference_bytes
+
+
+def test_qwen_image_edit_caps_references_at_three(monkeypatch: pytest.MonkeyPatch) -> None:
+    keys = [f"test/qwen-multi-ref-{i}.png" for i in range(5)]
+    for i, key in enumerate(keys):
+        s3.put_object(key, base64.b64decode(_png_b64((i, i, i))), content_type="image/png")
+    output_png = base64.b64decode(_png_b64())
+    calls: list[dict[str, object]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs["json"])
+        return _FakeResponse(json_body={"output": [{"url": "https://cdn.invalid/edited.png"}]})
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(content=output_png)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value, model="qwen-image-edit")
+    result = provider.submit(
+        _request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=keys)
+    )
+
+    assert result.succeeded is True
+    assert len(calls[0]["input"]["image"]) == 3
+
+
+def test_qwen_image_edit_missing_output_url_is_a_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference_key = "test/reference-for-qwen-edit-missing.png"
+    s3.put_object(
+        reference_key, base64.b64decode(_png_b64((4, 4, 4))), content_type="image/png"
+    )
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={"output": []})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value, model="qwen-image-3.0")
+    result = provider.submit(
+        _request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=[reference_key])
+    )
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+
+
 def test_a_reference_over_the_base64_limit_falls_back_to_a_signed_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -292,6 +387,7 @@ def test_h3_video_payload_types_input_references_and_frame_images(
         "image_url",
         "video_url",
     ]
+    assert all("role" not in item for item in payloads[0]["input_references"])
     assert "frame_images" not in payloads[0]
     assert [item["frame_type"] for item in payloads[1]["frame_images"]] == [
         "first_frame",

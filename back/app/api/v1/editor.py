@@ -20,6 +20,7 @@ from app.api.schemas.editor import (
     DeliveryVariantResponse,
     DramaEpisodeCreateRequest,
     DramaEpisodeResponse,
+    DramaEpisodeUpdateRequest,
     DramaSeriesCreateRequest,
     DramaSeriesResponse,
     EditorExportResponse,
@@ -27,7 +28,10 @@ from app.api.schemas.editor import (
     EditPlanApplyRequest,
     EditPlanCreateRequest,
     EditPlanResponse,
+    EpisodeContentLinkCreateRequest,
+    EpisodeContentLinkResponse,
     EpisodeCutResponse,
+    EpisodeSetCanonicalWorkRequest,
     ExportClaimRequest,
     ExportCompleteRequest,
     ExportFailRequest,
@@ -93,15 +97,28 @@ def _series_response(series) -> DramaSeriesResponse:  # type: ignore[no-untyped-
     )
 
 
-def _episode_response(episode) -> DramaEpisodeResponse:  # type: ignore[no-untyped-def]
+def episode_response(episode) -> DramaEpisodeResponse:  # type: ignore[no-untyped-def]
     return DramaEpisodeResponse(
         id=episode.id,
         series_id=episode.series_id,
+        season_number=episode.season_number,
         episode_number=episode.episode_number,
+        episode_kind=episode.episode_kind,
         title=episode.title,
         synopsis=episode.synopsis,
         status=episode.status,
         canonical_work_id=episode.canonical_work_id,
+    )
+
+
+def content_link_response(link) -> EpisodeContentLinkResponse:  # type: ignore[no-untyped-def]
+    return EpisodeContentLinkResponse(
+        id=link.id,
+        episode_id=link.episode_id,
+        content_type=link.content_type,
+        content_ref_id=link.content_ref_id,
+        role=link.role,
+        created_at=link.created_at,
     )
 
 
@@ -248,10 +265,12 @@ def create_episode(
         series_id=series_id,
         title=payload.title,
         episode_number=payload.episode_number,
+        season_number=payload.season_number,
+        episode_kind=payload.episode_kind,
         synopsis=payload.synopsis,
     )
     session.commit()
-    return _episode_response(episode)
+    return episode_response(episode)
 
 
 @router.get("/drama-series/{series_id}/episodes", response_model=list[DramaEpisodeResponse])
@@ -259,9 +278,105 @@ def list_episodes(
     series_id: str, user: CurrentUser, session: DbSession
 ) -> list[DramaEpisodeResponse]:
     return [
-        _episode_response(item)
+        episode_response(item)
         for item in editor_service.list_episodes(session, user_id=user.id, series_id=series_id)
     ]
+
+
+@router.get("/drama-episodes/{episode_id}", response_model=DramaEpisodeResponse)
+def get_episode(episode_id: str, user: CurrentUser, session: DbSession) -> DramaEpisodeResponse:
+    episode = editor_service.get_episode(session, user_id=user.id, episode_id=episode_id)
+    return episode_response(episode)
+
+
+@router.patch("/drama-episodes/{episode_id}", response_model=DramaEpisodeResponse)
+def update_episode(
+    episode_id: str,
+    payload: DramaEpisodeUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> DramaEpisodeResponse:
+    episode = editor_service.update_episode(
+        session,
+        user_id=user.id,
+        episode_id=episode_id,
+        title=payload.title,
+        synopsis=payload.synopsis,
+        episode_kind=payload.episode_kind,
+        season_number=payload.season_number,
+        episode_number=payload.episode_number,
+        status=payload.status,
+    )
+    session.commit()
+    return episode_response(episode)
+
+
+@router.post(
+    "/drama-episodes/{episode_id}/content-links",
+    response_model=EpisodeContentLinkResponse,
+    status_code=201,
+)
+def create_content_link(
+    episode_id: str,
+    payload: EpisodeContentLinkCreateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> EpisodeContentLinkResponse:
+    link = editor_service.create_content_link(
+        session,
+        user_id=user.id,
+        episode_id=episode_id,
+        content_type=payload.content_type,
+        content_ref_id=payload.content_ref_id,
+        role=payload.role,
+    )
+    session.commit()
+    return content_link_response(link)
+
+
+@router.get(
+    "/drama-episodes/{episode_id}/content-links", response_model=list[EpisodeContentLinkResponse]
+)
+def list_content_links(
+    episode_id: str, user: CurrentUser, session: DbSession
+) -> list[EpisodeContentLinkResponse]:
+    return [
+        content_link_response(item)
+        for item in editor_service.list_content_links(
+            session, user_id=user.id, episode_id=episode_id
+        )
+    ]
+
+
+@router.delete("/drama-episodes/{episode_id}/content-links/{link_id}", status_code=204)
+def delete_content_link(
+    episode_id: str,
+    link_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> None:
+    editor_service.delete_content_link(
+        session, user_id=user.id, episode_id=episode_id, link_id=link_id
+    )
+    session.commit()
+
+
+@router.post("/drama-episodes/{episode_id}/set-canonical-work", response_model=DramaEpisodeResponse)
+def set_canonical_work(
+    episode_id: str,
+    payload: EpisodeSetCanonicalWorkRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> DramaEpisodeResponse:
+    episode = editor_service.set_canonical_work(
+        session, user_id=user.id, episode_id=episode_id, work_id=payload.work_id
+    )
+    session.commit()
+    return episode_response(episode)
 
 
 @router.post("/episode-cuts:from-job", response_model=EpisodeCutResponse, status_code=201)
@@ -283,7 +398,6 @@ def create_cut_from_job(
     if analysis_id:
         _enqueue_media_analysis(analysis_id)
     return _cut_response(session, cut)
-
 
 @router.post(
     "/drama-episodes/{episode_id}/cuts",

@@ -372,4 +372,6 @@ def test_a_private_asset_is_invisible_to_a_stranger(
         media_service.signed_url_for(db, asset_id=asset.id, viewer_user_id=remixer.id)
 
     url = media_service.signed_url_for(db, asset_id=asset.id, viewer_user_id=author.id)
-    assert "X-Amz-Signature" in url
+    # MinIO/S3 signs with `X-Amz-Signature`; Tencent COS signs with its own
+    # `q-signature` — whichever backend `STORAGE_BACKEND` selects locally.
+    assert "X-Amz-Signature" in url or "q-signature=" in url

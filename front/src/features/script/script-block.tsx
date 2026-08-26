@@ -2,10 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import { IconClock } from '@/components/ui/icons';
+import { IconVideo } from '@/components/ui/icons';
+import { Link } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
 
 import type { ScriptBlock, ScriptBlockType } from './api';
+import { EditableInlineText } from './editable-text';
 
 /**
  * Full literal class strings (not template-built), matching
@@ -50,20 +52,52 @@ export function ScriptLegend({ className }: { className?: string }) {
   );
 }
 
-export function ScriptBlockRow({ block }: { block: ScriptBlock }) {
+export function ScriptBlockRow({
+  block,
+  onSave,
+  breakpointVideoHref,
+}: {
+  block: ScriptBlock;
+  /** Present only while viewing the episode's true latest turn (see
+   * `ScriptEditor`) — `episode.script_json` only ever holds the latest
+   * turn's content, so hand-editing a browsed historical snapshot has
+   * nowhere to persist. Omitted, the block renders as plain read-only
+   * text, same as before this prop existed. */
+  onSave?: (text: string) => void;
+  /** Only set on a `breakpoint` block, and only when the segment it closes
+   * resolves to at least one linked character/scene (see
+   * `script-document-view.tsx`'s `resolveBreakpointRefs`) — undefined renders
+   * the badge as plain (non-clickable) text rather than a disabled link. */
+  breakpointVideoHref?: string;
+}) {
   const t = useTranslations('scriptStudio');
 
   // A breakpoint is a cut marker, not script content — it reads as a dashed
   // divider with the reasoning as a caption, never as another colored
-  // paragraph the reader might mistake for something to shoot.
+  // paragraph the reader might mistake for something to shoot. The badge
+  // itself doubles as the "generate this segment" action: a `Link` when the
+  // segment resolves to at least one linked character/scene
+  // (`script-document-view.tsx`'s `resolveBreakpointRefs`), a plain span
+  // otherwise — never a separate chip alongside it.
   if (block.type === 'breakpoint') {
+    const badgeClassName =
+      'flex shrink-0 items-center gap-1.5 rounded-full border border-script-breakpoint/30 bg-script-breakpoint/10 px-2.5 py-1 text-[11px] font-medium';
+    const badgeContent = (
+      <>
+        <IconVideo className="size-3" />
+        {t('blockType.breakpoint')}
+      </>
+    );
     return (
       <div className="flex items-center gap-2 py-1 text-script-breakpoint">
         <span className="h-px flex-1 border-t border-dashed border-script-breakpoint/40" />
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-script-breakpoint/30 bg-script-breakpoint/10 px-2.5 py-1 text-[11px] font-medium">
-          <IconClock className="size-3" />
-          {t('blockType.breakpoint')}
-        </span>
+        {breakpointVideoHref ? (
+          <Link href={breakpointVideoHref} className={cn(badgeClassName, 'hover:bg-script-breakpoint/20')}>
+            {badgeContent}
+          </Link>
+        ) : (
+          <span className={badgeClassName}>{badgeContent}</span>
+        )}
         <span className="h-px flex-1 border-t border-dashed border-script-breakpoint/40" />
         {block.text ? (
           <span
@@ -90,7 +124,14 @@ export function ScriptBlockRow({ block }: { block: ScriptBlock }) {
           <span className="normal-case opacity-100">· {block.character}</span>
         ) : null}
       </div>
-      <p className="text-text">{block.text}</p>
+      <EditableInlineText
+        value={block.text}
+        onCommit={(next) => onSave?.(next)}
+        editable={!!onSave}
+        className="block text-text"
+        ariaLabel={t(`blockType.${block.type}`)}
+        title={onSave ? t('editHint') : undefined}
+      />
     </div>
   );
 }

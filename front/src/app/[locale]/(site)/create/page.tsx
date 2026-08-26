@@ -12,7 +12,7 @@ import type { Draft, Me, Page, Series, StyleGalleryEntry } from '@/lib/api/types
 
 export async function generateMetadata() {
   const t = await getTranslations('createPage');
-  return { title: t('title'), description: t('subtitle') };
+  return { title: t('title') };
 }
 
 export default async function CreatePage() {
@@ -30,7 +30,7 @@ export default async function CreatePage() {
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-8 px-4 py-8 sm:px-6 sm:py-10">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-        <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
+        <PageHeading eyebrow={t('eyebrow')} title={t('title')} />
         <CreditsTile available={me?.available_credits ?? null} />
       </div>
 

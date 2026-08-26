@@ -25,8 +25,10 @@ from app.models.enums import (
     EditorCommandEventStatus,
     EditorExportStatus,
     EditPlanStatus,
+    EpisodeContentRole,
     EpisodeCutKind,
     EpisodeCutStatus,
+    EpisodeKind,
     MediaAnalysisStatus,
 )
 
@@ -40,7 +42,18 @@ class DramaEpisode(Base, TimestampMixin):
     series_id: Mapped[str] = mapped_column(
         ForeignKey("series.id", ondelete="RESTRICT"), nullable=False
     )
+    # Uniqueness is scoped to `(series_id, season_number, episode_number)`,
+    # not just `(series_id, episode_number)` — a trailer or a season 2
+    # episode 1 must not collide with season 1 episode 1. Default 1 so every
+    # pre-existing row (and every caller that doesn't think about seasons)
+    # behaves exactly as before.
+    season_number: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
     episode_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    episode_kind: Mapped[str] = mapped_column(
+        String(16), default=EpisodeKind.MAIN, server_default=EpisodeKind.MAIN.value, nullable=False
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
     script_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
@@ -52,8 +65,52 @@ class DramaEpisode(Base, TimestampMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("series_id", "episode_number", name="uq_drama_episodes_series_number"),
+        UniqueConstraint(
+            "series_id",
+            "season_number",
+            "episode_number",
+            name="uq_drama_episodes_series_season_number",
+        ),
         Index("ix_drama_episodes_series_id", "series_id"),
+    )
+
+
+class EpisodeContentLink(Base, TimestampMixin):
+    """Material associated with an episode without being its canonical
+    output — a script draft still being iterated on, a batch of candidate
+    image/video drafts, a finished `EditorExport` kept as a behind-the-scenes
+    clip. `canonical_work_id` on `DramaEpisode` (not a `FINAL`-role row here)
+    is what publishing and the public projection actually trust; a `FINAL`
+    link is only a history breadcrumb of how that choice was made.
+
+    `content_ref_id` is a bare id, not a foreign key — `content_type` names
+    which table it belongs to (`draft` / `work` / `editor_export`), and a
+    single polymorphic FK across three tables isn't expressible in SQL, so
+    ownership is re-checked in the service layer on every read/write instead
+    of being enforced by the database (same trade-off `AuditLog.target_id`
+    makes — see `zaolang-data-model`).
+    """
+
+    __tablename__ = "episode_content_links"
+
+    id: Mapped[str] = id_column("ecl")
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("drama_episodes.id", ondelete="CASCADE"), nullable=False
+    )
+    content_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    content_ref_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(24), default=EpisodeContentRole.CANDIDATE, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "episode_id",
+            "content_type",
+            "content_ref_id",
+            name="uq_episode_content_links_episode_content",
+        ),
+        Index("ix_episode_content_links_episode_id", "episode_id"),
     )
 
 

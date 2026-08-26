@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbSession
+from app.domain.editor import analysis as media_analysis
 from app.domain.editor import document as docs
 from app.domain.editor import exports as export_service
 from app.domain.editor import flags as editor_flags
@@ -22,8 +23,9 @@ from app.mcp.auth import (
     require_project,
     require_scope,
 )
-from app.models import EditorExport, EditPlan
+from app.models import Asset, EditorExport, EditPlan, MediaAnalysis
 from app.observability.context import get_request_id
+from app.workers.celery_app import celery_app
 
 router = APIRouter(tags=["mcp"])
 
@@ -42,6 +44,7 @@ TOOLS = (
     ("editor.queue_exports", "editor:export"),
     ("editor.get_operation", "editor:read"),
     ("editor.cancel_operation", "editor:export"),
+    ("editor.request_transcription", "editor:write"),
 )
 
 
@@ -371,10 +374,35 @@ def _call_tool(
             if edit_plan is None:
                 raise ValidationFailed("操作不存在。")
             return {"id": edit_plan.id, "kind": "edit_plan", "status": edit_plan.status}
+        if operation_id.startswith("man_"):
+            analysis = session.get(MediaAnalysis, operation_id)
+            if analysis is None:
+                raise ValidationFailed("操作不存在。")
+            result: dict[str, Any] = {}
+            if analysis.status in {"succeeded", "degraded"}:
+                asset = session.get(Asset, analysis.asset_id)
+                if asset is not None and asset.owner_user_id == principal.user_id:
+                    result = {"transcript": analysis.transcript_json}
+            return {"id": analysis.id, "kind": "media_analysis", "status": analysis.status, **result}
         raise ValidationFailed("操作不存在。")
     if name == "editor.cancel_operation":
         export = export_service.request_cancel(
             session, user_id=principal.user_id, export_id=str(arguments["operation_id"])
         )
         return {"id": export.id, "status": export.status}
+    if name == "editor.request_transcription":
+        # AI-triggerable, but this only ever produces a draft transcript to
+        # review — there is no tool here (or anywhere else in this MCP
+        # surface) that turns it into real caption elements on its own. A
+        # human must review and confirm it in the editor's own review UI
+        # before it becomes `insert_caption` commands; see
+        # `zaolang-editor-drama`'s invariant on this.
+        asset_id = str(arguments["asset_id"])
+        asset = session.get(Asset, asset_id)
+        if asset is None or asset.owner_user_id != principal.user_id:
+            raise ValidationFailed("素材不存在。")
+        row = media_analysis.enqueue_transcription(session, asset_id=asset_id)
+        session.commit()
+        celery_app.send_task("app.workers.tasks.run_editor_transcription", args=[row.id])
+        return {"id": row.id, "kind": "media_analysis", "status": row.status}
     raise ValidationFailed(f"未知工具: {name}。")

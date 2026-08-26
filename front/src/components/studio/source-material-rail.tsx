@@ -26,6 +26,7 @@ export function SourceMaterialRail({
   uploads,
   onUploaded,
   onRemove,
+  onSelectUpload,
 }: {
   source?: StudioSource;
   /**
@@ -37,6 +38,10 @@ export function SourceMaterialRail({
   uploads: Asset[];
   onUploaded: (asset: Asset) => void;
   onRemove: (assetId: string) => void;
+  /** Clicking an uploaded thumbnail — shows it enlarged in the studio's
+   * preview area instead of doing nothing. Omitted where there's no preview
+   * area to load it into (video/audio don't pass this). */
+  onSelectUpload?: (asset: Asset) => void;
 }) {
   const t = useTranslations('remixPage');
   const tStates = useTranslations('states');
@@ -92,11 +97,25 @@ export function SourceMaterialRail({
 
         {uploads.map((asset) => (
           <li key={asset.id} className="relative w-28 shrink-0 lg:w-full">
-            <Thumb
-              url={asset.url}
-              label={asset.media_type === 'video' ? t('videoReference') : t('imageReference')}
-              mediaType={asset.media_type}
-            />
+            {onSelectUpload ? (
+              <button
+                type="button"
+                onClick={() => onSelectUpload(asset)}
+                className="block w-full text-left focus-visible:outline-2"
+              >
+                <Thumb
+                  url={asset.url}
+                  label={asset.media_type === 'video' ? t('videoReference') : t('imageReference')}
+                  mediaType={asset.media_type}
+                />
+              </button>
+            ) : (
+              <Thumb
+                url={asset.url}
+                label={asset.media_type === 'video' ? t('videoReference') : t('imageReference')}
+                mediaType={asset.media_type}
+              />
+            )}
             <button
               type="button"
               aria-label={`${t('addMaterial')} ✕`}

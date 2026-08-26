@@ -495,3 +495,35 @@ def update_links(
     episode.script_json = {**script, "characters": next_characters, "scenes": next_scenes}
     session.flush()
     return episode
+
+
+def update_content(
+    session: Session, *, user_id: str, episode_id: str, script: dict[str, Any]
+) -> DramaEpisode:
+    """Persists a user's direct hand-edit of the script text (title, logline,
+    character traits, block text) straight to `episode.script_json` — same
+    non-LLM write path as `update_links`, and for the same reason: this is a
+    manual content edit the user made by typing, not a revision described in
+    words, so it must not spend a model call or create a new `EpisodeScriptTurn`.
+
+    Takes the *entire* document (not a per-field patch) and re-validates it
+    through `copywriter._sanitize_script`, the same bounds/shape checks
+    applied to every LLM-produced or client-echoed script — this is the one
+    write path where arbitrary caller-supplied text lands directly in
+    storage, so it must not skip that validation. `_sanitize_script` already
+    preserves whatever `character_ref_id`/`ref_id` the caller sends back
+    (see its docstring), so links set via `update_links` survive a content
+    edit untouched.
+    """
+    _require_script_studio(session, user_id=user_id)
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    if not episode.script_json:
+        raise ValidationFailed("该剧本还没有初稿，请先生成初稿。")
+
+    sanitized = copywriter._sanitize_script(script)
+    if sanitized is None:
+        raise ValidationFailed("剧本内容不能为空。")
+
+    episode.script_json = sanitized
+    session.flush()
+    return episode

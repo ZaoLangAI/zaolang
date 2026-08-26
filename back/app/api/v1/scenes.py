@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbSession, rate_limited
 from app.api.schemas.scenes import (
-    SceneClip,
     SceneCreateRequest,
     SceneReferenceAsset,
     SceneReferenceAssetUpdateRequest,
@@ -167,16 +166,6 @@ def _scene_response(session: Session, scene: scenes.SceneView) -> SceneResponse:
                 created_at=entry.get("created_at"),
             )
             for entry in scene.reference_assets
-            if entry.get("asset_id")
-        ],
-        clips=[
-            SceneClip(
-                asset_id=str(entry.get("asset_id")),
-                label=entry.get("label"),
-                url=media_urls.asset_url(session, str(entry.get("asset_id"))),
-                created_at=entry.get("created_at"),
-            )
-            for entry in scene.clips
             if entry.get("asset_id")
         ],
         status=scene.status,

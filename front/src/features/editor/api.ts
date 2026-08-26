@@ -19,11 +19,22 @@ export interface DramaSeries {
 export interface DramaEpisode {
   id: string;
   series_id: string;
+  season_number: number;
   episode_number: number;
+  episode_kind: string;
   title: string;
   synopsis: string | null;
   status: string;
   canonical_work_id: string | null;
+}
+
+export interface EpisodeContentLink {
+  id: string;
+  episode_id: string;
+  content_type: string;
+  content_ref_id: string;
+  role: string;
+  created_at: string;
 }
 
 export interface CutRevision {
@@ -125,6 +136,74 @@ export function createDramaSeries(title: string) {
     { title },
     { idempotencyKey: crypto.randomUUID() },
   );
+}
+
+export function getDramaSeries(seriesId: string) {
+  return api.get<DramaSeries>(`/v1/drama-series/${seriesId}`);
+}
+
+export function listEpisodes(seriesId: string) {
+  return api.get<DramaEpisode[]>(`/v1/drama-series/${seriesId}/episodes`);
+}
+
+export function createEpisode(
+  seriesId: string,
+  input: {
+    title: string;
+    episode_number?: number;
+    season_number?: number;
+    episode_kind?: string;
+    synopsis?: string;
+  },
+) {
+  return api.post<DramaEpisode>(`/v1/drama-series/${seriesId}/episodes`, input, {
+    idempotencyKey: crypto.randomUUID(),
+  });
+}
+
+export function getEpisode(episodeId: string) {
+  return api.get<DramaEpisode>(`/v1/drama-episodes/${episodeId}`);
+}
+
+export function updateEpisode(
+  episodeId: string,
+  input: Partial<{
+    title: string;
+    synopsis: string;
+    episode_kind: string;
+    season_number: number;
+    episode_number: number;
+    status: string;
+  }>,
+) {
+  return api.patch<DramaEpisode>(`/v1/drama-episodes/${episodeId}`, input);
+}
+
+export function createContentLink(
+  episodeId: string,
+  input: { content_type: string; content_ref_id: string; role?: string },
+) {
+  return api.post<EpisodeContentLink>(`/v1/drama-episodes/${episodeId}/content-links`, input, {
+    idempotencyKey: crypto.randomUUID(),
+  });
+}
+
+export function listContentLinks(episodeId: string) {
+  return api.get<EpisodeContentLink[]>(`/v1/drama-episodes/${episodeId}/content-links`);
+}
+
+export function deleteContentLink(episodeId: string, linkId: string) {
+  return api.delete<void>(`/v1/drama-episodes/${episodeId}/content-links/${linkId}`);
+}
+
+export function setCanonicalWork(episodeId: string, workId: string | null) {
+  return api.post<DramaEpisode>(`/v1/drama-episodes/${episodeId}/set-canonical-work`, {
+    work_id: workId,
+  });
+}
+
+export function listEpisodeCuts(episodeId: string) {
+  return api.get<EpisodeCut[]>(`/v1/drama-episodes/${episodeId}/cuts`);
 }
 
 export function getCut(cutId: string) {

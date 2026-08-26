@@ -96,7 +96,7 @@ flowchart TB
 
 ```text
 front/src/app/[locale]/
-├─ (site)/    C 端（含 /create/drama 桌面剪辑），沉浸式外壳
+├─ (site)/    C 端（含 /create/short 短剧管理与桌面剪辑），沉浸式外壳
 └─ (admin)/   后台控制台，独立 layout、独立登录、独立 API client
 ```
 

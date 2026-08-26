@@ -169,6 +169,32 @@ export function ScriptEditor({
     }
   };
 
+  // Hand-edits (double-click a block/logline/trait, then blur or Ctrl+S —
+  // see `EditableInlineText`) never go through the LLM turn machinery: they
+  // persist straight to `episode.script_json` via `updateScriptContent`,
+  // same non-turn write path as `updateLink` above. Updating `viewedScript`/
+  // `detail.script` optimistically (before the network round-trip resolves)
+  // is what makes an edit "stick" for the *next* prompt-based revision too —
+  // `sendTurn` below always reads `viewedScript ?? detail.script` as the
+  // basis it sends as `current_script`, so an edit made seconds ago is
+  // already part of what the next turn revises, with no separate merge step
+  // needed. A failed save rolls the optimistic update back and surfaces a
+  // toast, so client state never drifts from what's actually persisted.
+  const saveContent = async (nextScript: ScriptDocument) => {
+    const previous = viewedScript ?? detail?.script ?? null;
+    setViewedScript(nextScript);
+    setDetail((current) => (current ? { ...current, script: nextScript } : current));
+    try {
+      const saved = await scriptApi.updateScriptContent(episodeId, nextScript);
+      setViewedScript(saved);
+      setDetail((current) => (current ? { ...current, script: saved } : current));
+    } catch (error) {
+      setViewedScript(previous);
+      setDetail((current) => (current && previous ? { ...current, script: previous } : current));
+      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
+    }
+  };
+
   // Runs once, the moment `detail` first has a script to match against.
   // Exact-matches `pendingLink.label` against a character name/scene
   // heading (never fuzzy — a near-miss silently linking the wrong card
@@ -316,6 +342,7 @@ export function ScriptEditor({
             document={viewedScript ?? detail.script}
             episodeId={episodeId}
             onLink={isViewingLatest ? (update) => void updateLink(update) : undefined}
+            onSaveContent={isViewingLatest ? (next) => void saveContent(next) : undefined}
           />
         )}
       </div>

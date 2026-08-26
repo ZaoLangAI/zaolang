@@ -5,22 +5,66 @@
  * the same edited content instead of drifting apart.
  */
 
-import { TICKS_PER_SECOND, type BrandOverlay, type CanonicalDocument, type ResolvedAsset } from './ports';
+import { resolveNumberAtTime } from './animation';
+import { applyClipEffects } from './effects';
+import {
+  TICKS_PER_SECOND,
+  type BrandOverlay,
+  type CanonicalDocument,
+  type ClipEffect,
+  type ClipMask,
+  type ResolvedAsset,
+  type TimelineElement,
+  type TimelineTrack,
+} from './ports';
 import { WasmCompositor } from './wasm-compositor';
 
 type Canvas2DContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+/** Resolved from `transform.*` keyframe channels (or the identity default) — see `animation.ts`. */
+export interface ClipTransform {
+  xMilli: number;
+  yMilli: number;
+  scaleMillipercent: number;
+  rotationMillidegrees: number;
+}
+
+const IDENTITY_TRANSFORM: ClipTransform = {
+  xMilli: 0,
+  yMilli: 0,
+  scaleMillipercent: 100_000,
+  rotationMillidegrees: 0,
+};
 
 export interface ActiveClipLayer {
   asset_id: string;
   element_id: string;
   sourceSeconds: number;
   volume: number;
+  effects: ClipEffect[];
+  mask: ClipMask | null;
+  /** Resolved 0-1 from the `opacity` channel (or 1, static default). */
+  opacity: number;
+  transform: ClipTransform;
+}
+
+/** One audio-producing element active at a tick — an audio-track clip, or the visible video clip's own sound. */
+export interface ActiveAudioLayer {
+  asset_id: string;
+  element_id: string;
+  track_id: string;
+  sourceSeconds: number;
+  volume: number;
+  /** Playback-rate multiplier from the clip's own `speed_millipercent` — shifts pitch (no time-stretch), same tradeoff `set_clip_speed` already accepts for picture. */
+  speedFactor: number;
 }
 
 export interface FrameLayers {
   canvasWidth: number;
   canvasHeight: number;
   clip: ActiveClipLayer | null;
+  /** The other clip during a crossfade transition — null outside one, and always null for `dip_to_black` (which never shows two pictures at once). */
+  transitionLayer: ActiveClipLayer | null;
   captions: string[];
   overlay: BrandOverlay | null;
 }
@@ -29,27 +73,130 @@ function isActive(startTicks: number, durationTicks: number, atTicks: number): b
   return atTicks >= startTicks && atTicks < startTicks + durationTicks;
 }
 
+function elementSourceSeconds(element: TimelineElement, atTicks: number): number {
+  const speed = Math.max(element.speed_millipercent, 1) / 100_000;
+  const elapsedTicks = atTicks - element.start_ticks;
+  const sourceTicks = element.source_in_ticks + elapsedTicks * speed;
+  return Math.max(0, sourceTicks / TICKS_PER_SECOND);
+}
+
+interface WeightedVideoLayer {
+  track: TimelineTrack;
+  element: TimelineElement;
+  /** Opacity multiplier from a transition blend — 1 outside any transition. */
+  weight: number;
+}
+
+function activeElementsOnTrack(track: TimelineTrack, atTicks: number): TimelineElement[] {
+  return track.elements.filter((item) => isActive(item.start_ticks, item.duration_ticks, atTicks));
+}
+
+/**
+ * Two elements on the same track overlapping in time only happens when a
+ * transition was deliberately set up (via ordinary trim/move — there is no
+ * "insert an overlapping clip" command). Resolves which element(s) are
+ * visible and at what blend weight: `crossfade` shows both at once with
+ * complementary weights; `dip_to_black` shows exactly one, fading out to
+ * (or in from) nothing rather than ever blending the two pictures together.
+ * The effective transition is whichever of the outgoing clip's
+ * `transition_out` / the incoming clip's `transition_in` is set (outgoing
+ * wins if both are); an overlap with neither configured falls back to "the
+ * newer clip wins" rather than a silent double-exposure.
+ */
+function resolveOverlap(
+  track: TimelineTrack,
+  active: TimelineElement[],
+  atTicks: number,
+): WeightedVideoLayer[] {
+  if (active.length <= 1) {
+    return active.map((element) => ({ track, element, weight: 1 }));
+  }
+  const [outgoing, incoming] = [...active].sort((a, b) => a.start_ticks - b.start_ticks);
+  const transition = outgoing!.transition_out ?? incoming!.transition_in ?? null;
+  const overlapStart = incoming!.start_ticks;
+  const overlapEnd = outgoing!.start_ticks + outgoing!.duration_ticks;
+  if (!transition || overlapEnd <= overlapStart) {
+    return [{ track, element: incoming!, weight: 1 }];
+  }
+  const span = Math.max(1, Math.min(transition.duration_ticks, overlapEnd - overlapStart));
+  const windowStart = overlapEnd - span;
+  const progress = Math.min(1, Math.max(0, (atTicks - windowStart) / span));
+  if (transition.type === 'dip_to_black') {
+    return progress < 0.5
+      ? [{ track, element: outgoing!, weight: 1 - progress * 2 }]
+      : [{ track, element: incoming!, weight: (progress - 0.5) * 2 }];
+  }
+  return [
+    { track, element: outgoing!, weight: 1 - progress },
+    { track, element: incoming!, weight: progress },
+  ];
+}
+
+/**
+ * Every visible video layer for a frame — 1 outside a transition, 2 during
+ * a crossfade — picked from the topmost non-muted track (`order`
+ * descending) that has any active content at `atTicks`. Lower tracks are
+ * neither drawn nor heard while a higher one is covering them.
+ */
+export function activeVideoLayers(document: CanonicalDocument, atTicks: number): WeightedVideoLayer[] {
+  const videoTracks = document.tracks
+    .filter((track) => track.kind === 'video' && !track.muted)
+    .sort((a, b) => b.order - a.order);
+  for (const track of videoTracks) {
+    const active = activeElementsOnTrack(track, atTicks);
+    if (active.length > 0) return resolveOverlap(track, active, atTicks);
+  }
+  return [];
+}
+
+/** The dominant (first) visible video layer — used where only one layer's identity matters, e.g. embedded audio. */
+export function activeVideoLayer(
+  document: CanonicalDocument,
+  atTicks: number,
+): { track: TimelineTrack; element: TimelineElement } | undefined {
+  return activeVideoLayers(document, atTicks)[0];
+}
+
+function buildClipLayer(element: TimelineElement, atTicks: number, weight: number): ActiveClipLayer | null {
+  if (!element.asset_id) return null;
+  const animations = element.animations;
+  const baseOpacity = resolveNumberAtTime(animations, 'opacity', atTicks, 100_000) / 100_000;
+  return {
+    asset_id: element.asset_id,
+    element_id: element.id,
+    sourceSeconds: elementSourceSeconds(element, atTicks),
+    volume: Math.min(1, Math.max(0, element.volume_millipercent / 100_000)),
+    effects: element.effects,
+    mask: element.mask,
+    opacity: Math.min(1, Math.max(0, baseOpacity * weight)),
+    transform: {
+      xMilli: resolveNumberAtTime(animations, 'transform.x_milli', atTicks, IDENTITY_TRANSFORM.xMilli),
+      yMilli: resolveNumberAtTime(animations, 'transform.y_milli', atTicks, IDENTITY_TRANSFORM.yMilli),
+      scaleMillipercent: resolveNumberAtTime(
+        animations,
+        'transform.scale_millipercent',
+        atTicks,
+        IDENTITY_TRANSFORM.scaleMillipercent,
+      ),
+      rotationMillidegrees: resolveNumberAtTime(
+        animations,
+        'transform.rotation_millidegrees',
+        atTicks,
+        IDENTITY_TRANSFORM.rotationMillidegrees,
+      ),
+    },
+  };
+}
+
 /** Pure timeline resolution — no DOM access, safe to unit test directly. */
 export function resolveFrame(document: CanonicalDocument, atTicks: number): FrameLayers {
-  const videoTrack = document.tracks.find((track) => track.kind === 'video');
   const captionTrack = document.tracks.find((track) => track.kind === 'caption');
+  const videoLayers = activeVideoLayers(document, atTicks);
+  const primary = videoLayers[0];
+  const secondary = videoLayers[1];
 
-  const clipElement = videoTrack?.elements.find((element) =>
-    isActive(element.start_ticks, element.duration_ticks, atTicks),
-  );
-
-  let clip: ActiveClipLayer | null = null;
-  if (clipElement?.asset_id) {
-    const speed = Math.max(clipElement.speed_millipercent, 1) / 100_000;
-    const elapsedTicks = atTicks - clipElement.start_ticks;
-    const sourceTicks = clipElement.source_in_ticks + elapsedTicks * speed;
-    clip = {
-      asset_id: clipElement.asset_id,
-      element_id: clipElement.id,
-      sourceSeconds: Math.max(0, sourceTicks / TICKS_PER_SECOND),
-      volume: Math.min(1, Math.max(0, clipElement.volume_millipercent / 100_000)),
-    };
-  }
+  const clip = primary ? buildClipLayer(primary.element, atTicks, primary.weight) : null;
+  const transitionLayer = secondary ? buildClipLayer(secondary.element, atTicks, secondary.weight) : null;
 
   const captions = (captionTrack?.elements ?? [])
     .filter(
@@ -61,9 +208,52 @@ export function resolveFrame(document: CanonicalDocument, atTicks: number): Fram
     canvasWidth: document.canvas.width,
     canvasHeight: document.canvas.height,
     clip,
+    transitionLayer,
     captions,
     overlay: document.brand_overlay,
   };
+}
+
+function toAudioLayer(
+  element: TimelineElement,
+  trackId: string,
+  atTicks: number,
+): ActiveAudioLayer {
+  return {
+    asset_id: element.asset_id as string,
+    element_id: element.id,
+    track_id: trackId,
+    sourceSeconds: elementSourceSeconds(element, atTicks),
+    volume: Math.min(1, Math.max(0, element.volume_millipercent / 100_000)),
+    speedFactor: Math.max(element.speed_millipercent, 1) / 100_000,
+  };
+}
+
+/**
+ * Every element that should be audible at `atTicks`: one per non-muted
+ * audio track (each track mixes independently — audio has no "topmost"
+ * concept, unlike video), plus the currently *visible* video track's own
+ * embedded sound (a hidden/occluded video track's audio stays silent too,
+ * matching what the viewer sees). Shared by live preview (`audio-mixer.ts`)
+ * and export (`export-runner.ts`) so both mix identically.
+ */
+export function resolveAudioLayers(
+  document: CanonicalDocument,
+  atTicks: number,
+): ActiveAudioLayer[] {
+  const layers: ActiveAudioLayer[] = [];
+  const audioTracks = document.tracks.filter((track) => track.kind === 'audio' && !track.muted);
+  for (const track of audioTracks) {
+    const element = track.elements.find((item) =>
+      isActive(item.start_ticks, item.duration_ticks, atTicks),
+    );
+    if (element?.asset_id) layers.push(toAudioLayer(element, track.id, atTicks));
+  }
+  const video = activeVideoLayer(document, atTicks);
+  if (video?.element.asset_id) {
+    layers.push(toAudioLayer(video.element, video.track.id, atTicks));
+  }
+  return layers;
 }
 
 /** Caches per-asset <video>/<img> elements across frames so seeking stays cheap. */
@@ -76,6 +266,7 @@ export class MediaPool {
   // and `seeked` events firing normally.
   private readonly host: HTMLDivElement;
   private scratch: OffscreenCanvas | null = null;
+  private effectsScratch: OffscreenCanvas | null = null;
   private wasm: WasmCompositor | null | undefined;
   private wasmDimensions: { width: number; height: number } | null = null;
 
@@ -124,6 +315,14 @@ export class MediaPool {
       this.scratch = new OffscreenCanvas(width, height);
     }
     return this.scratch;
+  }
+
+  /** A second scratch buffer for `applyClipEffects`, kept separate from `scratchCanvas` since both can be read from in the same frame. */
+  effectsScratchCanvas(width: number, height: number): OffscreenCanvas {
+    if (!this.effectsScratch || this.effectsScratch.width !== width || this.effectsScratch.height !== height) {
+      this.effectsScratch = new OffscreenCanvas(width, height);
+    }
+    return this.effectsScratch;
   }
 
   /**
@@ -214,6 +413,34 @@ function drawCover(
   ctx.drawImage(source, dx, dy, drawWidth, drawHeight);
 }
 
+/**
+ * Draws an already-canvas-sized clip frame with its resolved opacity and
+ * transform (pan/zoom/rotate) applied. With the identity transform and
+ * opacity 1 (no keyframes — the overwhelming default) this is pixel-for-
+ * pixel the same as the old unconditional `ctx.drawImage(source, 0, 0, w, h)`.
+ */
+function drawClipTransformed(
+  ctx: Canvas2DContext,
+  source: CanvasImageSource,
+  canvasWidth: number,
+  canvasHeight: number,
+  opacity: number,
+  transform: ClipTransform,
+): void {
+  const xOffsetPx = (transform.xMilli / 1000) * canvasWidth;
+  const yOffsetPx = (transform.yMilli / 1000) * canvasHeight;
+  const scale = transform.scaleMillipercent / 100_000;
+  const rotationRadians = (transform.rotationMillidegrees / 1000) * (Math.PI / 180);
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.translate(canvasWidth / 2 + xOffsetPx, canvasHeight / 2 + yOffsetPx);
+  ctx.rotate(rotationRadians);
+  ctx.scale(scale, scale);
+  ctx.drawImage(source, -canvasWidth / 2, -canvasHeight / 2, canvasWidth, canvasHeight);
+  ctx.restore();
+}
+
 function drawCaptions(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
@@ -251,6 +478,58 @@ function drawCaptions(
  * Canvas2D draw otherwise — same visible result either way, so callers
  * never need to know which path ran.
  */
+/**
+ * Renders one already-resolved clip layer onto `ctx`: seek → cover-fit onto
+ * a scratch canvas → WASM or Canvas2D render → effects/mask → transformed
+ * draw. Shared by the primary clip and, during a crossfade, the second
+ * (transition) layer — same pipeline either way, called twice per frame
+ * only when a transition is actually blending two pictures together.
+ */
+async function renderClipLayer(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+  clip: ActiveClipLayer,
+  assets: ResolvedAsset[],
+  pool: MediaPool,
+): Promise<void> {
+  const asset = assets.find((item) => item.asset_id === clip.asset_id);
+  if (!asset) return;
+  const video = pool.video(asset.asset_id, asset.url);
+  await seekVideo(video, clip.sourceSeconds);
+
+  const scratch = pool.scratchCanvas(canvasWidth, canvasHeight);
+  const scratchCtx = scratch.getContext('2d');
+  if (!scratchCtx) return;
+  scratchCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+  drawCover(
+    scratchCtx,
+    video,
+    video.videoWidth || canvasWidth,
+    video.videoHeight || canvasHeight,
+    canvasWidth,
+    canvasHeight,
+  );
+
+  const wasm = await pool.wasmCompositorFor(canvasWidth, canvasHeight);
+  const wasmCanvas = wasm?.canvas ?? null;
+  const rendered = wasm && wasmCanvas ? wasm.renderVideoFrame(scratch) : false;
+  const renderedSource: CanvasImageSource = rendered && wasmCanvas ? wasmCanvas : scratch;
+  const hasEffects = clip.effects.length > 0 || clip.mask;
+  const finalSource = hasEffects
+    ? applyClipEffects(
+        renderedSource,
+        canvasWidth,
+        canvasHeight,
+        clip.effects,
+        clip.mask,
+        rendered ? wasm : null,
+        pool.effectsScratchCanvas(canvasWidth, canvasHeight),
+      )
+    : renderedSource;
+  drawClipTransformed(ctx, finalSource, canvasWidth, canvasHeight, clip.opacity, clip.transform);
+}
+
 export async function composeFrame(
   ctx: CanvasRenderingContext2D,
   canvasWidth: number,
@@ -266,35 +545,15 @@ export async function composeFrame(
 
   let clipVolume: number | null = null;
   if (layers.clip) {
-    const asset = assets.find((item) => item.asset_id === layers.clip!.asset_id);
-    if (asset) {
-      const video = pool.video(asset.asset_id, asset.url);
-      await seekVideo(video, layers.clip.sourceSeconds);
-
-      const scratch = pool.scratchCanvas(canvasWidth, canvasHeight);
-      const scratchCtx = scratch.getContext('2d');
-      if (scratchCtx) {
-        scratchCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-        drawCover(
-          scratchCtx,
-          video,
-          video.videoWidth || canvasWidth,
-          video.videoHeight || canvasHeight,
-          canvasWidth,
-          canvasHeight,
-        );
-
-        const wasm = await pool.wasmCompositorFor(canvasWidth, canvasHeight);
-        const wasmCanvas = wasm?.canvas ?? null;
-        const rendered = wasm && wasmCanvas ? wasm.renderVideoFrame(scratch) : false;
-        if (rendered && wasmCanvas) {
-          ctx.drawImage(wasmCanvas, 0, 0, canvasWidth, canvasHeight);
-        } else {
-          ctx.drawImage(scratch, 0, 0);
-        }
-      }
-      clipVolume = layers.clip.volume;
-    }
+    await renderClipLayer(ctx, canvasWidth, canvasHeight, layers.clip, assets, pool);
+    clipVolume = layers.clip.volume;
+  }
+  // Drawn on top of the primary layer with its own resolved (already
+  // weight-multiplied) opacity — this is what actually shows a crossfade;
+  // dip_to_black never produces a transitionLayer, since it shows only one
+  // picture at a time by construction (see `resolveOverlap`).
+  if (layers.transitionLayer) {
+    await renderClipLayer(ctx, canvasWidth, canvasHeight, layers.transitionLayer, assets, pool);
   }
 
   if (layers.overlay) {

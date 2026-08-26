@@ -30,7 +30,7 @@ export async function RecentSeries({ series }: { series: Series[] | null }) {
         description={t('recentSeriesHint')}
         action={
           series.length > 0 ? (
-            <Link href="/create/short" className="text-xs text-muted hover:text-text">
+            <Link href="/create/short/studio" className="text-xs text-muted hover:text-text">
               {tActions('viewAll')}
             </Link>
           ) : null
@@ -43,10 +43,10 @@ export async function RecentSeries({ series }: { series: Series[] | null }) {
           description={t('noSeriesHint')}
           action={
             <Link
-              href="/create/short"
+              href="/create/short/studio"
               className="rounded-[var(--radius-sm)] border border-border px-4 py-2 text-sm transition-colors hover:border-border-strong hover:bg-surface-soft"
             >
-              {t('shortformHeroCta')}
+              {t('startShortformStudio')}
             </Link>
           }
         />
@@ -68,7 +68,7 @@ export async function RecentSeries({ series }: { series: Series[] | null }) {
                   {t('episodeCount', { count: item.episode_count })}
                 </p>
                 <Link
-                  href={{ pathname: '/create/short', query: { seriesId: item.id } }}
+                  href={{ pathname: '/create/short/studio', query: { seriesId: item.id } }}
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2 text-xs transition-colors hover:border-border-strong hover:bg-surface-soft"
                 >
                   {t('continueEpisode', { number: (item.latest_episode?.episode_number ?? 0) + 1 })}

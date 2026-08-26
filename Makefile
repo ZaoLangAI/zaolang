@@ -28,9 +28,8 @@ setup-front: ## 安装前端依赖（fnm 管理 Node 版本）
 # --- infrastructure ------------------------------------------------------
 
 .PHONY: up
-up: ## 启动 postgres / redis / minio 容器
-	$(COMPOSE) up -d --wait postgres redis minio
-	$(COMPOSE) up minio-init
+up: ## 启动 postgres / redis 容器（本地默认对象存储走 COS，MinIO 不再默认拉起，需要时手动 `docker compose ... up -d minio`）
+	$(COMPOSE) up -d --wait postgres redis
 
 .PHONY: down
 down: ## 停止容器
@@ -114,7 +113,7 @@ dev-api: ## 启动 FastAPI（含 AgentOS）
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（生成与质检队列，不含供应商轮询）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis \
+		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution \
 		--loglevel=info
 
 .PHONY: dev-poller

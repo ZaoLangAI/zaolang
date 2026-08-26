@@ -1332,6 +1332,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/assets:mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Media
+         * @description Lists the caller's own generated/uploaded media, for the editor's media library.
+         */
+        get: operations["list_my_media_v1_assets_mine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/uploads/presign": {
         parameters: {
             query?: never;
@@ -1915,6 +1935,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drama-episodes/{episode_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Episode */
+        get: operations["get_episode_v1_drama_episodes__episode_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Episode */
+        patch: operations["update_episode_v1_drama_episodes__episode_id__patch"];
+        trace?: never;
+    };
+    "/v1/drama-episodes/{episode_id}/content-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Content Links */
+        get: operations["list_content_links_v1_drama_episodes__episode_id__content_links_get"];
+        put?: never;
+        /** Create Content Link */
+        post: operations["create_content_link_v1_drama_episodes__episode_id__content_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-episodes/{episode_id}/content-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Content Link */
+        delete: operations["delete_content_link_v1_drama_episodes__episode_id__content_links__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-episodes/{episode_id}/set-canonical-work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Canonical Work */
+        post: operations["set_canonical_work_v1_drama_episodes__episode_id__set_canonical_work_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/episode-cuts:from-job": {
         parameters: {
             query?: never;
@@ -1926,6 +2016,30 @@ export interface paths {
         put?: never;
         /** Create Cut From Job */
         post: operations["create_cut_from_job_v1_episode_cuts_from_job_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/media-assets/{asset_id}/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Transcription
+         * @description Starts (or returns the existing) ASR transcription for one of the
+         *     caller's own assets. Never auto-commits the result as captions — the
+         *     resulting transcript is only ever a review-panel draft; turning it into
+         *     real `caption` elements is always a separate, explicit `insert_caption`
+         *     batch the caller sends after reviewing it (see `zaolang-editor-drama`).
+         */
+        post: operations["request_transcription_v1_media_assets__asset_id__transcriptions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2419,6 +2533,131 @@ export interface paths {
         put?: never;
         /** Create Turn */
         post: operations["create_turn_v1_scripts__episode_id__turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/platform-accounts/config-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Config Status */
+        get: operations["config_status_v1_platform_accounts_config_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/platform-accounts/{channel}/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connect */
+        get: operations["connect_v1_platform_accounts__channel__connect_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/platform-accounts/{channel}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Callback */
+        get: operations["callback_v1_platform_accounts__channel__callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/platform-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Accounts */
+        get: operations["list_accounts_v1_platform_accounts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/platform-accounts/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Disconnect */
+        delete: operations["disconnect_v1_platform_accounts__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/works/{work_id}/publications:fanout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Fanout
+         * @description One-click publish to every requested channel.
+         *
+         *     A channel that isn't configured/linked, or that fails, never blocks the
+         *     others — see `distribution.publish_fanout`'s own docstring.
+         */
+        post: operations["publish_fanout_v1_works__work_id__publications_fanout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/works/{work_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Metrics */
+        get: operations["list_metrics_v1_works__work_id__metrics_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -5313,6 +5552,11 @@ export interface components {
             /** Avatar Url */
             avatar_url?: string | null;
         };
+        /** AuthorizeUrlResponse */
+        AuthorizeUrlResponse: {
+            /** Authorize Url */
+            authorize_url: string;
+        };
         /** BackupRecordView */
         BackupRecordView: {
             /** Id */
@@ -5647,6 +5891,16 @@ export interface components {
             confirm: boolean;
             /** Target Version */
             target_version: number;
+        };
+        /**
+         * ConfigStatusResponse
+         * @description True iff that channel's AppKey/AppSecret are both set in `Settings`.
+         */
+        ConfigStatusResponse: {
+            /** Douyin */
+            douyin: boolean;
+            /** Kuaishou */
+            kuaishou: boolean;
         };
         /** ConfigUpdateRequest */
         ConfigUpdateRequest: {
@@ -6264,12 +6518,13 @@ export interface components {
          * DistributionChannel
          * @description Where an export is headed.
          *
-         *     `MANUAL_DOWNLOAD` is the only channel that completes today; `DOUYIN` names
-         *     the destination so an intent recorded now stays meaningful once direct
-         *     publishing exists.
+         *     `MANUAL_DOWNLOAD` never touches a real platform API. `DOUYIN` and
+         *     `KUAISHOU` both have a real `PlatformClient` implementation in
+         *     `app.domain.distribution` — reachable once a `PlatformAccountLink` exists
+         *     for the channel and the org's own AppKey/AppSecret are configured.
          * @enum {string}
          */
-        DistributionChannel: "douyin" | "manual_download";
+        DistributionChannel: "douyin" | "kuaishou" | "manual_download";
         /** DraftCreateRequest */
         DraftCreateRequest: {
             /** Source Work Id */
@@ -6323,6 +6578,16 @@ export interface components {
             title: string;
             /** Episode Number */
             episode_number?: number | null;
+            /**
+             * Season Number
+             * @default 1
+             */
+            season_number: number;
+            /**
+             * Episode Kind
+             * @default main
+             */
+            episode_kind: string;
             /** Synopsis */
             synopsis?: string | null;
         };
@@ -6332,8 +6597,12 @@ export interface components {
             id: string;
             /** Series Id */
             series_id: string;
+            /** Season Number */
+            season_number: number;
             /** Episode Number */
             episode_number: number;
+            /** Episode Kind */
+            episode_kind: string;
             /** Title */
             title: string;
             /** Synopsis */
@@ -6342,6 +6611,21 @@ export interface components {
             status: string;
             /** Canonical Work Id */
             canonical_work_id?: string | null;
+        };
+        /** DramaEpisodeUpdateRequest */
+        DramaEpisodeUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Synopsis */
+            synopsis?: string | null;
+            /** Episode Kind */
+            episode_kind?: string | null;
+            /** Season Number */
+            season_number?: number | null;
+            /** Episode Number */
+            episode_number?: number | null;
+            /** Status */
+            status?: string | null;
         };
         /** DramaSeriesCreateRequest */
         DramaSeriesCreateRequest: {
@@ -6492,6 +6776,36 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** EpisodeContentLinkCreateRequest */
+        EpisodeContentLinkCreateRequest: {
+            /** Content Type */
+            content_type: string;
+            /** Content Ref Id */
+            content_ref_id: string;
+            /**
+             * Role
+             * @default candidate
+             */
+            role: string;
+        };
+        /** EpisodeContentLinkResponse */
+        EpisodeContentLinkResponse: {
+            /** Id */
+            id: string;
+            /** Episode Id */
+            episode_id: string;
+            /** Content Type */
+            content_type: string;
+            /** Content Ref Id */
+            content_ref_id: string;
+            /** Role */
+            role: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** EpisodeCutResponse */
         EpisodeCutResponse: {
             /** Id */
@@ -6518,6 +6832,30 @@ export interface components {
              */
             lease_held: boolean;
             head?: components["schemas"]["CutRevisionResponse"] | null;
+        };
+        /** EpisodeExternalMetricResponse */
+        EpisodeExternalMetricResponse: {
+            channel: components["schemas"]["DistributionChannel"];
+            /** External Post Id */
+            external_post_id: string;
+            /** View Count */
+            view_count: number;
+            /** Like Count */
+            like_count: number;
+            /** Comment Count */
+            comment_count: number;
+            /** Share Count */
+            share_count: number;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+        };
+        /** EpisodeSetCanonicalWorkRequest */
+        EpisodeSetCanonicalWorkRequest: {
+            /** Work Id */
+            work_id?: string | null;
         };
         /** ExportClaimRequest */
         ExportClaimRequest: {
@@ -8055,6 +8393,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[AssetResponse] */
+        Page_AssetResponse_: {
+            /** Items */
+            items: components["schemas"]["AssetResponse"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[AuditLogView] */
         Page_AuditLogView_: {
             /** Items */
@@ -8511,6 +8861,25 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** PlatformAccountLinkResponse */
+        PlatformAccountLinkResponse: {
+            /** Id */
+            id: string;
+            channel: components["schemas"]["DistributionChannel"];
+            /** External Account Id */
+            external_account_id: string;
+            /** External Account Label */
+            external_account_label?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Connected At
+             * Format: date-time
+             */
+            connected_at: string;
+            /** Token Expires At */
+            token_expires_at?: string | null;
+        };
         /**
          * PreferencesRequest
          * @description Partial update; every field is optional.
@@ -8863,6 +9232,35 @@ export interface components {
             /** Scheduled At */
             scheduled_at?: string | null;
         };
+        /** PublicationFanoutItem */
+        PublicationFanoutItem: {
+            channel: components["schemas"]["DistributionChannel"];
+            status: components["schemas"]["PublicationStatus"];
+            /** External Post Id */
+            external_post_id?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
+        /** PublicationFanoutRequest */
+        PublicationFanoutRequest: {
+            /** Channels */
+            channels: components["schemas"]["DistributionChannel"][];
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Hashtags */
+            hashtags?: string[];
+        };
+        /** PublicationFanoutResponse */
+        PublicationFanoutResponse: {
+            /** Work Id */
+            work_id: string;
+            /** Results */
+            results: components["schemas"]["PublicationFanoutItem"][];
+        };
         /** PublicationIntentResponse */
         PublicationIntentResponse: {
             /** Id */
@@ -8891,8 +9289,11 @@ export interface components {
          * PublicationStatus
          * @description Lifecycle of one distribution intent.
          *
-         *     Nothing reaches `SUBMITTED` yet: it belongs to the OAuth direct-publish path
-         *     that is deliberately left unimplemented, together with `FAILED`.
+         *     `SUBMITTED` and `FAILED` are reachable now: `app.domain.distribution.
+         *     service.publish_fanout` advances a `PublicationIntent` row to one of them
+         *     once it actually calls a platform's `create_post`. A channel with no
+         *     configured/linked account never leaves `EXPORTED`/`READY` — the manual
+         *     download path is untouched.
          * @enum {string}
          */
         PublicationStatus: "draft" | "ready" | "exported" | "submitted" | "failed";
@@ -9278,22 +9679,6 @@ export interface components {
                 [key: string]: unknown;
             }[];
         };
-        /**
-         * SceneClip
-         * @description A generated `video_asset_kind=scene_video` clip — see
-         *     `scenes.service.SCENE_CLIPS_KEY`. No `view` field (unlike
-         *     `SceneReferenceAsset`): a video clip has no fixed shot tag.
-         */
-        SceneClip: {
-            /** Asset Id */
-            asset_id: string;
-            /** Label */
-            label?: string | null;
-            /** Url */
-            url?: string | null;
-            /** Created At */
-            created_at?: string | null;
-        };
         /** SceneCreateRequest */
         SceneCreateRequest: {
             /** Name */
@@ -9346,8 +9731,6 @@ export interface components {
             description?: string | null;
             /** Reference Assets */
             reference_assets?: components["schemas"]["SceneReferenceAsset"][];
-            /** Clips */
-            clips?: components["schemas"]["SceneClip"][];
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -10182,10 +10565,10 @@ export interface components {
          *     is *for* — the video-side equivalent of `ImageAssetKind`.
          *
          *     Deliberately its own enum, not a reuse of `ImageAssetKind`: values are
-         *     spelled differently on purpose (`scene_video`/`character_action`/
-         *     `transition_video`/`cover_video`, not `scene`/`character`/`cover`) so a
-         *     video kind can never collide with an image kind wherever the two get
-         *     looked up by bare string key (`copywriter._VIDEO_ENHANCE_SYSTEM_PROMPTS`,
+         *     spelled differently on purpose (`character_action`/`transition_video`/
+         *     `cover_video`, not `character`/`cover`) so a video kind can never
+         *     collide with an image kind wherever the two get looked up by bare
+         *     string key (`copywriter._VIDEO_ENHANCE_SYSTEM_PROMPTS`,
          *     `GenerationWorkflowTemplate.asset_kind` rows, agent-skill default-profile
          *     buckets). There is no `CharacterViewAngle` equivalent here — a
          *     `CHARACTER_ACTION` job always produces exactly one clip per submission,
@@ -10197,7 +10580,7 @@ export interface components {
          *     as `ImageAssetKind.COVER` today) — see `execute_asset_output_link`.
          * @enum {string}
          */
-        VideoAssetKind: "general" | "scene_video" | "character_action" | "transition_video" | "cover_video";
+        VideoAssetKind: "general" | "character_action" | "transition_video" | "cover_video";
         /**
          * VideoGenerationOptions
          * @description Typed H3 options; arbitrary provider JSON and webhooks are forbidden.
@@ -13632,6 +14015,40 @@ export interface operations {
             };
         };
     };
+    list_my_media_v1_assets_mine_get: {
+        parameters: {
+            query?: {
+                media_type?: components["schemas"]["MediaType"] | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AssetResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     presign_v1_uploads_presign_post: {
         parameters: {
             query?: never;
@@ -14892,6 +15309,215 @@ export interface operations {
             };
         };
     };
+    get_episode_v1_drama_episodes__episode_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DramaEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_episode_v1_drama_episodes__episode_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DramaEpisodeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DramaEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_content_links_v1_drama_episodes__episode_id__content_links_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeContentLinkResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_content_link_v1_drama_episodes__episode_id__content_links_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EpisodeContentLinkCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeContentLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_content_link_v1_drama_episodes__episode_id__content_links__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_canonical_work_v1_drama_episodes__episode_id__set_canonical_work_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EpisodeSetCanonicalWorkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DramaEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_cut_from_job_v1_episode_cuts_from_job_post: {
         parameters: {
             query?: never;
@@ -14914,6 +15540,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EpisodeCutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_transcription_v1_media_assets__asset_id__transcriptions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorOperationResponse"];
                 };
             };
             /** @description Validation Error */
@@ -16040,6 +16699,241 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    config_status_v1_platform_accounts_config_status_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_v1_platform_accounts__channel__connect_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                channel: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizeUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    callback_v1_platform_accounts__channel__callback_get: {
+        parameters: {
+            query: {
+                code: string;
+                state: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                channel: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAccountLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_accounts_v1_platform_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAccountLinkResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_v1_platform_accounts__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformAccountLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_fanout_v1_works__work_id__publications_fanout_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicationFanoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicationFanoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_metrics_v1_works__work_id__metrics_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                work_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeExternalMetricResponse"][];
                 };
             };
             /** @description Validation Error */

@@ -399,6 +399,24 @@ def run_media_analysis(analysis_id: str) -> str:
         return row.status
 
 
+@celery_app.task(name="app.workers.tasks.run_editor_transcription")
+def run_editor_transcription(analysis_id: str) -> str:
+    """Same queue, same row shape, same shrug-and-skip-on-missing-row
+    behavior as `run_media_analysis` — this is a second analyzer identity on
+    the same `MediaAnalysis` table, not a new pipeline."""
+    from app.domain.editor import analysis as media_analysis
+    from app.domain.errors import NotFound
+
+    with session_scope() as session:
+        try:
+            row = media_analysis.run_transcription(session, analysis_id)
+        except NotFound as exc:
+            logger.warning("editor transcription task skipped: %s", exc)
+            return "missing"
+        session.commit()
+        return row.status
+
+
 @celery_app.task(name="app.workers.tasks.expire_editor_leases")
 def expire_editor_leases() -> int:
     from sqlalchemy import update
@@ -446,6 +464,20 @@ def expire_orphan_editor_uploads() -> int:
             deleted += 1
         session.commit()
     return deleted
+
+
+@celery_app.task(name="app.workers.tasks.pull_episode_metrics")
+def pull_episode_metrics() -> int:
+    """Refreshes every submitted post's play/like/comment/share snapshot.
+
+    Runs on its own `platform_distribution` queue/beat schedule, separate from
+    the generation-job lifecycle queues — see `app.domain.distribution.
+    service.pull_episode_metrics` for the actual pull/upsert logic.
+    """
+    from app.domain.distribution import service as distribution_service
+
+    with session_scope() as session:
+        return distribution_service.pull_episode_metrics(session)
 
 
 def dispatch_generation(job: GenerationJob) -> None:

@@ -12,13 +12,75 @@ export const EXPORT_MAX_PIXELS = 1920 * 1080;
 export const EXPORT_MAX_ESTIMATED_BYTES = 80 * 1024 * 1024;
 
 export type TrackKind = 'video' | 'audio' | 'caption' | 'overlay';
-export type ElementType = 'clip' | 'caption' | 'brand';
+/** `sticker` is structurally identical to `clip` (same fields, same track kind) — see `insert_clip`'s `element_type`. */
+export type ElementType = 'clip' | 'caption' | 'brand' | 'sticker';
+
+/**
+ * `blur` alone runs through the vendored WASM module's real `gaussian-blur`
+ * shader when available (confirmed working by direct test — it's the only
+ * shader actually registered in the pinned Rust pipeline); every other type
+ * is always a plain Canvas2D `ctx.filter`, on both the WASM and fallback
+ * paths, since no GPU pass exists for them.
+ */
+export type EffectType = 'blur' | 'brightness' | 'contrast' | 'saturate' | 'grayscale';
+
+export interface ClipEffect {
+  type: EffectType;
+  /** `blur` reads `intensity` (0-100); brightness/contrast/saturate/grayscale read `amount` (percent, 100 = neutral). */
+  params: Record<string, number>;
+}
+
+export type MaskShape = 'rect' | 'ellipse';
+
+export interface ClipMask {
+  shape: MaskShape;
+  x_milli: number;
+  y_milli: number;
+  width_milli: number;
+  height_milli: number;
+  /** Feather radius as a fraction of canvas height, matching `BrandOverlay`'s milli-unit convention. */
+  feather_millipercent: number;
+}
 
 export interface CanvasSpec {
   width: number;
   height: number;
   fps_num: number;
   fps_den: number;
+}
+
+/**
+ * Coarse, hand-placed keyframes — not per-frame animation. Only `number`
+ * channels exist so far (opacity, transform); `color`/`discrete` are named
+ * in `kind` for forward compatibility with OpenCut's own documented channel
+ * model but have no resolver yet, so nothing produces them today.
+ */
+export type AnimatableProperty =
+  | 'opacity'
+  | 'transform.x_milli'
+  | 'transform.y_milli'
+  | 'transform.scale_millipercent'
+  | 'transform.rotation_millidegrees';
+
+export interface AnimationPoint {
+  at_ticks: number;
+  value: number;
+}
+
+export interface AnimationChannel {
+  kind: 'number';
+  points: AnimationPoint[];
+}
+
+export interface ElementAnimations {
+  channels: Partial<Record<AnimatableProperty, AnimationChannel>>;
+}
+
+export type TransitionType = 'crossfade' | 'dip_to_black';
+
+export interface ClipTransition {
+  type: TransitionType;
+  duration_ticks: number;
 }
 
 export interface TimelineElement {
@@ -34,12 +96,22 @@ export interface TimelineElement {
   speed_millipercent: number;
   text: string | null;
   caption_language: string | null;
+  effects: ClipEffect[];
+  mask: ClipMask | null;
+  animations: ElementAnimations;
+  /** Set at this clip's own start/end edge; realized only when the adjacent clip on the same track actually overlaps it in time (via ordinary trim/move) — see `activeVideoLayer`. */
+  transition_in: ClipTransition | null;
+  transition_out: ClipTransition | null;
 }
 
 export interface TimelineTrack {
   id: string;
   kind: TrackKind;
   elements: TimelineElement[];
+  /** Z-order for video tracks (higher = drawn on top); stable row order otherwise. */
+  order: number;
+  label: string | null;
+  muted: boolean;
 }
 
 export interface BrandOverlay {
@@ -80,6 +152,8 @@ export type EditCommand =
       duration_ticks: number;
       source_in_ticks?: number;
       element_id?: string;
+      /** 'sticker' is structurally identical to the default 'clip' — same fields, same track kind, just a different visual role. */
+      element_type?: 'clip' | 'sticker';
     }
   | { type: 'delete_elements'; element_ids: string[] }
   | { type: 'move_elements'; element_ids: string[]; delta_ticks: number; track_id?: string }
@@ -111,7 +185,46 @@ export type EditCommand =
       duration_ticks?: number;
     }
   | { type: 'set_canvas'; width: number; height: number; fps_num?: number; fps_den?: number }
-  | { type: 'set_brand_overlay'; overlay: BrandOverlay | null };
+  | { type: 'set_brand_overlay'; overlay: BrandOverlay | null }
+  | {
+      type: 'add_track';
+      kind: 'video' | 'audio';
+      label?: string | null;
+      order?: number;
+      track_id?: string;
+    }
+  | { type: 'remove_track'; track_id: string }
+  | { type: 'set_track_order'; track_id: string; order: number }
+  | { type: 'set_track_muted'; track_id: string; muted: boolean }
+  | { type: 'add_effect'; element_id: string; effect: ClipEffect }
+  | { type: 'remove_effect'; element_id: string; effect_index: number }
+  | {
+      type: 'update_effect_params';
+      element_id: string;
+      effect_index: number;
+      params: Record<string, number>;
+    }
+  | { type: 'set_clip_mask'; element_id: string; mask: ClipMask | null }
+  | {
+      type: 'set_keyframe';
+      element_id: string;
+      property: AnimatableProperty;
+      at_ticks: number;
+      value: number;
+    }
+  | {
+      type: 'delete_keyframe';
+      element_id: string;
+      property: AnimatableProperty;
+      at_ticks: number;
+    }
+  | { type: 'clear_keyframes'; element_id: string; property: AnimatableProperty }
+  | {
+      type: 'set_transition';
+      element_id: string;
+      edge: 'in' | 'out';
+      transition: ClipTransition | null;
+    };
 
 export interface EditCommandBatch {
   schema_version: 1;

@@ -6,10 +6,12 @@ the comparison: an asset and a caption on one side, the selected profile on the
 other, reported as one verdict per rule so the UI can show a checklist rather
 than a single pass/fail.
 
-Distribution stops at "exported": the platform hands back the file and the
-caption, and the creator posts it. `PublicationIntent` still records the attempt
-so switching on a direct-publish integration later is a matter of advancing an
-existing row rather than inventing history.
+This module always creates the intent and hands back the material to post
+with — `EXPORTED`/`READY`, never `SUBMITTED`/`FAILED`. Advancing an intent
+into those two states, by actually calling a connected platform's API, is
+`app.domain.distribution.service.publish_fanout`'s job (`mark_submitted`/
+`mark_failed` below are its write path into this same row); a channel with no
+configured/linked account still stops here exactly as before.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.media import service as media_service
 from app.domain.shortform import clarify
 from app.models import Asset, Draft, PublicationIntent, Work, WorkVersion
+from app.models.base import utcnow
 from app.models.enums import (
     LifecycleStatus,
     ModerationStage,
@@ -195,9 +198,11 @@ def create_publication_intent(
 ) -> PublicationBundle:
     """Records an export and hands back the material to post with.
 
-    The status reflects what actually happened: `EXPORTED` once a download URL
-    exists, `READY` when the work has no deliverable yet. `SUBMITTED` is only
-    reachable by a direct-publish integration, which does not exist.
+    The status reflects what actually happened here: `EXPORTED` once a
+    download URL exists, `READY` when the work has no deliverable yet.
+    `SUBMITTED`/`FAILED` are only ever set afterwards, by `mark_submitted`/
+    `mark_failed` below, once a caller has actually pushed this same intent
+    to a real platform.
     """
     work, version = _owned_work(session, work_id=work_id, user_id=user_id)
 
@@ -234,6 +239,25 @@ def list_publication_intents(
             .limit(limit)
         )
     )
+
+
+def mark_submitted(
+    session: Session, intent: PublicationIntent, *, external_post_id: str | None
+) -> PublicationIntent:
+    """Advances an intent once `app.domain.distribution.service` actually
+    pushed it to a real platform and got a post id back."""
+    intent.status = PublicationStatus.SUBMITTED
+    intent.external_post_id = external_post_id
+    intent.submitted_at = utcnow()
+    session.flush()
+    return intent
+
+
+def mark_failed(session: Session, intent: PublicationIntent) -> PublicationIntent:
+    """Counterpart to `mark_submitted` for a real platform push that failed."""
+    intent.status = PublicationStatus.FAILED
+    session.flush()
+    return intent
 
 
 def export_url_for(session: Session, *, work_id: str, user_id: str) -> str | None:

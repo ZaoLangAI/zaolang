@@ -163,6 +163,8 @@ function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) 
   const items = [
     { href: '/profile', label: t('nav.profile') },
     { href: '/collection', label: t('nav.collection') },
+    { href: '/create/characters', label: t('nav.characterLibrary') },
+    { href: '/create/scenes', label: t('nav.sceneLibrary') },
     { href: '/billing', label: t('nav.billing') },
     { href: '/profile/settings', label: t('nav.settings') },
   ] as const;

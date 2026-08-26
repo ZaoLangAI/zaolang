@@ -80,6 +80,17 @@ class ScriptLinksUpdateRequest(ApiModel):
     scenes: list[ScriptSceneLinkUpdate] = Field(default_factory=list, max_length=40)
 
 
+class ScriptContentUpdateRequest(ApiModel):
+    """A direct hand-edit of the script text — bypasses the LLM turn
+    machinery, same as `ScriptLinksUpdateRequest`. The full document, not a
+    per-field patch, so `app.agents.copywriter._sanitize_script` can do all
+    the bounds/shape validation the same way it does for every other write
+    path into `script_json`.
+    """
+
+    script: ScriptDocument
+
+
 class ScriptTurnSummary(ApiModel):
     id: str
     turn_no: int

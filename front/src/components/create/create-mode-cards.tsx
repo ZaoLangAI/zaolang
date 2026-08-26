@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import { useSession } from '@/components/auth/session-provider';
 import {
   AudioGenerationIllustration,
-  DramaIllustration,
   ImageCreationIllustration,
   ImageToVideoIllustration,
   RemixIllustration,
@@ -33,7 +32,6 @@ type ModeId =
   | 'image_to_video'
   | 'audio_generation'
   | 'shortform'
-  | 'drama'
   | 'remix';
 
 const MODES: Array<{
@@ -93,14 +91,6 @@ const MODES: Array<{
     accent: 'text-amber',
   },
   {
-    id: 'drama',
-    icon: <IconVideo className="size-5" />,
-    illustration: <DramaIllustration className="size-full" />,
-    href: '/create/drama',
-    tone: 'bg-primary/15 text-primary',
-    accent: 'text-primary',
-  },
-  {
     id: 'remix',
     icon: <IconRemix className="size-5" />,
     illustration: <RemixIllustration className="size-full" />,
@@ -152,11 +142,6 @@ export function CreateModeCards({ className }: { className?: string }) {
       title: t('modeShortformTitle'),
       desc: t('modeShortformDesc'),
       tag: t('modeShortformTag'),
-    },
-    drama: {
-      title: t('modeDramaTitle'),
-      desc: t('modeDramaDesc'),
-      tag: t('modeDramaTag'),
     },
     remix: { title: t('modeRemixTitle'), desc: t('modeRemixDesc'), tag: t('modeRemixTag') },
   };

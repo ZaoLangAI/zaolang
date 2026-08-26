@@ -68,6 +68,22 @@ _IMAGE_SIZE_BY_ASPECT = {
     "21:9": "1024x576",
 }
 
+# AiHubMix has no documented `/v1/images/generations` support for feeding a
+# reference image into a Qwen model — the `image` field `_image_reference_
+# urls` builds is honoured only loosely there (a 2026-08-19 live check got
+# the right gender and nothing else of the reference: wrong clothes, wrong
+# face). The real contract for Qwen image editing is this dedicated
+# multimodal endpoint (`docs.aihubmix.com/en/api/Image-Gen`, "Qwen-Image-
+# Edit"): `input.image` (1-3 images) + `input.text`, and it reliably
+# preserves identity/outfit/pose across a view change — verified against
+# the same reference photo in that same check. Scoped to Qwen models only:
+# every other family keeps going through `_submit_image`'s OpenAI-shaped
+# request, unverified against the real API but at least no worse than
+# before this fix.
+_QWEN_EDIT_MODEL_PATH = "qianfan/qwen-image-edit"
+# The documented image-to-image limit for this endpoint.
+_QWEN_EDIT_MAX_REFERENCES = 3
+
 
 def join_media_url(base_url: str, path: str) -> str:
     """Join a rooted media path onto a gateway base without doubling `/v1`.
@@ -170,6 +186,10 @@ class AiHubMixMediaProvider(GenerationProvider):
     # -- image: text_to_image / image_to_image -----------------------------
 
     def _submit_image(self, request: GenerationRequest, started: float) -> GenerationResult:
+        image_refs = _image_reference_urls(request)
+        if image_refs and _is_qwen_model(self._model):
+            return self._submit_qwen_image_edit(request, started, image_refs)
+
         size = _size_for(request.aspect_ratio, request.quality_tier)
         body: dict[str, object] = {
             "model": self._model,
@@ -177,7 +197,6 @@ class AiHubMixMediaProvider(GenerationProvider):
             "size": size,
             "n": 1,
         }
-        image_refs = _image_reference_urls(request)
         if image_refs:
             body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
 
@@ -208,6 +227,71 @@ class AiHubMixMediaProvider(GenerationProvider):
             height=height,
             latency_ms=self._elapsed_ms(started),
             metadata={"provider": self.name, "model": self._model},
+        )
+
+    def _submit_qwen_image_edit(
+        self, request: GenerationRequest, started: float, image_refs: list[str]
+    ) -> GenerationResult:
+        """Qwen's real image-editing contract — see `_QWEN_EDIT_MODEL_PATH`."""
+        images: str | list[str] = (
+            image_refs[0] if len(image_refs) == 1 else image_refs[:_QWEN_EDIT_MAX_REFERENCES]
+        )
+        input_body: dict[str, object] = {
+            "prompt": request.prompt,
+            "image": images,
+            "n": 1,
+            "watermark": False,
+        }
+        if request.seed is not None:
+            input_body["seed"] = request.seed
+        # No `size`: unlike `qwen-image-3.0`'s plain generations call, this
+        # endpoint rejected every `_IMAGE_SIZE_BY_ASPECT` value tried here
+        # with `image size is invalid` (2026-08-19 live check) — it takes
+        # its output resolution from the input image instead.
+
+        with self._client() as client:
+            response = client.post(
+                media_request_path(
+                    self._creds.base_url, f"/v1/models/{_QWEN_EDIT_MODEL_PATH}/predictions"
+                ),
+                json={"input": input_body},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            output_url = _qwen_edit_output_url(payload)
+
+        if not output_url:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
+
+        # Deliberately a bare, header-less client rather than `self._client()`
+        # reused: this endpoint's `output` URL is a pre-signed BCE (Baidu
+        # Cloud) object-storage link, not an AiHubMix one, and BCE's edge
+        # rejects it with `MissingDateHeader` once *any* `Authorization`
+        # header rides along (2026-08-19 live check) — it reads that header's
+        # mere presence as "the caller means to authenticate via BCE's own
+        # header-signature scheme", which needs a paired `date`/`x-bce-date`
+        # we have no reason to send, instead of the query-string signature
+        # the presigned URL already carries.
+        with httpx.Client(timeout=self._creds.timeout_s) as download_client:
+            download = download_client.get(output_url)
+            download.raise_for_status()
+            image_bytes = download.content or None
+
+        if not image_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
+
+        width, height = _probe_image_size(image_bytes)
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.png"
+        s3.put_object(object_key, image_bytes, content_type="image/png")
+
+        return GenerationResult(
+            succeeded=True,
+            object_key=object_key,
+            mime_type="image/png",
+            width=width,
+            height=height,
+            latency_ms=self._elapsed_ms(started),
+            metadata={"provider": self.name, "model": self._model, "endpoint": "qwen-image-edit"},
         )
 
     # -- audio: audio_generation ---------------------------------------------
@@ -465,6 +549,14 @@ def build_video_payload(
             for ref in frame_refs
         ]
     elif input_refs:
+        # No `role` field: confirmed live against a real AiHubMix credential
+        # (2026-08-20) that this endpoint's schema is strict, not tolerant of
+        # unknown fields — adding `role` (to mirror MiniMax's own native
+        # "reference-to-video" contract) got a hard `400 schema_violation:
+        # "Unknown request parameter: \`role\`."` on every submission. AiHubMix's
+        # own docs don't cover minimax-h3 at all, so this endpoint's contract
+        # is only known through what's actually been verified live: `type`+
+        # `url` only, nothing else.
         body["input_references"] = [
             {
                 "type": "video_url" if ref.media_type == "video" else "image_url",
@@ -525,6 +617,24 @@ def _data_uri_for(object_key: str) -> str:
     mime = mimetypes.guess_type(object_key)[0] or "image/png"
     encoded = base64.b64encode(payload).decode("ascii")
     return f"data:{mime};base64,{encoded}"
+
+
+def _is_qwen_model(model: str) -> bool:
+    return "qwen" in model.strip().lower()
+
+
+def _qwen_edit_output_url(payload: object) -> str | None:
+    """The predictions endpoint answers `{"output": [{"url": ...}]}` — a
+    different shape than `/v1/images/generations`'s `{"data": [...]}` (see
+    `_image_bytes_from_payload`), and (observed 2026-08-19) always a URL,
+    never a `b64_json`."""
+    if not isinstance(payload, dict):
+        return None
+    outputs = payload.get("output")
+    if not isinstance(outputs, list) or not outputs or not isinstance(outputs[0], dict):
+        return None
+    url = outputs[0].get("url")
+    return url if isinstance(url, str) and url else None
 
 
 def _image_bytes_from_payload(payload: object, client: httpx.Client) -> bytes | None:

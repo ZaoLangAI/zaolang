@@ -5,13 +5,14 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
-import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import { Button, IconButton } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import {
   IconClose,
+  IconPencil,
   IconPlus,
+  IconShare,
   IconTrash,
   IconUpload,
   IconVideo,
@@ -20,7 +21,6 @@ import { Badge, type BadgeTone, Card, EmptyState, ErrorNotice } from '@/componen
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
-import { Link } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { CreationSkillStatus, Scene } from '@/lib/api/types';
@@ -361,6 +361,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
           {scenes.map((scene) => (
             <li key={scene.id}>
               <Card className="flex h-full flex-col gap-3 p-4">
+                <h3 className="truncate text-sm font-semibold">{scene.name}</h3>
                 <div className="flex gap-2 overflow-x-auto">
                   {scene.reference_assets && scene.reference_assets.length > 0 ? (
                     scene.reference_assets.map((asset) => (
@@ -385,75 +386,47 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                     </div>
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
+                {scene.status !== 'draft' || scene.access_credits > 0 ? (
                   <div className="flex items-center gap-1.5">
-                    <Badge tone={STATUS_TONE[scene.status]}>
-                      {tSkills(STATUS_LABEL_KEY[scene.status])}
-                    </Badge>
+                    {scene.status !== 'draft' ? (
+                      <Badge tone={STATUS_TONE[scene.status]}>
+                        {tSkills(STATUS_LABEL_KEY[scene.status])}
+                      </Badge>
+                    ) : null}
                     {scene.access_credits > 0 ? (
                       <Badge tone="primary">
                         {tSkills('priceCredits', { credits: scene.access_credits })}
                       </Badge>
                     ) : null}
                   </div>
-                  <h3 className="mt-1.5 truncate text-sm font-semibold">{scene.name}</h3>
+                ) : null}
+                <div className="min-w-0 flex-1">
                   {scene.description ? (
-                    <p className="mt-1 line-clamp-2 text-xs text-muted">{scene.description}</p>
+                    <p className="line-clamp-2 text-xs text-muted">{scene.description}</p>
                   ) : null}
-                  {scene.clips && scene.clips.length > 0 ? (
-                    <div className="mt-2">
-                      <p className="text-[11px] text-muted">{t('clipsLabel')}</p>
-                      <div className="mt-1 flex gap-2 overflow-x-auto">
-                        {scene.clips.map((clip) => (
-                          <a
-                            key={clip.asset_id}
-                            href={clip.url ?? undefined}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="relative size-14 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft"
-                          >
-                            {clip.url ? <VideoFirstFrame src={clip.url} /> : null}
-                            <span className="absolute inset-0 grid place-items-center bg-black/20">
-                              <IconVideo className="size-4 text-white" />
-                            </span>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  <Link
-                    href={`/create/new?mode=video_creation&videoAssetKind=scene_video&targetSceneId=${scene.id}`}
-                    className="mt-2 inline-block text-[11px] text-muted hover:text-text"
-                  >
-                    {t('generateSceneVideo')}
-                  </Link>
                 </div>
-                {/* Fixed 3-slot row (Edit | Publish-or-Withdraw | Delete),
-                    same layout as `character-library.tsx` — status always
-                    yields exactly one of Publish/Withdraw, so the grid never
-                    has a hole. */}
-                <div className="mt-auto grid grid-cols-[1fr_1fr_auto] gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openEdit(scene)}>
-                    {tActions('edit')}
-                  </Button>
+                <div className="mt-auto flex items-center justify-center gap-6 border-t border-border pt-3">
+                  <IconButton size="sm" label={tActions('edit')} onClick={() => openEdit(scene)}>
+                    <IconPencil className="size-4" />
+                  </IconButton>
                   {scene.status === 'draft' || scene.status === 'rejected' ? (
-                    <Button
+                    <IconButton
                       size="sm"
-                      variant="ghost"
+                      label={t('publishScene')}
                       loading={publishingId === scene.id}
                       onClick={() => void publish(scene)}
                     >
-                      {t('publishScene')}
-                    </Button>
+                      <IconShare className="size-4" />
+                    </IconButton>
                   ) : (
-                    <Button
+                    <IconButton
                       size="sm"
-                      variant="ghost"
+                      label={tSkills('withdraw')}
                       loading={withdrawingId === scene.id}
                       onClick={() => void withdraw(scene)}
                     >
-                      {tSkills('withdraw')}
-                    </Button>
+                      <IconShare className="size-4" />
+                    </IconButton>
                   )}
                   <IconButton
                     variant="danger"

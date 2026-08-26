@@ -124,7 +124,7 @@ class PromptEnhanceRequest(ApiModel):
     # the polish to that kind's dedicated default agent (`general`/omitted
     # behaves like today, and audio callers never set this).
     asset_kind: ImageAssetKind | None = None
-    # The video-side equivalent — `scene_video`/`character_action`/
+    # The video-side equivalent — `character_action`/
     # `transition_video`/`cover_video` routes the polish to that kind's
     # dedicated default agent the same way `asset_kind` does for images (see
     # `agent_skills.service.ASSET_KIND_BUCKETS`, which spans both). A caller

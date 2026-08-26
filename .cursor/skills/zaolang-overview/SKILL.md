@@ -14,7 +14,7 @@ A global AI co-creation sharing platform. **Read this routing table first, then 
 | `back/` | FastAPI + Agno AgentOS, conda env `zaolang`, Python 3.12 |
 | `front/` | Next.js 16 App Router + Tailwind v4, fnm reading `front/.node-version`; consumer and admin share one project, isolated in session and API |
 | `ios/` | the native iOS client, SwiftUI + Swift Concurrency, an XcodeGen project, a read-only M1 closed loop, no admin capability |
-| `infra/` | docker-compose: PostgreSQL 17 (pgvector) on `5433`, Redis on `6380`, MinIO on `9000` |
+| `infra/` | docker-compose: PostgreSQL 17 (pgvector) on `5433`, Redis on `6380`, MinIO on `9000` (optional — local default object storage is Tencent COS via `STORAGE_BACKEND`) |
 | `docs/` | the MkDocs site source and ops runbook |
 | `assets-pack/` | where a user drops real media; `manifest.example.json` in the repo defines the import contract — for a real import, copy/fill in a local `assets-pack/manifest.json` (not committed by default) |
 

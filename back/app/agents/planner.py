@@ -199,7 +199,10 @@ _ASSET_KIND_BRIEF: dict[str, str] = {
         "单一视角的一张图，禁止在同一张图里拼接展示多个角度"
         "（例如把正面和侧面画在一起，或做成分格对比图/转身参考图）。"
     ),
-    ImageAssetKind.SCENE.value: "短剧场景图：一个具体地点的空镜或建立镜头，无主要角色遮挡构图。",
+    ImageAssetKind.SCENE.value: (
+        "短剧场景图：一个具体地点的纯静态空镜或建立镜头，主体是空间本身，"
+        "画面中不能出现任何人物/角色痕迹（含背影、剪影、局部肢体或人群）。"
+    ),
     ImageAssetKind.COVER.value: (
         "短剧/系列封面：突出主视觉与氛围，适合竖版封面裁切，避免杂乱前景遮挡标题区。"
     ),
@@ -239,6 +242,10 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
 - 当 asset_kind 是 character 且用户之前已经生成过同一角色的其他视角时
   （source_params 里会带出该角色已有的描述），prompt_enhancements 必须包含足以保持发型、
   服装、体型一致的关键特征，不要遗漏
+- 当 asset_kind 是 scene 时，无人物入镜同样是硬性要求，优先级高于"不要改变用户描述本身特征"
+  这条：如果用户描述里写了人物或人物动作（哪怕只是带过一句），prompt_enhancements 里也要明确
+  加入"去除人物""替换为无人纯场景"这类描述去覆盖它们，negative_prompt_suggestions 必须包含
+  人物相关的反面描述（例如"人物/人影/背影/人群"）
 - subject_name 是这个角色/场景适合作为库内条目名称的简短命名（4-12 个字），
   没有更具体的名字时可以用一个概括性的称呼（例如"神秘女侦探"），但不要留空
 - negative_prompt_suggestions 给出会破坏该用途可用性的反面描述
@@ -318,11 +325,6 @@ VIDEO_ASSET_PLAN_SLOT = "video_asset_plan"
 # single frame — see `VideoAssetKind`'s own docstring for why this is a
 # fully separate system prompt rather than folded into `ASSET_PLAN_SYSTEM_PROMPT`.
 _VIDEO_ASSET_KIND_BRIEF: dict[str, str] = {
-    VideoAssetKind.SCENE.value: (
-        "短剧场景空镜：设计一个具体地点的运镜方式（推/拉/摇/移/环绕），"
-        "环境氛围与光线可以随镜头推进有变化，避免人物入镜打断场景的纯净度，"
-        "给出适合剪辑对轨的清晰起幅与落幅动作。"
-    ),
     VideoAssetKind.CHARACTER_ACTION.value: (
         "角色动作片段：设计一个具体、可执行的单一主体动作，动作的起幅与落幅要清晰，"
         "方便和其他镜头剪辑对轨；若 source_params 带出该角色已有的形象描述，"

@@ -31,7 +31,7 @@ Key fixtures live in `back/tests/conftest.py`: `db` (rollback-style, used by mos
 
 ## Frontend: Three Playwright Projects
 
-`front/playwright.config.ts`: `setup` (log in and store sessions) → `e2e` (`e2e/flows/*.spec.ts`, incl. the desktop-only `editor.spec.ts`), `a11y` (`e2e/a11y.spec.ts`), `visual-qa` (`e2e/visual.spec.ts`). All run with `workers: 1` — the three suites share one seeded database, and parallel publishing would cross-contaminate assertions. `/create/drama` is deliberately excluded from both `a11y-mobile` and `PUBLIC_PAGES`.
+`front/playwright.config.ts`: `setup` (log in and store sessions) → `e2e` (`e2e/flows/*.spec.ts`, incl. the desktop-only `editor.spec.ts`), `a11y` (`e2e/a11y.spec.ts`), `visual-qa` (`e2e/visual.spec.ts`). All run with `workers: 1` — the three suites share one seeded database, and parallel publishing would cross-contaminate assertions. `/create/short/{cutId}` (the cut editor, formerly at `/create/drama/{cutId}`) is deliberately excluded from both `a11y-mobile` and `PUBLIC_PAGES` — it's a dynamic route anyway, but the desktop-only gate is the reason even if it weren't. `/create/short` itself (the drama-series dashboard) is a plain sign-in-gated page and is already in both lists.
 
 Support files: `e2e/support/session.ts` (`ACCOUNTS` / `STATE_FILES` / `signIn` / `watchForPageErrors`), `support/axe.ts`, `support/theme.ts`, `setup/auth.setup.ts`.
 
@@ -52,7 +52,7 @@ cd front && npm run build && npx next start --port 3100
 make test-e2e && make test-a11y && make qa-visual
 ```
 
-`front/.env.local` needs `ALLOW_LOCAL_IMAGE_HOSTS=1`: Next 16 rejects image optimization against private-address hosts by default (SSRF protection), and the local MinIO instance is exactly that — skip this and every cover image 400s. Never set this in production.
+`front/.env.local` needs `ALLOW_LOCAL_IMAGE_HOSTS=1` only when `STORAGE_BACKEND=minio`: Next 16 rejects image optimization against private-address hosts by default (SSRF protection), and the local MinIO instance is exactly that — skip this and every cover image 400s. Not needed with the default `tencent_cos` backend, since COS serves from a public domain. Never set this in production.
 
 ## Verify
 

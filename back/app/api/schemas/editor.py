@@ -33,17 +33,49 @@ class DramaSeriesResponse(ApiModel):
 class DramaEpisodeCreateRequest(ApiModel):
     title: str = Field(min_length=1, max_length=200)
     episode_number: int | None = Field(default=None, ge=1, le=10_000)
+    season_number: int = Field(default=1, ge=1, le=1_000)
+    episode_kind: str = "main"
     synopsis: str | None = Field(default=None, max_length=4000)
+
+
+class DramaEpisodeUpdateRequest(ApiModel):
+    title: str | None = Field(default=None, max_length=200)
+    synopsis: str | None = Field(default=None, max_length=4000)
+    episode_kind: str | None = None
+    season_number: int | None = Field(default=None, ge=1, le=1_000)
+    episode_number: int | None = Field(default=None, ge=1, le=10_000)
+    status: str | None = None
 
 
 class DramaEpisodeResponse(ApiModel):
     id: str
     series_id: str
+    season_number: int
     episode_number: int
+    episode_kind: str
     title: str
     synopsis: str | None = None
     status: str
     canonical_work_id: str | None = None
+
+
+class EpisodeContentLinkCreateRequest(ApiModel):
+    content_type: str
+    content_ref_id: str = Field(min_length=1, max_length=40)
+    role: str = "candidate"
+
+
+class EpisodeContentLinkResponse(ApiModel):
+    id: str
+    episode_id: str
+    content_type: str
+    content_ref_id: str
+    role: str
+    created_at: dt.datetime
+
+
+class EpisodeSetCanonicalWorkRequest(ApiModel):
+    work_id: str | None = None
 
 
 class CutCreateRequest(ApiModel):

@@ -44,6 +44,10 @@ QUEUE_NAMES = (
     # produce would stop.
     "provider_task_polling",
     "media_analysis",
+    # Real-platform OAuth token refresh and metrics pulls — its own queue so
+    # a slow/failing external platform call never competes with, or gets
+    # delayed by, the generation-job lifecycle queues above.
+    "platform_distribution",
 )
 
 celery_app.conf.update(
@@ -72,8 +76,10 @@ celery_app.conf.update(
         "app.workers.tasks.expire_stale_input_requests": {"queue": "webhook_reconcile"},
         "app.workers.tasks.poll_async_provider_tasks": {"queue": "provider_task_polling"},
         "app.workers.tasks.run_media_analysis": {"queue": "media_analysis"},
+        "app.workers.tasks.run_editor_transcription": {"queue": "media_analysis"},
         "app.workers.tasks.expire_editor_leases": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_orphan_editor_uploads": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.pull_episode_metrics": {"queue": "platform_distribution"},
         "app.workers.tasks.purge_expired_exports": {"queue": "webhook_reconcile"},
     },
     beat_schedule={
@@ -107,6 +113,12 @@ celery_app.conf.update(
         "expire-orphan-editor-uploads": {
             "task": "app.workers.tasks.expire_orphan_editor_uploads",
             "schedule": 300.0,
+        },
+        # Basic counts only (see distribution service docstring) — hourly is
+        # plenty, no need for the tighter cadence the job-lifecycle sweeps use.
+        "pull-episode-metrics": {
+            "task": "app.workers.tasks.pull_episode_metrics",
+            "schedule": 3600.0,
         },
         # Retention is 30 days (`compliance.purge_expired_exports`'s default);
         # once a day is plenty to keep expired export bundles from lingering.

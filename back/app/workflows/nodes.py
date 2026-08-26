@@ -666,7 +666,7 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
     # which carries the script's own character name/scene heading) wins over
     # the planner's own guess from the prompt. The fallback text is kind-
     # specific so a scene auto-create never inherits "新角色".
-    is_scene_kind = asset_kind in (ImageAssetKind.SCENE.value, VideoAssetKind.SCENE.value)
+    is_scene_kind = asset_kind == ImageAssetKind.SCENE.value
     default_subject_name = "新场景" if is_scene_kind else "新角色"
     subject_name = (
         str(
@@ -690,22 +690,9 @@ def execute_asset_output_link(ctx: WorkflowContext, config: AssetOutputLinkConfi
                 if target_id:
                     ctx.job.linked_character_id = target_id
                     ctx.session.flush()
-            elif asset_kind == VideoAssetKind.SCENE.value:
-                target_id = ctx.params.get("target_scene_id")
-                for entry in outputs:
-                    target_id = _link_scene_clip_output(
-                        ctx,
-                        config,
-                        asset_id=str(entry.get("asset_id")),
-                        subject_name=subject_name,
-                        target_id=target_id,
-                    )
-                if target_id:
-                    ctx.job.linked_scene_id = target_id
-                    ctx.session.flush()
-            # `TRANSITION`/`COVER` video have no library to attach to, same
-            # as image `COVER` below — the output stays a plain generated
-            # asset.
+            # `CHARACTER_ACTION` is handled above; `TRANSITION`/`COVER` video
+            # have no library to attach to, same as image `COVER` below —
+            # the output stays a plain generated asset.
         elif asset_kind == ImageAssetKind.CHARACTER.value:
             target_id = ctx.params.get("target_character_id")
             for entry in outputs:
@@ -924,50 +911,6 @@ def _link_character_action_output(
     )
     ctx.state["created_character_id"] = character.id
     return character.id
-
-
-def _link_scene_clip_output(
-    ctx: WorkflowContext,
-    config: AssetOutputLinkConfig,
-    *,
-    asset_id: str,
-    subject_name: str,
-    target_id: str | None,
-) -> str | None:
-    """Attaches one `scene`-kind video output to `target_id`'s `clips` list,
-    auto-creating a scene from scratch on the first call if there was none —
-    mirrors `_link_character_action_output` one asset type over, calling
-    `scenes_service.append_clip` (`params_json["scene"]["clips"]`) rather
-    than `append_reference_asset`, for the same reason. Also the fallback
-    when `target_id` no longer resolves, same reason as
-    `_link_character_output`'s.
-    """
-    if target_id:
-        try:
-            scenes_service.append_clip(
-                ctx.session, user_id=ctx.job.user_id, scene_id=str(target_id), asset_id=asset_id
-            )
-            return target_id
-        except NotFound:
-            logger.warning(
-                "job %s target_scene_id=%s no longer exists; auto-creating a replacement",
-                ctx.job.id,
-                target_id,
-            )
-    if not config.auto_create_scene:
-        return None
-    scene = scenes_service.create_scene(
-        ctx.session,
-        user_id=ctx.job.user_id,
-        name=subject_name,
-        description=None,
-        reference_asset_ids=[],
-    )
-    scenes_service.append_clip(
-        ctx.session, user_id=ctx.job.user_id, scene_id=scene.id, asset_id=asset_id
-    )
-    ctx.state["created_scene_id"] = scene.id
-    return scene.id
 
 
 def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfig) -> NodeResult:

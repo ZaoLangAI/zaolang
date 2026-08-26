@@ -271,6 +271,11 @@ def job_payload(session: Session, job: GenerationJob) -> dict[str, Any]:
         "prompt_excerpt": prompt[:PROMPT_EXCERPT_MAX],
         "is_remix": bool(job.source_work_version_id),
     }
+    if job.draft_id:
+        # Lets the frontend route image-creation jobs back into the studio
+        # (inline progress/version history) instead of `/jobs/[jobId]` — see
+        # `notification-format.ts#targetHref`.
+        payload["draft_id"] = job.draft_id
     profile = params.get("shortform_profile")
     if isinstance(profile, str) and profile:
         payload["shortform_profile"] = profile

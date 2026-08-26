@@ -120,6 +120,17 @@ export function updateScriptLinks(
 }
 
 /**
+ * Persists a hand-edit of the script text (logline, character traits, block
+ * text) directly to `episode.script_json` — bypasses the LLM turn machinery,
+ * same as `updateScriptLinks` above. Always sends the *entire* document, not
+ * a per-field patch, since the backend re-validates/bounds the whole thing
+ * through the same sanitizer every LLM-produced script goes through.
+ */
+export function updateScriptContent(episodeId: string, script: ScriptDocument) {
+  return api.patch<ScriptDocument>(`/v1/scripts/${episodeId}`, { script });
+}
+
+/**
  * Low-level SSE-over-POST reader.
  *
  * Unlike `useJobStream`'s GET-based long-lived progress feed, one script

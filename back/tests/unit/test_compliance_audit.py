@@ -197,7 +197,9 @@ def test_each_export_lands_on_its_own_key(db: Session, populated: User) -> None:
 def test_an_export_is_only_reachable_through_a_signed_url(db: Session, populated: User) -> None:
     key = compliance.export_user_data(db, populated.id)
     url = compliance.signed_export_url(key)
-    assert "Signature=" in url or "X-Amz-Signature" in url
+    # MinIO/S3 signs with `X-Amz-Signature`; Tencent COS signs with its own
+    # `q-signature` — whichever backend `STORAGE_BACKEND` selects locally.
+    assert any(marker in url for marker in ("Signature=", "X-Amz-Signature", "q-signature="))
 
 
 # --- erasure --------------------------------------------------------------

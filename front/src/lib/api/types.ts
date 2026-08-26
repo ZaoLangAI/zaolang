@@ -64,6 +64,7 @@ export type SeriesEpisode = S['SeriesEpisodeSummary'];
 
 export type DramaSeries = S['DramaSeriesResponse'];
 export type DramaEpisode = S['DramaEpisodeResponse'];
+export type EpisodeContentLink = S['EpisodeContentLinkResponse'];
 export type EpisodeCut = S['EpisodeCutResponse'];
 export type CutRevision = S['CutRevisionResponse'];
 export type EditorLease = S['LeaseResponse'];

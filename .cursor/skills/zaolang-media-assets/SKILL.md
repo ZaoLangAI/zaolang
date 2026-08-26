@@ -14,9 +14,9 @@ Ensure what goes into the bucket is something we allow, that what comes out of i
 
 | File | Contents |
 | --- | --- |
-| `back/app/domain/media/service.py` | `presign_upload` / `complete_upload` / `register_generated_asset` / `record_provenance` / `record_fingerprint` / `find_near_duplicates` / `signed_url_for` / `publish_asset` |
+| `back/app/domain/media/service.py` | `presign_upload` / `complete_upload` / `register_generated_asset` / `record_provenance` / `record_fingerprint` / `find_near_duplicates` / `signed_url_for` / `publish_asset` / `list_owned_media` (the editor's media-library query — `GENERATION_OUTPUT`/`EDITOR_SOURCE` roles only) |
 | `back/app/storage/s3.py` | `ALLOWED_UPLOAD_MIME_TYPES`, `MAX_UPLOAD_BYTES`, `PURPOSE_PREFIXES` (incl. `editor_source` / `editor_export`), presigning, bucket CORS and lifecycle policy |
-| `back/app/api/v1/uploads.py` | `POST /v1/uploads/presign` and `POST /v1/uploads/complete` |
+| `back/app/api/v1/uploads.py` | `POST /v1/uploads/presign` and `POST /v1/uploads/complete`; `GET /assets:mine` (the drama editor's media-library listing — see `zaolang-editor-drama`) |
 | `back/app/presenters/media_urls.py` | outbound URL assembly (signing and expiry) |
 | `back/app/scripts/import_assets_pack.py` | reads a local `assets-pack/manifest.json` under the `assets-pack/manifest.example.json` contract; supports import and `--dry-run` validation |
 | `front/src/lib/upload.ts`, `front/src/components/studio/source-material-rail.tsx` | the frontend's two-phase upload |
@@ -25,7 +25,7 @@ Ensure what goes into the bucket is something we allow, that what comes out of i
 
 1. **Uploads are two-phase**: first `presign` (server validates MIME, size cap, and purpose), the client uploads directly to MinIO, then `complete` (server re-verifies the actual object, probes dimensions/duration, creates the `Asset`). **An object without a `complete` call is not an asset** and is cleaned up by lifecycle policy.
 2. **Whitelist constraints apply before a presigned URL is issued**: only `image/png` / `image/jpeg` / `image/webp` / `video/mp4` / `video/webm` are allowed; size caps vary by purpose (reference image 32MB, avatar 4MB, cover 12MB, authorization evidence 16MB, editor source/export 256MB).
-3. **Every purpose is confined to its own prefix** (`PURPOSE_PREFIXES`, all under `staging/`) — an avatar's signed URL can't be replayed to overwrite a generated output. `editor_export`'s `complete` requires HEAD + checksum + **ffprobe**. Editor-source duration/dimension analysis is `MediaAnalysis` + the `media_analysis` queue, owned by `zaolang-editor-drama` — don't put ffprobe analysis logic in `media/service.py`.
+3. **Every purpose is confined to its own prefix** (`PURPOSE_PREFIXES`, all under `staging/`) — an avatar's signed URL can't be replayed to overwrite a generated output. `editor_export`'s `complete` requires HEAD + checksum + **ffprobe**. Editor-source duration/dimension analysis is `MediaAnalysis` + the `media_analysis` queue, owned by `zaolang-editor-drama` — don't put ffprobe analysis logic in `media/service.py`. The same table/queue also carries ASR subtitle transcription now, as a second analyzer identity (`ASR_ANALYZER = "whisper-asr"`) — same "owned by `zaolang-editor-drama`, don't duplicate in `media/service.py`" rule applies to it too.
 4. **Private objects are downloadable only via short-lived signed URLs**, and the caller's permission on that asset must be checked before signing. The bucket is never public — don't set an object `public-read` for convenience.
 5. **`publish_asset` runs only at publish time**: it moves the object from staging into the readable area. A rolled-back publish transaction must not leave a publicly readable object behind.
 6. **pHash is stored as the string form of a signed 64-bit integer** (`_to_signed_64`); comparison uses Hamming distance with threshold `DUPLICATE_HAMMING_THRESHOLD = 6`. Changing the threshold changes both "block duplicate uploads" and the admin "duplicate fingerprints" view at once.
@@ -51,4 +51,4 @@ cd back && conda run -n zaolang pytest tests/unit/test_media_integrity.py tests/
 make check-assets
 ```
 
-Manual path: upload a reference image on `/create` → the MinIO console (`localhost:9001`) should show exactly one object under the matching prefix → accessing that object URL while logged out must fail.
+Manual path: upload a reference image on `/create` → the active backend's console (MinIO `localhost:9001` if `STORAGE_BACKEND=minio`, the Tencent COS console if `tencent_cos`) should show exactly one object under the matching prefix → accessing that object URL while logged out must fail.

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
+from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
     AssetResponse,
     ProvenanceResponse,
@@ -21,6 +22,20 @@ from app.models.enums import ADMIN_ROLE_RANK, AssetRole, MediaType
 from app.presenters import media_urls
 
 router = APIRouter(tags=["assets"])
+
+
+@router.get("/assets:mine", response_model=Page[AssetResponse])
+def list_my_media(
+    user: CurrentUser,
+    session: DbSession,
+    media_type: MediaType | None = None,
+    limit: int = Query(default=40, ge=1, le=100),
+) -> Page[AssetResponse]:
+    """Lists the caller's own generated/uploaded media, for the editor's media library."""
+    assets = media_service.list_owned_media(
+        session, user_id=user.id, media_type=media_type, limit=limit
+    )
+    return Page(items=[_asset_response(session, asset, viewer_id=user.id) for asset in assets])
 
 
 @router.post("/uploads/presign", response_model=UploadPresignResponse)

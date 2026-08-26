@@ -21,6 +21,7 @@ export function OutputGallery({
   title,
   labels,
   itemLabel,
+  maxHeight,
 }: {
   urls: string[];
   assetIds?: (string | null)[] | null;
@@ -29,6 +30,9 @@ export function OutputGallery({
   /** Per-item captions, e.g. the character view name — falls back to `itemLabel`. */
   labels?: (string | null)[];
   itemLabel: (index: number, total: number) => string;
+  /** Forwarded to `DevicePreview` — see its own prop for why a caller with
+   * actions directly below the stage (e.g. `InlineImageResult`) needs this. */
+  maxHeight?: number;
 }) {
   const [selected, setSelected] = useState(0);
   const activeIndex = Math.min(selected, urls.length - 1);
@@ -56,6 +60,7 @@ export function OutputGallery({
           title={title}
           mediaType={mediaType}
           refreshSrc={refreshSrc}
+          maxHeight={maxHeight}
         />
       )}
 

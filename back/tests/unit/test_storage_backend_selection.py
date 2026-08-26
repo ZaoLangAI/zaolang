@@ -18,7 +18,9 @@ def _reset_backend_cache():
 
 
 def test_defaults_to_minio(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(factory, "get_settings", lambda: Settings())
+    # `_env_file=None` skips the developer's real `back/.env` (which may have
+    # switched `STORAGE_BACKEND` locally) so this asserts the field default.
+    monkeypatch.setattr(factory, "get_settings", lambda: Settings(_env_file=None))
     assert isinstance(factory.get_backend(), MinioBackend)
 
 

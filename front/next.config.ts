@@ -13,12 +13,22 @@ const config: NextConfig = {
   poweredByHeader: false,
   output: 'standalone',
   allowedDevOrigins,
+  experimental: {
+    // The root layout is a passthrough (`<html>`/`<body>` live in
+    // `[locale]/layout.tsx` so `lang` can follow the URL), which is exactly
+    // the case Next calls out as needing this flag: a root layout defined by
+    // a top-level dynamic segment can't compose a 404 for requests that
+    // never resolve to a locale (e.g. the browser's automatic
+    // `/favicon.ico` request). See `src/app/global-not-found.tsx` and
+    // https://nextjs.org/docs/app/api-reference/file-conventions/not-found#global-not-foundjs-experimental
+    globalNotFound: true,
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: process.env.APP_VERSION ?? '0.0.0-dev',
   },
   images: {
     // `search` is deliberately omitted: object keys are matched exactly, and
-    // MinIO hands out presigned URLs whose query string differs every time.
+    // MinIO/COS both hand out presigned URLs whose query string differs every time.
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost', port: '9000', pathname: '/**' },
       { protocol: 'http', hostname: '127.0.0.1', port: '9000', pathname: '/**' },
@@ -27,6 +37,9 @@ const config: NextConfig = {
       ...(localMediaHost
         ? [{ protocol: 'http' as const, hostname: localMediaHost, port: '9000', pathname: '/**' }]
         : []),
+      // Tencent COS's default bucket domain (STORAGE_BACKEND=tencent_cos).
+      // A custom CDN domain (COS_PUBLIC_ENDPOINT_URL) needs its own entry here.
+      { protocol: 'https', hostname: '**.myqcloud.com', pathname: '/**' },
     ],
     // Next 16 refuses to optimise an upstream image that resolves to a private
     // address. That is sound SSRF protection, and it also describes every object

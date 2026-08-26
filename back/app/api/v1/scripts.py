@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from app.api import idempotency
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.script import (
+    ScriptContentUpdateRequest,
     ScriptCreateRequest,
     ScriptDetailResponse,
     ScriptDocument,
@@ -267,6 +268,30 @@ def update_script_links(
         episode_id=episode_id,
         character_links=[(c.name, c.character_ref_id) for c in payload.characters],
         scene_links=[(s.heading, s.ref_id) for s in payload.scenes],
+    )
+    session.commit()
+    return ScriptDocument.model_validate(episode.script_json or {})
+
+
+@router.patch("/scripts/{episode_id}", response_model=ScriptDocument)
+def update_script_content(
+    episode_id: str,
+    payload: ScriptContentUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> ScriptDocument:
+    """Persists a user's direct hand-edit of the script text (title,
+    logline, character traits, block text). Same shape as
+    `update_script_links` above — a plain request/response, not the SSE turn
+    machinery, since this is a manual edit rather than a model-driven
+    revision.
+    """
+    episode = script_writing_service.update_content(
+        session,
+        user_id=user.id,
+        episode_id=episode_id,
+        script=payload.script.model_dump(mode="json"),
     )
     session.commit()
     return ScriptDocument.model_validate(episode.script_json or {})

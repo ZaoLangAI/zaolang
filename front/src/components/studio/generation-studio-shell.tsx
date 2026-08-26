@@ -38,9 +38,13 @@ export function GenerationStudioShell({
   uploads,
   onUploaded,
   onRemove,
+  onSelectUpload,
   isAudio = false,
   isPortraitPreview = false,
   previewSlot,
+  previewOverrideUrl,
+  previewPlaceholder,
+  hideDirectHint = false,
   canSubmit,
   submitting,
   onSubmit,
@@ -55,6 +59,10 @@ export function GenerationStudioShell({
   uploads: Asset[];
   onUploaded: (asset: Asset) => void;
   onRemove: (assetId: string) => void;
+  /** Clicking an uploaded thumbnail in `SourceMaterialRail` — shows it
+   * enlarged in the preview area via `previewOverrideUrl` below. Omitted by
+   * video/audio, which don't wire this up. */
+  onSelectUpload?: (asset: Asset) => void;
   /** Swaps the preview for a "no picture" hint instead of a poster/device frame. */
   isAudio?: boolean;
   /** Whether the chosen aspect ratio is vertical — decides `DevicePreview` vs a plain `Poster`. */
@@ -69,6 +77,17 @@ export function GenerationStudioShell({
    * original `isAudio`/`isPortraitPreview` preview untouched.
    */
   previewSlot?: React.ReactNode;
+  /** A source-material thumbnail the user clicked, shown enlarged in place
+   * of the default cover/placeholder — only consulted when `previewSlot` is
+   * absent (i.e. before the first submit). */
+  previewOverrideUrl?: string | null;
+  /** Overrides the empty-preview placeholder text (`t('promptLabel')`'s
+   * default) — `ImageGenerationStudio` passes a dedicated "图片预览区域"
+   * string here instead of reusing the prompt field's own label. */
+  previewPlaceholder?: string;
+  /** Hides the "写得更像导演" writing-tip box below the preview — the image
+   * studio alone opts into this. */
+  hideDirectHint?: boolean;
   canSubmit: boolean;
   submitting: boolean;
   onSubmit: () => void;
@@ -87,8 +106,8 @@ export function GenerationStudioShell({
   const isDesktop = useMinWidth('lg');
   const paramsOpen = paramsRequested && !isDesktop;
 
-  const cover = source?.work.current_version?.cover_url ?? source?.work.cover_url;
-  const previewTitle = source?.work.title ?? t('promptLabel');
+  const cover = previewOverrideUrl ?? source?.work.current_version?.cover_url ?? source?.work.cover_url;
+  const previewTitle = source?.work.title ?? previewPlaceholder ?? t('promptLabel');
 
   return (
     <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[184px_minmax(0,1fr)_340px]">
@@ -99,6 +118,7 @@ export function GenerationStudioShell({
           uploads={uploads}
           onUploaded={onUploaded}
           onRemove={onRemove}
+          onSelectUpload={onSelectUpload}
         />
       </div>
 
@@ -138,13 +158,15 @@ export function GenerationStudioShell({
           </div>
         ) : null}
 
-        <div className="flex gap-3 rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
-          <IconSparkle className="size-5 shrink-0 text-amber" />
-          <div>
-            <p className="text-sm font-medium">{t('directHint')}</p>
-            <p className="mt-1 text-xs leading-relaxed text-muted">{t('directHintBody')}</p>
+        {!hideDirectHint ? (
+          <div className="flex gap-3 rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
+            <IconSparkle className="size-5 shrink-0 text-amber" />
+            <div>
+              <p className="text-sm font-medium">{t('directHint')}</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">{t('directHintBody')}</p>
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
 
       <aside

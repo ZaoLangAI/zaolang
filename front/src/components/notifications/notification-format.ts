@@ -18,6 +18,7 @@ import {
   IconWand,
 } from '@/components/ui/icons';
 import type { Notification } from '@/lib/api/types';
+import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
 
 /**
  * Shared rendering logic for a `Notification`: which group label it belongs
@@ -264,11 +265,20 @@ function creationIcon(item: Notification, payload: Record<string, unknown>): Ico
 export function targetHref(item: Notification): string | null {
   const payload = item.payload ?? {};
   if (item.target_type === 'generation_job' && item.target_id) {
+    // Image-creation jobs never had a standalone progress page to begin
+    // with (see `ImageGenerationStudio`); route back into the studio's
+    // inline flow instead of `/jobs/[jobId]` when we know which draft it
+    // belongs to. Other operations (video/audio/shortform) and image jobs
+    // without a draft (e.g. sandbox runs) fall back to the job page.
+    const draftId = payload.draft_id;
+    if (isImageCreationOperation(payload.operation) && typeof draftId === 'string' && draftId) {
+      return imageCreationStudioHref(draftId);
+    }
     return `/jobs/${item.target_id}`;
   }
   if (item.target_type === 'editor_export') {
     const cutId = payload.cut_id;
-    return typeof cutId === 'string' && cutId ? `/create/drama/${cutId}` : '/create/drama';
+    return typeof cutId === 'string' && cutId ? `/create/short/${cutId}` : '/create/short';
   }
   if (item.target_type === 'work' && item.target_id) return `/work/${item.target_id}`;
   if (item.target_type === 'learn_post' && item.target_id) return `/learn/${item.target_id}`;

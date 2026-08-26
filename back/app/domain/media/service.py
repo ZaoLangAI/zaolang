@@ -209,6 +209,33 @@ def object_keys_for(session: Session, *, asset_ids: Sequence[str]) -> list[str]:
     return [by_id[asset_id] for asset_id in asset_ids if asset_id in by_id]
 
 
+def list_owned_media(
+    session: Session,
+    *,
+    user_id: str,
+    media_type: MediaType | None,
+    limit: int,
+) -> list[Asset]:
+    """Lists a user's own usable editing source material.
+
+    Scoped to `GENERATION_OUTPUT`/`EDITOR_SOURCE` roles only, so an avatar,
+    consent-evidence, or learn-media asset never shows up as pickable footage.
+    """
+    stmt = (
+        select(Asset)
+        .where(
+            Asset.owner_user_id == user_id,
+            Asset.role.in_([AssetRole.GENERATION_OUTPUT, AssetRole.EDITOR_SOURCE]),
+            Asset.moderation_status != ModerationStatus.REJECTED,
+        )
+        .order_by(Asset.created_at.desc())
+        .limit(limit)
+    )
+    if media_type is not None:
+        stmt = stmt.where(Asset.media_type == media_type)
+    return list(session.scalars(stmt))
+
+
 def validate_generation_references(
     session: Session,
     *,

@@ -30,6 +30,7 @@ import type {
   WorkSummary,
 } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
+import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
 
 const TABS = [
   'all',
@@ -43,8 +44,6 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
-const IMAGE_DRAFT_OPERATIONS = new Set(['text_to_image', 'image_to_image']);
-
 /**
  * An image-creation draft reopens straight into the studio's inline flow
  * (full version history, continue refining — see `ImageGenerationStudio`)
@@ -54,8 +53,8 @@ const IMAGE_DRAFT_OPERATIONS = new Set(['text_to_image', 'image_to_image']);
  */
 function draftResumeHref(draft: Draft): string {
   const operation = draft.params?.operation;
-  if (typeof operation === 'string' && IMAGE_DRAFT_OPERATIONS.has(operation)) {
-    return `/create/new?mode=image_creation&draftId=${draft.id}`;
+  if (isImageCreationOperation(operation)) {
+    return imageCreationStudioHref(draft.id);
   }
   return `/publish/${draft.id}`;
 }

@@ -1,8 +1,11 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
 
+import { useSession } from '@/components/auth/session-provider';
+import { CollapsibleSection } from '@/components/studio/collapsible-section';
 import {
   GenerationStudioShell,
   type StudioSource,
@@ -17,23 +20,35 @@ import {
 } from '@/components/studio/style-and-skill-picker';
 import { Select, TextInput } from '@/components/ui/field';
 import {
-  IconChevronDown,
   IconGear,
   IconLandscape,
   IconPortrait,
   IconVolume,
   IconVolumeOff,
 } from '@/components/ui/icons';
+import { useToast } from '@/components/ui/toast';
+import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import type { QualityTier, WorkDetail } from '@/lib/api/types';
+import { api } from '@/lib/api/client';
+import { isApiError } from '@/lib/api/errors';
+import type { Character, Draft, QualityTier, Scene, WorkDetail } from '@/lib/api/types';
+import { referenceByView } from '@/lib/characters';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDuration } from '@/lib/format';
 import type { Asset } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
+import { useResource } from '@/lib/use-resource';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
 type Orientation = 'landscape' | 'portrait';
+/** What a video job's output is *for* — mirrors the backend's `VideoAssetKind`
+ * (`back/app/models/enums.py`), the video-side equivalent of
+ * `ImageGenerationStudio`'s `AssetKind`. `character_action` auto-attaches
+ * the succeeded output to a character's clip list
+ * (`execute_asset_output_link`); `transition_video`/`cover_video` are
+ * tagged but not attached to any library, same as image's `cover` today. */
+type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
 
 // No `1:1`: every framing the studio offers is either wider or taller than
 // square, so orientation is always a meaningful first choice.
@@ -42,6 +57,10 @@ const PORTRAIT_ASPECTS = ['9:16', '3:4'] as const;
 const ASPECTS = [...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS] as const;
 const PORTRAIT_ASPECT = '9:16';
 const DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
+// Mirrors the backend's `GenerationParams.character_ids`/`scene_ids` cap
+// (`max_length=4`) — the picker refuses a 5th selection client-side instead
+// of letting submit fail with a 422.
+const MAX_REFERENCE_SELECTION = 4;
 
 /**
  * `/create/new` (`text_to_video` / `image_to_video` modes) and
@@ -55,8 +74,15 @@ export function VideoGenerationStudio({
   source,
   reference,
   initialPrompt,
+  initialDraft,
   initialStyleParams,
   initialStyleGalleryId,
+  initialVideoAssetKind,
+  initialTargetCharacterId,
+  subjectNameHint,
+  initialReferenceCharacterIds,
+  initialReferenceSceneIds,
+  linkEpisodeId,
 }: {
   operation: 'text_to_video' | 'image_to_video';
   /** A licensed remix source. Submitted as `source_work_id`. */
@@ -64,18 +90,72 @@ export function VideoGenerationStudio({
   /** A work the idea came from, carried over from the discover feed. */
   reference?: WorkDetail;
   initialPrompt?: string;
+  /**
+   * Resumes an earlier video draft as *material* for a new `video_to_video`
+   * session — the "最近草稿" edit shortcut's target (see `zaolang-frontend-ui`
+   * / `RecentDraftCard`). Unlike `ImageGenerationStudio`'s `initialDraft`,
+   * this never reuses the same draft id on submit: there is no per-draft
+   * version history on the video side, so continuing to build on an old clip
+   * always starts a fresh draft with the earlier output attached as a
+   * reference upload.
+   */
+  initialDraft?: Draft;
   /** A style gallery entry's `params`, applied once on mount (from `?styleId=`). */
   initialStyleParams?: Record<string, unknown>;
   /** The catalogue id behind `initialStyleParams`; submitted as `style_gallery_id`. */
   initialStyleGalleryId?: string;
+  /**
+   * Pre-fills the asset-kind picker below — the character library's
+   * "生成动作视频" button deep-links here the same way the script studio's
+   * image jump-out pre-fills `ImageGenerationStudio`'s `initialAssetKind`
+   * (see `zaolang-frontend-ui` invariant #16).
+   */
+  initialVideoAssetKind?: VideoAssetKind;
+  initialTargetCharacterId?: string;
+  /** Names the new character/scene skill exactly when there is no target id
+   * to auto-create one for — see `GenerationParams.subject_name_hint`. */
+  subjectNameHint?: string;
+  /**
+   * Pre-selects the reference-character/reference-scene picker below — the
+   * script studio's "建议切分" chip (`buildBreakpointVideoHref`) deep-links
+   * here with the segment's already-linked characters/scenes. Distinct from
+   * `initialTargetCharacterId` above: that names an output auto-attach
+   * target, these name generation *input* references (`characterIds`/
+   * `sceneIds` on `useGenerationSubmit`). Only seeds the
+   * initial selection — the picker stays fully user-editable afterward.
+   */
+  initialReferenceCharacterIds?: string[];
+  initialReferenceSceneIds?: string[];
+  /** The short-drama workspace's "去视频创作" jump-out (`?linkEpisodeId=`) —
+   * see `GenerationSubmitInput.linkEpisodeId`. */
+  linkEpisodeId?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
+  const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
+  const { status: sessionStatus } = useSession();
+  const { notify } = useToast();
 
-  const [prompt, setPrompt] = useState(source?.params.prompt ?? initialPrompt ?? '');
-  const [aspect, setAspect] = useState<string>('16:9');
-  const [duration, setDuration] = useState(8);
+  const draftPrompt = initialDraft?.params?.prompt;
+  const [prompt, setPrompt] = useState(
+    source?.params.prompt ??
+      (typeof draftPrompt === 'string' && draftPrompt ? draftPrompt : undefined) ??
+      initialPrompt ??
+      '',
+  );
+  const [aspect, setAspect] = useState<string>(() => {
+    const draftAspect = initialDraft?.params?.aspect_ratio;
+    return typeof draftAspect === 'string' && (ASPECTS as readonly string[]).includes(draftAspect)
+      ? draftAspect
+      : '16:9';
+  });
+  const [duration, setDuration] = useState(() => {
+    const draftDuration = initialDraft?.params?.duration_seconds;
+    return typeof draftDuration === 'number' && DURATIONS.includes(draftDuration)
+      ? draftDuration
+      : 8;
+  });
   const [seed, setSeed] = useState('');
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>('input_references');
   const [firstFrameAssetId, setFirstFrameAssetId] = useState('');
@@ -85,7 +165,56 @@ export function VideoGenerationStudio({
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [uploads, setUploads] = useState<Asset[]>([]);
   const [presetExtra, setPresetExtra] = useState<Record<string, unknown>>({});
-  const [moreSettingsOpen, setMoreSettingsOpen] = useState(false);
+  // "视频创作" — what this output is for, and which existing character/scene
+  // (if any) it should write back to. Mirrors `ImageGenerationStudio`'s own
+  // asset-kind state one-for-one.
+  const [videoAssetKind, setVideoAssetKind] = useState<VideoAssetKind>(
+    initialVideoAssetKind ?? 'general',
+  );
+  const [targetCharacterId, setTargetCharacterId] = useState(initialTargetCharacterId ?? '');
+  const [autoAttachToRoster, setAutoAttachToRoster] = useState(true);
+  const [selectedReferenceCharacterIds, setSelectedReferenceCharacterIds] = useState<string[]>(
+    initialReferenceCharacterIds ?? [],
+  );
+  const [selectedReferenceSceneIds, setSelectedReferenceSceneIds] = useState<string[]>(
+    initialReferenceSceneIds ?? [],
+  );
+
+  // Seeds the resumed draft's own output as the `video_to_video` material —
+  // once only, guarded the same way `ImageGenerationStudio`'s
+  // `draftMaterialSeededRef` is, so a later upload/removal is never
+  // clobbered by this effect firing again.
+  const draftMaterialSeededRef = useRef(false);
+  useEffect(() => {
+    const assetId = initialDraft?.output_asset_id;
+    if (draftMaterialSeededRef.current || !assetId) return;
+    draftMaterialSeededRef.current = true;
+    void (async () => {
+      try {
+        const asset = await api.get<Asset>(`/v1/assets/${assetId}`);
+        setUploads((current) => [...current, asset]);
+      } catch (caught) {
+        notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+      }
+    })();
+  }, [initialDraft, notify, tStates]);
+
+  const toggleReferenceCharacter = (id: string) =>
+    setSelectedReferenceCharacterIds((current) =>
+      current.includes(id)
+        ? current.filter((existing) => existing !== id)
+        : current.length < MAX_REFERENCE_SELECTION
+          ? [...current, id]
+          : current,
+    );
+  const toggleReferenceScene = (id: string) =>
+    setSelectedReferenceSceneIds((current) =>
+      current.includes(id)
+        ? current.filter((existing) => existing !== id)
+        : current.length < MAX_REFERENCE_SELECTION
+          ? [...current, id]
+          : current,
+    );
 
   /** Shared by presets, skills and the style gallery: all three apply the same `prompt`/`aspect_ratio`/extras shape. */
   const applyParams = (params: Record<string, unknown>) => {
@@ -113,6 +242,16 @@ export function VideoGenerationStudio({
     else if (hasVideoReference) operation = 'video_to_video';
     else if (source || hasImageReference) operation = 'image_to_video';
   }
+
+  const charactersResource = useResource<Character[]>(
+    sessionStatus === 'authenticated' ? '/v1/characters' : null,
+  );
+  const scenesResource = useResource<Scene[]>(
+    sessionStatus === 'authenticated' ? '/v1/scenes' : null,
+  );
+  const characters = charactersResource.data ?? [];
+  const scenes = scenesResource.data ?? [];
+  const isCharacterActionKind = videoAssetKind === 'character_action';
 
   const {
     node: styleAndSkillPicker,
@@ -178,9 +317,16 @@ export function VideoGenerationStudio({
       extra: { sound, ...presetExtra },
       skillIds: appliedSkillIds,
       styleGalleryId: appliedStyleGalleryId ?? undefined,
+      characterIds: selectedReferenceCharacterIds,
+      sceneIds: selectedReferenceSceneIds,
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
+      videoAssetKind,
+      targetCharacterId: isCharacterActionKind ? targetCharacterId || null : undefined,
+      autoAttachAsset: isCharacterActionKind ? autoAttachToRoster : undefined,
+      subjectNameHint: isCharacterActionKind ? subjectNameHint : undefined,
+      linkEpisodeId,
     });
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
@@ -189,6 +335,141 @@ export function VideoGenerationStudio({
   const paramsPanel = (
     <>
       {styleAndSkillPicker}
+
+      <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+        <OptionGroup
+          label={t('videoAssetKind')}
+          value={videoAssetKind}
+          onChange={(value) => {
+            setVideoAssetKind(value);
+            if (value !== 'character_action') setTargetCharacterId('');
+          }}
+          columns={3}
+          options={[
+            { value: 'general' as const, label: t('videoAssetKindGeneral') },
+            { value: 'character_action' as const, label: t('videoAssetKindCharacterAction') },
+            { value: 'transition_video' as const, label: t('videoAssetKindTransition') },
+            { value: 'cover_video' as const, label: t('videoAssetKindCover') },
+          ]}
+        />
+        <p className="text-[11px] text-muted">{t('videoAssetKindHint')}</p>
+
+        {isCharacterActionKind ? (
+          <div className="flex flex-col gap-2">
+            <Select
+              label={t('targetCharacter')}
+              hint={t('targetCharacterHint')}
+              value={targetCharacterId}
+              onChange={(event) => setTargetCharacterId(event.target.value)}
+              options={[
+                { value: '', label: t('targetCharacterAutoCreate') },
+                ...characters.map((character) => ({
+                  value: character.id,
+                  label: character.name,
+                })),
+              ]}
+            />
+            <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-muted">
+              <input
+                type="checkbox"
+                checked={autoAttachToRoster}
+                onChange={(event) => setAutoAttachToRoster(event.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
+              />
+              {t('autoAttachToRoster')}
+            </label>
+            {!autoAttachToRoster ? (
+              <p className="text-[11px] text-muted">{t('autoAttachToRosterOffHint')}</p>
+            ) : null}
+            <Link href="/create/characters" className="text-[11px] text-muted hover:text-text">
+              {t('manageCharactersLink')}
+            </Link>
+          </div>
+        ) : null}
+
+        <div className="flex flex-col gap-2 border-t border-border pt-3">
+          <p className="text-xs text-muted">{t('referenceCastLabel')}</p>
+          <p className="text-[11px] text-muted">{t('referenceCastHint')}</p>
+          {characters.length > 0 ? (
+            <ul className="flex flex-col gap-1.5">
+              {characters.map((character) => {
+                const checked = selectedReferenceCharacterIds.includes(character.id);
+                const disabled =
+                  !checked && selectedReferenceCharacterIds.length >= MAX_REFERENCE_SELECTION;
+                const thumbnailUrl = referenceByView(character, 'front')?.url;
+                return (
+                  <li key={character.id}>
+                    <label
+                      className={cn(
+                        'flex items-center gap-2.5 text-sm',
+                        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => toggleReferenceCharacter(character.id)}
+                        className="size-4 shrink-0 accent-[var(--primary)]"
+                      />
+                      <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+                        {thumbnailUrl ? (
+                          <Image src={thumbnailUrl} alt="" fill sizes="28px" className="object-cover" />
+                        ) : null}
+                      </span>
+                      {character.name}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted">{t('referenceCastEmpty')}</p>
+          )}
+
+          <p className="mt-1 text-xs text-muted">{t('referenceScenesLabel')}</p>
+          {scenes.length > 0 ? (
+            <ul className="flex flex-col gap-1.5">
+              {scenes.map((scene) => {
+                const checked = selectedReferenceSceneIds.includes(scene.id);
+                const disabled =
+                  !checked && selectedReferenceSceneIds.length >= MAX_REFERENCE_SELECTION;
+                const thumbnailUrl = scene.reference_assets?.[0]?.url;
+                return (
+                  <li key={scene.id}>
+                    <label
+                      className={cn(
+                        'flex items-center gap-2.5 text-sm',
+                        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => toggleReferenceScene(scene.id)}
+                        className="size-4 shrink-0 accent-[var(--primary)]"
+                      />
+                      <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+                        {thumbnailUrl ? (
+                          <Image src={thumbnailUrl} alt="" fill sizes="28px" className="object-cover" />
+                        ) : null}
+                      </span>
+                      {scene.name}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted">{t('referenceScenesEmpty')}</p>
+          )}
+          {selectedReferenceCharacterIds.length >= MAX_REFERENCE_SELECTION ||
+          selectedReferenceSceneIds.length >= MAX_REFERENCE_SELECTION ? (
+            <p className="text-[11px] text-muted">{t('referenceLimitReached')}</p>
+          ) : null}
+        </div>
+      </div>
 
       <PromptField
         prompt={prompt}
@@ -200,128 +481,115 @@ export function VideoGenerationStudio({
           qualityTier: tier,
           styleHint,
           hasReference: uploads.length > 0 || Boolean(source),
+          videoAssetKind,
         }}
         onPolishAccept={setPrompt}
       />
 
-      <OptionGroup
-        label={t('orientation')}
-        value={orientation}
-        onChange={(value) =>
-          setAspect(value === 'landscape' ? LANDSCAPE_ASPECTS[0] : PORTRAIT_ASPECTS[0])
-        }
-        columns={2}
-        options={[
-          {
-            value: 'landscape' as const,
-            label: t('orientationLandscape'),
-            icon: <IconLandscape className="size-4" />,
-          },
-          {
-            value: 'portrait' as const,
-            label: t('orientationPortrait'),
-            icon: <IconPortrait className="size-4" />,
-          },
-        ]}
-      />
-      <OptionGroup
-        label={t('aspect')}
-        value={aspect}
-        onChange={setAspect}
-        options={aspectOptions.map((value) => ({ value, label: value }))}
-      />
+      <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+        <OptionGroup
+          label={t('orientation')}
+          value={orientation}
+          onChange={(value) =>
+            setAspect(value === 'landscape' ? LANDSCAPE_ASPECTS[0] : PORTRAIT_ASPECTS[0])
+          }
+          columns={2}
+          options={[
+            {
+              value: 'landscape' as const,
+              label: t('orientationLandscape'),
+              icon: <IconLandscape className="size-4" />,
+            },
+            {
+              value: 'portrait' as const,
+              label: t('orientationPortrait'),
+              icon: <IconPortrait className="size-4" />,
+            },
+          ]}
+        />
+        <OptionGroup
+          label={t('aspect')}
+          value={aspect}
+          onChange={setAspect}
+          options={aspectOptions.map((value) => ({ value, label: value }))}
+        />
+        <OptionGroup
+          label={t('duration')}
+          value={duration}
+          onChange={setDuration}
+          options={DURATIONS.map((value) => ({
+            value,
+            label: t('durationSeconds', { count: value }),
+          }))}
+        />
+      </div>
 
-      <OptionGroup
-        label={t('duration')}
-        value={duration}
-        onChange={setDuration}
-        options={DURATIONS.map((value) => ({
-          value,
-          label: t('durationSeconds', { count: value }),
-        }))}
-      />
+      <CollapsibleSection label={t('moreSettings')} icon={<IconGear className="size-4 text-muted" />}>
+        <Select
+          label={t('resolution')}
+          hint={t('resolutionHint')}
+          value="2K"
+          disabled
+          options={[{ value: '2K', label: '2K' }]}
+        />
+        <TextInput
+          label={t('seed')}
+          hint={t('seedHint')}
+          error={seedValid ? undefined : t('seedInvalid')}
+          type="number"
+          min="0"
+          max={String(2 ** 31 - 1)}
+          value={seed}
+          onChange={(event) => setSeed(event.target.value)}
+        />
+      </CollapsibleSection>
 
-      <div className="rounded-[var(--radius-sm)] border border-border">
-        <button
-          type="button"
-          onClick={() => setMoreSettingsOpen((current) => !current)}
-          aria-expanded={moreSettingsOpen}
-          className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium"
-        >
-          <span className="flex items-center gap-2">
-            <IconGear className="size-4 text-muted" />
-            {t('moreSettings')}
-          </span>
-          <IconChevronDown
-            className={cn(
-              'size-4 text-muted transition-transform',
-              moreSettingsOpen && 'rotate-180',
-            )}
-          />
-        </button>
-        {moreSettingsOpen ? (
-          <div className="flex flex-col gap-4 border-t border-border p-3">
+      <CollapsibleSection
+        label={t('referenceFramesGroup')}
+        defaultOpen={referenceMode === 'frame_images'}
+      >
+        <OptionGroup
+          label={t('referenceMode')}
+          value={referenceMode}
+          onChange={setReferenceMode}
+          columns={2}
+          options={[
+            { value: 'input_references', label: t('referenceModeInputs') },
+            { value: 'frame_images', label: t('referenceModeFrames') },
+          ]}
+        />
+        {referenceMode === 'frame_images' ? (
+          <div className="grid gap-3 sm:grid-cols-2">
             <Select
-              label={t('resolution')}
-              hint={t('resolutionHint')}
-              value="2K"
-              disabled
-              options={[{ value: '2K', label: '2K' }]}
+              label={t('firstFrameSelect')}
+              hint={t('firstFrameRequired')}
+              value={firstFrameAssetId}
+              onChange={(event) => setFirstFrameAssetId(event.target.value)}
+              options={[
+                { value: '', label: t('selectUploadedImage') },
+                ...imageUploads.map((asset, index) => ({
+                  value: asset.id,
+                  label: t('uploadedImage', { index: index + 1 }),
+                })),
+              ]}
             />
-            <TextInput
-              label={t('seed')}
-              hint={t('seedHint')}
-              error={seedValid ? undefined : t('seedInvalid')}
-              type="number"
-              min="0"
-              max={String(2 ** 31 - 1)}
-              value={seed}
-              onChange={(event) => setSeed(event.target.value)}
+            <Select
+              label={t('lastFrameSelect')}
+              value={lastFrameAssetId}
+              onChange={(event) => setLastFrameAssetId(event.target.value)}
+              options={[
+                { value: '', label: t('lastFrameNone') },
+                ...imageUploads.map((asset, index) => ({
+                  value: asset.id,
+                  label: t('uploadedImage', { index: index + 1 }),
+                })),
+              ]}
             />
           </div>
-        ) : null}
-      </div>
-      <OptionGroup
-        label={t('referenceMode')}
-        value={referenceMode}
-        onChange={setReferenceMode}
-        columns={2}
-        options={[
-          { value: 'input_references', label: t('referenceModeInputs') },
-          { value: 'frame_images', label: t('referenceModeFrames') },
-        ]}
-      />
-      {referenceMode === 'frame_images' ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Select
-            label={t('firstFrameSelect')}
-            hint={t('firstFrameRequired')}
-            value={firstFrameAssetId}
-            onChange={(event) => setFirstFrameAssetId(event.target.value)}
-            options={[
-              { value: '', label: t('selectUploadedImage') },
-              ...imageUploads.map((asset, index) => ({
-                value: asset.id,
-                label: t('uploadedImage', { index: index + 1 }),
-              })),
-            ]}
-          />
-          <Select
-            label={t('lastFrameSelect')}
-            value={lastFrameAssetId}
-            onChange={(event) => setLastFrameAssetId(event.target.value)}
-            options={[
-              { value: '', label: t('lastFrameNone') },
-              ...imageUploads.map((asset, index) => ({
-                value: asset.id,
-                label: t('uploadedImage', { index: index + 1 }),
-              })),
-            ]}
-          />
-        </div>
-      ) : (
-        <p className="text-xs text-muted">{t('inputReferencesHint')}</p>
-      )}
+        ) : (
+          <p className="text-xs text-muted">{t('inputReferencesHint')}</p>
+        )}
+      </CollapsibleSection>
 
       <OptionGroup
         label={t('sound')}

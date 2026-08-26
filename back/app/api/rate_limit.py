@@ -38,6 +38,9 @@ RULES: dict[str, RateLimitRule] = {
     # write — priced between `editor_write` and the much stricter
     # `generation_submit`.
     "script_studio_write": RateLimitRule(limit=20, window_seconds=60),
+    # A real platform push per channel (upload + create_post) — heavier than
+    # `authenticated_write`, lighter than `generation_submit`'s per-provider cost.
+    "platform_publish": RateLimitRule(limit=20, window_seconds=60),
     "mcp_tool": RateLimitRule(limit=60, window_seconds=60),
     # Back office gets its own budget so consumer traffic can never starve an
     # operator during an incident.

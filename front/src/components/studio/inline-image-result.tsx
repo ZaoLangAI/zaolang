@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import {
@@ -17,7 +17,7 @@ import { OutputGallery } from '@/components/media/output-gallery';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
-import { IconBranch, IconSparkle } from '@/components/ui/icons';
+import { IconBranch, IconCheck, IconSparkle } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
@@ -25,6 +25,7 @@ import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
 import type { CreationSkillDetail, GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
+import { loadAnime, useReducedMotion } from '@/lib/motion';
 import { refreshAssetUrl, refreshJobOutputUrl } from '@/lib/refresh-media-src';
 import type { StreamedEvent } from '@/lib/use-job-stream';
 
@@ -41,6 +42,10 @@ import type { StreamedEvent } from '@/lib/use-job-stream';
  * scrolling.
  */
 const RESULT_STAGE_MAX_HEIGHT = 380;
+
+const STAGE_POP_DURATION = 420;
+const FUN_CAPTION_INTERVAL = 2200;
+const FUN_CAPTION_COUNT = 2;
 
 /**
  * The image studio's preview-area result — replaces the standalone
@@ -154,6 +159,53 @@ export function InlineImageResult({
     finished && job.status !== 'succeeded'
       ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
       : (STAGES[activeIndex] ?? 'done');
+  const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
+
+  // Ports `job-progress.tsx`'s stage-dot pop animation so image creation's
+  // inline progress view isn't limited to a bare percentage + label.
+  const reduced = useReducedMotion();
+  const dotRefs = useRef<Partial<Record<Stage, HTMLSpanElement | null>>>({});
+  const previousReachedRef = useRef<Set<Stage>>(new Set());
+  const stageAnimationReady = useRef(false);
+
+  useEffect(() => {
+    const previous = previousReachedRef.current;
+    previousReachedRef.current = reached;
+    if (!stageAnimationReady.current) {
+      stageAnimationReady.current = true;
+      return;
+    }
+    if (reduced) return;
+    const newlyDone = STAGES.filter((stage) => reached.has(stage) && !previous.has(stage));
+    if (newlyDone.length === 0) return;
+    loadAnime().then(({ animate }) => {
+      for (const stage of newlyDone) {
+        const node = dotRefs.current[stage];
+        if (node)
+          animate(node, { scale: [1, 1.3, 1], duration: STAGE_POP_DURATION, ease: 'outQuad' });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reachedKey, reduced]);
+
+  // A small rotating set of playful captions per stage, replacing the flat
+  // static stage label while a job is still in flight. Reset during render
+  // (not in an effect) when the stage changes — the recommended pattern for
+  // "adjusting state when a prop changes" — so only the interval tick itself
+  // needs an effect.
+  const [captionIndex, setCaptionIndex] = useState(0);
+  const [captionStage, setCaptionStage] = useState(displayStage);
+  if (captionStage !== displayStage) {
+    setCaptionStage(displayStage);
+    setCaptionIndex(0);
+  }
+  useEffect(() => {
+    if (reduced || finished) return;
+    const id = window.setInterval(() => {
+      setCaptionIndex((index) => (index + 1) % FUN_CAPTION_COUNT);
+    }, FUN_CAPTION_INTERVAL);
+    return () => window.clearInterval(id);
+  }, [displayStage, reduced, finished]);
 
   // `job`'s own output(s) — front view only, or every view for a native
   // multi-view character job that never needed a separate completion job.
@@ -279,14 +331,49 @@ export function InlineImageResult({
         <div className="relative aspect-video overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface-soft">
           <div className="absolute inset-0 grid place-items-center px-6">
             <div className="flex flex-col items-center gap-2 text-center">
-              <IconSparkle className={cn('size-5 text-amber', !finished && 'animate-pulse')} />
+              <IconSparkle
+                className={cn('size-5 text-amber', !reduced && !finished && 'animate-pulse')}
+              />
               <p aria-live="polite" className="tabular text-4xl font-semibold tracking-tight text-text">
                 {job.progress}%
               </p>
-              <p className="text-sm text-text">{t(stageLabelKey(displayStage, job.operation))}</p>
+              <p aria-live="polite" className="text-sm text-text">
+                {t(`funCaptions.${displayStage}.${captionIndex}`)}
+              </p>
               {latestEvent?.message ? (
                 <p className="max-w-md text-sm text-muted">{latestEvent.message}</p>
               ) : null}
+              <ol className="mt-1 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+                {STAGES.map((stage) => {
+                  const done = reached.has(stage);
+                  const active = stage === displayStage && !finished;
+                  return (
+                    <li
+                      key={stage}
+                      aria-current={active ? 'step' : undefined}
+                      title={t(stageLabelKey(stage, job.operation))}
+                      className="flex items-center gap-1"
+                    >
+                      <span
+                        ref={(node) => {
+                          dotRefs.current[stage] = node;
+                        }}
+                        aria-label={t(stageLabelKey(stage, job.operation))}
+                        className={cn(
+                          'grid size-3.5 place-items-center rounded-full border',
+                          done
+                            ? 'border-success bg-success/15'
+                            : active
+                              ? 'border-primary'
+                              : 'border-border',
+                        )}
+                      >
+                        {done ? <IconCheck className="size-2" /> : null}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-0 h-1.5 overflow-hidden bg-track">
@@ -297,6 +384,24 @@ export function InlineImageResult({
           </div>
         </div>
       )}
+
+      {job.status !== 'succeeded' ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className={cn('font-medium', statusColor(job.status))}>{tJob(job.status)}</span>
+          {reconnecting ? (
+            <span role="status" className="text-amber">
+              {tJob('reconnecting')}
+            </span>
+          ) : connected && !finished ? (
+            <span role="status" className="text-success">
+              {t('liveUpdating')}
+            </span>
+          ) : null}
+          {job.cancel_requested && !finished ? (
+            <span className="text-muted">{t('cancellingHint')}</span>
+          ) : null}
+        </div>
+      ) : null}
 
       {!finished ? (
         <div className="flex justify-center">
@@ -311,22 +416,6 @@ export function InlineImageResult({
           </Button>
         </div>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className={cn('font-medium', statusColor(job.status))}>{tJob(job.status)}</span>
-        {reconnecting ? (
-          <span role="status" className="text-amber">
-            {tJob('reconnecting')}
-          </span>
-        ) : connected && !finished ? (
-          <span role="status" className="text-success">
-            {t('liveUpdating')}
-          </span>
-        ) : null}
-        {job.cancel_requested && !finished ? (
-          <span className="text-muted">{t('cancellingHint')}</span>
-        ) : null}
-      </div>
 
       {job.status === 'failed' ? (
         <ErrorNotice

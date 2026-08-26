@@ -30,7 +30,6 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const t = useTranslations('commandPalette');
   const tNav = useTranslations('nav');
   const tShortform = useTranslations('shortform');
-  const tEditor = useTranslations('editor');
   const tScript = useTranslations('scriptStudio');
   const locale = useLocale() as Locale;
   const router = useRouter();
@@ -127,7 +126,6 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'discover', label: tNav('discover'), path: '/discover' },
       { id: 'create', label: tNav('create'), path: '/create' },
       { id: 'create-short', label: tShortform('title'), path: '/create/short' },
-      { id: 'create-drama', label: tEditor('title'), path: '/create/drama' },
       { id: 'create-script', label: tScript('title'), path: '/create/script' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
       { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
@@ -153,7 +151,6 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
             'billing',
             'notifications',
             'settings',
-            'create-drama',
             'create-script',
           ].includes(id)
         ) {
@@ -197,7 +194,6 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
     searchable,
     status,
     t,
-    tEditor,
     tNav,
     tScript,
     tShortform,

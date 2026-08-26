@@ -165,11 +165,19 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
 
   const enterEditor = async () => {
     setOpeningEditor(true);
+    // Opened synchronously (before the await below) so the browser attributes
+    // it to this click, not to the async response that follows — opening
+    // asynchronously here would get blocked as an unrequested popup in most
+    // browsers.
+    const tab = window.open('', '_blank', 'noopener,noreferrer');
     try {
       const cut = await createCutFromJob(jobId);
       const draftQuery = current.draft_id ? `?draftId=${encodeURIComponent(current.draft_id)}` : '';
-      router.push(`/create/drama/${cut.id}${draftQuery}`);
+      const href = `/${locale}/studio-editor/${cut.id}${draftQuery}`;
+      if (tab) tab.location.href = href;
+      else router.push(href);
     } catch (error) {
+      tab?.close();
       if (isApiError(error) && error.isNotFound && current.draft_id) {
         router.push(`/publish/${current.draft_id}`);
         return;

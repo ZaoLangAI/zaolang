@@ -6,6 +6,7 @@ import {
   type EditCommandBatch,
   type TimelineElement,
   type TimelineTrack,
+  type TrackKind,
   MAX_COMMANDS_PER_BATCH,
   assertSafeTicks,
 } from './ports';
@@ -22,7 +23,52 @@ const ALLOWED = new Set([
   'update_caption',
   'set_canvas',
   'set_brand_overlay',
+  'add_track',
+  'remove_track',
+  'set_track_order',
+  'set_track_muted',
+  'add_effect',
+  'remove_effect',
+  'update_effect_params',
+  'set_clip_mask',
+  'set_keyframe',
+  'delete_keyframe',
+  'clear_keyframes',
+  'set_transition',
 ]);
+
+const TRACK_KINDS_ADDABLE = new Set(['video', 'audio']);
+const MAX_TRACKS_PER_KIND = 16;
+// Only `blur` runs on the vendored WASM shader (confirmed the only one
+// actually registered in the pinned Rust pipeline) — the rest are always
+// Canvas2D `ctx.filter`. Keeping the allowlist here, not open-ended, means a
+// caller can never request an effect the renderer has no path for.
+const EFFECT_TYPES = new Set(['blur', 'brightness', 'contrast', 'saturate', 'grayscale']);
+const MASK_SHAPES = new Set(['rect', 'ellipse']);
+const MAX_EFFECTS_PER_ELEMENT = 8;
+
+// A closed, per-property-validated enum — not the generic path/value update
+// `validate_batch` permanently forbids. `set_keyframe`'s `property` field
+// only ever selects one of these five names, each with its own numeric
+// range below; it can never address an arbitrary tree path.
+const ANIMATABLE_PROPERTIES = new Set([
+  'opacity',
+  'transform.x_milli',
+  'transform.y_milli',
+  'transform.scale_millipercent',
+  'transform.rotation_millidegrees',
+]);
+const PROPERTY_RANGES: Record<string, [number, number]> = {
+  opacity: [0, 100_000],
+  'transform.x_milli': [-2000, 2000],
+  'transform.y_milli': [-2000, 2000],
+  'transform.scale_millipercent': [10_000, 500_000],
+  'transform.rotation_millidegrees': [-180_000, 180_000],
+};
+const MAX_KEYFRAMES_PER_CHANNEL = 64;
+
+const ELEMENT_TYPES_ADDABLE = new Set(['clip', 'sticker']);
+const TRANSITION_TYPES = new Set(['crossfade', 'dip_to_black']);
 
 export class BatchRolledBackError extends Error {
   constructor(message: string) {
@@ -35,16 +81,20 @@ export function cloneDocument(document: CanonicalDocument): CanonicalDocument {
   return structuredClone(document);
 }
 
+function emptyTrack(id: string, kind: TrackKind): TimelineTrack {
+  return { id, kind, elements: [], order: 0, label: null, muted: false };
+}
+
 export function emptyDocument(width = 1080, height = 1920): CanonicalDocument {
   return {
     schema_version: 1,
     engine: 'zaolang-canonical',
     canvas: { width, height, fps_num: 30, fps_den: 1 },
     tracks: [
-      { id: 'trk_video', kind: 'video', elements: [] },
-      { id: 'trk_audio', kind: 'audio', elements: [] },
-      { id: 'trk_caption', kind: 'caption', elements: [] },
-      { id: 'trk_overlay', kind: 'overlay', elements: [] },
+      emptyTrack('trk_video', 'video'),
+      emptyTrack('trk_audio', 'audio'),
+      emptyTrack('trk_caption', 'caption'),
+      emptyTrack('trk_overlay', 'overlay'),
     ],
     brand_overlay: null,
   };
@@ -122,6 +172,10 @@ function newElementId(): string {
   return `el_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
 }
 
+function newTrackId(): string {
+  return `trk_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+}
+
 function applyOne(
   document: CanonicalDocument,
   command: EditCommand,
@@ -131,6 +185,9 @@ function applyOne(
     case 'insert_clip': {
       const track = findTrack(document, command.track_id);
       if (!track) throw new Error('轨道不存在。');
+      if (!TRACK_KINDS_ADDABLE.has(track.kind)) throw new Error('片段只能插入视频或音频轨道。');
+      const elementType = command.element_type ?? 'clip';
+      if (!ELEMENT_TYPES_ADDABLE.has(elementType)) throw new Error('不支持的元素类型。');
       if (knownAssets.size && !knownAssets.has(command.asset_id)) {
         throw new Error('素材不存在或不属于该项目。');
       }
@@ -139,7 +196,7 @@ function applyOne(
       const sourceIn = command.source_in_ticks ?? 0;
       track.elements.push({
         id: command.element_id ?? newElementId(),
-        type: 'clip',
+        type: elementType,
         track_id: track.id,
         asset_id: command.asset_id,
         start_ticks: command.at_ticks,
@@ -150,6 +207,11 @@ function applyOne(
         speed_millipercent: 100_000,
         text: null,
         caption_language: null,
+        effects: [],
+        mask: null,
+        animations: { channels: {} },
+        transition_in: null,
+        transition_out: null,
       });
       return;
     }
@@ -167,6 +229,7 @@ function applyOne(
         if (!found) throw new Error('元素不存在。');
         found.element.start_ticks = Math.max(0, found.element.start_ticks + command.delta_ticks);
         if (target && target.id !== found.track.id) {
+          if (target.kind !== found.track.kind) throw new Error('不能跨轨道类型移动元素。');
           found.track.elements = found.track.elements.filter((item) => item.id !== elementId);
           found.element.track_id = target.id;
           target.elements.push(found.element);
@@ -195,14 +258,36 @@ function applyOne(
       const sourceIn = found.element.source_in_ticks;
       const right: TimelineElement = {
         ...found.element,
+        // A shallow spread still shares the `effects` array (and its effect
+        // objects), and the `animations.channels` map, with the original —
+        // `update_effect_params`/`set_keyframe` mutate a key on one of those
+        // shared objects in place, which would otherwise leak across both
+        // split halves. `mask` needs no such copy: every write to it
+        // replaces the whole value rather than mutating it.
+        effects: found.element.effects.map((effect) => ({ ...effect })),
+        animations: {
+          channels: Object.fromEntries(
+            Object.entries(found.element.animations.channels).map(([property, channel]) => [
+              property,
+              { kind: channel!.kind, points: [...channel!.points] },
+            ]),
+          ),
+        },
         id: newElementId(),
         start_ticks: command.at_ticks,
         duration_ticks: duration - left,
         source_in_ticks: sourceIn + left,
         source_out_ticks: sourceIn + duration,
+        // The split point is a brand-new internal edge on both halves — the
+        // original's own transition_in stays on the left half (its start
+        // didn't move) and transition_out stays on the right half (inherited
+        // by the spread above, since its end didn't move either); neither
+        // edge transition should duplicate onto the new cut point.
+        transition_in: null,
       };
       found.element.duration_ticks = left;
       found.element.source_out_ticks = sourceIn + left;
+      found.element.transition_out = null;
       found.track.elements.push(right);
       return;
     }
@@ -221,6 +306,7 @@ function applyOne(
     case 'insert_caption': {
       const track = findTrack(document, command.track_id);
       if (!track) throw new Error('轨道不存在。');
+      if (track.kind !== 'caption') throw new Error('字幕只能插入字幕轨道。');
       track.elements.push({
         id: command.element_id ?? newElementId(),
         type: 'caption',
@@ -234,6 +320,11 @@ function applyOne(
         speed_millipercent: 100_000,
         text: command.text,
         caption_language: command.caption_language ?? 'zh-CN',
+        effects: [],
+        mask: null,
+        animations: { channels: {} },
+        transition_in: null,
+        transition_out: null,
       });
       return;
     }
@@ -255,6 +346,134 @@ function applyOne(
     }
     case 'set_brand_overlay': {
       document.brand_overlay = command.overlay;
+      return;
+    }
+    case 'add_track': {
+      if (!TRACK_KINDS_ADDABLE.has(command.kind))
+        throw new Error('轨道类型必须是 video 或 audio。');
+      const sameKind = document.tracks.filter((track) => track.kind === command.kind);
+      if (sameKind.length >= MAX_TRACKS_PER_KIND) {
+        throw new Error(`同类轨道最多 ${MAX_TRACKS_PER_KIND} 条。`);
+      }
+      const trackId = command.track_id ?? newTrackId();
+      if (findTrack(document, trackId)) throw new Error('轨道 id 已存在。');
+      const maxOrder = sameKind.reduce((max, track) => Math.max(max, track.order), -1);
+      document.tracks.push({
+        id: trackId,
+        kind: command.kind,
+        elements: [],
+        order: command.order ?? maxOrder + 1,
+        label: command.label ?? null,
+        muted: false,
+      });
+      return;
+    }
+    case 'remove_track': {
+      const track = findTrack(document, command.track_id);
+      if (!track) throw new Error('轨道不存在。');
+      if (!TRACK_KINDS_ADDABLE.has(track.kind)) throw new Error('字幕轨与角标轨不可删除。');
+      if (track.elements.length > 0) throw new Error('轨道非空，无法删除，请先移除轨道上的元素。');
+      const remaining = document.tracks.filter((item) => item.kind === track.kind);
+      if (remaining.length <= 1) throw new Error('至少保留一条该类型轨道。');
+      document.tracks = document.tracks.filter((item) => item.id !== track.id);
+      return;
+    }
+    case 'set_track_order': {
+      const track = findTrack(document, command.track_id);
+      if (!track) throw new Error('轨道不存在。');
+      track.order = command.order;
+      return;
+    }
+    case 'set_track_muted': {
+      const track = findTrack(document, command.track_id);
+      if (!track) throw new Error('轨道不存在。');
+      track.muted = command.muted;
+      return;
+    }
+    case 'add_effect': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      if (!EFFECT_TYPES.has(command.effect.type)) throw new Error('不支持的特效类型。');
+      if (found.element.effects.length >= MAX_EFFECTS_PER_ELEMENT) {
+        throw new Error(`单个元素最多 ${MAX_EFFECTS_PER_ELEMENT} 个特效。`);
+      }
+      found.element.effects = [...found.element.effects, command.effect];
+      return;
+    }
+    case 'remove_effect': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      if (command.effect_index < 0 || command.effect_index >= found.element.effects.length) {
+        throw new Error('特效索引越界。');
+      }
+      found.element.effects = found.element.effects.filter(
+        (_, index) => index !== command.effect_index,
+      );
+      return;
+    }
+    case 'update_effect_params': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      const effect = found.element.effects[command.effect_index];
+      if (!effect) throw new Error('特效索引越界。');
+      effect.params = { ...effect.params, ...command.params };
+      return;
+    }
+    case 'set_clip_mask': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      if (command.mask && !MASK_SHAPES.has(command.mask.shape)) throw new Error('不支持的蒙版形状。');
+      found.element.mask = command.mask;
+      return;
+    }
+    case 'set_keyframe': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      if (!ANIMATABLE_PROPERTIES.has(command.property)) throw new Error('不支持的动画属性。');
+      const range = PROPERTY_RANGES[command.property]!;
+      if (command.value < range[0] || command.value > range[1]) {
+        throw new Error(`${command.property} 的值必须在 ${range[0]} 到 ${range[1]} 之间。`);
+      }
+      assertSafeTicks(command.at_ticks, 'at_ticks');
+      const existing = found.element.animations.channels[command.property];
+      const points = (existing?.points ?? []).filter((point) => point.at_ticks !== command.at_ticks);
+      if (points.length >= MAX_KEYFRAMES_PER_CHANNEL) {
+        throw new Error(`单个属性最多 ${MAX_KEYFRAMES_PER_CHANNEL} 个关键帧。`);
+      }
+      points.push({ at_ticks: command.at_ticks, value: command.value });
+      points.sort((a, b) => a.at_ticks - b.at_ticks);
+      found.element.animations.channels[command.property] = { kind: 'number', points };
+      return;
+    }
+    case 'delete_keyframe': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      const channel = found.element.animations.channels[command.property];
+      const points = channel?.points ?? [];
+      const next = points.filter((point) => point.at_ticks !== command.at_ticks);
+      if (next.length === points.length) throw new Error('该时间点没有关键帧。');
+      found.element.animations.channels[command.property] = { kind: 'number', points: next };
+      return;
+    }
+    case 'clear_keyframes': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      delete found.element.animations.channels[command.property];
+      return;
+    }
+    case 'set_transition': {
+      const found = findElement(document, command.element_id);
+      if (!found) throw new Error('元素不存在。');
+      const { transition } = command;
+      if (transition) {
+        if (!TRANSITION_TYPES.has(transition.type)) throw new Error('不支持的转场类型。');
+        if (transition.duration_ticks <= 0 || transition.duration_ticks > found.element.duration_ticks) {
+          throw new Error('转场时长必须大于零且不超过该元素自身时长。');
+        }
+      }
+      if (command.edge === 'in') found.element.transition_in = transition;
+      else found.element.transition_out = transition;
+      return;
     }
   }
 }

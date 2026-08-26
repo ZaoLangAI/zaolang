@@ -391,6 +391,16 @@ export const IconTrash = (p: IconProps) => (
   </Icon>
 );
 
+/** Three connected nodes: sharing/publishing something to others. */
+export const IconShare = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="18" cy="5" r="2.3" />
+    <circle cx="6" cy="12" r="2.3" />
+    <circle cx="18" cy="19" r="2.3" />
+    <path d="M8 10.8 16 6.3M8 13.2l8 4.5" />
+  </Icon>
+);
+
 /** The brand wordmark's wave glyph. */
 export const IconWave = (p: IconProps) => (
   <Icon {...p} strokeWidth="2">

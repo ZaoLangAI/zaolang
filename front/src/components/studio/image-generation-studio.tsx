@@ -88,6 +88,7 @@ export function ImageGenerationStudio({
   returnTo,
   returnLinkKind,
   returnLinkLabel,
+  linkEpisodeId,
 }: {
   source?: StudioSource;
   reference?: WorkDetail;
@@ -114,6 +115,9 @@ export function ImageGenerationStudio({
   returnTo?: string;
   returnLinkKind?: 'character' | 'scene';
   returnLinkLabel?: string;
+  /** The short-drama workspace's "去图片创作" jump-out (`?linkEpisodeId=`) —
+   * see `GenerationSubmitInput.linkEpisodeId`. */
+  linkEpisodeId?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -482,6 +486,7 @@ export function ImageGenerationStudio({
       targetSceneId: assetKind === 'scene' ? targetSceneId || null : undefined,
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
+      linkEpisodeId,
     });
   };
 
@@ -524,23 +529,8 @@ export function ImageGenerationStudio({
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
 
-  const returnBanner =
-    returnTo && returnLinkLabel ? (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-xs text-muted">
-        <span>
-          {returnLinkKind === 'scene'
-            ? t('returnBannerScene', { name: returnLinkLabel })
-            : t('returnBannerCharacter', { name: returnLinkLabel })}
-        </span>
-        <Link href={returnTo} className="shrink-0 font-medium text-text hover:underline">
-          {t('returnBannerAbandon')}
-        </Link>
-      </div>
-    ) : null;
-
   const paramsPanel = (
     <>
-      {returnBanner}
       <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
         <OptionGroup
           label={t('assetKind')}

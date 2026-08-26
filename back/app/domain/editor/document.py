@@ -13,11 +13,15 @@ ENGINE = "zaolang-canonical"
 SCHEMA_VERSION = 1
 
 
+def _track(track_id: str, kind: str) -> dict[str, Any]:
+    return {"id": track_id, "kind": kind, "elements": [], "order": 0, "label": None, "muted": False}
+
+
 def empty_document(*, width: int = 1080, height: int = 1920) -> dict[str, Any]:
-    video_track = {"id": "trk_video", "kind": "video", "elements": []}
-    audio_track = {"id": "trk_audio", "kind": "audio", "elements": []}
-    caption_track = {"id": "trk_caption", "kind": "caption", "elements": []}
-    overlay_track = {"id": "trk_overlay", "kind": "overlay", "elements": []}
+    video_track = _track("trk_video", "video")
+    audio_track = _track("trk_audio", "audio")
+    caption_track = _track("trk_caption", "caption")
+    overlay_track = _track("trk_overlay", "overlay")
     return {
         "schema_version": SCHEMA_VERSION,
         "engine": ENGINE,
@@ -69,18 +73,36 @@ def duration_ticks(document: dict[str, Any]) -> int:
     return end
 
 
+def _normalize_track(track: dict[str, Any]) -> dict[str, Any]:
+    """Backfills `order`/`label`/`muted` on tracks from before these fields existed.
+
+    Revisions are immutable full snapshots with no migration path, so old
+    stored documents must upgrade transparently through this function rather
+    than through a schema-version bump or a one-off backfill script.
+    """
+    return {
+        **track,
+        "order": int(track.get("order") or 0),
+        "label": track.get("label"),
+        "muted": bool(track.get("muted") or False),
+    }
+
+
 def canonicalize(document: dict[str, Any]) -> dict[str, Any]:
     payload = clone_document(document)
     payload["schema_version"] = SCHEMA_VERSION
     payload["engine"] = ENGINE
     tracks = []
     for track in payload.get("tracks") or []:
+        normalized = _normalize_track(track)
         elements = sorted(
-            track.get("elements") or [],
+            normalized.get("elements") or [],
             key=lambda item: (item.get("start_ticks", 0), item.get("id", "")),
         )
-        tracks.append({**track, "elements": elements})
-    payload["tracks"] = sorted(tracks, key=lambda item: item.get("id", ""))
+        tracks.append({**normalized, "elements": elements})
+    # `order` is the meaningful z-order for video tracks (and stable UI row
+    # order for others); `id` only breaks ties within the same order.
+    payload["tracks"] = sorted(tracks, key=lambda item: (item.get("order", 0), item.get("id", "")))
     return payload
 
 
@@ -120,6 +142,9 @@ def timeline_summary(document: dict[str, Any]) -> dict[str, Any]:
             {
                 "id": track.get("id"),
                 "kind": track.get("kind"),
+                "order": track.get("order"),
+                "label": track.get("label"),
+                "muted": track.get("muted"),
                 "element_count": len(track.get("elements") or []),
                 "elements": [
                     {

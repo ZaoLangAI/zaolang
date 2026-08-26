@@ -9,16 +9,16 @@ per operation.
 
 `asset_graph` is the same shape with three extra nodes spliced in for a
 non-`GENERAL` `ImageAssetKind`/`VideoAssetKind` job (image: character /
-scene / cover; video: scene_video / character_action / transition_video /
+scene / cover; video: character_action / transition_video /
 cover_video): `asset_planning` right before routing, so the planner's
 guidance can steer the actual generation; `asset_output_advance` right after
 quality passes, which loops back to `asset_planning` once per remaining
 `GenerationParams.character_views` entry for a multi-view image `CHARACTER`
 job (a no-op single pass for everything else, including every video kind —
 no video kind ever loops); and `asset_output_link`, once every view is
-done, so the successful output(s) auto-attach to their target character
-skill / scene (an image reference, or a video `action_clips`/`clips`
-entry). See `app.domain.workflow_templates.service.ensure_default_templates`,
+done, so the successful output(s) auto-attach to their target character/
+scene skill (an image reference, or a video `action_clips` entry).
+See `app.domain.workflow_templates.service.ensure_default_templates`,
 the only place all three are seeded. The graph shape itself is identical for
 both media types — only the node executors (`app.workflows.nodes`) branch
 on which asset-kind axis is active.

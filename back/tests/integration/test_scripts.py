@@ -341,6 +341,90 @@ def test_update_links_patches_the_document_without_creating_a_turn(
     assert revised_character["character_ref_id"] == character.id
 
 
+def test_update_content_saves_hand_edited_text_without_creating_a_turn(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    first = next(data for kind, data in _parse_sse(created.text) if kind == "complete")
+    episode_id = first["episode_id"]
+    script = first["script"]
+    script["logline"] = "手动修改后的梗概"
+    script["scenes"][0]["blocks"][0]["text"] = "手动改写的第一句台词"
+
+    saved = client.patch(
+        f"/v1/scripts/{episode_id}",
+        json={"script": script},
+        headers=auth_header(author),
+    )
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["logline"] == "手动修改后的梗概"
+    assert body["scenes"][0]["blocks"][0]["text"] == "手动改写的第一句台词"
+
+    # A direct content save must never create a new conversation turn.
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert len(detail.json()["turns"]) == 1
+    assert detail.json()["script"]["logline"] == "手动修改后的梗概"
+
+    # The hand-edit must be what the *next* prompt-based turn builds on, even
+    # when the client doesn't resend `current_script` explicitly — it falls
+    # back to the freshly-persisted `episode.script_json`, and the fake
+    # gateway's revise stub only ever appends a scene onto whatever it's
+    # handed, leaving earlier scenes/blocks untouched.
+    revised = client.post(
+        f"/v1/scripts/{episode_id}/turns",
+        json={"message": "继续修改"},
+        headers=auth_header(author),
+    )
+    revised_complete = next(data for kind, data in _parse_sse(revised.text) if kind == "complete")
+    assert revised_complete["script"]["scenes"][0]["blocks"][0]["text"] == "手动改写的第一句台词"
+
+
+def test_update_content_rejects_another_users_episode(
+    client: TestClient, db: Session, author: User, remixer: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _enable_script_studio(db, remixer)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    first = next(data for kind, data in _parse_sse(created.text) if kind == "complete")
+    episode_id = first["episode_id"]
+    script = first["script"]
+    script["logline"] = "别人偷改的梗概"
+
+    response = client.patch(
+        f"/v1/scripts/{episode_id}",
+        json={"script": script},
+        headers=auth_header(remixer),
+    )
+    assert response.status_code == 404
+
+    # Untouched — still there for the real owner.
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert detail.json()["script"]["logline"] != "别人偷改的梗概"
+
+
+def test_update_content_requires_flag(client: TestClient, author: User) -> None:
+    response = client.patch(
+        "/v1/scripts/dep_missing",
+        json={"script": {"title": "", "logline": "", "characters": [], "scenes": []}},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 404
+
+
 def test_delete_script_removes_episode_and_turns(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

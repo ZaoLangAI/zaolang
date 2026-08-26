@@ -1,10 +1,11 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 
+import { AudioMixer } from './engine/audio-mixer';
 import { composeFrame, MediaPool } from './engine/compositor';
 import { TICKS_PER_SECOND, type CanonicalDocument, type ResolvedAsset } from './engine/ports';
 import { useEditorUi } from './store';
@@ -30,6 +31,7 @@ export function Preview({
   const t = useTranslations('editor');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const poolRef = useRef<MediaPool | null>(null);
+  const audioMixerRef = useRef<AudioMixer | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastFrameAtRef = useRef<number | null>(null);
   const playheadTicks = useEditorUi((state) => state.playheadTicks);
@@ -37,12 +39,19 @@ export function Preview({
   const [playing, setPlaying] = useState(false);
 
   const empty = document.tracks.every((track) => track.elements.length === 0);
+  const assetUrls = useMemo(
+    () => new Map(assets.map((asset) => [asset.asset_id, asset.url])),
+    [assets],
+  );
 
   useEffect(() => {
     poolRef.current = new MediaPool();
+    audioMixerRef.current = new AudioMixer();
     return () => {
       poolRef.current?.dispose();
       poolRef.current = null;
+      audioMixerRef.current?.dispose();
+      audioMixerRef.current = null;
     };
   }, []);
 
@@ -60,10 +69,17 @@ export function Preview({
         if (cancelled) return;
       },
     );
+    // Audio only actually sounds during playback — scrubbing while paused
+    // stays silent, matching how a paused video element behaves elsewhere.
+    if (playing) {
+      audioMixerRef.current?.sync(document, playheadTicks, assetUrls);
+    } else {
+      audioMixerRef.current?.stopAll();
+    }
     return () => {
       cancelled = true;
     };
-  }, [document, playheadTicks, assets, empty]);
+  }, [document, playheadTicks, assets, assetUrls, empty, playing]);
 
   useEffect(() => {
     if (!playing) {
@@ -108,10 +124,20 @@ export function Preview({
         style={{ aspectRatio: `${document.canvas.width} / ${document.canvas.height}` }}
       />
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="secondary" onClick={() => setPlaying((value) => !value)}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            const next = !playing;
+            setPlaying(next);
+            // Must run inside this gesture handler — browsers refuse to
+            // resume an AudioContext from any other call site.
+            if (next) void audioMixerRef.current?.resume();
+          }}
+        >
           {playing ? t('pause') : t('play')}
         </Button>
-        <p className="text-xs text-muted">{t('previewMuted')}</p>
+        <p className="text-xs text-muted">{t('previewScrubMuted')}</p>
       </div>
     </div>
   );

@@ -52,7 +52,10 @@ export function DevicePreview({
   title: string;
   /** `NO_DEVICE`, or an id from the device catalogue. */
   defaultDeviceId?: string;
-  /** Extra ceiling for the framed phone, in px, on top of the remaining viewport. */
+  /** Caps the stage height (framed or not) below the viewport-remaining
+   * default `useAvailableStage` would otherwise compute — set this when a
+   * caller has its own content (e.g. action buttons) directly below the
+   * stage that also needs to stay visible without excessive scrolling. */
   maxHeight?: number;
   /**
    * The stage runs to the viewport edges on a phone, so the control row has to
@@ -120,6 +123,7 @@ export function DevicePreview({
             title={title}
             framed={false}
             refreshSrc={refreshSrc}
+            maxHeight={maxHeight}
           />
         )}
       </div>
@@ -200,6 +204,7 @@ function StageMedia({
   title,
   framed,
   refreshSrc,
+  maxHeight,
 }: {
   mediaType: 'image' | 'video';
   src?: string | null;
@@ -207,6 +212,9 @@ function StageMedia({
   title: string;
   framed: boolean;
   refreshSrc?: () => Promise<string | null>;
+  /** Only meaningful for the unframed still image below — the framed case
+   * already respects it via `DevicePreview`'s own `avail`/`scale`. */
+  maxHeight?: number;
 }) {
   if (mediaType === 'image') {
     if (framed) {
@@ -217,7 +225,7 @@ function StageMedia({
         <div className="grid size-full place-items-center text-sm text-muted">{title}</div>
       );
     }
-    return <CappedStill src={src} title={title} />;
+    return <CappedStill src={src} title={title} maxHeight={maxHeight} />;
   }
 
   if (framed) {
@@ -238,9 +246,17 @@ function StageMedia({
   return <VideoPlayer src={src} poster={poster} title={title} refreshSrc={refreshSrc} />;
 }
 
-function CappedStill({ src, title }: { src?: string | null; title: string }) {
+function CappedStill({
+  src,
+  title,
+  maxHeight,
+}: {
+  src?: string | null;
+  title: string;
+  maxHeight?: number;
+}) {
   const measureRef = useRef<HTMLDivElement>(null);
-  const avail = useAvailableStage(measureRef);
+  const avail = useAvailableStage(measureRef, maxHeight);
   const [ratio, setRatio] = useState(16 / 9);
   const stage = fitWithinReferenceCanvas({
     ratio,

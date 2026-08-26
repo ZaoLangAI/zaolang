@@ -44,20 +44,12 @@ MAX_REFERENCE_ASSETS = 4
 # schema, same rationale as `characters.service.MAX_JOB_REFERENCE_ASSETS`.
 MAX_JOB_REFERENCE_ASSETS = 9
 MAX_SELECTED_SCENES = 4
-# Mirrors `characters.service.MAX_ACTION_CLIPS`.
-MAX_CLIPS = 12
 
 DEFAULT_VIEW = "general"
 
 # Sub-key inside `CreationSkill.params_json` a scene skill's structured data
 # lives under — mirrors `characters.service.CHARACTER_PARAMS_KEY`.
 SCENE_PARAMS_KEY = "scene"
-# Sub-key holding this scene's generated video clips
-# (`{"asset_id", "label", "created_at"}`) — mirrors
-# `characters.service.CHARACTER_ACTION_CLIPS_KEY`, same reasoning for why
-# it's kept apart from `reference_assets` rather than a video-typed entry
-# inside it (see `apply_scene_refs` below).
-SCENE_CLIPS_KEY = "clips"
 
 _REFERENCE_MEDIA_TYPES = (MediaType.IMAGE, MediaType.VIDEO)
 
@@ -94,11 +86,6 @@ class SceneView:
         return [str(entry["asset_id"]) for entry in self.reference_assets if entry.get("asset_id")]
 
     @property
-    def clips(self) -> list[dict[str, Any]]:
-        """Generated `scene`-kind video clips — see `SCENE_CLIPS_KEY`."""
-        return list(_clips(self.skill))
-
-    @property
     def status(self) -> str:
         return self.skill.status
 
@@ -131,15 +118,6 @@ def _reference_assets(skill: CreationSkill) -> list[dict[str, Any]]:
     """Copies of each reference-asset entry — see `characters.service.
     _reference_assets` for the dirty-tracking bug this mirrors avoiding."""
     raw = _payload(skill).get("reference_assets")
-    return (
-        [dict(entry) for entry in raw if isinstance(entry, dict)] if isinstance(raw, list) else []
-    )
-
-
-def _clips(skill: CreationSkill) -> list[dict[str, Any]]:
-    """Copies of each `clips` entry — same copy-not-reference contract as
-    `_reference_assets` (see `characters.service._payload`'s docstring)."""
-    raw = _payload(skill).get(SCENE_CLIPS_KEY)
     return (
         [dict(entry) for entry in raw if isinstance(entry, dict)] if isinstance(raw, list) else []
     )
@@ -310,44 +288,6 @@ def append_reference_asset(
     if len(entries) > MAX_REFERENCE_ASSETS:
         entries = entries[-MAX_REFERENCE_ASSETS:]
     payload["reference_assets"] = entries
-    _set_payload(skill, payload)
-    session.flush()
-    return SceneView(skill)
-
-
-def append_clip(
-    session: Session,
-    *,
-    user_id: str,
-    scene_id: str,
-    asset_id: str,
-    label: str | None = None,
-) -> SceneView:
-    """Adds one generated video clip to the scene's `clips` list.
-
-    Called by `app.workflows.nodes._link_scene_clip_output` when a
-    `video_asset_kind=scene_video` job succeeds. Always accumulates (no
-    "one per shot-tag" replacement) up to `MAX_CLIPS`, dropping the oldest
-    entry once full — mirrors `characters.service.append_action_clip`.
-    """
-    skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
-    asset = session.get(Asset, asset_id)
-    if asset is None or asset.owner_user_id != user_id:
-        raise NotFound("视频素材不存在。")
-    if asset.media_type != MediaType.VIDEO:
-        raise ValidationFailed("场景片段必须是视频。", fields={"asset_id": "必须是视频素材"})
-    payload = _payload(skill)
-    entries = [e for e in _clips(skill) if e.get("asset_id") != asset_id]
-    entries.append(
-        {
-            "asset_id": asset_id,
-            "label": (label or "").strip() or None,
-            "created_at": utcnow().isoformat(),
-        }
-    )
-    if len(entries) > MAX_CLIPS:
-        entries = entries[-MAX_CLIPS:]
-    payload[SCENE_CLIPS_KEY] = entries
     _set_payload(skill, payload)
     session.flush()
     return SceneView(skill)

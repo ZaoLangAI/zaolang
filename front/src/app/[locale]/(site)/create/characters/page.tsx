@@ -2,9 +2,8 @@ import { getTranslations } from 'next-intl/server';
 
 import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { CharacterLibrary } from '@/components/characters/character-library';
-import { BackLink } from '@/components/ui/back-link';
+import { GoBackLink } from '@/components/ui/go-back-link';
 import { PageHeading } from '@/components/ui/primitives';
-import { Link } from '@/i18n/navigation';
 import { isSignedIn, serverFetchOrNull } from '@/lib/api/server';
 import type { Character } from '@/lib/api/types';
 
@@ -19,6 +18,7 @@ export async function generateMetadata() {
  */
 export default async function CharactersPage() {
   const t = await getTranslations('characters');
+  const tActions = await getTranslations('actions');
   if (!(await isSignedIn())) return <SignInPrompt />;
 
   const characters = await serverFetchOrNull<Character[]>('/v1/characters', {
@@ -28,13 +28,8 @@ export default async function CharactersPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-6 sm:px-6">
-      <BackLink href="/create">{t('backToCreate')}</BackLink>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
-        <Link href="/create/scenes" className="text-sm text-muted hover:text-text">
-          {t('sceneLibraryLink')}
-        </Link>
-      </div>
+      <GoBackLink fallbackHref="/create">{tActions('back')}</GoBackLink>
+      <PageHeading eyebrow={t('eyebrow')} title={t('title')} description={t('subtitle')} />
       <CharacterLibrary initial={characters} />
     </div>
   );

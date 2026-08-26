@@ -116,7 +116,17 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    * to be stored on it rather than in component state.
    */
   draftParams?: Record<string, unknown>;
+  /**
+   * The short-drama workspace's own deep link (`?linkEpisodeId=`, read back
+   * by `/create/new`'s `page.tsx`) — associates the draft this submit
+   * creates with that episode as a `candidate` the moment the draft exists,
+   * not gated on the job succeeding (a still-running or even failed attempt
+   * is still material worth keeping visible in the workspace). Best-effort:
+   * a failure here must never block the generation itself.
+   */
+  linkEpisodeId?: string;
 }
+
 
 export interface GenerationSubmit {
   quote: Quote | null;
@@ -242,6 +252,19 @@ export function useGenerationSubmit(
               },
             });
             pendingDraft.current = draft.id;
+            if (input.linkEpisodeId) {
+              api
+                .post(`/v1/drama-episodes/${input.linkEpisodeId}/content-links`, {
+                  content_type: 'draft',
+                  content_ref_id: draft.id,
+                  role: 'candidate',
+                })
+                .catch(() => {
+                  // Best-effort — the episode workspace's own content-links
+                  // list is just a convenience view, never the source of
+                  // truth for what the draft is.
+                });
+            }
           }
 
           const job = await api.post<GenerationJob>(

@@ -260,11 +260,11 @@ class GenerationParams(ApiModel):
     # What a `text_to_video`/`image_to_video`/`video_to_video` output is
     # *for* — the video-side equivalent of `asset_kind` above, orthogonal to
     # `operation` the same way. Selects both which `GenerationWorkflowTemplate`
-    # runs and, for `CHARACTER_ACTION`/`SCENE`, which character/scene the
-    # successful output auto-attaches to as a clip (`action_clips`/`clips`,
-    # not `reference_assets` — see `app.workflows.nodes._link_character_action_output`
-    # / `_link_scene_clip_output`). Deliberately a separate field/enum from
-    # `asset_kind` rather than a shared one: video has no `CharacterViewAngle`
+    # runs and, for `CHARACTER_ACTION`, which character the successful output
+    # auto-attaches to as a clip (`action_clips`, not `reference_assets` —
+    # see `app.workflows.nodes._link_character_action_output`). Deliberately
+    # a separate field/enum from `asset_kind` rather than a shared one: video
+    # has no `CharacterViewAngle`
     # multi-view loop, and mixing the two into one field would let a video
     # job's kind value collide with an image kind's string in any lookup
     # keyed by bare `asset_kind` string (see `VideoAssetKind`'s docstring).

@@ -27,14 +27,18 @@ from app.models import (
     Asset,
     CutRevision,
     DeliveryVariant,
+    Draft,
     DramaEpisode,
     EditorCommandEvent,
+    EditorExport,
     EditorLease,
     EditorOperationEvent,
     EditPlan,
+    EpisodeContentLink,
     EpisodeCut,
     GenerationJob,
     Series,
+    Work,
 )
 from app.models.base import new_id, utcnow
 from app.models.enums import (
@@ -42,8 +46,11 @@ from app.models.enums import (
     DramaEpisodeStatus,
     EditorCommandEventStatus,
     EditPlanStatus,
+    EpisodeContentRole,
+    EpisodeContentType,
     EpisodeCutKind,
     EpisodeCutStatus,
+    EpisodeKind,
     JobStatus,
     SeriesKind,
     SeriesStatus,
@@ -93,7 +100,6 @@ def create_drama_series(
     shortform_profile_key: str | None = None,
     allow_external_models: bool = False,
 ) -> Series:
-    editor_flags.require_flag(session, editor_flags.FLAG_DRAMA, user_id=user_id)
     series = Series(
         owner_user_id=user_id,
         title=title.strip(),
@@ -111,7 +117,6 @@ def create_drama_series(
 
 
 def list_drama_series(session: Session, *, user_id: str) -> list[Series]:
-    editor_flags.require_flag(session, editor_flags.FLAG_DRAMA, user_id=user_id)
     stmt = (
         select(Series)
         .where(Series.owner_user_id == user_id, Series.kind == SeriesKind.DRAMA)
@@ -127,28 +132,42 @@ def create_episode(
     series_id: str,
     title: str,
     episode_number: int | None = None,
+    season_number: int = 1,
+    episode_kind: str = EpisodeKind.MAIN,
     synopsis: str | None = None,
 ) -> DramaEpisode:
-    editor_flags.require_flag(session, editor_flags.FLAG_DRAMA, user_id=user_id)
-    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    """Basic episode CRUD is intentionally *not* flag-gated and not limited
+    to `kind=drama` series — every series (the roster's `kind=cast` short-
+    drama entries included) can manage its own episode list. Only entering
+    the full timeline editor (`create_cut_from_job`/`acquire_lease`/
+    `apply_commands`/exports/AI) still requires `FLAG_EDITOR` and friends —
+    see `zaolang-editor-drama`."""
+    series = _owned_series(session, user_id=user_id, series_id=series_id)
     number = episode_number
     if number is None:
         current = session.scalars(
             select(DramaEpisode.episode_number)
-            .where(DramaEpisode.series_id == series.id)
+            .where(
+                DramaEpisode.series_id == series.id,
+                DramaEpisode.season_number == season_number,
+            )
             .order_by(DramaEpisode.episode_number.desc())
         ).first()
         number = int(current or 0) + 1
     existing = session.scalar(
         select(DramaEpisode).where(
-            DramaEpisode.series_id == series.id, DramaEpisode.episode_number == number
+            DramaEpisode.series_id == series.id,
+            DramaEpisode.season_number == season_number,
+            DramaEpisode.episode_number == number,
         )
     )
     if existing is not None:
         raise ValidationFailed("该集数已存在。")
     episode = DramaEpisode(
         series_id=series.id,
+        season_number=season_number,
         episode_number=number,
+        episode_kind=episode_kind,
         title=title.strip(),
         synopsis=(synopsis or "").strip() or None,
         script_json={},
@@ -160,14 +179,169 @@ def create_episode(
 
 
 def list_episodes(session: Session, *, user_id: str, series_id: str) -> list[DramaEpisode]:
-    editor_flags.require_flag(session, editor_flags.FLAG_DRAMA, user_id=user_id)
-    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    series = _owned_series(session, user_id=user_id, series_id=series_id)
     stmt = (
         select(DramaEpisode)
         .where(DramaEpisode.series_id == series.id)
-        .order_by(DramaEpisode.episode_number.asc())
+        .order_by(DramaEpisode.season_number.asc(), DramaEpisode.episode_number.asc())
     )
     return list(session.scalars(stmt))
+
+
+def get_episode(session: Session, *, user_id: str, episode_id: str) -> DramaEpisode:
+    return _owned_episode(session, user_id=user_id, episode_id=episode_id)
+
+
+def update_episode(
+    session: Session,
+    *,
+    user_id: str,
+    episode_id: str,
+    title: str | None = None,
+    synopsis: str | None = None,
+    episode_kind: str | None = None,
+    season_number: int | None = None,
+    episode_number: int | None = None,
+    status: str | None = None,
+) -> DramaEpisode:
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    next_season = season_number if season_number is not None else episode.season_number
+    next_number = episode_number if episode_number is not None else episode.episode_number
+    if next_season != episode.season_number or next_number != episode.episode_number:
+        clash = session.scalar(
+            select(DramaEpisode).where(
+                DramaEpisode.series_id == episode.series_id,
+                DramaEpisode.season_number == next_season,
+                DramaEpisode.episode_number == next_number,
+                DramaEpisode.id != episode.id,
+            )
+        )
+        if clash is not None:
+            raise ValidationFailed("该集数已存在。")
+        episode.season_number = next_season
+        episode.episode_number = next_number
+    if title is not None:
+        episode.title = title.strip() or episode.title
+    if synopsis is not None:
+        episode.synopsis = synopsis.strip() or None
+    if episode_kind is not None:
+        episode.episode_kind = episode_kind
+    if status is not None:
+        episode.status = status
+    session.flush()
+    return episode
+
+
+def _content_owner_user_id(
+    session: Session, *, content_type: str, content_ref_id: str
+) -> str | None:
+    """Traces a piece of content back to whoever owns it, for the ownership
+    check `create_content_link` needs before letting a user attach it to
+    their episode. Not a foreign key (see `EpisodeContentLink`'s docstring),
+    so this has to walk each content type's own path by hand."""
+    if content_type == EpisodeContentType.DRAFT:
+        draft = session.get(Draft, content_ref_id)
+        return draft.user_id if draft else None
+    if content_type == EpisodeContentType.WORK:
+        work = session.get(Work, content_ref_id)
+        return work.owner_user_id if work else None
+    if content_type == EpisodeContentType.EDITOR_EXPORT:
+        export = session.get(EditorExport, content_ref_id)
+        if export is None:
+            return None
+        variant = session.get(DeliveryVariant, export.variant_id)
+        revision = session.get(CutRevision, variant.cut_revision_id) if variant else None
+        cut = session.get(EpisodeCut, revision.cut_id) if revision else None
+        episode = session.get(DramaEpisode, cut.episode_id) if cut else None
+        series = session.get(Series, episode.series_id) if episode else None
+        return series.owner_user_id if series else None
+    return None
+
+
+def create_content_link(
+    session: Session,
+    *,
+    user_id: str,
+    episode_id: str,
+    content_type: str,
+    content_ref_id: str,
+    role: str = EpisodeContentRole.CANDIDATE,
+) -> EpisodeContentLink:
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    owner_id = _content_owner_user_id(
+        session, content_type=content_type, content_ref_id=content_ref_id
+    )
+    if owner_id is None:
+        raise NotFound("关联的内容不存在。")
+    if owner_id != user_id:
+        raise Forbidden("不能关联他人的创作产出。")
+    existing = session.scalar(
+        select(EpisodeContentLink).where(
+            EpisodeContentLink.episode_id == episode.id,
+            EpisodeContentLink.content_type == content_type,
+            EpisodeContentLink.content_ref_id == content_ref_id,
+        )
+    )
+    if existing is not None:
+        if existing.role != role:
+            existing.role = role
+            session.flush()
+        return existing
+    link = EpisodeContentLink(
+        episode_id=episode.id,
+        content_type=content_type,
+        content_ref_id=content_ref_id,
+        role=role,
+    )
+    session.add(link)
+    session.flush()
+    return link
+
+
+def list_content_links(
+    session: Session, *, user_id: str, episode_id: str
+) -> list[EpisodeContentLink]:
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    stmt = (
+        select(EpisodeContentLink)
+        .where(EpisodeContentLink.episode_id == episode.id)
+        .order_by(EpisodeContentLink.created_at.desc())
+    )
+    return list(session.scalars(stmt))
+
+
+def delete_content_link(session: Session, *, user_id: str, episode_id: str, link_id: str) -> None:
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    link = session.get(EpisodeContentLink, link_id)
+    if link is None or link.episode_id != episode.id:
+        raise NotFound("关联记录不存在。")
+    session.delete(link)
+    session.flush()
+
+
+def set_canonical_work(
+    session: Session, *, user_id: str, episode_id: str, work_id: str | None
+) -> DramaEpisode:
+    """Names the one output the episode's publishing flow (`PublishKit`) and
+    the public projection should trust as current — see
+    `EpisodeContentRole`'s docstring for why this is a dedicated column
+    rather than just "the link with role=final"."""
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    if work_id is not None:
+        work = session.get(Work, work_id)
+        if work is None or work.owner_user_id != user_id:
+            raise NotFound("作品不存在。")
+        create_content_link(
+            session,
+            user_id=user_id,
+            episode_id=episode_id,
+            content_type=EpisodeContentType.WORK,
+            content_ref_id=work_id,
+            role=EpisodeContentRole.FINAL,
+        )
+    episode.canonical_work_id = work_id
+    session.flush()
+    return episode
 
 
 def list_cuts(session: Session, *, user_id: str, episode_id: str) -> list[EpisodeCut]:

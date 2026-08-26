@@ -422,6 +422,43 @@ class EpisodeCutStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+
+
+class EpisodeKind(StrEnum):
+    """What an episode *is* within its series — the "剧集类型" the short-drama
+    workspace lets a creator pick, independent of `DramaEpisodeStatus`
+    (which tracks production lifecycle, not narrative role). Additive only —
+    see `zaolang-data-model` invariant on enum values."""
+
+    MAIN = "main"
+    TRAILER = "trailer"
+    TEASER = "teaser"
+    BTS = "bts"
+    RECAP = "recap"
+    OTHER = "other"
+
+
+class EpisodeContentType(StrEnum):
+    """What `EpisodeContentLink.content_ref_id` points at."""
+
+    DRAFT = "draft"
+    WORK = "work"
+    EDITOR_EXPORT = "editor_export"
+
+
+class EpisodeContentRole(StrEnum):
+    """Why a piece of content is linked to an episode — orthogonal to
+    `DramaEpisode.canonical_work_id`, which names the one output actually
+    chosen as the episode's final cut. A `FINAL` link is a record of that
+    choice's history; `canonical_work_id` is what every other reader
+    (publishing, the public work projection) trusts as current."""
+
+    CANDIDATE = "candidate"
+    REFERENCE = "reference"
+    BEHIND_THE_SCENES = "behind_the_scenes"
+    FINAL = "final"
+
+
 EPISODE_CUT_TRANSITIONS: dict[EpisodeCutStatus, frozenset[EpisodeCutStatus]] = {
     EpisodeCutStatus.DRAFT: frozenset({EpisodeCutStatus.EDITING, EpisodeCutStatus.ARCHIVED}),
     EpisodeCutStatus.EDITING: frozenset(

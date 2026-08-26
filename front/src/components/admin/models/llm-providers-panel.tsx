@@ -345,7 +345,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   const [inFlight, setInFlight] = useState<Record<string, ValidationInFlight>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const inFlightIds = useRef(new Set<string>());
-  const abortRef = useRef(new AbortController());
+  const abortRef = useRef<AbortController | null>(null);
   const [confirmingValidation, setConfirmingValidation] = useState<LlmProviderEndpoint | null>(
     null,
   );
@@ -354,8 +354,15 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   >({});
   const knownIds = new Set(endpoints.map((e) => e.id));
 
+  // Created here rather than at the `useRef` initializer: Strict Mode's
+  // dev-only mount -> cleanup -> remount simulation would otherwise abort
+  // the one-and-only controller `useRef` ever builds before the operator
+  // gets to click anything, poisoning every future validation poll for the
+  // rest of the page's life. Building it fresh on every genuine effect run
+  // means the simulated remount hands back a live controller instead.
   useEffect(() => {
-    const controller = abortRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
     return () => controller.abort();
   }, []);
 
@@ -471,6 +478,12 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
 
   const validateEndpoint = async (endpoint: LlmProviderEndpoint) => {
     if (inFlightIds.current.has(endpoint.id)) return;
+    // Read once and reuse for the whole call: the mount effect above is the
+    // only thing that ever replaces `abortRef.current`, and it does so
+    // before this handler can run, so `null` here would only mean the
+    // component never actually mounted.
+    const controller = abortRef.current;
+    if (!controller) return;
     inFlightIds.current.add(endpoint.id);
     const startedAt = Date.now();
     setNowMs(startedAt);
@@ -498,7 +511,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
       while (Date.now() < deadline) {
         const latest = await adminApi.get<LlmProviderValidationJob>(
           `/v1/admin/llm-providers/${endpoint.id}/validate/${job.validation_id}`,
-          { signal: abortRef.current.signal },
+          { signal: controller.signal },
         );
         if (latest.status === 'completed' && latest.result) {
           setValidationResults((current) => ({ ...current, [endpoint.id]: latest.result! }));
@@ -508,11 +521,11 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
           );
           return;
         }
-        await delay(1000, abortRef.current.signal);
+        await delay(1000, controller.signal);
       }
       notify(t('validationErrorTimeout'), 'error');
     } catch (caught) {
-      if (isAbortError(caught) || abortRef.current.signal.aborted) return;
+      if (isAbortError(caught) || controller.signal.aborted) return;
       notify(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'), 'error');
     } finally {
       inFlightIds.current.delete(endpoint.id);

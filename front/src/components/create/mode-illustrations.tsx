@@ -131,59 +131,7 @@ export function ShortformIllustration(props: IllustrationProps) {
   );
 }
 
-/** A vertical frame sitting on a timeline of clips. */
-export function DramaIllustration(props: IllustrationProps) {
-  return (
-    <Scene {...props}>
-      <rect x="58" y="8" width="44" height="52" rx="8" fillOpacity="0.06" fill="currentColor" />
-      <path d="M72 8h16" strokeWidth="3" strokeOpacity="0.55" />
-      <rect
-        x="18"
-        y="70"
-        width="28"
-        height="12"
-        rx="2"
-        fill="currentColor"
-        stroke="none"
-        fillOpacity="0.45"
-      />
-      <rect
-        x="50"
-        y="70"
-        width="40"
-        height="12"
-        rx="2"
-        fill="currentColor"
-        stroke="none"
-        fillOpacity="0.75"
-      />
-      <rect
-        x="94"
-        y="70"
-        width="22"
-        height="12"
-        rx="2"
-        fill="currentColor"
-        stroke="none"
-        fillOpacity="0.4"
-      />
-      <rect
-        x="120"
-        y="70"
-        width="22"
-        height="12"
-        rx="2"
-        fill="currentColor"
-        stroke="none"
-        fillOpacity="0.55"
-      />
-      <path d="M18 88h124" strokeOpacity="0.35" />
-    </Scene>
-  );
-}
 
-/** A script page with lines of text, alongside a chat bubble for the
- * conversation that refines it. */
 export function ScriptIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>

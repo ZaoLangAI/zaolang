@@ -17,11 +17,14 @@ export function PromptField({
   onChange,
   polishContext,
   onPolishAccept,
+  closePolishSignal,
 }: {
   prompt: string;
   onChange: (value: string) => void;
   polishContext?: PromptPolishContext;
   onPolishAccept?: (prompt: string) => void;
+  /** Forwarded to `PromptPolish` — see its own doc comment. */
+  closePolishSignal?: number;
 }) {
   const t = useTranslations('remixPage');
 
@@ -44,6 +47,7 @@ export function PromptField({
           prompt={prompt}
           context={polishContext}
           onAccept={onPolishAccept}
+          closeSignal={closePolishSignal}
         />
       ) : null}
     </div>

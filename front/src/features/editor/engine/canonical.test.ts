@@ -27,6 +27,11 @@ function withClip(document: CanonicalDocument, overrides: Partial<CanonicalDocum
     speed_millipercent: 100_000,
     text: null,
     caption_language: null,
+    effects: [],
+    mask: null,
+    animations: { channels: {} },
+    transition_in: null,
+    transition_out: null,
     ...overrides,
   });
   return document;
@@ -158,16 +163,26 @@ describe('applyBatch — move_elements', () => {
     expect(result.tracks[0]!.elements[0]!.start_ticks).toBe(0);
   });
 
-  it('moves the element to another track when track_id is given', () => {
+  it('moves the element to another track of the same kind when track_id is given', () => {
     const document = withClip(emptyDocument());
     const result = apply(document, [
-      { type: 'move_elements', element_ids: ['el_clip'], delta_ticks: 0, track_id: 'trk_overlay' },
+      { type: 'add_track', kind: 'video', track_id: 'trk_pip' },
+      { type: 'move_elements', element_ids: ['el_clip'], delta_ticks: 0, track_id: 'trk_pip' },
     ]);
     const videoTrack = result.tracks.find((track) => track.id === 'trk_video')!;
-    const overlayTrack = result.tracks.find((track) => track.id === 'trk_overlay')!;
+    const pipTrack = result.tracks.find((track) => track.id === 'trk_pip')!;
     expect(videoTrack.elements).toHaveLength(0);
-    expect(overlayTrack.elements).toHaveLength(1);
-    expect(overlayTrack.elements[0]!.track_id).toBe('trk_overlay');
+    expect(pipTrack.elements).toHaveLength(1);
+    expect(pipTrack.elements[0]!.track_id).toBe('trk_pip');
+  });
+
+  it('rejects moving an element to a track of a different kind', () => {
+    const document = withClip(emptyDocument());
+    expect(() =>
+      apply(document, [
+        { type: 'move_elements', element_ids: ['el_clip'], delta_ticks: 0, track_id: 'trk_overlay' },
+      ]),
+    ).toThrow(BatchRolledBackError);
   });
 
   it('rolls back when the element does not exist', () => {
@@ -307,5 +322,312 @@ describe('applyBatch — whole-batch rollback', () => {
       ]),
     ).toThrow(BatchRolledBackError);
     expect(document).toEqual(before);
+  });
+});
+
+describe('applyBatch — effects', () => {
+  it('appends an effect and keeps existing ones', () => {
+    const result = apply(withClip(emptyDocument()), [
+      { type: 'add_effect', element_id: 'el_clip', effect: { type: 'blur', params: { intensity: 20 } } },
+      { type: 'add_effect', element_id: 'el_clip', effect: { type: 'grayscale', params: { amount: 100 } } },
+    ]);
+    const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.effects).toEqual([
+      { type: 'blur', params: { intensity: 20 } },
+      { type: 'grayscale', params: { amount: 100 } },
+    ]);
+  });
+
+  it('rejects an effect type outside the confirmed-working allowlist', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        { type: 'add_effect', element_id: 'el_clip', effect: { type: 'sepia' as never, params: {} } },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('caps the number of effects per element', () => {
+    const commands: EditCommand[] = Array.from({ length: 9 }, () => ({
+      type: 'add_effect' as const,
+      element_id: 'el_clip',
+      effect: { type: 'brightness' as const, params: { amount: 110 } },
+    }));
+    expect(() => apply(withClip(emptyDocument()), commands)).toThrow(BatchRolledBackError);
+  });
+
+  it('removes an effect by index', () => {
+    const withEffects = apply(withClip(emptyDocument()), [
+      { type: 'add_effect', element_id: 'el_clip', effect: { type: 'blur', params: { intensity: 20 } } },
+      { type: 'add_effect', element_id: 'el_clip', effect: { type: 'contrast', params: { amount: 120 } } },
+    ]);
+    const result = applyBatch(
+      withEffects,
+      [{ type: 'remove_effect', element_id: 'el_clip', effect_index: 0 }],
+      new Set(['ast_1']),
+    );
+    const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.effects).toEqual([{ type: 'contrast', params: { amount: 120 } }]);
+  });
+
+  it('rejects an out-of-range effect index', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        { type: 'remove_effect', element_id: 'el_clip', effect_index: 0 },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('merges params without dropping untouched keys', () => {
+    const withEffect = apply(withClip(emptyDocument()), [
+      { type: 'add_effect', element_id: 'el_clip', effect: { type: 'blur', params: { intensity: 20, extra: 1 } } },
+    ]);
+    const result = applyBatch(
+      withEffect,
+      [{ type: 'update_effect_params', element_id: 'el_clip', effect_index: 0, params: { intensity: 40 } }],
+      new Set(['ast_1']),
+    );
+    const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.effects[0]!.params).toEqual({ intensity: 40, extra: 1 });
+  });
+});
+
+describe('applyBatch — clip mask', () => {
+  it('sets and clears a mask', () => {
+    const mask = { shape: 'ellipse' as const, x_milli: 100, y_milli: 100, width_milli: 800, height_milli: 800, feather_millipercent: 10_000 };
+    const withMask = apply(withClip(emptyDocument()), [
+      { type: 'set_clip_mask', element_id: 'el_clip', mask },
+    ]);
+    let element = withMask.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.mask).toEqual(mask);
+
+    const cleared = applyBatch(
+      withMask,
+      [{ type: 'set_clip_mask', element_id: 'el_clip', mask: null }],
+      new Set(['ast_1']),
+    );
+    element = cleared.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.mask).toBeNull();
+  });
+
+  it('rejects an unsupported mask shape', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        {
+          type: 'set_clip_mask',
+          element_id: 'el_clip',
+          mask: {
+            shape: 'star' as never,
+            x_milli: 0,
+            y_milli: 0,
+            width_milli: 100,
+            height_milli: 100,
+            feather_millipercent: 0,
+          },
+        },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+});
+
+describe('applyBatch — keyframes', () => {
+  it('inserts keyframes sorted by tick regardless of insertion order', () => {
+    const result = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 2 * TICKS_PER_SECOND, value: 100_000 },
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 0 },
+    ]);
+    const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.animations.channels.opacity!.points.map((point) => point.at_ticks)).toEqual([
+      0,
+      2 * TICKS_PER_SECOND,
+    ]);
+  });
+
+  it('replaces an existing point at the same tick rather than duplicating it', () => {
+    const result = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 10_000 },
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 90_000 },
+    ]);
+    const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.animations.channels.opacity!.points).toEqual([{ at_ticks: 0, value: 90_000 }]);
+  });
+
+  it('rejects an unsupported property', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        { type: 'set_keyframe', element_id: 'el_clip', property: 'color' as never, at_ticks: 0, value: 0 },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('rejects a value outside the property range', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 999_999 },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('deletes a keyframe at an exact tick and rejects deleting a tick with none', () => {
+    const withPoint = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 50_000 },
+    ]);
+    const cleared = applyBatch(
+      withPoint,
+      [{ type: 'delete_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0 }],
+      new Set(['ast_1']),
+    );
+    expect(cleared.tracks.flatMap((t) => t.elements)[0]!.animations.channels.opacity!.points).toEqual([]);
+    expect(() =>
+      applyBatch(
+        cleared,
+        [{ type: 'delete_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0 }],
+        new Set(['ast_1']),
+      ),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('clears a whole channel', () => {
+    const withPoints = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 0 },
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 1000, value: 100_000 },
+    ]);
+    const cleared = applyBatch(
+      withPoints,
+      [{ type: 'clear_keyframes', element_id: 'el_clip', property: 'opacity' }],
+      new Set(['ast_1']),
+    );
+    const element = cleared.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(element.animations.channels.opacity).toBeUndefined();
+  });
+
+  it('does not alias keyframe channels between split halves', () => {
+    const withPoint = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 50_000 },
+      { type: 'split_element', element_id: 'el_clip', at_ticks: TICKS_PER_SECOND },
+    ]);
+    const elements = withPoint.tracks.flatMap((track) => track.elements);
+    const right = elements.find((item) => item.id !== 'el_clip')!;
+    const withMoreKeyframes = applyBatch(
+      withPoint,
+      [{ type: 'set_keyframe', element_id: right.id, property: 'opacity', at_ticks: 500, value: 20_000 }],
+      new Set(['ast_1']),
+    );
+    const left = withMoreKeyframes.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
+    expect(left.animations.channels.opacity!.points).toHaveLength(1);
+  });
+});
+
+describe('applyBatch — stickers and transitions', () => {
+  it('inserts a sticker element via element_type, defaulting to clip', () => {
+    const result = apply(emptyDocument(), [
+      {
+        type: 'insert_clip',
+        track_id: 'trk_video',
+        asset_id: 'ast_1',
+        at_ticks: 0,
+        duration_ticks: TICKS_PER_SECOND,
+        element_id: 'el_sticker',
+        element_type: 'sticker',
+      },
+    ]);
+    const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_sticker')!;
+    expect(element.type).toBe('sticker');
+
+    const plain = apply(emptyDocument(), [
+      { type: 'insert_clip', track_id: 'trk_video', asset_id: 'ast_1', at_ticks: 0, duration_ticks: TICKS_PER_SECOND, element_id: 'el_plain' },
+    ]);
+    expect(plain.tracks.flatMap((t) => t.elements).find((el) => el.id === 'el_plain')!.type).toBe('clip');
+  });
+
+  it('rejects an unsupported element_type', () => {
+    expect(() =>
+      apply(emptyDocument(), [
+        {
+          type: 'insert_clip',
+          track_id: 'trk_video',
+          asset_id: 'ast_1',
+          at_ticks: 0,
+          duration_ticks: TICKS_PER_SECOND,
+          element_type: 'shape' as never,
+        },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('sets a transition on each edge independently and clears it with null', () => {
+    const result = apply(withClip(emptyDocument(), { duration_ticks: 2 * TICKS_PER_SECOND }), [
+      {
+        type: 'set_transition',
+        element_id: 'el_clip',
+        edge: 'out',
+        transition: { type: 'crossfade', duration_ticks: TICKS_PER_SECOND },
+      },
+    ]);
+    let element = result.tracks.flatMap((t) => t.elements).find((el) => el.id === 'el_clip')!;
+    expect(element.transition_out).toEqual({ type: 'crossfade', duration_ticks: TICKS_PER_SECOND });
+    expect(element.transition_in).toBeNull();
+
+    const cleared = applyBatch(
+      result,
+      [{ type: 'set_transition', element_id: 'el_clip', edge: 'out', transition: null }],
+      new Set(['ast_1']),
+    );
+    element = cleared.tracks.flatMap((t) => t.elements).find((el) => el.id === 'el_clip')!;
+    expect(element.transition_out).toBeNull();
+  });
+
+  it('rejects an unsupported transition type', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        {
+          type: 'set_transition',
+          element_id: 'el_clip',
+          edge: 'out',
+          transition: { type: 'wipe' as never, duration_ticks: TICKS_PER_SECOND },
+        },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('rejects a transition longer than the element itself', () => {
+    expect(() =>
+      apply(withClip(emptyDocument(), { duration_ticks: TICKS_PER_SECOND }), [
+        {
+          type: 'set_transition',
+          element_id: 'el_clip',
+          edge: 'out',
+          transition: { type: 'crossfade', duration_ticks: 2 * TICKS_PER_SECOND },
+        },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('moves transition_out to the right half and keeps transition_in on the left half after a split', () => {
+    const withTransitions = apply(withClip(emptyDocument(), { duration_ticks: 4 * TICKS_PER_SECOND }), [
+      {
+        type: 'set_transition',
+        element_id: 'el_clip',
+        edge: 'in',
+        transition: { type: 'crossfade', duration_ticks: TICKS_PER_SECOND },
+      },
+      {
+        type: 'set_transition',
+        element_id: 'el_clip',
+        edge: 'out',
+        transition: { type: 'dip_to_black', duration_ticks: TICKS_PER_SECOND },
+      },
+    ]);
+    const result = applyBatch(
+      withTransitions,
+      [{ type: 'split_element', element_id: 'el_clip', at_ticks: 2 * TICKS_PER_SECOND }],
+      new Set(['ast_1']),
+    );
+    const elements = result.tracks.flatMap((t) => t.elements);
+    const left = elements.find((el) => el.id === 'el_clip')!;
+    const right = elements.find((el) => el.id !== 'el_clip')!;
+    expect(left.transition_in).toEqual({ type: 'crossfade', duration_ticks: TICKS_PER_SECOND });
+    expect(left.transition_out).toBeNull();
+    expect(right.transition_in).toBeNull();
+    expect(right.transition_out).toEqual({ type: 'dip_to_black', duration_ticks: TICKS_PER_SECOND });
   });
 });

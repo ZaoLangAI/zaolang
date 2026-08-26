@@ -62,6 +62,25 @@ class Settings(BaseSettings):
     upload_url_ttl_seconds: int = 60 * 10
     download_url_ttl_seconds: int = 60 * 15
 
+    # Fernet key (32 url-safe base64-encoded bytes) used to encrypt platform
+    # OAuth tokens at rest. Empty means "not configured yet" — the same
+    # convention as the COS fields above — validated lazily in
+    # `app.domain.distribution.crypto`, not at import time.
+    platform_token_encryption_key: str = ""
+
+    # Douyin (抖音) Open Platform app credentials. Empty = that org's platform
+    # registration is not done yet; every `DouyinClient` method must raise
+    # `PlatformNotConfigured` rather than attempt a real call.
+    douyin_app_key: str = ""
+    douyin_app_secret: str = ""
+    douyin_redirect_uri: str = ""
+
+    # Kuaishou (快手) Open Platform app credentials — same empty-means-
+    # unconfigured convention as the Douyin fields above.
+    kuaishou_app_id: str = ""
+    kuaishou_app_secret: str = ""
+    kuaishou_redirect_uri: str = ""
+
     @property
     def embed_reference_images_as_base64(self) -> bool:
         """Whether a provider reference image must be inlined as base64
