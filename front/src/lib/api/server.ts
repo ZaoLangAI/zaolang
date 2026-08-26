@@ -10,7 +10,7 @@ import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
  * In a container deployment the browser-visible host is not reachable from the
  * server, so the two URLs are configured separately rather than derived.
  */
-const INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:8000';
+const INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 export const REFRESH_COOKIE = 'zl_refresh';
 

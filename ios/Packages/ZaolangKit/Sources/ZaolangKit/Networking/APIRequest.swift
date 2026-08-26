@@ -9,7 +9,7 @@ public enum HTTPMethod: String, Sendable {
 }
 
 /// 一次 API 调用的描述。`path` 只写相对路径（如 `/v1/works`），host 由 `APIClient.Configuration` 提供，
-/// 这样本地 `localhost:8000` 和未来的生产域名切换只改一处配置。
+/// 这样本地 `localhost:3001` 和未来的生产域名切换只改一处配置。
 public struct APIRequest: Sendable {
     public var method: HTTPMethod
     public var path: String

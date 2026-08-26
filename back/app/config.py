@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     app_env: Literal["local", "test", "ci", "production"] = "local"
     app_version: str = "0.0.0-dev"
-    api_base_url: str = "http://localhost:8000"
+    api_base_url: str = "http://localhost:3001"
     web_base_url: str = "http://localhost:3000"
 
     database_url: str = "postgresql+psycopg://zaolang:zaolang@localhost:5433/zaolang"

@@ -45,7 +45,7 @@
 	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- 只放开本机回环地址，本地联调 `http://localhost:8000` 用；生产走 https，不放宽任意加载。 -->
+		<!-- 只放开本机回环地址，本地联调 `http://localhost:3001` 用；生产走 https，不放宽任意加载。 -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

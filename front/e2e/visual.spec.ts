@@ -60,7 +60,7 @@ for (const theme of ['dark', 'light'] as const) {
  * pinned: a hard-coded id would turn a reseed into a suite-wide failure that
  * says nothing about the layout these tests are actually about.
  */
-const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:8000';
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:3001';
 
 async function seededPaths(page: Page) {
   // The refresh cookie rides in the saved storage state; the access token does

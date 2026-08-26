@@ -83,6 +83,6 @@ xcodebuild -project ios/Zaolang.xcodeproj -scheme Zaolang \
   -destination 'platform=iOS Simulator,name=iPhone 17' build   # command-line self-check for UI-layer changes; a full local Xcode install can run this
 ```
 
-Still worth walking key paths on a real device/simulator in Xcode: `open Zaolang.xcodeproj` → pick an iPhone simulator → Run. Integration testing needs the backend running: `make up && make migrate && make seed && make dev-api` (defaults to `http://localhost:8000`, matching `AppConfig.apiBaseURL`); push/device-registration testing additionally needs the two endpoints in `back/app/api/v1/devices.py` migrated in (`alembic upgrade head`).
+Still worth walking key paths on a real device/simulator in Xcode: `open Zaolang.xcodeproj` → pick an iPhone simulator → Run. Integration testing needs the backend running: `make up && make migrate && make seed && make dev-api` (defaults to `http://localhost:3001`, matching `AppConfig.apiBaseURL`); push/device-registration testing additionally needs the two endpoints in `back/app/api/v1/devices.py` migrated in (`alembic upgrade head`).
 
 Accessibility review follows the same standard as web (the same `make test-a11y`/`make qa-visual` targets as `zaolang-testing-qa`): no truncation or horizontal overflow at the largest assistive text size, every VoiceOver icon button has a label, no transition exceeds 50ms with reduced motion on, and touch targets are at least 44×44pt.

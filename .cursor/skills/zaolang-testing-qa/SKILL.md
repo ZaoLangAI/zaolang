@@ -47,7 +47,7 @@ Support files: `e2e/support/session.ts` (`ACCOUNTS` / `STATE_FILES` / `signIn` /
 
 ```bash
 make up && make migrate && make seed          # a real database and seed data
-make dev-api                                   # backend must be on 8000
+make dev-api                                   # backend must be on 3001
 cd front && npm run build && npx next start --port 3100
 make test-e2e && make test-a11y && make qa-visual
 ```

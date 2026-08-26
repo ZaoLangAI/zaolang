@@ -108,7 +108,7 @@ dev: ## 同时启动 API、Worker、轮询 poller、Beat 与 Web
 
 .PHONY: dev-api
 dev-api: ## 启动 FastAPI（含 AgentOS）
-	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port 8000
+	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port 3001
 
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（生成与质检队列，不含供应商轮询）

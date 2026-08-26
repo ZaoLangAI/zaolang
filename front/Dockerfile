@@ -16,7 +16,7 @@ COPY . .
 # `NEXT_PUBLIC_*` values are inlined into the client bundle, so the browser-facing
 # API URL has to be known at build time. Server-side reads (`API_INTERNAL_URL`)
 # stay runtime configuration.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_API_URL=http://localhost:3001
 ARG APP_VERSION=0.0.0-dev
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     APP_VERSION=$APP_VERSION \

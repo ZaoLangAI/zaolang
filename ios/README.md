@@ -53,7 +53,7 @@ ios/
    open Zaolang.xcodeproj
    ```
 3. 起后端（仓库根目录）：`make up && make migrate && make seed && make dev-api`，默认监听
-   `http://localhost:8000`，与 `AppConfig.apiBaseURL` 一致，不用改代码。
+   `http://localhost:3001`，与 `AppConfig.apiBaseURL` 一致，不用改代码。
 4. 选 iPhone 模拟器直接 Run。首次启动会拉 `GET /v1/auth/me`——游客态返回未认证是正常状态，
    不是错误；已有 Debug 构建可以点右上角的调试图标验证会话链路（`DebugSessionView`，只在
    `#if DEBUG` 下可达，不进 Release 包）。

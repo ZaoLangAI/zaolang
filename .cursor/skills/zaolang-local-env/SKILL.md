@@ -38,7 +38,7 @@ disable-model-invocation: true
 make setup             # create the conda env, install front/back deps, copy .env files
 make up                 # start postgres/redis containers (COS is the default local object store — no container needed)
 make migrate seed       # create tables + seed data
-make dev                # run API(8000) / Celery worker / Celery beat / Web(3000) in parallel
+make dev                # run API(3001) / Celery worker / Celery beat / Web(3000) in parallel
 make dev-beat           # start only the async-provider-polling and timeout-reclaim scheduler
 make dev-purge-queues   # flush Celery queues (after seed --reset / a DB wipe; stop the worker first)
 make reset              # destroy the data volume and rebuild (up + migrate + seed)
@@ -58,8 +58,8 @@ Seed accounts share the password `Zaolang2026`: `linhai` (author), `mizuki` (rem
 
 ```bash
 make up && make migrate && make seed
-curl -s localhost:8000/healthz | jq       # process is alive
-curl -s localhost:8000/readyz | jq        # Postgres / Redis ready (MinIO is checked on the admin health page)
+curl -s localhost:3001/healthz | jq       # process is alive
+curl -s localhost:3001/readyz | jq        # Postgres / Redis ready (MinIO is checked on the admin health page)
 make dev                                  # all three processes start clean
 ```
 

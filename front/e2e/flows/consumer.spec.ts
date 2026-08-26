@@ -11,7 +11,7 @@ import { expectTheme, setTheme } from '../support/theme';
  * behaviour preserves the test.
  */
 
-const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:8000';
+const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:3001';
 
 /** Active free remix in the seeded chain. The original root may be tombstoned. */
 const SEEDED_FREE_REMIX = '潮汐之上 · 夜行';

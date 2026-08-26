@@ -1,6 +1,6 @@
 import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 /**
  * The access token is held in memory only.

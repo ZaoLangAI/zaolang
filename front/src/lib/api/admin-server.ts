@@ -6,7 +6,7 @@ import { getLocale } from 'next-intl/server';
 
 import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
 
-const INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:8000';
+const INTERNAL_URL = process.env.API_INTERNAL_URL ?? 'http://localhost:3001';
 
 /**
  * The console session cookie.

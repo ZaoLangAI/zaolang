@@ -20,7 +20,7 @@
 **确认**
 
 ```bash
-curl -s localhost:8000/health | jq          # 服务自己的探针
+curl -s localhost:3001/healthz | jq         # 服务自己的探针
 docker compose --env-file infra/.env.example -f infra/docker-compose.yml ps
 make logs                                    # 跟容器日志
 ```

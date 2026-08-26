@@ -24,7 +24,7 @@ make hooks     # 安装 pre-commit 钩子
 ## 日常开发
 
 ```bash
-make dev       # 同时起 API(8000)、Celery worker、Celery beat、Web(3000)
+make dev       # 同时起 API(3001)、Celery worker、Celery beat、Web(3000)
 make dev-api   # 只起 FastAPI
 make dev-worker # 只起 Celery worker（订阅七个队列）
 make dev-beat  # 只起 Celery Beat（异步轮询与超时回收）
@@ -39,7 +39,7 @@ make dev-purge-queues  # 清空 Celery 队列（先停 worker）
 
 - C 端：<http://localhost:3000/zh-CN/discover>
 - 后台运维台：<http://localhost:3000/zh-CN/admin>
-- API 文档：<http://localhost:8000/docs>
+- API 文档：<http://localhost:3001/docs>
 - MinIO 控制台（仅当手动启动了 MinIO 容器时可用）：<http://localhost:9001>
 
 `STORAGE_BACKEND=minio` 时，本地开发的页面入口和媒体签名一律走 `localhost`，不要用机器网卡 IP 打开前端或写入 `S3_PUBLIC_ENDPOINT_URL` / `LOCAL_MEDIA_HOST`。网卡 IP 会随 DHCP / 换网变化：SigV4 签的是 `Host` 头，Next `/_next/image` 的 allowlist 也只认 `localhost:9000` 与 `127.0.0.1:9000`，写成 `192.168.*` 后封面和沙盒预览会 403 或约 5s 后 500。`STORAGE_BACKEND=tencent_cos` 时媒体签名走 COS 自己的公网域名，不受这条限制。
@@ -123,7 +123,7 @@ E2E 与无障碍是额外的本地套件：它们需要真实数据库与种子�
 
 ```bash
 make up && make migrate && make seed   # 真实数据库与种子数据
-make dev-api                            # 后端必须在 8000，CORS 允许 3000/3100
+make dev-api                            # 后端必须在 3001，CORS 允许 3000/3100
 cd front && npm run build && npx next start --port 3100
 make test-e2e
 ```

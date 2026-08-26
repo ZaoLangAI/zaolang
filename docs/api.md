@@ -1,6 +1,6 @@
 # 接口参考
 
-下面的文档由后端 `make openapi` 导出的 `openapi.json` 直接渲染，因此不会和运行中的 API 漂移。本地也可以直接开 <http://localhost:8000/docs>。
+下面的文档由后端 `make openapi` 导出的 `openapi.json` 直接渲染，因此不会和运行中的 API 漂移。本地也可以直接开 <http://localhost:3001/docs>。
 
 ## 约定
 

@@ -108,7 +108,7 @@ services:
         condition: service_healthy
     environment: *backend-env
     ports:
-      - '8000:8000'
+      - '3001:8000'
 
   worker:
     <<: *backend
@@ -163,7 +163,7 @@ services:
     build:
       context: ../front
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
         APP_VERSION: ${APP_VERSION:-0.0.0-dev}
     image: zaolang-front:local
     depends_on:
