@@ -1590,3 +1590,5 @@ def test_a_shipped_template_carries_the_prompt_the_code_actually_uses(
     ).json()["items"]
     shipped = next(template for template in templates if template["key"] == "safety-default")
     assert shipped["prompt_template"] == safety.SYSTEM_PROMPT
+
+

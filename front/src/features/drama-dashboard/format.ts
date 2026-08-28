@@ -18,3 +18,20 @@ export function episodeStatusTone(status: string): BadgeTone {
   if (status === 'production') return 'amber';
   return 'neutral';
 }
+
+/** `SeriesGenre` dictionary — additive only, mirrors `back/app/models/enums.py`. */
+export const SERIES_GENRES = [
+  'urban',
+  'ancient_costume',
+  'sweet_romance',
+  'suspense',
+  'comedy',
+  'family_drama',
+  'workplace',
+  'fantasy',
+  'era',
+  'other',
+] as const;
+
+/** `DistributionChannel` values a series can pick as its target platforms. */
+export const TARGET_PLATFORMS = ['douyin', 'kuaishou', 'manual_download'] as const;

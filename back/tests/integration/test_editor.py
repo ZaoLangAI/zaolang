@@ -78,7 +78,7 @@ def test_an_owner_can_create_a_cut_and_apply_a_command(
     created = client.post(
         "/v1/drama-series",
         headers=auth_header(author),
-        json={"title": "测试短剧"},
+        json={"title": "测试短剧", "target_platforms": ["manual_download"]},
     )
     assert created.status_code == 201, created.text
     series_id = created.json()["id"]
@@ -132,7 +132,9 @@ def test_add_track_then_insert_clip_round_trips_through_the_api(
     _enable_editor(db, admin)
     asset = _video_asset(db, author)
     created = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "多轨测试"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "多轨测试", "target_platforms": ["manual_download"]},
     )
     episode = client.post(
         f"/v1/drama-series/{created.json()['id']}/episodes",
@@ -193,7 +195,9 @@ def test_stale_expected_revision_conflicts(
     _enable_editor(db, admin)
     asset = _video_asset(db, author)
     series = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "冲突剧"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "冲突剧", "target_platforms": ["manual_download"]},
     ).json()
     episode = client.post(
         f"/v1/drama-series/{series['id']}/episodes",
@@ -238,7 +242,9 @@ def test_a_second_browser_cannot_steal_the_write_lease(
     _enable_editor(db, admin)
     asset = _video_asset(db, author)
     series = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "租约剧"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "租约剧", "target_platforms": ["manual_download"]},
     ).json()
     episode = client.post(
         f"/v1/drama-series/{series['id']}/episodes",
@@ -269,7 +275,11 @@ def test_a_stranger_cannot_open_someone_elses_series(
     client: TestClient, db: Session, author: User, admin: User
 ) -> None:
     _enable_editor(db, admin)
-    created = client.post("/v1/drama-series", headers=auth_header(author), json={"title": "私有剧"})
+    created = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "私有剧", "target_platforms": ["manual_download"]},
+    )
     assert created.status_code == 201
     from tests.conftest import make_user
 
@@ -309,6 +319,49 @@ def test_cut_from_job_opens_a_timeline_on_success(
     assert body["source_job_id"] == job.id
     assert body["source_asset_id"] == asset.id
     assert body["head_revision_id"]
+
+
+def test_cut_from_job_skips_a_trashed_series_when_picking_the_fallback(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """Without an explicit `series_id`, `create_cut_from_job` falls back to
+    the user's most-recently-created `kind=drama` series. That fallback must
+    skip a trashed one — otherwise "进入剪辑" from a job page would silently
+    resurrect content into a series the user just moved to the recycle bin,
+    where it would then be invisible on the dashboard."""
+    _enable_editor(db, admin)
+    trashed_series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "已回收的短剧", "target_platforms": ["manual_download"]},
+    ).json()
+    trash_response = client.delete(
+        f"/v1/drama-series/{trashed_series['id']}", headers=auth_header(author)
+    )
+    assert trash_response.status_code == 204
+
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    db.flush()
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert response.status_code == 201, response.text
+
+    episode = client.get(
+        f"/v1/drama-episodes/{response.json()['episode_id']}", headers=auth_header(author)
+    )
+    assert episode.status_code == 200
+    assert episode.json()["series_id"] != trashed_series["id"]
+
+    new_series = client.get(
+        f"/v1/drama-series/{episode.json()['series_id']}", headers=auth_header(author)
+    )
+    assert new_series.status_code == 200
+    assert new_series.json()["status"] == "active"
 
 
 @contextmanager
@@ -391,7 +444,7 @@ def test_creating_a_cut_enqueues_analysis_only_after_commit(
         series = client.post(
             "/v1/drama-series",
             headers=auth_header(author),
-            json={"title": "提交后入队"},
+            json={"title": "提交后入队", "target_platforms": ["manual_download"]},
         )
         assert series.status_code == 201, series.text
         episode = client.post(
@@ -418,7 +471,9 @@ def test_missing_media_analysis_does_not_raise() -> None:
 
 def _open_cut(client: TestClient, author: User, asset: Asset) -> dict[str, Any]:
     series = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "测试短剧"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "测试短剧", "target_platforms": ["manual_download"]},
     ).json()
     episode = client.post(
         f"/v1/drama-series/{series['id']}/episodes",

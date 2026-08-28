@@ -39,6 +39,10 @@ _TYPICAL_LATENCY_MS: dict[str, int] = {
     "text_to_video": 90_000,
     "image_to_video": 90_000,
     "video_to_video": 100_000,
+    # A synchronous chat-style call, not a polled render task, but still
+    # well beyond a text-only completion — the model has to watch the whole
+    # clip before it can answer.
+    "video_analysis": 25_000,
 }
 # Fallback per-call cost in micro-USD, used only when an operator has not
 # configured a price for the endpoint. Setting these to zero instead would be
@@ -52,6 +56,7 @@ _FALLBACK_UNIT_COST_MICRO_USD: dict[str, int] = {
     "text_to_video": 1_200_000,
     "image_to_video": 1_200_000,
     "video_to_video": 1_400_000,
+    "video_analysis": 80_000,
 }
 _FALLBACK_DEFAULT_MICRO_USD = 200_000
 _ALL_TIERS = frozenset({"preview", "standard", "cinematic"})
@@ -62,13 +67,28 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
     An endpoint offering both `text_to_image` and `audio_generation` yields
     two independent catalog entries — each scored and dispatched on its own,
     because "primary for images" need not mean "primary for audio".
+
+    A `kind="general"` endpoint that declares `"video"` in `input_modalities`
+    also gets one entry here, tagged `video_analysis` — the only capability a
+    general (text + vision) endpoint can derive. It keeps its ordinary role
+    in `app/llm/failover.py`'s primary/backup pool too; the two selection
+    paths are independent.
     """
     config = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     catalog: dict[str, ProviderCapability] = {}
     for endpoint_id, endpoint in config.endpoints.items():
-        if not endpoint.enabled or endpoint.kind != "media":
+        if not endpoint.enabled:
             continue
-        if endpoint.protocol not in IMPLEMENTED_MEDIA_PROTOCOLS:
+        if endpoint.kind == "media":
+            if endpoint.protocol not in IMPLEMENTED_MEDIA_PROTOCOLS:
+                continue
+        elif endpoint.kind == "general":
+            # A general endpoint has no `protocol` concept — its only
+            # possible capability is `video_analysis`, declared purely via
+            # `input_modalities` (see `LlmProviderEndpoint.capabilities`).
+            if not endpoint.capabilities:
+                continue
+        else:
             continue
         for tag in endpoint.capabilities:
             catalog_key = f"{endpoint_id}:{tag}"

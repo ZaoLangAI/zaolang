@@ -27,6 +27,7 @@ from app.platform_config.schemas import (
     ImagePricing,
     MediaPricing,
     TokenPricing,
+    VideoAnalysisPricing,
     VideoPricing,
     pricing_section_for,
 )
@@ -106,6 +107,14 @@ def video_call_cost_micro_usd(
     return total + billable_images * pricing.extra_reference_image_micro_usd
 
 
+def video_analysis_call_cost_micro_usd(pricing: VideoAnalysisPricing | None) -> int:
+    """Flat per-call price — a video-understanding request has no per-second
+    or per-image dimension the way generation/synthesis calls do."""
+    if pricing is None or not pricing.is_declared:
+        return 0
+    return pricing.per_request_micro_usd
+
+
 def media_call_cost_micro_usd(
     pricing: MediaPricing | None,
     *,
@@ -141,6 +150,8 @@ def media_call_cost_micro_usd(
             input_material_seconds=input_material_seconds,
             reference_images=reference_images,
         )
+    if section == "video_analysis":
+        return video_analysis_call_cost_micro_usd(pricing.video_analysis)
     return 0
 
 

@@ -49,6 +49,7 @@ export const STAGE_FOR_EVENT: Record<string, Stage> = {
   quality_checked: 'quality',
   settled: 'done',
   succeeded: 'done',
+  // Redis-only thinking frames must never light a stage. Intentionally absent.
 };
 
 /** A generation-content-appropriate label for a stage — every stage but

@@ -141,9 +141,52 @@ class FakePaidApiProvider(GenerationProvider):
         )
 
 
+class FakeVideoAnalysisProvider(GenerationProvider):
+    """`video_analysis`'s own shape: `output_json`, never `object_key`."""
+
+    name = "fake_video_analysis"
+    kind = "commercial_api"
+    base_latency_ms = 1_500
+    unit_cost_minor = 12
+
+    def submit(self, request: GenerationRequest) -> GenerationResult:
+        started = time.perf_counter()
+        if FORCE_FAILURE_MARKER in request.prompt:
+            return GenerationResult(
+                succeeded=False,
+                failure_code="PROVIDER_TEMPORARY_FAILURE",
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                metadata={"provider": self.name, "simulated": True},
+            )
+        return GenerationResult(
+            succeeded=True,
+            output_json={
+                "summary": "测试摘要：一段海边的黄昏长镜头。",
+                "composed_prompt": "海边黄昏，长镜头缓慢推进，暖色调。",
+                "style_tags": ["长镜头", "暖色调"],
+                "pacing": "舒缓长镜头",
+                "shots": [
+                    {
+                        "time_range": "00:00-00:05",
+                        "camera_movement": "推镜",
+                        "scene": "海边",
+                        "subject_action": "缓慢前行",
+                        "lighting_mood": "黄昏暖光",
+                        "transition_in": "淡入",
+                    }
+                ],
+            },
+            cost_minor=self.unit_cost_minor,
+            latency_ms=int((time.perf_counter() - started) * 1000) + self.base_latency_ms,
+            external_task_id=f"analysis-{_seeded(request.job_id, 'task'):08x}",
+            metadata={"provider": self.name, "model": "fake-video-understanding-v1"},
+        )
+
+
 REGISTRY: dict[str, GenerationProvider] = {
     FakeOpenWorkflowProvider.name: FakeOpenWorkflowProvider(),
     FakePaidApiProvider.name: FakePaidApiProvider(),
+    FakeVideoAnalysisProvider.name: FakeVideoAnalysisProvider(),
 }
 
 

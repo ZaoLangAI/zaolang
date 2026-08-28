@@ -16,7 +16,7 @@ import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
 import { WorkCard } from '@/components/work/work-card';
 import { Button, IconButton } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { IconPencil, IconPlus, IconRefresh, IconTrash } from '@/components/ui/icons';
+import { IconPencil, IconPlus, IconRefresh, IconTrash, IconTrashX } from '@/components/ui/icons';
 import { EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
@@ -311,18 +311,18 @@ export function LibraryTabs({
                       >
                         <IconRefresh className="size-4" />
                       </IconButton>
+                      <span aria-hidden className="my-1 w-px self-stretch bg-border" />
                       <IconButton
                         label={t('purgeWork')}
-                        variant="secondary"
+                        variant="danger"
                         size="sm"
-                        className="border-border bg-surface/90"
                         onClick={(event) => {
                           event.preventDefault();
                           event.stopPropagation();
                           setPurgingWork(work);
                         }}
                       >
-                        <IconTrash className="size-4" />
+                        <IconTrashX className="size-4" />
                       </IconButton>
                     </>
                   }

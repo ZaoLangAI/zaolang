@@ -1795,6 +1795,29 @@
         }
       }
     },
+    "billingPage.packagesEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No credit packs available right now"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在購入できるクレジットパックはありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无可购买的积分包"
+          }
+        }
+      }
+    },
     "billingPage.packagesHint": {
       "extractionState": "manual",
       "localizations": {
@@ -3934,25 +3957,25 @@
         }
       }
     },
-    "createPage.continueEpisode": {
+    "createPage.backToPrevious": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continue · Episode {number}"
+            "value": "Back"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "続きを作成 · 第 {number} 話"
+            "value": "前の画面に戻る"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "继续创作 · 第 {number} 集"
+            "value": "返回上一级"
           }
         }
       }
@@ -4279,75 +4302,6 @@
         }
       }
     },
-    "createPage.modeImageToVideoDesc": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Upload one image and let the character, scene and camera move."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画像を 1 枚アップロードし、人物・背景・カメラを動かします。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上传一张图片，让角色、场景与镜头自然运动。"
-          }
-        }
-      }
-    },
-    "createPage.modeImageToVideoTag": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preview · 36+ credits"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クイックプレビュー · 36+ クレジット"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "快速预览 · 36+ 积分"
-          }
-        }
-      }
-    },
-    "createPage.modeImageToVideoTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image to video"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画像から動画"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "图片生成视频"
-          }
-        }
-      }
-    },
     "createPage.modeLearnPublishDesc": {
       "extractionState": "manual",
       "localizations": {
@@ -4413,75 +4367,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "发表学习内容"
-          }
-        }
-      }
-    },
-    "createPage.modeRemixDesc": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inherit licensed assets, parameters and credit, with a traceable new version."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "許諾済みの素材・パラメータ・クレジットを引き継ぎ、追跡可能な新版をつくります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继承授权素材、参数和署名，创作可追溯的新版本。"
-          }
-        }
-      }
-    },
-    "createPage.modeRemixTag": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lineage preserved"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "出典チェーンを保持"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "来源链已保留"
-          }
-        }
-      }
-    },
-    "createPage.modeRemixTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remix a work"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作品から二次創作"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "基于作品二创"
           }
         }
       }
@@ -4555,140 +4440,71 @@
         }
       }
     },
-    "createPage.modeShortformDesc": {
+    "createPage.modeVideoCreationDesc": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Build a vertical cut against a platform's delivery spec, write the caption beside the safe areas, and export ready to post."
+            "value": "Start from text, an image or a video to generate scene shots, character action, transitions or trailers."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "配信仕様に合わせた縦型動画を作り、セーフエリアを見ながらキャプションまで仕上げて書き出します。"
+            "value": "テキスト・画像・動画のいずれからでも、場面の空撮、キャラクターの動作、転場、予告編を生成できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按抖音等平台的交付规格做竖屏成片，边写文案边看安全区，导出即可发布。"
+            "value": "文字、图片或视频均可作为起点，生成场景空镜、角色动作、转场或预告片段。"
           }
         }
       }
     },
-    "createPage.modeShortformTag": {
+    "createPage.modeVideoCreationTag": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vertical · Compliance"
+            "value": "Create video · 36+ credits"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "縦型 · 適合チェック"
+            "value": "動画作成 · 36+ クレジット"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "竖屏 · 合规检查"
+            "value": "创作视频 · 36+ 积分"
           }
         }
       }
     },
-    "createPage.modeShortformTitle": {
+    "createPage.modeVideoCreationTitle": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Short video"
+            "value": "Create Video"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ショート動画"
+            "value": "動画を作成"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "短视频创作"
-          }
-        }
-      }
-    },
-    "createPage.modeTextToVideoDesc": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Describe the subject, camera and sound to build a story from nothing."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "被写体・カメラ・音を描写し、ゼロから物語をつくります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "描述主体、镜头和声音，从零开始一段新故事。"
-          }
-        }
-      }
-    },
-    "createPage.modeTextToVideoTag": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Standard · 82+ credits"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "標準 · 82+ クレジット"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "标准 · 82+ 积分"
-          }
-        }
-      }
-    },
-    "createPage.modeTextToVideoTitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Text to video"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テキストから動画"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文字生成视频"
+            "value": "创作视频"
           }
         }
       }
@@ -4785,29 +4601,6 @@
         }
       }
     },
-    "createPage.pickWork": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pick a work from Discover"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "発見ページから作品を選ぶ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "去发现页挑一个作品"
-          }
-        }
-      }
-    },
     "createPage.recentDrafts": {
       "extractionState": "manual",
       "localizations": {
@@ -4827,29 +4620,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "最近草稿"
-          }
-        }
-      }
-    },
-    "createPage.recentSeriesHint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pick up a series and shoot the next episode — cast and episode number carry over automatically."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "既存のシリーズから次のエピソードを撮影。キャストとエピソード番号は自動で引き継がれます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "接着已有系列继续拍下一集，角色阵容和分集号会自动带上。"
           }
         }
       }
@@ -4883,19 +4653,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Start a short video"
+            "value": "Start managing a series"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ショート動画を作る"
+            "value": "シリーズ管理を始める"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开始短视频创作"
+            "value": "开始剧集创作"
           }
         }
       }
@@ -4906,19 +4676,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Laid out against a platform's delivery spec automatically — write the caption beside the safe areas and export ready to post."
+            "value": "Create a drama series, manage its episodes and content, and pick the final cut — the whole path from generation to publish-ready lives here."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "配信仕様に合わせて自動でレイアウトし、セーフエリアを見ながらキャプションを書けば、そのまま書き出せます。"
+            "value": "ドラマシリーズを作成し、エピソードと素材を管理し、最終成果物を指定します。生成から公開準備までここで完結します。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按抖音等平台的交付规格自动排版，边写文案边看安全区，生成即可导出发布。"
+            "value": "创建短剧系列，管理分集、内容素材与最终成片，从生成到发布前的整理都在这里完成。"
           }
         }
       }
@@ -4929,19 +4699,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Short video"
+            "value": "Drama series"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ショート動画"
+            "value": "ドラマシリーズ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "短视频创作"
+            "value": "剧集创作"
           }
         }
       }
@@ -4952,19 +4722,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vertical drama, ready to post"
+            "value": "Series management, from cast to final cut"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "縦型ショートドラマをそのまま投稿"
+            "value": "シリーズ管理で、企画から最終成果物まで一本化"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "竖屏短剧，一步直达发布"
+            "value": "剧集管理，从系列到成片一站搞定"
           }
         }
       }
@@ -5038,25 +4808,25 @@
         }
       }
     },
-    "createPage.subtitle": {
+    "createPage.startSeriesLibrary": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Describe the intent. ZaoLang arranges the assets, safety, models and quality pass."
+            "value": "Start a drama series"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "意図を伝えるだけで、素材・安全・モデル・品質の流れは造浪が整えます。"
+            "value": "ドラマシリーズを始める"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只需表达创作意图，造浪会为你安排素材、安全、模型和质量流程。"
+            "value": "开始短剧创作"
           }
         }
       }
@@ -5080,6 +4850,121 @@
           "stringUnit": {
             "state": "translated",
             "value": "今天，想创造什么？"
+          }
+        }
+      }
+    },
+    "createPage.toolVideoAnalysisDesc": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload a reference video and let AI break down its camera moves, scenes and pacing into prompts you can reuse."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参考動画をアップロードすると、AIがカメラワークやシーン、テンポを分析し、そのまま使えるプロンプトに変換します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传一段参考视频，AI 拆解运镜、场景与节奏，产出可直接复用于创作的提示词。"
+          }
+        }
+      }
+    },
+    "createPage.toolVideoAnalysisTag": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video analysis · 20+ credits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画解析 · 20+ クレジット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频解析 · 20+ 积分"
+          }
+        }
+      }
+    },
+    "createPage.toolVideoAnalysisTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video analysis"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "動画解析"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视频解析"
+          }
+        }
+      }
+    },
+    "createPage.toolsHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reuses the same creation and billing pipeline to get more out of material you already have."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ制作・課金の仕組みを使って、すでにある素材をもっと活用できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复用完整的创作与计费体系，让已有素材发挥更大价值。"
+          }
+        }
+      }
+    },
+    "createPage.toolsTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creation tools"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "制作ツール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创作工具"
           }
         }
       }
@@ -7016,6 +6901,29 @@
         }
       }
     },
+    "jobPage.characterViewsTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View progress {current}/{total}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビュー進捗 {current}/{total}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "视图进度 {current}/{total}"
+          }
+        }
+      }
+    },
     "jobPage.copyId": {
       "extractionState": "manual",
       "localizations": {
@@ -7246,6 +7154,190 @@
         }
       }
     },
+    "jobPage.outputItemLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Output {index} of {total}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出力 {index}/{total}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出 {index}/{total}"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkill": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as a shareable cover"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有可能なカバーとして保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另存为可分享封面"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkillDescriptionLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description (optional)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述（选填）"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkillDone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved as a shareable cover."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有可能なカバーとして保存しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存为可分享封面。"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkillFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save. Please try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存に失敗しました。再試行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败，请重试。"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkillHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once saved, it's discoverable in the skill marketplace — other creators can use it for free or unlock it with credits."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存するとスキルマーケットで発見され、他の制作者が無料またはクレジットで利用できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存后可在技能广场发现，其他创作者可以免费或用积分购买这张封面。"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkillTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save as a shareable cover"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有可能なカバーとして保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另存为可分享封面"
+          }
+        }
+      }
+    },
+    "jobPage.saveCoverSkillTitleLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Title"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题"
+          }
+        }
+      }
+    },
     "jobPage.stageDone": {
       "extractionState": "manual",
       "localizations": {
@@ -7426,6 +7518,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "任务 {id}"
+          }
+        }
+      }
+    },
+    "jobPage.thinkingLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reasoning"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考過程"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考过程"
+          }
+        }
+      }
+    },
+    "jobPage.thinkingLive": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "考えています…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在思考…"
           }
         }
       }
@@ -9017,6 +9155,29 @@
         }
       }
     },
+    "lineagePanel.diffAdded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增"
+          }
+        }
+      }
+    },
     "lineagePanel.diffAfter": {
       "extractionState": "manual",
       "localizations": {
@@ -9105,6 +9266,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "参数"
+          }
+        }
+      }
+    },
+    "lineagePanel.diffModified": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改动"
+          }
+        }
+      }
+    },
+    "lineagePanel.diffRemoved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
           }
         }
       }
@@ -9230,19 +9437,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pick any node above to see how it differs from its parent version."
+            "value": "Pick any node on the left to see how it differs from its parent version."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "上のノードを選ぶと、親バージョンとの差分がここに表示されます。"
+            "value": "左のノードを選ぶと、親バージョンとの差分がここに表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "点击上方任意节点，这里会显示它与父版本的参数差异。"
+            "value": "点击左侧任意节点，这里会显示它与父版本的参数差异。"
           }
         }
       }
@@ -9358,6 +9565,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "积分与账单"
+          }
+        }
+      }
+    },
+    "nav.characterLibrary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Characters"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクター"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "角色库"
           }
         }
       }
@@ -9611,6 +9841,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "个人中心"
+          }
+        }
+      }
+    },
+    "nav.sceneLibrary": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scenes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "场景库"
           }
         }
       }
@@ -10416,6 +10669,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "《{work_title}》为你带来了 {amount} 积分回流。"
+          }
+        }
+      }
+    },
+    "notificationBody.scriptFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your script “{title}” failed to generate."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "台本「{title}」の生成に失敗しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的剧本《{title}》生成失败。"
+          }
+        }
+      }
+    },
+    "notificationBody.scriptGenerating": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your script “{title}” is generating."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "台本「{title}」を生成しています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的剧本《{title}》正在生成。"
+          }
+        }
+      }
+    },
+    "notificationBody.scriptSucceeded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your script “{title}” is ready."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "台本「{title}」の生成が完了しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的剧本《{title}》已生成完成。"
           }
         }
       }
@@ -13025,19 +13347,19 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Generates the front view first; once it's done, complete the side and back from the character library in one click."
+            "value": "Generates the front view first; once it's done, complete the side and back right here in one click and view them as different angles of the same version."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "まず正面立ち絵を生成し、完了後にキャラクターライブラリで側面・背面をワンクリックで補完できます。"
+            "value": "まず正面立ち絵を生成し、完了後にここでワンクリックで側面・背面を補完し、同一バージョンの別アングルとして確認できます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先生成正面立绘，成功后可在角色库一键补全侧面与背面。"
+            "value": "先生成正面立绘，成功后可直接在这里一键补全侧面与背面，作为同一版本的不同视角查看。"
           }
         }
       }
@@ -13571,6 +13893,29 @@
         }
       }
     },
+    "remixPage.generationHistory": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version history ({count})"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン履歴（{count}）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本历史（{count}）"
+          }
+        }
+      }
+    },
     "remixPage.howToGenerate": {
       "extractionState": "manual",
       "localizations": {
@@ -14100,6 +14445,29 @@
         }
       }
     },
+    "remixPage.previewAreaLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image preview area"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像プレビューエリア"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片预览区域"
+          }
+        }
+      }
+    },
     "remixPage.promptLabel": {
       "extractionState": "manual",
       "localizations": {
@@ -14188,6 +14556,121 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法获取报价，请稍后重试。"
+          }
+        }
+      }
+    },
+    "remixPage.referenceCastEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No characters yet — create one in the character library first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクターがまだありません。先にキャラクターライブラリで作成してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有角色，先去角色库创建。"
+          }
+        }
+      }
+    },
+    "remixPage.referenceCastHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check up to 4 characters to use as generation references."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成時の参照として、キャラクターを最大 4 件選択できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "勾选角色作为生成时的参考图，最多 4 个。"
+          }
+        }
+      }
+    },
+    "remixPage.referenceCastLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Character references"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクター参照"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "角色参考"
+          }
+        }
+      }
+    },
+    "remixPage.referenceFramesGroup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reference settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参照設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参考设置"
+          }
+        }
+      }
+    },
+    "remixPage.referenceLimitReached": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4-item limit reached"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4件の上限に達しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已达 4 个上限"
           }
         }
       }
@@ -14284,6 +14767,52 @@
         }
       }
     },
+    "remixPage.referenceScenesEmpty": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No scenes yet — create one in the scene library first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーンがまだありません。先にシーンライブラリで作成してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有场景，先去场景库创建。"
+          }
+        }
+      }
+    },
+    "remixPage.referenceScenesLabel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scene references"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーン参照"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "场景参考"
+          }
+        }
+      }
+    },
     "remixPage.resolution": {
       "extractionState": "manual",
       "localizations": {
@@ -14326,6 +14855,98 @@
           "stringUnit": {
             "state": "translated",
             "value": "MiniMax H3 当前仅支持 2K。"
+          }
+        }
+      }
+    },
+    "remixPage.returnBannerAbandon": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard and go back now"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "破棄してすぐに戻る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "放弃并直接返回"
+          }
+        }
+      }
+    },
+    "remixPage.returnBannerCharacter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generating a character image for \"{name}\" — link it back to the script once it's done."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{name}」のキャラクター画像を生成中です。完了後に脚本作成へ関連付けて戻れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在为《{name}》生成角色图，完成后可一键关联回文案创作"
+          }
+        }
+      }
+    },
+    "remixPage.returnBannerScene": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Generating a scene image for \"{name}\" — link it back to the script once it's done."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{name}」のシーン画像を生成中です。完了後に脚本作成へ関連付けて戻れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在为《{name}》生成场景图，完成后可一键关联回文案创作"
+          }
+        }
+      }
+    },
+    "remixPage.returnToScript": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to script"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "脚本作成に戻る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回文案创作"
           }
         }
       }
@@ -15181,6 +15802,190 @@
         }
       }
     },
+    "remixPage.useAsReference": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refine from this image"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この画像を元に微調整する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基于此图继续微调"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKind": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creation type"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "創作タイプ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创作类型"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKindCharacterAction": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Character action video"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャラクター動作動画"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "角色动作视频"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKindCover": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trailer/cover video"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予告編/カバー動画"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预告/封面视频"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKindGeneral": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freeform"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自由創作"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自由创作"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKindHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What this video is for decides the generation flow and prompt planning used."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この動画の用途を選ぶと、使用する生成フローとプロンプト設計が決まります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择这段视频的用途，将决定使用的生成流程与提示词规划。"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKindScene": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scene video"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シーン動画"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "场景视频"
+          }
+        }
+      }
+    },
+    "remixPage.videoAssetKindTransition": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transition clip"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トランジション素材"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转场片段"
+          }
+        }
+      }
+    },
     "remixPage.videoReference": {
       "extractionState": "manual",
       "localizations": {
@@ -15706,6 +16511,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "通知偏好"
+          }
+        }
+      }
+    },
+    "settingsPage.navPlatforms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Platforms"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラットフォーム連携"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布平台"
           }
         }
       }

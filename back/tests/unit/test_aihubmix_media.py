@@ -313,6 +313,69 @@ def test_audio_generation_stores_the_raw_response_bytes(monkeypatch: pytest.Monk
     assert s3.get_object(result.object_key) == audio_bytes
 
 
+def test_video_analysis_submits_video_url_and_parses_structured_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}"
+    )
+    captured: dict = {}
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/chat/completions"
+        captured.update(kwargs["json"])
+        body = {
+            "summary": "一段城市夜景运镜展示",
+            "composed_prompt": "霓虹夜色下的城市航拍，缓慢推进",
+            "style_tags": ["cyberpunk", "夜景"],
+            "pacing": "舒缓长镜头",
+            "shots": [
+                {
+                    "time_range": "00:00-00:03",
+                    "camera_movement": "推镜",
+                    "scene": "城市天际线",
+                    "subject_action": "无人机缓慢前进",
+                    "lighting_mood": "霓虹冷色调",
+                    "transition_in": "淡入",
+                }
+            ],
+        }
+        return _FakeResponse(
+            json_body={"choices": [{"message": {"content": f"```json\n{__import__('json').dumps(body)}\n```"}}]}
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.VIDEO_ANALYSIS.value, model="qwen-vl-max")
+    result = provider.submit(
+        _request(
+            Operation.VIDEO_ANALYSIS.value,
+            prompt="重点关注镜头切换节奏",
+            references=[ProviderReference(object_key="source.mp4", media_type="video")],
+        )
+    )
+
+    assert result.succeeded is True
+    assert result.object_key is None
+    assert result.output_json is not None
+    assert result.output_json["summary"] == "一段城市夜景运镜展示"
+    assert result.output_json["shots"][0]["camera_movement"] == "推镜"
+    content = captured["messages"][0]["content"]
+    assert content[0]["video_url"]["url"] == "https://signed.invalid/source.mp4"
+    assert "重点关注镜头切换节奏" in content[1]["text"]
+
+
+def test_video_analysis_fails_without_a_video_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not call the gateway without a reference")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.VIDEO_ANALYSIS.value, model="qwen-vl-max")
+    result = provider.submit(_request(Operation.VIDEO_ANALYSIS.value, references=[]))
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+
+
 def test_video_submit_returns_pending_without_waiting_for_the_render(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

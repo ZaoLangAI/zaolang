@@ -1,18 +1,25 @@
 import Foundation
 
-/// `GET /v1/generation-jobs/{id}/events` 每一帧 `data:` 字段里的 JSON——
-/// 跟 `JobEventResponse` 字段一样，但没有 `internal_code`/`created_at`（后端 `_sse()` 只发这五个）。
+/// `GET /v1/generation-jobs/{id}/events` 每一帧 `data:` 字段里的 JSON。
+///
+/// 阶段事件带 `sequence`；Redis 直播的思考帧没有 `sequence`，也不是
+/// `JobEvent` 行。解码失败的帧直接丢弃，不中断整条流。
 public struct JobStreamEvent: Decodable, Sendable, Equatable {
-    public let sequence: Int
+    public let sequence: Int?
     public let eventType: String
     public let status: RawOrUnknown<JobStatus>
     public let progress: Int
     public let message: String
+    public let thinking: String?
+    public let nodeId: String?
+
+    public var isThinking: Bool { eventType == "thinking" }
 
     private enum CodingKeys: String, CodingKey {
         case sequence
         case eventType = "event_type"
-        case status, progress, message
+        case status, progress, message, thinking
+        case nodeId = "node_id"
     }
 }
 

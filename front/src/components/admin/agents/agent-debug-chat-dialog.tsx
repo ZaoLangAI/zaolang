@@ -3,16 +3,30 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
+import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextArea } from '@/components/ui/field';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
-import { adminApi } from '@/lib/api/admin-client';
+import { getAdminToken } from '@/lib/api/admin-client';
 import type { AgentNode, AgentProfile } from '@/lib/api/admin-types';
-import type { components } from '@/lib/api/schema';
 import { ApiError } from '@/lib/api/errors';
+import { streamPost } from '@/lib/sse-post';
 
-type DebugChatResponse = components['schemas']['AgentDebugChatResponse'];
+// `debug-chat` is a `StreamingResponse` (see `agent_skills.py`), so its final
+// frame never appears as a schema in `openapi.json` — this mirrors
+// `AgentDebugChatResponse` on the backend by hand, the same way
+// `ScriptTurnCompleteEvent` does for the script-studio SSE stream.
+interface DebugChatResponse {
+  reply_text: string;
+  parsed_json: Record<string, unknown> | null;
+  degraded: boolean;
+  model: string;
+  latency_ms: number;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  agent_run_id: string;
+}
 type Source = 'draft' | 'published';
 
 const INPUT_MAX_LENGTH = 4000;
@@ -63,14 +77,25 @@ export function AgentDebugChatDialog({
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  const [liveThinking, setLiveThinking] = useState('');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   // Lets an operator start typing the moment the dialog opens instead of
   // having to click into the message field first.
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Keeps the transcript pinned to the newest turn — including while the
+  // reply is still streaming in, so a reasoning-heavy call doesn't leave the
+  // reader stranded above the fold until it finishes.
+  useEffect(() => {
+    const node = listRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [turns.length, busy, liveThinking]);
 
   const reset = () => {
     setTurns([]);
@@ -84,16 +109,31 @@ export function AgentDebugChatDialog({
     setTurns(history);
     setInput('');
     setBusy(true);
+    setLiveThinking('');
     setError(null);
     try {
-      const response = await adminApi.post<DebugChatResponse>(
+      let response: DebugChatResponse | null = null;
+      for await (const frame of streamPost(
         `/v1/admin/agent-profiles/${profile.id}/debug-chat`,
         {
           slot,
           prompt_template: source === 'draft' ? draftPromptTemplate : undefined,
           messages: history.map(({ role, content }) => ({ role, content })),
         },
-      );
+        undefined,
+        { getToken: getAdminToken },
+      )) {
+        if (frame.event === 'thinking' && typeof frame.data.text === 'string') {
+          setLiveThinking((current) => current + frame.data.text);
+        } else if (frame.event === 'complete') {
+          response = frame.data as unknown as DebugChatResponse;
+        } else if (frame.event === 'error') {
+          const message =
+            typeof frame.data.message === 'string' ? frame.data.message : tAdmin('loadFailed');
+          throw new Error(message);
+        }
+      }
+      if (!response) throw new Error(tAdmin('loadFailed'));
       setTurns([
         ...history,
         {
@@ -105,8 +145,15 @@ export function AgentDebugChatDialog({
           parsedJson: response.parsed_json ?? null,
         },
       ]);
+      setLiveThinking('');
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : caught instanceof Error
+            ? caught.message
+            : tAdmin('loadFailed'),
+      );
       // Drop the turn that never got a reply so retrying resends cleanly.
       setTurns(turns);
     } finally {
@@ -194,7 +241,10 @@ export function AgentDebugChatDialog({
           </div>
         </div>
 
-        <ul className="flex min-h-[320px] max-h-[55vh] flex-col gap-2 overflow-y-auto rounded-[var(--radius-sm)] border border-border p-3">
+        <ul
+          ref={listRef}
+          className="flex min-h-[320px] max-h-[55vh] flex-col gap-2 overflow-y-auto rounded-[var(--radius-sm)] border border-border p-3"
+        >
           {turns.length === 0 ? (
             <p className="m-auto max-w-xs text-center text-xs text-muted">
               {t('debugChatEmpty')}
@@ -230,6 +280,15 @@ export function AgentDebugChatDialog({
               </li>
             ))
           )}
+          {busy ? (
+            <li className="max-w-[85%]">
+              <LiveThinking
+                thinking={liveThinking}
+                label={t('thinkingLive')}
+                className="max-h-32 overflow-y-auto"
+              />
+            </li>
+          ) : null}
         </ul>
 
         {error ? <ErrorNotice title={error} /> : null}

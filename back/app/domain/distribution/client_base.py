@@ -45,6 +45,17 @@ class MetricsSnapshot:
     like_count: int
     comment_count: int
     share_count: int
+    # Best-effort extras: neither platform's response shape has been
+    # confirmed against live docs for these two (see the disclaimers at the
+    # top of `douyin_client.py`/`kuaishou_client.py`), so both stay `None`
+    # whenever the raw payload doesn't carry a recognized key.
+    finish_rate_bp: int | None = None
+    avg_play_duration_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AccountStatsSnapshot:
+    follower_count: int | None
 
 
 class PlatformClient(ABC):
@@ -80,8 +91,19 @@ class PlatformClient(ABC):
 
     @abstractmethod
     def fetch_metrics(self, access_token: str, open_id: str, item_id: str) -> MetricsSnapshot:
-        """Basic play/like/comment/share counts for a published item.
+        """Basic play/like/comment/share counts for a published item, plus
+        best-effort finish-rate/watch-time if the raw response happens to
+        carry them (see `MetricsSnapshot`).
 
-        Nothing calls this yet — Phase D wires up the polling that does. The
-        signature exists now so the interface is complete.
+        Called from `app.domain.distribution.service.pull_episode_metrics`
+        on its own beat schedule.
+        """
+
+    @abstractmethod
+    def fetch_account_stats(self, access_token: str, open_id: str) -> AccountStatsSnapshot:
+        """Best-effort follower count for the linked account.
+
+        Same caveat as `fetch_metrics`'s extra fields: the endpoint/field
+        name is not confirmed against live docs, so a missing/unrecognized
+        key yields `follower_count=None` rather than raising.
         """

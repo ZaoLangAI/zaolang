@@ -3,6 +3,8 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
+import { TextArea } from '@/components/ui/field';
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -11,7 +13,7 @@ import { isApiError } from '@/lib/api/errors';
 
 import * as scriptApi from './api';
 import type { ScriptDetail, ScriptDocument } from './api';
-import { clearCreateStream, useCreateStream } from './create-stream-store';
+import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
 import { ScriptChatPanel } from './script-chat-panel';
 import { ScriptDocumentView } from './script-document-view';
 import { useScriptTurnStream } from './use-script-turn-stream';
@@ -70,6 +72,7 @@ export function ScriptEditor({
   const [selectedTurnId, setSelectedTurnId] = useState<string | null>(null);
   const [viewedScript, setViewedScript] = useState<ScriptDocument | null>(null);
   const [firstDraftError, setFirstDraftError] = useState<string | null>(null);
+  const [retryIdea, setRetryIdea] = useState('');
   // A ref, not `useState`: this is purely a run-once guard, never read by
   // render — same pattern as `WorkflowPublishDialog`'s `wasOpen`.
   const pendingLinkApplied = useRef(false);
@@ -255,6 +258,7 @@ export function ScriptEditor({
                     summary: result.summary,
                     referenced_skill_ids: referencedSkillIds,
                     created_at: new Date().toISOString(),
+                    thinking: result.thinking,
                   },
                 ],
               }
@@ -288,18 +292,43 @@ export function ScriptEditor({
   const hasTurns = detail.turns.length > 0;
   const firstDraftStreaming = !hasTurns && (createStream?.streaming ?? false);
 
+  // A shell with no turn at all — its first-draft stream either failed
+  // outright or was interrupted (a page refresh loses `create-stream-
+  // store.ts`'s in-memory progress) before ever writing one. Either way
+  // the original idea text was never persisted anywhere on the episode
+  // (see `retry_new_script`'s docstring on the backend), so recovering
+  // means asking for it again rather than a single "retry" button.
   if (!hasTurns && !firstDraftStreaming) {
-    if (firstDraftError) {
-      return (
-        <ErrorNotice title={firstDraftError} detail={t('firstDraftFailedHint')} action={backToScripts} />
-      );
-    }
+    const submitRetry = () => {
+      const trimmed = retryIdea.trim();
+      if (!trimmed) return;
+      setFirstDraftError(null);
+      startRetry(episodeId, { idea: trimmed, referencedSkillIds: [] });
+    };
     return (
-      <EmptyState
-        title={t('firstDraftMissing')}
-        description={t('firstDraftMissingHint')}
-        action={backToScripts}
-      />
+      <div className="flex flex-col gap-4">
+        {firstDraftError ? (
+          <ErrorNotice title={firstDraftError} detail={t('firstDraftFailedHint')} />
+        ) : (
+          <EmptyState title={t('firstDraftMissing')} description={t('firstDraftMissingHint')} />
+        )}
+        <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
+          <TextArea
+            label={t('ideaLabel')}
+            placeholder={t('ideaPlaceholder')}
+            value={retryIdea}
+            maxLength={2000}
+            className="min-h-28"
+            onChange={(event) => setRetryIdea(event.target.value)}
+          />
+          <div className="flex items-center justify-end gap-2">
+            {backToScripts}
+            <Button disabled={retryIdea.trim().length === 0} onClick={submitRetry}>
+              {t('retryFirstDraft')}
+            </Button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -307,12 +336,13 @@ export function ScriptEditor({
 
   // Both columns share this exact height at the desktop breakpoint —
   // `100dvh` minus everything the page stacks above the grid (top bar,
-  // page padding, the back link, `PageHeading`, and the gaps between them),
-  // floored at `26rem` so a very short viewport degrades to a normal page
-  // scroll instead of an unusably squashed workspace. Kept identical on
-  // both sides on purpose (see `sendTurn`'s composer requirement below) —
-  // if you retune one, retune the other the same way.
-  const WORKSPACE_HEIGHT = 'xl:h-[max(26rem,calc(100dvh-19rem))]';
+  // page padding, the back link, the title-only `PageHeading`, and the
+  // gaps between them), floored at `26rem` so a very short viewport
+  // degrades to a normal page scroll instead of an unusably squashed
+  // workspace. Kept identical on both sides on purpose (see `sendTurn`'s
+  // composer requirement below) — if you retune one, retune the other
+  // the same way.
+  const WORKSPACE_HEIGHT = 'xl:h-[max(26rem,calc(100dvh-16rem))]';
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.3fr)]">
@@ -324,6 +354,7 @@ export function ScriptEditor({
           onSend={sendTurn}
           streaming={documentStreaming}
           liveText={firstDraftStreaming ? (createStream?.liveText ?? '') : stream.liveText}
+          liveThinking={firstDraftStreaming ? (createStream?.liveThinking ?? '') : stream.liveThinking}
           streamError={stream.error}
         />
       </div>

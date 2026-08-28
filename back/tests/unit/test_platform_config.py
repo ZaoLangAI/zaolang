@@ -394,6 +394,78 @@ def test_a_mixed_media_endpoint_is_dropped_without_emptying_the_pool() -> None:
     assert parsed.endpoints["good"].protocol == "openai"
 
 
+def test_a_general_endpoint_always_has_text_input_modality() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "通用",
+            "base_url": "https://general.invalid",
+            "kind": "general",
+            "model": "gpt-4o-mini",
+        }
+    )
+    assert endpoint.input_modalities == ["text"]
+    assert endpoint.capabilities == set()
+
+
+def test_a_general_endpoint_declaring_video_derives_video_analysis() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "通用带视频",
+            "base_url": "https://general.invalid",
+            "kind": "general",
+            "model": "qwen-vl-max",
+            "input_modalities": ["video"],
+        }
+    )
+    # Text is injected even though the caller only asked for video.
+    assert endpoint.input_modalities == ["text", "video"]
+    assert endpoint.capabilities == {"video_analysis"}
+    assert endpoint.output_modalities == []
+    assert endpoint.protocol is None
+
+
+def test_a_general_endpoint_rejects_unsupported_input_modalities() -> None:
+    with pytest.raises(Exception, match="不支持的输入类型"):
+        LlmProviderEndpoint.model_validate(
+            {
+                "name": "非法",
+                "base_url": "https://general.invalid",
+                "kind": "general",
+                "model": "gpt-4o-mini",
+                "input_modalities": ["audio"],
+            }
+        )
+
+
+def test_a_general_endpoints_video_analysis_price_is_dropped_without_video_declared() -> None:
+    """A price for a capability this endpoint cannot produce would still show
+    up in cost reports and router estimates — same reasoning as the media
+    branch's price-dropping behaviour."""
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "通用无视频",
+            "base_url": "https://general.invalid",
+            "kind": "general",
+            "model": "gpt-4o-mini",
+            "media_pricing": {"video_analysis": {"per_request_micro_usd": 80_000}},
+        }
+    )
+    assert endpoint.media_pricing.video_analysis is None
+
+    priced = LlmProviderEndpoint.model_validate(
+        {
+            "name": "通用带视频价格",
+            "base_url": "https://general.invalid",
+            "kind": "general",
+            "model": "qwen-vl-max",
+            "input_modalities": ["video"],
+            "media_pricing": {"video_analysis": {"per_request_micro_usd": 80_000}},
+        }
+    )
+    assert priced.media_pricing.video_analysis is not None
+    assert priced.media_pricing.video_analysis.per_request_micro_usd == 80_000
+
+
 def test_legacy_media_json_without_protocol_still_loads_via_get_typed(db: Session) -> None:
     """A stored pre-protocol endpoint must not trip `get_typed` into the empty
     default pool — that would silently unroute every media job."""
@@ -435,3 +507,44 @@ def test_comfyui_protocol_capabilities_exclude_audio() -> None:
     assert Operation.AUDIO_GENERATION.value not in caps
     assert Operation.TEXT_TO_IMAGE.value in caps
     assert Operation.TEXT_TO_VIDEO.value in caps
+
+
+def _general_endpoint(**kwargs: object) -> LlmProviderEndpoint:
+    return LlmProviderEndpoint.model_validate(
+        {
+            "name": "通用",
+            "base_url": "https://example.invalid/v1",
+            "api_key": "k",
+            "kind": "general",
+            "model": "glm-5.3-flash",
+            **kwargs,
+        }
+    )
+
+
+def test_output_budget_honours_an_undeclared_ceiling() -> None:
+    endpoint = _general_endpoint()
+    assert endpoint.output_budget(2048, reasoning_model=True) == 2048
+    assert endpoint.expand_output_budget(2048) == 4096
+
+
+def test_output_budget_adds_a_thinking_margin_for_reasoning_capped_by_the_ceiling() -> None:
+    """A reasoning model's first attempt gets the requested budget plus
+    `REASONING_THINKING_MARGIN_TOKENS` of headroom, not the endpoint's
+    entire declared ceiling — see `output_budget`'s own docstring for why
+    handing over the full ceiling upfront is the behavior this replaced."""
+    from app.platform_config.schemas import REASONING_THINKING_MARGIN_TOKENS
+
+    endpoint = _general_endpoint(max_output_tokens=16_384)
+    assert endpoint.output_budget(512, reasoning_model=True) == 512 + REASONING_THINKING_MARGIN_TOKENS
+    assert endpoint.output_budget(512, reasoning_model=False) == 512
+    # A request already close to (or past) the ceiling still gets capped by
+    # it, margin included.
+    assert endpoint.output_budget(20_000, reasoning_model=True) == 16_384
+    assert endpoint.output_budget(20_000) == 16_384
+
+
+def test_output_budget_caps_to_remaining_context() -> None:
+    endpoint = _general_endpoint(context_length=1000, max_output_tokens=8000)
+    assert endpoint.output_budget(4096, prompt_tokens=900) == 100
+    assert endpoint.expand_output_budget(80, prompt_tokens=900) == 100

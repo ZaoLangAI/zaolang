@@ -5,9 +5,8 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import * as distributionApi from '@/features/drama-dashboard/distribution-api';
 import { isApiError } from '@/lib/api/errors';
-
-import * as distributionApi from './distribution-api';
 
 const CHANNELS = ['douyin', 'kuaishou'] as const;
 
@@ -17,8 +16,9 @@ const CHANNEL_LABEL_KEYS: Record<(typeof CHANNELS)[number], string> = {
 };
 
 /**
- * "连接抖音/快手账号" — per-user, not per-episode, so this renders once at
- * the top of the dashboard rather than once per series/episode.
+ * "连接抖音/快手账号" — per-user, not per-series/episode, so it lives on
+ * the account settings page (`/profile/settings?section=platforms`) rather
+ * than the drama dashboard.
  *
  * Neither platform's real AppKey/AppSecret exists yet (the org hasn't
  * finished platform registration), so `config-status` reports both as

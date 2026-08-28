@@ -40,27 +40,46 @@ export type GenerationJob = S['GenerationJobResponse'];
 export type JobEvent = S['JobEventResponse'];
 export type Quote = S['QuoteResponse'];
 export type RouteSummary = S['RouteSummary'];
+export type VideoAnalysisResult = S['VideoAnalysisResult'];
+export type VideoAnalysisShot = S['VideoAnalysisShot'];
 
 export type ShortformProfile = S['ShortformProfileResponse'];
 export type ShortformProfiles = S['ShortformProfilesResponse'];
-export type PromptEnhanceResult = S['PromptEnhanceResponse'];
 export type PromptEnhancePayload = S['PromptEnhanceRequest'];
-export type ClarifyQuestion = S['ClarifyQuestionResponse'];
-export type ClarifyResult = S['PromptClarifyResponse'];
+// `/generation/prompts/enhance` is a `StreamingResponse` (see
+// `api/v1/prompts.py`), so its final frame — `PromptEnhanceResponse` on the
+// backend — never gets a `response_model` and so never appears in
+// `openapi.json`. Mirrored here by hand instead, same as `PromptDimensionView`.
+export interface PromptEnhanceDimension {
+  key:
+    | 'subject'
+    | 'scene'
+    | 'action'
+    | 'camera'
+    | 'lighting'
+    | 'mood'
+    | 'pacing'
+    | 'composition'
+    | 'style'
+    | 'detail';
+  status: 'missing' | 'weak' | 'ok';
+  hint: string;
+}
+export interface PromptEnhanceResult {
+  prompt: string;
+  detail_level: 'sparse' | 'adequate' | 'detailed';
+  feedback: string;
+  dimensions: PromptEnhanceDimension[];
+  additions: string[];
+}
 export type JobInputQuestion = S['JobInputQuestionView'];
 export type JobInputRequest = S['JobInputRequestResponse'];
 export type JobAnswerItem = S['JobAnswerItem'];
-export type ComplianceCheck = S['ComplianceCheckItem'];
-export type ComplianceReport = S['ComplianceCheckResponse'];
-export type PublicationIntent = S['PublicationIntentResponse'];
 export type DistributionChannel = S['DistributionChannel'];
 export type PublicationStatus = S['PublicationStatus'];
 
 export type Character = S['CharacterResponse'];
 export type Scene = S['SceneResponse'];
-export type Series = S['SeriesResponse'];
-export type SeriesDetail = S['SeriesDetailResponse'];
-export type SeriesEpisode = S['SeriesEpisodeSummary'];
 
 export type DramaSeries = S['DramaSeriesResponse'];
 export type DramaEpisode = S['DramaEpisodeResponse'];

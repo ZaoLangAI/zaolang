@@ -12,14 +12,46 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import User
+from app.models import Asset, EpisodeScriptTurn, User
+from app.models.base import new_id
+from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
+from app.platform_config import service as config_service
+from app.platform_config.schemas import FeatureFlags
 from tests.conftest import auth_header, make_user
 from tests.factories import make_work
 
 
+def _enable_editor(session: Session, admin: User) -> None:
+    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(mode="json")
+    value.update({"web_editor_enabled": True})
+    config_service.set_value(session, "feature_flags", value, actor_user_id=admin.id, note="test")
+
+
+def _video_asset(session: Session, owner: User) -> Asset:
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=2048,
+        checksum_sha256="d" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        width=1080,
+        height=1920,
+        duration_ms=10_000,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
 def _create_series(client: TestClient, user: User) -> str:
     response = client.post(
-        "/v1/drama-series", headers=auth_header(user), json={"title": "我的短剧"}
+        "/v1/drama-series",
+        headers=auth_header(user),
+        json={"title": "我的短剧", "target_platforms": ["manual_download"]},
     )
     assert response.status_code == 201, response.text
     return response.json()["id"]
@@ -46,7 +78,12 @@ def test_episode_crud_works_for_any_authenticated_user(
     trailer = client.post(
         f"/v1/drama-series/{series_id}/episodes",
         headers=auth_header(author),
-        json={"title": "预告片", "season_number": 2, "episode_number": 1, "episode_kind": "trailer"},
+        json={
+            "title": "预告片",
+            "season_number": 2,
+            "episode_number": 1,
+            "episode_kind": "trailer",
+        },
     )
     assert trailer.status_code == 201, trailer.text
 
@@ -62,6 +99,50 @@ def test_episode_crud_works_for_any_authenticated_user(
     assert updated.status_code == 200, updated.text
     assert updated.json()["status"] == "published"
     assert updated.json()["season_number"] == 3
+
+
+def test_episode_response_reports_has_script_turns(
+    client: TestClient, db: Session, author: User
+) -> None:
+    """`has_script_turns` flags a script-writing shell whose first draft is
+    still streaming elsewhere or failed outright, for the series dashboard's
+    "待完成剧本" badge — see `script_writing_service.list_scripts`' own
+    turn-agnostic filter for why the badge can't just trust `turn_count`
+    from that endpoint alone (episode roster and script list are two
+    different views)."""
+    series_id = _create_series(client, author)
+
+    created = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集", "episode_kind": "main"},
+    )
+    episode_id = created.json()["id"]
+
+    listed = client.get(f"/v1/drama-series/{series_id}/episodes", headers=auth_header(author))
+    assert listed.json()[0]["has_script_turns"] is False
+
+    detail = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert detail.json()["has_script_turns"] is False
+
+    db.add(
+        EpisodeScriptTurn(
+            episode_id=episode_id,
+            turn_no=1,
+            parent_turn_id=None,
+            user_id=author.id,
+            user_message="深夜便利店的秘密",
+            summary="s",
+            script_snapshot_json={"title": "t", "logline": "l", "characters": [], "scenes": []},
+        )
+    )
+    db.flush()
+
+    listed_after = client.get(f"/v1/drama-series/{series_id}/episodes", headers=auth_header(author))
+    assert listed_after.json()[0]["has_script_turns"] is True
+
+    detail_after = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert detail_after.json()["has_script_turns"] is True
 
 
 def test_outsider_cannot_manage_someone_elses_episodes(
@@ -146,10 +227,70 @@ def test_drama_series_open_to_any_authenticated_user(
     client: TestClient, db: Session, author: User
 ) -> None:
     response = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "我的短剧项目"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "我的短剧项目", "target_platforms": ["manual_download"]},
     )
     assert response.status_code == 201, response.text
 
     listed = client.get("/v1/drama-series", headers=auth_header(author))
     assert listed.status_code == 200
     assert any(item["title"] == "我的短剧项目" for item in listed.json())
+
+
+def test_delete_episode_removes_it(client: TestClient, db: Session, author: User) -> None:
+    series_id = _create_series(client, author)
+    episode_id = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()["id"]
+
+    deleted = client.delete(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert deleted.status_code == 204, deleted.text
+
+    fetched = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert fetched.status_code == 404
+
+    listed = client.get(f"/v1/drama-series/{series_id}/episodes", headers=auth_header(author))
+    assert episode_id not in {item["id"] for item in listed.json()}
+
+
+def test_delete_episode_blocked_when_cuts_exist(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    series_id = _create_series(client, author)
+    episode_id = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()["id"]
+    cut = client.post(
+        f"/v1/drama-episodes/{episode_id}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": asset.id, "name": "主剪辑"},
+    )
+    assert cut.status_code == 201, cut.text
+
+    deleted = client.delete(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert deleted.status_code == 422, deleted.text
+
+    still_there = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert still_there.status_code == 200
+
+
+def test_outsider_cannot_delete_someone_elses_episode(
+    client: TestClient, db: Session, author: User
+) -> None:
+    outsider = make_user(db, email="episode-outsider@example.com", handle="episode-outsider")
+    series_id = _create_series(client, author)
+    episode_id = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()["id"]
+
+    deleted = client.delete(f"/v1/drama-episodes/{episode_id}", headers=auth_header(outsider))
+    assert deleted.status_code == 404

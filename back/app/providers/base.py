@@ -82,6 +82,11 @@ class GenerationResult:
     # `poll()` decides which it becomes. `external_task_id` is mandatory when
     # this is set — it is the only handle left to the work in flight.
     pending: bool = False
+    # `video_analysis`'s own output shape: a structured text breakdown
+    # instead of a media asset. Mutually exclusive with `object_key` — a
+    # provider sets exactly one of the two depending on whether its
+    # capability produces media or text.
+    output_json: dict[str, Any] | None = None
     # Redacted before it reaches ProviderAttempt: no keys, no signed URLs.
     metadata: dict[str, Any] = field(default_factory=dict)
 

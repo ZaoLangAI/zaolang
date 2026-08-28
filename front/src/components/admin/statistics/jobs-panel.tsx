@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 
-import { TrendChart } from '@/components/admin/statistics/trend-chart';
+import { TrendChart } from '@/components/charts/trend-chart';
 import { StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import type { JobStats, JobsTimeseries } from '@/lib/api/admin-types';

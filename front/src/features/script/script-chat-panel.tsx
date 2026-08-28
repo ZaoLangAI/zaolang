@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
+import { LiveThinking, ThinkingDisclosure } from '@/components/ai/thinking-disclosure';
 import { IconArrowUp } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
@@ -100,6 +101,7 @@ export function ScriptChatPanel({
   onSend,
   streaming,
   liveText,
+  liveThinking,
   streamError,
 }: {
   turns: ScriptTurnSummary[];
@@ -108,6 +110,7 @@ export function ScriptChatPanel({
   onSend: (message: string, referencedSkillIds: string[]) => void;
   streaming: boolean;
   liveText: string;
+  liveThinking: string;
   streamError: string | null;
 }) {
   const t = useTranslations('scriptStudio');
@@ -119,7 +122,18 @@ export function ScriptChatPanel({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const dismissedMentionStartRef = useRef<number | null>(null);
+
+  // Pins the view to the newest content — a new turn, or another chunk of
+  // the in-flight one — the same way a chat window is expected to track
+  // what is currently being said rather than staying wherever it happened
+  // to be scrolled.
+  useEffect(() => {
+    const node = listRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [turns.length, streaming, liveText, liveThinking]);
 
   // Closes the mention menu on any click outside the composer — a click on
   // one of its own option buttons is *inside* `composerRef`, so this never
@@ -274,7 +288,10 @@ export function ScriptChatPanel({
           ever-growing turn history) force the flex column taller than its
           now-fixed parent instead of shrinking to fit and scrolling — see
           `script-editor.tsx`'s `WORKSPACE_HEIGHT`. */}
-      <ul className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-[var(--radius-sm)] border border-border bg-surface p-3">
+      <ul
+        ref={listRef}
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-[var(--radius-sm)] border border-border bg-surface p-3"
+      >
         {turns.length === 0 && !streaming ? (
           <p className="m-auto max-w-xs text-center text-xs text-muted">{t('chatEmpty')}</p>
         ) : null}
@@ -299,15 +316,27 @@ export function ScriptChatPanel({
               </p>
               <p className="whitespace-pre-wrap break-words">{turn.summary}</p>
             </button>
+            {/* A native `<details>`, keyed by `turn.id` — its open/closed
+                state lives in the DOM node itself, so a turn the user
+                expands to read never fights with a different turn that
+                is still streaming in, with no extra state needed here. */}
+            <ThinkingDisclosure thinking={turn.thinking} label={t('thinkingLabel')} />
           </li>
         ))}
 
         {streaming ? (
-          <li className="max-w-[85%] rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-sm text-muted">
-            <p className="mb-1 text-[11px] font-medium">{t('generating')}</p>
-            <p className="whitespace-pre-wrap break-words">
-              {streamingPreviewText(liveText, t('scriptGeneratingBody')) || '…'}
-            </p>
+          <li className="flex max-w-[85%] flex-col gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-sm text-muted">
+            <div>
+              <p className="mb-1 text-[11px] font-medium">{t('generating')}</p>
+              <p className="whitespace-pre-wrap break-words">
+                {streamingPreviewText(liveText, t('scriptGeneratingBody')) || '…'}
+              </p>
+            </div>
+            <LiveThinking
+              thinking={liveThinking}
+              label={t('thinkingLive')}
+              className="max-h-32 overflow-y-auto"
+            />
           </li>
         ) : null}
       </ul>

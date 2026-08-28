@@ -161,6 +161,15 @@ class ProviderGenerateConfig(NodeConfig):
     retry_on_failure: bool = True
 
 
+class VideoAnalysisGenerateConfig(NodeConfig):
+    """`video_analysis`'s own generate node — see
+    `app.workflows.nodes.execute_video_analysis_generate`. Mirrors
+    `ProviderGenerateConfig`'s one knob; there is no separate quality-check
+    retry path for this operation since it has no `quality_check` step."""
+
+    retry_on_failure: bool = True
+
+
 class QualityCheckConfig(NodeConfig):
     agent_id: str | None = Field(default=None, max_length=40)
 
@@ -191,6 +200,7 @@ NODE_CONFIG_SCHEMAS: dict[str, type[NodeConfig]] = {
     "copy_generate": CopyGenerateConfig,
     "route_score": RouteScoreConfig,
     "provider_generate": ProviderGenerateConfig,
+    "video_analysis_generate": VideoAnalysisGenerateConfig,
     "quality_check": QualityCheckConfig,
     "asset_output_advance": AssetOutputAdvanceConfig,
     "asset_output_link": AssetOutputLinkConfig,

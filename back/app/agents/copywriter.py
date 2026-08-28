@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent, run_agent_stream
 from app.domain.agent_skills import service as agent_skills_service
-from app.models.enums import AgentName
+from app.llm.client import StreamChunk
+from app.llm.normalize import extract_json, strip_thinking
+from app.models import AgentRun
+from app.models.enums import AgentName, AgentRunStatus
 from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
 
 # Two unrelated system prompts share the `copy` agent identity, so each names
@@ -101,8 +104,9 @@ VIDEO_OPERATIONS_FOR_ENHANCE = ("text_to_video", "image_to_video", "video_to_vid
 
 # A diagnosis plus a hint per dimension plus the rewrite runs well past the
 # generic 2048-token fallback, and a JSON reply cut off mid-object costs a
-# second round trip to recover (`client._attempt_endpoint`). Budgeting for the
-# real shape up front is cheaper than paying for that on every polish.
+# second round trip to recover (`client._attempt_endpoint`). This is a slot
+# *request*; the serving endpoint's `max_output_tokens` / `context_length`
+# still cap it at call time.
 ENHANCE_MAX_TOKENS = 4096
 # Higher than the platform default of 0.2, which exists to keep verdicts and
 # routing decisions repeatable. This slot rewrites prose: at 0.2 every polish
@@ -311,20 +315,17 @@ def enhance_prompt(
         session,
         agent_name=AgentName.COPY,
         system_prompt=enhance_system_prompt,
-        user_prompt=json.dumps(
-            {
-                "prompt": prompt,
-                "operation": operation,
-                "aspect_ratio": aspect_ratio,
-                "duration_seconds": duration_seconds,
-                "quality_tier": quality_tier,
-                "style_hint": style_hint,
-                "has_reference": has_reference,
-                "direction": direction,
-                "instruction": instruction,
-                "max_length": max_length,
-            },
-            ensure_ascii=False,
+        user_prompt=_enhance_user_prompt(
+            prompt=prompt,
+            operation=operation,
+            aspect_ratio=aspect_ratio,
+            duration_seconds=duration_seconds,
+            quality_tier=quality_tier,
+            style_hint=style_hint,
+            has_reference=has_reference,
+            direction=direction,
+            instruction=instruction,
+            max_length=max_length,
         ),
         fallback={"prompt": prompt, "detail_level": "adequate", "feedback": ""},
         user_id=user_id,
@@ -333,6 +334,141 @@ def enhance_prompt(
         max_tokens=ENHANCE_MAX_TOKENS,
         temperature=ENHANCE_TEMPERATURE,
     )
+    return _sanitize_enhance_outcome(outcome, prompt=prompt, max_length=max_length)
+
+
+def stream_enhance_prompt(
+    session: Session,
+    *,
+    prompt: str,
+    max_length: int,
+    operation: str = "",
+    aspect_ratio: str = "",
+    duration_seconds: int | None = None,
+    quality_tier: str = "",
+    style_hint: str = "",
+    has_reference: bool = False,
+    direction: str = "",
+    instruction: str = "",
+    asset_kind: str = "",
+    user_id: str | None = None,
+    agent_id: str | None = None,
+) -> tuple[Iterator[StreamChunk], Callable[[Session | None], AgentOutcome]]:
+    """HTTP-SSE counterpart to `enhance_prompt`."""
+    resolved_agent_id = agent_id
+    if resolved_agent_id is None and asset_kind in agent_skills_service.ASSET_KIND_BUCKETS:
+        specific = agent_skills_service.default_profile_for_asset_kind(
+            session, agent_skills_service.ASSET_KIND_AGENT_ROLE, asset_kind
+        )
+        if specific is not None:
+            resolved_agent_id = specific.id
+    enhance_system_prompt = (
+        _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
+        or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
+        or ENHANCE_SYSTEM_PROMPT
+    )
+    user_prompt = _enhance_user_prompt(
+        prompt=prompt,
+        operation=operation,
+        aspect_ratio=aspect_ratio,
+        duration_seconds=duration_seconds,
+        quality_tier=quality_tier,
+        style_hint=style_hint,
+        has_reference=has_reference,
+        direction=direction,
+        instruction=instruction,
+        max_length=max_length,
+    )
+    fallback = {"prompt": prompt, "detail_level": "adequate", "feedback": ""}
+    chunks, finalize = run_agent_stream(
+        session,
+        agent_name=AgentName.COPY,
+        system_prompt=enhance_system_prompt,
+        user_prompt=user_prompt,
+        user_id=user_id,
+        agent_id=resolved_agent_id,
+        slot=ENHANCE_SLOT,
+        max_tokens=ENHANCE_MAX_TOKENS,
+        temperature=ENHANCE_TEMPERATURE,
+        expect_json=True,
+        is_usable=_enhance_text_is_usable,
+    )
+
+    def finish(persist_session: Session | None = None) -> AgentOutcome:
+        stream = finalize(persist_session)
+        parsed = extract_json(strip_thinking(stream.raw_text))
+        parse_failed = parsed is None
+        if parse_failed:
+            _mark_enhance_run_failed(persist_session, stream.agent_run_id)
+        data = dict(parsed) if parsed is not None else dict(fallback)
+        outcome = AgentOutcome(
+            data=data,
+            raw_text=stream.raw_text,
+            degraded=parse_failed or stream.degraded,
+            model=stream.model,
+            agent_run_id=stream.agent_run_id,
+            thinking=stream.thinking,
+        )
+        return _sanitize_enhance_outcome(outcome, prompt=prompt, max_length=max_length)
+
+    return chunks, finish
+
+
+def _enhance_text_is_usable(text: str) -> bool:
+    """`is_usable` gate for a recovered reasoning-only polish pass.
+
+    Same contract as `_script_text_is_usable`: thinking prose that never
+    resolves into a JSON object must trigger one budget expansion, not be
+    handed back as a successful `result.text`.
+    """
+    return extract_json(strip_thinking(text)) is not None
+
+
+def _mark_enhance_run_failed(session: Session | None, agent_run_id: str) -> None:
+    """`run_agent_stream` records success before the caller parses JSON."""
+    if session is None:
+        return
+    run = session.get(AgentRun, agent_run_id)
+    if run is None:
+        return
+    run.degraded = True
+    run.degrade_reason = "json_parse_failed"
+    run.status = AgentRunStatus.FAILED
+
+
+def _enhance_user_prompt(
+    *,
+    prompt: str,
+    operation: str,
+    aspect_ratio: str,
+    duration_seconds: int | None,
+    quality_tier: str,
+    style_hint: str,
+    has_reference: bool,
+    direction: str,
+    instruction: str,
+    max_length: int,
+) -> str:
+    return json.dumps(
+        {
+            "prompt": prompt,
+            "operation": operation,
+            "aspect_ratio": aspect_ratio,
+            "duration_seconds": duration_seconds,
+            "quality_tier": quality_tier,
+            "style_hint": style_hint,
+            "has_reference": has_reference,
+            "direction": direction,
+            "instruction": instruction,
+            "max_length": max_length,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _sanitize_enhance_outcome(
+    outcome: AgentOutcome, *, prompt: str, max_length: int
+) -> AgentOutcome:
     enhanced = str(outcome.data.get("prompt") or "").strip() or prompt
     outcome.data["prompt"] = enhanced[:max_length]
     detail_level = str(outcome.data.get("detail_level") or "adequate")
@@ -495,6 +631,18 @@ def _sanitize_clarify_question(raw: Any) -> dict[str, Any] | None:
 SCRIPT_DRAFT_SLOT = "script_draft"
 SCRIPT_REVISE_SLOT = "script_revise"
 
+# A full scene-by-scene script (summary + fenced JSON for several scenes,
+# each with several color blocks) routinely runs past the generic 2048
+# fallback, the same reasoning `ENHANCE_MAX_TOKENS` documents for a much
+# smaller payload. This is a slot *request*, not a hard ceiling: the serving
+# endpoint's own `max_output_tokens`/`context_length` still cap it
+# (`LlmProviderEndpoint.output_budget`), and a reasoning model's *first*
+# attempt is still this slot request, not the endpoint's entire declared
+# ceiling — only a truncated/unusable first pass expands the budget from
+# here (see `_stream_complete_from_endpoints`'s retry, gated by
+# `_script_text_is_usable` below).
+SCRIPT_MAX_TOKENS = 8192
+
 SCRIPT_JSON_SHAPE = (
     '{"title": string, "logline": string, '
     '"characters": [{"name": string, "traits": string}], '
@@ -526,6 +674,17 @@ scene 色块之外，同一场戏还要至少覆盖 action、dialogue 两类中�
 - 拆分粒度：同一时间点内不同的动作、镜头切换、对话轮次都要拆成独立色块，不要为了减少色块数量把\
 几件事挤进同一句话里——细粒度色块是为了让后续可以逐镜头生成与剪辑"""
 
+# `characters[].traits` is what `script-document-view.tsx::characterImagePrompt`
+# seeds the "生成角色图" jump-out with verbatim (no separate appearance field —
+# this is the one and only place a character's visual gets described), so
+# it must lead with what a character portrait actually needs — appearance —
+# rather than personality, which a text-to-image model has no way to render.
+_CHARACTER_APPEARANCE_RULE = """- characters 至少列出剧本中出现的主要角色，每个角色的 traits \
+必须先写外貌特征——性别、年龄段、肤色、发型/发色、体型、面部或标志性穿着等，写到足以直接支撑\
+角色立绘/角色图生成的程度，这部分不能省略、不能含糊；外貌之后再补充性格、人物关系等信息。\
+例如「年轻女性，二十出头，肤色偏白，齐肩黑发，穿便利店店员制服；外冷内热，藏着不能说的秘密」\
+而不是只写「外冷内热的便利店店员」"""
+
 # A single generation call can never produce more than this many seconds of
 # footage (`app.platform_config.schemas.MAX_GENERATION_DURATION_SECONDS`) —
 # read live so an admin lowering the platform ceiling is reflected the next
@@ -553,7 +712,7 @@ SCRIPT_DRAFT_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，深�
 规则：
 {_BLOCK_TYPE_RULES}
 - 剧本至少包含 1 到 3 个场景
-- characters 至少列出剧本中出现的主要角色及其性格特征
+{_CHARACTER_APPEARANCE_RULE}
 - 短剧节奏要快：第一场的第一个色块必须已经在建立冲突、悬念或反差，不能用寒暄或环境铺垫开场
 - 每一场戏都要有一个明确的钩子或转折收尾，让人想看下一场——不要写成平铺直叙的流水账
 - 每个镜头默认只安排一到两个正在说话/行动的角色，人物关系与画面在竖屏窄画幅里也能看清楚
@@ -576,7 +735,9 @@ SCRIPT_REVISE_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，正�
 
 规则：
 {_BLOCK_TYPE_RULES}
-- 只按用户这一轮的意见调整，其余场景、角色、台词尽量原样保留，不要做用户没有要求的改写
+{_CHARACTER_APPEARANCE_RULE}
+- 只按用户这一轮的意见调整，其余场景、角色、台词尽量原样保留，不要做用户没有要求的改写\
+（包括已有角色的 traits——用户没有要求修改角色外貌/性格时原样保留，不要顺手补全或改写外貌描述）
 - 用户没有要求删除的场景或角色不要删除
 - 调整或新增内容后，重新检查一遍受影响场景的 breakpoint 是否仍然合理：\
 新增的内容让某段超过 {MAX_GENERATION_DURATION_SECONDS} 秒时补插 breakpoint，\
@@ -591,9 +752,15 @@ MAX_BLOCKS_PER_SCENE = 60
 MAX_CHARACTERS = 20
 MAX_TEXT_LEN = 400
 MAX_TITLE_LEN = 60
-MAX_TRAITS_LEN = 200
+MAX_TRAITS_LEN = 300
 MAX_HEADING_LEN = 80
 MAX_SUMMARY_LEN = 300
+# The reasoning trace persisted per turn (`EpisodeScriptTurn.thinking_text`)
+# can run far longer than the visible summary/text fields above — a
+# thinking model narrating its plan easily runs into the thousands of
+# characters — so this gets a floor of its own rather than reusing
+# `MAX_TEXT_LEN`/`MAX_SUMMARY_LEN`.
+MAX_THINKING_LEN = 8000
 
 _SCRIPT_JSON_FENCE = re.compile(r"```json\s*([\s\S]*?)```", re.IGNORECASE)
 
@@ -606,6 +773,7 @@ class ScriptTurnOutcome:
     degraded: bool
     model: str
     agent_run_id: str
+    thinking: str = ""
 
 
 def _extract_summary_and_script(raw_text: str) -> tuple[str, Any]:
@@ -614,16 +782,42 @@ def _extract_summary_and_script(raw_text: str) -> tuple[str, Any]:
     Returns `(summary, parsed_or_none)` — `parsed_or_none` is whatever
     `json.loads` produced (not yet validated as a script shape) or `None`
     when no fenced block was found or it didn't parse.
+
+    Falls back to `extract_json` (balanced-brace scanning, not just a fence
+    match) when there is no ```json fence at all — a model that ignores the
+    "always fence it" instruction and just emits bare JSON after its summary
+    must not be treated as if it produced no script.
     """
     match = _SCRIPT_JSON_FENCE.search(raw_text)
     if not match:
-        return raw_text.strip(), None
+        parsed = extract_json(raw_text)
+        if parsed is None:
+            return raw_text.strip(), None
+        # `extract_json` finds the JSON wherever it starts, so whatever
+        # precedes it is the prose summary — same trade-off the fenced path
+        # makes below.
+        prefix = raw_text[: raw_text.find("{")].strip()
+        return prefix or raw_text.strip(), parsed
     summary = raw_text[: match.start()].strip()
     try:
         parsed = json.loads(match.group(1))
     except (TypeError, ValueError):
         return summary or raw_text.strip(), None
     return summary or raw_text.strip(), parsed
+
+
+def _script_text_is_usable(text: str) -> bool:
+    """`is_usable` gate passed to `run_agent_stream`/`stream_complete`.
+
+    A pass recovered from reasoning-only output (the glm-5.3-flash case) is
+    only worth accepting when a script can actually be found in it — plain
+    "thinking out loud" prose that never reaches a JSON payload must not be
+    handed back as a successful `result.text` (see `stream_complete`'s
+    `is_usable` docstring for exactly when this gate fires: never once real
+    `content` has streamed, only on a recovered pass).
+    """
+    _, parsed = _extract_summary_and_script(text)
+    return _sanitize_script(parsed) is not None
 
 
 def _sanitize_script(raw: Any) -> dict[str, Any] | None:
@@ -738,7 +932,7 @@ def stream_draft_script(
     referenced_skills: list[dict[str, str]] | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
-) -> tuple[Iterator[str], Callable[[], ScriptTurnOutcome]]:
+) -> tuple[Iterator[StreamChunk], Callable[[Session | None], ScriptTurnOutcome]]:
     """Streams the first turn of a new script: idea in, full script out.
 
     Mirrors `run_agent_stream`'s `(chunks, finalize)` contract — the caller
@@ -756,10 +950,12 @@ def stream_draft_script(
         user_id=user_id,
         agent_id=agent_id,
         slot=SCRIPT_DRAFT_SLOT,
+        max_tokens=SCRIPT_MAX_TOKENS,
+        is_usable=_script_text_is_usable,
     )
 
-    def finalize() -> ScriptTurnOutcome:
-        outcome = finalize_run()
+    def finalize(persist_session: Session | None = None) -> ScriptTurnOutcome:
+        outcome = finalize_run(persist_session)
         summary, parsed = _extract_summary_and_script(outcome.raw_text)
         script = _sanitize_script(parsed)
         parse_ok = script is not None
@@ -779,6 +975,7 @@ def stream_draft_script(
             degraded=outcome.degraded,
             model=outcome.model,
             agent_run_id=outcome.agent_run_id,
+            thinking=outcome.thinking[:MAX_THINKING_LEN],
         )
 
     return chunks, finalize
@@ -792,7 +989,7 @@ def stream_revise_script(
     referenced_skills: list[dict[str, str]] | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
-) -> tuple[Iterator[str], Callable[[], ScriptTurnOutcome]]:
+) -> tuple[Iterator[StreamChunk], Callable[[Session | None], ScriptTurnOutcome]]:
     """Streams one revision turn: current script + instruction in, full
     updated script out. The fallback on parse failure is the caller's own
     `current_script`, unchanged — a degraded turn must never blank out a
@@ -813,10 +1010,12 @@ def stream_revise_script(
         user_id=user_id,
         agent_id=agent_id,
         slot=SCRIPT_REVISE_SLOT,
+        max_tokens=SCRIPT_MAX_TOKENS,
+        is_usable=_script_text_is_usable,
     )
 
-    def finalize() -> ScriptTurnOutcome:
-        outcome = finalize_run()
+    def finalize(persist_session: Session | None = None) -> ScriptTurnOutcome:
+        outcome = finalize_run(persist_session)
         summary, parsed = _extract_summary_and_script(outcome.raw_text)
         script = _sanitize_script(parsed)
         parse_ok = script is not None
@@ -833,6 +1032,7 @@ def stream_revise_script(
             degraded=outcome.degraded,
             model=outcome.model,
             agent_run_id=outcome.agent_run_id,
+            thinking=outcome.thinking[:MAX_THINKING_LEN],
         )
 
     return chunks, finalize

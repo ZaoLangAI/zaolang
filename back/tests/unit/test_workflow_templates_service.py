@@ -13,7 +13,7 @@ from app.domain.errors import NotFound, ValidationFailed
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import User
 from app.models.enums import ImageAssetKind, Operation
-from app.workflows.defaults import asset_graph, default_graph
+from app.workflows.defaults import asset_graph, default_graph, video_analysis_graph
 
 
 def _minimal_graph() -> dict:
@@ -269,7 +269,12 @@ def test_ensure_default_templates_seeds_every_operation_exactly_once(db: Session
     for operation in Operation:
         active = workflow_templates_service.get_active(db, operation.value)
         assert active is not None
-        assert active.graph_json == default_graph(db)
+        expected = (
+            video_analysis_graph(db)
+            if operation == Operation.VIDEO_ANALYSIS
+            else default_graph(db)
+        )
+        assert active.graph_json == expected
 
     # Idempotent: an operation that already has an active template (hand
     # edited or seeded before) must be left alone, not re-seeded to v2.

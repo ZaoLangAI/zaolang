@@ -31,6 +31,7 @@ from app.models import (
     DeliveryVariant,
     Draft,
     EditorExport,
+    EpisodeCut,
     UploadSession,
     WorkVersion,
 )
@@ -349,6 +350,57 @@ def bind_draft_export(
     draft.editor_export_id = export.id
     session.flush()
     return draft
+
+
+def list_exports_for_episode(
+    session: Session, *, user_id: str, episode_id: str
+) -> list[tuple[EditorExport, DeliveryVariant, Draft | None]]:
+    """Every editor export made from any cut belonging to this episode,
+    newest first, each paired with its delivery variant and — if one
+    exists — the draft it was bound into via `bind_draft_export`. An
+    export carries no forward pointer to whichever draft later claimed it,
+    so the draft is found by the reverse lookup `Draft.editor_export_id ==
+    export.id` instead. This is the "最终成片" list on the episode page —
+    it replaces the old cuts list, which moved into the editor itself."""
+    editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
+    editor_service._owned_episode(session, user_id=user_id, episode_id=episode_id)
+    cut_ids = list(
+        session.scalars(select(EpisodeCut.id).where(EpisodeCut.episode_id == episode_id))
+    )
+    if not cut_ids:
+        return []
+    revision_ids = list(
+        session.scalars(select(CutRevision.id).where(CutRevision.cut_id.in_(cut_ids)))
+    )
+    if not revision_ids:
+        return []
+    variants = list(
+        session.scalars(
+            select(DeliveryVariant).where(DeliveryVariant.cut_revision_id.in_(revision_ids))
+        )
+    )
+    variant_by_id = {variant.id: variant for variant in variants}
+    if not variant_by_id:
+        return []
+    exports = list(
+        session.scalars(
+            select(EditorExport)
+            .where(EditorExport.variant_id.in_(variant_by_id.keys()))
+            .order_by(EditorExport.created_at.desc())
+        )
+    )
+    if not exports:
+        return []
+    drafts = list(
+        session.scalars(
+            select(Draft).where(Draft.editor_export_id.in_([item.id for item in exports]))
+        )
+    )
+    draft_by_export_id = {draft.editor_export_id: draft for draft in drafts}
+    return [
+        (export, variant_by_id[export.variant_id], draft_by_export_id.get(export.id))
+        for export in exports
+    ]
 
 
 def _owned_export(session: Session, *, user_id: str, export_id: str) -> EditorExport:

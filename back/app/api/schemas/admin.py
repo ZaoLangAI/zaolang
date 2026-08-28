@@ -323,6 +323,7 @@ class AgentRunView(ApiModel):
     node_id: str | None = None
     input_json: dict[str, Any] | None = None
     output_json: dict[str, Any] = Field(default_factory=dict)
+    thinking_text: str = ""
     created_at: dt.datetime
 
 

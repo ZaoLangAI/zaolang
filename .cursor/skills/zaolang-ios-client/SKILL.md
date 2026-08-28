@@ -21,7 +21,7 @@ disable-model-invocation: true
 | `.../Networking/` | `APIClient` plus feature-split `APIClient+*.swift` (`Works`/`Community`/`Uploads`/`Jobs`/`Drafts`/`Credits`/`Devices`/`Privacy`/`Profiles`/`Auth`/`Discovery`), `ApiError`, `IdempotencyKeyStore` |
 | `.../Session/` | `SessionManager`/`TokenStore`/`CookieCodec`/`AuthTransport` — manually taking over the `zl_refresh` cookie; login/register capture `Set-Cookie` separately via `AuthTransport` |
 | `.../Media/AssetCache.swift`, `.../Media/UploadTransport.swift` | a two-tier asset cache; uploads go directly to a presigned URL via `UploadTransport` (bypassing `APIClient`'s auth/idempotency) |
-| `.../Streaming/JobEventStream.swift` | SSE frame parsing + `EventStreamClient.jobEvents(jobID:)`; the job-detail screen uses this plus a 5-second polling fallback |
+| `.../Streaming/JobEventStream.swift` | SSE frame parsing + `EventStreamClient.jobEvents(jobID:)`; `JobStreamEvent.sequence` is optional. `eventType == "thinking"` is live reasoning, not a stage — decode failure still drops the frame, never the stream. Job detail may fold thinking; it must not update `lastAppliedSequence` |
 | `ios/App/Sources/Shell/` | `RootView`/`RootTabView` (a custom four-tab bar, four independent `NavigationStack`s), `AppRouter`, `Routes` (per-stack Route enums), `DeepLink`, `DebugSessionView` (debug builds only) |
 | `ios/App/Sources/DesignSystem/` | `Color.zl.*`, `ZLRadius`, `zlCardShadow`/`zlRaisedShadow`, the `zlMotion` environment value |
 | `ios/App/Sources/Common/` | six generic state views, shared `AuthorRow`/`TagChip`/`StatItem` components (the login wall has been replaced by `AppEnvironment.requireAuth` + `AuthSheet` — see "Auth & Write Operations" below) |

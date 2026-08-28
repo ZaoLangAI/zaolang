@@ -13,6 +13,7 @@ export const OPERATIONS = [
   'image_to_video',
   'video_to_video',
   'audio_generation',
+  'video_analysis',
 ] as const;
 
 export type OperationValue = (typeof OPERATIONS)[number];
@@ -24,6 +25,7 @@ export const OPERATION_LABEL_KEYS: Record<OperationValue, string> = {
   image_to_video: 'capabilityImageToVideo',
   video_to_video: 'capabilityVideoToVideo',
   audio_generation: 'capabilityAudioGeneration',
+  video_analysis: 'capabilityVideoAnalysis',
 };
 
 /** Falls back to the raw value so an operation added to the backend enum
@@ -81,8 +83,19 @@ export const WORKFLOW_EDITOR_OPERATIONS = [
  */
 export const MEDIA_INPUT_MODALITIES = ['text', 'image', 'video', 'audio'] as const;
 export type MediaInputModality = (typeof MEDIA_INPUT_MODALITIES)[number];
-export const MEDIA_OUTPUT_MODALITIES = ['image', 'video', 'audio'] as const;
+// `text` joined the output side for `video_analysis` — the first capability
+// that reads media and writes a structured text breakdown instead of
+// generating more media. Mirrors `MEDIA_OUTPUT_MODALITIES` in
+// `app/platform_config/schemas.py`.
+export const MEDIA_OUTPUT_MODALITIES = ['image', 'video', 'audio', 'text'] as const;
 export type MediaOutputModality = (typeof MEDIA_OUTPUT_MODALITIES)[number];
+
+/** `kind="general"` endpoints declare input types from this smaller set —
+ * `text` is always on, `image` is a declarative label only, `video` makes
+ * the endpoint a `video_analysis` candidate. Mirrors `GENERAL_INPUT_
+ * MODALITIES` in `app/platform_config/schemas.py`. */
+export const GENERAL_INPUT_MODALITIES = ['text', 'image', 'video'] as const;
+export type GeneralInputModality = (typeof GENERAL_INPUT_MODALITIES)[number];
 
 export const MODALITY_LABEL_KEYS: Record<MediaInputModality | MediaOutputModality, string> = {
   text: 'modalityText',
@@ -104,6 +117,7 @@ const OPERATION_MODALITY_MAP: Record<
   image_to_video: ['image', 'video'],
   video_to_video: ['video', 'video'],
   audio_generation: ['text', 'audio'],
+  video_analysis: ['video', 'text'],
 };
 
 /**
@@ -140,6 +154,7 @@ export type MediaProtocol = (typeof MEDIA_PROTOCOLS)[number];
 export const IMPLEMENTED_MEDIA_PROTOCOLS: ReadonlySet<MediaProtocol> = new Set([
   'openai',
   'minimax',
+  'dashscope',
 ]);
 
 export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
@@ -157,7 +172,7 @@ const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
   minimax: ['text_to_video', 'image_to_video', 'video_to_video'],
   comfyui: ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'video_to_video'],
   google: [],
-  dashscope: [],
+  dashscope: ['video_analysis'],
   ark: [],
   kling: [],
 };

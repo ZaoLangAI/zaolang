@@ -1,6 +1,7 @@
 import { api } from '@/lib/api/client';
-import { isApiError } from '@/lib/api/errors';
-import type { ShortformProfiles } from '@/lib/api/types';
+import { ApiError, isApiError } from '@/lib/api/errors';
+import { streamPost } from '@/lib/sse-post';
+import type { Asset, Page, ShortformProfiles } from '@/lib/api/types';
 
 import type { CanonicalDocument, EditCommand } from './engine/ports';
 
@@ -13,7 +14,47 @@ export interface DramaSeries {
   status: string;
   allow_external_models: boolean;
   shortform_profile_key: string | null;
+  english_title: string | null;
+  planned_episode_count: number | null;
+  genre_tags: string[];
+  target_platforms: string[];
+  logo_asset_id: string | null;
+  logo_url: string | null;
+  episode_count: number;
+  script_count: number;
+  video_count: number;
+  published_count: number;
   created_at: string;
+  updated_at: string;
+}
+
+export interface DramaSeriesCreateInput {
+  title: string;
+  description?: string;
+  english_title?: string;
+  planned_episode_count?: number;
+  genre_tags?: string[];
+  target_platforms: string[];
+  logo_asset_id?: string | null;
+}
+
+export type DramaSeriesUpdateInput = Partial<{
+  title: string;
+  description: string;
+  english_title: string;
+  planned_episode_count: number;
+  genre_tags: string[];
+  target_platforms: string[];
+  logo_asset_id: string | null;
+}>;
+
+export interface DramaSeriesListParams {
+  q?: string;
+  genre?: string;
+  sort?: 'updated_at' | 'created_at';
+  sort_dir?: 'asc' | 'desc';
+  status?: 'trashed';
+  [key: string]: string | undefined;
 }
 
 export interface DramaEpisode {
@@ -26,6 +67,11 @@ export interface DramaEpisode {
   synopsis: string | null;
   status: string;
   canonical_work_id: string | null;
+  /** Whether this episode has at least one script-writing turn — `false`
+   * flags a script shell whose first draft is still streaming elsewhere or
+   * failed outright (see `back/app/domain/script_writing/service.py`'s
+   * `list_scripts`, which is turn-agnostic for the same reason). */
+  has_script_turns: boolean;
 }
 
 export interface EpisodeContentLink {
@@ -62,6 +108,31 @@ export interface EpisodeCut {
   source_url: string | null;
   lease_held: boolean;
   head: CutRevision | null;
+}
+
+export interface CutRevisionSummary {
+  id: string;
+  cut_id: string;
+  revision_no: number;
+  parent_revision_id: string | null;
+  duration_ticks: number;
+  is_head: boolean;
+  created_at: string;
+}
+
+export interface EpisodeExport {
+  id: string;
+  status: string;
+  profile_key: string;
+  width: number;
+  height: number;
+  format: string;
+  output_asset_id: string | null;
+  output_url: string | null;
+  created_at: string;
+  bound_draft_id: string | null;
+  published_work_id: string | null;
+  is_canonical: boolean;
 }
 
 export interface EditorLease {
@@ -107,8 +178,8 @@ export interface EditorExport {
   failure_message: string | null;
 }
 
-export function listDramaSeries() {
-  return api.get<DramaSeries[]>('/v1/drama-series');
+export function listDramaSeries(params?: DramaSeriesListParams) {
+  return api.get<DramaSeries[]>('/v1/drama-series', { query: params });
 }
 
 let editorAvailableCache: Promise<boolean> | null = null;
@@ -130,16 +201,30 @@ export function checkEditorAvailable(): Promise<boolean> {
   return editorAvailableCache;
 }
 
-export function createDramaSeries(title: string) {
-  return api.post<DramaSeries>(
-    '/v1/drama-series',
-    { title },
-    { idempotencyKey: crypto.randomUUID() },
-  );
+export function createDramaSeries(input: DramaSeriesCreateInput) {
+  return api.post<DramaSeries>('/v1/drama-series', input, {
+    idempotencyKey: crypto.randomUUID(),
+  });
 }
 
 export function getDramaSeries(seriesId: string) {
   return api.get<DramaSeries>(`/v1/drama-series/${seriesId}`);
+}
+
+export function updateDramaSeries(seriesId: string, input: DramaSeriesUpdateInput) {
+  return api.patch<DramaSeries>(`/v1/drama-series/${seriesId}`, input);
+}
+
+export function trashDramaSeries(seriesId: string) {
+  return api.delete<void>(`/v1/drama-series/${seriesId}`);
+}
+
+export function untrashDramaSeries(seriesId: string) {
+  return api.post<DramaSeries>(`/v1/drama-series/${seriesId}/untrash`);
+}
+
+export function purgeDramaSeries(seriesId: string) {
+  return api.delete<void>(`/v1/drama-series/${seriesId}/purge`);
 }
 
 export function listEpisodes(seriesId: string) {
@@ -179,6 +264,10 @@ export function updateEpisode(
   return api.patch<DramaEpisode>(`/v1/drama-episodes/${episodeId}`, input);
 }
 
+export function deleteEpisode(episodeId: string) {
+  return api.delete<void>(`/v1/drama-episodes/${episodeId}`);
+}
+
 export function createContentLink(
   episodeId: string,
   input: { content_type: string; content_ref_id: string; role?: string },
@@ -206,8 +295,42 @@ export function listEpisodeCuts(episodeId: string) {
   return api.get<EpisodeCut[]>(`/v1/drama-episodes/${episodeId}/cuts`);
 }
 
+export function createCutFromAsset(
+  episodeId: string,
+  input: { asset_id: string; name?: string; kind?: string; job_id?: string },
+) {
+  return api.post<EpisodeCut>(`/v1/drama-episodes/${episodeId}/cuts`, input, {
+    idempotencyKey: crypto.randomUUID(),
+  });
+}
+
 export function getCut(cutId: string) {
   return api.get<EpisodeCut>(`/v1/episode-cuts/${cutId}`);
+}
+
+export function listCutRevisions(cutId: string) {
+  return api.get<CutRevisionSummary[]>(`/v1/episode-cuts/${cutId}/revisions`);
+}
+
+export function restoreRevision(
+  cutId: string,
+  input: {
+    revisionId: string;
+    expectedRevisionId: string | null;
+    leaseId: string;
+    leaseToken: string;
+  },
+) {
+  return api.post<CutRevision>(`/v1/episode-cuts/${cutId}/revisions:restore`, {
+    revision_id: input.revisionId,
+    expected_revision_id: input.expectedRevisionId,
+    lease_id: input.leaseId,
+    lease_token: input.leaseToken,
+  });
+}
+
+export function listEpisodeExports(episodeId: string) {
+  return api.get<EpisodeExport[]>(`/v1/drama-episodes/${episodeId}/exports`);
 }
 
 export { createCutFromJob } from './from-job';
@@ -263,8 +386,34 @@ export function applyCommands(
   });
 }
 
-export function createEditPlan(cutId: string, goal: string) {
-  return api.post<EditPlan>(`/v1/episode-cuts/${cutId}/edit-plans`, { goal });
+export async function createEditPlan(
+  cutId: string,
+  goal: string,
+  options?: { onThinking?: (delta: string) => void; signal?: AbortSignal },
+): Promise<EditPlan> {
+  let plan: EditPlan | null = null;
+  for await (const frame of streamPost(
+    `/v1/episode-cuts/${cutId}/edit-plans`,
+    { goal },
+    options?.signal,
+  )) {
+    if (frame.event === 'thinking' && typeof frame.data.text === 'string') {
+      options?.onThinking?.(frame.data.text);
+    } else if (frame.event === 'complete') {
+      plan = frame.data as unknown as EditPlan;
+    } else if (frame.event === 'error') {
+      const message = typeof frame.data.message === 'string' ? frame.data.message : 'plan failed';
+      throw new ApiError(502, { error: { code: 'AGENT_STREAM_ERROR', message } }, message);
+    }
+  }
+  if (!plan) {
+    throw new ApiError(
+      502,
+      { error: { code: 'AGENT_STREAM_ERROR', message: 'empty plan' } },
+      'empty plan',
+    );
+  }
+  return plan;
 }
 
 export function applyEditPlan(
@@ -354,4 +503,38 @@ export function presignExportUpload(
     expires_at: string;
     required_headers: Record<string, string>;
   }>(`/v1/editor-exports/${exportId}/upload-session`, payload);
+}
+
+export function listMyMedia() {
+  return api.get<Page<Asset>>('/v1/assets:mine');
+}
+
+/**
+ * The backend models `EditorOperationResponse.result` as an open `dict[str,
+ * Any]` (it's a poll-once-for-several-kinds-of-job envelope: export /
+ * edit-plan / media-analysis all share the shape). This narrows `result` to
+ * the one shape the media library's transcript flow actually reads, instead
+ * of re-exporting the untyped generated schema.
+ */
+export interface EditorOperation {
+  id: string;
+  kind: string;
+  status: string;
+  progress: number;
+  result?: {
+    transcript?: {
+      language?: string | null;
+      segments?: Array<{ start_ms: number; end_ms: number; text: string }>;
+    };
+    [key: string]: unknown;
+  };
+  error?: { code?: string; [key: string]: unknown } | null;
+}
+
+export function requestTranscription(assetId: string) {
+  return api.post<EditorOperation>(`/v1/media-assets/${assetId}/transcriptions`);
+}
+
+export function getOperation(operationId: string) {
+  return api.get<EditorOperation>(`/v1/editor-operations/${operationId}`);
 }

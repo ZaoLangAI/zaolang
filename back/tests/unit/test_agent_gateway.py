@@ -893,6 +893,45 @@ def test_a_profile_without_sampling_overrides_uses_generic_defaults(db: Session)
     assert binding.preferred_endpoint_ids == ()
 
 
+def test_a_profile_without_sampling_overrides_uses_the_model_output_ceiling(
+    db: Session,
+) -> None:
+    from tests.llm_catalog import TEST_LLM_MODEL, seed_test_llm_catalog
+
+    _seeded(db)
+    seed_test_llm_catalog(db, max_output_tokens=16_384)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="model-budget",
+        display_name="跟模型走",
+    )
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert binding.max_tokens == 16_384
+    assert binding.model == TEST_LLM_MODEL
+
+
+def test_a_profile_max_tokens_is_clamped_to_the_model_output_ceiling(db: Session) -> None:
+    from tests.llm_catalog import seed_test_llm_catalog
+
+    _seeded(db)
+    seed_test_llm_catalog(db, max_output_tokens=4096)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="safety",
+        key="over-budget",
+        display_name="超模型上限",
+    )
+    # Admin no longer writes this column; leftover rows still exist and
+    # must not ask a 4k model for 20k completion tokens.
+    profile.max_tokens = 20_000
+    db.flush()
+
+    binding = agent_base.effective_binding(db, AgentName.SAFETY.value, profile)
+    assert binding.max_tokens == 4096
+
+
 def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     db: Session,
 ) -> None:
@@ -926,6 +965,55 @@ def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     assert run.job_id is None
     assert run.agent_profile_id == default.id
     assert run.prompt_slot == agent_slots.DEFAULT_SLOT
+
+
+def test_run_agent_persists_thinking_outside_output_json(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reasoning tokens stay on `AgentRun.thinking_text` so JSON replay is
+    still a structured payload, not a think-block dump."""
+    from app.llm import client as llm_client
+    from app.llm.normalize import NormalizedResponse
+    from tests.llm_catalog import bind_default_agents_to_catalog
+
+    bind_default_agents_to_catalog(db)
+    payload = {
+        "decision": "approve",
+        "categories": [],
+        "reason_code": "OK",
+        "public_message": "",
+    }
+
+    def _complete(**kwargs: object) -> llm_client.LlmCallResult:
+        on_chunk = kwargs.get("on_chunk")
+        if callable(on_chunk):
+            on_chunk(llm_client.StreamChunk(kind="thinking", text="先判断尺度"))
+        return llm_client.LlmCallResult(
+            response=NormalizedResponse(
+                text=json.dumps(payload, ensure_ascii=False),
+                data=payload,
+                finish_reason="stop",
+                prompt_tokens=4,
+                completion_tokens=4,
+                model="test-llm",
+            ),
+            latency_ms=8,
+            thinking="先判断尺度",
+        )
+
+    monkeypatch.setattr(llm_client, "complete", _complete)
+    outcome = agent_base.run_agent(
+        db,
+        agent_name=AgentName.SAFETY.value,
+        system_prompt="{}",
+        user_prompt="一只猫",
+        fallback={"decision": "needs_review"},
+    )
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.thinking_text == "先判断尺度"
+    assert outcome.thinking == "先判断尺度"
+    assert "先判断尺度" not in json.dumps(run.output_json, ensure_ascii=False)
 
 
 def test_debug_chat_with_unparseable_output_is_recorded_as_degraded(

@@ -12,9 +12,9 @@ import {
 } from '@/components/studio/prompt-polish-drawer';
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
-import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { PromptEnhancePayload, PromptEnhanceResult } from '@/lib/api/types';
+import { streamPost } from '@/lib/sse-post';
 
 /** What the studio already knows, forwarded so the advice fits the job. */
 export interface PromptPolishContext {
@@ -73,6 +73,7 @@ export function PromptPolish({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<PromptEnhanceResult | null>(null);
+  const [thinking, setThinking] = useState('');
   const [instruction, setInstruction] = useState('');
 
   // Adjusted during render rather than in an effect (same pattern as
@@ -103,6 +104,7 @@ export function PromptPolish({
         setOpen(true);
         setPending(true);
         setError(null);
+        setThinking('');
         try {
           const body: PromptEnhancePayload = {
             prompt: base.trim(),
@@ -117,11 +119,30 @@ export function PromptPolish({
             asset_kind: context?.assetKind,
             video_asset_kind: context?.videoAssetKind,
           };
-          const result = await api.post<PromptEnhanceResult>(endpoint, body);
+          let result: PromptEnhanceResult | null = null;
+          for await (const frame of streamPost(endpoint, body)) {
+            if (frame.event === 'thinking' && typeof frame.data.text === 'string') {
+              setThinking((current) => current + frame.data.text);
+            } else if (frame.event === 'complete') {
+              result = frame.data as unknown as PromptEnhanceResult;
+            } else if (frame.event === 'error') {
+              const message =
+                typeof frame.data.message === 'string' ? frame.data.message : tStates('errorHint');
+              throw new Error(message);
+            }
+          }
+          if (!result) throw new Error(tStates('errorHint'));
           setSuggestion(result);
           setInstruction('');
+          setThinking('');
         } catch (caught) {
-          setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
+          setError(
+            caught instanceof ApiError
+              ? caught.message
+              : caught instanceof Error
+                ? caught.message
+                : tStates('errorHint'),
+          );
         } finally {
           setPending(false);
         }
@@ -145,6 +166,7 @@ export function PromptPolish({
         open={open}
         onClose={() => setOpen(false)}
         pending={pending}
+        thinking={thinking}
         error={error}
         suggestion={suggestion}
         instruction={instruction}

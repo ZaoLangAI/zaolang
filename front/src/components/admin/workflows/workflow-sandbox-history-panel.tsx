@@ -188,6 +188,7 @@ export function WorkflowSandboxHistoryPanel({
             jobId={selected.job_id}
             events={stream.events}
             detail={stream.detail}
+            liveThinking={stream.liveThinking}
             reconnecting={stream.reconnecting}
             idleLabel={t('sandboxHistoryIdle')}
             layout="split"

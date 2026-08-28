@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.llm.client import NO_ENDPOINT_ID, LlmCallResult, StreamResult
+from app.llm.client import NO_ENDPOINT_ID, LlmCallResult, StreamChunk, StreamResult
 from app.llm.normalize import NormalizedResponse
 from app.models.enums import AgentName
 
@@ -64,6 +64,7 @@ def fake_complete(
     expect_json: bool = True,
     reasoning_model: bool = False,
     preferred_endpoint_ids: Sequence[str] = (),
+    on_chunk: Any = None,
 ) -> LlmCallResult:
     """Signature-compatible with `app.llm.client.complete`; ignores every
     gateway-selection argument (`session`/`temperature`/`preferred_endpoint_ids`/
@@ -77,7 +78,7 @@ def fake_complete(
     instead (see `tests/unit/test_agent_gateway.py` and
     `tests/integration/test_prompts_api.py`).
     """
-    del session, max_tokens, temperature, reasoning_model, preferred_endpoint_ids
+    del session, max_tokens, temperature, reasoning_model, preferred_endpoint_ids, on_chunk
     prompt = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
     payload = _dispatch(agent_name, prompt)
     text = json.dumps(payload, ensure_ascii=False)
@@ -103,12 +104,32 @@ def fake_stream_complete(
     temperature: float = 0.4,
     reasoning_model: bool = False,
     preferred_endpoint_ids: Sequence[str] = (),
-) -> Iterator[str]:
-    """Signature-compatible with `app.llm.client.stream_complete`."""
-    del session, max_tokens, temperature, reasoning_model, preferred_endpoint_ids
+    is_usable: Any = None,
+    expect_json: bool = False,
+) -> Iterator[StreamChunk]:
+    """Signature-compatible with `app.llm.client.stream_complete`.
+
+    Yields a single `kind="thinking"` chunk followed by a single
+    `kind="content"` chunk — enough for a caller that forwards `StreamChunk`s
+    by `.kind` (see `app.domain.script_writing.service`) to exercise both
+    branches, without needing every one of this fake's many callers to know
+    or care about the split.
+    """
+    del (
+        session,
+        max_tokens,
+        temperature,
+        reasoning_model,
+        preferred_endpoint_ids,
+        is_usable,
+        expect_json,
+    )
     text = _dispatch_stream(agent_name, messages)
-    yield text
+    thinking = f"fake:{agent_name} 正在构思……"
+    yield StreamChunk(kind="thinking", text=thinking)
+    yield StreamChunk(kind="content", text=text)
     result.text = text
+    result.thinking = thinking
     result.endpoint_id = NO_ENDPOINT_ID
     result.model = model or "fake-llm"
     result.prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
@@ -147,7 +168,13 @@ def _copy_stream_script_draft(payload: dict[str, Any]) -> str:
     script = {
         "title": title or (idea[:24] if idea else f"未命名短剧 {digest}"),
         "logline": idea or "一段关于选择与代价的短剧。",
-        "characters": [{"name": "林夏", "traits": "外冷内热的便利店店员，藏着不能说的秘密"}],
+        "characters": [
+            {
+                "name": "林夏",
+                "traits": "年轻女性，二十出头，肤色偏白，齐肩黑发，穿便利店店员制服；"
+                "外冷内热，藏着不能说的秘密",
+            }
+        ],
         "scenes": [
             {
                 "heading": "第一场 · 便利店 - 夜",

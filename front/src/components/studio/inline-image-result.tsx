@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
+import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import {
   CHARACTER_VIEW_LABEL_KEY,
@@ -66,6 +67,7 @@ export function InlineImageResult({
   events,
   connected,
   reconnecting,
+  liveThinking,
   draftId,
   cancelling,
   onCancel,
@@ -84,6 +86,7 @@ export function InlineImageResult({
   events: StreamedEvent[];
   connected: boolean;
   reconnecting: boolean;
+  liveThinking?: string;
   draftId: string | null;
   cancelling: boolean;
   onCancel: () => void;
@@ -342,6 +345,13 @@ export function InlineImageResult({
               </p>
               {latestEvent?.message ? (
                 <p className="max-w-md text-sm text-muted">{latestEvent.message}</p>
+              ) : null}
+              {!finished ? (
+                <LiveThinking
+                  thinking={liveThinking ?? ''}
+                  label={t('thinkingLive')}
+                  className="max-h-28 overflow-y-auto"
+                />
               ) : null}
               <ol className="mt-1 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
                 {STAGES.map((stage) => {

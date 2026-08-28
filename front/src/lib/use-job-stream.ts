@@ -16,11 +16,20 @@ function isTerminal(status: string): boolean {
  * The stream carries the same shape as a `JobEvent`, except that the timestamp
  * is only assigned when the row is written, so a live frame may not have one.
  */
-export type StreamedEvent = Omit<JobEvent, 'created_at'> & {
+export type StreamedEvent = Omit<JobEvent, 'created_at' | 'sequence'> & {
+  sequence?: number;
   status: JobStatus;
   created_at?: string;
   cancel_requested?: boolean;
+  thinking?: string;
 };
+
+export interface LiveThinking {
+  nodeId: string | null;
+  text: string;
+}
+
+export const EMPTY_LIVE_THINKING: LiveThinking = { nodeId: null, text: '' };
 
 export interface JobStreamState {
   job: GenerationJob | null;
@@ -28,6 +37,8 @@ export interface JobStreamState {
   connected: boolean;
   /** True while a dropped stream is being re-established. */
   reconnecting: boolean;
+  /** In-flight reasoning for the current node — Redis-only, not backfilled. */
+  liveThinking: LiveThinking;
   applyJob: (next: GenerationJob) => void;
 }
 
@@ -48,6 +59,7 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
   const [events, setEvents] = useState<StreamedEvent[]>(initial?.events ?? []);
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [liveThinking, setLiveThinking] = useState<LiveThinking>(EMPTY_LIVE_THINKING);
 
   // Survives re-renders and reconnects so a resumed stream never replays.
   const lastEventId = useRef<number>(
@@ -67,8 +79,9 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
     previousJobId.current = jobId;
     setJob(initial);
     setEvents(initial?.events ?? []);
+    setLiveThinking(EMPTY_LIVE_THINKING);
     lastEventId.current =
-      initial?.events?.reduce((max, event) => Math.max(max, event.sequence), 0) ?? 0;
+      initial?.events?.reduce((max, event) => Math.max(max, event.sequence ?? 0), 0) ?? 0;
     // `initial` is only meaningful at the moment `jobId` changes — it is not
     // itself a dependency, or a caller passing a fresh object each render
     // (`initial ?? undefined`-style props) would reset state every render.
@@ -88,11 +101,11 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
     let stopped = false;
 
     const rememberSequences = (incoming: StreamedEvent[]) => {
-      if (incoming.length === 0) return;
-      lastEventId.current = Math.max(
-        lastEventId.current,
-        ...incoming.map((event) => event.sequence),
-      );
+      const sequences = incoming
+        .map((event) => event.sequence)
+        .filter((sequence): sequence is number => sequence != null);
+      if (sequences.length === 0) return;
+      lastEventId.current = Math.max(lastEventId.current, ...sequences);
     };
 
     const applyLatest = (latest: GenerationJob) => {
@@ -162,8 +175,29 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
             for (const frame of frames) {
               const payload = parseFrame(frame);
               if (!payload) continue;
-              const stale = payload.sequence < lastEventId.current;
-              lastEventId.current = Math.max(lastEventId.current, payload.sequence);
+              if (isThinkingFrame(payload)) {
+                const increment = payload.thinking ?? '';
+                const nodeId = payload.node_id ?? null;
+                if (increment) {
+                  setLiveThinking((current) => {
+                    if (current.nodeId && nodeId && current.nodeId !== nodeId) {
+                      return { nodeId, text: increment };
+                    }
+                    return { nodeId: nodeId ?? current.nodeId, text: current.text + increment };
+                  });
+                }
+                continue;
+              }
+              const sequence = payload.sequence ?? 0;
+              const stale = sequence < lastEventId.current;
+              lastEventId.current = Math.max(lastEventId.current, sequence);
+              setLiveThinking((current) => {
+                const nodeId = payload.node_id ?? null;
+                if (current.nodeId && nodeId && current.nodeId !== nodeId) {
+                  return { nodeId, text: '' };
+                }
+                return current;
+              });
               setEvents((current) => mergeEvents(current, [payload]));
               if (!stale) {
                 setJob((current) => patchJobFromEvent(current, payload));
@@ -218,13 +252,13 @@ export function useJobStream(jobId: string, initial: GenerationJob | null): JobS
     setJob((current) => clampProgress(current, next));
     if (!next.events?.length) return;
     setEvents((current) => mergeEvents(current, next.events ?? []));
-    lastEventId.current = Math.max(
-      lastEventId.current,
-      ...next.events.map((event) => event.sequence),
-    );
+    const sequences = next.events
+      .map((event) => event.sequence)
+      .filter((sequence): sequence is number => sequence != null);
+    if (sequences.length) lastEventId.current = Math.max(lastEventId.current, ...sequences);
   };
 
-  return { job, events, connected, reconnecting, applyJob };
+  return { job, events, connected, reconnecting, liveThinking, applyJob };
 }
 
 /**
@@ -259,12 +293,22 @@ function patchJobFromEvent(
 
 function mergeEvents(current: StreamedEvent[], incoming: StreamedEvent[]): StreamedEvent[] {
   const bySequence = new Map<number, StreamedEvent>();
-  for (const event of current) bySequence.set(event.sequence, event);
+  for (const event of current) {
+    if (event.sequence == null) continue;
+    bySequence.set(event.sequence, event);
+  }
   for (const event of incoming) {
+    if (event.sequence == null) continue;
     const existing = bySequence.get(event.sequence);
     bySequence.set(event.sequence, existing ? { ...existing, ...event } : event);
   }
-  return [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
+  return [...bySequence.values()].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
+}
+
+type ThinkingFrame = StreamedEvent & { event_type: 'thinking'; thinking?: string };
+
+function isThinkingFrame(payload: StreamedEvent): payload is ThinkingFrame {
+  return payload.event_type === 'thinking';
 }
 
 function parseFrame(frame: string): StreamedEvent | null {

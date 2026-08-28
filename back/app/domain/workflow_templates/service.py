@@ -27,7 +27,7 @@ from app.models import GenerationWorkflowTemplate
 from app.models.base import utcnow
 from app.models.enums import ImageAssetKind, Operation, VideoAssetKind
 from app.workflows import registry
-from app.workflows.defaults import asset_graph, default_graph
+from app.workflows.defaults import asset_graph, default_graph, video_analysis_graph
 from app.workflows.graph import WorkflowGraph, WorkflowNode
 from app.workflows.graph import validate as validate_graph
 
@@ -461,11 +461,16 @@ def ensure_default_templates(session: Session) -> None:
     """
     for operation in Operation:
         if get_active(session, operation.value) is None:
+            graph = (
+                video_analysis_graph(session)
+                if operation == Operation.VIDEO_ANALYSIS
+                else default_graph(session)
+            )
             publish(
                 session,
                 operation=operation.value,
                 name=DEFAULT_TEMPLATE_NAME,
-                graph_json=default_graph(session),
+                graph_json=graph,
                 actor_user_id=None,
                 reason="seed: 初始默认模板",
             )

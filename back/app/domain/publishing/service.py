@@ -21,7 +21,6 @@ from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
 from app.domain.audit import service as audit
-from app.domain.characters import service as characters_service
 from app.domain.credits.royalty import RoyaltyRule, distribute
 from app.domain.errors import (
     Conflict,
@@ -182,17 +181,6 @@ def publish(
     )
     session.add(work)
     session.flush()
-
-    # Optional: the studio may have tagged this draft as an episode of a
-    # series so it inherits the same cast. A standalone draft carries neither
-    # key, and `assign_episode` is a no-op without a series_id.
-    characters_service.assign_episode(
-        session,
-        user_id=user_id,
-        work=work,
-        series_id=draft.params_json.get("series_id"),
-        episode_number=draft.params_json.get("episode_number"),
-    )
 
     version = WorkVersion(
         work_id=work.id,

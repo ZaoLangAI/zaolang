@@ -46,7 +46,11 @@ def test_mcp_token_is_scoped_to_one_project(
     client: TestClient, db: Session, author: User, admin: User
 ) -> None:
     _enable(db, admin)
-    series = client.post("/v1/drama-series", headers=auth_header(author), json={"title": "MCP剧"})
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "MCP剧", "target_platforms": ["manual_download"]},
+    )
     assert series.status_code == 201, series.text
     minted = client.post(
         "/v1/mcp/tokens",
@@ -59,7 +63,9 @@ def test_mcp_token_is_scoped_to_one_project(
     )
     assert minted.status_code == 201, minted.text
     other = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "另一部"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "另一部", "target_platforms": ["manual_download"]},
     ).json()
     call = client.post(
         "/mcp",
@@ -94,7 +100,11 @@ def test_request_transcription_tool_enqueues_for_an_owned_asset(
         lambda name, args=None, **kwargs: seen.append((args or [""])[0]),
     )
 
-    series = client.post("/v1/drama-series", headers=auth_header(author), json={"title": "转写测试"})
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "转写测试", "target_platforms": ["manual_download"]},
+    )
     assert series.status_code == 201, series.text
     minted = client.post(
         "/v1/mcp/tokens",
@@ -153,7 +163,11 @@ def test_request_transcription_tool_rejects_someone_elses_asset(
     asset = _video_asset(db, other_owner)
     db.commit()
 
-    series = client.post("/v1/drama-series", headers=auth_header(author), json={"title": "转写越权测试"})
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "转写越权测试", "target_platforms": ["manual_download"]},
+    )
     assert series.status_code == 201, series.text
     minted = client.post(
         "/v1/mcp/tokens",

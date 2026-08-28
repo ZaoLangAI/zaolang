@@ -1,8 +1,9 @@
-"""Generic sampling fallback when an AgentProfile does not store its own.
+"""Generic sampling fallback when neither the profile nor the model declares one.
 
-Model ids themselves are never listed here: they come from `llm_providers`
-and `AgentProfile.model`. These two numbers only keep a call well-formed
-when the profile left max_tokens/temperature empty.
+Model ids and token ceilings come from `llm_providers` endpoints
+(`max_output_tokens` / `context_length`) and optional `AgentProfile`
+overrides. These two numbers only keep a call well-formed when both the
+profile and the bound endpoint left those fields empty (0 / NULL).
 """
 
 from __future__ import annotations

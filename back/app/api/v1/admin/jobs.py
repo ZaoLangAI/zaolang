@@ -268,6 +268,7 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
                 node_id=r.node_id,
                 input_json=r.input_json,
                 output_json=r.output_json or {},
+                thinking_text=r.thinking_text or "",
                 created_at=r.created_at,
             )
             for r in agent_runs
@@ -569,6 +570,9 @@ def stream_job_events(
                     yield ": heartbeat\n\n"
                 continue
 
+            if payload.get("event_type") == "thinking":
+                yield _sse_live(payload)
+                continue
             sequence = int(payload.get("sequence", 0))
             if sequence <= last_sequence:
                 continue
@@ -590,6 +594,10 @@ def stream_job_events(
 
 def _sse(event_id: int, payload: dict[str, object]) -> str:
     return f"id: {event_id}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _sse_live(payload: dict[str, object]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _parse_last_event_id(value: str | None) -> int:

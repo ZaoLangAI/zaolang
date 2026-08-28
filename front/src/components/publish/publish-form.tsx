@@ -39,11 +39,6 @@ const TIERS = ['preview', 'standard', 'cinematic'] as const;
 type OperationKey = (typeof OPERATIONS)[number];
 type TierKey = (typeof TIERS)[number];
 
-/** Drafts created by the short-form studio carry the spec they were made for. */
-function isShortform(draft: Draft): boolean {
-  return typeof draft.params?.shortform_profile === 'string';
-}
-
 function stringParam(params: Draft['params'], key: string): string | null {
   const value = params?.[key];
   return typeof value === 'string' && value.trim() ? value : null;
@@ -105,12 +100,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
         },
         { idempotencyKey: newIdempotencyKey() },
       );
-      // A vertical draft has one step left: the export kit, which is where its
-      // caption and the compliance checklist live. Everything else is done once
-      // the work exists.
-      router.push(
-        isShortform(draft) ? `/create/short?draftId=${draft.id}` : `/work/${result.work_id}`,
-      );
+      router.push(`/work/${result.work_id}`);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
       setPublishing(false);

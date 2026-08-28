@@ -134,6 +134,8 @@ def validate_generation_params(
         voice = extras.get("voice")
         if voice not in AUDIO_VOICES:
             raise ValueError(f"音频生成必须指定音色，可选: {sorted(AUDIO_VOICES)}。")
+    if operation == Operation.VIDEO_ANALYSIS and len(references) != 1:
+        raise ValueError("视频解析必须提供且仅提供一段待解析的参考视频。")
 
 
 def prepare_sandbox_generation_params(
@@ -193,7 +195,10 @@ def _parsed_video_asset_kind(raw: Any) -> VideoAssetKind | None:
 
 
 class GenerationParams(ApiModel):
-    prompt: str = Field(min_length=1, max_length=2000)
+    # No `min_length` here: enforced instead by `validate_generation_params`,
+    # which exempts `video_analysis` (this field means "optional extra notes
+    # on the uploaded clip" there, not a required creative instruction).
+    prompt: str = Field(default="", max_length=2000)
     negative_prompt: str | None = Field(default=None, max_length=1000)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     aspect_ratio: str = Field(default="16:9", pattern=r"^\d{1,2}:\d{1,2}$")
@@ -324,6 +329,13 @@ class GenerationJobCreateRequest(ApiModel):
 
     @model_validator(mode="after")
     def _video_needs_duration(self) -> GenerationJobCreateRequest:
+        # Every operation except `video_analysis` treats `prompt` as the
+        # mandatory creative instruction; `GenerationParams` itself cannot
+        # enforce that with a plain `min_length=1` because it has no idea
+        # which operation it is being submitted for (for `video_analysis`
+        # the same field is optional "extra notes on the uploaded clip").
+        if self.operation != Operation.VIDEO_ANALYSIS and not self.params.prompt.strip():
+            raise ValueError("必须填写提示词。")
         validate_generation_params(
             self.operation,
             duration_seconds=self.params.duration_seconds,
@@ -424,6 +436,34 @@ class JobEventResponse(ApiModel):
     node_id: str | None = None
 
 
+class VideoAnalysisShot(ApiModel):
+    """One shot of the model's per-shot breakdown of the analysed clip."""
+
+    time_range: str = ""
+    camera_movement: str = ""
+    scene: str = ""
+    subject_action: str = ""
+    lighting_mood: str = ""
+    transition_in: str = ""
+
+
+class VideoAnalysisResult(ApiModel):
+    """Structured output of a `video_analysis` job.
+
+    Mirrors `_VIDEO_ANALYSIS_INSTRUCTIONS` in `app.providers.aihubmix_media`
+    field-for-field — that prompt is what actually shapes the model's JSON,
+    this schema only validates/echoes it back to the client.
+    """
+
+    summary: str = ""
+    # The single ready-to-paste prompt the "用于视频创作" deep link carries
+    # into `VideoGenerationStudio`'s prompt box.
+    composed_prompt: str = ""
+    style_tags: list[str] = Field(default_factory=list)
+    pacing: str = ""
+    shots: list[VideoAnalysisShot] = Field(default_factory=list)
+
+
 class GenerationJobResponse(ApiModel):
     id: str
     status: JobStatus
@@ -445,6 +485,12 @@ class GenerationJobResponse(ApiModel):
     # named more than one view (see `execute_asset_output_advance`).
     output_asset_ids: list[str] | None = None
     output_urls: list[str] | None = None
+    # Signed URL for `GenerationParams.reference_asset_ids[0]`, the job's own
+    # input rather than its output. `None` for the many operations that never
+    # echo it — today only populated for `video_analysis`, so its history list
+    # and detail view can replay the source video without a second asset
+    # lookup; harmless to leave `None` elsewhere.
+    reference_url: str | None = None
     # Echoes `GenerationParams.asset_kind` back so a client can, e.g., offer
     # "save as a shareable cover skill" on a succeeded `cover` job's detail
     # page without having kept the original request around.
@@ -471,6 +517,10 @@ class GenerationJobResponse(ApiModel):
     # inline version-history strip) show what prompt produced each past
     # iteration without keeping a separate client-side copy of the request.
     prompt: str | None = None
+    # `GenerationJob.analysis_result_json` echoed back, typed. `None` for
+    # every non-`video_analysis` job, and for a `video_analysis` job that
+    # has not settled yet.
+    analysis: VideoAnalysisResult | None = None
     failure_code: str | None = None
     failure_message: str | None = None
     cancel_requested: bool = False
@@ -488,7 +538,8 @@ class UploadPresignRequest(ApiModel):
     purpose: str = Field(
         pattern=(
             r"^(generation_reference|avatar|profile_cover|consent_evidence|learn_media"
-            r"|style_gallery_cover|editor_source|editor_export|caption|font)$"
+            r"|style_gallery_cover|series_logo|video_analysis_source|editor_source"
+            r"|editor_export|caption|font)$"
         )
     )
 

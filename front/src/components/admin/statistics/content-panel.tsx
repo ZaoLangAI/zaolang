@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { TrendChart } from '@/components/admin/statistics/trend-chart';
+import { TrendChart } from '@/components/charts/trend-chart';
 import { DuplicateGroups } from '@/components/admin/moderation/duplicate-groups';
 import type { ContentTimeseries } from '@/lib/api/admin-types';
 

@@ -40,4 +40,15 @@ def build_fake_catalog() -> dict[str, ProviderCapability]:
             model_or_workflow="paid-video-v3",
             provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
         ),
+        "fake_video_analysis": ProviderCapability(
+            name="fake_video_analysis",
+            kind=ProviderKind.COMMERCIAL_API,
+            operations=frozenset({Operation.VIDEO_ANALYSIS}),
+            tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),
+            quality_prior=0.85,
+            typical_latency_ms=6_000,
+            unit_cost_micro_usd=90000,
+            model_or_workflow="fake-video-understanding-v1",
+            provider_factory=lambda: fake_providers.get_provider("fake_video_analysis"),
+        ),
     }

@@ -2,18 +2,27 @@
 
 Each turn is a `POST` that responds with a `text/event-stream` body:
 `event: start` (once, carries `episode_id` for a brand-new script),
-`event: delta` (repeated, `{"text": str}` chunks as the model writes),
-`event: complete` (once, the finished `{turn_id, turn_no, summary, script,
-degraded}`), or `event: error` (`{"message": str}`) instead of `complete` when
-the turn failed after streaming had already started — headers are long sent
-by then, so an error can only be reported inside the stream, never as an
-HTTP status.
+`event: delta` (repeated, `{"text": str}` chunks as the model writes the
+user-facing summary/script), `event: thinking` (repeated, `{"text": str}`
+chunks of the model's live reasoning — best-effort: some providers stream it
+token-by-token, others hand it back in one late burst, see
+`llm_client.stream_complete`'s own docstring), `event: complete` (once, the
+finished `{turn_id, turn_no, summary, script, degraded, thinking}`), or
+`event: error` (`{"message": str}`) instead of `complete` when the turn
+failed after streaming had already started — headers are long sent by then,
+so an error can only be reported inside the stream, never as an HTTP status.
+A bare SSE comment line (no `event:`/`data:`) may also appear before the
+first real chunk, as a heartbeat; `parseSseFrame` on the frontend silently
+skips it (no `data:` line), so it never reaches `ScriptStreamEvent` handling.
 """
 
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import json
+import queue
+import threading
 from collections.abc import Iterator
 from typing import Annotated, Any
 
@@ -29,6 +38,7 @@ from app.api.schemas.script import (
     ScriptDetailResponse,
     ScriptDocument,
     ScriptLinksUpdateRequest,
+    ScriptRetryRequest,
     ScriptSummaryResponse,
     ScriptTurnRequest,
     ScriptTurnSnapshotResponse,
@@ -37,12 +47,73 @@ from app.api.schemas.script import (
 from app.db import session_scope
 from app.domain.errors import DomainError
 from app.domain.script_writing import service as script_writing_service
+from app.llm.client import StreamChunk
 from app.models import EpisodeScriptTurn
 
 router = APIRouter(tags=["scripts"])
 
 SCRIPTS_ENDPOINT = "POST /v1/scripts"
 SCRIPT_TURNS_ENDPOINT = "POST /v1/scripts/{episode_id}/turns"
+SCRIPT_RETRY_ENDPOINT = "POST /v1/scripts/{episode_id}/retry"
+
+# How often a heartbeat comment is sent while nothing else is ready — keeps
+# the connection carrying traffic during a long silent gap before the first
+# real chunk (a cold proxy buffer, or a provider that hands reasoning back
+# in one late burst rather than incrementally) instead of looking
+# indistinguishable from a hung connection. This alone does not bound a
+# genuinely stuck call — that ceiling is `llm_client
+# .STREAM_WALL_CLOCK_TIMEOUT_SECONDS`, enforced inside the stream loop
+# itself, not here.
+_HEARTBEAT_INTERVAL_SECONDS = 12.0
+_HEARTBEAT_COMMENT = ": heartbeat\n\n"
+_HEARTBEAT = object()
+_DRAIN_DONE = object()
+
+
+def _with_heartbeat(source: Iterator[Any]) -> Iterator[Any]:
+    """Drains `source` on a background thread, yielding `_HEARTBEAT` in
+    between its items whenever none arrives within
+    `_HEARTBEAT_INTERVAL_SECONDS`.
+
+    `source` here is always one of `stream_new_script`/`stream_turn`'s own
+    generators — draining it on a background thread also runs their
+    trailing (non-yielding) finalize/DB-write code there, since a generator
+    only finishes executing past its last `yield` once fully iterated; by
+    the time this wrapper's own iterator ends, that write has already
+    happened and the caller's `TurnResult` is fully populated, same as
+    before this wrapper existed. Runs inside a copy of the calling context
+    (`contextvars.copy_context()`) so request-scoped correlation ids
+    (`app.observability.context`) still land on the `AgentRun` written at
+    the end of that drain — a bare `threading.Thread` would otherwise start
+    with an empty context.
+    """
+    ctx = contextvars.copy_context()
+    q: queue.Queue[Any] = queue.Queue()
+    errors: list[BaseException] = []
+
+    def _drain() -> None:
+        try:
+            for item in source:
+                q.put(item)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            q.put(_DRAIN_DONE)
+
+    thread = threading.Thread(target=lambda: ctx.run(_drain), daemon=True)
+    thread.start()
+    while True:
+        try:
+            item = q.get(timeout=_HEARTBEAT_INTERVAL_SECONDS)
+        except queue.Empty:
+            yield _HEARTBEAT
+            continue
+        if item is _DRAIN_DONE:
+            if errors:
+                raise errors[0]
+            return
+        yield item
+
 
 SSE_HEADERS = {
     "cache-control": "no-cache",
@@ -90,6 +161,53 @@ def _remember_idempotent(
         )
 
 
+def _turn_sse_body(
+    *,
+    stream: Iterator[StreamChunk],
+    result: script_writing_service.TurnResult,
+    episode_id: str,
+    endpoint: str,
+    user_id: str,
+    idempotency_key: str | None,
+    request_hash: str,
+) -> Iterator[str]:
+    """Shared tail of every streamed-turn route below `event: start` (if
+    any): drains `stream` (heartbeat-wrapped), then emits `complete`/`error`
+    and records the idempotency snapshot — identical for a first draft, a
+    revision turn, and a first-draft retry, so only what builds `stream`
+    itself differs per route.
+    """
+    for chunk in _with_heartbeat(stream):
+        if chunk is _HEARTBEAT:
+            yield _HEARTBEAT_COMMENT
+            continue
+        assert isinstance(chunk, StreamChunk)
+        event = "delta" if chunk.kind == "content" else "thinking"
+        yield _sse(event, {"text": chunk.text})
+
+    if result.error:
+        yield _sse("error", {"message": result.error})
+        return
+
+    snapshot = {
+        "episode_id": episode_id,
+        "turn_id": result.turn_id,
+        "turn_no": result.turn_no,
+        "summary": result.summary,
+        "script": result.script,
+        "degraded": result.degraded,
+        "thinking": result.thinking,
+    }
+    _remember_idempotent(
+        user_id=user_id,
+        endpoint=endpoint,
+        key=idempotency_key,
+        request_hash=request_hash,
+        snapshot=snapshot,
+    )
+    yield _sse("complete", snapshot)
+
+
 def _turn_summary(turn: EpisodeScriptTurn) -> ScriptTurnSummary:
     return ScriptTurnSummary(
         id=turn.id,
@@ -98,6 +216,7 @@ def _turn_summary(turn: EpisodeScriptTurn) -> ScriptTurnSummary:
         summary=turn.summary,
         referenced_skill_ids=list(turn.referenced_skill_ids_json or []),
         created_at=turn.created_at,
+        thinking=turn.thinking_text or "",
     )
 
 
@@ -132,6 +251,7 @@ def create_script(
         title=payload.title,
         idea=payload.idea,
         referenced_skill_ids=payload.referenced_skill_ids,
+        series_id=payload.series_id,
     )
     session.commit()
 
@@ -139,29 +259,76 @@ def create_script(
 
     def generate() -> Iterator[str]:
         yield _sse("start", {"episode_id": prep.episode_id})
-        for delta in script_writing_service.stream_new_script(prep, user_id=user.id, result=result):
-            yield _sse("delta", {"text": delta})
-
-        if result.error:
-            yield _sse("error", {"message": result.error})
-            return
-
-        snapshot = {
-            "episode_id": prep.episode_id,
-            "turn_id": result.turn_id,
-            "turn_no": result.turn_no,
-            "summary": result.summary,
-            "script": result.script,
-            "degraded": result.degraded,
-        }
-        _remember_idempotent(
-            user_id=user.id,
+        yield from _turn_sse_body(
+            stream=script_writing_service.stream_new_script(prep, user_id=user.id, result=result),
+            result=result,
+            episode_id=prep.episode_id,
             endpoint=SCRIPTS_ENDPOINT,
+            user_id=user.id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
+
+    return StreamingResponse(
+        generate(), status_code=SSE_STATUS_CODE, media_type="text/event-stream", headers=SSE_HEADERS
+    )
+
+
+@router.post("/scripts/{episode_id}/retry", status_code=202)
+def retry_script(
+    episode_id: str,
+    payload: ScriptRetryRequest,
+    user: CurrentUser,
+    session: DbSession,
+    idempotency_key: IdempotencyKey,
+    _: Annotated[None, Depends(rate_limited("script_studio_write"))],
+) -> StreamingResponse:
+    """Re-runs the first draft for an episode shell whose original stream
+    never finished (see `retry_new_script`'s docstring) — the empty-shell
+    page's "重新生成初稿" action, offered in place of `POST /v1/scripts`
+    precisely because that route always mints a new episode.
+    """
+    request_hash = idempotency.hash_request(
+        {"episode_id": episode_id, **payload.model_dump(mode="json")}
+    )
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=SCRIPT_RETRY_ENDPOINT,
             key=idempotency_key,
             request_hash=request_hash,
-            snapshot=snapshot,
         )
-        yield _sse("complete", snapshot)
+        if replay is not None:
+            return StreamingResponse(
+                _replay_stream(replay.response_snapshot),
+                status_code=SSE_STATUS_CODE,
+                media_type="text/event-stream",
+                headers=SSE_HEADERS,
+            )
+
+    prep = script_writing_service.retry_new_script(
+        session,
+        user_id=user.id,
+        episode_id=episode_id,
+        idea=payload.idea,
+        referenced_skill_ids=payload.referenced_skill_ids,
+    )
+    session.commit()
+
+    result = script_writing_service.TurnResult()
+
+    def generate() -> Iterator[str]:
+        yield _sse("start", {"episode_id": prep.episode_id})
+        yield from _turn_sse_body(
+            stream=script_writing_service.stream_new_script(prep, user_id=user.id, result=result),
+            result=result,
+            episode_id=prep.episode_id,
+            endpoint=SCRIPT_RETRY_ENDPOINT,
+            user_id=user.id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
 
     return StreamingResponse(
         generate(), status_code=SSE_STATUS_CODE, media_type="text/event-stream", headers=SSE_HEADERS
@@ -213,6 +380,8 @@ def get_script(
         status=episode.status,
         script=ScriptDocument.model_validate(episode.script_json or {}),
         turns=[_turn_summary(turn) for turn in turns],
+        created_at=episode.created_at,
+        updated_at=episode.updated_at,
     )
 
 
@@ -343,29 +512,15 @@ def create_turn(
     result = script_writing_service.TurnResult()
 
     def generate() -> Iterator[str]:
-        for delta in script_writing_service.stream_turn(prep, user_id=user.id, result=result):
-            yield _sse("delta", {"text": delta})
-
-        if result.error:
-            yield _sse("error", {"message": result.error})
-            return
-
-        snapshot = {
-            "episode_id": prep.episode_id,
-            "turn_id": result.turn_id,
-            "turn_no": result.turn_no,
-            "summary": result.summary,
-            "script": result.script,
-            "degraded": result.degraded,
-        }
-        _remember_idempotent(
-            user_id=user.id,
+        yield from _turn_sse_body(
+            stream=script_writing_service.stream_turn(prep, user_id=user.id, result=result),
+            result=result,
+            episode_id=prep.episode_id,
             endpoint=endpoint,
-            key=idempotency_key,
+            user_id=user.id,
+            idempotency_key=idempotency_key,
             request_hash=request_hash,
-            snapshot=snapshot,
         )
-        yield _sse("complete", snapshot)
 
     return StreamingResponse(
         generate(), status_code=SSE_STATUS_CODE, media_type="text/event-stream", headers=SSE_HEADERS

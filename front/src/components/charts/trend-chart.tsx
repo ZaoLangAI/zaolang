@@ -33,12 +33,11 @@ export interface TrendSeriesDef {
 }
 
 /**
- * Shared line-chart wrapper for the statistics module.
- *
- * The repo had no charting dependency before this module — everywhere else a
- * stacked bar or a table was enough (see `duration-bars.tsx`). A daily trend
- * across a 7–90 day window is exactly the case a bar/table cannot show well,
- * which is why this one screen pulls in `recharts`.
+ * Shared line-chart wrapper — originally built for the admin statistics
+ * module (see `duration-bars.tsx` for the stacked-bar/table cases that came
+ * before it), now also used by the drama-series analytics pages. A daily
+ * trend across a multi-day window is exactly the case a bar/table can't
+ * show well, which is why this one pulls in `recharts`.
  */
 export function TrendChart<T extends { date: string }>({
   data,

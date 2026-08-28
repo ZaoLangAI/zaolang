@@ -54,6 +54,84 @@ def _seed_media_endpoint(
     )
 
 
+def _seed_general_endpoint(
+    db: Session,
+    *,
+    endpoint_id: str = "general-ep",
+    model: str = "qwen-vl-max",
+    input_modalities: list[str] | None = None,
+    enabled: bool = True,
+) -> None:
+    """A `kind="general"` endpoint, optionally declaring video input support.
+
+    Mirrors `_seed_media_endpoint`'s merge-not-replace behaviour. Unlike a
+    media endpoint, `input_modalities=None` here means "text only" (the
+    validator's default), not "whatever `_seed_media_endpoint` defaults to".
+    """
+    current = config_service.get_typed(db, "llm_providers", LlmProviderConfig)
+    endpoints = {
+        existing_id: endpoint.model_dump(mode="json")
+        for existing_id, endpoint in current.endpoints.items()
+    }
+    endpoints[endpoint_id] = {
+        "name": "通用测试端点",
+        "base_url": "https://general.invalid",
+        "api_key": "test-key",
+        "kind": "general",
+        "role": "backup",
+        "enabled": enabled,
+        "model": model,
+        "input_modalities": input_modalities or [],
+    }
+    config_service.set_value(
+        db,
+        "llm_providers",
+        {"endpoints": endpoints},
+        actor_user_id=None,
+        note="test bootstrap",
+    )
+
+
+def test_a_general_endpoint_without_video_never_enters_the_video_analysis_catalog(
+    db: Session,
+) -> None:
+    """Strict validation: a general endpoint that hasn't declared video input
+    must never be selectable for `video_analysis`."""
+    _seed_general_endpoint(db, input_modalities=["image"])
+    catalog = router.build_catalog(db)
+    assert "general-ep:video_analysis" not in catalog
+    assert not any(key.startswith("general-ep:") for key in catalog)
+
+
+def test_a_general_endpoint_declaring_video_enters_the_video_analysis_catalog(
+    db: Session,
+) -> None:
+    _seed_general_endpoint(db, input_modalities=["video"])
+    catalog = router.build_catalog(db)
+    entry = catalog["general-ep:video_analysis"]
+    assert entry.model_or_workflow == "qwen-vl-max"
+    assert entry.operations == frozenset({"video_analysis"})
+
+
+def test_a_general_endpoint_with_video_can_be_selected_for_video_analysis(db: Session) -> None:
+    """End-to-end: `router.route` actually dispatches `video_analysis` to a
+    general endpoint once it declares video support, reusing the same
+    `AiHubMixMediaProvider` a media endpoint would use."""
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db, operation=Operation.VIDEO_ANALYSIS, quality_tier=QualityTier.STANDARD
+    )
+    assert decision.selected is None
+
+    _seed_general_endpoint(db, input_modalities=["video"])
+    decision = router.route(
+        db, operation=Operation.VIDEO_ANALYSIS, quality_tier=QualityTier.STANDARD
+    )
+    assert decision.selected is not None
+    assert decision.selected.provider == "general-ep:video_analysis"
+    assert isinstance(decision.provider, AiHubMixMediaProvider)
+
+
 def test_a_configured_media_endpoint_can_serve_an_operation_the_fakes_cannot(
     db: Session,
 ) -> None:

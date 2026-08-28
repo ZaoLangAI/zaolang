@@ -92,6 +92,38 @@ def test_generation_references_enforce_ownership_and_frame_media_type(
         )
 
 
+def test_video_analysis_requires_a_video_reference_within_the_duration_cap(
+    db: Session, author: User
+) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="必须是视频"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.VIDEO_ANALYSIS,
+            params={"reference_asset_ids": [image.id]},
+        )
+
+    short_clip = _reference_asset(db, author, MediaType.VIDEO)
+    media_service.validate_generation_references(
+        db,
+        user_id=author.id,
+        operation=Operation.VIDEO_ANALYSIS,
+        params={"reference_asset_ids": [short_clip.id]},
+    )
+
+    long_clip = _reference_asset(db, author, MediaType.VIDEO)
+    long_clip.duration_ms = media_service.VIDEO_ANALYSIS_MAX_DURATION_MS + 1
+    db.flush()
+    with pytest.raises(ValidationFailed, match="不能超过 3 分钟"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.VIDEO_ANALYSIS,
+            params={"reference_asset_ids": [long_clip.id]},
+        )
+
+
 def test_provider_references_preserve_media_and_frame_roles(db: Session, author: User) -> None:
     image = _reference_asset(db, author, MediaType.IMAGE)
     video = _reference_asset(db, author, MediaType.VIDEO)
@@ -140,6 +172,38 @@ def test_an_oversized_file_is_refused(db: Session, author: User) -> None:
             checksum_sha256="0" * 64,
             purpose="avatar",
         )
+
+
+def test_video_analysis_source_accepts_video_up_to_its_own_larger_limit(
+    db: Session, author: User
+) -> None:
+    """`video_analysis_source` needs its own, bigger ceiling than
+    `generation_reference` (32MB, sized for a still image) because a
+    3-minute reference clip routinely exceeds that."""
+    with pytest.raises(ValidationFailed, match="必须是视频"):
+        media_service.presign_upload(
+            db,
+            user_id=author.id,
+            filename="frame.png",
+            mime_type="image/png",
+            size_bytes=100,
+            checksum_sha256="0" * 64,
+            purpose="video_analysis_source",
+        )
+
+    generation_reference_limit = s3.MAX_UPLOAD_BYTES["generation_reference"]
+    presigned = media_service.presign_upload(
+        db,
+        user_id=author.id,
+        filename="clip.mp4",
+        mime_type="video/mp4",
+        size_bytes=generation_reference_limit + 1,
+        checksum_sha256="0" * 64,
+        purpose="video_analysis_source",
+    )
+    assert presigned.upload_session.object_key.startswith(
+        f"{s3.PURPOSE_PREFIXES['video_analysis_source']}/{author.id}/"
+    )
 
 
 def test_the_object_key_is_scoped_to_the_owner_and_purpose(db: Session, author: User) -> None:

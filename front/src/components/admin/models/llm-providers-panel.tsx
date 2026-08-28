@@ -15,6 +15,7 @@ import { dollarsToMicroUsd, microUsdToDollars } from '@/lib/admin/micro-usd';
 import { formatTokenCount, parseTokenCount } from '@/lib/admin/token-count';
 import { cn } from '@/lib/cn';
 import {
+  GENERAL_INPUT_MODALITIES,
   MEDIA_INPUT_MODALITIES,
   MEDIA_OUTPUT_MODALITIES,
   MEDIA_PROTOCOLS,
@@ -27,6 +28,7 @@ import {
   operationLabelKey,
 } from '@/lib/admin/operations';
 import type {
+  GeneralInputModality,
   MediaInputModality,
   MediaOutputModality,
   MediaProtocol,
@@ -169,7 +171,7 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     api_key: '',
     kind,
     model: '',
-    input_modalities: [],
+    input_modalities: kind === 'general' ? ['text'] : [],
     output_modalities: [],
     protocol: 'openai',
     role: !hasPrimary ? 'primary' : 'backup',
@@ -262,7 +264,10 @@ function buildUpsertPayload(form: EndpointFormState) {
     role: form.role,
     backup_order: Number(form.backup_order),
     model: form.model.trim(),
-    input_modalities: form.kind === 'media' ? form.input_modalities : [],
+    // Both kinds send their own input-modality selection now — the server
+    // auto-injects "text" for general regardless, so this only needs to
+    // reflect what's shown to the admin.
+    input_modalities: form.input_modalities,
     output_modalities: form.kind === 'media' ? form.output_modalities : [],
     protocol: form.kind === 'media' ? form.protocol : null,
     max_concurrency: Number(form.max_concurrency),
@@ -711,6 +716,12 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
 
             {editing.kind === 'general' ? (
               <>
+                <GeneralModalitySelector
+                  inputModalities={editing.input_modalities as GeneralInputModality[]}
+                  onChange={(next) =>
+                    setEditing((current) => current && { ...current, input_modalities: next })
+                  }
+                />
                 <Select
                   layout="inline"
                   label={t('nodeRole')}
@@ -1099,6 +1110,62 @@ function ModalitySelector({
   );
 }
 
+/** Input-only modality picker for `kind="general"` endpoints: "text" is
+ * always on (a chat endpoint always reads text) and locked, "image" is a
+ * declarative label only, "video" additionally makes the endpoint a
+ * `video_analysis` candidate — surfaced here so the admin sees the direct
+ * effect of the toggle. Deliberately not `ModalitySelector`: that component's
+ * two-column input/output grid and "derived generation capabilities" preview
+ * are media-endpoint concepts that don't apply here. */
+function GeneralModalitySelector({
+  inputModalities,
+  onChange,
+}: {
+  inputModalities: GeneralInputModality[];
+  onChange: (next: GeneralInputModality[]) => void;
+}) {
+  const t = useTranslations('adminProviders');
+  const supportsVideo = inputModalities.includes('video');
+
+  const toggle = (modality: GeneralInputModality) => {
+    if (modality === 'text') return;
+    const next = inputModalities.includes(modality)
+      ? inputModalities.filter((item) => item !== modality)
+      : [...inputModalities, modality];
+    onChange(next);
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+      <p className="text-xs leading-relaxed text-muted">{t('generalModalitiesHint')}</p>
+      <div className="flex flex-col rounded-[var(--radius-sm)] border border-border">
+        {GENERAL_INPUT_MODALITIES.map((modality) => {
+          const label = t(MODALITY_LABEL_KEYS[modality]);
+          return (
+            <div
+              key={modality}
+              className="flex items-center justify-between gap-2 border-b border-border px-3 py-2 last:border-b-0"
+            >
+              <span className="text-sm text-text">{label}</span>
+              <InlineToggle
+                label={label}
+                checked={modality === 'text' || inputModalities.includes(modality)}
+                disabled={modality === 'text'}
+                onChange={() => toggle(modality)}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {supportsVideo ? (
+        <div>
+          <Badge tone="neutral">{t(OPERATION_LABEL_KEYS.video_analysis)}</Badge>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ModalityGroup<M extends string>({
   title,
   options,
@@ -1302,7 +1369,9 @@ function NodeRow({
   onValidate: (endpoint: LlmProviderEndpoint) => void;
 }) {
   const t = useTranslations('adminProviders');
-  const capabilityTags = endpoint.kind === 'media' ? (endpoint.capabilities ?? []) : [];
+  // A general endpoint only ever derives `video_analysis` (declared via
+  // `input_modalities`), but shares the same badge row media endpoints use.
+  const capabilityTags = endpoint.capabilities ?? [];
   const errorLabels: Record<string, string> = {
     no_model: t('validationErrorNoModel'),
     no_capability: t('validationErrorNoCapability'),

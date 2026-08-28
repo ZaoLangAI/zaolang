@@ -435,6 +435,7 @@ def _seed_editor_flags(session: Session) -> None:
         and current.editor_ai_enabled
         and current.editor_mcp_enabled
         and current.script_studio_enabled
+        and current.video_analysis_enabled
     ):
         return
     value = current.model_dump(mode="json")
@@ -446,6 +447,7 @@ def _seed_editor_flags(session: Session) -> None:
             "editor_ai_enabled": True,
             "editor_mcp_enabled": True,
             "script_studio_enabled": True,
+            "video_analysis_enabled": True,
         }
     )
     config_service.set_value(
@@ -469,8 +471,8 @@ def main() -> None:
     if args.reset:
         print(
             "已清空业务表，但 Celery/Redis 队列未动。"
-            "请先停 worker，再执行 make dev-purge-queues"
-            "（或 redis-cli -p 6380 -n 0 FLUSHDB），然后重启 worker。",
+            "请执行 make dev-purge-queues，去掉指向已删除 job 的消息"
+            "（不要 FLUSHDB，限流键和 LLM 统计会一起没）。",
             file=sys.stderr,
         )
 

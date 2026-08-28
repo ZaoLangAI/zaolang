@@ -3,19 +3,19 @@ import { getTranslations } from 'next-intl/server';
 import { Poster } from '@/components/media/poster';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
-import type { Series } from '@/lib/api/types';
+import type { DramaSeries } from '@/lib/api/types';
 
 const VISIBLE_LIMIT = 4;
 
 /**
- * "Recent series": the quick way back into a short-drama in progress.
+ * "最近短剧": the quick way back into a drama series in progress.
  *
- * Sits above the shortform hero banner so a returning creator sees "continue
- * episode N" before "start something new". The list is already sorted by
- * the API for recent activity (`GET /v1/series`), so this only slices the
- * head rather than re-sorting.
+ * Sits above the shortform hero banner so a returning creator sees their own
+ * series before "start something new". Reads `kind=drama` series from
+ * `GET /v1/drama-series` (already sorted by `updated_at` desc), so this only
+ * slices the head rather than re-sorting.
  */
-export async function RecentSeries({ series }: { series: Series[] | null }) {
+export async function RecentSeries({ series }: { series: DramaSeries[] | null }) {
   const t = await getTranslations('createPage');
   const tActions = await getTranslations('actions');
 
@@ -27,13 +27,10 @@ export async function RecentSeries({ series }: { series: Series[] | null }) {
     <section>
       <SectionHeading
         title={t('recentSeriesTitle')}
-        description={t('recentSeriesHint')}
         action={
-          series.length > 0 ? (
-            <Link href="/create/short/studio" className="text-xs text-muted hover:text-text">
-              {tActions('viewAll')}
-            </Link>
-          ) : null
+          <Link href="/create/short" className="text-xs text-muted hover:text-text">
+            {series.length > 0 ? tActions('viewAll') : t('startSeriesLibrary')}
+          </Link>
         }
       />
 
@@ -43,10 +40,10 @@ export async function RecentSeries({ series }: { series: Series[] | null }) {
           description={t('noSeriesHint')}
           action={
             <Link
-              href="/create/short/studio"
+              href="/create/short"
               className="rounded-[var(--radius-sm)] border border-border px-4 py-2 text-sm transition-colors hover:border-border-strong hover:bg-surface-soft"
             >
-              {t('startShortformStudio')}
+              {t('startSeriesLibrary')}
             </Link>
           }
         />
@@ -57,23 +54,15 @@ export async function RecentSeries({ series }: { series: Series[] | null }) {
               key={item.id}
               className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow hover:shadow-raised"
             >
-              <Poster
-                src={item.latest_episode?.cover_url}
-                alt={item.latest_episode?.title ?? item.title}
-                aspect="video"
-              />
-              <div className="flex flex-1 flex-col p-4">
-                <h3 className="truncate text-sm font-semibold">{item.title}</h3>
-                <p className="mt-1 text-xs text-muted">
-                  {t('episodeCount', { count: item.episode_count })}
-                </p>
-                <Link
-                  href={{ pathname: '/create/short/studio', query: { seriesId: item.id } }}
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2 text-xs transition-colors hover:border-border-strong hover:bg-surface-soft"
-                >
-                  {t('continueEpisode', { number: (item.latest_episode?.episode_number ?? 0) + 1 })}
-                </Link>
-              </div>
+              <Link href={`/create/short/series/${item.id}`} className="flex flex-1 flex-col">
+                <Poster src={item.logo_url} alt={item.title} aspect="square" />
+                <div className="flex flex-1 flex-col p-4">
+                  <h3 className="truncate text-sm font-semibold">{item.title}</h3>
+                  <p className="mt-1 text-xs text-muted">
+                    {t('episodeCount', { count: item.episode_count })}
+                  </p>
+                </div>
+              </Link>
             </li>
           ))}
         </ul>

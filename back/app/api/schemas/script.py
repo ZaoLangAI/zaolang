@@ -44,6 +44,21 @@ class ScriptCreateRequest(ApiModel):
     title: str = Field(default="", max_length=60)
     idea: str = Field(min_length=1, max_length=2000)
     referenced_skill_ids: list[str] = Field(default_factory=list, max_length=5)
+    # When set, the new episode is attached to this existing `kind=drama`
+    # series (the "新增一集" entry point from a series' own detail page)
+    # instead of spinning up a brand-new series — see
+    # `script_writing_service.prepare_new_script`.
+    series_id: str | None = Field(default=None, max_length=40)
+
+
+class ScriptRetryRequest(ApiModel):
+    """Re-describes the idea for `POST /v1/scripts/{episode_id}/retry` —
+    the original text was never persisted anywhere on the episode shell
+    (see `script_writing_service.retry_new_script`), so there is nothing to
+    default this to; the caller (the empty-shell page) must ask again."""
+
+    idea: str = Field(min_length=1, max_length=2000)
+    referenced_skill_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
 class ScriptTurnRequest(ApiModel):
@@ -98,6 +113,11 @@ class ScriptTurnSummary(ApiModel):
     summary: str
     referenced_skill_ids: list[str] = Field(default_factory=list)
     created_at: dt.datetime
+    # The model's reasoning trace for this turn (empty for a turn written
+    # before this field existed, or one whose model/endpoint never produced
+    # one) — rendered as a collapsed-by-default "思考" disclosure under the
+    # turn's summary bubble, never inside the right-side script view.
+    thinking: str = ""
 
 
 class ScriptSummaryResponse(ApiModel):
@@ -116,6 +136,8 @@ class ScriptDetailResponse(ApiModel):
     status: str
     script: ScriptDocument
     turns: list[ScriptTurnSummary]
+    created_at: dt.datetime
+    updated_at: dt.datetime
 
 
 class ScriptTurnSnapshotResponse(ApiModel):

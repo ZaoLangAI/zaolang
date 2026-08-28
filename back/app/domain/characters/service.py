@@ -1,12 +1,19 @@
-"""Character library and the series that cast them.
+"""Character library: reusable cast members for generation and drama scripts.
 
 A character is a reusable cast member: a name, up to a few reference images
 and a text voice description — stored as a `CreationSkill` with
 `category=CHARACTER` rather than a bespoke table (see `CharacterView` below
-for why callers never need to know that). A series is a named cast roster
-plus the episode numbering that published `Work` rows carry, so a creator
-can ask for "the same face and voice" on episode two without retyping
-anything.
+for why callers never need to know that).
+
+The `Series(kind=cast)` roster CRUD that used to live in this module
+(`create_series`/`list_series`/`get_series_detail`/`assign_episode`/...) was
+removed with the old single-clip `ShortformStudio` it only ever served —
+short-drama series management now lives entirely under
+`app.domain.editor.service`'s `Series(kind=drama)` path (see
+`.cursor/skills/zaolang-editor-drama`). `delete_character` below still cleans
+a deleted character out of any pre-existing cast roster's `character_ids_json`
+for data hygiene, since those rows are not otherwise reachable for editing
+anymore.
 
 Nothing here talks to a TTS or face-consistency provider directly.
 `voice_description` and reference images are carried through to the job so
@@ -22,9 +29,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.domain.errors import Conflict, NotFound, ValidationFailed
+from app.domain.errors import NotFound, ValidationFailed
 from app.domain.skill_library import service as skill_library_service
-from app.models import Asset, CreationSkill, Series, Work
+from app.models import Asset, CreationSkill, Series
 from app.models.base import utcnow
 from app.models.enums import (
     CharacterViewAngle,
@@ -206,15 +213,6 @@ def _owned_character_skill(session: Session, *, user_id: str, character_id: str)
     ):
         raise NotFound("角色不存在。")
     return skill
-
-
-def _owned_series(session: Session, *, user_id: str, series_id: str) -> Series:
-    series = session.get(Series, series_id)
-    # Drama rows share this table (`kind=drama`) but are not a cast roster.
-    # Same 404 as missing: `/v1/series` must not confirm a production project.
-    if series is None or series.owner_user_id != user_id or series.kind != SeriesKind.CAST:
-        raise NotFound("系列不存在。")
-    return series
 
 
 def _validate_reference_assets(
@@ -542,131 +540,6 @@ def admin_portrait_consent_at(skill: CreationSkill) -> str | None:
     return CharacterView(skill).portrait_consent_at
 
 
-# ---- Series CRUD --------------------------------------------------------
-
-
-def create_series(
-    session: Session,
-    *,
-    user_id: str,
-    title: str,
-    description: str | None,
-    shortform_profile_key: str | None,
-) -> Series:
-    series = Series(
-        owner_user_id=user_id,
-        title=title.strip(),
-        description=(description or "").strip() or None,
-        shortform_profile_key=shortform_profile_key,
-        character_ids_json=[],
-        kind=SeriesKind.CAST,
-    )
-    session.add(series)
-    session.flush()
-    return series
-
-
-def list_series(session: Session, *, user_id: str) -> list[Series]:
-    stmt = (
-        select(Series)
-        .where(Series.owner_user_id == user_id, Series.kind == SeriesKind.CAST)
-        .order_by(Series.created_at.desc())
-    )
-    return list(session.scalars(stmt))
-
-
-@dataclass(slots=True)
-class SeriesRecency:
-    episode_count: int
-    latest_work: Work | None
-
-
-def series_recency(session: Session, *, series_ids: list[str]) -> dict[str, SeriesRecency]:
-    """Per-series episode count and most recent episode, in one query.
-
-    Ordering within each `series_id` group puts the highest episode number
-    (ties broken by publish time) first, so the first row seen per group is
-    the "latest episode" the create page's recent-series rail links into.
-    """
-    if not series_ids:
-        return {}
-    works = session.scalars(
-        select(Work)
-        .where(Work.series_id.in_(series_ids))
-        .order_by(
-            Work.series_id,
-            Work.episode_number.desc().nulls_last(),
-            Work.published_at.desc().nulls_last(),
-        )
-    )
-    result: dict[str, SeriesRecency] = {}
-    for work in works:
-        series_id = work.series_id
-        if series_id is None:
-            continue
-        info = result.get(series_id)
-        if info is None:
-            result[series_id] = SeriesRecency(episode_count=1, latest_work=work)
-        else:
-            info.episode_count += 1
-    return result
-
-
-@dataclass(slots=True)
-class SeriesDetail:
-    series: Series
-    characters: list[CharacterView]
-    episodes: list[Work]
-    next_episode_number: int
-
-
-def get_series_detail(session: Session, *, user_id: str, series_id: str) -> SeriesDetail:
-    series = _owned_series(session, user_id=user_id, series_id=series_id)
-    characters: list[CharacterView] = []
-    for character_id in series.character_ids_json:
-        skill = session.get(CreationSkill, character_id)
-        if skill is not None and skill.category == CreationSkillCategory.CHARACTER:
-            characters.append(CharacterView(skill))
-    episodes = list(
-        session.scalars(
-            select(Work)
-            .where(Work.series_id == series_id)
-            .order_by(Work.episode_number.asc().nulls_last())
-        )
-    )
-    return SeriesDetail(
-        series=series,
-        characters=characters,
-        episodes=episodes,
-        next_episode_number=_next_episode_number(episodes),
-    )
-
-
-def _next_episode_number(episodes: list[Work]) -> int:
-    numbers = [work.episode_number for work in episodes if work.episode_number is not None]
-    return max(numbers, default=0) + 1
-
-
-def add_character_to_series(
-    session: Session, *, user_id: str, series_id: str, character_id: str
-) -> Series:
-    series = _owned_series(session, user_id=user_id, series_id=series_id)
-    _owned_character_skill(session, user_id=user_id, character_id=character_id)
-    if character_id not in series.character_ids_json:
-        series.character_ids_json = [*series.character_ids_json, character_id]
-        session.flush()
-    return series
-
-
-def remove_character_from_series(
-    session: Session, *, user_id: str, series_id: str, character_id: str
-) -> Series:
-    series = _owned_series(session, user_id=user_id, series_id=series_id)
-    series.character_ids_json = [cid for cid in series.character_ids_json if cid != character_id]
-    session.flush()
-    return series
-
-
 # ---- Generation + publish wiring ----------------------------------------
 
 
@@ -710,31 +583,3 @@ def apply_character_refs(session: Session, *, user_id: str, params: dict[str, An
         if character.voice_description
     ]
     params["extra"] = extra
-
-
-def assign_episode(
-    session: Session,
-    *,
-    user_id: str,
-    work: Work,
-    series_id: str | None,
-    episode_number: int | None,
-) -> None:
-    """Called at publish time. A work with no chosen series stays standalone."""
-    if not series_id:
-        return
-
-    series = _owned_series(session, user_id=user_id, series_id=series_id)
-    if episode_number is None:
-        episode_number = get_series_detail(
-            session, user_id=user_id, series_id=series_id
-        ).next_episode_number
-
-    clash = session.scalar(
-        select(Work).where(Work.series_id == series.id, Work.episode_number == episode_number)
-    )
-    if clash is not None:
-        raise Conflict(f"第 {episode_number} 集已经存在。")
-
-    work.series_id = series.id
-    work.episode_number = episode_number

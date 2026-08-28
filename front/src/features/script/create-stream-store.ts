@@ -9,6 +9,10 @@ export interface CreateStreamState {
   episodeId: string | null;
   streaming: boolean;
   liveText: string;
+  /** The model's live reasoning trace, accumulated from `event: thinking`
+   * frames — a separate channel from `liveText`, never mixed into it (see
+   * `stream_complete`'s docstring on the backend for why). */
+  liveThinking: string;
   error: string | null;
   result: ScriptTurnCompleteEvent | null;
 }
@@ -17,6 +21,7 @@ const EMPTY_STATE: CreateStreamState = {
   episodeId: null,
   streaming: false,
   liveText: '',
+  liveThinking: '',
   error: null,
   result: null,
 };
@@ -56,6 +61,54 @@ export interface StartCreateInput {
   title: string;
   idea: string;
   referencedSkillIds: string[];
+  /** Attaches the new episode to an existing series instead of auto-creating one. */
+  seriesId?: string;
+}
+
+/**
+ * Drains one first-draft SSE stream into the shared store. Shared by
+ * `startCreate` and `startRetry` — the only difference between the two is
+ * which endpoint opens the stream and whether `episodeId` is already known
+ * going in.
+ *
+ * When the body ends without a `complete`/`error` frame (the backend closed
+ * the connection normally but never reached a terminal event — see
+ * `_turn_sse_body`'s own docstring on the backend), this clears `streaming`
+ * rather than leaving the caller spinning forever; no `error` is set, so
+ * the UI treats it the same as a first draft whose progress was lost, which
+ * is exactly what happened.
+ */
+async function drainCreateStream(
+  events: AsyncGenerator<scriptApi.ScriptStreamEvent>,
+  signal: AbortSignal,
+  onEpisodeReady?: (episodeId: string) => void,
+): Promise<void> {
+  try {
+    for await (const event of events) {
+      if (signal.aborted) return;
+      if (event.event === 'start') {
+        setState({ episodeId: event.data.episode_id });
+        onEpisodeReady?.(event.data.episode_id);
+      } else if (event.event === 'delta') {
+        setState({ liveText: state.liveText + event.data.text });
+      } else if (event.event === 'thinking') {
+        setState({ liveThinking: state.liveThinking + event.data.text });
+      } else if (event.event === 'error') {
+        setState({ streaming: false, error: event.data.message });
+        return;
+      } else if (event.event === 'complete') {
+        setState({ streaming: false, result: event.data });
+        return;
+      }
+    }
+    if (!signal.aborted) setState({ streaming: false });
+  } catch (error) {
+    if (signal.aborted) return;
+    setState({
+      streaming: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**
@@ -74,35 +127,32 @@ export function startCreate(
   controller?.abort();
   const nextController = new AbortController();
   controller = nextController;
-  state = { episodeId: null, streaming: true, liveText: '', error: null, result: null };
+  state = { episodeId: null, streaming: true, liveText: '', liveThinking: '', error: null, result: null };
   for (const listener of listeners) listener();
 
-  void (async () => {
-    try {
-      const events = scriptApi.createScript(input, nextController.signal);
-      for await (const event of events) {
-        if (nextController.signal.aborted) return;
-        if (event.event === 'start') {
-          setState({ episodeId: event.data.episode_id });
-          onEpisodeReady(event.data.episode_id);
-        } else if (event.event === 'delta') {
-          setState({ liveText: state.liveText + event.data.text });
-        } else if (event.event === 'error') {
-          setState({ streaming: false, error: event.data.message });
-          return;
-        } else if (event.event === 'complete') {
-          setState({ streaming: false, result: event.data });
-          return;
-        }
-      }
-    } catch (error) {
-      if (nextController.signal.aborted) return;
-      setState({
-        streaming: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  })();
+  void drainCreateStream(
+    scriptApi.createScript(input, nextController.signal),
+    nextController.signal,
+    onEpisodeReady,
+  );
+}
+
+/**
+ * Re-runs the first draft for an episode shell that never got a finished
+ * turn (see `retryScript`'s docstring) — reuses this exact `episode_id`
+ * instead of minting a new one, unlike `startCreate`.
+ */
+export function startRetry(episodeId: string, input: { idea: string; referencedSkillIds: string[] }): void {
+  controller?.abort();
+  const nextController = new AbortController();
+  controller = nextController;
+  state = { episodeId, streaming: true, liveText: '', liveThinking: '', error: null, result: null };
+  for (const listener of listeners) listener();
+
+  void drainCreateStream(
+    scriptApi.retryScript(episodeId, input, nextController.signal),
+    nextController.signal,
+  );
 }
 
 /**

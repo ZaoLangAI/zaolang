@@ -206,32 +206,3 @@ def test_withdraw_returns_a_published_character_to_draft(
     assert withdrawn.status_code == 200
     assert withdrawn.json()["status"] == "draft"
     assert withdrawn.json()["visibility"] == "private"
-
-
-def test_series_round_trip_with_character_casting(
-    client: TestClient, db: Session, author: User
-) -> None:
-    series = client.post(
-        "/v1/series", json={"title": "深海霓虹"}, headers=auth_header(author)
-    ).json()
-    character = client.post(
-        "/v1/characters", json={"name": "林夏"}, headers=auth_header(author)
-    ).json()
-
-    added = client.post(
-        f"/v1/series/{series['id']}/characters",
-        json={"character_id": character["id"]},
-        headers=auth_header(author),
-    )
-    assert added.status_code == 200
-    assert added.json()["character_ids"] == [character["id"]]
-
-    detail = client.get(f"/v1/series/{series['id']}", headers=auth_header(author))
-    assert detail.status_code == 200
-    assert [c["id"] for c in detail.json()["characters"]] == [character["id"]]
-
-    removed = client.delete(
-        f"/v1/series/{series['id']}/characters/{character['id']}", headers=auth_header(author)
-    )
-    assert removed.status_code == 200
-    assert removed.json()["character_ids"] == []

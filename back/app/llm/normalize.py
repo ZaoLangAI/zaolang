@@ -130,7 +130,7 @@ def normalize_completion(raw: Any, *, expect_json: bool) -> NormalizedResponse:
     if not content:
         # Reasoning-only response: the answer exists but never made it into
         # `content` because the budget ran out during thinking.
-        reasoning = _reasoning_text(message)
+        reasoning = reasoning_text(message)
         if reasoning:
             content = reasoning
             recovered = True
@@ -156,7 +156,7 @@ def normalize_completion(raw: Any, *, expect_json: bool) -> NormalizedResponse:
     )
 
 
-def _reasoning_text(message: dict[str, Any]) -> str:
+def reasoning_text(message: dict[str, Any]) -> str:
     """Collects reasoning text across the shapes the gateway returns."""
     direct = message.get("reasoning_content") or message.get("reasoning")
     if isinstance(direct, str) and direct.strip():
@@ -173,6 +173,30 @@ def _reasoning_text(message: dict[str, Any]) -> str:
         if joined:
             return joined
     return ""
+
+
+def reasoning_text_from_delta(delta: Any) -> str:
+    """Same shapes as `reasoning_text`, but from a stream `delta` object."""
+    if delta is None:
+        return ""
+    if isinstance(delta, dict):
+        return reasoning_text(delta)
+    payload: dict[str, Any] = {}
+    dumper = getattr(delta, "model_dump", None)
+    if callable(dumper):
+        try:
+            dumped = dumper()
+        except TypeError:
+            dumped = None
+        if isinstance(dumped, dict):
+            payload = dumped
+    if not payload:
+        payload = {
+            "reasoning_content": getattr(delta, "reasoning_content", None),
+            "reasoning": getattr(delta, "reasoning", None),
+            "reasoning_details": getattr(delta, "reasoning_details", None),
+        }
+    return reasoning_text(payload)
 
 
 def _to_dict(obj: Any) -> dict[str, Any]:

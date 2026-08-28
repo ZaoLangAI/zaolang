@@ -15,19 +15,28 @@ function isTerminal(status: string): boolean {
 }
 
 export interface AdminStreamedEvent {
-  sequence: number;
+  sequence?: number;
   event_type: string;
   status: string;
   progress: number;
   message: string;
   node_id?: string | null;
+  thinking?: string;
 }
+
+export interface LiveThinking {
+  nodeId: string | null;
+  text: string;
+}
+
+export const EMPTY_LIVE_THINKING: LiveThinking = { nodeId: null, text: '' };
 
 export interface AdminJobStreamState {
   events: AdminStreamedEvent[];
   detail: AdminJobDetail | null;
   connected: boolean;
   reconnecting: boolean;
+  liveThinking: LiveThinking;
 }
 
 /**
@@ -44,11 +53,13 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
   const [detail, setDetail] = useState<AdminJobDetail | null>(null);
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [liveThinking, setLiveThinking] = useState<LiveThinking>(EMPTY_LIVE_THINKING);
   const lastEventId = useRef(0);
 
   useEffect(() => {
     if (!jobId) {
       lastEventId.current = 0;
+      setLiveThinking(EMPTY_LIVE_THINKING);
       return;
     }
 
@@ -62,10 +73,10 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
       if (!latest.events?.length) return;
       const incoming = latest.events.map(toStreamedEvent);
       setEvents((current) => mergeEvents(current, incoming));
-      lastEventId.current = Math.max(
-        lastEventId.current,
-        ...incoming.map((event) => event.sequence),
-      );
+      const sequences = incoming
+        .map((event) => event.sequence)
+        .filter((sequence): sequence is number => sequence != null);
+      if (sequences.length) lastEventId.current = Math.max(lastEventId.current, ...sequences);
     };
 
     const refreshDetail = async () => {
@@ -100,6 +111,7 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
       setDetail(null);
       setConnected(false);
       setReconnecting(false);
+      setLiveThinking(EMPTY_LIVE_THINKING);
 
       const initial = await refreshDetail();
       if (initial && isTerminal(initial.status)) {
@@ -141,9 +153,30 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
             for (const frame of frames) {
               const payload = parseFrame(frame);
               if (!payload) continue;
-              lastEventId.current = Math.max(lastEventId.current, payload.sequence);
+              if (payload.event_type === 'thinking') {
+                const increment = payload.thinking ?? '';
+                const nodeId = payload.node_id ?? null;
+                if (increment) {
+                  setLiveThinking((current) => {
+                    if (current.nodeId && nodeId && current.nodeId !== nodeId) {
+                      return { nodeId, text: increment };
+                    }
+                    return { nodeId: nodeId ?? current.nodeId, text: current.text + increment };
+                  });
+                }
+                continue;
+              }
+              const sequence = payload.sequence ?? 0;
+              lastEventId.current = Math.max(lastEventId.current, sequence);
+              setLiveThinking((current) => {
+                const nodeId = payload.node_id ?? null;
+                if (current.nodeId && nodeId && current.nodeId !== nodeId) {
+                  return { nodeId, text: '' };
+                }
+                return current;
+              });
               setEvents((current) =>
-                current.some((event) => event.sequence === payload.sequence)
+                payload.sequence != null && current.some((event) => event.sequence === payload.sequence)
                   ? current
                   : [...current, payload],
               );
@@ -195,9 +228,15 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
   }, [jobId]);
 
   if (!jobId) {
-    return { events: [], detail: null, connected: false, reconnecting: false };
+    return {
+      events: [],
+      detail: null,
+      connected: false,
+      reconnecting: false,
+      liveThinking: EMPTY_LIVE_THINKING,
+    };
   }
-  return { events, detail, connected, reconnecting };
+  return { events, detail, connected, reconnecting, liveThinking };
 }
 
 function toStreamedEvent(event: {
@@ -223,9 +262,15 @@ function mergeEvents(
   incoming: AdminStreamedEvent[],
 ): AdminStreamedEvent[] {
   const bySequence = new Map<number, AdminStreamedEvent>();
-  for (const event of current) bySequence.set(event.sequence, event);
-  for (const event of incoming) bySequence.set(event.sequence, event);
-  return [...bySequence.values()].sort((left, right) => left.sequence - right.sequence);
+  for (const event of current) {
+    if (event.sequence == null) continue;
+    bySequence.set(event.sequence, event);
+  }
+  for (const event of incoming) {
+    if (event.sequence == null) continue;
+    bySequence.set(event.sequence, event);
+  }
+  return [...bySequence.values()].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
 }
 
 function parseFrame(frame: string): AdminStreamedEvent | null {

@@ -35,7 +35,7 @@ Interface language (`locale`) is **determined solely** by the user's region (`re
 
 ## Extension Points
 
-- **Add copy**: edit the relevant module fragment under `front/scripts/fragments/` (or edit all three `messages/*.json` directly) → `make messages` must pass → consume it via `useTranslations('namespace')`.
+- **Add copy**: edit the relevant module fragment under `front/scripts/fragments/` (or edit all three `messages/*.json` directly) → `make messages` must pass → consume it via `useTranslations('namespace')`. Job-progress thinking uses `jobPage.thinkingLabel` / `jobPage.thinkingLive` (also generated into iOS via `gen-strings.py`); prompt polish / editor / admin debug-chat / sandbox use the matching `thinkingLive` key in their own namespace.
 - **Add a locale**: add the value to `routing.ts`'s `locales` → create a complete message file (**never a partial translation**) → add the value to the backend `Locale` enum → check every `Intl` call and date-library language pack.
 - **Add a region**: add to `regions` + `regionCurrency` + `regionLocale` (must point at an existing locale) + the backend `Region` enum — all four together; pricing logic reads region, so confirm tier prices are defined for the new region.
 - **E2E selectors depend on Chinese copy**: changing visible `zh-CN` text breaks Playwright specs — this is **intentional**, copy is part of the contract. Update `front/e2e/` alongside any copy change.

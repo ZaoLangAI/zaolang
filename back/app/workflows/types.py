@@ -25,6 +25,11 @@ class PipelineOutcome:
     # `asset_ids[0]` when this is set. `None` for the overwhelming majority
     # of jobs that only ever make one asset; see `GenerationJob.output_asset_ids_json`.
     asset_ids: list[str] | None = None
+    # `video_analysis`'s own output: a structured text breakdown instead of
+    # an asset. Mutually exclusive with `asset_id`/`asset_ids` — this
+    # operation never registers an `Asset`. Written to
+    # `GenerationJob.analysis_result_json` by `app.workers.pipeline`.
+    result_json: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)

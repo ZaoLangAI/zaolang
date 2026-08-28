@@ -6,33 +6,20 @@ import { useSession } from '@/components/auth/session-provider';
 import {
   AudioGenerationIllustration,
   ImageCreationIllustration,
-  ImageToVideoIllustration,
-  RemixIllustration,
   ScriptIllustration,
-  ShortformIllustration,
   TextToVideoIllustration,
 } from '@/components/create/mode-illustrations';
 import {
   IconArrowRight,
-  IconImage,
   IconMessage,
   IconMic,
-  IconPhone,
-  IconRemix,
   IconSparkle,
   IconVideo,
 } from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
 
-type ModeId =
-  | 'script'
-  | 'image_creation'
-  | 'text_to_video'
-  | 'image_to_video'
-  | 'audio_generation'
-  | 'shortform'
-  | 'remix';
+type ModeId = 'script' | 'image_creation' | 'video_creation' | 'audio_generation';
 
 const MODES: Array<{
   id: ModeId;
@@ -59,20 +46,12 @@ const MODES: Array<{
     accent: 'text-primary',
   },
   {
-    id: 'text_to_video',
+    id: 'video_creation',
     icon: <IconVideo className="size-5" />,
     illustration: <TextToVideoIllustration className="size-full" />,
-    href: '/create/new?mode=text_to_video',
+    href: '/create/new?mode=video_creation',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
-  },
-  {
-    id: 'image_to_video',
-    icon: <IconImage className="size-5" />,
-    illustration: <ImageToVideoIllustration className="size-full" />,
-    href: '/create/new?mode=image_to_video',
-    tone: 'bg-amber/15 text-amber',
-    accent: 'text-amber',
   },
   {
     id: 'audio_generation',
@@ -82,26 +61,13 @@ const MODES: Array<{
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
   },
-  {
-    id: 'shortform',
-    icon: <IconPhone className="size-5" />,
-    illustration: <ShortformIllustration className="size-full" />,
-    href: '/create/short',
-    tone: 'bg-amber/15 text-amber',
-    accent: 'text-amber',
-  },
-  {
-    id: 'remix',
-    icon: <IconRemix className="size-5" />,
-    illustration: <RemixIllustration className="size-full" />,
-    href: '/discover',
-    tone: 'bg-primary/15 text-primary',
-    accent: 'text-primary',
-  },
 ];
 
 /**
- * Entry points from the create page: stills, video, audio, shortform, remix.
+ * Entry points from the create page: stills, video, audio. Short-drama
+ * management has its own dedicated entry (`ShortformHeroBanner` + the
+ * "最近短剧" section), not a card in this grid — see
+ * `.cursor/skills/zaolang-editor-drama`.
  *
  * Choosing a mode is a protected action: it goes through `requireAuth` so an
  * anonymous visitor lands back on the same mode after signing in rather than
@@ -123,27 +89,16 @@ export function CreateModeCards({ className }: { className?: string }) {
       desc: t('modeImageCreationDesc'),
       tag: t('modeImageCreationTag'),
     },
-    text_to_video: {
-      title: t('modeTextToVideoTitle'),
-      desc: t('modeTextToVideoDesc'),
-      tag: t('modeTextToVideoTag'),
-    },
-    image_to_video: {
-      title: t('modeImageToVideoTitle'),
-      desc: t('modeImageToVideoDesc'),
-      tag: t('modeImageToVideoTag'),
+    video_creation: {
+      title: t('modeVideoCreationTitle'),
+      desc: t('modeVideoCreationDesc'),
+      tag: t('modeVideoCreationTag'),
     },
     audio_generation: {
       title: t('modeAudioGenerationTitle'),
       desc: t('modeAudioGenerationDesc'),
       tag: t('modeAudioGenerationTag'),
     },
-    shortform: {
-      title: t('modeShortformTitle'),
-      desc: t('modeShortformDesc'),
-      tag: t('modeShortformTag'),
-    },
-    remix: { title: t('modeRemixTitle'), desc: t('modeRemixDesc'), tag: t('modeRemixTag') },
   };
 
   return (
@@ -173,7 +128,7 @@ export function CreateModeCards({ className }: { className?: string }) {
               <p
                 className={cn(
                   'text-[11px]',
-                  mode.id === 'text_to_video' || mode.id === 'image_creation'
+                  mode.id === 'video_creation' || mode.id === 'image_creation'
                     ? 'text-muted'
                     : 'text-amber',
                 )}
@@ -190,7 +145,7 @@ export function CreateModeCards({ className }: { className?: string }) {
                 }
                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-border px-4 py-2.5 text-sm transition-colors hover:border-border-strong hover:bg-surface-soft"
               >
-                {mode.id === 'remix' ? t('pickWork') : t('start')}
+                {t('start')}
                 <IconArrowRight className="size-4" />
               </button>
             </div>

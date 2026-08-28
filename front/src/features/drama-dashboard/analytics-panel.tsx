@@ -1,14 +1,14 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
 
-import { api } from '@/lib/api/client';
+import { Button } from '@/components/ui/button';
+import { IconRefresh } from '@/components/ui/icons';
+import { ErrorNotice } from '@/components/ui/primitives';
+import { useResource } from '@/lib/use-resource';
 
-const CHANNEL_LABEL_KEYS: Record<string, string> = {
-  douyin: 'channelDouyin',
-  kuaishou: 'channelKuaishou',
-};
+import { ChannelMetricChart, ChannelMetricChartSkeleton } from './channel-metric-chart';
+import { CHANNEL_LABEL_KEYS, WORK_CHANNELS } from './channels';
 
 interface EpisodeExternalMetric {
   channel: string;
@@ -17,6 +17,8 @@ interface EpisodeExternalMetric {
   like_count: number;
   comment_count: number;
   share_count: number;
+  finish_rate: number | null;
+  avg_play_duration_ms: number | null;
   fetched_at: string;
 }
 
@@ -25,59 +27,96 @@ interface EpisodeExternalMetric {
  * periodically off the platform's own metrics endpoint (see
  * `app.workers.tasks.pull_episode_metrics`). No manual refresh here on
  * purpose — that would need a synchronous external call in the request
- * path, which this phase deliberately avoids.
+ * path, which this phase deliberately avoids. (A failed *fetch* of already-
+ * pulled metrics can still be retried — see the `failed` branch below.)
+ * Always renders the full chart+metrics layout, even with zero data — see
+ * `ChannelMetricChart`.
  */
 export function AnalyticsPanel({ workId }: { workId: string }) {
   const t = useTranslations('editor');
-  const [metrics, setMetrics] = useState<EpisodeExternalMetric[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const tActions = useTranslations('actions');
+  const resource = useResource<EpisodeExternalMetric[]>(`/v1/works/${workId}/metrics`);
 
-  useEffect(() => {
-    void api
-      .get<EpisodeExternalMetric[]>(`/v1/works/${workId}/metrics`)
-      .then((rows) => {
-        setMetrics(rows);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-  }, [workId]);
-
-  if (!loaded || metrics.length === 0) {
+  if (resource.status === 'idle' || resource.status === 'loading') {
     return (
       <div className="rounded-[var(--radius-md)] border border-border bg-surface p-4">
         <h3 className="text-sm font-semibold">{t('analyticsPanelTitle')}</h3>
-        <p className="mt-2 text-xs text-muted">{t('analyticsEmpty')}</p>
+        <div className="mt-2">
+          <ChannelMetricChartSkeleton channelCount={WORK_CHANNELS.length} />
+        </div>
       </div>
     );
   }
 
+  if (resource.status === 'failed') {
+    return (
+      <div className="rounded-[var(--radius-md)] border border-border bg-surface p-4">
+        <h3 className="text-sm font-semibold">{t('analyticsPanelTitle')}</h3>
+        <div className="mt-2">
+          <ErrorNotice
+            title={t('analyticsLoadFailed')}
+            action={
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<IconRefresh className="size-3.5" />}
+                onClick={resource.refetch}
+              >
+                {tActions('retry')}
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const metrics = resource.data ?? [];
+
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
-      <h3 className="text-sm font-semibold">{t('analyticsPanelTitle')}</h3>
-      <ul className="flex flex-col gap-3">
-        {metrics.map((metric) => (
-          <li key={`${metric.channel}-${metric.external_post_id}`} className="text-xs">
-            <p className="font-medium">{t(CHANNEL_LABEL_KEYS[metric.channel] ?? metric.channel)}</p>
-            <div className="mt-1 grid grid-cols-4 gap-2 text-muted">
-              <span>
-                {t('analyticsViews')}: {metric.view_count}
-              </span>
-              <span>
-                {t('analyticsLikes')}: {metric.like_count}
-              </span>
-              <span>
-                {t('analyticsComments')}: {metric.comment_count}
-              </span>
-              <span>
-                {t('analyticsShares')}: {metric.share_count}
-              </span>
-            </div>
-            <p className="mt-1 text-muted">
+      <div>
+        <h3 className="text-sm font-semibold">{t('analyticsPanelTitle')}</h3>
+        {metrics.length === 0 ? (
+          <p className="mt-1 text-xs text-muted">{t('analyticsEmpty')}</p>
+        ) : null}
+      </div>
+      <ChannelMetricChart
+        channels={WORK_CHANNELS}
+        rows={metrics}
+        labelForChannel={(channel) => t(CHANNEL_LABEL_KEYS[channel] ?? channel)}
+        metricLabels={{
+          views: t('analyticsViews'),
+          likes: t('analyticsLikes'),
+          comments: t('analyticsComments'),
+          shares: t('analyticsShares'),
+        }}
+      />
+      {metrics.length > 0 ? (
+        <ul className="flex flex-col gap-1">
+          {metrics.map((metric) => (
+            <li key={`${metric.channel}-${metric.external_post_id}`} className="text-xs text-muted">
+              {t(CHANNEL_LABEL_KEYS[metric.channel] ?? metric.channel)}
+              {' · '}
               {t('analyticsLastUpdated', { time: new Date(metric.fetched_at).toLocaleString() })}
-            </p>
-          </li>
-        ))}
-      </ul>
+              {metric.finish_rate !== null ? (
+                <>
+                  {' · '}
+                  {t('analyticsFinishRate', { rate: Math.round(metric.finish_rate * 100) })}
+                </>
+              ) : null}
+              {metric.avg_play_duration_ms !== null ? (
+                <>
+                  {' · '}
+                  {t('analyticsAvgPlayDuration', {
+                    seconds: Math.round(metric.avg_play_duration_ms / 1000),
+                  })}
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

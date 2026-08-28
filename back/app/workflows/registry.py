@@ -30,6 +30,7 @@ from app.workflows.configs import (
     SafetyCheckConfig,
     SettleSuccessConfig,
     SkillContextConfig,
+    VideoAnalysisGenerateConfig,
 )
 from app.workflows.types import NodeResult, WorkflowContext
 
@@ -213,6 +214,16 @@ NODE_TYPES: dict[str, NodeSpec] = {
         "失败时不进入该节点的 failed 分支就走 retry。",
         config_schema=ProviderGenerateConfig,
         executor=nodes.execute_provider_generate,
+        output_ports=("succeeded", "retry", "failed"),
+        event_type=JobEventType.GENERATING,
+    ),
+    "video_analysis_generate": NodeSpec(
+        category="generation",
+        label="视频解析生成",
+        description="向选中的视频理解供应商发起一次解析尝试，成功后直接写入结构化解析结果并按满额结算，"
+        "不登记产出资产、不经过质量评估。",
+        config_schema=VideoAnalysisGenerateConfig,
+        executor=nodes.execute_video_analysis_generate,
         output_ports=("succeeded", "retry", "failed"),
         event_type=JobEventType.GENERATING,
     ),

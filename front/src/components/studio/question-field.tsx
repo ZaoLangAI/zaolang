@@ -6,10 +6,9 @@ import { MultiSelect, TextInput } from '@/components/ui/field';
 export type QuestionAnswer = string | string[];
 
 /**
- * The three question shapes a copy agent's follow-up can take, shared by
- * `ClarifyQuestionResponse` (pre-submission, `app/domain/shortform/clarify.py`)
- * and `JobInputQuestionView` (mid-workflow, `app/domain/jobs/input_requests.py`)
- * — same fields, two different backend callers.
+ * The three question shapes a copy agent's follow-up can take — mirrors
+ * `JobInputQuestionView` (`app/domain/jobs/input_requests.py`), the
+ * mid-workflow awaiting-input question a running job can ask.
  */
 export interface QuestionFieldQuestion {
   id: string;
@@ -22,9 +21,9 @@ export interface QuestionFieldQuestion {
 /**
  * One follow-up question rendered as whichever control its `kind` calls for.
  *
- * Pulled out of `shortform/clarify-panel.tsx` so the awaiting-input panel on
- * the job page (`job/awaiting-input-panel.tsx`) renders the exact same
- * single/multi/free-text controls rather than a second, driftable copy — the
+ * Shared by the job page's awaiting-input panel (`job/awaiting-input-panel.tsx`)
+ * so any place that renders a follow-up question uses the exact same
+ * single/multi/free-text controls rather than a driftable copy — the
  * two only differ in *when* the question is asked (before submission vs. a
  * suspended job), never in how it looks.
  */

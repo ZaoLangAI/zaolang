@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
@@ -14,6 +15,7 @@ import {
   IconBell,
   IconEye,
   IconGear,
+  IconGlobe,
   IconLock,
   IconMonitor,
   IconMoon,
@@ -29,8 +31,14 @@ import { cn } from '@/lib/cn';
 import { beginLocaleTransition } from '@/lib/locale-transition';
 import { uploadFile } from '@/lib/upload';
 
-const SECTIONS = ['profile', 'privacy', 'notifications', 'display'] as const;
+import { PlatformConnect } from './platform-connect';
+
+const SECTIONS = ['profile', 'privacy', 'notifications', 'display', 'platforms'] as const;
 type Section = (typeof SECTIONS)[number];
+
+function isSection(value: string | null): value is Section {
+  return (SECTIONS as readonly string[]).includes(value ?? '');
+}
 
 /**
  * Account settings.
@@ -49,8 +57,12 @@ export function SettingsShell({ me }: { me: Me }) {
   const pathname = usePathname();
   const { refresh } = useSession();
   const { preference, setPreference, reduceMotion, setReduceMotion } = useTheme();
+  const searchParams = useSearchParams();
 
-  const [section, setSection] = useState<Section>('profile');
+  const [section, setSection] = useState<Section>(() => {
+    const requested = searchParams.get('section');
+    return isSection(requested) ? requested : 'profile';
+  });
   const [displayName, setDisplayName] = useState(me.profile?.display_name ?? '');
   const [bio, setBio] = useState(me.profile?.bio ?? '');
   const [location, setLocation] = useState(me.profile?.location ?? '');
@@ -67,12 +79,14 @@ export function SettingsShell({ me }: { me: Me }) {
     privacy: <IconLock className="size-4" />,
     notifications: <IconBell className="size-4" />,
     display: <IconEye className="size-4" />,
+    platforms: <IconGlobe className="size-4" />,
   };
   const labels: Record<Section, string> = {
     profile: t('navProfile'),
     privacy: t('navPrivacy'),
     notifications: t('navNotifications'),
     display: t('navDisplay'),
+    platforms: t('navPlatforms'),
   };
 
   const saveProfile = async (patch: Record<string, unknown>) => {
@@ -292,6 +306,8 @@ export function SettingsShell({ me }: { me: Me }) {
             />
           </Panel>
         ) : null}
+
+        {section === 'platforms' ? <PlatformConnect /> : null}
       </div>
 
       <Dialog

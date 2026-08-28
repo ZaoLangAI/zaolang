@@ -35,6 +35,7 @@ import httpx
 
 from app.config import get_settings
 from app.domain.distribution.client_base import (
+    AccountStatsSnapshot,
     MetricsSnapshot,
     PlatformClient,
     PublishResult,
@@ -55,6 +56,10 @@ UPLOAD_INIT_URL = "https://open.douyin.com/api/douyin/v1/video/init/"
 UPLOAD_PART_URL = "https://open.douyin.com/api/douyin/v1/video/upload/"
 CREATE_VIDEO_URL = "https://open.douyin.com/api/douyin/v1/video/create_video/"
 VIDEO_DATA_URL = "https://open.douyin.com/api/douyin/v1/video/data/"
+# Guessed by analogy with the rest of this file's unverified endpoints —
+# same caveat as `UPLOAD_INIT_URL`/`UPLOAD_PART_URL`: adjust once real
+# AppKey/AppSecret exist and this can be run end-to-end.
+USER_INFO_URL = "https://open.douyin.com/oauth/userinfo/"
 
 # The publish scope — sensitive, requires separate manual review.
 PUBLISH_SCOPE = "video.create.bind"
@@ -177,7 +182,23 @@ class DouyinClient(PlatformClient):
             like_count=int(stats.get("digg_count") or 0),
             comment_count=int(stats.get("comment_count") or 0),
             share_count=int(stats.get("share_count") or 0),
+            finish_rate_bp=_finish_rate_bp(stats),
+            avg_play_duration_ms=_avg_play_duration_ms(stats),
         )
+
+    def fetch_account_stats(self, access_token: str, open_id: str) -> AccountStatsSnapshot:
+        settings = get_settings()
+        if not settings.douyin_app_key or not settings.douyin_app_secret:
+            raise PlatformNotConfigured()
+        data = self._post(
+            USER_INFO_URL,
+            {},
+            error=PlatformPublishFailed,
+            headers={"access-token": access_token},
+            params={"open_id": open_id},
+            json_body=True,
+        )
+        return AccountStatsSnapshot(follower_count=_follower_count(data))
 
     # -- internals ----------------------------------------------------------
 
@@ -227,3 +248,41 @@ def _token_bundle_from(data: dict[str, object]) -> TokenBundle:
         expires_in=int(data.get("expires_in") or 0),
         open_id=str(data.get("open_id", "")),
     )
+
+
+def _finish_rate_bp(stats: dict[str, object]) -> int | None:
+    """Basis points (0-10000), from whichever candidate key the response
+    happens to carry — neither key name is confirmed against live docs."""
+    raw = stats.get("finish_play_rate")
+    if raw is None:
+        raw = stats.get("play_over_rate")
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return round(float(raw) * 10000)
+    except (TypeError, ValueError):
+        return None
+
+
+def _avg_play_duration_ms(stats: dict[str, object]) -> int | None:
+    raw = stats.get("avg_play_duration")
+    if raw is None:
+        raw = stats.get("average_play_duration")
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _follower_count(data: dict[str, object]) -> int | None:
+    raw = data.get("follower_count")
+    if raw is None:
+        raw = data.get("fans_count")
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None

@@ -126,6 +126,14 @@ class Operation(StrEnum):
     IMAGE_TO_VIDEO = "image_to_video"
     VIDEO_TO_VIDEO = "video_to_video"
     AUDIO_GENERATION = "audio_generation"
+    # Reads an existing video (via `reference_asset_ids[0]`), writes a
+    # structured text breakdown (camera movement / scene / style prompts),
+    # not a media asset — the first `Operation` whose output modality is
+    # `text` rather than image/video/audio. See
+    # `zaolang-generation-jobs`/video-analysis feature notes: it is NOT a
+    # member of `VIDEO_OPERATIONS` (that set drives the "must specify a
+    # duration" video-generation rule, which is meaningless here).
+    VIDEO_ANALYSIS = "video_analysis"
 
 
 class QualityTier(StrEnum):
@@ -300,6 +308,7 @@ class DistributionChannel(StrEnum):
     """
 
     DOUYIN = "douyin"
+    KUAISHOU = "kuaishou"
     MANUAL_DOWNLOAD = "manual_download"
 
 
@@ -315,6 +324,13 @@ class PublicationStatus(StrEnum):
     EXPORTED = "exported"
     SUBMITTED = "submitted"
     FAILED = "failed"
+
+
+class PlatformAccountLinkStatus(StrEnum):
+    """Lifecycle of one creator's OAuth grant on an external platform."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"
 
 
 class LicenseType(StrEnum):
@@ -398,6 +414,24 @@ class SeriesKind(StrEnum):
 class SeriesStatus(StrEnum):
     ACTIVE = "active"
     ARCHIVED = "archived"
+    TRASHED = "trashed"
+
+
+class SeriesGenre(StrEnum):
+    """The short-drama genre dictionary offered as multi-select tags on a
+    `kind=drama` `Series`. Additive only — see `zaolang-data-model` invariant
+    on enum values; never rename a value once it may have been persisted."""
+
+    URBAN = "urban"
+    ANCIENT_COSTUME = "ancient_costume"
+    SWEET_ROMANCE = "sweet_romance"
+    SUSPENSE = "suspense"
+    COMEDY = "comedy"
+    FAMILY_DRAMA = "family_drama"
+    WORKPLACE = "workplace"
+    FANTASY = "fantasy"
+    ERA = "era"
+    OTHER = "other"
 
 
 class DramaEpisodeStatus(StrEnum):

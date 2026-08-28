@@ -1,54 +1,86 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { BackLink } from '@/components/ui/back-link';
-import { Button, IconButton } from '@/components/ui/button';
-import { Select, TextArea, TextInput } from '@/components/ui/field';
-import { IconTrash } from '@/components/ui/icons';
+import { Button } from '@/components/ui/button';
+import { Select, TextInput } from '@/components/ui/field';
+import {
+  IconClock,
+  IconImage,
+  IconMessage,
+  IconTrash,
+  IconUser,
+  IconWand,
+} from '@/components/ui/icons';
 import { Badge, EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import * as editorApi from '@/features/editor/api';
-import { Link } from '@/i18n/navigation';
+import * as scriptApi from '@/features/script/api';
+import { Link, useRouter } from '@/i18n/navigation';
+import type { Locale } from '@/i18n/routing';
+import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
+import type { Draft } from '@/lib/api/types';
+import { formatRelative } from '@/lib/format';
 
-import { AttachContentPicker } from './attach-content-picker';
+import { AnalyticsPanel } from './analytics-panel';
+import { DeleteEpisodeDialog } from './delete-episode-dialog';
 import { pascalCase } from './format';
+import { PublishPanel } from './publish-panel';
 
 const EPISODE_KINDS = ['main', 'trailer', 'teaser', 'bts', 'recap', 'other'] as const;
 const STATUSES = ['draft', 'production', 'published', 'archived'] as const;
-const ROLE_ORDER = ['candidate', 'reference', 'behind_the_scenes', 'final'] as const;
+const VIDEO_CONTENT_TYPES = new Set(['draft', 'work']);
+const META_SAVE_DEBOUNCE_MS = 500;
 
 /**
- * `/create/short/episodes/{episodeId}`: one episode's metadata, its content
- * links (grouped by role), its canonical work, and the cuts already made
- * from it. Cuts themselves are only ever created from a finished video job's
- * "enter editor" button — this page just lists what already exists.
+ * `/create/short/episodes/{episodeId}`: the episode's own workspace.
+ *
+ * Layout is main content + a right-hand "剧集信息" sidebar (title/kind/
+ * status, saved automatically on change — no submit button). Cut/version
+ * history no longer lists here at all; it lives inside the editor itself
+ * (`HistoryPanel`) and always resumes at the cut's current head.
+ * "关联已有素材" (manual attach-by-id) is gone — the only content this
+ * page still surfaces is the "生成的视频" candidates (auto-linked via
+ * `linkEpisodeId`) and the "最终成片" list, which is populated purely by
+ * what the editor has actually exported. Connect/publish/analytics only
+ * ever render for the one export promoted to `episode.canonical_work_id`.
+ * The old standalone "打开文案" button is gone too — its destination is
+ * now a clickable script-summary card (prompt/character/scene counts,
+ * timestamps) fetched on its own and rendered ahead of "生成的视频".
  */
 export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const t = useTranslations('editor');
   const tActions = useTranslations('actions');
+  const locale = useLocale() as Locale;
   const { status } = useSession();
   const { notify } = useToast();
+  const router = useRouter();
 
   const [episode, setEpisode] = useState<editorApi.DramaEpisode | null>(null);
   const [links, setLinks] = useState<editorApi.EpisodeContentLink[]>([]);
   const [cuts, setCuts] = useState<editorApi.EpisodeCut[]>([]);
+  const [exports, setExports] = useState<editorApi.EpisodeExport[]>([]);
+  const [script, setScript] = useState<scriptApi.ScriptDetail | null>(null);
+  const [draftDetails, setDraftDetails] = useState<Record<string, Draft>>({});
   const [loaded, setLoaded] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [enteringEditorFor, setEnteringEditorFor] = useState<string | null>(null);
+  const [settingCanonicalId, setSettingCanonicalId] = useState<string | null>(null);
+  const [clearingCanonical, setClearingCanonical] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const [title, setTitle] = useState('');
-  const [synopsis, setSynopsis] = useState('');
   const [kind, setKind] = useState('main');
   const [episodeStatus, setEpisodeStatus] = useState('draft');
-  const [savingMeta, setSavingMeta] = useState(false);
-
-  const [workIdInput, setWorkIdInput] = useState('');
-  const [settingWork, setSettingWork] = useState(false);
+  const skipNextAutoSaveRef = useRef(true);
+  const [justSaved, setJustSaved] = useState(false);
+  const savedIndicatorTimeoutRef = useRef<number | null>(null);
 
   const load = useCallback(() => {
     if (status !== 'authenticated') return;
@@ -59,8 +91,8 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     ])
       .then(([episodeRow, linkRows, cutRows]) => {
         setEpisode(episodeRow);
+        skipNextAutoSaveRef.current = true;
         setTitle(episodeRow.title);
-        setSynopsis(episodeRow.synopsis ?? '');
         setKind(episodeRow.episode_kind);
         setEpisodeStatus(episodeRow.status);
         setLinks(linkRows);
@@ -78,12 +110,149 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     load();
   }, [load]);
 
-  const refreshLinks = useCallback(() => {
+  const refreshExports = useCallback(() => {
     void editorApi
-      .listContentLinks(episodeId)
-      .then(setLinks)
+      .listEpisodeExports(episodeId)
+      .then(setExports)
       .catch(() => undefined);
   }, [episodeId]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    refreshExports();
+  }, [refreshExports, status]);
+
+  // Fetched independently from `load()`: a missing/flag-gated script must
+  // not block the rest of the episode workspace, it just hides the card.
+  useEffect(() => {
+    if (status !== 'authenticated') return;
+    void scriptApi
+      .getScript(episodeId)
+      .then(setScript)
+      .catch(() => setScript(null));
+  }, [episodeId, status]);
+
+  // Video links only carry a bare `content_ref_id`; `draft`-typed ones need
+  // their own record fetched to know the underlying asset (for "进入剪辑").
+  useEffect(() => {
+    const draftIds = links
+      .filter((link) => link.content_type === 'draft')
+      .map((link) => link.content_ref_id)
+      .filter((id) => !(id in draftDetails));
+    if (draftIds.length === 0) return;
+    void Promise.all(
+      draftIds.map((id) =>
+        api
+          .get<Draft>(`/v1/drafts/${id}`)
+          .then((draft) => [id, draft] as const)
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      setDraftDetails((current) => {
+        const next = { ...current };
+        for (const entry of results) {
+          if (entry) next[entry[0]] = entry[1];
+        }
+        return next;
+      });
+    });
+    // Only re-runs when a not-yet-fetched draft id shows up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [links]);
+
+  // Debounced auto-save: fires ~500ms after title/kind/status settle, and
+  // never on the values a fresh load just seeded (guarded by the ref reset
+  // inside `load`'s `.then`).
+  useEffect(() => {
+    if (skipNextAutoSaveRef.current) {
+      skipNextAutoSaveRef.current = false;
+      return;
+    }
+    // A fresh edit invalidates any "已保存" left over from the previous
+    // cycle — it shouldn't linger next to fields the user is changing again.
+    setJustSaved(false);
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) return;
+    const handle = window.setTimeout(() => {
+      void editorApi
+        .updateEpisode(episodeId, {
+          title: trimmedTitle,
+          episode_kind: kind,
+          status: episodeStatus,
+        })
+        .then((updated) => {
+          setEpisode(updated);
+          setJustSaved(true);
+          if (savedIndicatorTimeoutRef.current) window.clearTimeout(savedIndicatorTimeoutRef.current);
+          savedIndicatorTimeoutRef.current = window.setTimeout(() => setJustSaved(false), 2000);
+        })
+        .catch((error: unknown) => {
+          notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+        });
+    }, META_SAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, kind, episodeStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (savedIndicatorTimeoutRef.current) window.clearTimeout(savedIndicatorTimeoutRef.current);
+    };
+  }, []);
+
+  const enterEditor = (link: editorApi.EpisodeContentLink) => {
+    const draftIdParam = link.content_type === 'draft' ? link.content_ref_id : null;
+    const suffix = draftIdParam ? `?draftId=${encodeURIComponent(draftIdParam)}` : '';
+    const existingCut = cuts[0];
+    if (existingCut) {
+      router.push(`/studio-editor/${existingCut.id}${suffix}`);
+      return;
+    }
+    const assetId =
+      link.content_type === 'draft' ? (draftDetails[link.content_ref_id]?.output_asset_id ?? null) : null;
+    if (!assetId) {
+      notify(t('enterEditorNoAsset'), 'error');
+      return;
+    }
+    setEnteringEditorFor(link.id);
+    void editorApi
+      .createCutFromAsset(episodeId, { asset_id: assetId })
+      .then((cut) => {
+        router.push(`/studio-editor/${cut.id}${suffix}`);
+      })
+      .catch((error: unknown) => {
+        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+      })
+      .finally(() => setEnteringEditorFor(null));
+  };
+
+  const setFinalCut = (workId: string) => {
+    setSettingCanonicalId(workId);
+    void editorApi
+      .setCanonicalWork(episodeId, workId)
+      .then((updated) => {
+        setEpisode(updated);
+        notify(t('canonicalWorkSet'), 'success');
+      })
+      .catch((error: unknown) => {
+        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+      })
+      .finally(() => setSettingCanonicalId(null));
+  };
+
+  const clearFinalCut = () => {
+    setClearingCanonical(true);
+    void editorApi
+      .setCanonicalWork(episodeId, null)
+      .then((updated) => {
+        setEpisode(updated);
+        notify(t('canonicalWorkCleared'), 'success');
+      })
+      .catch((error: unknown) => {
+        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+      })
+      .finally(() => setClearingCanonical(false));
+  };
 
   if (status === 'anonymous') return <SignInPrompt description={t('signInHint')} />;
   if (status === 'loading' || !loaded) {
@@ -99,219 +268,235 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     );
   }
 
-  const saveMeta = (event: React.FormEvent) => {
-    event.preventDefault();
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) return;
-    setSavingMeta(true);
-    void editorApi
-      .updateEpisode(episodeId, {
-        title: trimmedTitle,
-        synopsis: synopsis.trim() ? synopsis.trim() : undefined,
-        episode_kind: kind,
-        status: episodeStatus,
-      })
-      .then((updated) => {
-        setEpisode(updated);
-        notify(t('episodeSaveSuccess'), 'success');
-      })
-      .catch((error: unknown) => {
-        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
-      })
-      .finally(() => setSavingMeta(false));
-  };
-
-  const removeLink = (linkId: string) => {
-    void editorApi
-      .deleteContentLink(episodeId, linkId)
-      .then(() => {
-        setLinks((current) => current.filter((link) => link.id !== linkId));
-        notify(t('linkDeleted'), 'success');
-      })
-      .catch((error: unknown) => {
-        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
-      });
-  };
-
-  const submitCanonicalWork = (event: React.FormEvent) => {
-    event.preventDefault();
-    const workId = workIdInput.trim();
-    if (!workId) return;
-    setSettingWork(true);
-    void editorApi
-      .setCanonicalWork(episodeId, workId)
-      .then((updated) => {
-        setEpisode(updated);
-        setWorkIdInput('');
-        notify(t('canonicalWorkSet'), 'success');
-        refreshLinks();
-      })
-      .catch((error: unknown) => {
-        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
-      })
-      .finally(() => setSettingWork(false));
-  };
-
-  const clearCanonicalWork = () => {
-    setSettingWork(true);
-    void editorApi
-      .setCanonicalWork(episodeId, null)
-      .then((updated) => {
-        setEpisode(updated);
-        notify(t('canonicalWorkCleared'), 'success');
-      })
-      .catch((error: unknown) => {
-        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
-      })
-      .finally(() => setSettingWork(false));
-  };
-
-  const groupedLinks = new Map<string, editorApi.EpisodeContentLink[]>();
-  for (const link of links) {
-    const list = groupedLinks.get(link.role) ?? [];
-    list.push(link);
-    groupedLinks.set(link.role, list);
-  }
-
-  const trimmedTitle = title.trim();
+  const videoLinks = links.filter((link) => VIDEO_CONTENT_TYPES.has(link.content_type));
+  const scriptDoc = script?.script;
+  const mainPrompt = script?.turns[0]?.user_message ?? '';
+  const hasScriptContent = Boolean(
+    scriptDoc &&
+      ((script?.turns.length ?? 0) > 0 ||
+        scriptDoc.title ||
+        scriptDoc.logline ||
+        scriptDoc.characters.length > 0 ||
+        scriptDoc.scenes.length > 0),
+  );
+  // `script` fetched fine but has no turns yet: either its first draft is
+  // still streaming (in this tab or another) or failed outright — either
+  // way there's something to click into and continue/retry, unlike a
+  // script studio that's flag-gated off entirely (`script === null`),
+  // which keeps the generic `scriptSummaryEmpty` copy below.
+  const scriptPending = script !== null && !hasScriptContent;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <BackLink href={`/create/short/series/${episode.series_id}`}>{t('backToSeries')}</BackLink>
 
-      <section>
-        <SectionHeading title={t('episodeMetaTitle')} />
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={saveMeta}>
-          <TextInput
-            label={t('episodeTitleFieldLabel')}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            disabled={savingMeta}
-          />
-          <Select
-            label={t('episodeKindFieldLabel')}
-            value={kind}
-            onChange={(event) => setKind(event.target.value)}
-            options={EPISODE_KINDS.map((value) => ({
-              value,
-              label: t(`episodeKind${pascalCase(value)}`),
-            }))}
-            disabled={savingMeta}
-          />
-          <Select
-            label={t('episodeStatusFieldLabel')}
-            value={episodeStatus}
-            onChange={(event) => setEpisodeStatus(event.target.value)}
-            options={STATUSES.map((value) => ({ value, label: t(`status${pascalCase(value)}`) }))}
-            disabled={savingMeta}
-          />
-          <div className="sm:col-span-2">
-            <TextArea
-              label={t('episodeSynopsisFieldLabel')}
-              value={synopsis}
-              onChange={(event) => setSynopsis(event.target.value)}
-              disabled={savingMeta}
+      <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
+        <aside className="order-1 flex flex-col gap-4 lg:order-2 lg:sticky lg:top-6 lg:self-start">
+          <section className="flex flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4">
+            <SectionHeading
+              title={t('episodeMetaTitle')}
+              action={justSaved ? <span className="text-xs text-muted">{tActions('saved')}</span> : null}
             />
-          </div>
-          <div className="sm:col-span-2">
-            <Button type="submit" loading={savingMeta} disabled={!trimmedTitle}>
-              {tActions('save')}
+            <TextInput
+              label={t('episodeTitleFieldLabel')}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+            <Select
+              label={t('episodeKindFieldLabel')}
+              value={kind}
+              onChange={(event) => setKind(event.target.value)}
+              options={EPISODE_KINDS.map((value) => ({
+                value,
+                label: t(`episodeKind${pascalCase(value)}`),
+              }))}
+            />
+            <Select
+              label={t('episodeStatusFieldLabel')}
+              value={episodeStatus}
+              onChange={(event) => setEpisodeStatus(event.target.value)}
+              options={STATUSES.map((value) => ({ value, label: t(`status${pascalCase(value)}`) }))}
+            />
+            <Button
+              size="sm"
+              variant="danger"
+              icon={<IconTrash className="size-3.5" />}
+              disabled={cuts.length > 0}
+              title={cuts.length > 0 ? t('deleteEpisodeBlockedHasCuts') : undefined}
+              onClick={() => setDeleteOpen(true)}
+            >
+              {t('deleteEpisodeAction')}
             </Button>
-          </div>
-        </form>
-      </section>
+          </section>
+        </aside>
 
-      <section>
-        <SectionHeading title={t('contentLinksTitle')} description={t('contentLinksHint')} />
-        {links.length === 0 ? (
-          <EmptyState title={t('contentLinksEmpty')} />
-        ) : (
-          <div className="flex flex-col gap-4">
-            {ROLE_ORDER.filter((role) => groupedLinks.has(role)).map((role) => (
-              <div key={role}>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-                  {t(`role${pascalCase(role)}`)}
-                </p>
-                <ul className="flex flex-col gap-2">
-                  {groupedLinks.get(role)!.map((link) => (
-                    <li
-                      key={link.id}
-                      className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3"
-                    >
-                      <span className="min-w-0 truncate text-sm">
-                        {t(`contentType${pascalCase(link.content_type)}`)} · {link.content_ref_id}
-                      </span>
-                      <IconButton label={t('deleteLinkAction')} onClick={() => removeLink(link.id)}>
-                        <IconTrash className="size-4" />
-                      </IconButton>
-                    </li>
-                  ))}
-                </ul>
+        <div className="order-2 flex flex-col gap-8 lg:order-1">
+          <Link
+            href={`/create/script/${episode.id}`}
+            className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4 transition-colors hover:border-border-strong hover:bg-surface-soft"
+          >
+            {hasScriptContent && script && scriptDoc ? (
+              <>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <IconMessage className="size-4 text-muted" />
+                  <span className="truncate">{scriptDoc.title || episode.title}</span>
+                </div>
+                {mainPrompt ? (
+                  <p className="line-clamp-2 text-sm text-muted">
+                    {t('scriptSummaryPromptLabel')}：{mainPrompt}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-4 text-xs text-muted">
+                  <span className="inline-flex items-center gap-1.5">
+                    <IconUser className="size-3.5" />
+                    {t('scriptSummaryCharacterCount', { count: scriptDoc.characters.length })}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <IconImage className="size-3.5" />
+                    {t('scriptSummarySceneCount', { count: scriptDoc.scenes.length })}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <IconClock className="size-3.5" />
+                    {t('scriptSummaryCreatedAt', { time: formatRelative(script.created_at, locale) })}
+                    {' · '}
+                    {t('scriptSummaryUpdatedAt', { time: formatRelative(script.updated_at, locale) })}
+                  </span>
+                </div>
+              </>
+            ) : scriptPending ? (
+              <div className="flex items-center gap-2 text-sm text-muted">
+                <IconMessage className="size-4" />
+                {t('scriptSummaryPending')}
               </div>
-            ))}
-          </div>
-        )}
-        <div className="mt-4">
-          <AttachContentPicker episodeId={episodeId} onLinked={refreshLinks} />
-        </div>
-      </section>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-muted">
+                <IconMessage className="size-4" />
+                {t('scriptSummaryEmpty')}
+              </div>
+            )}
+          </Link>
 
-      <section>
-        <SectionHeading title={t('canonicalWorkTitle')} description={t('canonicalWorkHint')} />
-        {episode.canonical_work_id ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3">
-            <Link
-              href={`/work/${episode.canonical_work_id}`}
-              className="min-w-0 truncate text-sm text-primary hover:underline"
-            >
-              {episode.canonical_work_id}
-            </Link>
-            <Button size="sm" variant="secondary" loading={settingWork} onClick={clearCanonicalWork}>
-              {t('canonicalWorkClear')}
-            </Button>
-          </div>
-        ) : null}
-        {episode.canonical_work_id ? null : (
-          <>
-            <p className="mb-3 text-sm text-muted">{t('canonicalWorkEmpty')}</p>
-            <form
-              className="flex flex-col gap-3 sm:flex-row sm:items-end"
-              onSubmit={submitCanonicalWork}
-            >
-              <TextInput
-                label={t('canonicalWorkInputLabel')}
-                value={workIdInput}
-                onChange={(event) => setWorkIdInput(event.target.value)}
-                disabled={settingWork}
-              />
-              <Button type="submit" loading={settingWork} disabled={!workIdInput.trim()}>
-                {t('canonicalWorkSubmit')}
-              </Button>
-            </form>
-          </>
-        )}
-      </section>
+          <section>
+            <SectionHeading title={t('generatedVideosTitle')} description={t('generatedVideosHint')} />
+            {videoLinks.length === 0 ? (
+              <p className="text-sm text-muted">{t('generatedVideosEmpty')}</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {videoLinks.map((link) => (
+                  <li
+                    key={link.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3"
+                  >
+                    <span className="min-w-0 truncate text-sm">
+                      {t(`contentType${pascalCase(link.content_type)}`)} · {link.content_ref_id}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={<IconWand className="size-3.5" />}
+                      loading={enteringEditorFor === link.id}
+                      onClick={() => enterEditor(link)}
+                    >
+                      {t('enterEditorAction')}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-      <section>
-        <SectionHeading title={t('cutsTitle')} />
-        {cuts.length === 0 ? (
-          <p className="text-sm text-muted">{t('cutsEmptyHint')}</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {cuts.map((cut) => (
-              <li key={cut.id}>
+          <section>
+            <SectionHeading title={t('finalCutsTitle')} description={t('finalCutsHint')} />
+            {exports.length === 0 ? (
+              <p className="text-sm text-muted">{t('finalCutsEmpty')}</p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {exports.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3"
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate text-sm">
+                        {item.profile_key} · {item.width}×{item.height} · {item.format}
+                      </span>
+                      <Badge tone={item.status === 'succeeded' ? 'success' : item.status === 'failed' ? 'danger' : 'neutral'}>
+                        {t(`exportStatus${pascalCase(item.status)}`)}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.output_url ? (
+                        <a
+                          href={item.output_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-border px-3 py-1.5 text-xs transition-colors hover:border-border-strong hover:bg-surface-soft"
+                        >
+                          {t('finalCutDownloadAction')}
+                        </a>
+                      ) : null}
+                      {item.is_canonical ? (
+                        <>
+                          <Badge tone="success">{t('finalCutCurrentBadge')}</Badge>
+                          <Button size="sm" variant="ghost" loading={clearingCanonical} onClick={clearFinalCut}>
+                            {t('canonicalWorkClear')}
+                          </Button>
+                        </>
+                      ) : item.published_work_id ? (
+                        <Button
+                          size="sm"
+                          loading={settingCanonicalId === item.published_work_id}
+                          onClick={() => setFinalCut(item.published_work_id!)}
+                        >
+                          {t('finalCutSetAction')}
+                        </Button>
+                      ) : item.bound_draft_id ? (
+                        <Link
+                          href={`/publish/${item.bound_draft_id}`}
+                          className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-border px-3 py-1.5 text-xs transition-colors hover:border-border-strong hover:bg-surface-soft"
+                        >
+                          {t('finalCutPublishFirstAction')}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted">{t('finalCutDownloadOnlyHint')}</span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {episode.canonical_work_id ? (
+            <section>
+              <SectionHeading title={t('connectPublishTitle')} description={t('connectPublishHint')} />
+              <p className="mb-3 text-xs text-muted">
+                {t('connectPublishSettingsHint')}{' '}
                 <Link
-                  href={`/create/short/${cut.id}`}
-                  className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong hover:bg-surface-soft"
+                  href={{ pathname: '/profile/settings', query: { section: 'platforms' } }}
+                  className="text-primary underline"
                 >
-                  <span className="truncate text-sm font-medium">{cut.name}</span>
-                  <Badge tone="neutral">{cut.status}</Badge>
+                  {t('connectPublishSettingsLink')}
                 </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PublishPanel workId={episode.canonical_work_id} />
+                <AnalyticsPanel workId={episode.canonical_work_id} />
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </div>
+
+      <DeleteEpisodeDialog
+        episodeId={episode.id}
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => {
+          setDeleteOpen(false);
+          router.push(`/create/short/series/${episode.series_id}`);
+        }}
+      />
     </div>
   );
 }

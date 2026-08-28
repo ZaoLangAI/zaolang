@@ -100,6 +100,33 @@ def test_the_polish_slot_asks_for_its_own_budget_and_creativity(
     assert captured["temperature"] == copywriter.ENHANCE_TEMPERATURE
 
 
+def test_the_stream_polish_slot_asks_for_its_own_budget_and_creativity(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The HTTP path is `stream_enhance_prompt`, not `enhance_prompt` —
+    losing the slot overrides here is what sent live polishes out at the
+    binding default (0.2 / no JSON mode) and left thinking-only replies
+    unparseable."""
+    captured: dict[str, object] = {}
+    real_stream = llm_client.stream_complete
+
+    def capture(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_stream(**kwargs)
+
+    monkeypatch.setattr(llm_client, "stream_complete", capture)
+    chunks, finish = copywriter.stream_enhance_prompt(
+        db, prompt="女孩在海边", max_length=600, user_id=author.id
+    )
+    list(chunks)
+    finish(db)
+
+    assert captured["max_tokens"] == copywriter.ENHANCE_MAX_TOKENS
+    assert captured["temperature"] == copywriter.ENHANCE_TEMPERATURE
+    assert captured["expect_json"] is True
+    assert captured["is_usable"] is copywriter._enhance_text_is_usable
+
+
 def test_enhance_routes_to_the_asset_kinds_dedicated_agent(db: Session, author: User) -> None:
     """A `character`/`scene`/`cover` polish must land on that bucket's agent,
     not the role's ordinary default — the whole point of separate agent
@@ -210,6 +237,105 @@ def test_the_prompt_context_asset_kind_reaches_the_copy_agent(db: Session, autho
     run = db.get(AgentRun, latest_run_id)
     assert run is not None
     assert run.agent_profile_id == specific.id
+
+
+def test_stream_enhance_routes_to_the_asset_kinds_dedicated_agent(
+    db: Session, author: User
+) -> None:
+    """The live button is the SSE path — routing through `enhance_prompt`
+    alone would miss a regression that only hits `stream_enhance_prompt`."""
+    specific = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-character-stream",
+        display_name="角色润色 · 流式",
+        default_for_asset_kind="character",
+    )
+    chunks, finish = copywriter.stream_enhance_prompt(
+        db,
+        prompt="女孩在海边",
+        max_length=600,
+        operation="text_to_image",
+        asset_kind="character",
+        user_id=author.id,
+    )
+    list(chunks)
+    outcome = finish(db)
+    assert outcome.degraded is False
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.agent_profile_id == specific.id
+    assert run.degraded is False
+
+
+def test_enhance_text_is_usable_requires_a_json_object() -> None:
+    assert copywriter._enhance_text_is_usable('{"prompt": "黄昏海边的女孩"}') is True
+    assert copywriter._enhance_text_is_usable('<think>先构思</think>{"prompt": "x"}') is True
+    assert copywriter._enhance_text_is_usable("先分析这段描述缺什么") is False
+    assert copywriter._enhance_text_is_usable("") is False
+
+
+@pytest.mark.real_gateway_seams
+def test_stream_enhance_retries_when_recovered_thinking_is_not_json(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The glm-5.3-flash / reasoning-model shape: first pass thinks out loud
+    with no content, recovered prose is not JSON, one budget expansion then
+    yields the polish object."""
+    calls = 0
+    payload = (
+        '{"detail_level": "sparse", "feedback": "补主体与光线", '
+        '"prompt": "黄昏海边的女孩，逆光剪影", "dimensions": [], "additions": ["逆光剪影"]}'
+    )
+
+    def _stream_gateway(**_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield llm_client.StreamDelta(reasoning="先分析这段描述缺什么", finish_reason="length")
+        else:
+            yield llm_client.StreamDelta(content=payload, finish_reason="stop")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    chunks, finish = copywriter.stream_enhance_prompt(
+        db, prompt="女孩在海边", max_length=600, user_id=author.id
+    )
+    drained = list(chunks)
+    outcome = finish(db)
+
+    assert calls == 2
+    assert any(chunk.kind == "thinking" for chunk in drained)
+    assert outcome.degraded is False
+    assert "女孩" in str(outcome.data["prompt"])
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.degraded is False
+
+
+@pytest.mark.real_gateway_seams
+def test_stream_enhance_marks_the_run_degraded_when_thinking_never_becomes_json(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both attempts stay reasoning-only prose — `is_usable` spends the one
+    retry, then `finish` must flip the already-written `AgentRun` so the
+    ops console matches the user's "暂时不可用"."""
+
+    def _stream_gateway(**_kwargs):  # type: ignore[no-untyped-def]
+        yield llm_client.StreamDelta(reasoning="先分析这段描述缺什么", finish_reason="length")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    chunks, finish = copywriter.stream_enhance_prompt(
+        db, prompt="女孩在海边", max_length=600, user_id=author.id
+    )
+    list(chunks)
+    outcome = finish(db)
+
+    assert outcome.degraded is True
+    run = db.get(AgentRun, outcome.agent_run_id)
+    assert run is not None
+    assert run.degraded is True
+    assert run.degrade_reason == "json_parse_failed"
+    assert run.status == "failed"
 
 
 def test_unknown_dimensions_and_duplicates_are_dropped() -> None:

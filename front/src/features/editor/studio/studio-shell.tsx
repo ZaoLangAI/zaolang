@@ -45,6 +45,7 @@ export function StudioShell({
   leaseId,
   leaseToken,
   onPlanApplied,
+  onRestore,
 }: {
   cutName: string;
   readonly: boolean;
@@ -67,6 +68,7 @@ export function StudioShell({
   leaseId: string | null;
   leaseToken: string | null;
   onPlanApplied: () => void;
+  onRestore: (revisionId: string) => void;
 }) {
   const t = useTranslations('editor');
 
@@ -123,6 +125,7 @@ export function StudioShell({
                   leaseToken={leaseToken}
                   onApply={onApply}
                   onPlanApplied={onPlanApplied}
+                  onRestore={onRestore}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>

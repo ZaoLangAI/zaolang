@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
 import { ErrorNotice } from '@/components/ui/primitives';
@@ -31,11 +32,15 @@ export function EditPlanPanel({
   const [plan, setPlan] = useState<editorApi.EditPlan | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [thinking, setThinking] = useState('');
 
   const generate = async () => {
     setBusy(true);
+    setThinking('');
     try {
-      const next = await editorApi.createEditPlan(cutId, goal);
+      const next = await editorApi.createEditPlan(cutId, goal, {
+        onThinking: (delta) => setThinking((current) => current + delta),
+      });
       setPlan(next);
       setSelected(new Set(next.commands.map((_, index) => index)));
     } catch (error) {
@@ -85,6 +90,13 @@ export function EditPlanPanel({
       <Button onClick={() => void generate()} loading={busy} disabled={disabled || !goal.trim()}>
         {t('planGenerate')}
       </Button>
+      {busy ? (
+        <LiveThinking
+          thinking={thinking}
+          label={t('thinkingLive')}
+          className="max-h-32 overflow-y-auto"
+        />
+      ) : null}
       {plan ? (
         plan.commands.length === 0 ? (
           <p className="text-xs text-muted">{t('planEmpty')}</p>

@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import {
   CHARACTER_VIEW_LABEL_KEY,
@@ -47,7 +48,10 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const router = useRouter();
   const { notify } = useToast();
 
-  const { job, events, connected, reconnecting, applyJob } = useJobStream(jobId, initial);
+  const { job, events, connected, reconnecting, liveThinking, applyJob } = useJobStream(
+    jobId,
+    initial,
+  );
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
@@ -347,6 +351,13 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                   {latestEvent?.message ? (
                     <p className="max-w-md text-sm text-muted">{latestEvent.message}</p>
                   ) : null}
+                  {!finished ? (
+                    <LiveThinking
+                      thinking={liveThinking.text}
+                      label={t('thinkingLive')}
+                      className="max-h-32 overflow-y-auto"
+                    />
+                  ) : null}
                 </div>
               </div>
               <div className="absolute inset-x-0 bottom-0">{progressBar}</div>
@@ -537,7 +548,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                   const latest = index === events.length - 1;
                   return (
                     <li
-                      key={event.sequence}
+                      key={event.sequence ?? `event-${index}`}
                       className={cn(
                         'flex gap-3 rounded-[var(--radius-sm)] px-1.5 py-1 text-xs',
                         latest ? 'bg-surface-soft text-text' : null,

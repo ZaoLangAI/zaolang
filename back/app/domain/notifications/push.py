@@ -44,9 +44,11 @@ from app.realtime import publisher
 logger = logging.getLogger(__name__)
 
 PROMPT_EXCERPT_MAX = 40
+SCRIPT_ERROR_EXCERPT_MAX = 200
 DRAMA_EXPORT_OPERATION = "drama_export"
 CREATION_TARGET_JOB = "generation_job"
 CREATION_TARGET_EXPORT = "editor_export"
+CREATION_TARGET_SCRIPT = "episode_script"
 
 _JOB_ACTIONABLE = frozenset(
     {
@@ -72,6 +74,11 @@ _EXPORT_RUNNING = frozenset(
         EditorExportStatus.VERIFYING,
     }
 )
+# Script generation has no persisted status enum of its own (see
+# `script_writing_service` — generation is still a single synchronous SSE
+# request, not a tracked job row); these are the plain strings
+# `sync_script_notification`'s callers pass in.
+_SCRIPT_ACTIONABLE = frozenset({"succeeded", "failed"})
 
 
 def notify(
@@ -141,6 +148,46 @@ def sync_export_notification(
         payload=export_payload(export, context),
         target_type=CREATION_TARGET_EXPORT,
         target_id=export.id,
+        bump_unread=bump,
+        dispatch_push=bump,
+    )
+
+
+def sync_script_notification(
+    session: Session,
+    *,
+    episode: DramaEpisode,
+    series: Series,
+    status: str,
+    kind: str,
+    turn_no: int | None = None,
+    error: str | None = None,
+) -> Notification:
+    """Upsert the one notification row that tracks this script's most
+    recent generation attempt (first draft, revision, or a first-draft
+    retry — all three funnel through here with `kind="draft"`/`"revise"`).
+
+    `status` is one of `"generating"`/`"succeeded"`/`"failed"` — plain
+    strings, not a persisted enum, since a script generation is still a
+    single synchronous SSE request with no tracked job row (see
+    `script_writing_service`'s module docstring); this call is the only
+    place that state briefly exists. `"generating"` never bumps unread or
+    pushes, matching the "开始生成" scope decided for this feature — only
+    `"succeeded"`/`"failed"` are actionable, same split as
+    `_JOB_ACTIONABLE`/`_EXPORT_ACTIONABLE`.
+    """
+    ntype, title_key = script_type_and_key(status)
+    bump = status in _SCRIPT_ACTIONABLE
+    return sync_creation_notification(
+        session,
+        user_id=series.owner_user_id,
+        type=ntype,
+        title_key=title_key,
+        payload=script_payload(
+            episode=episode, series=series, kind=kind, turn_no=turn_no, error=error
+        ),
+        target_type=CREATION_TARGET_SCRIPT,
+        target_id=episode.id,
         bump_unread=bump,
         dispatch_push=bump,
     )
@@ -258,6 +305,35 @@ def export_type_and_key(status: EditorExportStatus) -> tuple[NotificationType, s
     if status in _EXPORT_RUNNING:
         return NotificationType.JOB_PROGRESS, "notification.export_running"
     return NotificationType.JOB_PROGRESS, "notification.export_queued"
+
+
+def script_type_and_key(status: str) -> tuple[NotificationType, str]:
+    if status == "succeeded":
+        return NotificationType.JOB_SUCCEEDED, "notification.script_succeeded"
+    if status == "failed":
+        return NotificationType.JOB_FAILED, "notification.script_failed"
+    return NotificationType.JOB_PROGRESS, "notification.script_generating"
+
+
+def script_payload(
+    *,
+    episode: DramaEpisode,
+    series: Series,
+    kind: str,
+    turn_no: int | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "episode_id": episode.id,
+        "series_id": series.id,
+        "title": episode.title,
+        "kind": kind,
+    }
+    if turn_no is not None:
+        payload["turn_no"] = turn_no
+    if error:
+        payload["error"] = error[:SCRIPT_ERROR_EXCERPT_MAX]
+    return payload
 
 
 def job_payload(session: Session, job: GenerationJob) -> dict[str, Any]:

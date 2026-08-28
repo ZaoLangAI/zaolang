@@ -2,29 +2,38 @@
 
 import { useTranslations } from 'next-intl';
 
-import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
+import type { ScriptBlockType, ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import { EditableInlineText } from './editable-text';
 import { ScriptBlockRow, ScriptLegend } from './script-block';
 import { ScriptLinkPicker } from './script-link-picker';
 
 /** Seed prompt for a character's auto-created/updated image: the traits the
  * writer already gave it, falling back to the bare name for a character
- * with none yet rather than submitting an empty prompt. */
+ * with none yet rather than submitting an empty prompt. `traits` itself is
+ * appearance-first now (gender/age/skin tone/hair/build/attire, personality
+ * only after — see `copywriter._CHARACTER_APPEARANCE_RULE`), so this seed
+ * already reads as a character-portrait prompt rather than a personality
+ * blurb without any change needed here. */
 function characterImagePrompt(character: ScriptCharacter): string {
   return character.traits.trim() || character.name;
 }
 
 /** Seed prompt for a scene's auto-created/updated image: the heading alone
  * ("内景·咖啡馆-日") is not evocative enough on its own, so it's paired with
- * the scene's first non-empty `scene`-type block — the block reserved for
+ * every non-empty `scene`-type block in the scene, in order — not just the
+ * first one, since a scene can carry more than one pure environment
+ * description (e.g. a later lighting/weather beat) and dropping the rest
+ * left the seed prompt incomplete. `scene` is the block type reserved for
  * pure static environment description (see `copywriter._BLOCK_TYPE_RULES`).
- * Deliberately not an `action` block: those describe character movement,
+ * Deliberately never an `action` block: those describe character movement,
  * which conflicts with the scene-asset pipeline's no-people requirement
  * (`planner._ASSET_KIND_BRIEF[SCENE]`) — falling back to the bare heading
  * here is still safer than seeding a prompt with a character in it. */
 function sceneImagePrompt(scene: ScriptScene): string {
-  const env = scene.blocks.find((block) => block.type === 'scene' && block.text.trim());
-  return env ? `${scene.heading}，${env.text.trim()}` : scene.heading;
+  const envTexts = scene.blocks
+    .filter((block) => block.type === 'scene' && block.text.trim())
+    .map((block) => block.text.trim());
+  return envTexts.length ? `${scene.heading}，${envTexts.join('，')}` : scene.heading;
 }
 
 /**
@@ -103,25 +112,55 @@ function resolveBreakpointRefs(
   return { characterIds, sceneId: scene.ref_id };
 }
 
+/** One labelled section of `breakpointSegmentPrompt`'s output, in render
+ * order. `scene`'s `label` is unused — that section is always headed by the
+ * scene's own heading instead (see the `type === 'scene'` branch below). */
+const _SEGMENT_PROMPT_SECTIONS: { type: ScriptBlockType; label: string }[] = [
+  { type: 'scene', label: '' },
+  { type: 'action', label: '动作：' },
+  { type: 'camera', label: '镜头：' },
+  { type: 'dialogue', label: '台词：' },
+];
+
 /**
  * Seeds the video studio's prompt field with the segment's own copy —
  * without this, "生成视频片段" opens an empty prompt and the writer has to
- * retype what the script already says. Scene heading first for setting,
- * then every non-empty block's text in written order; a dialogue line is
- * prefixed with the speaker's name (matching how it already reads in the
- * document) since a bare line of dialogue reads as scene description
- * otherwise. Capped by `create/new/page.tsx`'s own `PROMPT_MAX_LENGTH`
- * slice, so no length handling is needed here.
+ * retype what the script already says.
+ *
+ * Grouped by block type into labelled sections (场景/动作/镜头/台词) instead
+ * of flattening every block into one "；"-joined sentence: a video generator
+ * benefits from camera direction, action and dialogue being distinguishable
+ * from each other rather than run together, and grouping (instead of
+ * dropping) every matching block per type is what keeps the seed a complete
+ * prompt when a segment has more than one block of the same type. Each
+ * section joins its own blocks with "；"; a dialogue line is still prefixed
+ * with the speaker's name (matching how it already reads in the document).
+ * Sections with no matching block are omitted entirely. Order is fixed —
+ * 场景 (scene heading + any `scene` blocks) sets the subject before 动作,
+ * 镜头 gives the camera instruction, 台词 comes last, matching how a video
+ * prompt is usually read. Capped by `create/new/page.tsx`'s own
+ * `PROMPT_MAX_LENGTH` slice, so no length handling is needed here.
  */
 function breakpointSegmentPrompt(scene: ScriptScene, breakpointBlockIndex: number): string {
-  const parts = breakpointSegmentBlocks(scene, breakpointBlockIndex)
-    .filter((block) => block.text.trim())
-    .map((block) =>
-      block.type === 'dialogue' && block.character
-        ? `${block.character}：${block.text.trim()}`
-        : block.text.trim(),
-    );
-  return [scene.heading, ...parts].join('；');
+  const blocks = breakpointSegmentBlocks(scene, breakpointBlockIndex).filter((block) =>
+    block.text.trim(),
+  );
+  const sections = _SEGMENT_PROMPT_SECTIONS.map(({ type, label }) => {
+    const texts = blocks
+      .filter((block) => block.type === type)
+      .map((block) =>
+        type === 'dialogue' && block.character
+          ? `${block.character}：${block.text.trim()}`
+          : block.text.trim(),
+      );
+    // 场景 always renders (the heading alone is still a usable seed), every
+    // other section is dropped entirely when this segment has no such block.
+    if (type === 'scene') {
+      return texts.length ? `${scene.heading}，${texts.join('；')}` : scene.heading;
+    }
+    return texts.length ? `${label}${texts.join('；')}` : null;
+  }).filter((section): section is string => section !== null);
+  return sections.join('\n');
 }
 
 /**

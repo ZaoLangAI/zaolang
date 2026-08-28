@@ -42,21 +42,6 @@ export function TextToVideoIllustration(props: IllustrationProps) {
   );
 }
 
-/** A still photo pivoting into motion, with a sweep arc between the two. */
-export function ImageToVideoIllustration(props: IllustrationProps) {
-  return (
-    <Scene {...props}>
-      <rect x="16" y="22" width="52" height="52" rx="6" fillOpacity="0.06" fill="currentColor" />
-      <circle cx="34" cy="38" r="5" />
-      <path d="M22 62 36 48l8 8 8-8 8 6" />
-      <path d="M78 48c8-14 22-14 30-2" strokeDasharray="4 5" />
-      <path d="M104 40 108 47 100 47Z" fill="currentColor" />
-      <rect x="98" y="20" width="46" height="52" rx="6" fillOpacity="0.06" fill="currentColor" />
-      <path d="M112 34 132 46 112 58Z" fill="currentColor" strokeLinejoin="round" />
-    </Scene>
-  );
-}
-
 /** A character bust portrait beside a small landscape frame, standing in for
  * the three asset purposes this card fans out to (character views, scene
  * stills, covers) once inside the studio. */
@@ -132,6 +117,24 @@ export function ShortformIllustration(props: IllustrationProps) {
 }
 
 
+/** A film frame with a magnifying glass over it, standing in for "analyse
+ * an existing video" rather than "generate a new one" (`TextToVideoIllustration`
+ * above uses the same frame shape with a play mark instead). */
+export function VideoAnalysisIllustration(props: IllustrationProps) {
+  return (
+    <Scene {...props}>
+      <rect x="14" y="16" width="92" height="68" rx="6" fillOpacity="0.06" fill="currentColor" />
+      <path d="M14 32h92M36 16v16M64 16v16M92 16v16" strokeOpacity="0.35" />
+      <path d="M28 66 44 48l10 9 16-18 14 12" strokeOpacity="0.55" />
+      <g>
+        <circle cx="112" cy="62" r="17" fillOpacity="0.08" fill="currentColor" />
+        <circle cx="112" cy="62" r="17" />
+        <path d="M124 74 138 88" strokeWidth="4" />
+      </g>
+    </Scene>
+  );
+}
+
 export function ScriptIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>
@@ -163,24 +166,6 @@ export function ScriptIllustration(props: IllustrationProps) {
         fill="currentColor"
       />
       <path d="M114 32h20M114 40h14" strokeOpacity="0.6" />
-    </Scene>
-  );
-}
-
-/** Two frames branching from a shared root, tracing where a remix came from. */
-export function RemixIllustration(props: IllustrationProps) {
-  return (
-    <Scene {...props}>
-      <rect x="16" y="38" width="44" height="34" rx="6" fillOpacity="0.08" fill="currentColor" />
-      <path d="M28 60 38 50l6 6 8-8" />
-      <path d="M60 55h16" />
-      <path d="M76 55c10 0 10-20 20-20M76 55c10 0 10 20 20 20" />
-      <rect x="96" y="20" width="44" height="30" rx="6" fillOpacity="0.06" fill="currentColor" />
-      <circle cx="110" cy="32" r="4" />
-      <path d="M100 44 112 36l6 5 8-6" />
-      <rect x="96" y="60" width="44" height="30" rx="6" fillOpacity="0.06" fill="currentColor" />
-      <circle cx="110" cy="72" r="4" />
-      <path d="M100 84 112 76l6 5 8-6" />
     </Scene>
   );
 }

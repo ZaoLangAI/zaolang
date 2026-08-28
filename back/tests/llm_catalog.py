@@ -21,6 +21,8 @@ def seed_test_llm_catalog(
     *,
     model: str = TEST_LLM_MODEL,
     endpoint_id: str = TEST_LLM_ENDPOINT_ID,
+    context_length: int = 0,
+    max_output_tokens: int = 0,
 ) -> None:
     current = config_service.get_typed(session, "llm_providers", LlmProviderConfig)
     endpoints = {
@@ -34,6 +36,8 @@ def seed_test_llm_catalog(
         "kind": "general",
         "model": model,
         "role": "primary",
+        "context_length": context_length,
+        "max_output_tokens": max_output_tokens,
     }
     config_service.set_value(
         session,

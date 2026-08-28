@@ -19,6 +19,8 @@ export async function uploadFile(
     | 'profile_cover'
     | 'consent_evidence'
     | 'learn_media'
+    | 'series_logo'
+    | 'video_analysis_source'
     | 'editor_source'
     | 'editor_export'
     | 'caption'

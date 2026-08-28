@@ -345,8 +345,9 @@ def _apply_bindings(
     different one, which is the whole point of having a backup.
 
     `max_tokens`/`temperature_milli` are deliberately not parameters here: an
-    operator no longer fills them in. A bound model gets the generic sampling
-    fallback; an unbound profile leaves both empty so runtime inherits.
+    operator no longer fills them in. Runtime takes the bound endpoint's
+    `max_output_tokens` (then the generic fallback if that field is 0);
+    leftover column values are clamped to the model's ceiling.
     """
     endpoints = config_service.get_typed(session, "llm_providers", LlmProviderConfig).endpoints
     if default_endpoint_id is not None:

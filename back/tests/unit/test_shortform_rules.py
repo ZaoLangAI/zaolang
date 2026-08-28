@@ -81,20 +81,3 @@ def test_the_rules_follow_a_reconfigured_spec(db: Session, admin: User) -> None:
     }
     with pytest.raises(ValidationFailed):
         shortform.assert_params_consistent(db, params)
-
-
-@pytest.mark.parametrize(
-    ("width", "height", "ratio", "expected"),
-    [
-        (1080, 1920, "9:16", True),
-        # Encoder rounding, not a different aspect ratio.
-        (1078, 1920, "9:16", True),
-        (1920, 1080, "9:16", False),
-        (1080, 1080, "1:1", True),
-        (1080, 1920, "not-a-ratio", False),
-    ],
-)
-def test_aspect_matching_tolerates_rounding_but_not_the_wrong_shape(
-    width: int, height: int, ratio: str, expected: bool
-) -> None:
-    assert shortform._matches_aspect(width, height, ratio) is expected

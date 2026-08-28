@@ -98,6 +98,16 @@ struct JobDetailView: View {
             if job.status.value == nil || job.progress == 0, job.status.value?.isTerminal != true {
                 Text(L10n.t("jobPage.waiting")).font(.caption).foregroundStyle(Color.zl.textMuted)
             }
+            if job.status.value?.isTerminal != true, let thinking = viewModel?.liveThinking, !thinking.isEmpty {
+                DisclosureGroup(L10n.t("jobPage.thinkingLive")) {
+                    Text(thinking)
+                        .font(.caption)
+                        .foregroundStyle(Color.zl.textMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .font(.caption.weight(.medium))
+                .accessibilityAddTraits(.updatesFrequently)
+            }
         }
     }
 

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent
+from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent, run_agent_stream
 from app.domain.editor import document as docs
+from app.llm.client import StreamChunk
+from app.llm.normalize import extract_json
 from app.models import CutRevision, EpisodeCut
 from app.models.enums import AgentName
 
@@ -88,6 +91,57 @@ def plan_timeline(
         agent_id=agent_id,
         slot=SLOT,
     )
+    return _sanitize_plan_outcome(outcome, goal=goal, max_commands=max_commands)
+
+
+def stream_plan_timeline(
+    session: Session,
+    *,
+    user_id: str,
+    cut: EpisodeCut,
+    revision: CutRevision,
+    goal: str,
+    max_commands: int = 40,
+    agent_id: str | None = None,
+) -> tuple[Iterator[StreamChunk], Callable[[Session | None], AgentOutcome]]:
+    """HTTP-SSE counterpart to `plan_timeline`."""
+    payload = {
+        "goal": goal,
+        "max_commands": max_commands,
+        "cut_id": cut.id,
+        "revision_id": revision.id,
+        "timeline": docs.timeline_summary(revision.document_json),
+    }
+    chunks, finalize = run_agent_stream(
+        session,
+        agent_name=AgentName.EDITOR_PLANNER,
+        system_prompt=SYSTEM_PROMPT,
+        user_prompt=json.dumps(payload, ensure_ascii=False),
+        user_id=user_id,
+        agent_id=agent_id,
+        slot=SLOT,
+    )
+
+    def finish(persist_session: Session | None = None) -> AgentOutcome:
+        stream = finalize(persist_session)
+        parsed = extract_json(stream.raw_text)
+        data = dict(parsed) if parsed is not None else dict(FALLBACK)
+        outcome = AgentOutcome(
+            data=data,
+            raw_text=stream.raw_text,
+            degraded=parsed is None or stream.degraded,
+            model=stream.model,
+            agent_run_id=stream.agent_run_id,
+            thinking=stream.thinking,
+        )
+        return _sanitize_plan_outcome(outcome, goal=goal, max_commands=max_commands)
+
+    return chunks, finish
+
+
+def _sanitize_plan_outcome(
+    outcome: AgentOutcome, *, goal: str, max_commands: int
+) -> AgentOutcome:
     commands = outcome.data.get("commands")
     if not isinstance(commands, list):
         outcome.data["commands"] = []

@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,7 @@ from app.domain.editor import leases as lease_service
 from app.domain.editor import state_machine
 from app.domain.editor.time import ticks_from_ms
 from app.domain.errors import (
+    Conflict,
     Forbidden,
     NotFound,
     RevisionConflict,
@@ -36,6 +37,7 @@ from app.models import (
     EditPlan,
     EpisodeContentLink,
     EpisodeCut,
+    EpisodeScriptTurn,
     GenerationJob,
     Series,
     Work,
@@ -43,6 +45,7 @@ from app.models import (
 from app.models.base import new_id, utcnow
 from app.models.enums import (
     DeliveryVariantStatus,
+    DistributionChannel,
     DramaEpisodeStatus,
     EditorCommandEventStatus,
     EditPlanStatus,
@@ -52,6 +55,7 @@ from app.models.enums import (
     EpisodeCutStatus,
     EpisodeKind,
     JobStatus,
+    SeriesGenre,
     SeriesKind,
     SeriesStatus,
 )
@@ -90,6 +94,36 @@ def require_drama_series(session: Session, *, user_id: str, series_id: str) -> S
     return series
 
 
+_VALID_GENRES = {item.value for item in SeriesGenre}
+_VALID_PLATFORMS = {item.value for item in DistributionChannel}
+
+
+def _clean_genre_tags(genre_tags: list[str] | None) -> list[str]:
+    if not genre_tags:
+        return []
+    cleaned: list[str] = []
+    for tag in genre_tags:
+        if tag not in _VALID_GENRES:
+            raise ValidationFailed(f"未知题材类型: {tag}。")
+        if tag not in cleaned:
+            cleaned.append(tag)
+    return cleaned
+
+
+def _clean_target_platforms(target_platforms: list[str] | None, *, required: bool) -> list[str]:
+    if not target_platforms:
+        if required:
+            raise ValidationFailed("请至少选择一个发布平台。")
+        return []
+    cleaned: list[str] = []
+    for platform in target_platforms:
+        if platform not in _VALID_PLATFORMS:
+            raise ValidationFailed(f"未知发布平台: {platform}。")
+        if platform not in cleaned:
+            cleaned.append(platform)
+    return cleaned
+
+
 def create_drama_series(
     session: Session,
     *,
@@ -99,7 +133,16 @@ def create_drama_series(
     default_locale: str = "zh-CN",
     shortform_profile_key: str | None = None,
     allow_external_models: bool = False,
+    english_title: str | None = None,
+    planned_episode_count: int | None = None,
+    genre_tags: list[str] | None = None,
+    target_platforms: list[str] | None = None,
+    logo_asset_id: str | None = None,
 ) -> Series:
+    if logo_asset_id:
+        logo = session.get(Asset, logo_asset_id)
+        if logo is None or logo.owner_user_id != user_id:
+            raise NotFound("logo 素材不存在。")
     series = Series(
         owner_user_id=user_id,
         title=title.strip(),
@@ -110,19 +153,238 @@ def create_drama_series(
         default_locale=default_locale,
         status=SeriesStatus.ACTIVE,
         allow_external_models=allow_external_models,
+        english_title=(english_title or "").strip() or None,
+        planned_episode_count=planned_episode_count,
+        genre_tags_json=_clean_genre_tags(genre_tags),
+        target_platforms_json=_clean_target_platforms(target_platforms, required=True),
+        logo_asset_id=logo_asset_id,
     )
     session.add(series)
     session.flush()
     return series
 
 
-def list_drama_series(session: Session, *, user_id: str) -> list[Series]:
-    stmt = (
-        select(Series)
-        .where(Series.owner_user_id == user_id, Series.kind == SeriesKind.DRAMA)
-        .order_by(Series.created_at.desc())
+def update_drama_series(
+    session: Session,
+    *,
+    user_id: str,
+    series_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    english_title: str | None = None,
+    planned_episode_count: int | None = None,
+    genre_tags: list[str] | None = None,
+    target_platforms: list[str] | None = None,
+    logo_asset_id: str | None = None,
+) -> Series:
+    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    if title is not None:
+        series.title = title.strip() or series.title
+    if description is not None:
+        series.description = description.strip() or None
+    if english_title is not None:
+        series.english_title = english_title.strip() or None
+    if planned_episode_count is not None:
+        series.planned_episode_count = planned_episode_count
+    if genre_tags is not None:
+        series.genre_tags_json = _clean_genre_tags(genre_tags)
+    if target_platforms is not None:
+        series.target_platforms_json = _clean_target_platforms(target_platforms, required=True)
+    if logo_asset_id is not None:
+        if logo_asset_id:
+            logo = session.get(Asset, logo_asset_id)
+            if logo is None or logo.owner_user_id != user_id:
+                raise NotFound("logo 素材不存在。")
+        series.logo_asset_id = logo_asset_id or None
+    session.flush()
+    return series
+
+
+def trash_drama_series(session: Session, *, user_id: str, series_id: str) -> Series:
+    """Moves a `kind=drama` series into the owner's recycle bin. Reversible,
+    and deliberately does not check for existing episodes — trashing only
+    hides the series from the default dashboard list; the episodes underneath
+    still exist and are still reachable/deletable from the (still-visible)
+    series-detail page. That episode-emptiness check belongs to
+    `purge_drama_series`, which is the actual hard delete."""
+    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    if series.status == SeriesStatus.TRASHED:
+        raise Conflict("剧集已在回收站中。")
+    series.status = SeriesStatus.TRASHED
+    series.trashed_at = utcnow()
+    session.flush()
+    return series
+
+
+def untrash_drama_series(session: Session, *, user_id: str, series_id: str) -> Series:
+    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    if series.status != SeriesStatus.TRASHED:
+        raise Conflict("只有回收站中的剧集可以恢复。")
+    series.status = SeriesStatus.ACTIVE
+    series.trashed_at = None
+    session.flush()
+    return series
+
+
+def purge_drama_series(session: Session, *, user_id: str, series_id: str) -> None:
+    """Permanently deletes a trashed series. Blocked while it still has any
+    episodes — `DramaEpisode.series_id` is `ondelete=RESTRICT`, so this check
+    is enforcing at the domain layer, with a clear message, what the database
+    would otherwise reject with an opaque IntegrityError."""
+    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    if series.status != SeriesStatus.TRASHED:
+        raise Conflict("只有回收站中的剧集可以彻底删除。")
+    episode_count = session.scalar(
+        select(func.count()).select_from(DramaEpisode).where(DramaEpisode.series_id == series.id)
     )
+    if episode_count:
+        raise ValidationFailed("该剧集下还有分集，请先删除全部分集后再彻底删除。")
+    session.delete(series)
+    session.flush()
+
+
+def list_drama_series(
+    session: Session,
+    *,
+    user_id: str,
+    q: str | None = None,
+    genre: str | None = None,
+    sort: str = "updated_at",
+    sort_dir: str = "desc",
+    status: str | None = None,
+) -> list[Series]:
+    stmt = select(Series).where(Series.owner_user_id == user_id, Series.kind == SeriesKind.DRAMA)
+    if status == SeriesStatus.TRASHED:
+        stmt = stmt.where(Series.status == SeriesStatus.TRASHED)
+    else:
+        stmt = stmt.where(Series.status != SeriesStatus.TRASHED)
+    if q:
+        needle = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(Series.title.ilike(needle), Series.english_title.ilike(needle))
+        )
+    if genre:
+        if genre not in _VALID_GENRES:
+            raise ValidationFailed(f"未知题材类型: {genre}。")
+        stmt = stmt.where(Series.genre_tags_json.contains([genre]))
+    if sort_dir not in ("asc", "desc"):
+        raise ValidationFailed(f"未知排序方向: {sort_dir}。")
+    column = Series.created_at if sort == "created_at" else Series.updated_at
+    stmt = stmt.order_by(column.asc() if sort_dir == "asc" else column.desc())
     return list(session.scalars(stmt))
+
+
+def series_stats(session: Session, *, series_ids: list[str]) -> dict[str, dict[str, int]]:
+    """Aggregate `关联文案数`/`关联视频数`/`已发布数` per series for the
+    library card list. Computed in Python rather than raw SQL aggregates —
+    a creator's own series/episode/content-link counts are small, and the
+    join across `draft.published_work_id` / `episode.canonical_work_id` /
+    `Work.is_publicly_visible` isn't expressible as a single clean
+    aggregate anyway."""
+    stats = {
+        sid: {"episode_count": 0, "script_count": 0, "video_count": 0, "published_count": 0}
+        for sid in series_ids
+    }
+    if not series_ids:
+        return stats
+    episodes = list(
+        session.scalars(select(DramaEpisode).where(DramaEpisode.series_id.in_(series_ids)))
+    )
+    episode_to_series: dict[str, str] = {}
+    for ep in episodes:
+        bucket = stats[ep.series_id]
+        bucket["episode_count"] += 1
+        if ep.script_json:
+            bucket["script_count"] += 1
+        episode_to_series[ep.id] = ep.series_id
+
+    if not episode_to_series:
+        return stats
+
+    links = list(
+        session.scalars(
+            select(EpisodeContentLink).where(
+                EpisodeContentLink.episode_id.in_(episode_to_series.keys()),
+                EpisodeContentLink.content_type.in_(
+                    [EpisodeContentType.DRAFT, EpisodeContentType.WORK]
+                ),
+            )
+        )
+    )
+    video_refs: dict[str, set[str]] = {sid: set() for sid in series_ids}
+    draft_ids: set[str] = set()
+    work_ids: set[str] = set()
+    for link in links:
+        sid = episode_to_series.get(link.episode_id)
+        if sid is None:
+            continue
+        video_refs[sid].add(f"{link.content_type}:{link.content_ref_id}")
+        if link.content_type == EpisodeContentType.DRAFT:
+            draft_ids.add(link.content_ref_id)
+        else:
+            work_ids.add(link.content_ref_id)
+    for sid, refs in video_refs.items():
+        stats[sid]["video_count"] = len(refs)
+
+    canonical_ids = {ep.canonical_work_id for ep in episodes if ep.canonical_work_id}
+    work_ids |= canonical_ids
+    drafts_by_id = (
+        {d.id: d for d in session.scalars(select(Draft).where(Draft.id.in_(draft_ids)))}
+        if draft_ids
+        else {}
+    )
+    work_ids |= {d.published_work_id for d in drafts_by_id.values() if d.published_work_id}
+    works_by_id = (
+        {w.id: w for w in session.scalars(select(Work).where(Work.id.in_(work_ids)))}
+        if work_ids
+        else {}
+    )
+
+    published_by_series: dict[str, set[str]] = {sid: set() for sid in series_ids}
+    for link in links:
+        sid = episode_to_series.get(link.episode_id)
+        if sid is None:
+            continue
+        target_work_id = None
+        if link.content_type == EpisodeContentType.WORK:
+            target_work_id = link.content_ref_id
+        elif link.content_type == EpisodeContentType.DRAFT:
+            draft = drafts_by_id.get(link.content_ref_id)
+            target_work_id = draft.published_work_id if draft else None
+        work = works_by_id.get(target_work_id) if target_work_id else None
+        if work is not None and work.is_publicly_visible:
+            published_by_series[sid].add(work.id)
+    for ep in episodes:
+        if not ep.canonical_work_id:
+            continue
+        work = works_by_id.get(ep.canonical_work_id)
+        if work is not None and work.is_publicly_visible:
+            published_by_series[ep.series_id].add(work.id)
+    for sid, ids in published_by_series.items():
+        stats[sid]["published_count"] = len(ids)
+
+    return stats
+
+
+def episodes_with_script_turns(session: Session, *, episode_ids: list[str]) -> set[str]:
+    """Which of `episode_ids` have at least one `EpisodeScriptTurn`.
+
+    Batched (one `IN` query for the whole list/detail response) rather than
+    one `EXISTS` per episode — see `api.v1.editor.episode_response`'s
+    `has_script_turns`, which flags a script-writing shell whose first
+    draft is still streaming elsewhere or failed outright (mirrors
+    `script_writing_service.list_scripts`'s own relaxed, turn-agnostic
+    filter).
+    """
+    if not episode_ids:
+        return set()
+    return set(
+        session.scalars(
+            select(EpisodeScriptTurn.episode_id)
+            .where(EpisodeScriptTurn.episode_id.in_(episode_ids))
+            .distinct()
+        )
+    )
 
 
 def create_episode(
@@ -230,6 +492,26 @@ def update_episode(
         episode.status = status
     session.flush()
     return episode
+
+
+def delete_episode(session: Session, *, user_id: str, episode_id: str) -> None:
+    """Hard-deletes an episode. Blocked while it has any `EpisodeCut` rows
+    (`ondelete=RESTRICT`) — there is no way to delete a cut in this codebase
+    today (a cut gets a revision immediately on creation, and revisions are
+    themselves RESTRICT-linked), so an episode that has entered the timeline
+    editor cannot be deleted at all, not even after removing its cuts one by
+    one. `EpisodeContentLink`/`EpisodeScriptTurn` are `ondelete=CASCADE` and
+    need no precheck. This intentionally runs its own unflagged count query
+    rather than reusing `list_cuts`, which gates on `FLAG_EDITOR` — basic
+    episode CRUD is not flag-gated (see `create_episode`'s docstring)."""
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    cut_count = session.scalar(
+        select(func.count()).select_from(EpisodeCut).where(EpisodeCut.episode_id == episode.id)
+    )
+    if cut_count:
+        raise ValidationFailed("该集已进入剪辑，暂不支持删除。")
+    session.delete(episode)
+    session.flush()
 
 
 def _content_owner_user_id(
@@ -374,11 +656,22 @@ def create_cut_from_job(
     else:
         existing = session.scalars(
             select(Series)
-            .where(Series.owner_user_id == user_id, Series.kind == SeriesKind.DRAMA)
+            .where(
+                Series.owner_user_id == user_id,
+                Series.kind == SeriesKind.DRAMA,
+                Series.status != SeriesStatus.TRASHED,
+            )
             .order_by(Series.created_at.desc())
         ).first()
+        # Auto-created fallback series (user jumped straight from a generation
+        # job into "进入剪辑" without going through the series library's
+        # create dialog) — `target_platforms` defaults to manual download
+        # only, editable later via `PATCH /v1/drama-series/{id}`.
         series = existing or create_drama_series(
-            session, user_id=user_id, title=(title or "短剧").strip() or "短剧"
+            session,
+            user_id=user_id,
+            title=(title or "短剧").strip() or "短剧",
+            target_platforms=[DistributionChannel.MANUAL_DOWNLOAD.value],
         )
     episode = create_episode(
         session,
@@ -551,6 +844,84 @@ def head_revision(session: Session, cut: EpisodeCut) -> CutRevision | None:
     if not cut.head_revision_id:
         return None
     return session.get(CutRevision, cut.head_revision_id)
+
+
+def list_revisions(session: Session, *, user_id: str, cut_id: str) -> list[CutRevision]:
+    """Newest-first revision history for the editor's own history panel —
+    this is the only place a past `CutRevision` becomes browsable; the
+    episode page no longer lists cuts at all (see `zaolang-editor-drama`)."""
+    editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
+    cut = _owned_cut(session, user_id=user_id, cut_id=cut_id)
+    stmt = (
+        select(CutRevision)
+        .where(CutRevision.cut_id == cut.id)
+        .order_by(CutRevision.revision_no.desc())
+    )
+    return list(session.scalars(stmt))
+
+
+def restore_revision(
+    session: Session,
+    *,
+    user_id: str,
+    cut_id: str,
+    revision_id: str,
+    expected_revision_id: str | None,
+    lease_id: str,
+    lease_token: str,
+) -> CutRevision:
+    """Rolls the timeline back to an earlier revision's content by writing
+    a brand-new head revision that copies it — history itself is never
+    rewritten (immutable snapshots, invariant #2), so "restore" is just
+    another editing action gated by the exact same lease + CAS check as
+    `apply_commands`, not a special-cased mutation."""
+    editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
+    cut = _owned_cut(session, user_id=user_id, cut_id=cut_id)
+    cut = session.get(EpisodeCut, cut.id, with_for_update=True) or cut
+    lease = lease_service.require_write_lease(
+        session, cut_id=cut.id, user_id=user_id, lease_id=lease_id, token=lease_token
+    )
+    target = session.get(CutRevision, revision_id)
+    if target is None or target.cut_id != cut.id:
+        raise NotFound("历史版本不存在。")
+    head = session.get(CutRevision, cut.head_revision_id) if cut.head_revision_id else None
+    if expected_revision_id != (head.id if head else None):
+        raise RevisionConflict()
+    if head is not None and target.id == head.id:
+        return head
+    document = docs.clone_document(target.document_json)
+    bindings = list(target.asset_bindings_json)
+    try:
+        revision = _persist_revision(
+            session,
+            cut=cut,
+            parent=head,
+            document=document,
+            bindings=bindings,
+            user_id=user_id,
+            command_summary={"source": "restore_revision", "restored_from": target.id},
+        )
+    except IntegrityError as error:
+        session.rollback()
+        raise RevisionConflict() from error
+    if cut.head_revision_id != (head.id if head else None):
+        raise RevisionConflict()
+    cut.head_revision_id = revision.id
+    lease.last_sequence += 1
+    lease.base_revision_id = revision.id
+    event = EditorCommandEvent(
+        lease_id=lease.id,
+        sequence=lease.last_sequence,
+        batch_id=new_id("bat"),
+        expected_revision_id=expected_revision_id,
+        result_revision_id=revision.id,
+        commands_json=[{"type": "restore_revision", "revision_id": target.id}],
+        status=EditorCommandEventStatus.APPLIED,
+        created_at=utcnow(),
+    )
+    session.add(event)
+    session.flush()
+    return revision
 
 
 def create_variants(

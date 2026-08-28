@@ -374,7 +374,6 @@ export const IconMessage = (p: IconProps) => (
   </Icon>
 );
 
-/** A trash can: a destructive, hard-delete action. */
 /** Conical flask — a connectivity probe against a live provider is an
  * experiment on the real thing, not a settings action. */
 export const IconFlask = (p: IconProps) => (
@@ -384,10 +383,21 @@ export const IconFlask = (p: IconProps) => (
   </Icon>
 );
 
+/** A trash can: moves an item to the recycle bin — reversible. */
 export const IconTrash = (p: IconProps) => (
   <Icon {...p}>
     <path d="M5 7h14M10 7V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" />
     <path d="M10 11v6M14 11v6" />
+  </Icon>
+);
+
+/** A trash can with the contents crossed out: purges permanently — irreversible.
+ * Deliberately distinct from {@link IconTrash} so the two severities never
+ * share a glyph. */
+export const IconTrashX = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 7h14M10 7V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" />
+    <path d="M9.5 10.5l5 6M14.5 10.5l-5 6" />
   </Icon>
 );
 

@@ -10,6 +10,7 @@ import { EditPlanPanel } from '../edit-plan-panel';
 import type { CanonicalDocument, EditCommand, ResolvedAsset, TimelineElement } from '../engine/ports';
 import { EffectsMaskControls } from '../effects-mask-controls';
 import { ExportPanel } from '../export-panel';
+import { HistoryPanel } from '../history-panel';
 import { KeyframeControls } from '../keyframe-controls';
 import { TransitionControls } from '../transition-controls';
 
@@ -36,6 +37,7 @@ export function PropertiesPanel({
   leaseToken,
   onApply,
   onPlanApplied,
+  onRestore,
 }: {
   document: CanonicalDocument;
   assets: ResolvedAsset[];
@@ -50,6 +52,7 @@ export function PropertiesPanel({
   leaseToken: string | null;
   onApply: (commands: EditCommand[]) => void;
   onPlanApplied: () => void;
+  onRestore: (revisionId: string) => void;
 }) {
   const t = useTranslations('editor');
 
@@ -63,6 +66,12 @@ export function PropertiesPanel({
         draftId={draftId}
         disabled={disabled}
         profiles={profiles}
+      />
+      <HistoryPanel
+        cutId={cutId}
+        headRevisionId={revisionId}
+        disabled={disabled}
+        onRestore={onRestore}
       />
       <section className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
         <h2 className="text-sm font-semibold">{t('propertiesTitle')}</h2>

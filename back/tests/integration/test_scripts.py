@@ -12,11 +12,24 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.script_writing import service as script_writing_service
-from app.models import User
-from app.models.enums import CreationSkillCategory
+from app.llm.client import StreamChunk
+from app.models import Notification, User
+from app.models.enums import CreationSkillCategory, NotificationType
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
 from tests.conftest import auth_header
+
+
+def _script_notes(db: Session, user: User, episode_id: str) -> list[Notification]:
+    return list(
+        db.scalars(
+            select(Notification).where(
+                Notification.user_id == user.id,
+                Notification.target_type == "episode_script",
+                Notification.target_id == episode_id,
+            )
+        )
+    )
 
 
 def _enable_script_studio(session: Session, actor: User) -> None:
@@ -79,11 +92,17 @@ def test_create_script_streams_first_draft(
     kinds = [kind for kind, _ in events]
     assert kinds[0] == "start"
     assert "delta" in kinds
+    # The fake gateway (`tests/fake_llm_gateway.py::fake_stream_complete`)
+    # yields one `thinking` chunk before its `content` — the live reasoning
+    # channel must reach the SSE body as its own event, not get folded into
+    # `delta`.
+    assert "thinking" in kinds
     assert kinds[-1] == "complete"
 
     complete = next(data for kind, data in events if kind == "complete")
     assert complete["turn_no"] == 1
     assert complete["script"]["scenes"]
+    assert complete["thinking"]
     episode_id = complete["episode_id"]
 
     detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
@@ -92,6 +111,176 @@ def test_create_script_streams_first_draft(
     assert body["script"]["scenes"]
     assert len(body["turns"]) == 1
     assert body["turns"][0]["turn_no"] == 1
+    # Persisted on the turn (`EpisodeScriptTurn.thinking_text`), surfaced via
+    # `ScriptTurnSummary.thinking` — not just present in the one-shot
+    # `complete` frame.
+    assert body["turns"][0]["thinking"]
+
+
+def test_create_script_upserts_generating_then_succeeded_notification(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Full lifecycle for a script's first draft: `prepare_new_script`
+    fires a `"generating"` notification (never actionable — no unread bump/
+    push), and the finished turn upserts that same row to `"succeeded"`
+    (which is)."""
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    response = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    complete = next(data for kind, data in _parse_sse(response.text) if kind == "complete")
+    episode_id = complete["episode_id"]
+
+    notes = _script_notes(db, author, episode_id)
+    assert len(notes) == 1
+    note = notes[0]
+    assert note.type == NotificationType.JOB_SUCCEEDED
+    assert note.title_key == "notification.script_succeeded"
+    assert note.payload_json["kind"] == "draft"
+    assert note.payload_json["turn_no"] == 1
+    assert note.payload_json["episode_id"] == episode_id
+    assert note.read_at is None
+
+
+def test_revise_turn_upserts_the_same_script_notification_row(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    first = next(data for kind, data in _parse_sse(created.text) if kind == "complete")
+    episode_id = first["episode_id"]
+    first_note_id = _script_notes(db, author, episode_id)[0].id
+
+    revised = client.post(
+        f"/v1/scripts/{episode_id}/turns",
+        json={"message": "把结局改得更悬疑一点"},
+        headers=auth_header(author),
+    )
+    assert revised.status_code == 202
+
+    notes = _script_notes(db, author, episode_id)
+    assert len(notes) == 1
+    note = notes[0]
+    assert note.id == first_note_id
+    assert note.type == NotificationType.JOB_SUCCEEDED
+    assert note.title_key == "notification.script_succeeded"
+    assert note.payload_json["kind"] == "revise"
+    assert note.payload_json["turn_no"] == 2
+
+
+def test_create_script_replay_with_the_same_idempotency_key_preserves_thinking(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A retried request with the same `Idempotency-Key` replays the stored
+    `complete` snapshot instead of re-running the LLM turn (no `delta`/
+    `thinking` frames in front of it — see `_replay_stream`) — but that
+    snapshot must still carry `thinking`, or the replayed frame would look
+    unlike the original live one to the frontend."""
+    from app.api.v1 import scripts as scripts_module
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+    # `_remember_idempotent` deliberately opens its own session via
+    # `app.db.session_scope` (see its docstring) rather than reusing the
+    # route's own — in production that session's a separate, later-committed
+    # connection to the same already-committed rows; here it would instead
+    # be a second, genuinely separate connection racing the still-open
+    # `db` fixture transaction that `author` only exists in, so point it
+    # back at `db` too, same as `_patch_stream_session` does for the
+    # streaming turn's own session.
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(scripts_module, "session_scope", fake_session_scope)
+
+    headers = {**auth_header(author), "Idempotency-Key": "idk-script-replay"}
+    payload = {"title": "", "idea": "深夜便利店的秘密"}
+
+    first = client.post("/v1/scripts", json=payload, headers=headers)
+    assert first.status_code == 202
+    first_events = _parse_sse(first.text)
+    assert "thinking" in [kind for kind, _ in first_events]
+    first_complete = next(data for kind, data in first_events if kind == "complete")
+    assert first_complete["thinking"]
+
+    second = client.post("/v1/scripts", json=payload, headers=headers)
+    assert second.status_code == 202
+    second_events = _parse_sse(second.text)
+    # The replay is a single `complete` frame — no re-run of the turn.
+    assert [kind for kind, _ in second_events] == ["complete"]
+    second_complete = next(data for kind, data in second_events if kind == "complete")
+    assert second_complete == first_complete
+
+    episodes = client.get("/v1/scripts", headers=auth_header(author)).json()
+    assert len(episodes) == 1
+
+
+def test_create_script_attaches_to_existing_series(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """"新增一集" from an existing series' detail page must attach the new
+    episode to that series (auto-incrementing episode_number), not spin up a
+    second series."""
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    from app.domain.editor import service as editor_service
+
+    series = editor_service.create_drama_series(
+        db, user_id=author.id, title="我的短剧", target_platforms=["manual_download"]
+    )
+    editor_service.create_episode(db, user_id=author.id, series_id=series.id, title="第一集")
+    db.commit()
+
+    response = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密", "series_id": series.id},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 202
+    events = _parse_sse(response.text)
+    complete = next(data for kind, data in events if kind == "complete")
+    episode_id = complete["episode_id"]
+
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["series_id"] == series.id
+
+    episodes = editor_service.list_episodes(db, user_id=author.id, series_id=series.id)
+    assert [ep.episode_number for ep in episodes] == [1, 2]
+
+
+def test_create_script_rejects_someone_elses_series(
+    client: TestClient, db: Session, author: User
+) -> None:
+    from app.domain.editor import service as editor_service
+    from tests.conftest import make_user
+
+    _enable_script_studio(db, author)
+    outsider = make_user(db, email="script-outsider@example.com", handle="scriptoutsider")
+    series = editor_service.create_drama_series(
+        db, user_id=outsider.id, title="别人的短剧", target_platforms=["manual_download"]
+    )
+    db.commit()
+
+    response = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密", "series_id": series.id},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 404
 
 
 def test_create_script_surfaces_an_error_when_the_draft_fails_to_parse(
@@ -107,7 +296,7 @@ def test_create_script_surfaces_an_error_when_the_draft_fails_to_parse(
     _patch_stream_session(monkeypatch, db)
 
     def fake_stream_draft_script(*args: Any, **kwargs: Any) -> Any:
-        def finalize() -> copywriter.ScriptTurnOutcome:
+        def finalize(_persist_session: Any = None) -> copywriter.ScriptTurnOutcome:
             return copywriter.ScriptTurnOutcome(
                 summary="剧本生成失败，请换一种方式描述你的创意后重试。",
                 script={"title": "t", "logline": "l", "characters": [], "scenes": []},
@@ -117,7 +306,7 @@ def test_create_script_surfaces_an_error_when_the_draft_fails_to_parse(
                 agent_run_id="agr_unused",
             )
 
-        return iter(["部分输出"]), finalize
+        return iter([StreamChunk(kind="content", text="部分输出")]), finalize
 
     monkeypatch.setattr(
         script_writing_service.copywriter, "stream_draft_script", fake_stream_draft_script
@@ -143,10 +332,169 @@ def test_create_script_surfaces_an_error_when_the_draft_fails_to_parse(
     assert body["turns"] == []
     assert body["script"]["scenes"] == []
 
-    # Consistent with `list_scripts` treating a turn-less episode as not
-    # actually started yet.
+    # `list_scripts` no longer requires a turn to exist — a failed first
+    # draft must stay discoverable (and retryable) rather than vanishing.
     listed = client.get("/v1/scripts", headers=auth_header(author))
-    assert listed.json() == []
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["episode_id"] == episode_id
+    assert listed.json()[0]["turn_count"] == 0
+
+    notes = _script_notes(db, author, episode_id)
+    assert len(notes) == 1
+    assert notes[0].type == NotificationType.JOB_FAILED
+    assert notes[0].title_key == "notification.script_failed"
+    assert notes[0].payload_json["kind"] == "draft"
+    assert notes[0].payload_json["error"]
+    assert notes[0].read_at is None
+
+
+def test_create_script_empty_stream_does_not_write_a_turn(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reasoning model that returns no visible tokens after retry must
+    surface as an in-stream error, not a turn with an empty document."""
+    from app.llm import client as llm_client
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    def empty_stream(**kwargs: Any) -> Any:
+        kwargs["result"].text = ""
+        yield from ()
+
+    monkeypatch.setattr(llm_client, "stream_complete", empty_stream)
+
+    response = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 202
+    events = _parse_sse(response.text)
+    assert next(kind for kind, _ in events) == "start"
+    assert events[-1][0] == "error"
+
+    episode_id = next(data for kind, data in events if kind == "start")["episode_id"]
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert detail.json()["turns"] == []
+    assert detail.json()["script"]["scenes"] == []
+
+
+def test_retry_script_regenerates_the_first_draft_for_an_empty_shell(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The empty-shell recovery path: a first draft never finished (the
+    fake stream below stands in for a dropped connection/failed parse), so
+    `POST /v1/scripts/{episode_id}/retry` re-runs it on the *same* episode
+    rather than `POST /v1/scripts` minting a second one."""
+    from app.llm import client as llm_client
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    def empty_stream(**kwargs: Any) -> Any:
+        kwargs["result"].text = ""
+        yield from ()
+
+    monkeypatch.setattr(llm_client, "stream_complete", empty_stream)
+
+    failed = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    start_data = next(data for kind, data in _parse_sse(failed.text) if kind == "start")
+    episode_id = start_data["episode_id"]
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert detail.json()["turns"] == []
+
+    # Undoes only the `empty_stream` override above, back to the module's
+    # own autouse `fake_stream_complete` (not `monkeypatch.undo()`, which
+    # would also revert *that* fixture's patch — the two share this same
+    # `monkeypatch` instance for the whole test).
+    from tests.fake_llm_gateway import fake_stream_complete
+
+    monkeypatch.setattr(llm_client, "stream_complete", fake_stream_complete)
+
+    retried = client.post(
+        f"/v1/scripts/{episode_id}/retry",
+        json={"idea": "深夜便利店的秘密，换一种写法"},
+        headers=auth_header(author),
+    )
+    assert retried.status_code == 202
+    events = _parse_sse(retried.text)
+    kinds = [kind for kind, _ in events]
+    assert kinds[0] == "start"
+    assert kinds[-1] == "complete"
+    complete = next(data for kind, data in events if kind == "complete")
+    assert complete["episode_id"] == episode_id
+    assert complete["turn_no"] == 1
+
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    body = detail.json()
+    assert len(body["turns"]) == 1
+    assert body["script"]["scenes"]
+
+    # No second episode/series was created along the way.
+    listed = client.get("/v1/scripts", headers=auth_header(author))
+    assert len(listed.json()) == 1
+
+
+def test_retry_script_rejects_an_episode_that_already_has_a_turn(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+
+    response = client.post(
+        f"/v1/scripts/{episode_id}/retry",
+        json={"idea": "换个新故事"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 422
+
+
+def test_retry_script_rejects_another_users_episode(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.llm import client as llm_client
+    from tests.conftest import make_user
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    def empty_stream(**kwargs: Any) -> Any:
+        kwargs["result"].text = ""
+        yield from ()
+
+    monkeypatch.setattr(llm_client, "stream_complete", empty_stream)
+    failed = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    start_data = next(data for kind, data in _parse_sse(failed.text) if kind == "start")
+    episode_id = start_data["episode_id"]
+
+    outsider = make_user(db, email="retry-outsider@example.com", handle="retryoutsider")
+    _enable_script_studio(db, outsider)
+    db.commit()
+
+    response = client.post(
+        f"/v1/scripts/{episode_id}/retry",
+        json={"idea": "换个新故事"},
+        headers=auth_header(outsider),
+    )
+    assert response.status_code == 404
 
 
 def test_revise_turn_versions_the_script(
@@ -516,9 +864,15 @@ def test_delete_script_blocked_once_opened_in_the_editor(
     assert db.get(DramaEpisode, episode_id) is not None
 
 
-def test_list_scripts_only_shows_started_scripts(
+def test_list_scripts_shows_zero_turn_shells_too(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """`list_scripts` used to require a turn to exist — relaxed so a script
+    whose first draft is still streaming (in another tab/device) or failed
+    outright stays discoverable instead of vanishing until it either
+    finishes or is manually retried (`retry_new_script`)."""
+    from app.llm import client as llm_client
+
     _enable_script_studio(db, author)
     _patch_stream_session(monkeypatch, db)
 
@@ -526,12 +880,30 @@ def test_list_scripts_only_shows_started_scripts(
     assert empty_list.status_code == 200
     assert empty_list.json() == []
 
+    def empty_stream(**kwargs: Any) -> Any:
+        kwargs["result"].text = ""
+        yield from ()
+
+    monkeypatch.setattr(llm_client, "stream_complete", empty_stream)
     client.post(
         "/v1/scripts",
         json={"title": "", "idea": "深夜便利店的秘密"},
         headers=auth_header(author),
     )
 
+    zero_turn = client.get("/v1/scripts", headers=auth_header(author))
+    assert len(zero_turn.json()) == 1
+    assert zero_turn.json()[0]["turn_count"] == 0
+
+    from tests.fake_llm_gateway import fake_stream_complete
+
+    monkeypatch.setattr(llm_client, "stream_complete", fake_stream_complete)
+    client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "另一个故事"},
+        headers=auth_header(author),
+    )
+
     populated = client.get("/v1/scripts", headers=auth_header(author))
-    assert len(populated.json()) == 1
-    assert populated.json()[0]["turn_count"] == 1
+    assert len(populated.json()) == 2
+    assert sorted(row["turn_count"] for row in populated.json()) == [0, 1]

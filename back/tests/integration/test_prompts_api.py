@@ -1,17 +1,59 @@
 """`POST /v1/generation/prompts/enhance`: the generation studio's own polish
-endpoint — same domain logic as shortform's, no feature flag gate."""
+endpoint. `ShortformStudio` used to have its own copy behind the
+`shortform_studio` feature flag (`POST /v1/shortform/prompt/enhance`); that
+route was removed along with the rest of that studio, so this endpoint is the
+only one left and it carries no feature-flag gate of its own."""
 
 from __future__ import annotations
 
+import json
+from contextlib import contextmanager
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import User
+from app.api.v1 import prompts as prompts_api
+from app.domain import prompts
+from app.domain.agent_skills import service as agent_skills_service
+from app.llm import client as llm_client
+from app.models import AgentRun, User
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
 from tests.conftest import auth_header
 from tests.llm_catalog import bind_default_agents_to_catalog
+
+
+def _patch_stream_session(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+    """Streaming finalize opens `session_scope()` after the request session
+    closes. Tests share one rolled-back transaction, so point that factory
+    at the fixture session (same as `test_scripts._patch_stream_session`)."""
+
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    monkeypatch.setattr(prompts_api, "session_scope", fake_session_scope)
+
+
+def _parse_sse(text: str) -> list[tuple[str, dict[str, Any]]]:
+    events: list[tuple[str, dict[str, Any]]] = []
+    for block in text.strip("\n").split("\n\n"):
+        if not block.strip():
+            continue
+        lines = block.split("\n")
+        event_line = next((line for line in lines if line.startswith("event: ")), None)
+        data_line = next((line for line in lines if line.startswith("data: ")), None)
+        if event_line is None or data_line is None:
+            continue
+        events.append((event_line[len("event: ") :], json.loads(data_line[len("data: ") :])))
+    return events
+
+
+def _enhance_complete(response) -> dict[str, Any]:
+    return next(data for kind, data in _parse_sse(response.text) if kind == "complete")
 
 
 @pytest.fixture
@@ -27,15 +69,22 @@ def bound_copy_agent(db: Session) -> None:
 
 
 def test_enhance_diagnoses_each_dimension(
-    client: TestClient, author: User, bound_copy_agent: None
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _patch_stream_session(monkeypatch, db)
     response = client.post(
         "/v1/generation/prompts/enhance",
         json={"prompt": "女孩在海边", "operation": "text_to_video", "duration_seconds": 8},
         headers=auth_header(author),
     )
     assert response.status_code == 200, response.text
-    body = response.json()
+    kinds = [kind for kind, _ in _parse_sse(response.text)]
+    assert "thinking" in kinds
+    body = _enhance_complete(response)
     assert body["detail_level"] in ("sparse", "adequate", "detailed")
     assert body["prompt"]
     assert body["feedback"]
@@ -53,19 +102,91 @@ def test_enhance_diagnoses_each_dimension(
 
 
 def test_enhance_diagnoses_image_prompts_on_image_dimensions(
-    client: TestClient, author: User, bound_copy_agent: None
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No camera or pacing advice on a still image — the operation decides."""
+    _patch_stream_session(monkeypatch, db)
     response = client.post(
         "/v1/generation/prompts/enhance",
         json={"prompt": "女孩在海边", "operation": "text_to_image"},
         headers=auth_header(author),
     )
     assert response.status_code == 200, response.text
-    keys = {d["key"] for d in response.json()["dimensions"]}
+    keys = {d["key"] for d in _enhance_complete(response)["dimensions"]}
     assert "composition" in keys
     assert "camera" not in keys
     assert "pacing" not in keys
+
+
+def test_enhance_character_stream_completes_on_the_dedicated_agent(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The studio's character button is this same SSE route with
+    `asset_kind=character` — fake content is valid JSON, so this asserts the
+    dedicated-agent hop plus the new finish path still emit `complete`."""
+    _patch_stream_session(monkeypatch, db)
+    specific = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-character-http",
+        display_name="角色润色 · HTTP",
+        default_for_asset_kind="character",
+    )
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={"prompt": "女孩在海边", "operation": "text_to_image", "asset_kind": "character"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    body = _enhance_complete(response)
+    assert body["prompt"]
+    run = db.scalars(select(AgentRun).order_by(AgentRun.created_at.desc())).first()
+    assert run is not None
+    assert run.agent_profile_id == specific.id
+    assert run.degraded is False
+
+
+@pytest.mark.real_gateway_seams
+def test_enhance_stream_reports_unavailable_when_thinking_never_becomes_json(
+    client: TestClient,
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live failure mode: thinking deltas arrive, then `event: error`
+    with the product copy — not a silent echo of the author's own prompt."""
+    bind_default_agents_to_catalog(db)
+    db.commit()
+    _patch_stream_session(monkeypatch, db)
+
+    def _stream_gateway(**_kwargs):  # type: ignore[no-untyped-def]
+        yield llm_client.StreamDelta(reasoning="先分析这段描述缺什么", finish_reason="length")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={"prompt": "女孩在海边", "operation": "text_to_image", "asset_kind": "character"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    events = _parse_sse(response.text)
+    kinds = [kind for kind, _ in events]
+    assert "thinking" in kinds
+    assert "complete" not in kinds
+    error = next(data for kind, data in events if kind == "error")
+    assert error["message"] == prompts.ENHANCE_UNAVAILABLE_MESSAGE
+    run = db.scalars(select(AgentRun).order_by(AgentRun.created_at.desc())).first()
+    assert run is not None
+    assert run.degraded is True
+    assert run.degrade_reason == "json_parse_failed"
 
 
 @pytest.mark.real_gateway_seams
@@ -97,7 +218,8 @@ def test_enhance_requires_login(client: TestClient) -> None:
 def test_enhance_is_not_gated_by_the_shortform_feature_flag(
     client: TestClient, db: Session, author: User, bound_copy_agent: None
 ) -> None:
-    """Disabling `shortform_studio` must not affect the generation studio."""
+    """Disabling `shortform_studio` (now only guarding the delivery-variant
+    export catalogue) must not affect the generation studio's own endpoint."""
     current = config_service.get_typed(db, "feature_flags", FeatureFlags)
     config_service.set_value(
         db,
@@ -107,13 +229,6 @@ def test_enhance_is_not_gated_by_the_shortform_feature_flag(
         note="test: disable shortform studio",
     )
     db.commit()
-
-    shortform_response = client.post(
-        "/v1/shortform/prompt/enhance",
-        json={"prompt": "女孩在海边"},
-        headers=auth_header(author),
-    )
-    assert shortform_response.status_code == 422
 
     generation_response = client.post(
         "/v1/generation/prompts/enhance",

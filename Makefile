@@ -95,10 +95,29 @@ restore: ## 从备份恢复，用法 make restore f=.backups/xxx.dump
 	./infra/scripts/restore.sh "$(f)" --confirm
 
 # --- development ---------------------------------------------------------
+# Ctrl+C 只能信号到当前进程组；conda / Next --reload 常会留下占着 3000/3001
+# 的孤儿进程。启动前与退出时按端口回收，避免下次 bind 失败。
+
+DEV_WEB_PORT ?= 3000
+DEV_API_PORT ?= 3001
+DEV_FREE_PORTS := ./infra/scripts/dev-free-ports.sh
+
+.PHONY: dev-free-ports
+dev-free-ports: ## 释放 3000/3001 及本仓库残留的 Celery 进程
+	@$(DEV_FREE_PORTS) --celery $(DEV_WEB_PORT) $(DEV_API_PORT)
 
 .PHONY: dev
 dev: ## 同时启动 API、Worker、轮询 poller、Beat 与 Web
-	@trap 'kill 0' EXIT INT TERM; \
+	@$(DEV_FREE_PORTS) --celery $(DEV_WEB_PORT) $(DEV_API_PORT)
+	@cleanup() { \
+		trap '' INT TERM; \
+		trap - EXIT; \
+		kill 0 2>/dev/null || true; \
+		$(DEV_FREE_PORTS) --celery $(DEV_WEB_PORT) $(DEV_API_PORT); \
+	}; \
+	trap cleanup EXIT; \
+	trap 'cleanup; exit 130' INT; \
+	trap 'cleanup; exit 143' TERM; \
 	$(MAKE) dev-api & \
 	$(MAKE) dev-worker & \
 	$(MAKE) dev-poller & \
@@ -108,23 +127,26 @@ dev: ## 同时启动 API、Worker、轮询 poller、Beat 与 Web
 
 .PHONY: dev-api
 dev-api: ## 启动 FastAPI（含 AgentOS）
-	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port 3001
+	@$(DEV_FREE_PORTS) $(DEV_API_PORT)
+	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port $(DEV_API_PORT) --timeout-graceful-shutdown 3
 
 .PHONY: dev-worker
 dev-worker: ## 启动 Celery worker（生成与质检队列，不含供应商轮询）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution \
+		-n zaolang-worker@%h \
+		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution,video_analysis \
 		--loglevel=info
 
 .PHONY: dev-poller
 dev-poller: ## 启动供应商异步轮询 worker（独占 provider_task_polling）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
+		-n zaolang-poller@%h \
 		-Q provider_task_polling --concurrency=1 \
 		--loglevel=info
 
 .PHONY: dev-purge-queues
-dev-purge-queues: ## 清空 Celery 队列（seed --reset / 清库后使用，先停 worker）
-	cd back && $(CONDA_RUN) celery -A app.workers.celery_app purge -f
+dev-purge-queues: ## 清理 Redis 中失效的 Celery 消息与结果（保留有效排队与限流键）
+	cd back && $(CONDA_RUN) python -m app.scripts.purge_stale_celery --results $(ARGS)
 
 .PHONY: dev-beat
 dev-beat: ## 启动 Celery Beat（异步供应商轮询与超时回收）
@@ -132,6 +154,7 @@ dev-beat: ## 启动 Celery Beat（异步供应商轮询与超时回收）
 
 .PHONY: dev-web
 dev-web: ## 启动 Next.js
+	@$(DEV_FREE_PORTS) $(DEV_WEB_PORT)
 	cd front && $(FNM_ENV) && npm run dev -- --hostname localhost
 
 # --- quality gates -------------------------------------------------------
@@ -175,8 +198,8 @@ test-llm: ## LLM 网关连通性冒烟（需要真实密钥，不进 make check�
 	cd back && $(CONDA_RUN) pytest -m live -v
 
 .PHONY: test-front
-test-front: ## 前端构建与类型检查
-	cd front && $(FNM_ENV) && npm run typecheck && npm run build
+test-front: ## 前端构建、类型检查与体积回归门禁
+	cd front && $(FNM_ENV) && npm run typecheck && npm run build && npm run check:bundle-size
 
 .PHONY: test-e2e
 test-e2e: ## Playwright 端到端测试

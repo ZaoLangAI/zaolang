@@ -46,6 +46,13 @@ DEFAULT_TIER_PRICING: dict[str, dict[str, int]] = {
         QualityTier.STANDARD: 6,
         QualityTier.CINEMATIC: 15,
     },
+    # Tiers are analysis depth (summary/per-scene/per-shot), not render
+    # quality — see `Operation.VIDEO_ANALYSIS` in `app.models.enums`.
+    Operation.VIDEO_ANALYSIS: {
+        QualityTier.PREVIEW: 20,
+        QualityTier.STANDARD: 50,
+        QualityTier.CINEMATIC: 120,
+    },
 }
 
 DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
@@ -78,6 +85,11 @@ DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
         QualityTier.PREVIEW: 5,
         QualityTier.STANDARD: 12,
         QualityTier.CINEMATIC: 25,
+    },
+    Operation.VIDEO_ANALYSIS: {
+        QualityTier.PREVIEW: 20,
+        QualityTier.STANDARD: 40,
+        QualityTier.CINEMATIC: 90,
     },
 }
 

@@ -14,7 +14,10 @@ binds by id, and a *skill* is one append-only prompt version for an
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
 
 from app.agents import base as agent_base
 from app.agents import slots as agent_slots
@@ -284,14 +287,14 @@ def delete_agent_profile(
     session.commit()
 
 
-@router.post("/agent-profiles/{profile_id}/debug-chat", response_model=AgentDebugChatResponse)
+@router.post("/agent-profiles/{profile_id}/debug-chat")
 def debug_chat_agent_profile(
     profile_id: str,
     payload: AgentDebugChatRequest,
     session: DbSession,
     user: Operator,
     _: AdminWrite,
-) -> AgentDebugChatResponse:
+) -> StreamingResponse:
     """Evaluates a skill prompt — draft or published — with a real model call.
 
     `AdminWrite`'s rate limit is what keeps this bounded, the same way it is
@@ -299,25 +302,41 @@ def debug_chat_agent_profile(
     confirmation, because nothing here is written to any workflow or made
     live, but real enough to cost real tokens.
     """
+    from app.api.agent_sse import SSE_HEADERS, iter_agent_sse
+    from app.db import session_scope
+
     profile = agent_skills_service.get_profile(session, profile_id)
-    outcome = agent_base.run_agent_debug(
+    chunks, finalize = agent_base.run_agent_debug_stream(
         session,
         profile=profile,
         slot=payload.slot,
         prompt_override=payload.prompt_template,
         history=[message.model_dump() for message in payload.messages],
     )
-    session.commit()
-    return AgentDebugChatResponse(
-        reply_text=outcome.reply_text,
-        parsed_json=outcome.parsed_json,
-        degraded=outcome.degraded,
-        model=outcome.model,
-        latency_ms=outcome.latency_ms,
-        prompt_tokens=outcome.prompt_tokens,
-        completion_tokens=outcome.completion_tokens,
-        agent_run_id=outcome.agent_run_id,
-    )
+
+    def generate() -> Iterator[str]:
+        def _finish() -> AgentDebugChatResponse:
+            with session_scope() as persist:
+                outcome = finalize(persist)
+                persist.commit()
+                return AgentDebugChatResponse(
+                    reply_text=outcome.reply_text,
+                    parsed_json=outcome.parsed_json,
+                    degraded=outcome.degraded,
+                    model=outcome.model,
+                    latency_ms=outcome.latency_ms,
+                    prompt_tokens=outcome.prompt_tokens,
+                    completion_tokens=outcome.completion_tokens,
+                    agent_run_id=outcome.agent_run_id,
+                )
+
+        yield from iter_agent_sse(
+            chunks,
+            _finish,
+            lambda body: body.model_dump(mode="json"),
+        )
+
+    return StreamingResponse(generate(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.get("/agent-skill-templates", response_model=Page[SkillTemplateView])

@@ -5,7 +5,12 @@ Each case mirrors a shape actually observed from the AIHubMix gateway.
 
 from __future__ import annotations
 
-from app.llm.normalize import extract_json, normalize_completion, strip_thinking
+from app.llm.normalize import (
+    extract_json,
+    normalize_completion,
+    reasoning_text_from_delta,
+    strip_thinking,
+)
 
 
 def test_think_block_is_removed() -> None:
@@ -138,3 +143,13 @@ def test_sdk_style_object_is_accepted() -> None:
 
     assert result.data == {"ok": True}
     assert result.model == "test-llm"
+
+
+def test_reasoning_text_from_delta_reads_sdk_and_dict_shapes() -> None:
+    class FakeDelta:
+        def model_dump(self) -> dict[str, object]:
+            return {"reasoning_content": "从推理字段回收"}
+
+    assert reasoning_text_from_delta(FakeDelta()) == "从推理字段回收"
+    assert reasoning_text_from_delta({"reasoning": "另一形状"}) == "另一形状"
+    assert reasoning_text_from_delta(None) == ""

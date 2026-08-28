@@ -24,6 +24,7 @@ import {
   IconRemix,
   IconSparkle,
   IconTrash,
+  IconTrashX,
 } from '@/components/ui/icons';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -172,7 +173,7 @@ export function WorkInfoPanel({
               <Button
                 size="sm"
                 variant="danger"
-                icon={<IconTrash className="size-4" />}
+                icon={<IconTrashX className="size-4" />}
                 onClick={() => setPurgeOpen(true)}
               >
                 {tLibrary('purgeWork')}

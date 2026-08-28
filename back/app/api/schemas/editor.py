@@ -16,6 +16,21 @@ class DramaSeriesCreateRequest(ApiModel):
     default_locale: str = "zh-CN"
     shortform_profile_key: str | None = None
     allow_external_models: bool = False
+    english_title: str | None = Field(default=None, max_length=200)
+    planned_episode_count: int | None = Field(default=None, ge=1, le=100_000)
+    genre_tags: list[str] = Field(default_factory=list, max_length=20)
+    target_platforms: list[str] = Field(min_length=1, max_length=10)
+    logo_asset_id: str | None = Field(default=None, max_length=40)
+
+
+class DramaSeriesUpdateRequest(ApiModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    english_title: str | None = Field(default=None, max_length=200)
+    planned_episode_count: int | None = Field(default=None, ge=1, le=100_000)
+    genre_tags: list[str] | None = Field(default=None, max_length=20)
+    target_platforms: list[str] | None = Field(default=None, min_length=1, max_length=10)
+    logo_asset_id: str | None = None
 
 
 class DramaSeriesResponse(ApiModel):
@@ -27,7 +42,18 @@ class DramaSeriesResponse(ApiModel):
     status: str
     allow_external_models: bool
     shortform_profile_key: str | None = None
+    english_title: str | None = None
+    planned_episode_count: int | None = None
+    genre_tags: list[str] = Field(default_factory=list)
+    target_platforms: list[str] = Field(default_factory=list)
+    logo_asset_id: str | None = None
+    logo_url: str | None = None
+    episode_count: int = 0
+    script_count: int = 0
+    video_count: int = 0
+    published_count: int = 0
     created_at: dt.datetime
+    updated_at: dt.datetime
 
 
 class DramaEpisodeCreateRequest(ApiModel):
@@ -57,6 +83,11 @@ class DramaEpisodeResponse(ApiModel):
     synopsis: str | None = None
     status: str
     canonical_work_id: str | None = None
+    # Whether this episode has at least one `EpisodeScriptTurn` — lets the
+    # series dashboard flag a script-writing shell whose first draft never
+    # finished (see `script_writing_service.list_scripts`'s own relaxed
+    # filter) without a second round trip to `GET /v1/scripts/{episode_id}`.
+    has_script_turns: bool = False
 
 
 class EpisodeContentLinkCreateRequest(ApiModel):
@@ -124,6 +155,27 @@ class EpisodeCutResponse(ApiModel):
     source_url: str | None = None
     lease_held: bool = False
     head: CutRevisionResponse | None = None
+
+
+class CutRevisionSummaryResponse(ApiModel):
+    """Lightweight revision listing for the editor's history panel — no
+    `document`/`asset_urls`, since browsing history shouldn't pull the full
+    timeline document for every past version."""
+
+    id: str
+    cut_id: str
+    revision_no: int
+    parent_revision_id: str | None = None
+    duration_ticks: int
+    is_head: bool = False
+    created_at: dt.datetime
+
+
+class RevisionRestoreRequest(ApiModel):
+    revision_id: str
+    expected_revision_id: str | None = None
+    lease_id: str
+    lease_token: str
 
 
 class LeaseAcquireRequest(ApiModel):
@@ -233,6 +285,26 @@ class EditorExportResponse(ApiModel):
     output_asset_id: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None
+
+
+class EpisodeExportResponse(ApiModel):
+    """One editor export made from an episode's own cut, joined with
+    whatever publishing state it has reached — never bound to a draft
+    (download-only), bound but not yet published, or bound and published
+    (eligible to become the episode's final cut)."""
+
+    id: str
+    status: str
+    profile_key: str
+    width: int
+    height: int
+    format: str
+    output_asset_id: str | None = None
+    output_url: str | None = None
+    created_at: dt.datetime
+    bound_draft_id: str | None = None
+    published_work_id: str | None = None
+    is_canonical: bool = False
 
 
 class EditorOperationResponse(ApiModel):

@@ -8,6 +8,7 @@ winner, and a terminal job can never be reopened by a late provider callback.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
@@ -35,6 +36,7 @@ def transition(
     actual_credits: int | None = None,
     output_asset_id: str | None = None,
     output_asset_ids: list[str] | None = None,
+    analysis_result_json: dict[str, Any] | None = None,
     now: dt.datetime | None = None,
 ) -> GenerationJob:
     """Moves a job to `target`, or raises if the move is illegal.
@@ -64,6 +66,8 @@ def transition(
         values["output_asset_id"] = output_asset_id
     if output_asset_ids is not None:
         values["output_asset_ids_json"] = output_asset_ids
+    if analysis_result_json is not None:
+        values["analysis_result_json"] = analysis_result_json
 
     matched = rows_affected(
         session,

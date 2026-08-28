@@ -26,16 +26,22 @@ make hooks     # 安装 pre-commit 钩子
 ```bash
 make dev       # 同时起 API(3001)、Celery worker、Celery beat、Web(3000)
 make dev-api   # 只起 FastAPI
-make dev-worker # 只起 Celery worker（订阅七个队列）
+make dev-worker # 只起 Celery worker（生成与质检队列，节点名 zaolang-worker）
+make dev-poller  # 只起供应商轮询 worker（节点名 zaolang-poller，勿与 worker 重名）
 make dev-beat  # 只起 Celery Beat（异步轮询与超时回收）
 make dev-web   # 只起 Next.js
-make dev-purge-queues  # 清空 Celery 队列（先停 worker）
+make dev-free-ports  # 只释放 3000/3001 与本仓库残留的 Celery
+make dev-purge-queues  # 清理失效的 Celery 消息与结果（保留有效排队与限流键）
+
+`make dev` / `make dev-web` / `make dev-api` 启动时会先关掉对应端口上已有的监听进程；Ctrl+C 退出 `make dev` 时也会再清一次，避免 Next / uvicorn 孤儿进程占着端口。
 ```
 
 `make seed ARGS=--reset`（或任何会 `TRUNCATE generation_jobs` 的操作）只会清 PostgreSQL，
 **不会**清 Redis 里已入队的 Celery 消息。旧 `job_id` 仍会被 worker 取到并报
-`job ... not found`，还会短暂占住并发槽。清库后请先停 worker，再执行
-`make dev-purge-queues`（或 `redis-cli -p 6380 -n 0 FLUSHDB`），然后重启 worker。
+`job ... not found`，还会短暂占住并发槽。清库后执行 `make dev-purge-queues`：
+它只删库里已不存在的消息和失效的 `celery-task-meta`，不动限流键、LLM 统计，
+也不丢尚未消费的有效任务。不要对 db0 `FLUSHDB`。只有确认队列里不该留下任何东西时，
+才用 `make dev-purge-queues ARGS=--empty-queues`。
 
 - C 端：<http://localhost:3000/zh-CN/discover>
 - 后台运维台：<http://localhost:3000/zh-CN/admin>

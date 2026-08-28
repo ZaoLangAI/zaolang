@@ -50,6 +50,67 @@ def default_graph(session: Session) -> dict[str, Any]:
     return _build_graph(session, with_asset_nodes=False)
 
 
+def video_analysis_graph(session: Session) -> dict[str, Any]:
+    """`Operation.VIDEO_ANALYSIS`'s own shape: `safety -> planning(no
+    follow-up questions) -> route_score -> video_analysis_generate ->
+    settle_success`, with no `intent_router`/`quality_check` — there is no
+    duration/tier-adjusting intent to route on, and no image/video quality
+    to judge on a structured text result. `planning`'s clarify slot is
+    disabled the same way the asset-kind graphs disable it (see
+    `_build_graph`'s comment on `with_asset_nodes`): this operation's
+    `prompt` is only ever an optional supplementary note, never something
+    worth pausing the job to ask follow-up questions about.
+    """
+    nodes: list[dict[str, Any]] = [
+        {"id": "safety", "type": "safety_check", "config": {}, "position": {"x": 0, "y": 0}},
+        {
+            "id": "planning",
+            "type": "planning",
+            "config": {"allow_followup_question": False},
+            "position": {"x": 220, "y": 0},
+        },
+        {
+            "id": "route_score",
+            "type": "route_score",
+            "config": {"max_attempts": 2},
+            "position": {"x": 440, "y": 0},
+        },
+        {
+            "id": "video_analysis_generate",
+            "type": "video_analysis_generate",
+            "config": {"retry_on_failure": True},
+            "position": {"x": 660, "y": 0},
+        },
+        {
+            "id": "settle_success",
+            "type": "settle_success",
+            "config": {},
+            "position": {"x": 880, "y": 0},
+        },
+        {"id": "fail", "type": "fail", "config": {}, "position": {"x": 440, "y": 260}},
+    ]
+    nodes_by_id = {node["id"]: node for node in nodes}
+    for node_id, config_field, role in _STATIC_BINDINGS:
+        if node_id not in nodes_by_id:
+            continue
+        profile = agent_skills_service.default_profile(session, role)
+        if profile is not None:
+            nodes_by_id[node_id]["config"][config_field] = profile.id
+
+    edges = [
+        _edge("safety", "pass", "planning"),
+        _edge("safety", "reject", "fail"),
+        _edge("planning", "ok", "route_score"),
+        _edge("route_score", "ok", "video_analysis_generate"),
+        _edge("route_score", "no_candidate", "fail"),
+        _edge("route_score", "retries_exhausted", "fail"),
+        _edge("video_analysis_generate", "succeeded", "settle_success"),
+        _edge("video_analysis_generate", "retry", "route_score", kind="retry"),
+        _edge("video_analysis_generate", "failed", "fail"),
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
 def asset_graph(session: Session, asset_kind: str) -> dict[str, Any]:
     """The asset-kind variant of `default_graph`, shared by image and video.
 

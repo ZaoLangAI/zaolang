@@ -835,11 +835,13 @@ def test_video_work_is_dispatched_to_the_long_queue(monkeypatch) -> None:
 
     monkeypatch.setattr(tasks, "run_generation", _Recorder("image"))
     monkeypatch.setattr(tasks, "run_video_generation", _Recorder("video"))
+    monkeypatch.setattr(tasks, "run_video_analysis", _Recorder("video_analysis"))
 
     tasks.dispatch_generation(GenerationJob(id="job_x", operation=Operation.TEXT_TO_VIDEO.value))
     tasks.dispatch_generation(GenerationJob(id="job_y", operation=Operation.TEXT_TO_IMAGE.value))
+    tasks.dispatch_generation(GenerationJob(id="job_z", operation=Operation.VIDEO_ANALYSIS.value))
 
-    assert routed == ["video", "image"]
+    assert routed == ["video", "image", "video_analysis"]
 
 
 def test_latency_specific_celery_tasks_do_not_double_bind(monkeypatch) -> None:
@@ -1092,3 +1094,115 @@ def test_job_response_exposes_which_scene_a_job_linked_to(
     body = response.json()
     assert body["linked_scene_id"] == scene.id
     assert body["linked_character_id"] is None
+
+
+def _enable_video_analysis(session: Session, actor: User) -> None:
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import FeatureFlags
+
+    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(
+        mode="json"
+    )
+    value["video_analysis_enabled"] = True
+    config_service.set_value(session, "feature_flags", value, actor_user_id=actor.id, note="test")
+
+
+def _reference_video_asset(session: Session, owner: User, *, duration_ms: int = 30_000) -> Asset:
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=1024,
+        duration_ms=duration_ms,
+        checksum_sha256="c" * 64,
+        role=AssetRole.GENERATION_REFERENCE,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+def test_video_analysis_is_refused_until_its_feature_flag_is_enabled(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    video = _reference_video_asset(db, funded)
+    db.commit()
+
+    blocked = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "video_analysis",
+            "quality_tier": "standard",
+            "params": {"reference_asset_ids": [video.id]},
+        },
+        headers=auth_header(funded),
+    )
+    assert blocked.status_code == 422
+    assert blocked.json()["error"]["code"] == "VALIDATION_FAILED"
+
+    _enable_video_analysis(db, funded)
+    db.commit()
+    allowed = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "video_analysis",
+            "quality_tier": "standard",
+            "params": {"reference_asset_ids": [video.id]},
+        },
+        headers=auth_header(funded),
+    )
+    assert allowed.status_code == 202, allowed.text
+    assert allowed.json()["operation"] == "video_analysis"
+
+
+def test_video_analysis_settles_into_structured_analysis_and_the_operation_filtered_history(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """Mirrors `文案创作`'s history pattern: the analysis result rides on the
+    job itself, and the C-end history panel lists only this tool's own jobs
+    via `operation=video_analysis` without needing a `draft_id`."""
+    _enable_video_analysis(db, funded)
+    video = _reference_video_asset(db, funded)
+    db.commit()
+
+    result = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.VIDEO_ANALYSIS,
+        quality_tier=QualityTier.STANDARD,
+        params={"reference_asset_ids": [video.id], "prompt": "重点关注运镜"},
+        idempotency_key=new_id("idk"),
+    )
+    other = _submit(db, funded)
+
+    outcome = pipeline.run_generation_pipeline(db, result.job.id)
+    assert outcome.status == JobStatus.SUCCEEDED
+    assert outcome.asset_id is None
+    assert outcome.result_json is not None
+
+    db.refresh(result.job)
+    assert result.job.analysis_result_json is not None
+    assert result.job.analysis_result_json["composed_prompt"]
+
+    body = client.get(
+        f"/v1/generation-jobs/{result.job.id}", headers=auth_header(funded)
+    ).json()
+    assert body["analysis"]["composed_prompt"] == result.job.analysis_result_json["composed_prompt"]
+    assert body["analysis"]["shots"][0]["camera_movement"]
+    assert body["output_asset_id"] is None
+    # The one job type whose *input* (not output) is worth echoing back, so
+    # the studio and history panel can replay the source video (see
+    # `GenerationJobResponse.reference_url`).
+    assert body["reference_url"]
+
+    listed = client.get(
+        "/v1/generation-jobs",
+        params={"operation": "video_analysis"},
+        headers=auth_header(funded),
+    ).json()
+    ids = {item["id"] for item in listed["items"]}
+    assert result.job.id in ids
+    assert other.id not in ids

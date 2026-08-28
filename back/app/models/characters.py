@@ -17,9 +17,10 @@ generation itself, only the cast roster and the episode numbering that
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
@@ -45,6 +46,24 @@ class Series(Base, TimestampMixin):
     )
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
     allow_external_models: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    # `kind=drama` short-drama management metadata (剧集管理). Left null/empty
+    # for `kind=cast` rows — these fields only mean something for a
+    # production project, not a character roster.
+    english_title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    planned_episode_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    genre_tags_json: Mapped[list[Any]] = mapped_column(
+        default=list, server_default="[]", nullable=False
+    )
+    target_platforms_json: Mapped[list[Any]] = mapped_column(
+        default=list, server_default="[]", nullable=False
+    )
+    logo_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
+    # `status=trashed` recycle bin timestamp — mirrors `Work.trashed_at`.
+    # Null unless the series is currently trashed.
+    trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_series_owner_user_id", "owner_user_id"),

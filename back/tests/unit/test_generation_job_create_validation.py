@@ -188,6 +188,43 @@ def test_sandbox_defaults_keep_an_explicit_video_duration() -> None:
     assert filled["duration_seconds"] == 6
 
 
+def test_video_analysis_allows_an_empty_prompt_with_one_reference() -> None:
+    """`prompt` means "optional extra notes on the clip" for this operation,
+    unlike every other operation where it is the mandatory instruction."""
+    request = GenerationJobCreateRequest(
+        operation=Operation.VIDEO_ANALYSIS,
+        quality_tier=QualityTier.STANDARD,
+        params=GenerationParams(reference_asset_ids=["asset-video"]),
+    )
+    assert request.params.prompt == ""
+    assert request.params.reference_asset_ids == ["asset-video"]
+
+
+def test_video_analysis_requires_exactly_one_reference_video() -> None:
+    with pytest.raises(ValidationError, match="必须提供且仅提供一段"):
+        GenerationJobCreateRequest(
+            operation=Operation.VIDEO_ANALYSIS,
+            quality_tier=QualityTier.STANDARD,
+            params=GenerationParams(),
+        )
+
+    with pytest.raises(ValidationError, match="必须提供且仅提供一段"):
+        GenerationJobCreateRequest(
+            operation=Operation.VIDEO_ANALYSIS,
+            quality_tier=QualityTier.STANDARD,
+            params=GenerationParams(reference_asset_ids=["asset-1", "asset-2"]),
+        )
+
+
+def test_every_other_operation_still_requires_a_non_empty_prompt() -> None:
+    with pytest.raises(ValidationError, match="必须填写提示词"):
+        GenerationJobCreateRequest(
+            operation=Operation.TEXT_TO_IMAGE,
+            quality_tier=QualityTier.STANDARD,
+            params=GenerationParams(prompt="   "),
+        )
+
+
 def test_sandbox_prepare_rejects_an_illegal_h3_duration() -> None:
     with pytest.raises(ValueError, match="4-15"):
         prepare_sandbox_generation_params(

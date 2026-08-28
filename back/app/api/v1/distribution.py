@@ -22,6 +22,13 @@ from app.api.schemas.distribution import (
     PublicationFanoutItem,
     PublicationFanoutRequest,
     PublicationFanoutResponse,
+    SeriesDistributionCoverage,
+    SeriesFollowerDailyPoint,
+    SeriesMetricsChannelTotal,
+    SeriesMetricsDailyPoint,
+    SeriesMetricsEpisodeRow,
+    SeriesMetricsPeriodComparison,
+    SeriesMetricsSummaryResponse,
 )
 from app.domain.distribution import service as distribution
 
@@ -169,10 +176,106 @@ def list_metrics(
             like_count=item.like_count,
             comment_count=item.comment_count,
             share_count=item.share_count,
+            finish_rate=(item.finish_rate_bp / 10000 if item.finish_rate_bp is not None else None),
+            avg_play_duration_ms=item.avg_play_duration_ms,
             fetched_at=item.fetched_at,
         )
         for item in distribution.list_metrics_for_work(session, user_id=user.id, work_id=work_id)
     ]
+
+
+@router.get("/drama-series/{series_id}/metrics", response_model=SeriesMetricsSummaryResponse)
+def series_metrics(
+    series_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+    days: Annotated[int, Query(ge=1, le=90)] = 30,
+) -> SeriesMetricsSummaryResponse:
+    totals, episodes = distribution.series_metrics_summary(
+        session, user_id=user.id, series_id=series_id
+    )
+    daily = distribution.series_metrics_timeseries(
+        session, user_id=user.id, series_id=series_id, days=days
+    )
+    followers = distribution.series_followers_timeseries(
+        session, user_id=user.id, series_id=series_id, days=days
+    )
+    period_comparison = distribution.series_metrics_period_comparison(
+        session, user_id=user.id, series_id=series_id, days=days
+    )
+    coverage = distribution.series_distribution_coverage(
+        session, user_id=user.id, series_id=series_id
+    )
+    return SeriesMetricsSummaryResponse(
+        totals=[
+            SeriesMetricsChannelTotal(
+                channel=item.channel,
+                view_count=item.view_count,
+                like_count=item.like_count,
+                comment_count=item.comment_count,
+                share_count=item.share_count,
+                like_rate=item.like_rate,
+                comment_rate=item.comment_rate,
+                share_rate=item.share_rate,
+                engagement_rate=item.engagement_rate,
+            )
+            for item in totals
+        ],
+        episodes=[
+            SeriesMetricsEpisodeRow(
+                episode_id=item.episode_id,
+                episode_number=item.episode_number,
+                episode_title=item.episode_title,
+                channel=item.channel,
+                view_count=item.view_count,
+                like_count=item.like_count,
+                comment_count=item.comment_count,
+                share_count=item.share_count,
+                like_rate=item.like_rate,
+                comment_rate=item.comment_rate,
+                share_rate=item.share_rate,
+                engagement_rate=item.engagement_rate,
+                finish_rate=item.finish_rate,
+                avg_play_duration_ms=item.avg_play_duration_ms,
+                fetched_at=item.fetched_at,
+            )
+            for item in episodes
+        ],
+        daily=[
+            SeriesMetricsDailyPoint(
+                date=item.date,
+                channel=item.channel,
+                view_count=item.view_count,
+                like_count=item.like_count,
+                comment_count=item.comment_count,
+                share_count=item.share_count,
+            )
+            for item in daily
+        ],
+        followers=[
+            SeriesFollowerDailyPoint(
+                date=item.date, channel=item.channel, follower_count=item.follower_count
+            )
+            for item in followers
+        ],
+        period_comparison=[
+            SeriesMetricsPeriodComparison(
+                channel=item.channel,
+                view_count_change_pct=item.view_count_change_pct,
+                like_count_change_pct=item.like_count_change_pct,
+                comment_count_change_pct=item.comment_count_change_pct,
+                share_count_change_pct=item.share_count_change_pct,
+            )
+            for item in period_comparison
+        ],
+        coverage=SeriesDistributionCoverage(
+            total_episodes=coverage.total_episodes,
+            episodes_with_final_cut=coverage.episodes_with_final_cut,
+            episodes_distributed=coverage.episodes_distributed,
+            channels_covered=coverage.channels_covered,
+        ),
+    )
 
 
 def _link_response(link) -> PlatformAccountLinkResponse:  # type: ignore[no-untyped-def]

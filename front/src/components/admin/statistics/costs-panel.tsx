@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 
-import { TrendChart, type TrendColor } from '@/components/admin/statistics/trend-chart';
+import { TrendChart, type TrendColor } from '@/components/charts/trend-chart';
 import { EmptyState, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { formatMicroUsd } from '@/lib/admin/micro-usd';

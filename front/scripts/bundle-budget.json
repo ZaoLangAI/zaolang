@@ -1,0 +1,7 @@
+{
+  "$comment": "Committed baseline for scripts/check-bundle-size.mjs, mirroring make openapi-check's pattern: this is a source of truth to bump deliberately, not a generated file. Measured on 2026-08-27 (Next 16.2.12, Turbopack): shared root JS was 446.1KB raw / 129.2KB gzip, and the whole app's static/chunks JS (every route, consumer + admin) was 4053KB raw / 1243KB gzip. Each budget below carries roughly 25% headroom over that measurement. Bump a number here only alongside a real, understood increase (a new dependency, a bigger shared provider, etc.) — not to silence a failing check.",
+  "rootRawKb": 560,
+  "rootGzipKb": 165,
+  "totalRawKb": 5100,
+  "totalGzipKb": 1550
+}

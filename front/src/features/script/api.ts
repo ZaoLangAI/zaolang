@@ -1,5 +1,5 @@
-import { api, buildUrl, getAccessToken, newIdempotencyKey, refreshAccessToken } from '@/lib/api/client';
-import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
+import { api } from '@/lib/api/client';
+import { streamPost as streamAgentPost } from '@/lib/sse-post';
 
 export type ScriptBlockType = 'scene' | 'action' | 'camera' | 'dialogue' | 'breakpoint';
 
@@ -39,6 +39,11 @@ export interface ScriptTurnSummary {
   summary: string;
   referenced_skill_ids: string[];
   created_at: string;
+  /** The model's reasoning trace for this turn — empty for a turn written
+   * before this field existed, or whose model/endpoint never produced one.
+   * Rendered as a collapsed-by-default disclosure, never inside the
+   * right-side script view. */
+  thinking: string;
 }
 
 export interface ScriptSummary {
@@ -57,6 +62,8 @@ export interface ScriptDetail {
   status: string;
   script: ScriptDocument;
   turns: ScriptTurnSummary[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ScriptTurnSnapshot {
@@ -73,11 +80,13 @@ export interface ScriptTurnCompleteEvent {
   summary: string;
   script: ScriptDocument;
   degraded: boolean;
+  thinking: string;
 }
 
 export type ScriptStreamEvent =
   | { event: 'start'; data: { episode_id: string } }
   | { event: 'delta'; data: { text: string } }
+  | { event: 'thinking'; data: { text: string } }
   | { event: 'complete'; data: ScriptTurnCompleteEvent }
   | { event: 'error'; data: { message: string } };
 
@@ -144,75 +153,42 @@ async function* streamPost(
   body: unknown,
   signal?: AbortSignal,
 ): AsyncGenerator<ScriptStreamEvent> {
-  const token = getAccessToken() ?? (await refreshAccessToken());
-  const response = await fetch(buildUrl(path), {
-    method: 'POST',
-    headers: {
-      accept: 'text/event-stream',
-      'content-type': 'application/json',
-      'idempotency-key': newIdempotencyKey(),
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!response.ok || !response.body) {
-    // Same envelope `apiRequest` parses for every non-streaming call — a
-    // failure here (most commonly the feature flag being off) must surface
-    // its `error.message`, not the raw JSON body, in the chat panel.
-    const text = await response.text().catch(() => '');
-    let body: ApiErrorBody | undefined;
-    try {
-      body = text ? (JSON.parse(text) as ApiErrorBody) : undefined;
-    } catch {
-      body = undefined;
-    }
-    throw new ApiError(response.status, body, response.statusText || `HTTP ${response.status}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // SSE frames are separated by a blank line; anything after the last one
-    // is a partial frame that has to wait for the next chunk.
-    const frames = buffer.split('\n\n');
-    buffer = frames.pop() ?? '';
-    for (const frame of frames) {
-      const parsed = parseSseFrame(frame);
-      if (parsed) yield parsed;
-    }
-  }
-}
-
-function parseSseFrame(frame: string): ScriptStreamEvent | null {
-  let event = 'message';
-  let data = '';
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice('event:'.length).trim();
-    else if (line.startsWith('data:')) data += line.slice('data:'.length).trim();
-  }
-  if (!data) return null;
-  try {
-    return { event, data: JSON.parse(data) } as ScriptStreamEvent;
-  } catch {
-    return null;
+  for await (const frame of streamAgentPost(path, body, signal)) {
+    yield frame as ScriptStreamEvent;
   }
 }
 
 export function createScript(
-  input: { title: string; idea: string; referencedSkillIds: string[] },
+  input: { title: string; idea: string; referencedSkillIds: string[]; seriesId?: string },
   signal?: AbortSignal,
 ) {
   return streamPost(
     '/v1/scripts',
     {
       title: input.title,
+      idea: input.idea,
+      referenced_skill_ids: input.referencedSkillIds,
+      series_id: input.seriesId,
+    },
+    signal,
+  );
+}
+
+/**
+ * Re-runs a first draft for an episode shell whose original stream never
+ * finished (a page refresh or dropped connection lost `create-stream-store.ts`'s
+ * in-memory progress) — reuses this exact `episode_id`/`Series` instead of
+ * `createScript`, which always mints a brand-new one. The original idea
+ * text was never persisted anywhere, so the caller must supply it again.
+ */
+export function retryScript(
+  episodeId: string,
+  input: { idea: string; referencedSkillIds: string[] },
+  signal?: AbortSignal,
+) {
+  return streamPost(
+    `/v1/scripts/${episodeId}/retry`,
+    {
       idea: input.idea,
       referenced_skill_ids: input.referencedSkillIds,
     },

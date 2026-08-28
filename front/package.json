@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "gen:api": "openapi-typescript ../back/openapi.json -o src/lib/api/schema.d.ts",
     "check:messages": "node scripts/check-messages.mjs && node scripts/check-message-usage.mjs",
+    "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test --project=e2e",
     "test:a11y": "playwright test --project=a11y --project=a11y-mobile",

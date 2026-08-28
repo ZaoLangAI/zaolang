@@ -3,6 +3,7 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useState } from 'react';
 
+import { LiveThinking, ThinkingDisclosure } from '@/components/ai/thinking-disclosure';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { IconClose } from '@/components/ui/icons';
 import { Badge } from '@/components/ui/primitives';
@@ -13,7 +14,8 @@ import type { AdminJobDetail } from '@/lib/api/admin-types';
 import type { JobStatus } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatDateTime, formatNumber } from '@/lib/format';
-import type { AdminStreamedEvent } from '@/lib/use-admin-job-stream';
+import type { AdminStreamedEvent, LiveThinking as LiveThinkingState } from '@/lib/use-admin-job-stream';
+import { EMPTY_LIVE_THINKING } from '@/lib/use-admin-job-stream';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
 
@@ -23,6 +25,7 @@ export function traceFromEvents(events: AdminStreamedEvent[]): SandboxTraceStep[
   const steps: SandboxTraceStep[] = [];
   const seen = new Set<string>();
   for (const event of events) {
+    if (event.event_type === 'thinking' || event.sequence == null) continue;
     if (!event.node_id || seen.has(event.node_id)) continue;
     seen.add(event.node_id);
     steps.push({ node_id: event.node_id });
@@ -38,6 +41,7 @@ export function SandboxRunInspector({
   jobId,
   events,
   detail,
+  liveThinking = EMPTY_LIVE_THINKING,
   reconnecting = false,
   idleLabel,
   layout = 'stack',
@@ -46,6 +50,7 @@ export function SandboxRunInspector({
   jobId: string | null;
   events: AdminStreamedEvent[];
   detail: AdminJobDetail | null;
+  liveThinking?: LiveThinkingState;
   reconnecting?: boolean;
   idleLabel: string;
   layout?: 'stack' | 'split';
@@ -141,7 +146,9 @@ export function SandboxRunInspector({
         </div>
       ) : (
         <ol className="flex flex-col gap-1.5">
-          {events.map((event) => {
+          {events
+            .filter((event) => event.event_type !== 'thinking' && event.sequence != null)
+            .map((event) => {
             const expandable = Boolean(event.node_id);
             const expanded = event.sequence === selectedSequence;
             return (
@@ -160,7 +167,7 @@ export function SandboxRunInspector({
                     type="button"
                     disabled={!expandable}
                     aria-expanded={expandable ? expanded : undefined}
-                    onClick={() => event.node_id && toggleEvent(event.sequence)}
+                    onClick={() => event.node_id && event.sequence != null && toggleEvent(event.sequence)}
                     className={cn(
                       'flex w-full flex-col gap-0.5 px-3 py-1.5 text-left text-xs transition-colors',
                       expandable
@@ -212,6 +219,11 @@ export function SandboxRunInspector({
             <span className="text-muted">{t('dryRunLatest')}</span> {latestEvent.message}
           </p>
           <p className="tabular text-muted">{tJob('progress', { percent: latestEvent.progress })}</p>
+          <LiveThinking
+            thinking={liveThinking.text}
+            label={t('thinkingLive')}
+            className="max-h-32 overflow-y-auto"
+          />
         </div>
       ) : null}
 
@@ -299,12 +311,14 @@ function NodeInspectBody({
     systemPrompt: string | null;
     userPrompt: string | null;
     mediaPrompt: string | null;
+    thinking: string | null;
     output: string | null;
   };
 }) {
   const t = useTranslations('adminWorkflows');
   return (
     <>
+      <ThinkingDisclosure thinking={inspect.thinking ?? ''} label={t('thinkingLabel')} />
       {inspect.systemPrompt || inspect.userPrompt || inspect.mediaPrompt ? (
         <div className="flex flex-col gap-1">
           <span className="text-[11px] uppercase tracking-wide text-muted">
@@ -358,6 +372,7 @@ function inspectNode(
   systemPrompt: string | null;
   userPrompt: string | null;
   mediaPrompt: string | null;
+  thinking: string | null;
   output: string | null;
 } {
   const runs = detail?.agent_runs?.filter((item) => item.node_id === nodeId) ?? [];
@@ -369,6 +384,8 @@ function inspectNode(
   const payloadEvent = [...events].reverse().find((event) => event.node_id === nodeId);
   const payload = detail?.events?.find((event) => event.node_id === nodeId)?.payload;
   const mediaPrompt = payload && typeof payload.prompt === 'string' ? payload.prompt : null;
+  const thinking =
+    run && typeof run.thinking_text === 'string' && run.thinking_text ? run.thinking_text : null;
   const output = runs.length
     ? runs
         .map((item) => {
@@ -381,5 +398,5 @@ function inspectNode(
       : payloadEvent
         ? payloadEvent.message
         : null;
-  return { systemPrompt, userPrompt, mediaPrompt, output };
+  return { systemPrompt, userPrompt, mediaPrompt, thinking, output };
 }

@@ -17,16 +17,19 @@ happen to guard the same tables, which is intentional — a script written
 here is a normal `DramaEpisode` an author can later open in the drama editor
 to generate cuts from.
 
-Streaming turns split into two phases for a reason that has nothing to do
-with the domain and everything to do with FastAPI: a `StreamingResponse`'s
-generator runs *after* the route handler returns, by which point FastAPI has
-already closed the request-scoped `DbSession` dependency. `prepare_new_script`
-/`prepare_turn` do all validation and ownership checks against that
-request-scoped session (fast, and safe to run inside the handler); the
-caller commits that, then `stream_new_script`/`stream_turn` open their own
-session for the life of the stream via `app.db.session_scope` — the same
-tool workers and one-off scripts use for exactly this "outlives the request"
-reason.
+Streaming turns split for a reason that has nothing to do with the domain
+and everything to do with FastAPI: a `StreamingResponse`'s generator runs
+*after* the route handler returns, by which point FastAPI has already closed
+the request-scoped `DbSession` dependency. `prepare_new_script`/`prepare_turn`
+do all validation and ownership checks against that request-scoped session
+(fast, and safe to run inside the handler); the caller commits that before
+the generator starts.
+
+`stream_new_script`/`stream_turn` then use two short `session_scope()`
+windows — one to resolve the prompt/binding and snapshot the LLM endpoint
+list, one to persist the `AgentRun` + turn *after* the stream drains. The
+LLM call itself holds no DB connection, so a 60s thinking model cannot sit
+`idle in transaction` and starve `GET /v1/scripts/{id}`.
 """
 
 from __future__ import annotations
@@ -42,8 +45,10 @@ from app.agents import copywriter
 from app.db import session_scope
 from app.domain.characters import service as characters_service
 from app.domain.errors import DomainError, NotFound, ValidationFailed
+from app.domain.notifications import push
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
+from app.llm.client import StreamChunk
 from app.models import DramaEpisode, EpisodeCut, EpisodeScriptTurn, Series
 from app.models.enums import DramaEpisodeStatus, SeriesKind, SeriesStatus
 from app.platform_config import service as config_service
@@ -68,6 +73,54 @@ def _owned_episode(session: Session, *, user_id: str, episode_id: str) -> DramaE
     if series is None or series.owner_user_id != user_id:
         raise NotFound("剧本不存在。")
     return episode
+
+
+def _notify_script(
+    session: Session,
+    episode: DramaEpisode,
+    *,
+    status: str,
+    kind: str,
+    series: Series | None = None,
+    turn_no: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Upserts the one notification row for `episode`'s most recent
+    generation attempt, using `session` as-is (must be healthy — never
+    called right after a `session.rollback()` on this same session, see
+    `_notify_script_failure` for that case). Pass `series` when the caller
+    already has it loaded (`prepare_new_script`'s freshly created/looked-up
+    one); otherwise this loads it itself. A missing `Series` (should never
+    happen — every `DramaEpisode` here always has one) degrades to a no-op
+    rather than raising, since a notification is never allowed to be the
+    reason a script request fails."""
+    series = series or session.get(Series, episode.series_id)
+    if series is None:
+        return
+    push.sync_script_notification(
+        session,
+        episode=episode,
+        series=series,
+        status=status,
+        kind=kind,
+        turn_no=turn_no,
+        error=error,
+    )
+
+
+def _notify_script_failure(episode_id: str, *, kind: str, error: str) -> None:
+    """Same as `_notify_script(status="failed")`, but opens its own fresh
+    session instead of reusing the caller's — for the two situations where
+    that session is either not open yet (the LLM call itself raised, before
+    `stream_new_script`/`stream_turn` ever open their persist-phase session)
+    or was just rolled back by the caller's own `except` block (reusing a
+    session immediately after `rollback()` here is avoidable complexity
+    this skips entirely)."""
+    with session_scope() as session:
+        episode = session.get(DramaEpisode, episode_id)
+        if episode is None:
+            return
+        _notify_script(session, episode, status="failed", kind=kind, error=error)
 
 
 def _resolve_referenced_skills(
@@ -125,6 +178,7 @@ class TurnResult:
     summary: str = ""
     script: dict[str, Any] = field(default_factory=dict)
     degraded: bool = False
+    thinking: str = ""
     error: str | None = None
 
 
@@ -135,8 +189,16 @@ def prepare_new_script(
     title: str,
     idea: str,
     referenced_skill_ids: list[str] | None = None,
+    series_id: str | None = None,
 ) -> NewScriptPrep:
-    """Validates input and creates the `Series`+`DramaEpisode` shell.
+    """Validates input and creates the `DramaEpisode` shell.
+
+    When `series_id` is given, the new episode is attached to that existing
+    `kind=drama` series instead of spinning up a new one — this is the
+    "新增一集" entry point from the drama-series management module's series
+    detail page, which must not silently create a second series. Without a
+    `series_id` (the standalone `/create/script` idea-input flow), a new
+    `Series`+episode shell is created together, unchanged from before.
 
     The caller must `session.commit()` this before starting the stream —
     `stream_new_script` looks the episode up again from a different DB
@@ -151,22 +213,40 @@ def prepare_new_script(
         session, user_id=user_id, skill_ids=referenced_skill_ids
     )
 
-    series = Series(
-        owner_user_id=user_id,
-        title=title or idea[:24],
-        description=None,
-        character_ids_json=[],
-        kind=SeriesKind.DRAMA,
-        default_locale="zh-CN",
-        status=SeriesStatus.ACTIVE,
-        allow_external_models=False,
-    )
-    session.add(series)
-    session.flush()
+    if series_id:
+        series = session.get(Series, series_id)
+        if series is None or series.owner_user_id != user_id:
+            raise NotFound("剧集不存在。")
+        if series.kind != SeriesKind.DRAMA:
+            raise ValidationFailed("该系列不是短剧制作项目。")
+    else:
+        series = Series(
+            owner_user_id=user_id,
+            title=title or idea[:24],
+            description=None,
+            character_ids_json=[],
+            kind=SeriesKind.DRAMA,
+            default_locale="zh-CN",
+            status=SeriesStatus.ACTIVE,
+            allow_external_models=False,
+            target_platforms_json=[],
+            genre_tags_json=[],
+        )
+        session.add(series)
+        session.flush()
+
+    next_number = (
+        session.scalar(
+            select(DramaEpisode.episode_number)
+            .where(DramaEpisode.series_id == series.id, DramaEpisode.season_number == 1)
+            .order_by(DramaEpisode.episode_number.desc())
+        )
+        or 0
+    ) + 1
 
     episode = DramaEpisode(
         series_id=series.id,
-        episode_number=1,
+        episode_number=next_number,
         title=title or idea[:24] or "未命名短剧",
         synopsis=None,
         script_json={},
@@ -174,10 +254,57 @@ def prepare_new_script(
     )
     session.add(episode)
     session.flush()
+    _notify_script(session, episode, status="generating", kind="draft", series=series)
 
     return NewScriptPrep(
         episode_id=episode.id, title=title, idea=idea, referenced_skills=referenced
     )
+
+
+def retry_new_script(
+    session: Session,
+    *,
+    user_id: str,
+    episode_id: str,
+    idea: str,
+    referenced_skill_ids: list[str] | None = None,
+) -> NewScriptPrep:
+    """Re-runs the first-draft stream for an episode shell that
+    `prepare_new_script` already created but that never got a finished turn
+    — a page refresh or a dropped connection mid-stream loses
+    `create-stream-store.ts`'s in-memory progress, and by the time the user
+    comes back there is nothing server-side to resume: the original `idea`
+    text was only ever an LLM prompt, never persisted on `DramaEpisode`
+    itself, so this asks for it again rather than trying to recover it from
+    nothing.
+
+    Deliberately does not call `prepare_new_script` again: that always mints
+    a brand-new `Series`+`DramaEpisode` pair, which would leave the original
+    empty shell behind as an orphaned duplicate every time a user retries.
+    Blocked once the episode already has a turn — that is no longer an empty
+    shell, and revising it belongs to `prepare_turn`/`stream_turn` instead.
+    """
+    _require_script_studio(session, user_id=user_id)
+    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    has_turn = session.scalar(
+        select(exists().where(EpisodeScriptTurn.episode_id == episode.id))
+    )
+    if has_turn:
+        raise ValidationFailed("该剧本已生成初稿，无法重新生成。")
+    idea = idea.strip()[:MAX_IDEA_LEN]
+    if not idea:
+        raise ValidationFailed("请先描述你的创意。")
+    referenced = _resolve_referenced_skills(
+        session, user_id=user_id, skill_ids=referenced_skill_ids
+    )
+    _notify_script(session, episode, status="generating", kind="draft")
+    # `title=""`, not `episode.title`: `prepare_new_script` already filled
+    # `episode.title` with a fallback (`idea[:24]` or "未命名短剧") since a
+    # title is never actually optional on the row, so reusing it here would
+    # permanently block `stream_new_script`'s own "no title given yet" path
+    # (`if not prep.title and outcome.script.get("title")`) from ever
+    # applying the model's real title on a successful retry.
+    return NewScriptPrep(episode_id=episode.id, title="", idea=idea, referenced_skills=referenced)
 
 
 def prepare_turn(
@@ -223,6 +350,7 @@ def prepare_turn(
     referenced = _resolve_referenced_skills(
         session, user_id=user_id, skill_ids=referenced_skill_ids
     )
+    _notify_script(session, episode, status="generating", kind="revise")
     return TurnPrep(
         episode_id=episode.id,
         message=message,
@@ -233,14 +361,23 @@ def prepare_turn(
     )
 
 
-def stream_new_script(prep: NewScriptPrep, *, user_id: str, result: TurnResult) -> Iterator[str]:
+def stream_new_script(
+    prep: NewScriptPrep, *, user_id: str, result: TurnResult
+) -> Iterator[StreamChunk]:
     """SSE generator for a script's first turn.
 
-    Opens its own DB session for the life of the stream — see the module
-    docstring for why the request-scoped session cannot be reused here.
+    Forwards `copywriter.stream_draft_script`'s chunks unchanged — each is
+    already a typed `StreamChunk` (`kind="content"` for the chat bubble,
+    `kind="thinking"` for the model's live reasoning); the API layer
+    (`app.api.v1.scripts`) is what turns `.kind` into an SSE event name.
+
+    Resolve + endpoint lookup happen in a short session; the LLM stream
+    itself holds no DB connection; persist opens a second session. See the
+    module docstring for why none of this can reuse the request-scoped
+    session.
     """
-    with session_scope() as session:
-        try:
+    try:
+        with session_scope() as session:
             chunks, finalize_turn = copywriter.stream_draft_script(
                 session,
                 idea=prep.idea,
@@ -248,9 +385,23 @@ def stream_new_script(prep: NewScriptPrep, *, user_id: str, result: TurnResult) 
                 referenced_skills=_skill_hints(prep.referenced_skills),
                 user_id=user_id,
             )
-            yield from chunks
+        yield from chunks
+    except DomainError as exc:
+        result.error = exc.message
+        _notify_script_failure(prep.episode_id, kind="draft", error=result.error)
+        return
+    except Exception as exc:
+        result.error = str(exc)
+        _notify_script_failure(prep.episode_id, kind="draft", error=result.error)
+        return
 
-            outcome = finalize_turn()
+    with session_scope() as session:
+        try:
+            outcome = finalize_turn(session)
+            episode = session.get(DramaEpisode, prep.episode_id)
+            if episode is None:
+                raise NotFound("剧本不存在。")
+
             if not outcome.parse_ok:
                 # Unlike a revision, a first draft has no prior version to
                 # fall back to — `stream_draft_script.finalize` covers that
@@ -264,11 +415,8 @@ def stream_new_script(prep: NewScriptPrep, *, user_id: str, result: TurnResult) 
                 # exactly as `prepare_new_script` left it — is what actually
                 # lets the user retry.
                 result.error = outcome.summary or "剧本生成失败，请换一种方式描述你的创意后重试。"
+                _notify_script(session, episode, status="failed", kind="draft", error=result.error)
                 return
-
-            episode = session.get(DramaEpisode, prep.episode_id)
-            if episode is None:
-                raise NotFound("剧本不存在。")
 
             turn = EpisodeScriptTurn(
                 episode_id=prep.episode_id,
@@ -280,6 +428,7 @@ def stream_new_script(prep: NewScriptPrep, *, user_id: str, result: TurnResult) 
                 script_snapshot_json=outcome.script,
                 referenced_skill_ids_json=[s["id"] for s in prep.referenced_skills],
                 agent_run_id=outcome.agent_run_id,
+                thinking_text=outcome.thinking,
             )
             session.add(turn)
             episode.script_json = outcome.script
@@ -292,29 +441,25 @@ def stream_new_script(prep: NewScriptPrep, *, user_id: str, result: TurnResult) 
             result.summary = outcome.summary
             result.script = outcome.script
             result.degraded = outcome.degraded
+            result.thinking = outcome.thinking
+            _notify_script(session, episode, status="succeeded", kind="draft", turn_no=turn.turn_no)
         except DomainError as exc:
             session.rollback()
             result.error = exc.message
+            _notify_script_failure(prep.episode_id, kind="draft", error=result.error)
         except Exception as exc:
-            # A failed flush/execute leaves the session unable to do anything
-            # else — including `session_scope`'s own commit on the way out —
-            # until it is rolled back. Without this, a DB error here doesn't
-            # surface as a clean `error` frame: `session_scope` re-raises
-            # `PendingRollbackError` while closing, which propagates out of
-            # this generator entirely and kills the stream with no closing
-            # frame at all (delta events arrive, then the connection just
-            # ends) — the caller never learns why.
             session.rollback()
             result.error = str(exc)
+            _notify_script_failure(prep.episode_id, kind="draft", error=result.error)
 
 
-def stream_turn(prep: TurnPrep, *, user_id: str, result: TurnResult) -> Iterator[str]:
-    """SSE generator for a revision turn. Same session-lifetime rationale as
+def stream_turn(prep: TurnPrep, *, user_id: str, result: TurnResult) -> Iterator[StreamChunk]:
+    """SSE generator for a revision turn. Same session-lifetime split as
     `stream_new_script`; the fallback on any failure is `prep.current_script`
     staying exactly as it was — handled inside `copywriter.stream_revise_script`
     itself, not here."""
-    with session_scope() as session:
-        try:
+    try:
+        with session_scope() as session:
             chunks, finalize_turn = copywriter.stream_revise_script(
                 session,
                 message=prep.message,
@@ -322,9 +467,19 @@ def stream_turn(prep: TurnPrep, *, user_id: str, result: TurnResult) -> Iterator
                 referenced_skills=_skill_hints(prep.referenced_skills),
                 user_id=user_id,
             )
-            yield from chunks
+        yield from chunks
+    except DomainError as exc:
+        result.error = exc.message
+        _notify_script_failure(prep.episode_id, kind="revise", error=result.error)
+        return
+    except Exception as exc:
+        result.error = str(exc)
+        _notify_script_failure(prep.episode_id, kind="revise", error=result.error)
+        return
 
-            outcome = finalize_turn()
+    with session_scope() as session:
+        try:
+            outcome = finalize_turn(session)
             episode = session.get(DramaEpisode, prep.episode_id)
             if episode is None:
                 raise NotFound("剧本不存在。")
@@ -339,6 +494,7 @@ def stream_turn(prep: TurnPrep, *, user_id: str, result: TurnResult) -> Iterator
                 script_snapshot_json=outcome.script,
                 referenced_skill_ids_json=[s["id"] for s in prep.referenced_skills],
                 agent_run_id=outcome.agent_run_id,
+                thinking_text=outcome.thinking,
             )
             session.add(turn)
             episode.script_json = outcome.script
@@ -349,18 +505,36 @@ def stream_turn(prep: TurnPrep, *, user_id: str, result: TurnResult) -> Iterator
             result.summary = outcome.summary
             result.script = outcome.script
             result.degraded = outcome.degraded
+            result.thinking = outcome.thinking
+            _notify_script(
+                session, episode, status="succeeded", kind="revise", turn_no=turn.turn_no
+            )
         except DomainError as exc:
             session.rollback()
             result.error = exc.message
+            _notify_script_failure(prep.episode_id, kind="revise", error=result.error)
         except Exception as exc:
             session.rollback()
             result.error = str(exc)
+            _notify_script_failure(prep.episode_id, kind="revise", error=result.error)
 
 
 def list_scripts(session: Session, *, user_id: str) -> list[DramaEpisode]:
-    """Only episodes that have gone through this flow at least once (i.e.
-    have a turn) — a `DramaEpisode` created straight from the drama editor
-    with an empty `script_json` is not "a script in progress" here."""
+    """Every `kind=drama` episode the caller owns, including a 0-turn shell
+    whose first draft is still streaming (in another tab/device) or failed
+    outright — `prepare_new_script`/`retry_new_script` are the only paths
+    that create such a shell today (the drama editor's own
+    `POST /v1/drama-series/{id}/episodes` has no frontend caller), so
+    dropping the "has a turn" requirement no longer hides a script the user
+    is actively waiting on or needs to retry; the caller renders a 0-turn
+    row differently via `turn_count == 0` rather than this list silently
+    excluding it.
+
+    Excludes episodes whose series is in the recycle bin, mirroring
+    `list_drama_series`' default — trashing a series should hide its
+    scripts from this general list too, not just from the series dashboard;
+    a direct link to the episode still works, same as the dashboard's own
+    trashed-series detail page."""
     _require_script_studio(session, user_id=user_id)
     stmt = (
         select(DramaEpisode)
@@ -368,7 +542,7 @@ def list_scripts(session: Session, *, user_id: str) -> list[DramaEpisode]:
         .where(
             Series.owner_user_id == user_id,
             Series.kind == SeriesKind.DRAMA,
-            exists().where(EpisodeScriptTurn.episode_id == DramaEpisode.id),
+            Series.status != SeriesStatus.TRASHED,
         )
         .order_by(DramaEpisode.updated_at.desc())
     )

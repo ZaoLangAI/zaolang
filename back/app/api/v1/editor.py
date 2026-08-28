@@ -17,12 +17,14 @@ from app.api.schemas.editor import (
     CutCreateRequest,
     CutFromJobRequest,
     CutRevisionResponse,
+    CutRevisionSummaryResponse,
     DeliveryVariantResponse,
     DramaEpisodeCreateRequest,
     DramaEpisodeResponse,
     DramaEpisodeUpdateRequest,
     DramaSeriesCreateRequest,
     DramaSeriesResponse,
+    DramaSeriesUpdateRequest,
     EditorExportResponse,
     EditorOperationResponse,
     EditPlanApplyRequest,
@@ -31,6 +33,7 @@ from app.api.schemas.editor import (
     EpisodeContentLinkCreateRequest,
     EpisodeContentLinkResponse,
     EpisodeCutResponse,
+    EpisodeExportResponse,
     EpisodeSetCanonicalWorkRequest,
     ExportClaimRequest,
     ExportCompleteRequest,
@@ -42,6 +45,7 @@ from app.api.schemas.editor import (
     LeaseResponse,
     McpTokenCreateRequest,
     McpTokenResponse,
+    RevisionRestoreRequest,
     TimelineSummaryResponse,
     VariantBatchCreateRequest,
 )
@@ -53,7 +57,16 @@ from app.domain.editor import flags as editor_flags
 from app.domain.editor import leases as lease_service
 from app.domain.editor import service as editor_service
 from app.domain.errors import NotFound, ValidationFailed
-from app.models import CutRevision, DeliveryVariant, EditorExport, EditPlan, EpisodeCut
+from app.models import (
+    Asset,
+    CutRevision,
+    DeliveryVariant,
+    EditorExport,
+    EditPlan,
+    EpisodeCut,
+    MediaAnalysis,
+    Series,
+)
 from app.models.enums import EditorExportStatus, EditPlanStatus, MediaAnalysisStatus
 from app.presenters.media_urls import asset_url
 from app.realtime import publisher
@@ -83,7 +96,12 @@ def _operation_status_is_terminal(status: str) -> bool:
     return False
 
 
-def _series_response(series) -> DramaSeriesResponse:  # type: ignore[no-untyped-def]
+def _series_response(
+    session: DbSession,
+    series: Series,
+    stats: dict[str, int] | None = None,
+) -> DramaSeriesResponse:
+    counts = stats or {}
     return DramaSeriesResponse(
         id=series.id,
         title=series.title,
@@ -93,11 +111,22 @@ def _series_response(series) -> DramaSeriesResponse:  # type: ignore[no-untyped-
         status=series.status,
         allow_external_models=series.allow_external_models,
         shortform_profile_key=series.shortform_profile_key,
+        english_title=series.english_title,
+        planned_episode_count=series.planned_episode_count,
+        genre_tags=list(series.genre_tags_json or []),
+        target_platforms=list(series.target_platforms_json or []),
+        logo_asset_id=series.logo_asset_id,
+        logo_url=asset_url(session, series.logo_asset_id),
+        episode_count=counts.get("episode_count", 0),
+        script_count=counts.get("script_count", 0),
+        video_count=counts.get("video_count", 0),
+        published_count=counts.get("published_count", 0),
         created_at=series.created_at,
+        updated_at=series.updated_at,
     )
 
 
-def episode_response(episode) -> DramaEpisodeResponse:  # type: ignore[no-untyped-def]
+def episode_response(episode, *, has_script_turns: bool = False) -> DramaEpisodeResponse:  # type: ignore[no-untyped-def]
     return DramaEpisodeResponse(
         id=episode.id,
         series_id=episode.series_id,
@@ -108,6 +137,7 @@ def episode_response(episode) -> DramaEpisodeResponse:  # type: ignore[no-untype
         synopsis=episode.synopsis,
         status=episode.status,
         canonical_work_id=episode.canonical_work_id,
+        has_script_turns=has_script_turns,
     )
 
 
@@ -152,6 +182,20 @@ def _revision_response(session, revision: CutRevision) -> CutRevisionResponse:  
         ),
         document=dict(revision.document_json),
         asset_urls=_revision_asset_urls(session, revision),
+        created_at=revision.created_at,
+    )
+
+
+def _revision_summary_response(
+    revision: CutRevision, *, head_revision_id: str | None
+) -> CutRevisionSummaryResponse:
+    return CutRevisionSummaryResponse(
+        id=revision.id,
+        cut_id=revision.cut_id,
+        revision_no=revision.revision_no,
+        parent_revision_id=revision.parent_revision_id,
+        duration_ticks=revision.duration_ticks,
+        is_head=revision.id == head_revision_id,
         created_at=revision.created_at,
     )
 
@@ -232,21 +276,98 @@ def create_drama_series(
         default_locale=payload.default_locale,
         shortform_profile_key=payload.shortform_profile_key,
         allow_external_models=payload.allow_external_models,
+        english_title=payload.english_title,
+        planned_episode_count=payload.planned_episode_count,
+        genre_tags=payload.genre_tags,
+        target_platforms=payload.target_platforms,
+        logo_asset_id=payload.logo_asset_id,
     )
     session.commit()
-    return _series_response(series)
+    return _series_response(session, series)
 
 
 @router.get("/drama-series", response_model=list[DramaSeriesResponse])
-def list_drama_series(user: CurrentUser, session: DbSession) -> list[DramaSeriesResponse]:
-    rows = editor_service.list_drama_series(session, user_id=user.id)
-    return [_series_response(item) for item in rows]
+def list_drama_series(
+    user: CurrentUser,
+    session: DbSession,
+    q: str | None = None,
+    genre: str | None = None,
+    sort: str = "updated_at",
+    sort_dir: str = "desc",
+    status: str | None = None,
+) -> list[DramaSeriesResponse]:
+    rows = editor_service.list_drama_series(
+        session, user_id=user.id, q=q, genre=genre, sort=sort, sort_dir=sort_dir, status=status
+    )
+    stats = editor_service.series_stats(session, series_ids=[item.id for item in rows])
+    return [_series_response(session, item, stats.get(item.id)) for item in rows]
 
 
 @router.get("/drama-series/{series_id}", response_model=DramaSeriesResponse)
 def get_drama_series(series_id: str, user: CurrentUser, session: DbSession) -> DramaSeriesResponse:
     series = editor_service.require_drama_series(session, user_id=user.id, series_id=series_id)
-    return _series_response(series)
+    stats = editor_service.series_stats(session, series_ids=[series.id])
+    return _series_response(session, series, stats.get(series.id))
+
+
+@router.patch("/drama-series/{series_id}", response_model=DramaSeriesResponse)
+def update_drama_series(
+    series_id: str,
+    payload: DramaSeriesUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> DramaSeriesResponse:
+    series = editor_service.update_drama_series(
+        session,
+        user_id=user.id,
+        series_id=series_id,
+        title=payload.title,
+        description=payload.description,
+        english_title=payload.english_title,
+        planned_episode_count=payload.planned_episode_count,
+        genre_tags=payload.genre_tags,
+        target_platforms=payload.target_platforms,
+        logo_asset_id=payload.logo_asset_id,
+    )
+    session.commit()
+    stats = editor_service.series_stats(session, series_ids=[series.id])
+    return _series_response(session, series, stats.get(series.id))
+
+
+@router.delete("/drama-series/{series_id}", status_code=204)
+def trash_drama_series(
+    series_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> None:
+    editor_service.trash_drama_series(session, user_id=user.id, series_id=series_id)
+    session.commit()
+
+
+@router.post("/drama-series/{series_id}/untrash", response_model=DramaSeriesResponse)
+def untrash_drama_series(
+    series_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> DramaSeriesResponse:
+    series = editor_service.untrash_drama_series(session, user_id=user.id, series_id=series_id)
+    session.commit()
+    stats = editor_service.series_stats(session, series_ids=[series.id])
+    return _series_response(session, series, stats.get(series.id))
+
+
+@router.delete("/drama-series/{series_id}/purge", status_code=204)
+def purge_drama_series(
+    series_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> None:
+    editor_service.purge_drama_series(session, user_id=user.id, series_id=series_id)
+    session.commit()
 
 
 @router.post(
@@ -277,16 +398,18 @@ def create_episode(
 def list_episodes(
     series_id: str, user: CurrentUser, session: DbSession
 ) -> list[DramaEpisodeResponse]:
-    return [
-        episode_response(item)
-        for item in editor_service.list_episodes(session, user_id=user.id, series_id=series_id)
-    ]
+    rows = editor_service.list_episodes(session, user_id=user.id, series_id=series_id)
+    turned = editor_service.episodes_with_script_turns(
+        session, episode_ids=[item.id for item in rows]
+    )
+    return [episode_response(item, has_script_turns=item.id in turned) for item in rows]
 
 
 @router.get("/drama-episodes/{episode_id}", response_model=DramaEpisodeResponse)
 def get_episode(episode_id: str, user: CurrentUser, session: DbSession) -> DramaEpisodeResponse:
     episode = editor_service.get_episode(session, user_id=user.id, episode_id=episode_id)
-    return episode_response(episode)
+    turned = editor_service.episodes_with_script_turns(session, episode_ids=[episode.id])
+    return episode_response(episode, has_script_turns=episode.id in turned)
 
 
 @router.patch("/drama-episodes/{episode_id}", response_model=DramaEpisodeResponse)
@@ -309,7 +432,19 @@ def update_episode(
         status=payload.status,
     )
     session.commit()
-    return episode_response(episode)
+    turned = editor_service.episodes_with_script_turns(session, episode_ids=[episode.id])
+    return episode_response(episode, has_script_turns=episode.id in turned)
+
+
+@router.delete("/drama-episodes/{episode_id}", status_code=204)
+def delete_episode(
+    episode_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> None:
+    editor_service.delete_episode(session, user_id=user.id, episode_id=episode_id)
+    session.commit()
 
 
 @router.post(
@@ -376,7 +511,8 @@ def set_canonical_work(
         session, user_id=user.id, episode_id=episode_id, work_id=payload.work_id
     )
     session.commit()
-    return episode_response(episode)
+    turned = editor_service.episodes_with_script_turns(session, episode_ids=[episode.id])
+    return episode_response(episode, has_script_turns=episode.id in turned)
 
 
 @router.post("/episode-cuts:from-job", response_model=EpisodeCutResponse, status_code=201)
@@ -432,6 +568,39 @@ def list_cuts(episode_id: str, user: CurrentUser, session: DbSession) -> list[Ep
     return [
         _cut_response(session, item)
         for item in editor_service.list_cuts(session, user_id=user.id, episode_id=episode_id)
+    ]
+
+
+@router.get("/drama-episodes/{episode_id}/exports", response_model=list[EpisodeExportResponse])
+def list_episode_exports(
+    episode_id: str, user: CurrentUser, session: DbSession
+) -> list[EpisodeExportResponse]:
+    """The episode's "最终成片" list — every export made from any of its
+    cuts, each annotated with its publish state so the frontend can decide
+    whether to offer "设为最终成片" (published), "去发布" (bound but not
+    published) or download-only (never bound to a draft)."""
+    episode = editor_service.get_episode(session, user_id=user.id, episode_id=episode_id)
+    rows = export_service.list_exports_for_episode(session, user_id=user.id, episode_id=episode_id)
+    return [
+        EpisodeExportResponse(
+            id=export.id,
+            status=export.status,
+            profile_key=variant.profile_key,
+            width=variant.width,
+            height=variant.height,
+            format=variant.format,
+            output_asset_id=export.output_asset_id,
+            output_url=asset_url(session, export.output_asset_id),
+            created_at=export.created_at,
+            bound_draft_id=draft.id if draft else None,
+            published_work_id=draft.published_work_id if draft else None,
+            is_canonical=bool(
+                draft
+                and draft.published_work_id
+                and draft.published_work_id == episode.canonical_work_id
+            ),
+        )
+        for export, variant, draft in rows
     ]
 
 
@@ -530,22 +699,62 @@ def apply_revision(
     return _revision_response(session, revision)
 
 
-@router.post("/episode-cuts/{cut_id}/edit-plans", response_model=EditPlanResponse, status_code=202)
+@router.get(
+    "/episode-cuts/{cut_id}/revisions",
+    response_model=list[CutRevisionSummaryResponse],
+)
+def list_revisions(cut_id: str, user: CurrentUser, session: DbSession) -> list[CutRevisionSummaryResponse]:
+    cut = editor_service._owned_cut(session, user_id=user.id, cut_id=cut_id)
+    revisions = editor_service.list_revisions(session, user_id=user.id, cut_id=cut_id)
+    return [
+        _revision_summary_response(item, head_revision_id=cut.head_revision_id)
+        for item in revisions
+    ]
+
+
+@router.post(
+    "/episode-cuts/{cut_id}/revisions:restore",
+    response_model=CutRevisionResponse,
+    status_code=201,
+)
+def restore_revision(
+    cut_id: str,
+    payload: RevisionRestoreRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> CutRevisionResponse:
+    revision = editor_service.restore_revision(
+        session,
+        user_id=user.id,
+        cut_id=cut_id,
+        revision_id=payload.revision_id,
+        expected_revision_id=payload.expected_revision_id,
+        lease_id=payload.lease_id,
+        lease_token=payload.lease_token,
+    )
+    session.commit()
+    return _revision_response(session, revision)
+
+
+@router.post("/episode-cuts/{cut_id}/edit-plans", status_code=202)
 def create_edit_plan(
     cut_id: str,
     payload: EditPlanCreateRequest,
     user: CurrentUser,
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("editor_write"))],
-) -> EditPlanResponse:
+) -> StreamingResponse:
     from app.agents import editor_planner
+    from app.api.agent_sse import SSE_HEADERS, iter_agent_sse
+    from app.db import session_scope
 
     editor_flags.require_flag(session, editor_flags.FLAG_AI, user_id=user.id)
     cut = editor_service._owned_cut(session, user_id=user.id, cut_id=cut_id)
     head = editor_service.head_revision(session, cut)
     if head is None:
         raise ValidationFailed("剪辑还没有可编辑的修订。")
-    outcome = editor_planner.plan_timeline(
+    chunks, finalize = editor_planner.stream_plan_timeline(
         session,
         user_id=user.id,
         cut=cut,
@@ -553,19 +762,37 @@ def create_edit_plan(
         goal=payload.goal,
         max_commands=payload.max_commands,
     )
-    plan = editor_service.create_edit_plan(
-        session,
-        user_id=user.id,
-        cut_id=cut_id,
-        goal=payload.goal,
-        commands=list(outcome.data.get("commands") or []),
-        summary=str(outcome.data.get("summary") or payload.goal),
-        agent_run_id=outcome.agent_run_id,
-        model=outcome.model,
-        warnings=[str(item) for item in (outcome.data.get("warnings") or [])],
+
+    def generate() -> Iterator[str]:
+        def _finish() -> EditPlanResponse:
+            with session_scope() as persist:
+                outcome = finalize(persist)
+                plan = editor_service.create_edit_plan(
+                    persist,
+                    user_id=user.id,
+                    cut_id=cut_id,
+                    goal=payload.goal,
+                    commands=list(outcome.data.get("commands") or []),
+                    summary=str(outcome.data.get("summary") or payload.goal),
+                    agent_run_id=outcome.agent_run_id,
+                    model=outcome.model,
+                    warnings=[str(item) for item in (outcome.data.get("warnings") or [])],
+                )
+                persist.commit()
+                return _plan_response(plan)
+
+        yield from iter_agent_sse(
+            chunks,
+            _finish,
+            lambda plan: plan.model_dump(mode="json"),
+        )
+
+    return StreamingResponse(
+        generate(),
+        status_code=202,
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
     )
-    session.commit()
-    return _plan_response(plan)
 
 
 @router.post("/edit-plans/{plan_id}/apply", response_model=CutRevisionResponse)
@@ -769,6 +996,37 @@ def bind_editor_export(
     return {"draft_id": draft.id, "export_id": payload.export_id}
 
 
+@router.post(
+    "/media-assets/{asset_id}/transcriptions",
+    response_model=EditorOperationResponse,
+    status_code=202,
+)
+def request_transcription(
+    asset_id: str, user: CurrentUser, session: DbSession
+) -> EditorOperationResponse:
+    """Enqueues speech-to-text for an owned video/audio asset.
+
+    Mirrors the MCP tool `editor.request_transcription` — the poll-friendly
+    `id` returned here is the same `MediaAnalysis` row fetched by
+    `get_operation` below.
+    """
+    editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user.id)
+    asset = session.get(Asset, asset_id)
+    # 404 rather than 403 for someone else's asset, so this cannot be used to
+    # probe for existence (same rationale as `GET /assets/{asset_id}`).
+    if asset is None or asset.owner_user_id != user.id:
+        raise NotFound("素材不存在。")
+    analysis = media_analysis.enqueue_transcription(session, asset_id=asset_id)
+    session.commit()
+    celery_app.send_task("app.workers.tasks.run_editor_transcription", args=[analysis.id])
+    return EditorOperationResponse(
+        id=analysis.id,
+        kind="media_analysis",
+        status=analysis.status,
+        progress=100 if analysis.status in {"succeeded", "degraded", "failed"} else 10,
+    )
+
+
 @router.get("/editor-operations/{operation_id}", response_model=EditorOperationResponse)
 def get_operation(
     operation_id: str, user: CurrentUser, session: DbSession
@@ -797,16 +1055,20 @@ def get_operation(
             progress=100 if plan.commands_json else 10,
         )
     if operation_id.startswith("man_"):
-        from app.models import MediaAnalysis
-
         analysis = session.get(MediaAnalysis, operation_id)
         if analysis is None:
             raise NotFound("操作不存在。")
+        result: dict[str, Any] = {}
+        if analysis.status in {"succeeded", "degraded"}:
+            asset = session.get(Asset, analysis.asset_id)
+            if asset is not None and asset.owner_user_id == user.id:
+                result = {"transcript": analysis.transcript_json}
         return EditorOperationResponse(
             id=analysis.id,
             kind="media_analysis",
             status=analysis.status,
             progress=100 if analysis.status in {"succeeded", "degraded", "failed"} else 10,
+            result=result,
         )
     raise NotFound("操作不存在。")
 

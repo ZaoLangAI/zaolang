@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from typing import Any
 
@@ -46,6 +47,8 @@ from app.models.enums import (
     QualityTier,
     VideoAssetKind,
 )
+from app.llm import client as llm_client
+from app.llm.client import StreamChunk
 from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
 from app.realtime import publisher
 from app.storage import s3
@@ -65,6 +68,7 @@ from app.workflows.configs import (
     SafetyCheckConfig,
     SettleSuccessConfig,
     SkillContextConfig,
+    VideoAnalysisGenerateConfig,
 )
 from app.workflows.types import NodeResult, PipelineOutcome, WorkflowContext
 
@@ -92,6 +96,11 @@ _REFERENCE_REQUIRED = frozenset(
         # which the provider genuinely cannot proceed without.
         Operation.IMAGE_TO_VIDEO.value,
         Operation.VIDEO_TO_VIDEO.value,
+        # There is nothing to analyze without the source clip — unlike every
+        # generation operation above, `prompt` here is the optional part
+        # (a supplementary note), so this is the one thing standing in for
+        # "the request has an actual subject".
+        Operation.VIDEO_ANALYSIS.value,
     }
 )
 _SANDBOX_POLL_INTERVAL_SECONDS = 2.0
@@ -113,6 +122,9 @@ def _emit(
     A no-op when `ctx.dry_run` is set: unit tests walk a graph without a
     persisted job, so there is no event stream to attach one to.
     """
+    scaled = _scale_for_character_views(ctx, progress)
+    ctx.state["_last_event_status"] = status.value
+    ctx.state["_last_event_progress"] = scaled
     if ctx.dry_run:
         return
     event = sm.append_event(
@@ -121,7 +133,7 @@ def _emit(
         event_type=event_type,
         status=status,
         public_message=message,
-        progress=_scale_for_character_views(ctx, progress),
+        progress=scaled,
         internal_code=internal_code,
         payload=payload,
         node_id=ctx.state.get("_current_node_id"),
@@ -140,18 +152,46 @@ def _emit(
     )
 
 
+def publish_thinking(ctx: WorkflowContext, text: str) -> None:
+    """Live Redis thinking frame — not a `JobEvent` row, no `sequence`."""
+    if ctx.dry_run or not text:
+        return
+    publisher.publish_job_event(
+        ctx.job.id,
+        {
+            "event_type": "thinking",
+            "node_id": ctx.state.get("_current_node_id"),
+            "status": ctx.state.get("_last_event_status") or ctx.job.status,
+            "progress": ctx.state.get("_last_event_progress") or 0,
+            "message": "",
+            "thinking": text,
+        },
+    )
+
+
+@contextmanager
+def _live_thinking(ctx: WorkflowContext):
+    def on_chunk(chunk: StreamChunk) -> None:
+        if chunk.kind == "thinking" and chunk.text:
+            publish_thinking(ctx, chunk.text)
+
+    with llm_client.bind_on_chunk(on_chunk):
+        yield
+
+
 def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> NodeResult:
     _emit(ctx, JobEventType.SAFETY, JobStatus.QUEUED, "正在进行安全检查", 8)
-    verdict = safety.review(
-        ctx.session,
-        text=ctx.prompt,
-        stage=ModerationStage.PRE_GENERATION,
-        subject_type="generation_job",
-        subject_id=ctx.job.id,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-    )
+    with _live_thinking(ctx):
+        verdict = safety.review(
+            ctx.session,
+            text=ctx.prompt,
+            stage=ModerationStage.PRE_GENERATION,
+            subject_type="generation_job",
+            subject_id=ctx.job.id,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state["_last_agent_run_id"] = verdict.agent_run_id
     if verdict.status == ModerationStatus.REJECTED:
         # Hard veto: only the `fail` node may act on this, and nothing
@@ -312,28 +352,30 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
     slot judges the intent worth asking about.
     """
     _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划生成方案", 16)
-    outcome = planner.plan(
-        ctx.session,
-        intent=ctx.prompt,
-        source_params=ctx.params,
-        requested_operation=ctx.job.operation,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-    )
+    with _live_thinking(ctx):
+        outcome = planner.plan(
+            ctx.session,
+            intent=ctx.prompt,
+            source_params=ctx.params,
+            requested_operation=ctx.job.operation,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 
     if not config.allow_followup_question or ctx.dry_run:
         return NodeResult(port="ok", summary=f"生成计划 → {config.output_key}")
 
-    clarify_outcome = planner.clarify(
-        ctx.session,
-        intent=ctx.prompt,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-    )
+    with _live_thinking(ctx):
+        clarify_outcome = planner.clarify(
+            ctx.session,
+            intent=ctx.prompt,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state["_last_agent_run_id"] = clarify_outcome.agent_run_id
     questions = clarify_outcome.data.get("questions") or []
     if not clarify_outcome.data.get("needs_clarification") or not questions:
@@ -362,16 +404,17 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
 
 def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> NodeResult:
     _emit(ctx, JobEventType.INTENT_ROUTING, JobStatus.QUEUED, "正在理解生成意图", 20)
-    outcome = intent_router_agent.classify(
-        ctx.session,
-        intent=ctx.prompt,
-        params=ctx.params,
-        operation=ctx.job.operation,
-        requested_tier=ctx.job.quality_tier,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-    )
+    with _live_thinking(ctx):
+        outcome = intent_router_agent.classify(
+            ctx.session,
+            intent=ctx.prompt,
+            params=ctx.params,
+            operation=ctx.job.operation,
+            requested_tier=ctx.job.quality_tier,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state["intent_hint"] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
     suggested = outcome.data.get("suggested_quality_tier")
@@ -539,31 +582,33 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     if media_axis == "video":
         _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划视频资产生成方案", 16)
-        outcome = planner.plan_video_asset(
-            ctx.session,
-            intent=ctx.prompt,
-            video_asset_kind=asset_kind,
-            target_character_id=ctx.params.get("target_character_id"),
-            target_scene_id=ctx.params.get("target_scene_id"),
-            source_params=ctx.params,
-            job_id=ctx.agent_job_id,
-            user_id=ctx.job.user_id,
-            agent_id=config.agent_id,
-        )
+        with _live_thinking(ctx):
+            outcome = planner.plan_video_asset(
+                ctx.session,
+                intent=ctx.prompt,
+                video_asset_kind=asset_kind,
+                target_character_id=ctx.params.get("target_character_id"),
+                target_scene_id=ctx.params.get("target_scene_id"),
+                source_params=ctx.params,
+                job_id=ctx.agent_job_id,
+                user_id=ctx.job.user_id,
+                agent_id=config.agent_id,
+            )
     else:
         _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划图片资产生成方案", 16)
-        outcome = planner.plan_asset(
-            ctx.session,
-            intent=ctx.prompt,
-            asset_kind=asset_kind,
-            character_view=character_view,
-            target_character_id=ctx.params.get("target_character_id"),
-            target_scene_id=ctx.params.get("target_scene_id"),
-            source_params=ctx.params,
-            job_id=ctx.agent_job_id,
-            user_id=ctx.job.user_id,
-            agent_id=config.agent_id,
-        )
+        with _live_thinking(ctx):
+            outcome = planner.plan_asset(
+                ctx.session,
+                intent=ctx.prompt,
+                asset_kind=asset_kind,
+                character_view=character_view,
+                target_character_id=ctx.params.get("target_character_id"),
+                target_scene_id=ctx.params.get("target_scene_id"),
+                source_params=ctx.params,
+                job_id=ctx.agent_job_id,
+                user_id=ctx.job.user_id,
+                agent_id=config.agent_id,
+            )
     ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 
@@ -921,15 +966,16 @@ def execute_custom_agent_step(ctx: WorkflowContext, config: CustomAgentStepConfi
     own. Nothing here settles credits or transitions state.
     """
     _emit(ctx, JobEventType.PROGRESS, JobStatus.RUNNING, "正在进行智能体判断", 30)
-    outcome = custom_agent.judge(
-        ctx.session,
-        role=config.agent_role,
-        payload={"prompt": ctx.prompt, "params": ctx.params, "operation": ctx.job.operation},
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-        slot=config.slot,
-    )
+    with _live_thinking(ctx):
+        outcome = custom_agent.judge(
+            ctx.session,
+            role=config.agent_role,
+            payload={"prompt": ctx.prompt, "params": ctx.params, "operation": ctx.job.operation},
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+            slot=config.slot,
+        )
     ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
     return NodeResult(port="ok", summary=f"{config.agent_role} → {config.output_key}")
@@ -973,22 +1019,24 @@ def execute_copy_generate(ctx: WorkflowContext, config: CopyGenerateConfig) -> N
     `allow_followup_question` is set and the copy agent's own `clarify` slot
     judges the description worth asking about.
     """
-    outcome = copywriter.suggest(
-        ctx.session,
-        prompt=ctx.prompt,
-        lineage_summary=str(ctx.params.get("lineage_summary") or ""),
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-    )
+    with _live_thinking(ctx):
+        outcome = copywriter.suggest(
+            ctx.session,
+            prompt=ctx.prompt,
+            lineage_summary=str(ctx.params.get("lineage_summary") or ""),
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state[config.output_key] = outcome.data
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 
     if not config.allow_followup_question or ctx.dry_run:
         return NodeResult(port="ok", summary=f"文案建议 → {config.output_key}")
 
-    clarify_outcome = copywriter.clarify(
-        ctx.session, prompt=ctx.prompt, user_id=ctx.job.user_id, agent_id=config.agent_id
-    )
+    with _live_thinking(ctx):
+        clarify_outcome = copywriter.clarify(
+            ctx.session, prompt=ctx.prompt, user_id=ctx.job.user_id, agent_id=config.agent_id
+        )
     ctx.state["_last_agent_run_id"] = clarify_outcome.agent_run_id
     questions = clarify_outcome.data.get("questions") or []
     if not clarify_outcome.data.get("needs_clarification") or not questions:
@@ -1052,18 +1100,19 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
     tier = _effective_tier(ctx.job.quality_tier, hint)
     raw_cost_bias = hint.get("cost_bias")
     cost_bias = raw_cost_bias if isinstance(raw_cost_bias, (int, float)) else None
-    decision = router.route(
-        ctx.session,
-        operation=ctx.job.operation,
-        quality_tier=tier,
-        max_latency_ms=config.max_latency_ms,
-        exclude_providers=tried_providers,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        selector_agent_id=config.selector_agent_id,
-        request_params=ctx.params,
-        cost_bias=cost_bias,
-    )
+    with _live_thinking(ctx):
+        decision = router.route(
+            ctx.session,
+            operation=ctx.job.operation,
+            quality_tier=tier,
+            max_latency_ms=config.max_latency_ms,
+            exclude_providers=tried_providers,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            selector_agent_id=config.selector_agent_id,
+            request_params=ctx.params,
+            cost_bias=cost_bias,
+        )
     ctx.job.routing_trace_json = decision.trace()
     ctx.session.flush()
 
@@ -1204,6 +1253,32 @@ def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
             negative_prompt = f"{negative_prompt}，{joined}" if negative_prompt else joined
 
     return prompt, negative_prompt
+
+
+def _stub_video_analysis_result() -> GenerationResult:
+    """A settled fake breakdown for a dry run — no `object_key`, matching
+    `VideoAnalysisResult`'s shape (`app.api.schemas.jobs`) instead of a
+    media artifact's."""
+    return GenerationResult(
+        succeeded=True,
+        output_json={
+            "summary": "沙盒预览：整体为一段快节奏城市夜景运镜。",
+            "composed_prompt": "霓虹夜色下的城市航拍，缓慢推进，赛博朋克风格",
+            "style_tags": ["cyberpunk", "夜景"],
+            "pacing": "快节奏剪辑",
+            "shots": [
+                {
+                    "time_range": "00:00-00:03",
+                    "camera_movement": "推镜",
+                    "scene": "城市天际线",
+                    "subject_action": "无人机缓慢前进",
+                    "lighting_mood": "霓虹冷色调",
+                    "transition_in": "淡入",
+                }
+            ],
+        },
+        metadata={"dry_run": True},
+    )
 
 
 def _stub_generation_result(operation: str) -> GenerationResult:
@@ -1520,28 +1595,167 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
     return NodeResult(port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功")
 
 
+def execute_video_analysis_generate(
+    ctx: WorkflowContext, config: VideoAnalysisGenerateConfig
+) -> NodeResult:
+    """`video_analysis`'s own generate-and-settle node.
+
+    Mirrors `execute_provider_generate`'s routing/billing/cancel/retry
+    skeleton, but the success branch never registers an `Asset` — it writes
+    the provider's structured breakdown straight into `ctx.state["result_json"]`
+    for `execute_settle_success` to persist onto
+    `GenerationJob.analysis_result_json`, and settles the full reserved
+    credits directly, since this operation has no downstream
+    `quality_check` (a text breakdown has no image/video quality to judge)
+    and no partial-duration billing applies (`settlement_credits` only
+    adjusts `VIDEO_OPERATIONS`, which `video_analysis` is deliberately not a
+    member of — see `app.domain.credits.pricing`).
+
+    The provider call is synchronous today (see `AiHubMixMediaProvider
+    ._submit_video_analysis`), so unlike `execute_provider_generate` this
+    never suspends on a pending external task; if a future protocol needs
+    that, a `result.pending` reply just lands in the same failure/retry
+    branch below until `route_score`'s `max_attempts` is exhausted — revisit
+    this node before shipping an async video-understanding protocol.
+    """
+    decision = ctx.state.get("decision")
+    if decision is None or decision.capability is None:
+        ctx.state["failure_code"] = "PROVIDER_TEMPORARY_FAILURE"
+        ctx.state["failure_message"] = "没有可用的解析路线，积分已退回。"
+        return NodeResult(port="failed")
+
+    capability = decision.capability
+    attempt_number = ctx.state.get("attempt_number", 1)
+
+    if ctx.dry_run:
+        _emit(ctx, JobEventType.GENERATING, JobStatus.SUBMITTED, "正在解析视频", 40)
+        if ctx.live_provider:
+            result = _sandbox_live_generate(ctx, decision)
+        else:
+            result = _stub_video_analysis_result()
+    else:
+        if ctx.job.status == JobStatus.QUEUED:
+            ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.SUBMITTED)
+        _emit(ctx, JobEventType.GENERATING, JobStatus.SUBMITTED, "正在解析视频", 40)
+        if ctx.job.status != JobStatus.RUNNING:
+            ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.RUNNING)
+
+        ctx.session.refresh(ctx.job)
+        if ctx.job.cancel_requested_at is not None:
+            ctx.job = honor_user_cancel(ctx.session, ctx.job)
+            return NodeResult(
+                port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
+            )
+
+        request = GenerationRequest(
+            job_id=ctx.job.id,
+            operation=ctx.job.operation,
+            quality_tier=ctx.job.quality_tier,
+            prompt=ctx.prompt,
+            references=media_service.provider_references_for(
+                ctx.session,
+                user_id=ctx.job.user_id,
+                asset_ids=ctx.params.get("reference_asset_ids") or [],
+            ),
+            extra=dict(ctx.params.get("extra") or {}),
+            attempt_number=attempt_number,
+        )
+        result = decision.provider.submit(request)
+        attempt_cost_micro_usd = costs_service.generation_attempt_cost_micro_usd(
+            capability.pricing, capability=ctx.job.operation, request=request
+        )
+        attempt = ProviderAttempt(
+            job_id=ctx.job.id,
+            provider=capability.name,
+            provider_kind=capability.kind,
+            model_or_workflow_version=capability.model_or_workflow,
+            external_task_id=result.external_task_id,
+            attempt_number=attempt_number,
+            status=_attempt_status(result),
+            cost_minor=result.cost_minor,
+            cost_micro_usd=attempt_cost_micro_usd,
+            latency_ms=result.latency_ms,
+            failure_code=result.failure_code,
+            raw_metadata_redacted_json=result.metadata,
+            created_at=utcnow(),
+        )
+        ctx.session.add(attempt)
+        ctx.session.flush()
+
+        ctx.session.refresh(ctx.job)
+        if ctx.job.cancel_requested_at is not None:
+            attempt.status = ProviderAttemptStatus.CANCELLED
+            ctx.session.flush()
+            ctx.job = honor_user_cancel(ctx.session, ctx.job)
+            return NodeResult(
+                port="cancelled", terminal=PipelineOutcome(status=JobStatus.CANCELLED)
+            )
+
+        router.record_attempt_outcome(
+            ctx.session,
+            provider=capability.name,
+            operation=ctx.job.operation,
+            quality_tier=ctx.job.quality_tier,
+            succeeded=result.succeeded,
+            latency_ms=result.latency_ms,
+            cost_minor=result.cost_minor,
+            cost_micro_usd=attempt_cost_micro_usd,
+        )
+        ctx.session.flush()
+
+    if not result.succeeded or not result.output_json:
+        ctx.state["failure_code"] = result.failure_code or "PROVIDER_TEMPORARY_FAILURE"
+        detail = result.metadata.get("detail") if isinstance(result.metadata, dict) else None
+        if detail:
+            ctx.state["error_detail"] = str(detail)
+        _emit(
+            ctx,
+            JobEventType.PROGRESS,
+            JobStatus.RUNNING,
+            "这条线路暂时不可用，正在尝试其他路线",
+            45,
+            internal_code=ctx.state["failure_code"],
+        )
+        failure_summary = f"{capability.name} 失败：{ctx.state['failure_code']}"
+        skip_retry = (ctx.dry_run and ctx.live_provider) or not config.retry_on_failure
+        if skip_retry:
+            ctx.state["failure_message"] = "视频解析失败，积分已退回。"
+            return NodeResult(port="failed", summary=failure_summary)
+        return NodeResult(port="retry", summary=failure_summary)
+
+    ctx.state["result_json"] = result.output_json
+    ctx.state["actual_credits"] = ctx.job.reserved_credits
+    if ctx.dry_run and ctx.live_provider:
+        ctx.state["_preview_result_json"] = result.output_json
+    _emit(ctx, JobEventType.GENERATING, JobStatus.RUNNING, "解析完成，正在结算", 85)
+    return NodeResult(
+        port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功"
+    )
+
+
 def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> NodeResult:
     result = ctx.state.get("result")
     capability = ctx.state.get("capability")
     attempt_number = ctx.state.get("attempt_number", 1)
 
     _emit(ctx, JobEventType.QUALITY_CHECK, JobStatus.RUNNING, "正在校验输出质量", 78)
-    outcome = quality.evaluate(
-        ctx.session,
-        prompt=ctx.prompt,
-        output_summary={
-            "width": result.width if result else None,
-            "height": result.height if result else None,
-            "duration_ms": result.duration_ms if result else None,
-            "provider": capability.name if capability else None,
-            "partial_output": bool(result and result.metadata.get("partial_output")),
-            "upstream_status": result.metadata.get("upstream_status") if result else None,
-        },
-        attempt_number=attempt_number,
-        job_id=ctx.agent_job_id,
-        user_id=ctx.job.user_id,
-        agent_id=config.agent_id,
-    )
+    with _live_thinking(ctx):
+        outcome = quality.evaluate(
+            ctx.session,
+            prompt=ctx.prompt,
+            output_summary={
+                "width": result.width if result else None,
+                "height": result.height if result else None,
+                "duration_ms": result.duration_ms if result else None,
+                "provider": capability.name if capability else None,
+                "partial_output": bool(result and result.metadata.get("partial_output")),
+                "upstream_status": result.metadata.get("upstream_status") if result else None,
+            },
+            attempt_number=attempt_number,
+            job_id=ctx.agent_job_id,
+            user_id=ctx.job.user_id,
+            agent_id=config.agent_id,
+        )
     ctx.state["_last_agent_run_id"] = outcome.agent_run_id
 
     if outcome.data.get("verdict") == "fail":
@@ -1632,9 +1846,16 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
     else:
         asset_id = ctx.state.get("asset_id")
         asset_ids = [str(asset_id)] if asset_id else []
+    # `video_analysis`'s own output: `execute_video_analysis_generate` sets
+    # this instead of `asset_id`/`asset_outputs` — the two are mutually
+    # exclusive because this operation never registers an `Asset`.
+    result_json = ctx.state.get("result_json")
 
     terminal = PipelineOutcome(
-        status=JobStatus.SUCCEEDED, asset_id=asset_id, asset_ids=asset_ids or None
+        status=JobStatus.SUCCEEDED,
+        asset_id=asset_id,
+        asset_ids=asset_ids or None,
+        result_json=result_json,
     )
     if ctx.dry_run:
         return NodeResult(port="_terminal", terminal=terminal)
@@ -1650,6 +1871,7 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
         actual_credits=actual,
         output_asset_id=asset_id,
         output_asset_ids=asset_ids or None,
+        analysis_result_json=result_json,
     )
     _emit(
         ctx,
@@ -1657,7 +1879,7 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
         JobStatus.SUCCEEDED,
         "生成完成",
         100,
-        payload={"asset_id": asset_id},
+        payload={"asset_id": asset_id} if asset_id else {"has_analysis": bool(result_json)},
     )
     return NodeResult(port="_terminal", terminal=terminal)
 

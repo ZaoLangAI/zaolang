@@ -102,7 +102,10 @@ def upsert_llm_provider(
             role=payload.role if payload.kind == "general" else "backup",
             backup_order=payload.backup_order if payload.kind == "general" else 100,
             model=payload.model,
-            input_modalities=list(payload.input_modalities) if payload.kind == "media" else [],
+            # General endpoints now declare their own subset too (text is
+            # auto-injected, image/video are optional) — the domain
+            # validator enforces the allowed set per kind.
+            input_modalities=list(payload.input_modalities),
             output_modalities=list(payload.output_modalities) if payload.kind == "media" else [],
             protocol=payload.protocol if payload.kind == "media" else None,
             max_concurrency=payload.max_concurrency if payload.kind == "general" else 1,
@@ -135,7 +138,7 @@ def upsert_llm_provider(
             "role": payload.role,
             "model": payload.model,
             "protocol": endpoint.protocol if payload.kind == "media" else None,
-            "input_modalities": sorted(payload.input_modalities) if payload.kind == "media" else [],
+            "input_modalities": sorted(endpoint.input_modalities),
             "output_modalities": sorted(payload.output_modalities)
             if payload.kind == "media"
             else [],

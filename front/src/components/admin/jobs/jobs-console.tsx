@@ -12,6 +12,7 @@ import { FilterBar, Pager } from '@/components/admin/filter-bar';
 import { RoutingReplayTable } from '@/components/admin/jobs/routing-replay-table';
 import { WorkflowSteps } from '@/components/admin/jobs/workflow-steps';
 import { Timeline, type TimelineEntry } from '@/components/admin/timeline';
+import { ThinkingDisclosure } from '@/components/ai/thinking-disclosure';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { Button } from '@/components/ui/button';
 import { Badge, type BadgeTone } from '@/components/ui/primitives';
@@ -62,6 +63,7 @@ function IdWithTooltip({ primary, id }: { primary: string; id: string }) {
 export function JobsConsole() {
   const t = useTranslations('adminJobs');
   const tAdmin = useTranslations('admin');
+  const tAgents = useTranslations('adminAgents');
   const tJob = useTranslations('job');
   const locale = useLocale() as Locale;
   const { notify } = useToast();
@@ -488,27 +490,33 @@ export function JobsConsole() {
                   {agentRuns.map((run) => (
                     <li
                       key={run.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2"
+                      className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border px-3 py-2"
                     >
-                      <span className="font-mono">
-                        {run.agent_display_name ?? run.agent_name}
-                        {run.agent_display_name ? (
-                          <span className="ml-1.5 text-muted">
-                            ({t('agentProfile', { role: run.agent_name })})
-                          </span>
-                        ) : null}
-                        {run.model ? ` · ${run.model}` : ''}
-                        {run.degraded ? (
-                          <Badge tone="amber" className="ml-2">
-                            {t('degraded')}
-                          </Badge>
-                        ) : null}
-                      </span>
-                      <span className="tabular text-muted">
-                        {t('promptTokens')} {formatNumber(run.prompt_tokens ?? 0, locale)} ·{' '}
-                        {t('completionTokens')} {formatNumber(run.completion_tokens ?? 0, locale)} ·{' '}
-                        {formatNumber(run.latency_ms ?? 0, locale)}ms
-                      </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono">
+                          {run.agent_display_name ?? run.agent_name}
+                          {run.agent_display_name ? (
+                            <span className="ml-1.5 text-muted">
+                              ({t('agentProfile', { role: run.agent_name })})
+                            </span>
+                          ) : null}
+                          {run.model ? ` · ${run.model}` : ''}
+                          {run.degraded ? (
+                            <Badge tone="amber" className="ml-2">
+                              {t('degraded')}
+                            </Badge>
+                          ) : null}
+                        </span>
+                        <span className="tabular text-muted">
+                          {t('promptTokens')} {formatNumber(run.prompt_tokens ?? 0, locale)} ·{' '}
+                          {t('completionTokens')} {formatNumber(run.completion_tokens ?? 0, locale)} ·{' '}
+                          {formatNumber(run.latency_ms ?? 0, locale)}ms
+                        </span>
+                      </div>
+                      <ThinkingDisclosure
+                        thinking={run.thinking_text ?? ''}
+                        label={tAgents('thinkingLabel')}
+                      />
                     </li>
                   ))}
                 </ol>

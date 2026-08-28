@@ -25,6 +25,7 @@ from app.api.schemas.jobs import (
     QuoteRequest,
     QuoteResponse,
     RouteSummary,
+    VideoAnalysisResult,
 )
 from app.domain.credits import service as credits_service
 from app.domain.errors import NotFound, ValidationFailed
@@ -100,6 +101,11 @@ def create_job(
 
         if not config_service.is_enabled(session, "video_generation", user_id=user.id):
             raise ValidationFailed("视频生成暂未开放。")
+    if payload.operation == Operation.VIDEO_ANALYSIS:
+        from app.platform_config import service as config_service
+
+        if not config_service.is_enabled(session, "video_analysis_enabled", user_id=user.id):
+            raise ValidationFailed("视频解析暂未开放。")
 
     source_version_id = _resolve_source_version(session, payload, user.id)
 
@@ -131,14 +137,18 @@ def list_jobs(
     session: DbSession,
     status: JobStatus | None = None,
     draft_id: str | None = None,
+    operation: Operation | None = None,
     limit: int = Query(default=20, ge=1, le=50),
 ) -> Page[GenerationJobResponse]:
-    """Lists the user's own jobs, optionally scoped to one draft.
+    """Lists the user's own jobs, optionally scoped to one draft or operation.
 
     `draft_id` is how the image studio's inline version-history strip lists
     every iteration generated under the same creative draft — the
     `user_id`/`origin` filters below already keep this from leaking another
-    user's jobs even if a foreign draft id is passed.
+    user's jobs even if a foreign draft id is passed. `operation` is how the
+    "视频解析" tool's history panel lists only its own jobs
+    (`operation=video_analysis`), without a `draft_id` to scope by — that
+    tool never creates one.
     """
     stmt = (
         select(GenerationJob)
@@ -153,6 +163,8 @@ def list_jobs(
         stmt = stmt.where(GenerationJob.status == status)
     if draft_id is not None:
         stmt = stmt.where(GenerationJob.draft_id == draft_id)
+    if operation is not None:
+        stmt = stmt.where(GenerationJob.operation == operation.value)
     jobs = list(session.scalars(stmt))
     return Page(items=[_job_response(session, job) for job in jobs])
 
@@ -363,6 +375,10 @@ def stream_events(
                     yield ": heartbeat\n\n"
                 continue
 
+            if payload.get("event_type") == "thinking":
+                # Live-only: no `id:`, does not advance Last-Event-ID.
+                yield _sse_live(payload)
+                continue
             sequence = int(payload.get("sequence", 0))
             # Pub/sub can deliver an event the backfill already sent.
             if sequence <= last_sequence:
@@ -385,6 +401,10 @@ def stream_events(
 
 def _sse(event_id: int, payload: dict[str, object]) -> str:
     return f"id: {event_id}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _sse_live(payload: dict[str, object]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _parse_last_event_id(value: str | None) -> int:
@@ -466,6 +486,7 @@ def _job_response(
         )
         if job.output_asset_ids_json
         else None,
+        reference_url=_reference_url_of(session, job),
         asset_kind=_asset_kind_of(job),
         video_asset_kind=_video_asset_kind_of(job),
         character_views=_character_views_of(job),
@@ -473,6 +494,7 @@ def _job_response(
         linked_scene_id=job.linked_scene_id,
         draft_id=job.draft_id,
         prompt=_prompt_of(job),
+        analysis=_analysis_of(job),
         failure_code=job.failure_code,
         failure_message=job.failure_message,
         cancel_requested=job.cancel_requested_at is not None,
@@ -487,6 +509,32 @@ def _prompt_of(job: GenerationJob) -> str | None:
     params = job.request_json if isinstance(job.request_json, dict) else {}
     prompt = params.get("prompt")
     return prompt if isinstance(prompt, str) else None
+
+
+def _reference_url_of(session: Session, job: GenerationJob) -> str | None:
+    # Signing costs a request to the storage backend, so this stays scoped to
+    # the one operation that actually needs its input echoed back — every
+    # other operation's client already knows its own reference (it just
+    # uploaded it) and has no use for this field.
+    if job.operation != Operation.VIDEO_ANALYSIS.value:
+        return None
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    references = params.get("reference_asset_ids")
+    if not isinstance(references, list) or not references:
+        return None
+    return media_urls.asset_url(session, references[0])
+
+
+def _analysis_of(job: GenerationJob) -> VideoAnalysisResult | None:
+    raw = job.analysis_result_json
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return VideoAnalysisResult.model_validate(raw)
+    except ValueError:
+        # A malformed/legacy payload must not break the whole job response —
+        # the client just shows no structured result for it.
+        return None
 
 
 def _asset_kind_of(job: GenerationJob) -> ImageAssetKind | None:

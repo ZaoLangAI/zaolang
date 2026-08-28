@@ -21,6 +21,16 @@ logger = logging.getLogger(__name__)
 # than this would be unreachable, so every duration setting is capped by it.
 MAX_GENERATION_DURATION_SECONDS = 30
 
+# Added to a reasoning model's requested budget in `LlmProviderEndpoint
+# .output_budget` — enough headroom for a chain-of-thought pass without
+# handing the call the endpoint's *entire* declared ceiling on the first
+# attempt (which used to be this method's unconditional behaviour): a call
+# that spends this margin thinking and still hasn't produced a visible
+# answer gets truncated and, for a streaming caller that cares, retried once
+# with a doubled budget (see `LlmProviderEndpoint.expand_output_budget`)
+# rather than being left to think for however long the full ceiling allows.
+REASONING_THINKING_MARGIN_TOKENS = 4096
+
 
 class ConfigSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -170,6 +180,10 @@ class FeatureFlags(ConfigSection):
     # the full episode/cut editor does, and gating it on the bigger flag
     # would block that staged rollout.
     script_studio_enabled: bool = False
+    # Gates the "视频解析" creation tool end to end: the `/create` page's
+    # tool card, and `POST /v1/generation-jobs` for `operation=video_analysis`
+    # (same "off means 404/hidden" staged-rollout shape as `script_studio_enabled`).
+    video_analysis_enabled: bool = False
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
@@ -185,6 +199,7 @@ class FeatureFlags(ConfigSection):
             "editor_mcp_enabled",
             "marketplace_enabled",
             "script_studio_enabled",
+            "video_analysis_enabled",
         }
         for name, pct in self.rollout_percentages.items():
             if name not in allowed:
@@ -239,7 +254,17 @@ MEDIA_CAPABILITIES: list[str] = [op.value for op in Operation]
 # that does derive a capability is harmless, it just contributes nothing on
 # its own; see `_media_model_and_modalities_are_coherent` below.
 MEDIA_INPUT_MODALITIES: list[str] = ["text", "image", "video", "audio"]
-MEDIA_OUTPUT_MODALITIES: list[str] = ["image", "video", "audio"]
+# `text` joined the output side alongside image/video/audio for
+# `video_analysis` — the first capability that reads media and writes a
+# structured text breakdown instead of generating more media.
+MEDIA_OUTPUT_MODALITIES: list[str] = ["image", "video", "audio", "text"]
+
+# `kind="general"` endpoints declare input types from this smaller set —
+# `"text"` is always present (a chat endpoint always reads text), `"image"`
+# is a declarative label only, `"video"` additionally makes the endpoint a
+# `video_analysis` candidate. No `"audio"`: nothing consumes it for general
+# endpoints yet. Ordered for stable display/round-tripping.
+GENERAL_INPUT_MODALITIES: list[str] = ["text", "image", "video"]
 
 # One (input modality, output modality) pair per `Operation` — the new
 # capability-selection axis. There is no per-capability model any more: an
@@ -252,6 +277,7 @@ _CAPABILITY_MODALITY_MAP: dict[Operation, tuple[str, str]] = {
     Operation.IMAGE_TO_VIDEO: ("image", "video"),
     Operation.VIDEO_TO_VIDEO: ("video", "video"),
     Operation.AUDIO_GENERATION: ("text", "audio"),
+    Operation.VIDEO_ANALYSIS: ("video", "text"),
 }
 
 
@@ -285,7 +311,7 @@ MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
     "ark",
     "kling",
 )
-IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset({"openai", "minimax"})
+IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset({"openai", "minimax", "dashscope"})
 _OPENAI_CAPABILITIES = frozenset(
     {
         Operation.TEXT_TO_IMAGE.value,
@@ -303,12 +329,18 @@ _MINIMAX_CAPABILITIES = frozenset(
 _COMFYUI_CAPABILITIES = (_OPENAI_CAPABILITIES | _MINIMAX_CAPABILITIES) - {
     Operation.AUDIO_GENERATION.value
 }
+# DashScope (Alibaba) is the first implemented protocol whose only capability
+# is `video_analysis` — Qwen-VL's OpenAI-compatible mode accepts a `video_url`
+# content part and answers in plain text (see `AiHubMixMediaProvider`'s
+# `_submit_video_analysis`). Scoped to this one capability only; don't widen
+# it to image/video generation without a real endpoint that does that too.
+_DASHSCOPE_CAPABILITIES = frozenset({Operation.VIDEO_ANALYSIS.value})
 PROTOCOL_CAPABILITIES: dict[str, frozenset[str]] = {
     "openai": _OPENAI_CAPABILITIES,
     "minimax": _MINIMAX_CAPABILITIES,
     "comfyui": _COMFYUI_CAPABILITIES,
     "google": frozenset(),
-    "dashscope": frozenset(),
+    "dashscope": _DASHSCOPE_CAPABILITIES,
     "ark": frozenset(),
     "kling": frozenset(),
 }
@@ -317,13 +349,19 @@ PROTOCOL_CAPABILITIES: dict[str, frozenset[str]] = {
 def infer_media_protocol(capabilities: Iterable[str]) -> MediaProtocol:
     """Guess the contract for a pre-protocol media endpoint.
 
-    Video-only → MiniMax (the only implemented video path). Anything else,
-    including mixed image+video leftovers, → OpenAI so the after-validator
-    can reject the mismatch instead of silently picking a vendor.
+    Video-only → MiniMax (the only implemented video-generation path).
+    `video_analysis`-only → DashScope (the only implemented video-in/text-out
+    path — an endpoint predating this capability could never have declared
+    it, so this branch only ever fires for a freshly-created endpoint).
+    Anything else, including mixed image+video leftovers, → OpenAI so the
+    after-validator can reject the mismatch instead of silently picking a
+    vendor.
     """
     caps = set(capabilities)
     if caps and caps <= _MINIMAX_CAPABILITIES:
         return "minimax"
+    if caps and caps <= _DASHSCOPE_CAPABILITIES:
+        return "dashscope"
     return "openai"
 
 
@@ -432,6 +470,20 @@ class VideoPricing(ConfigSection):
         )
 
 
+class VideoAnalysisPricing(ConfigSection):
+    """Billed per request, unlike generation pricing's per-second/per-image
+    shape — a video-understanding call has one fixed cost regardless of how
+    long the source clip is (within the 3-minute cap the C-end enforces),
+    since the vendor charges per call/per-token on the response, not per
+    second of input."""
+
+    per_request_micro_usd: int = _MicroUsd
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(self.per_request_micro_usd)
+
+
 class MediaPricing(ConfigSection):
     """The price sections a media endpoint declares.
 
@@ -443,6 +495,7 @@ class MediaPricing(ConfigSection):
     image: ImagePricing | None = None
     audio: AudioPricing | None = None
     video: VideoPricing | None = None
+    video_analysis: VideoAnalysisPricing | None = None
 
 
 # Which pricing section each capability tag bills against.
@@ -453,6 +506,7 @@ _CAPABILITY_PRICING_SECTION: dict[str, str] = {
     Operation.TEXT_TO_VIDEO.value: "video",
     Operation.IMAGE_TO_VIDEO.value: "video",
     Operation.VIDEO_TO_VIDEO.value: "video",
+    Operation.VIDEO_ANALYSIS.value: "video_analysis",
 }
 
 
@@ -467,7 +521,13 @@ class LlmProviderEndpoint(ConfigSection):
     `kind="general"` is a text + vision LLM endpoint: every agent call
     (safety/planner/quality/copy) draws from this single shared pool via the
     failover logic in `app/llm/failover.py` — explicit primary/backup role +
-    live concurrency + circuit-breaker state, no scoring formula.
+    live concurrency + circuit-breaker state, no scoring formula. A general
+    endpoint that also declares `"video"` in `input_modalities` plays a
+    second, independent role: it additionally enters the `video_analysis`
+    dynamic capability catalog (`app.providers.media_endpoints.
+    dynamic_capabilities`) and gets scored/selected by `intent_router` like
+    any media endpoint, while remaining a failover-pool member for its
+    ordinary agent-call role. The two selection paths never interact.
 
     `kind="media"` is a media generation endpoint (image/video/audio). It is
     selected from the enabled endpoints maintained in Models; test fakes are
@@ -491,7 +551,13 @@ class LlmProviderEndpoint(ConfigSection):
     # ids means several endpoints, not several entries here: pricing, context
     # limits and cost accounting all hang off this one name.
     model: str = ""
-    # `kind="media"` only: subsets of `MEDIA_INPUT_MODALITIES`/`_OUTPUT_MODALITIES`.
+    # `kind="media"`: subsets of `MEDIA_INPUT_MODALITIES`/`_OUTPUT_MODALITIES`.
+    # `kind="general"`: subset of `{"text","image","video"}` — what the model
+    # can read besides plain text. `"text"` is always present (auto-injected
+    # by the validator below); `"image"` is a declarative label only (no
+    # capability derives from it yet); `"video"` makes the endpoint a
+    # `video_analysis` candidate — see `capabilities` and
+    # `media_endpoints.dynamic_capabilities`.
     input_modalities: list[str] = Field(default_factory=list)
     output_modalities: list[str] = Field(default_factory=list)
     # `kind="media"` only: which HTTP contract this endpoint speaks. Missing
@@ -501,8 +567,11 @@ class LlmProviderEndpoint(ConfigSection):
     timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
     enabled: bool = True
     # `kind="general"` only: what the model can hold and emit. Zero means the
-    # operator has not declared it — displayed as unknown, never enforced as a
-    # limit, because the provider is the authority on its own ceiling.
+    # operator has not declared it — shown as unknown in admin and treated as
+    # "no declared ceiling" at call time (the request is honoured as-is). A
+    # non-zero value *is* the ceiling: `output_budget` / `expand_output_budget`
+    # use these instead of a code constant so a 4k model and a 128k model
+    # cannot share one invented floor or retry cap.
     context_length: int = Field(default=0, ge=0, le=100_000_000)
     max_output_tokens: int = Field(default=0, ge=0, le=10_000_000)
     # `kind="general"` only: what this model's tokens cost us.
@@ -518,10 +587,55 @@ class LlmProviderEndpoint(ConfigSection):
         plain `@property` (not a pydantic field), so it never round-trips
         through `model_dump()` and can't go stale relative to the modalities
         that produced it.
+
+        A `kind="general"` endpoint has no declared output modality (it is
+        always a text-answering chat endpoint), so it can only ever derive
+        `video_analysis` — the one capability whose output side is `"text"`
+        — and only when it declares `"video"` on the input side.
         """
-        if self.kind != "media":
-            return set()
-        return capabilities_for_modalities(self.input_modalities, self.output_modalities)
+        if self.kind == "media":
+            return capabilities_for_modalities(self.input_modalities, self.output_modalities)
+        if self.kind == "general" and "video" in self.input_modalities:
+            return {Operation.VIDEO_ANALYSIS.value}
+        return set()
+
+    def output_budget(
+        self,
+        requested: int,
+        *,
+        prompt_tokens: int = 0,
+        reasoning_model: bool = False,
+    ) -> int:
+        """Completion tokens to ask this endpoint for.
+
+        Declared `max_output_tokens` / `context_length` of 0 mean the
+        operator has not filled them in — the request is honoured as-is,
+        including for a reasoning model: there is no ceiling to add a
+        thinking margin under, so inventing one here would be a made-up
+        floor for a model nobody has told this endpoint's real limits.
+        A reasoning model that *has* a declared ceiling gets `requested`
+        plus `REASONING_THINKING_MARGIN_TOKENS` of headroom for hidden
+        thinking, capped by that ceiling — not the ceiling itself, so a
+        model spending an unusually long time thinking gets truncated (and,
+        for a streaming caller, retried once — see `stream_complete`) well
+        before the endpoint's full declared limit. Remaining context
+        (`context_length - prompt_tokens`) is a second cap when the window
+        is known.
+        """
+        budget = max(int(requested), 1)
+        if self.max_output_tokens:
+            if reasoning_model:
+                budget += REASONING_THINKING_MARGIN_TOKENS
+            budget = min(budget, self.max_output_tokens)
+        if self.context_length:
+            remaining = self.context_length - max(int(prompt_tokens), 0)
+            if remaining > 0:
+                budget = min(budget, remaining)
+        return max(budget, 1)
+
+    def expand_output_budget(self, current: int, *, prompt_tokens: int = 0) -> int:
+        """One truncation retry: double, then re-apply this model's ceilings."""
+        return self.output_budget(max(int(current), 1) * 2, prompt_tokens=prompt_tokens)
 
     @model_validator(mode="after")
     def _media_model_and_modalities_are_coherent(self) -> LlmProviderEndpoint:
@@ -530,7 +644,23 @@ class LlmProviderEndpoint(ConfigSection):
             if not self.model:
                 raise ValueError("通用模型端点必须填写模型名称。")
             self.protocol = None
-            self.media_pricing = MediaPricing()
+            self.output_modalities = []
+            bad = set(self.input_modalities) - set(GENERAL_INPUT_MODALITIES)
+            if bad:
+                raise ValueError(f"通用模型不支持的输入类型: {sorted(bad)}")
+            # Text is the one input every chat endpoint always accepts —
+            # never optional, so it is injected rather than required from
+            # the caller.
+            modalities = {"text", *self.input_modalities}
+            self.input_modalities = [m for m in GENERAL_INPUT_MODALITIES if m in modalities]
+            # A price for a capability this endpoint cannot produce would
+            # still show up in cost reports and router estimates, same
+            # reasoning as the media branch below.
+            self.media_pricing = MediaPricing(
+                video_analysis=(
+                    self.media_pricing.video_analysis if "video" in self.input_modalities else None
+                )
+            )
             return self
         if not self.model:
             raise ValueError("媒体模型必须填写模型名称。")
@@ -563,6 +693,9 @@ class LlmProviderEndpoint(ConfigSection):
             image=self.media_pricing.image if "image" in priced else None,
             audio=self.media_pricing.audio if "audio" in priced else None,
             video=self.media_pricing.video if "video" in priced else None,
+            video_analysis=(
+                self.media_pricing.video_analysis if "video_analysis" in priced else None
+            ),
         )
         return self
 
@@ -675,6 +808,10 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
             Operation.IMAGE_TO_VIDEO.value: {"preview": 26, "standard": 80, "cinematic": 240},
             Operation.VIDEO_TO_VIDEO.value: {"preview": 34, "standard": 100, "cinematic": 280},
             Operation.AUDIO_GENERATION.value: {"preview": 2, "standard": 6, "cinematic": 15},
+            # Tiers map to analysis depth, not render quality: preview = one
+            # overall summary, standard = a per-scene breakdown, cinematic =
+            # a full shot-by-shot breakdown with transitions.
+            Operation.VIDEO_ANALYSIS.value: {"preview": 20, "standard": 50, "cinematic": 120},
         },
         "video_base_seconds": 4,
         "video_per_second_surcharge": {"preview": 4, "standard": 12, "cinematic": 30},
@@ -702,6 +839,7 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "editor_mcp_enabled": False,
         "marketplace_enabled": True,
         "script_studio_enabled": False,
+        "video_analysis_enabled": False,
         "rollout_percentages": {},
     },
     "content_moderation": {"blocked_keywords": []},

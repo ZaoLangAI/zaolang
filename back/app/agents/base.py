@@ -20,12 +20,13 @@ from app.domain.costs import service as costs_service
 from app.llm import client as llm_client
 from app.llm import failover
 from app.llm.model_defaults import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
+from app.llm.normalize import extract_json
 from app.models import AgentProfile, AgentRun
 from app.models.base import utcnow
 from app.models.enums import AgentRunStatus
 from app.observability.context import get_request_id
 from app.platform_config import service as config_service
-from app.platform_config.schemas import LlmProviderConfig
+from app.platform_config.schemas import LlmProviderConfig, LlmProviderEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,14 @@ logger = logging.getLogger(__name__)
 # than the column being dropped in a migration purely for this cleanup.
 GATEWAY_MODE = "openai_compatible"
 
+# Same floor as `copywriter.MAX_THINKING_LEN` — a thinking model narrating
+# its plan easily runs into the thousands of characters.
+AGENT_THINKING_MAX_LEN = 8000
+
+
+def _clip_thinking(text: str) -> str:
+    return (text or "")[:AGENT_THINKING_MAX_LEN]
+
 
 @dataclass(slots=True)
 class AgentOutcome:
@@ -43,6 +52,7 @@ class AgentOutcome:
     degraded: bool
     model: str
     agent_run_id: str
+    thinking: str = ""
 
 
 @dataclass(slots=True, frozen=True)
@@ -87,9 +97,10 @@ def effective_binding(
         endpoint_id for endpoint_id in (default_endpoint_id, backup_endpoint_id) if endpoint_id
     )
 
+    endpoint = _bound_endpoint(config, preferred)
     return EffectiveBinding(
-        model=_bound_model(config, preferred),
-        max_tokens=value("max_tokens") or DEFAULT_MAX_TOKENS,
+        model=endpoint.model if endpoint is not None else "",
+        max_tokens=_binding_max_tokens(value("max_tokens"), endpoint),
         temperature=(
             value("temperature_milli") / 1000
             if value("temperature_milli") is not None
@@ -100,24 +111,45 @@ def effective_binding(
     )
 
 
-def _bound_model(config: LlmProviderConfig, preferred: tuple[str, ...]) -> str:
-    """The model this binding starts on.
+def _bound_endpoint(
+    config: LlmProviderConfig, preferred: tuple[str, ...]
+) -> LlmProviderEndpoint | None:
+    """The general endpoint this binding starts on.
 
-    Failover may still finish on the backup endpoint's own model — this is
-    only where the call begins. An agent pinned to endpoints that have since
-    been removed counts as unbound rather than quietly borrowing someone
-    else's provider.
+    Failover may still finish on the backup endpoint — this is only where
+    the call begins. An agent pinned to endpoints that have since been
+    removed counts as unbound rather than quietly borrowing someone else's
+    provider.
     """
     if preferred:
         for endpoint_id in preferred:
             endpoint = config.endpoints.get(endpoint_id)
             if endpoint is not None and endpoint.kind == "general" and endpoint.model:
-                return endpoint.model
-        return ""
+                return endpoint
+        return None
     for _, endpoint in failover.general_candidates(config):
         if endpoint.model:
-            return endpoint.model
-    return ""
+            return endpoint
+    return None
+
+
+def _binding_max_tokens(
+    profile_max: int | None, endpoint: LlmProviderEndpoint | None
+) -> int:
+    """Sampling size: profile override, else the model's declared max output.
+
+    `AgentProfile.max_tokens` is an operator cap and is itself clamped to
+    the endpoint's `max_output_tokens` when that field is set. An empty
+    profile field uses the model's declared ceiling so a 16k reasoning
+    model is not asked for the generic 2048-token fallback. Zero on the
+    endpoint still means "undeclared" — then `DEFAULT_MAX_TOKENS`.
+    """
+    model_max = endpoint.max_output_tokens if endpoint is not None else 0
+    if profile_max:
+        return min(profile_max, model_max) if model_max else profile_max
+    if model_max:
+        return model_max
+    return DEFAULT_MAX_TOKENS
 
 
 def _token_cost_micro_usd(
@@ -168,6 +200,7 @@ def _record_agent_run(
     endpoint_id: str,
     input_json: dict[str, Any],
     output_json: dict[str, Any],
+    thinking_text: str = "",
 ) -> AgentRun:
     """Shared `AgentRun` bookkeeping for both `run_agent` and
     `run_agent_stream` — every agent call, streamed or not, must be recorded
@@ -195,6 +228,7 @@ def _record_agent_run(
         endpoint_id=endpoint_id,
         input_json=input_json,
         output_json=output_json,
+        thinking_text=_clip_thinking(thinking_text),
         request_id=get_request_id() or None,
         created_at=utcnow(),
     )
@@ -216,6 +250,7 @@ def run_agent(
     slot: str = DEFAULT_SLOT,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    on_chunk: Callable[[llm_client.StreamChunk], None] | None = None,
 ) -> AgentOutcome:
     """Runs one agent turn and always returns usable structured data.
 
@@ -257,6 +292,7 @@ def run_agent(
         expect_json=True,
         reasoning_model=binding.reasoning_model,
         preferred_endpoint_ids=binding.preferred_endpoint_ids,
+        on_chunk=on_chunk,
     )
 
     parse_failed = result.response.data is None
@@ -286,6 +322,7 @@ def run_agent(
         endpoint_id=result.endpoint_id,
         input_json={"system_prompt": resolved.text, "user_prompt": user_prompt},
         output_json=data,
+        thinking_text=result.thinking,
     )
 
     return AgentOutcome(
@@ -294,6 +331,7 @@ def run_agent(
         degraded=run.degraded,
         model=run.model or binding.model or "",
         agent_run_id=run.id,
+        thinking=result.thinking,
     )
 
 
@@ -303,6 +341,9 @@ class StreamOutcome:
     degraded: bool
     model: str
     agent_run_id: str
+    # The model's reasoning trace for this turn, raw (see `StreamResult.thinking`
+    # in `app.llm.client`) — empty when the model/endpoint never produced one.
+    thinking: str = ""
 
 
 def run_agent_stream(
@@ -315,7 +356,12 @@ def run_agent_stream(
     user_id: str | None = None,
     agent_id: str | None = None,
     slot: str = DEFAULT_SLOT,
-) -> tuple[Iterator[str], Callable[[], StreamOutcome]]:
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    expect_json: bool = False,
+    is_usable: Callable[[str], bool] | None = None,
+    extra_messages: list[dict[str, str]] | None = None,
+) -> tuple[Iterator[llm_client.StreamChunk], Callable[[Session | None], StreamOutcome]]:
     """Streaming counterpart to `run_agent`.
 
     Returns `(chunks, finalize)`. The caller must fully drain `chunks` before
@@ -323,10 +369,30 @@ def run_agent_stream(
     served it settled. `finalize()` writes the `AgentRun` (same invariant as
     `run_agent`) and returns the accumulated text plus its bookkeeping.
 
+    `max_tokens`/`temperature` override the profile/model-declared sampling
+    the same way `run_agent` does. The serving endpoint still caps (and, for
+    a reasoning model, lifts) that request against its own
+    `max_output_tokens` / `context_length`. `finalize(persist_session)`
+    writes the `AgentRun` on that session when given, so the resolve session
+    can close before the LLM stream starts.
+
+    `expect_json` is `False` by default: a streaming turn may be mixed
+    prose+JSON (script writing), so this wrapper does not force JSON mode.
+    A JSON-only slot such as prompt polish passes `True` to match `run_agent`.
+
     There is no `fallback`/`data` here: a streaming turn returns mixed
     prose+JSON text, not one parsed JSON blob, so extracting and validating
     structure out of it is the caller's job (see
     `app.agents.copywriter.stream_script_turn`), not this wrapper's.
+
+    `chunks` carries `llm_client.StreamChunk`s, not plain strings — a caller
+    forwarding them to a UI must branch on `.kind` (`"content"` vs.
+    `"thinking"`) rather than assuming everything iterated is chat text (see
+    `app.domain.script_writing.service`, the first caller that actually
+    displays the `"thinking"` ones).
+
+    `is_usable` passes straight through to `llm_client.stream_complete` — see
+    its own docstring for exactly which retry decision it gates.
     """
     resolved = agent_skills_service.resolve_prompt(
         session, agent_name, system_prompt, agent_id=agent_id, slot=slot
@@ -336,27 +402,37 @@ def run_agent_stream(
     binding = effective_binding(session, agent_name, profile)
 
     result = llm_client.StreamResult()
+    messages = (
+        [{"role": "system", "content": resolved.text}, *extra_messages]
+        if extra_messages is not None
+        else [
+            {"role": "system", "content": resolved.text},
+            {"role": "user", "content": user_prompt},
+        ]
+    )
+    # `stream_complete` reads `llm_providers` from `session` before returning
+    # the iterator, so this session can close before `chunks` is drained.
     chunks = llm_client.stream_complete(
         session=session,
         agent_name=agent_name,
         model=binding.model or "",
-        messages=[
-            {"role": "system", "content": resolved.text},
-            {"role": "user", "content": user_prompt},
-        ],
+        messages=messages,
         result=result,
-        max_tokens=binding.max_tokens,
-        temperature=binding.temperature,
+        max_tokens=max_tokens if max_tokens is not None else binding.max_tokens,
+        temperature=temperature if temperature is not None else binding.temperature,
         reasoning_model=binding.reasoning_model,
         preferred_endpoint_ids=binding.preferred_endpoint_ids,
+        is_usable=is_usable,
+        expect_json=expect_json,
     )
 
-    def finalize() -> StreamOutcome:
+    def finalize(persist_session: Session | None = None) -> StreamOutcome:
         # Reaching here means the generator was drained without
         # `stream_complete` raising, so the call succeeded — there is no
         # streaming equivalent of a JSON-parse failure to mark degraded.
+        target = persist_session if persist_session is not None else session
         run = _record_agent_run(
-            session,
+            target,
             agent_name=agent_name,
             profile_id=profile_id,
             slot=slot,
@@ -372,13 +448,17 @@ def run_agent_stream(
             latency_ms=result.latency_ms,
             endpoint_id=result.endpoint_id,
             input_json={"system_prompt": resolved.text, "user_prompt": user_prompt},
+            # Thinking lives on `thinking_text`, not inside `output_json`, so
+            # a JSON replay stays a structured payload.
             output_json={"raw_text": result.text},
+            thinking_text=result.thinking,
         )
         return StreamOutcome(
             raw_text=result.text,
             degraded=run.degraded,
             model=run.model or binding.model or "",
             agent_run_id=run.id,
+            thinking=result.thinking,
         )
 
     return chunks, finalize
@@ -394,6 +474,18 @@ class DebugChatOutcome:
     prompt_tokens: int | None
     completion_tokens: int | None
     agent_run_id: str
+    thinking: str = ""
+
+
+def _debug_system_prompt(
+    session: Session, profile: AgentProfile, slot: str, prompt_override: str | None
+) -> str:
+    if prompt_override is not None:
+        return prompt_override
+    resolved = agent_skills_service.resolve_prompt(
+        session, profile.role, "", agent_id=profile.id, slot=slot
+    )
+    return resolved.text
 
 
 def run_agent_debug(
@@ -423,14 +515,7 @@ def run_agent_debug(
     debugging, where `run_agent`'s callers instead have their own hardcoded
     constant to fall back to.
     """
-    if prompt_override is not None:
-        system_prompt = prompt_override
-    else:
-        resolved = agent_skills_service.resolve_prompt(
-            session, profile.role, "", agent_id=profile.id, slot=slot
-        )
-        system_prompt = resolved.text
-
+    system_prompt = _debug_system_prompt(session, profile, slot, prompt_override)
     binding = effective_binding(session, profile.role, profile)
     result = llm_client.complete(
         session=session,
@@ -449,12 +534,13 @@ def run_agent_debug(
     # purpose is letting an operator see whether a draft prompt actually
     # produces valid JSON, so silently reporting success here would defeat it.
     parse_failed = result.response.data is None
-    run = AgentRun(
+    run = _record_agent_run(
+        session,
+        agent_name=profile.role,
+        profile_id=profile.id,
+        slot=slot,
         job_id=None,
         user_id=None,
-        agent_name=profile.role,
-        agent_profile_id=profile.id,
-        prompt_slot=slot,
         mode=GATEWAY_MODE,
         model=_recorded_model(result, binding),
         status=AgentRunStatus.FAILED if parse_failed else AgentRunStatus.SUCCEEDED,
@@ -469,11 +555,8 @@ def run_agent_debug(
             "user_prompt": history[-1]["content"] if history else "",
         },
         output_json=result.response.data or {},
-        request_id=get_request_id() or None,
-        created_at=utcnow(),
+        thinking_text=result.thinking,
     )
-    session.add(run)
-    session.flush()
 
     return DebugChatOutcome(
         reply_text=result.response.text,
@@ -484,7 +567,79 @@ def run_agent_debug(
         prompt_tokens=result.response.prompt_tokens,
         completion_tokens=result.response.completion_tokens,
         agent_run_id=run.id,
+        thinking=result.thinking,
     )
+
+
+def run_agent_debug_stream(
+    session: Session,
+    *,
+    profile: AgentProfile,
+    slot: str,
+    prompt_override: str | None,
+    history: list[dict[str, str]],
+) -> tuple[Iterator[llm_client.StreamChunk], Callable[[Session | None], DebugChatOutcome]]:
+    """HTTP-SSE counterpart to `run_agent_debug`.
+
+    Uses the same prompt-override rule (an unsaved draft is sent verbatim)
+    rather than `run_agent_stream`'s `resolve_prompt`, which would replace
+    the draft with the published skill.
+    """
+    system_prompt = _debug_system_prompt(session, profile, slot, prompt_override)
+    binding = effective_binding(session, profile.role, profile)
+    result = llm_client.StreamResult()
+    chunks = llm_client.stream_complete(
+        session=session,
+        agent_name=profile.role,
+        model=binding.model or "",
+        messages=[{"role": "system", "content": system_prompt}, *history],
+        result=result,
+        max_tokens=binding.max_tokens,
+        temperature=binding.temperature,
+        reasoning_model=binding.reasoning_model,
+        preferred_endpoint_ids=binding.preferred_endpoint_ids,
+    )
+
+    def finish(persist_session: Session | None = None) -> DebugChatOutcome:
+        parsed = extract_json(result.text)
+        parse_failed = parsed is None
+        target = persist_session if persist_session is not None else session
+        run = _record_agent_run(
+            target,
+            agent_name=profile.role,
+            profile_id=profile.id,
+            slot=slot,
+            job_id=None,
+            user_id=None,
+            mode=GATEWAY_MODE,
+            model=result.model or binding.model or None,
+            status=AgentRunStatus.FAILED if parse_failed else AgentRunStatus.SUCCEEDED,
+            degraded=parse_failed,
+            degrade_reason="json_parse_failed" if parse_failed else None,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            latency_ms=result.latency_ms,
+            endpoint_id=result.endpoint_id,
+            input_json={
+                "system_prompt": system_prompt,
+                "user_prompt": history[-1]["content"] if history else "",
+            },
+            output_json=parsed or {},
+            thinking_text=result.thinking,
+        )
+        return DebugChatOutcome(
+            reply_text=result.text,
+            parsed_json=parsed,
+            degraded=parse_failed,
+            model=run.model or binding.model or "",
+            latency_ms=result.latency_ms,
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            agent_run_id=run.id,
+            thinking=result.thinking,
+        )
+
+    return chunks, finish
 
 
 # Models that reject `response_format` still need to be told to emit JSON, so

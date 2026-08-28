@@ -10,7 +10,16 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
@@ -73,9 +82,10 @@ class EpisodeExternalMetric(Base, TimestampMixin):
     Anchored on `Work` (not `DramaEpisode`): analytics only make sense once
     something has actually been pushed externally, and `PublicationIntent`
     already anchors on `Work` too. One row per `(work_id, channel,
-    external_post_id)` — a pull upserts in place rather than growing a time
-    series, matching the "basic metrics, no deep history" scope this phase
-    was scoped to (see `zaolang-editor-drama` / the distribution plan doc).
+    external_post_id)` — a pull upserts in place, so this table alone still
+    has no history. `EpisodeExternalMetricDaily` is the companion table that
+    keeps a day-by-day trail for trend charts; this one stays as the cheap
+    "latest snapshot" read path nothing else needs to change for.
     """
 
     __tablename__ = "episode_external_metrics"
@@ -96,6 +106,12 @@ class EpisodeExternalMetric(Base, TimestampMixin):
     share_count: Mapped[int] = mapped_column(
         BigInteger, default=0, server_default="0", nullable=False
     )
+    # Basis points (0-10000) rather than a float ratio — this schema never
+    # uses `Float` (see `zaolang-data-model` / `app.models.base`'s module
+    # docstring), and best-effort besides: neither platform client's raw
+    # response shape for this field is confirmed against live docs.
+    finish_rate_bp: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    avg_play_duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
@@ -106,4 +122,73 @@ class EpisodeExternalMetric(Base, TimestampMixin):
             name="uq_episode_external_metrics_work_channel_post",
         ),
         Index("ix_episode_external_metrics_work_id", "work_id"),
+    )
+
+
+class EpisodeExternalMetricDaily(Base, TimestampMixin):
+    """One row per `(work_id, channel, external_post_id, metric_date)` —
+    the history `EpisodeExternalMetric` deliberately doesn't keep. A pull
+    upserts in place for the current UTC day (repeated same-day pulls never
+    grow beyond one row per post per day), so `metric_date` is a clean
+    x-axis for a trend chart: the point-in-time cumulative total for that
+    post as of that day, not a daily delta.
+    """
+
+    __tablename__ = "episode_external_metric_daily"
+
+    id: Mapped[str] = id_column("eemd")
+    work_id: Mapped[str] = mapped_column(ForeignKey("works.id", ondelete="CASCADE"), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_post_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    metric_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    view_count: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    like_count: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    comment_count: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    share_count: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    finish_rate_bp: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    avg_play_duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "work_id",
+            "channel",
+            "external_post_id",
+            "metric_date",
+            name="uq_episode_external_metric_daily_work_channel_post_date",
+        ),
+        Index("ix_episode_external_metric_daily_work_date", "work_id", "metric_date"),
+    )
+
+
+class PlatformAccountDailyStat(Base, TimestampMixin):
+    """One row per `(link_id, metric_date)` — a day's follower-count
+    snapshot for a linked account, same upsert-per-day shape as
+    `EpisodeExternalMetricDaily`. `follower_count` is best-effort: neither
+    platform client's account-info endpoint is confirmed against live docs,
+    so a pull that can't parse it leaves this `NULL` rather than guessing.
+    """
+
+    __tablename__ = "platform_account_daily_stats"
+
+    id: Mapped[str] = id_column("pads")
+    link_id: Mapped[str] = mapped_column(
+        ForeignKey("platform_account_links.id", ondelete="CASCADE"), nullable=False
+    )
+    metric_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    follower_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fetched_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "link_id", "metric_date", name="uq_platform_account_daily_stats_link_date"
+        ),
     )

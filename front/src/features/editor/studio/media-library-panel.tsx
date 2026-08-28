@@ -231,7 +231,13 @@ function MediaCard({
         <span className="relative flex aspect-video items-center justify-center bg-track">
           {asset.media_type === 'image' && asset.url ? (
             // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL, not a static asset Next can optimize
-            <img src={asset.url} alt="" className="size-full object-cover" />
+            <img
+              src={asset.url}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="size-full object-cover"
+            />
           ) : asset.media_type === 'video' && asset.url ? (
             <video src={asset.url} muted preload="metadata" className="size-full object-cover" />
           ) : (

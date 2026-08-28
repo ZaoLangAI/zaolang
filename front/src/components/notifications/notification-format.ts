@@ -45,7 +45,7 @@ export const GROUPS = {
 export type IconComponent = (props: { className?: string }) => React.ReactNode;
 
 /** Notifications whose `target_type` upserts in place rather than inserting a new row each time. */
-export const CREATION_TARGET_TYPES = new Set(['generation_job', 'editor_export']);
+export const CREATION_TARGET_TYPES = new Set(['generation_job', 'editor_export', 'episode_script']);
 
 export function isCreationNotification(item: Notification): boolean {
   return item.target_type != null && CREATION_TARGET_TYPES.has(item.target_type);
@@ -128,6 +128,9 @@ const TITLE_KEYS: Record<
   'notification.export_succeeded': (p) => ({ key: 'exportSucceeded', params: exportParams(p) }),
   'notification.export_failed': (p) => ({ key: 'exportFailed', params: exportParams(p) }),
   'notification.export_cancelled': (p) => ({ key: 'exportCancelled', params: exportParams(p) }),
+  'notification.script_generating': (p) => ({ key: 'scriptGenerating', params: scriptParams(p) }),
+  'notification.script_succeeded': (p) => ({ key: 'scriptSucceeded', params: scriptParams(p) }),
+  'notification.script_failed': (p) => ({ key: 'scriptFailed', params: scriptParams(p) }),
   'notification.work_remixed': (p) => ({
     key: 'workRemixed',
     params: { work_title: String(p.work_title ?? '') },
@@ -179,6 +182,10 @@ function exportParams(payload: Record<string, unknown>): Record<string, string> 
     series: String(payload.series_title ?? ''),
     episode: String(payload.episode_title ?? ''),
   };
+}
+
+function scriptParams(payload: Record<string, unknown>): Record<string, string> {
+  return { title: String(payload.title ?? '') };
 }
 
 function operationLabel(payload: Record<string, unknown>, tBody: TBody): string {
@@ -241,6 +248,7 @@ export function notificationVisual(item: Notification): {
 }
 
 function creationIcon(item: Notification, payload: Record<string, unknown>): IconComponent {
+  if (item.target_type === 'episode_script') return IconMessage;
   if (payload.is_remix === true) return IconRemix;
   if (typeof payload.shortform_profile === 'string' && payload.shortform_profile) return IconPhone;
   switch (payload.operation) {
@@ -279,6 +287,9 @@ export function targetHref(item: Notification): string | null {
   if (item.target_type === 'editor_export') {
     const cutId = payload.cut_id;
     return typeof cutId === 'string' && cutId ? `/create/short/${cutId}` : '/create/short';
+  }
+  if (item.target_type === 'episode_script' && item.target_id) {
+    return `/create/script/${item.target_id}`;
   }
   if (item.target_type === 'work' && item.target_id) return `/work/${item.target_id}`;
   if (item.target_type === 'learn_post' && item.target_id) return `/learn/${item.target_id}`;

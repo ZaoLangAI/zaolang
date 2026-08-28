@@ -1,4 +1,4 @@
-"""Character library and series payloads.
+"""Character library payloads.
 
 A character is stored as a `CreationSkill` (`category=character`) — see
 `app.domain.characters.service.CharacterView` — so `CharacterResponse` also
@@ -74,40 +74,3 @@ class CharacterResponse(Timestamped):
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0
-
-
-class SeriesCreateRequest(ApiModel):
-    title: str = Field(min_length=1, max_length=200)
-    description: str | None = Field(default=None, max_length=2000)
-    shortform_profile_key: str | None = Field(default=None, max_length=64)
-
-
-class SeriesAddCharacterRequest(ApiModel):
-    character_id: str
-
-
-class SeriesEpisodeSummary(ApiModel):
-    work_id: str
-    episode_number: int | None = None
-    title: str
-    cover_url: str | None = None
-    published_at: dt.datetime | None = None
-
-
-class SeriesResponse(Timestamped):
-    id: str
-    title: str
-    description: str | None = None
-    shortform_profile_key: str | None = None
-    character_ids: list[str] = Field(default_factory=list)
-    # Populated only by the list endpoint (the create page's "recent series"
-    # rail); the detail endpoint already carries the full `episodes` list
-    # below and leaves these at their defaults instead of duplicating it.
-    episode_count: int = 0
-    latest_episode: SeriesEpisodeSummary | None = None
-
-
-class SeriesDetailResponse(SeriesResponse):
-    characters: list[CharacterResponse] = Field(default_factory=list)
-    episodes: list[SeriesEpisodeSummary] = Field(default_factory=list)
-    next_episode_number: int = 1

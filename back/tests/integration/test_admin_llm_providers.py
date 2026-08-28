@@ -165,6 +165,54 @@ def test_a_general_endpoint_round_trips_its_context_limits_and_token_prices(
     assert endpoint["token_pricing"]["output_per_million_micro_usd"] == 220_000
 
 
+def test_a_general_endpoint_can_declare_video_input_support(
+    client: TestClient, admin: User, db: Session
+) -> None:
+    """Text is auto-injected, video makes the endpoint a `video_analysis`
+    candidate, and the audit log records the real value rather than the
+    hardcoded `[]` a general endpoint used to get."""
+    body = _upsert(
+        client,
+        admin,
+        "ep-video-general",
+        _general_payload(input_modalities=["video"]),
+    )
+
+    endpoint = body["endpoints"][0]
+    assert sorted(endpoint["input_modalities"]) == ["text", "video"]
+    assert endpoint["output_modalities"] == []
+    assert endpoint["capabilities"] == ["video_analysis"]
+
+    entry = db.scalar(
+        select(AuditLog).where(
+            AuditLog.action == "llm_provider.upsert",
+            AuditLog.target_id == "ep-video-general",
+        )
+    )
+    assert entry is not None
+    assert sorted(entry.after_json["input_modalities"]) == ["text", "video"]
+
+
+def test_a_general_endpoint_without_video_has_no_capabilities(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(client, admin, "ep-plain-general", _general_payload())
+    endpoint = body["endpoints"][0]
+    assert endpoint["input_modalities"] == ["text"]
+    assert endpoint["capabilities"] == []
+
+
+def test_a_general_endpoint_rejects_an_unsupported_input_modality(
+    client: TestClient, admin: User
+) -> None:
+    response = client.put(
+        "/v1/admin/llm-providers/ep-bad-general",
+        json=_general_payload(input_modalities=["audio"]),
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
 def test_a_media_endpoint_keeps_only_the_prices_its_capabilities_can_bill(
     client: TestClient, admin: User
 ) -> None:

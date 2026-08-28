@@ -142,8 +142,10 @@ services:
       - -A
       - app.workers.celery_app
       - worker
+      - -n
+      - zaolang-worker@%h
       - -Q
-      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis
+      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution,video_analysis
       - --loglevel=info
     restart: unless-stopped
 
@@ -161,6 +163,8 @@ services:
       - -A
       - app.workers.celery_app
       - worker
+      - -n
+      - zaolang-poller@%h
       - -Q
       - provider_task_polling
       - --concurrency=1

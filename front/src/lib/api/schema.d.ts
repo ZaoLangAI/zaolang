@@ -760,12 +760,15 @@ export interface paths {
         };
         /**
          * List Jobs
-         * @description Lists the user's own jobs, optionally scoped to one draft.
+         * @description Lists the user's own jobs, optionally scoped to one draft or operation.
          *
          *     `draft_id` is how the image studio's inline version-history strip lists
          *     every iteration generated under the same creative draft — the
          *     `user_id`/`origin` filters below already keep this from leaking another
-         *     user's jobs even if a foreign draft id is passed.
+         *     user's jobs even if a foreign draft id is passed. `operation` is how the
+         *     "视频解析" tool's history panel lists only its own jobs
+         *     (`operation=video_analysis`), without a `draft_id` to scope by — that
+         *     tool never creates one.
          */
         get: operations["list_jobs_v1_generation_jobs_get"];
         put?: never;
@@ -973,95 +976,12 @@ export interface paths {
         };
         /**
          * List Profiles
-         * @description The spec catalogue the studio renders its selector and limits from.
+         * @description The delivery-variant export spec catalogue (`zaolang-editor-drama`'s
+         *     `batchCreateVariants`) renders its selector and limits from this.
          */
         get: operations["list_profiles_v1_shortform_profiles_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/shortform/compliance-check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Compliance Check
-         * @description Checks one clip and its caption against a spec, rule by rule.
-         */
-        post: operations["compliance_check_v1_shortform_compliance_check_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/shortform/prompt/enhance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Enhance Prompt
-         * @description 把画面描述交给文案 Agent 逐维度诊断并润色，保留用户核心意图。
-         */
-        post: operations["enhance_prompt_v1_shortform_prompt_enhance_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/shortform/prompt/clarify": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Clarify Prompt
-         * @description 判断画面描述是否需要用户补充信息，生成前给出结构化问题。
-         */
-        post: operations["clarify_prompt_v1_shortform_prompt_clarify_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/works/{work_id}/publications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Publications */
-        get: operations["list_publications_v1_works__work_id__publications_get"];
-        put?: never;
-        /**
-         * Create Publication
-         * @description Records an export intent and returns the material to post with.
-         *
-         *     Direct publishing is not implemented; the intent exists so the history is
-         *     already there when it is.
-         */
-        post: operations["create_publication_v1_works__work_id__publications_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1152,75 +1072,6 @@ export interface paths {
         /** Withdraw Character */
         post: operations["withdraw_character_v1_characters__character_id__withdraw_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/series": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Series */
-        get: operations["list_series_v1_series_get"];
-        put?: never;
-        /** Create Series */
-        post: operations["create_series_v1_series_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/series/{series_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Series */
-        get: operations["get_series_v1_series__series_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/series/{series_id}/characters": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add Character To Series */
-        post: operations["add_character_to_series_v1_series__series_id__characters_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/series/{series_id}/characters/{character_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Remove Character From Series */
-        delete: operations["remove_character_from_series_v1_series__series_id__characters__character_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1911,7 +1762,43 @@ export interface paths {
         get: operations["get_drama_series_v1_drama_series__series_id__get"];
         put?: never;
         post?: never;
+        /** Trash Drama Series */
+        delete: operations["trash_drama_series_v1_drama_series__series_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Drama Series */
+        patch: operations["update_drama_series_v1_drama_series__series_id__patch"];
+        trace?: never;
+    };
+    "/v1/drama-series/{series_id}/untrash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Untrash Drama Series */
+        post: operations["untrash_drama_series_v1_drama_series__series_id__untrash_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-series/{series_id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Purge Drama Series */
+        delete: operations["purge_drama_series_v1_drama_series__series_id__purge_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1946,7 +1833,8 @@ export interface paths {
         get: operations["get_episode_v1_drama_episodes__episode_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Episode */
+        delete: operations["delete_episode_v1_drama_episodes__episode_id__delete"];
         options?: never;
         head?: never;
         /** Update Episode */
@@ -2022,30 +1910,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/media-assets/{asset_id}/transcriptions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Request Transcription
-         * @description Starts (or returns the existing) ASR transcription for one of the
-         *     caller's own assets. Never auto-commits the result as captions — the
-         *     resulting transcript is only ever a review-panel draft; turning it into
-         *     real `caption` elements is always a separate, explicit `insert_caption`
-         *     batch the caller sends after reviewing it (see `zaolang-editor-drama`).
-         */
-        post: operations["request_transcription_v1_media_assets__asset_id__transcriptions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/drama-episodes/{episode_id}/cuts": {
         parameters: {
             query?: never;
@@ -2058,6 +1922,29 @@ export interface paths {
         put?: never;
         /** Create Cut */
         post: operations["create_cut_v1_drama_episodes__episode_id__cuts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-episodes/{episode_id}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Episode Exports
+         * @description The episode's "最终成片" list — every export made from any of its
+         *     cuts, each annotated with its publish state so the frontend can decide
+         *     whether to offer "设为最终成片" (published), "去发布" (bound but not
+         *     published) or download-only (never bound to a draft).
+         */
+        get: operations["list_episode_exports_v1_drama_episodes__episode_id__exports_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2139,10 +2026,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Revisions */
+        get: operations["list_revisions_v1_episode_cuts__cut_id__revisions_get"];
         put?: never;
         /** Apply Revision */
         post: operations["apply_revision_v1_episode_cuts__cut_id__revisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/episode-cuts/{cut_id}/revisions:restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Revision */
+        post: operations["restore_revision_v1_episode_cuts__cut_id__revisions_restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2370,6 +2275,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/media-assets/{asset_id}/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Transcription
+         * @description Enqueues speech-to-text for an owned video/audio asset.
+         *
+         *     Mirrors the MCP tool `editor.request_transcription` — the poll-friendly
+         *     `id` returned here is the same `MediaAnalysis` row fetched by
+         *     `get_operation` below.
+         */
+        post: operations["request_transcription_v1_media_assets__asset_id__transcriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/editor-operations/{operation_id}": {
         parameters: {
             query?: never;
@@ -2450,6 +2379,29 @@ export interface paths {
         put?: never;
         /** Create Script */
         post: operations["create_script_v1_scripts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Script
+         * @description Re-runs the first draft for an episode shell whose original stream
+         *     never finished (see `retry_new_script`'s docstring) — the empty-shell
+         *     page's "重新生成初稿" action, offered in place of `POST /v1/scripts`
+         *     precisely because that route always mints a new episode.
+         */
+        post: operations["retry_script_v1_scripts__episode_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2656,6 +2608,23 @@ export interface paths {
         };
         /** List Metrics */
         get: operations["list_metrics_v1_works__work_id__metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-series/{series_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Series Metrics */
+        get: operations["series_metrics_v1_drama_series__series_id__metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5027,27 +4996,6 @@ export interface components {
             /** Messages */
             messages: components["schemas"]["AgentDebugChatMessage"][];
         };
-        /** AgentDebugChatResponse */
-        AgentDebugChatResponse: {
-            /** Reply Text */
-            reply_text: string;
-            /** Parsed Json */
-            parsed_json?: {
-                [key: string]: unknown;
-            } | null;
-            /** Degraded */
-            degraded: boolean;
-            /** Model */
-            model: string;
-            /** Latency Ms */
-            latency_ms: number;
-            /** Prompt Tokens */
-            prompt_tokens?: number | null;
-            /** Completion Tokens */
-            completion_tokens?: number | null;
-            /** Agent Run Id */
-            agent_run_id: string;
-        };
         /**
          * AgentNodeView
          * @description One pipeline stage plus which failover-pool endpoints could serve it.
@@ -5228,6 +5176,11 @@ export interface components {
             output_json?: {
                 [key: string]: unknown;
             };
+            /**
+             * Thinking Text
+             * @default
+             */
+            thinking_text: string;
             /**
              * Created At
              * Format: date-time
@@ -5754,29 +5707,6 @@ export interface components {
             /** Currency */
             currency: string;
         };
-        /** ClarifyQuestionOption */
-        ClarifyQuestionOption: {
-            /** Value */
-            value: string;
-            /** Label */
-            label: string;
-        };
-        /** ClarifyQuestionResponse */
-        ClarifyQuestionResponse: {
-            /** Id */
-            id: string;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "single_choice" | "multi_choice" | "free_text";
-            /** Prompt */
-            prompt: string;
-            /** Options */
-            options?: components["schemas"]["ClarifyQuestionOption"][];
-            /** Required */
-            required: boolean;
-        };
         /** CollectionCreateRequest */
         CollectionCreateRequest: {
             /** Name */
@@ -5818,47 +5748,6 @@ export interface components {
              * @default true
              */
             is_public: boolean;
-        };
-        /** ComplianceCheckItem */
-        ComplianceCheckItem: {
-            /** Code */
-            code: string;
-            /**
-             * Level
-             * @enum {string}
-             */
-            level: "pass" | "warn" | "block";
-            /** Message */
-            message: string;
-        };
-        /** ComplianceCheckRequest */
-        ComplianceCheckRequest: {
-            /** Draft Id */
-            draft_id?: string | null;
-            /** Asset Id */
-            asset_id?: string | null;
-            /** Profile */
-            profile?: string | null;
-            /**
-             * Title
-             * @default
-             */
-            title: string;
-            /**
-             * Description
-             * @default
-             */
-            description: string;
-            /** Hashtags */
-            hashtags?: string[];
-        };
-        /** ComplianceCheckResponse */
-        ComplianceCheckResponse: {
-            profile: components["schemas"]["ShortformProfileResponse"];
-            /** Checks */
-            checks: components["schemas"]["ComplianceCheckItem"][];
-            /** Passed */
-            passed: boolean;
         };
         /** ConfigDiffEntry */
         ConfigDiffEntry: {
@@ -6390,6 +6279,34 @@ export interface components {
             created_at: string;
         };
         /**
+         * CutRevisionSummaryResponse
+         * @description Lightweight revision listing for the editor's history panel — no
+         *     `document`/`asset_urls`, since browsing history shouldn't pull the full
+         *     timeline document for every past version.
+         */
+        CutRevisionSummaryResponse: {
+            /** Id */
+            id: string;
+            /** Cut Id */
+            cut_id: string;
+            /** Revision No */
+            revision_no: number;
+            /** Parent Revision Id */
+            parent_revision_id?: string | null;
+            /** Duration Ticks */
+            duration_ticks: number;
+            /**
+             * Is Head
+             * @default false
+             */
+            is_head: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
          * DangerousAction
          * @description Base for anything requiring a typed reason.
          *
@@ -6518,10 +6435,9 @@ export interface components {
          * DistributionChannel
          * @description Where an export is headed.
          *
-         *     `MANUAL_DOWNLOAD` never touches a real platform API. `DOUYIN` and
-         *     `KUAISHOU` both have a real `PlatformClient` implementation in
-         *     `app.domain.distribution` — reachable once a `PlatformAccountLink` exists
-         *     for the channel and the org's own AppKey/AppSecret are configured.
+         *     `MANUAL_DOWNLOAD` is the only channel that completes today; `DOUYIN` names
+         *     the destination so an intent recorded now stays meaningful once direct
+         *     publishing exists.
          * @enum {string}
          */
         DistributionChannel: "douyin" | "kuaishou" | "manual_download";
@@ -6611,6 +6527,11 @@ export interface components {
             status: string;
             /** Canonical Work Id */
             canonical_work_id?: string | null;
+            /**
+             * Has Script Turns
+             * @default false
+             */
+            has_script_turns: boolean;
         };
         /** DramaEpisodeUpdateRequest */
         DramaEpisodeUpdateRequest: {
@@ -6645,6 +6566,16 @@ export interface components {
              * @default false
              */
             allow_external_models: boolean;
+            /** English Title */
+            english_title?: string | null;
+            /** Planned Episode Count */
+            planned_episode_count?: number | null;
+            /** Genre Tags */
+            genre_tags?: string[];
+            /** Target Platforms */
+            target_platforms: string[];
+            /** Logo Asset Id */
+            logo_asset_id?: string | null;
         };
         /** DramaSeriesResponse */
         DramaSeriesResponse: {
@@ -6664,11 +6595,65 @@ export interface components {
             allow_external_models: boolean;
             /** Shortform Profile Key */
             shortform_profile_key?: string | null;
+            /** English Title */
+            english_title?: string | null;
+            /** Planned Episode Count */
+            planned_episode_count?: number | null;
+            /** Genre Tags */
+            genre_tags?: string[];
+            /** Target Platforms */
+            target_platforms?: string[];
+            /** Logo Asset Id */
+            logo_asset_id?: string | null;
+            /** Logo Url */
+            logo_url?: string | null;
+            /**
+             * Episode Count
+             * @default 0
+             */
+            episode_count: number;
+            /**
+             * Script Count
+             * @default 0
+             */
+            script_count: number;
+            /**
+             * Video Count
+             * @default 0
+             */
+            video_count: number;
+            /**
+             * Published Count
+             * @default 0
+             */
+            published_count: number;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** DramaSeriesUpdateRequest */
+        DramaSeriesUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** English Title */
+            english_title?: string | null;
+            /** Planned Episode Count */
+            planned_episode_count?: number | null;
+            /** Genre Tags */
+            genre_tags?: string[] | null;
+            /** Target Platforms */
+            target_platforms?: string[] | null;
+            /** Logo Asset Id */
+            logo_asset_id?: string | null;
         };
         /**
          * DynamicAgentBindingView
@@ -6833,6 +6818,45 @@ export interface components {
             lease_held: boolean;
             head?: components["schemas"]["CutRevisionResponse"] | null;
         };
+        /**
+         * EpisodeExportResponse
+         * @description One editor export made from an episode's own cut, joined with
+         *     whatever publishing state it has reached — never bound to a draft
+         *     (download-only), bound but not yet published, or bound and published
+         *     (eligible to become the episode's final cut).
+         */
+        EpisodeExportResponse: {
+            /** Id */
+            id: string;
+            /** Status */
+            status: string;
+            /** Profile Key */
+            profile_key: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Format */
+            format: string;
+            /** Output Asset Id */
+            output_asset_id?: string | null;
+            /** Output Url */
+            output_url?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Bound Draft Id */
+            bound_draft_id?: string | null;
+            /** Published Work Id */
+            published_work_id?: string | null;
+            /**
+             * Is Canonical
+             * @default false
+             */
+            is_canonical: boolean;
+        };
         /** EpisodeExternalMetricResponse */
         EpisodeExternalMetricResponse: {
             channel: components["schemas"]["DistributionChannel"];
@@ -6846,6 +6870,10 @@ export interface components {
             comment_count: number;
             /** Share Count */
             share_count: number;
+            /** Finish Rate */
+            finish_rate?: number | null;
+            /** Avg Play Duration Ms */
+            avg_play_duration_ms?: number | null;
             /**
              * Fetched At
              * Format: date-time
@@ -7007,6 +7035,8 @@ export interface components {
             output_asset_ids?: string[] | null;
             /** Output Urls */
             output_urls?: string[] | null;
+            /** Reference Url */
+            reference_url?: string | null;
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
             video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
             /** Character Views */
@@ -7019,6 +7049,7 @@ export interface components {
             draft_id?: string | null;
             /** Prompt */
             prompt?: string | null;
+            analysis?: components["schemas"]["VideoAnalysisResult"] | null;
             /** Failure Code */
             failure_code?: string | null;
             /** Failure Message */
@@ -7042,7 +7073,10 @@ export interface components {
         };
         /** GenerationParams */
         GenerationParams: {
-            /** Prompt */
+            /**
+             * Prompt
+             * @default
+             */
             prompt: string;
             /** Negative Prompt */
             negative_prompt?: string | null;
@@ -8284,7 +8318,7 @@ export interface components {
          * Operation
          * @enum {string}
          */
-        Operation: "text_to_image" | "image_to_image" | "text_to_video" | "image_to_video" | "video_to_video" | "audio_generation";
+        Operation: "text_to_image" | "image_to_image" | "text_to_video" | "image_to_video" | "video_to_video" | "audio_generation" | "video_analysis";
         /** Page[AdminJobSummary] */
         Page_AdminJobSummary_: {
             /** Items */
@@ -8705,18 +8739,6 @@ export interface components {
              */
             has_more: boolean;
         };
-        /** Page[PublicationIntentResponse] */
-        Page_PublicationIntentResponse_: {
-            /** Items */
-            items: components["schemas"]["PublicationIntentResponse"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-            /**
-             * Has More
-             * @default false
-             */
-            has_more: boolean;
-        };
         /** Page[RedemptionCodeView] */
         Page_RedemptionCodeView_: {
             /** Items */
@@ -8944,38 +8966,6 @@ export interface components {
             /** Max Credits */
             max_credits?: number | null;
         };
-        /** PromptClarifyRequest */
-        PromptClarifyRequest: {
-            /** Prompt */
-            prompt: string;
-        };
-        /** PromptClarifyResponse */
-        PromptClarifyResponse: {
-            /** Needs Clarification */
-            needs_clarification: boolean;
-            /** Questions */
-            questions?: components["schemas"]["ClarifyQuestionResponse"][];
-            /** Degraded */
-            degraded: boolean;
-        };
-        /**
-         * PromptDimensionView
-         * @description One diagnosed aspect of the description, rendered as a checklist row.
-         */
-        PromptDimensionView: {
-            /**
-             * Key
-             * @enum {string}
-             */
-            key: "subject" | "scene" | "action" | "camera" | "lighting" | "mood" | "pacing" | "composition" | "style" | "detail";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "missing" | "weak" | "ok";
-            /** Hint */
-            hint: string;
-        };
         /**
          * PromptEnhanceRequest
          * @description A polish request, plus whatever the studio already knows about the job.
@@ -9012,22 +9002,6 @@ export interface components {
             instruction: string;
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
             video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
-        };
-        /** PromptEnhanceResponse */
-        PromptEnhanceResponse: {
-            /** Prompt */
-            prompt: string;
-            /**
-             * Detail Level
-             * @enum {string}
-             */
-            detail_level: "sparse" | "adequate" | "detailed";
-            /** Feedback */
-            feedback: string;
-            /** Dimensions */
-            dimensions?: components["schemas"]["PromptDimensionView"][];
-            /** Additions */
-            additions?: string[];
         };
         /**
          * PromptSlotView
@@ -9217,21 +9191,6 @@ export interface components {
              */
             is_self: boolean;
         };
-        /** PublicationCreateRequest */
-        PublicationCreateRequest: {
-            /** @default manual_download */
-            channel: components["schemas"]["DistributionChannel"];
-            /** Title */
-            title: string;
-            /** Description */
-            description?: string | null;
-            /** Hashtags */
-            hashtags?: string[];
-            /** Cover Asset Id */
-            cover_asset_id?: string | null;
-            /** Scheduled At */
-            scheduled_at?: string | null;
-        };
         /** PublicationFanoutItem */
         PublicationFanoutItem: {
             channel: components["schemas"]["DistributionChannel"];
@@ -9261,39 +9220,12 @@ export interface components {
             /** Results */
             results: components["schemas"]["PublicationFanoutItem"][];
         };
-        /** PublicationIntentResponse */
-        PublicationIntentResponse: {
-            /** Id */
-            id: string;
-            /** Work Id */
-            work_id: string;
-            channel: components["schemas"]["DistributionChannel"];
-            status: components["schemas"]["PublicationStatus"];
-            /** Payload */
-            payload?: {
-                [key: string]: unknown;
-            };
-            /** Download Url */
-            download_url?: string | null;
-            /** External Post Id */
-            external_post_id?: string | null;
-            /** Submitted At */
-            submitted_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-        };
         /**
          * PublicationStatus
          * @description Lifecycle of one distribution intent.
          *
-         *     `SUBMITTED` and `FAILED` are reachable now: `app.domain.distribution.
-         *     service.publish_fanout` advances a `PublicationIntent` row to one of them
-         *     once it actually calls a platform's `create_post`. A channel with no
-         *     configured/linked account never leaves `EXPORTED`/`READY` — the manual
-         *     download path is untouched.
+         *     Nothing reaches `SUBMITTED` yet: it belongs to the OAuth direct-publish path
+         *     that is deliberately left unimplemented, together with `FAILED`.
          * @enum {string}
          */
         PublicationStatus: "draft" | "ready" | "exported" | "submitted" | "failed";
@@ -9602,6 +9534,17 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** RevisionRestoreRequest */
+        RevisionRestoreRequest: {
+            /** Revision Id */
+            revision_id: string;
+            /** Expected Revision Id */
+            expected_revision_id?: string | null;
+            /** Lease Id */
+            lease_id: string;
+            /** Lease Token */
+            lease_token: string;
+        };
         /** RoleGrantRequest */
         RoleGrantRequest: {
             /** Reason */
@@ -9800,6 +9743,8 @@ export interface components {
             idea: string;
             /** Referenced Skill Ids */
             referenced_skill_ids?: string[];
+            /** Series Id */
+            series_id?: string | null;
         };
         /** ScriptDetailResponse */
         ScriptDetailResponse: {
@@ -9814,6 +9759,16 @@ export interface components {
             script: components["schemas"]["ScriptDocument"];
             /** Turns */
             turns: components["schemas"]["ScriptTurnSummary"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ScriptDocument */
         ScriptDocument: {
@@ -9845,6 +9800,19 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
+        };
+        /**
+         * ScriptRetryRequest
+         * @description Re-describes the idea for `POST /v1/scripts/{episode_id}/retry` —
+         *     the original text was never persisted anywhere on the episode shell
+         *     (see `script_writing_service.retry_new_script`), so there is nothing to
+         *     default this to; the caller (the empty-shell page) must ask again.
+         */
+        ScriptRetryRequest: {
+            /** Idea */
+            idea: string;
+            /** Referenced Skill Ids */
+            referenced_skill_ids?: string[];
         };
         /** ScriptScene */
         ScriptScene: {
@@ -9918,6 +9886,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Thinking
+             * @default
+             */
+            thinking: string;
         };
         /** SeedRequest */
         SeedRequest: {
@@ -9934,99 +9907,142 @@ export interface components {
              */
             reset: boolean;
         };
-        /** SeriesAddCharacterRequest */
-        SeriesAddCharacterRequest: {
-            /** Character Id */
-            character_id: string;
+        /** SeriesDistributionCoverage */
+        SeriesDistributionCoverage: {
+            /** Total Episodes */
+            total_episodes: number;
+            /** Episodes With Final Cut */
+            episodes_with_final_cut: number;
+            /** Episodes Distributed */
+            episodes_distributed: number;
+            /** Channels Covered */
+            channels_covered: components["schemas"]["DistributionChannel"][];
         };
-        /** SeriesCreateRequest */
-        SeriesCreateRequest: {
-            /** Title */
-            title: string;
-            /** Description */
-            description?: string | null;
-            /** Shortform Profile Key */
-            shortform_profile_key?: string | null;
+        /** SeriesFollowerDailyPoint */
+        SeriesFollowerDailyPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            channel: components["schemas"]["DistributionChannel"];
+            /** Follower Count */
+            follower_count: number;
         };
-        /** SeriesDetailResponse */
-        SeriesDetailResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-            /** Id */
-            id: string;
-            /** Title */
-            title: string;
-            /** Description */
-            description?: string | null;
-            /** Shortform Profile Key */
-            shortform_profile_key?: string | null;
-            /** Character Ids */
-            character_ids?: string[];
-            /**
-             * Episode Count
-             * @default 0
-             */
-            episode_count: number;
-            latest_episode?: components["schemas"]["SeriesEpisodeSummary"] | null;
-            /** Characters */
-            characters?: components["schemas"]["CharacterResponse"][];
-            /** Episodes */
-            episodes?: components["schemas"]["SeriesEpisodeSummary"][];
-            /**
-             * Next Episode Number
-             * @default 1
-             */
-            next_episode_number: number;
+        /**
+         * SeriesMetricsChannelTotal
+         * @description Per-channel totals across every episode's final cut in a series —
+         *     the compact card row on the series episode-list page.
+         */
+        SeriesMetricsChannelTotal: {
+            channel: components["schemas"]["DistributionChannel"];
+            /** View Count */
+            view_count: number;
+            /** Like Count */
+            like_count: number;
+            /** Comment Count */
+            comment_count: number;
+            /** Share Count */
+            share_count: number;
+            /** Like Rate */
+            like_rate: number;
+            /** Comment Rate */
+            comment_rate: number;
+            /** Share Rate */
+            share_rate: number;
+            /** Engagement Rate */
+            engagement_rate: number;
         };
-        /** SeriesEpisodeSummary */
-        SeriesEpisodeSummary: {
-            /** Work Id */
-            work_id: string;
+        /**
+         * SeriesMetricsDailyPoint
+         * @description One `(day, channel)` point on the "播放量趋势" trend chart — a
+         *     point-in-time cumulative sum, not a daily delta (see
+         *     `app.domain.distribution.service.series_metrics_timeseries`).
+         */
+        SeriesMetricsDailyPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            channel: components["schemas"]["DistributionChannel"];
+            /** View Count */
+            view_count: number;
+            /** Like Count */
+            like_count: number;
+            /** Comment Count */
+            comment_count: number;
+            /** Share Count */
+            share_count: number;
+        };
+        /**
+         * SeriesMetricsEpisodeRow
+         * @description One episode × channel breakdown row — the detail page's table.
+         */
+        SeriesMetricsEpisodeRow: {
+            /** Episode Id */
+            episode_id: string;
             /** Episode Number */
-            episode_number?: number | null;
-            /** Title */
-            title: string;
-            /** Cover Url */
-            cover_url?: string | null;
-            /** Published At */
-            published_at?: string | null;
+            episode_number: number;
+            /** Episode Title */
+            episode_title: string;
+            channel: components["schemas"]["DistributionChannel"];
+            /** View Count */
+            view_count: number;
+            /** Like Count */
+            like_count: number;
+            /** Comment Count */
+            comment_count: number;
+            /** Share Count */
+            share_count: number;
+            /** Like Rate */
+            like_rate: number;
+            /** Comment Rate */
+            comment_rate: number;
+            /** Share Rate */
+            share_rate: number;
+            /** Engagement Rate */
+            engagement_rate: number;
+            /** Finish Rate */
+            finish_rate?: number | null;
+            /** Avg Play Duration Ms */
+            avg_play_duration_ms?: number | null;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
         };
-        /** SeriesResponse */
-        SeriesResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-            /** Id */
-            id: string;
-            /** Title */
-            title: string;
-            /** Description */
-            description?: string | null;
-            /** Shortform Profile Key */
-            shortform_profile_key?: string | null;
-            /** Character Ids */
-            character_ids?: string[];
-            /**
-             * Episode Count
-             * @default 0
-             */
-            episode_count: number;
-            latest_episode?: components["schemas"]["SeriesEpisodeSummary"] | null;
+        /**
+         * SeriesMetricsPeriodComparison
+         * @description Growth over the selected window vs. the equal-length window before
+         *     it. A `None` field means the prior window had no positive growth to
+         *     compare against — see `_period_growth_pct`'s docstring.
+         */
+        SeriesMetricsPeriodComparison: {
+            channel: components["schemas"]["DistributionChannel"];
+            /** View Count Change Pct */
+            view_count_change_pct?: number | null;
+            /** Like Count Change Pct */
+            like_count_change_pct?: number | null;
+            /** Comment Count Change Pct */
+            comment_count_change_pct?: number | null;
+            /** Share Count Change Pct */
+            share_count_change_pct?: number | null;
+        };
+        /** SeriesMetricsSummaryResponse */
+        SeriesMetricsSummaryResponse: {
+            /** Totals */
+            totals: components["schemas"]["SeriesMetricsChannelTotal"][];
+            /** Episodes */
+            episodes: components["schemas"]["SeriesMetricsEpisodeRow"][];
+            /** Daily */
+            daily: components["schemas"]["SeriesMetricsDailyPoint"][];
+            /** Followers */
+            followers: components["schemas"]["SeriesFollowerDailyPoint"][];
+            /** Period Comparison */
+            period_comparison: components["schemas"]["SeriesMetricsPeriodComparison"][];
+            coverage: components["schemas"]["SeriesDistributionCoverage"];
         };
         /** ServiceHealth */
         ServiceHealth: {
@@ -10560,15 +10576,80 @@ export interface components {
             entries: components["schemas"]["VersionDiffEntry"][];
         };
         /**
+         * VideoAnalysisResult
+         * @description Structured output of a `video_analysis` job.
+         *
+         *     Mirrors `_VIDEO_ANALYSIS_INSTRUCTIONS` in `app.providers.aihubmix_media`
+         *     field-for-field — that prompt is what actually shapes the model's JSON,
+         *     this schema only validates/echoes it back to the client.
+         */
+        VideoAnalysisResult: {
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Composed Prompt
+             * @default
+             */
+            composed_prompt: string;
+            /** Style Tags */
+            style_tags?: string[];
+            /**
+             * Pacing
+             * @default
+             */
+            pacing: string;
+            /** Shots */
+            shots?: components["schemas"]["VideoAnalysisShot"][];
+        };
+        /**
+         * VideoAnalysisShot
+         * @description One shot of the model's per-shot breakdown of the analysed clip.
+         */
+        VideoAnalysisShot: {
+            /**
+             * Time Range
+             * @default
+             */
+            time_range: string;
+            /**
+             * Camera Movement
+             * @default
+             */
+            camera_movement: string;
+            /**
+             * Scene
+             * @default
+             */
+            scene: string;
+            /**
+             * Subject Action
+             * @default
+             */
+            subject_action: string;
+            /**
+             * Lighting Mood
+             * @default
+             */
+            lighting_mood: string;
+            /**
+             * Transition In
+             * @default
+             */
+            transition_in: string;
+        };
+        /**
          * VideoAssetKind
          * @description What a `text_to_video`/`image_to_video`/`video_to_video` job's output
          *     is *for* — the video-side equivalent of `ImageAssetKind`.
          *
          *     Deliberately its own enum, not a reuse of `ImageAssetKind`: values are
-         *     spelled differently on purpose (`character_action`/`transition_video`/
-         *     `cover_video`, not `character`/`cover`) so a video kind can never
-         *     collide with an image kind wherever the two get looked up by bare
-         *     string key (`copywriter._VIDEO_ENHANCE_SYSTEM_PROMPTS`,
+         *     spelled differently on purpose (`scene_video`/`character_action`/
+         *     `transition_video`/`cover_video`, not `scene`/`character`/`cover`) so a
+         *     video kind can never collide with an image kind wherever the two get
+         *     looked up by bare string key (`copywriter._VIDEO_ENHANCE_SYSTEM_PROMPTS`,
          *     `GenerationWorkflowTemplate.asset_kind` rows, agent-skill default-profile
          *     buckets). There is no `CharacterViewAngle` equivalent here — a
          *     `CHARACTER_ACTION` job always produces exactly one clip per submission,
@@ -10580,7 +10661,7 @@ export interface components {
          *     as `ImageAssetKind.COVER` today) — see `execute_asset_output_link`.
          * @enum {string}
          */
-        VideoAssetKind: "general" | "character_action" | "transition_video" | "cover_video";
+        VideoAssetKind: "general" | "scene_video" | "character_action" | "transition_video" | "cover_video";
         /**
          * VideoGenerationOptions
          * @description Typed H3 options; arbitrary provider JSON and webhooks are forbidden.
@@ -12659,6 +12740,7 @@ export interface operations {
             query?: {
                 status?: components["schemas"]["JobStatus"] | null;
                 draft_id?: string | null;
+                operation?: components["schemas"]["Operation"] | null;
                 limit?: number;
             };
             header?: {
@@ -12988,7 +13070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PromptEnhanceResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -13020,184 +13102,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShortformProfilesResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    compliance_check_v1_shortform_compliance_check_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ComplianceCheckRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ComplianceCheckResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    enhance_prompt_v1_shortform_prompt_enhance_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PromptEnhanceRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptEnhanceResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clarify_prompt_v1_shortform_prompt_clarify_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PromptClarifyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PromptClarifyResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_publications_v1_works__work_id__publications_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                work_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Page_PublicationIntentResponse_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_publication_v1_works__work_id__publications_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-                "Idempotency-Key"?: string | null;
-            };
-            path: {
-                work_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PublicationCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicationIntentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -13507,176 +13411,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_series_v1_series_get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SeriesResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_series_v1_series_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SeriesCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SeriesResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_series_v1_series__series_id__get: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                series_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SeriesDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    add_character_to_series_v1_series__series_id__characters_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                series_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SeriesAddCharacterRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SeriesResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    remove_character_from_series_v1_series__series_id__characters__character_id__delete: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                series_id: string;
-                character_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SeriesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15141,7 +14875,13 @@ export interface operations {
     };
     list_drama_series_v1_drama_series_get: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string | null;
+                genre?: string | null;
+                sort?: string;
+                sort_dir?: string;
+                status?: string | null;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -15227,6 +14967,138 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DramaSeriesResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trash_drama_series_v1_drama_series__series_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_drama_series_v1_drama_series__series_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DramaSeriesUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DramaSeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    untrash_drama_series_v1_drama_series__series_id__untrash_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DramaSeriesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_drama_series_v1_drama_series__series_id__purge_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -15330,6 +15202,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DramaEpisodeResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_episode_v1_drama_episodes__episode_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -15553,39 +15456,6 @@ export interface operations {
             };
         };
     };
-    request_transcription_v1_media_assets__asset_id__transcriptions_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                asset_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EditorOperationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_cuts_v1_drama_episodes__episode_id__cuts_get: {
         parameters: {
             query?: never;
@@ -15643,6 +15513,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EpisodeCutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_episode_exports_v1_drama_episodes__episode_id__exports_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeExportResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -15798,6 +15701,39 @@ export interface operations {
             };
         };
     };
+    list_revisions_v1_episode_cuts__cut_id__revisions_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                cut_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CutRevisionSummaryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     apply_revision_v1_episode_cuts__cut_id__revisions_post: {
         parameters: {
             query?: never;
@@ -15812,6 +15748,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ApplyCommandsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CutRevisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_revision_v1_episode_cuts__cut_id__revisions_restore_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                cut_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevisionRestoreRequest"];
             };
         };
         responses: {
@@ -15858,7 +15831,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EditPlanResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -16302,6 +16275,39 @@ export interface operations {
             };
         };
     };
+    request_transcription_v1_media_assets__asset_id__transcriptions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EditorOperationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_operation_v1_editor_operations__operation_id__get: {
         parameters: {
             query?: never;
@@ -16479,6 +16485,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ScriptCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_script_v1_scripts__episode_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScriptRetryRequest"];
             };
         };
         responses: {
@@ -16934,6 +16978,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EpisodeExternalMetricResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    series_metrics_v1_drama_series__series_id__metrics_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesMetricsSummaryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -19459,7 +19538,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentDebugChatResponse"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

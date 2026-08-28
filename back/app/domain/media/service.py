@@ -43,6 +43,11 @@ from app.storage import s3
 
 logger = logging.getLogger(__name__)
 
+# Matches the "视频解析" product requirement that a source clip is at most
+# 3 minutes; enforced here (not just client-side) since asset duration is
+# only known once ffprobe has run during upload completion.
+VIDEO_ANALYSIS_MAX_DURATION_MS = 180_000
+
 PURPOSE_TO_ROLE: dict[str, AssetRole] = {
     "generation_reference": AssetRole.GENERATION_REFERENCE,
     "avatar": AssetRole.AVATAR,
@@ -50,6 +55,11 @@ PURPOSE_TO_ROLE: dict[str, AssetRole] = {
     "consent_evidence": AssetRole.CONSENT_EVIDENCE,
     "learn_media": AssetRole.LEARN_MEDIA,
     "style_gallery_cover": AssetRole.COVER,
+    "series_logo": AssetRole.COVER,
+    # Ends up in `reference_asset_ids` exactly like `generation_reference` —
+    # it only needs its own upload `purpose` for the bigger size ceiling a
+    # 3-minute clip needs (see `s3.MAX_UPLOAD_BYTES`).
+    "video_analysis_source": AssetRole.GENERATION_REFERENCE,
     "editor_source": AssetRole.EDITOR_SOURCE,
     "editor_export": AssetRole.EDITOR_EXPORT,
     "caption": AssetRole.EDITOR_CAPTION,
@@ -95,8 +105,11 @@ def presign_upload(
         "profile_cover",
         "learn_media",
         "style_gallery_cover",
+        "series_logo",
     ) and not mime_type.startswith("image/"):
         raise ValidationFailed("头像、封面与学习内容配图必须是图片。", mime_type=mime_type)
+    if purpose == "video_analysis_source" and not mime_type.startswith("video/"):
+        raise ValidationFailed("视频解析的参考素材必须是视频。", mime_type=mime_type)
 
     # The key embeds the owner, so an object's directory alone proves who may
     # write to it.
@@ -296,6 +309,20 @@ def validate_generation_references(
             raise ValidationFailed(
                 "视频生成参考素材仅支持图片或视频。",
                 fields={"params.reference_asset_ids": "仅支持图片或视频"},
+            )
+    elif operation == Operation.VIDEO_ANALYSIS.value:
+        if any(by_id[asset_id].media_type != MediaType.VIDEO for asset_id in ordinary_ids):
+            raise ValidationFailed(
+                "视频解析的参考素材必须是视频。",
+                fields={"params.reference_asset_ids": "必须是视频"},
+            )
+        if any(
+            (by_id[asset_id].duration_ms or 0) > VIDEO_ANALYSIS_MAX_DURATION_MS
+            for asset_id in ordinary_ids
+        ):
+            raise ValidationFailed(
+                "视频解析的参考视频时长不能超过 3 分钟。",
+                fields={"params.reference_asset_ids": "时长超过 3 分钟"},
             )
 
 

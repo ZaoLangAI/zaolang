@@ -9,7 +9,7 @@ import { Button, IconButton } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import { IconPlus, IconTrash } from '@/components/ui/icons';
-import { EmptyState, ErrorNotice, PageHeading } from '@/components/ui/primitives';
+import { Badge, EmptyState, ErrorNotice, PageHeading } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
@@ -23,7 +23,10 @@ import { resetPendingCreate, startCreate, useCreateStreamSnapshot } from './crea
 
 const IDEA_MAX_LENGTH = 2000;
 
-export function ScriptLanding() {
+export function ScriptLanding({
+  seriesId,
+  initialIdea,
+}: { seriesId?: string; initialIdea?: string } = {}) {
   const t = useTranslations('scriptStudio');
   const tActions = useTranslations('actions');
   const { status: sessionStatus } = useSession();
@@ -48,6 +51,15 @@ export function ScriptLanding() {
   const [deletingScript, setDeletingScript] = useState<ScriptSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [autoOpenedForSeriesId, setAutoOpenedForSeriesId] = useState<string | undefined>(
+    undefined
+  );
+  // The "用于文案创作" jump from a settled `video_analysis` job's result — a
+  // separate flag from `autoOpenedForSeriesId` above because the two deep
+  // links never carry both params at once, but each has to compare against
+  // its own remembered value so a re-render with the same query string
+  // doesn't reopen a dialog the user already closed.
+  const [autoOpenedForIdea, setAutoOpenedForIdea] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (sessionStatus !== 'authenticated') return;
@@ -59,6 +71,26 @@ export function ScriptLanding() {
       })
       .finally(() => setLoaded(true));
   }, [sessionStatus, t]);
+
+  // Arriving from a series' "新增一集" link — jump straight to the create
+  // dialog instead of making the user find the button again. Adjusted during
+  // render (rather than in an effect) so it happens once per seriesId without
+  // an extra render/commit round trip.
+  if (sessionStatus === 'authenticated' && seriesId && autoOpenedForSeriesId !== seriesId) {
+    setAutoOpenedForSeriesId(seriesId);
+    resetPendingCreate();
+    setDialogOpen(true);
+  } else if (
+    sessionStatus === 'authenticated' &&
+    initialIdea &&
+    autoOpenedForIdea !== initialIdea
+  ) {
+    setAutoOpenedForIdea(initialIdea);
+    resetPendingCreate();
+    setTitle('');
+    setIdea(initialIdea);
+    setDialogOpen(true);
+  }
 
   if (sessionStatus === 'anonymous') {
     return <SignInPrompt description={t('signInHint')} />;
@@ -114,7 +146,7 @@ export function ScriptLanding() {
     // the user lands on the real script-writing workspace to watch it
     // generate rather than being stuck in this dialog.
     startCreate(
-      { title: title.trim(), idea: trimmedIdea, referencedSkillIds: [] },
+      { title: title.trim(), idea: trimmedIdea, referencedSkillIds: [], seriesId },
       { onEpisodeReady: (episodeId) => router.push(`/create/script/${episodeId}`) },
     );
   };
@@ -122,9 +154,7 @@ export function ScriptLanding() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeading
-        eyebrow={t('eyebrow')}
         title={t('title')}
-        description={t('subtitle')}
         actions={
           <Button onClick={openCreate} icon={<IconPlus className="size-4" />}>
             {t('newScript')}
@@ -158,8 +188,15 @@ export function ScriptLanding() {
                   href={`/create/script/${script.episode_id}`}
                   className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3 pr-14 transition-colors hover:border-border-strong hover:bg-surface-soft"
                 >
-                  <p className="truncate pr-2 font-medium">{script.title || t('untitled')}</p>
-                  {script.logline ? (
+                  <div className="flex items-center gap-2 pr-2">
+                    <p className="truncate font-medium">{script.title || t('untitled')}</p>
+                    {script.turn_count === 0 ? (
+                      <Badge tone="amber">{t('scriptPending')}</Badge>
+                    ) : null}
+                  </div>
+                  {script.turn_count === 0 ? (
+                    <p className="line-clamp-1 text-xs text-muted">{t('scriptPendingHint')}</p>
+                  ) : script.logline ? (
                     <p className="line-clamp-1 text-xs text-muted">{script.logline}</p>
                   ) : null}
                   <p className="text-xs text-muted">
@@ -203,6 +240,7 @@ export function ScriptLanding() {
         }
       >
         <div className="flex flex-col gap-4">
+          {seriesId ? <p className="text-xs text-muted">{t('newScriptForSeriesHint')}</p> : null}
           {pendingError ? <ErrorNotice title={pendingError} /> : null}
           <TextInput
             label={t('scriptTitle')}

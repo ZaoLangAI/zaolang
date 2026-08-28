@@ -174,6 +174,14 @@ class GenerationJob(Base, TimestampMixin):
     linked_character_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     linked_scene_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
+    # `operation == video_analysis`'s own output shape: a structured
+    # camera-movement/scene/style breakdown (see `VideoAnalysisResult` in
+    # `app.api.schemas.jobs`) rather than a media `Asset` — this job never
+    # populates `output_asset_id`/`output_asset_ids_json` at all. Kept as a
+    # separate nullable column rather than overloading either of those, since
+    # every other operation's reader already assumes an asset id there.
+    analysis_result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
     estimated_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -337,6 +345,11 @@ class AgentRun(Base):
     # before this column existed; new rows always write both keys.
     input_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     output_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    # The model's reasoning trace for this call, aligned with
+    # `EpisodeScriptTurn.thinking_text`. Empty-string default for runs
+    # recorded before this column existed. Never written into `output_json`
+    # so JSON replay stays a structured payload.
+    thinking_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

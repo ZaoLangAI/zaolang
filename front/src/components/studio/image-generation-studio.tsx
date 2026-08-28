@@ -198,6 +198,7 @@ export function ImageGenerationStudio({
     events: jobEvents,
     connected: jobConnected,
     reconnecting: jobReconnecting,
+    liveThinking,
     applyJob,
   } = useJobStream(activeJobId ?? '', activeJobSeed);
   // Guards against the one-render gap between setting `activeJobId` and
@@ -676,6 +677,7 @@ export function ImageGenerationStudio({
         events={jobEvents}
         connected={jobConnected}
         reconnecting={jobReconnecting}
+        liveThinking={liveThinking.text}
         draftId={draftId}
         cancelling={cancelling}
         onCancel={() => void cancelActiveJob()}

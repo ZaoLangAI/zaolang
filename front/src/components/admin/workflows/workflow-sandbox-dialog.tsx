@@ -239,6 +239,7 @@ export function WorkflowSandboxDialog({
             jobId={jobId}
             events={stream.events}
             detail={stream.detail}
+            liveThinking={stream.liveThinking}
             reconnecting={stream.reconnecting}
             idleLabel={t('dryRunIdle')}
             onTrace={onTrace}

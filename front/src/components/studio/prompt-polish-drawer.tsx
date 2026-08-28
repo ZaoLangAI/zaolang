@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { Button } from '@/components/ui/button';
 import { TextInput } from '@/components/ui/field';
 import { IconClose, IconSparkle } from '@/components/ui/icons';
@@ -65,6 +66,7 @@ export function PromptPolishDrawer({
   open,
   onClose,
   pending,
+  thinking = '',
   error,
   suggestion,
   instruction,
@@ -77,6 +79,7 @@ export function PromptPolishDrawer({
   open: boolean;
   onClose: () => void;
   pending: boolean;
+  thinking?: string;
   error: string | null;
   suggestion: PromptEnhanceResult | null;
   instruction: string;
@@ -227,10 +230,25 @@ export function PromptPolishDrawer({
           {error ? <ErrorNotice title={error} /> : null}
 
           {!error && pending && !suggestion ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted">
-              <Spinner className="size-4" />
-              {t('drawerPendingHint')}
+            <div className="flex flex-col gap-3 py-6">
+              <div className="flex items-center gap-2 text-sm text-muted">
+                <Spinner className="size-4" />
+                {t('drawerPendingHint')}
+              </div>
+              <LiveThinking
+                thinking={thinking}
+                label={t('thinkingLive')}
+                className="max-h-32 overflow-y-auto"
+              />
             </div>
+          ) : null}
+
+          {pending && suggestion && thinking ? (
+            <LiveThinking
+              thinking={thinking}
+              label={t('thinkingLive')}
+              className="max-h-24 overflow-y-auto"
+            />
           ) : null}
 
           {suggestion ? (

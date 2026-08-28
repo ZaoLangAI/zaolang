@@ -34,6 +34,7 @@ _MEDIA_PROBE_PRIORITY = (
     Operation.TEXT_TO_VIDEO.value,
     Operation.IMAGE_TO_VIDEO.value,
     Operation.VIDEO_TO_VIDEO.value,
+    Operation.VIDEO_ANALYSIS.value,
 )
 _VIDEO_PROBES = frozenset(
     {
@@ -186,6 +187,32 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     api_key=endpoint.api_key,
                 )
 
+            if probe_type == Operation.VIDEO_ANALYSIS.value:
+                # No sample clip to safely attach from the admin panel, so
+                # this only checks that the endpoint/model answers a plain
+                # chat turn — it proves reachability and auth, not that the
+                # model can actually watch a video. `_submit_video_analysis`
+                # is where the real `video_url` contract gets exercised.
+                response = client.post(
+                    media_request_path(endpoint.base_url, "/v1/chat/completions"),
+                    json={
+                        "model": endpoint.model,
+                        "messages": [
+                            {"role": "user", "content": "Connectivity check. Reply OK."}
+                        ],
+                        "max_tokens": 16,
+                        "temperature": 0.0,
+                    },
+                )
+                return _media_response(
+                    started,
+                    endpoint.model,
+                    probe_type,
+                    response,
+                    usable=_has_choice_entry(response),
+                    api_key=endpoint.api_key,
+                )
+
             response = client.post(
                 media_request_path(endpoint.base_url, "/ai/v1/videos"),
                 json=build_video_payload(
@@ -282,6 +309,13 @@ def _has_data_entry(response: httpx.Response) -> bool:
         return False
     data = _json_dict(response).get("data")
     return isinstance(data, list) and bool(data)
+
+
+def _has_choice_entry(response: httpx.Response) -> bool:
+    if response.status_code >= 400:
+        return False
+    choices = _json_dict(response).get("choices")
+    return isinstance(choices, list) and bool(choices)
 
 
 def _json_dict(response: httpx.Response) -> dict[str, Any]:

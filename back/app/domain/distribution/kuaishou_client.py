@@ -24,6 +24,7 @@ import httpx
 
 from app.config import get_settings
 from app.domain.distribution.client_base import (
+    AccountStatsSnapshot,
     MetricsSnapshot,
     PlatformClient,
     PublishResult,
@@ -44,6 +45,7 @@ UPLOAD_INIT_URL = "https://open.kuaishou.com/openapi/photo/init"
 UPLOAD_URL = "https://open.kuaishou.com/openapi/photo/upload"
 PUBLISH_URL = "https://open.kuaishou.com/openapi/photo/publish"
 METRICS_URL = "https://open.kuaishou.com/openapi/photo/stats"
+USER_INFO_URL = "https://open.kuaishou.com/openapi/user/info"
 
 PUBLISH_SCOPE = "user_info,photo.publish"
 MAX_CAPTION_CHARS = 1000
@@ -164,7 +166,22 @@ class KuaishouClient(PlatformClient):
             like_count=int(data.get("like_count") or 0),
             comment_count=int(data.get("comment_count") or 0),
             share_count=int(data.get("share_count") or 0),
+            finish_rate_bp=_finish_rate_bp(data),
+            avg_play_duration_ms=_avg_play_duration_ms(data),
         )
+
+    def fetch_account_stats(self, access_token: str, open_id: str) -> AccountStatsSnapshot:
+        settings = get_settings()
+        if not settings.kuaishou_app_id or not settings.kuaishou_app_secret:
+            raise PlatformNotConfigured()
+        data = self._post(
+            USER_INFO_URL,
+            {"open_id": open_id},
+            error=PlatformPublishFailed,
+            headers={"Authorization": f"Bearer {access_token}"},
+            json_body=True,
+        )
+        return AccountStatsSnapshot(follower_count=_follower_count(data))
 
     # -- internals ----------------------------------------------------------
 
@@ -209,3 +226,41 @@ def _token_bundle_from(data: dict[str, object]) -> TokenBundle:
         expires_in=int(data.get("expires_in") or 0),
         open_id=str(data.get("open_id", "")),
     )
+
+
+def _finish_rate_bp(data: dict[str, object]) -> int | None:
+    """Basis points (0-10000) — neither key name below is confirmed against
+    live docs (see the file's own header disclaimer)."""
+    raw = data.get("complete_play_rate")
+    if raw is None:
+        raw = data.get("finish_rate")
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return round(float(raw) * 10000)
+    except (TypeError, ValueError):
+        return None
+
+
+def _avg_play_duration_ms(data: dict[str, object]) -> int | None:
+    raw = data.get("play_duration_avg")
+    if raw is None:
+        raw = data.get("avg_play_duration")
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _follower_count(data: dict[str, object]) -> int | None:
+    raw = data.get("follower_count")
+    if raw is None:
+        raw = data.get("fans_count")
+    if not isinstance(raw, (int, float, str)):
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        return None

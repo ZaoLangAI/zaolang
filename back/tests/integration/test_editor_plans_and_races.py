@@ -8,7 +8,10 @@ were exercised against the real database.
 
 from __future__ import annotations
 
+import json
 import threading
+from contextlib import contextmanager
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,7 +66,9 @@ def _video_asset(session: Session, owner: User) -> Asset:
 
 def _open_cut(client: TestClient, author: User, asset: Asset) -> dict:
     series = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "测试短剧"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "测试短剧", "target_platforms": ["manual_download"]},
     ).json()
     episode = client.post(
         f"/v1/drama-series/{series['id']}/episodes",
@@ -90,6 +95,7 @@ def _poison_pill(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("plan_timeline must not run when editor_ai_enabled is off")
 
     monkeypatch.setattr(editor_planner, "plan_timeline", _boom)
+    monkeypatch.setattr(editor_planner, "stream_plan_timeline", _boom)
 
 
 def _fake_plan_outcome(commands: list[dict[str, object]]) -> AgentOutcome:
@@ -100,6 +106,42 @@ def _fake_plan_outcome(commands: list[dict[str, object]]) -> AgentOutcome:
         model="stub:test",
         agent_run_id=None,  # type: ignore[arg-type]
     )
+
+
+def _fake_stream_plan(commands: list[dict[str, object]]):
+    outcome = _fake_plan_outcome(commands)
+
+    def _stream(*_args: object, **_kwargs: object):
+        return iter(()), lambda session=None: outcome
+
+    return _stream
+
+
+def _parse_sse(text: str) -> list[tuple[str, dict[str, Any]]]:
+    events: list[tuple[str, dict[str, Any]]] = []
+    for block in text.strip("\n").split("\n\n"):
+        if not block.strip():
+            continue
+        lines = block.split("\n")
+        event_line = next((line for line in lines if line.startswith("event: ")), None)
+        data_line = next((line for line in lines if line.startswith("data: ")), None)
+        if event_line is None or data_line is None:
+            continue
+        events.append((event_line[len("event: ") :], json.loads(data_line[len("data: ") :])))
+    return events
+
+
+def _plan_from_sse(response) -> dict[str, Any]:
+    return next(data for kind, data in _parse_sse(response.text) if kind == "complete")
+
+
+def _patch_stream_session(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+    @contextmanager
+    def fake_session_scope():
+        yield db
+
+    # Imported inside the route: `from app.db import session_scope`.
+    monkeypatch.setattr("app.db.session_scope", fake_session_scope)
 
 
 # --- flag-order regression -------------------------------------------------
@@ -127,7 +169,9 @@ def test_edit_plan_mcp_checks_flag_before_calling_the_llm(
     _poison_pill(monkeypatch)
     asset = _video_asset(db, author)
     series = client.post(
-        "/v1/drama-series", headers=auth_header(author), json={"title": "MCP 计划剧"}
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "MCP 计划剧", "target_platforms": ["manual_download"]},
     ).json()
     episode = client.post(
         f"/v1/drama-series/{series['id']}/episodes",
@@ -177,6 +221,7 @@ def test_edit_plan_create_apply_produces_a_new_revision(
     client: TestClient, db: Session, author: User, admin: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _enable_editor(db, admin)
+    _patch_stream_session(monkeypatch, db)
     asset = _video_asset(db, author)
     opened = _open_cut(client, author, asset)
     cut_id = opened["cut"]["id"]
@@ -184,8 +229,8 @@ def test_edit_plan_create_apply_produces_a_new_revision(
 
     monkeypatch.setattr(
         editor_planner,
-        "plan_timeline",
-        lambda *a, **k: _fake_plan_outcome(
+        "stream_plan_timeline",
+        _fake_stream_plan(
             [
                 {
                     "type": "insert_caption",
@@ -204,7 +249,7 @@ def test_edit_plan_create_apply_produces_a_new_revision(
         json={"goal": "加一句开场字幕"},
     )
     assert created.status_code == 202, created.text
-    plan = created.json()
+    plan = _plan_from_sse(created)
     assert plan["status"] == "validated"
     assert len(plan["commands"]) == 1
 
@@ -224,6 +269,7 @@ def test_edit_plan_apply_rejects_a_stale_base_revision(
     client: TestClient, db: Session, author: User, admin: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _enable_editor(db, admin)
+    _patch_stream_session(monkeypatch, db)
     asset = _video_asset(db, author)
     opened = _open_cut(client, author, asset)
     cut_id = opened["cut"]["id"]
@@ -231,16 +277,16 @@ def test_edit_plan_apply_rejects_a_stale_base_revision(
 
     monkeypatch.setattr(
         editor_planner,
-        "plan_timeline",
-        lambda *a, **k: _fake_plan_outcome(
-            [{"type": "set_canvas", "width": 1080, "height": 1920}]
-        ),
+        "stream_plan_timeline",
+        _fake_stream_plan([{"type": "set_canvas", "width": 1080, "height": 1920}]),
     )
-    plan = client.post(
-        f"/v1/episode-cuts/{cut_id}/edit-plans",
-        headers=auth_header(author),
-        json={"goal": "调整画幅"},
-    ).json()
+    plan = _plan_from_sse(
+        client.post(
+            f"/v1/episode-cuts/{cut_id}/edit-plans",
+            headers=auth_header(author),
+            json={"goal": "调整画幅"},
+        )
+    )
 
     # A manual edit lands first, moving the head out from under the plan.
     manual = client.post(
@@ -278,18 +324,21 @@ def test_edit_plan_reject_marks_it_terminal(
     client: TestClient, db: Session, author: User, admin: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _enable_editor(db, admin)
+    _patch_stream_session(monkeypatch, db)
     asset = _video_asset(db, author)
     opened = _open_cut(client, author, asset)
     monkeypatch.setattr(
         editor_planner,
-        "plan_timeline",
-        lambda *a, **k: _fake_plan_outcome([{"type": "set_canvas", "width": 1080, "height": 1920}]),
+        "stream_plan_timeline",
+        _fake_stream_plan([{"type": "set_canvas", "width": 1080, "height": 1920}]),
     )
-    plan = client.post(
-        f"/v1/episode-cuts/{opened['cut']['id']}/edit-plans",
-        headers=auth_header(author),
-        json={"goal": "不想要这个方案"},
-    ).json()
+    plan = _plan_from_sse(
+        client.post(
+            f"/v1/episode-cuts/{opened['cut']['id']}/edit-plans",
+            headers=auth_header(author),
+            json={"goal": "不想要这个方案"},
+        )
+    )
     rejected = client.post(f"/v1/edit-plans/{plan['id']}/reject", headers=auth_header(author))
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
@@ -377,7 +426,9 @@ def test_concurrent_apply_commands_yields_one_winner_and_one_conflict(
     asset = _video_asset(committed_db, author)
     from app.domain.editor import service as svc
 
-    series = svc.create_drama_series(committed_db, user_id=author.id, title="并发剧")
+    series = svc.create_drama_series(
+        committed_db, user_id=author.id, title="并发剧", target_platforms=["manual_download"]
+    )
     episode = svc.create_episode(committed_db, user_id=author.id, series_id=series.id, title="一")
     cut, head = svc.create_cut_from_asset(
         committed_db, user_id=author.id, episode_id=episode.id, asset_id=asset.id, name="主剪辑"
@@ -457,7 +508,9 @@ def test_concurrent_lease_acquire_yields_one_winner(committed_db: Session) -> No
     asset = _video_asset(committed_db, owner)
     from app.domain.editor import service as svc
 
-    series = svc.create_drama_series(committed_db, user_id=owner.id, title="租约赛跑")
+    series = svc.create_drama_series(
+        committed_db, user_id=owner.id, title="租约赛跑", target_platforms=["manual_download"]
+    )
     episode = svc.create_episode(committed_db, user_id=owner.id, series_id=series.id, title="一")
     cut, _head = svc.create_cut_from_asset(
         committed_db, user_id=owner.id, episode_id=episode.id, asset_id=asset.id, name="主剪辑"

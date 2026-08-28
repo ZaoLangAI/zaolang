@@ -48,6 +48,11 @@ QUEUE_NAMES = (
     # a slow/failing external platform call never competes with, or gets
     # delayed by, the generation-job lifecycle queues above.
     "platform_distribution",
+    # A synchronous video-understanding call has its own, unpredictable
+    # latency profile (watching a whole clip before answering) — its own
+    # queue keeps it from either blocking, or being blocked by, the image/
+    # audio/video generation queues above.
+    "video_analysis",
 )
 
 celery_app.conf.update(
@@ -64,12 +69,16 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
     task_track_started=True,
+    # Progress lives on JobEvent / SSE. Storing Celery results just fills Redis
+    # with Beat ticks and leftover `missing` rows after a DB wipe.
+    task_ignore_result=True,
     result_expires=60 * 60 * 24,
     broker_connection_retry_on_startup=True,
     task_routes={
         "app.workers.tasks.run_generation": {"queue": "image_generation"},
         "app.workers.tasks.run_video_generation": {"queue": "video_generation_long"},
         "app.workers.tasks.run_audio_generation": {"queue": "audio_generation"},
+        "app.workers.tasks.run_video_analysis": {"queue": "video_analysis"},
         "app.workers.tasks.run_quality_check": {"queue": "quality_check"},
         "app.workers.tasks.reconcile_webhooks": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_jobs": {"queue": "webhook_reconcile"},

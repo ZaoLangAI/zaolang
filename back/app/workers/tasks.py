@@ -181,6 +181,16 @@ def run_audio_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-d
     return _run_generation_task(self, job_id)
 
 
+@celery_app.task(
+    name="app.workers.tasks.run_video_analysis",
+    bind=True,
+    base=GenerationTask,
+    max_retries=2,
+)
+def run_video_analysis(self, job_id: str) -> str:  # type: ignore[no-untyped-def]
+    return _run_generation_task(self, job_id)
+
+
 @celery_app.task(name="app.workers.tasks.run_quality_check")
 def run_quality_check(job_id: str) -> str:
     with session_scope() as session:
@@ -493,6 +503,8 @@ def dispatch_generation(job: GenerationJob) -> None:
         task = run_video_generation
     elif job.operation == Operation.AUDIO_GENERATION:
         task = run_audio_generation
+    elif job.operation == Operation.VIDEO_ANALYSIS:
+        task = run_video_analysis
     else:
         task = run_generation
     task.delay(job.id)
@@ -508,5 +520,6 @@ __all__ = [
     "run_audio_generation",
     "run_generation",
     "run_quality_check",
+    "run_video_analysis",
     "run_video_generation",
 ]

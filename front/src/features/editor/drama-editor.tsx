@@ -75,6 +75,26 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
     }
   };
 
+  const restore = async (revisionId: string) => {
+    if (!cut || !lease || !token) return;
+    setBusy(true);
+    try {
+      const revision = await editorApi.restoreRevision(cut.id, {
+        revisionId,
+        expectedRevisionId: cut.head_revision_id,
+        leaseId: lease.id,
+        leaseToken: token,
+      });
+      setDocument(revision.document);
+      setCut({ ...cut, head_revision_id: revision.id, head: revision });
+      notify(t('historyRestoreSuccess'), 'success');
+    } catch (error) {
+      notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selected = selectedElement(document, selectedIds[0]);
   const disabled = readonly || busy || !token;
   const assetUrls = cut?.head?.asset_urls ?? {};
@@ -133,6 +153,7 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
         leaseId={lease?.id ?? null}
         leaseToken={token}
         onPlanApplied={() => void reload()}
+        onRestore={(revisionId) => void restore(revisionId)}
       />
     </EditorGate>
   );

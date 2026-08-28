@@ -30,6 +30,10 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   /** Cast picked from the character library; merged server-side into the job's
    * reference images and voice hints (see `characters.service.apply_character_refs`). */
   characterIds?: string[];
+  /** Settings picked from the scene library; merged server-side into the job's
+   * reference images (see `scenes.service.apply_scene_refs`), sharing the same
+   * reference-slot budget as `characterIds` above. */
+  sceneIds?: string[];
   /**
    * What a `text_to_image`/`image_to_image` output is *for* — orthogonal to
    * `operation`. Selects the `(operation, asset_kind)` workflow template and,
@@ -282,6 +286,7 @@ export function useGenerationSubmit(
                 reference_asset_ids: input.referenceAssetIds,
                 video_options: input.videoOptions,
                 character_ids: input.characterIds ?? [],
+                scene_ids: input.sceneIds ?? [],
                 shortform_profile: input.shortformProfile,
                 skill_ids: input.skillIds ?? [],
                 style_gallery_id: input.styleGalleryId ?? null,

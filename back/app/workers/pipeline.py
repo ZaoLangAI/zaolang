@@ -22,10 +22,10 @@ from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import GenerationJob, GenerationWorkflowTemplate
-from app.models.enums import JobStatus, SystemLogLevel, SystemLogSource
+from app.models.enums import JobStatus, Operation, SystemLogLevel, SystemLogSource
 from app.observability.context import set_job_id
 from app.workflows.configs import RouteScoreConfig
-from app.workflows.defaults import default_graph
+from app.workflows.defaults import default_graph, video_analysis_graph
 from app.workflows.graph import WorkflowGraph
 from app.workflows.runner import WorkflowRunner
 from app.workflows.types import PipelineOutcome, WorkflowContext
@@ -140,6 +140,8 @@ def resolve_graph(session: Session, job: GenerationJob) -> WorkflowGraph:
 
     if template is not None:
         return WorkflowGraph.from_dict(template.graph_json)
+    if job.operation == Operation.VIDEO_ANALYSIS.value:
+        return WorkflowGraph.from_dict(video_analysis_graph(session))
     return WorkflowGraph.from_dict(default_graph(session))
 
 

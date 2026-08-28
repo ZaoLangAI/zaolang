@@ -170,6 +170,14 @@ class EpisodeScriptTurn(Base, TimestampMixin):
     script_snapshot_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     referenced_skill_ids_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
     agent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The model's reasoning trace for this turn, bounded by
+    # `copywriter.MAX_THINKING_LEN` before it lands here — a relational
+    # trace column, not backfilled for turns written before it existed
+    # (those just read back as the empty-string default). Never populated
+    # for a turn that failed to write at all (see `stream_new_script`'s
+    # `parse_ok=False` early return): there is no turn row for it to attach
+    # to, and thinking is not kept anywhere else on that path either.
+    thinking_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     __table_args__ = (
         UniqueConstraint("episode_id", "turn_no", name="uq_episode_script_turns_episode_turn"),

@@ -10,10 +10,11 @@ export async function generateMetadata() {
 }
 
 /**
- * `/create/short`: the drama-series management dashboard — every series the
- * user owns, and a form to start a new one. This replaced the old single-clip
- * short-video studio, which now lives at `/create/short/studio`, and folded
- * in what used to be the separate `/create/drama` landing page.
+ * `/create/short`: the sole entry point for short-drama creation — a
+ * searchable, sortable card library of every `kind=drama` series the user
+ * owns, plus the "新建短剧" dialog. This replaced the old single-clip
+ * `ShortformStudio` (`/create/short/studio`), which has been removed —
+ * episodes are now only ever created through "文案创作" (`/create/script`).
  */
 export default async function ShortDashboardPage() {
   const t = await getTranslations('editor');

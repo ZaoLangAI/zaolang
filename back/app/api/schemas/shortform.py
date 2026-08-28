@@ -1,21 +1,13 @@
-"""Short-video spec, compliance and distribution payloads."""
+"""Short-video delivery spec and prompt-polish payloads."""
 
 from __future__ import annotations
 
-import datetime as dt
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from app.api.schemas.common import ApiModel
-from app.models.enums import (
-    DistributionChannel,
-    ImageAssetKind,
-    Operation,
-    PublicationStatus,
-    QualityTier,
-    VideoAssetKind,
-)
+from app.models.enums import ImageAssetKind, Operation, QualityTier, VideoAssetKind
 
 # Mirrors `app.agents.copywriter.DIMENSION_KEYS` / `.ENHANCE_DIRECTIONS`. Spelled
 # out here rather than imported so the published contract does not depend on an
@@ -71,35 +63,6 @@ class ShortformProfilesResponse(ApiModel):
     preview_candidate_count: int
 
 
-class ComplianceCheckRequest(ApiModel):
-    draft_id: str | None = None
-    asset_id: str | None = None
-    profile: str | None = Field(default=None, max_length=64)
-    title: str = Field(default="", max_length=200)
-    description: str = Field(default="", max_length=2000)
-    hashtags: list[str] = Field(default_factory=list, max_length=30)
-
-    @model_validator(mode="after")
-    def _needs_a_subject(self) -> ComplianceCheckRequest:
-        if not self.draft_id and not self.asset_id:
-            raise ValueError("请提供 draft_id 或 asset_id。")
-        return self
-
-
-class ComplianceCheckItem(ApiModel):
-    code: str
-    level: Literal["pass", "warn", "block"]
-    message: str
-
-
-class ComplianceCheckResponse(ApiModel):
-    profile: ShortformProfileResponse
-    checks: list[ComplianceCheckItem]
-    # False when at least one check is a block; the publish action stays
-    # disabled until it is not.
-    passed: bool
-
-
 class PromptEnhanceRequest(ApiModel):
     """A polish request, plus whatever the studio already knows about the job.
 
@@ -150,49 +113,3 @@ class PromptEnhanceResponse(ApiModel):
     # The phrases this round actually added, so the panel can show what
     # changed without diffing two blocks of prose.
     additions: list[str] = Field(default_factory=list)
-
-
-class PromptClarifyRequest(ApiModel):
-    prompt: str = Field(min_length=1, max_length=600)
-
-
-class ClarifyQuestionOption(ApiModel):
-    value: str
-    label: str
-
-
-class ClarifyQuestionResponse(ApiModel):
-    id: str
-    kind: Literal["single_choice", "multi_choice", "free_text"]
-    prompt: str
-    options: list[ClarifyQuestionOption] = Field(default_factory=list)
-    required: bool
-
-
-class PromptClarifyResponse(ApiModel):
-    needs_clarification: bool
-    questions: list[ClarifyQuestionResponse] = Field(default_factory=list)
-    degraded: bool
-
-
-class PublicationCreateRequest(ApiModel):
-    channel: DistributionChannel = DistributionChannel.MANUAL_DOWNLOAD
-    title: str = Field(min_length=1, max_length=200)
-    description: str | None = Field(default=None, max_length=2000)
-    hashtags: list[str] = Field(default_factory=list, max_length=30)
-    cover_asset_id: str | None = None
-    scheduled_at: dt.datetime | None = None
-
-
-class PublicationIntentResponse(ApiModel):
-    id: str
-    work_id: str
-    channel: DistributionChannel
-    status: PublicationStatus
-    payload: dict[str, Any] = Field(default_factory=dict)
-    # Freshly signed on every read; the stored intent never holds a URL that
-    # would already be expired when the history is opened.
-    download_url: str | None = None
-    external_post_id: str | None = None
-    submitted_at: dt.datetime | None = None
-    created_at: dt.datetime

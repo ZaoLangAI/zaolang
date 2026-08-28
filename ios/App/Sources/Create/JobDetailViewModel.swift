@@ -21,9 +21,12 @@ final class JobDetailViewModel {
     /// 绝不能停在旧任务详情上继续轮询一个已经不会再变化的终态。
     private(set) var retriedJobID: String?
 
+    private(set) var liveThinking = ""
+
     private var pollingTask: Task<Void, Never>?
     private var sseTask: Task<Void, Never>?
     private var lastAppliedSequence = -1
+    private var liveThinkingNodeId: String?
 
     init(jobID: String, apiClient: APIClient, eventStreamClient: EventStreamClient) {
         self.jobID = jobID
@@ -71,7 +74,7 @@ final class JobDetailViewModel {
             do {
                 for try await event in await eventStreamClient.jobEvents(jobID: jobID) {
                     applyStreamEvent(event)
-                    if event.status.value?.isTerminal == true {
+                    if !event.isThinking, event.status.value?.isTerminal == true {
                         await refresh() // 终态时补一次完整 GET，拿到 output_url/actual_credits 等流事件里没有的字段
                         return
                     }
@@ -82,11 +85,26 @@ final class JobDetailViewModel {
         }
     }
 
-    /// SSE 帧只有 sequence/status/progress/message 四项，先用它做即时进度反馈，
-    /// 完整字段（`output_url`/`actual_credits`…）等终态时的那次 GET 补上。
+    /// 阶段事件带 sequence，用来推进进度；思考帧没有 sequence，只累加
+    /// `liveThinking`，不当阶段。完整字段等终态 GET 补上。
     private func applyStreamEvent(_ event: JobStreamEvent) {
-        guard case .loaded(let job) = state, event.sequence > lastAppliedSequence else { return }
-        lastAppliedSequence = event.sequence
+        if event.isThinking {
+            let increment = event.thinking ?? ""
+            guard !increment.isEmpty else { return }
+            if let nodeId = event.nodeId, let current = liveThinkingNodeId, current != nodeId {
+                liveThinking = increment
+            } else {
+                liveThinking += increment
+            }
+            liveThinkingNodeId = event.nodeId ?? liveThinkingNodeId
+            return
+        }
+        guard case .loaded(let job) = state, let sequence = event.sequence, sequence > lastAppliedSequence else { return }
+        lastAppliedSequence = sequence
+        if let nodeId = event.nodeId, let current = liveThinkingNodeId, current != nodeId {
+            liveThinking = ""
+            liveThinkingNodeId = nodeId
+        }
         state = .loaded(job.withStreamProgress(status: event.status, progress: event.progress))
     }
 

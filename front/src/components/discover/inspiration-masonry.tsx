@@ -23,6 +23,23 @@ const PRIORITY_TILES = 5;
 /** Start fetching this far before the wall's bottom edge enters the viewport. */
 const PREFETCH_MARGIN = '600px';
 
+/**
+ * Scroll-driven auto-loading stops once this many pages are on the wall — an
+ * unattended long scroll (or a scroll-wheel held down) must not turn into
+ * unbounded DOM nodes and decoded images. The explicit "load more" button
+ * below the sentinel keeps working past this point; only the automatic
+ * IntersectionObserver trigger is capped.
+ */
+const MAX_AUTO_LOAD_PAGES = 12;
+
+/**
+ * Reserved height for an off-screen page block once `content-visibility:
+ * auto` (see the `<ul>` below) skips rendering it — rough enough to avoid a
+ * visible jump when scrolling back up past it, without needing to measure
+ * every page's real height.
+ */
+const OFFSCREEN_PAGE_CLASS = '[content-visibility:auto] [contain-intrinsic-height:1400px]';
+
 type Status = 'idle' | 'loading' | 'failed';
 
 interface FeedQuery {
@@ -93,7 +110,10 @@ export function InspirationMasonry({
     const node = sentinelRef.current;
     // After a failure the sentinel is detached: an observer that keeps firing
     // would hammer an endpoint that just refused us. The button takes over.
-    if (!node || !cursor || status === 'failed') return;
+    // Past `MAX_AUTO_LOAD_PAGES` the button also takes over — deliberately,
+    // so an unattended scroll session has a hard ceiling on how much it can
+    // grow the wall on its own.
+    if (!node || !cursor || status === 'failed' || pages.length >= MAX_AUTO_LOAD_PAGES) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -103,7 +123,7 @@ export function InspirationMasonry({
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [cursor, loadMore, status]);
+  }, [cursor, loadMore, status, pages.length]);
 
   return (
     <>
@@ -111,7 +131,16 @@ export function InspirationMasonry({
         <ul
           key={page[0]?.id ?? pageIndex}
           aria-label={pageIndex === 0 ? t('inspiration') : undefined}
-          className={pageIndex === 0 ? INSPIRATION_COLUMNS : `mt-4 ${INSPIRATION_COLUMNS}`}
+          // `content-visibility: auto` on every page block (including the
+          // first — it is simply a no-op while on screen) lets the browser
+          // skip layout/paint/image-decode cost for whichever pages have
+          // scrolled out of view, without unmounting them or touching scroll
+          // position.
+          className={
+            pageIndex === 0
+              ? `${INSPIRATION_COLUMNS} ${OFFSCREEN_PAGE_CLASS}`
+              : `mt-4 ${INSPIRATION_COLUMNS} ${OFFSCREEN_PAGE_CLASS}`
+          }
         >
           {page.map((work, index) => (
             <li key={work.id} className={INSPIRATION_TILE}>

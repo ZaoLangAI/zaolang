@@ -18,6 +18,12 @@ from app.models.credits import (
     RedemptionRecord,
     WebhookEvent,
 )
+from app.models.distribution import (
+    EpisodeExternalMetric,
+    EpisodeExternalMetricDaily,
+    PlatformAccountDailyStat,
+    PlatformAccountLink,
+)
 from app.models.editor import (
     CutRevision,
     DeliveryVariant,
@@ -123,6 +129,8 @@ __all__ = [
     "EditorOperationEvent",
     "EpisodeContentLink",
     "EpisodeCut",
+    "EpisodeExternalMetric",
+    "EpisodeExternalMetricDaily",
     "EpisodeScriptTurn",
     "Follow",
     "GenerationJob",
@@ -139,6 +147,8 @@ __all__ = [
     "ModerationResult",
     "Notification",
     "PaymentIntent",
+    "PlatformAccountDailyStat",
+    "PlatformAccountLink",
     "PlatformConfig",
     "Profile",
     "ProvenanceManifest",

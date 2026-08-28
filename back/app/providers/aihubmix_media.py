@@ -19,11 +19,13 @@ import logging
 import mimetypes
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from PIL import Image, UnidentifiedImageError
 
 from app.config import get_settings
+from app.llm.normalize import extract_json, strip_thinking
 from app.models.enums import Operation
 from app.providers.base import (
     GenerationProvider,
@@ -67,6 +69,31 @@ _IMAGE_SIZE_BY_ASPECT = {
     "3:4": "768x1024",
     "21:9": "1024x576",
 }
+
+# `video_analysis`'s prompt to a native video-understanding model. Requests a
+# strict JSON object matching `VideoAnalysisResult` (`app.api.schemas.jobs`)
+# so the provider layer never has to know that schema — it only has to ask
+# for it consistently and let `extract_json` parse whatever comes back.
+_VIDEO_ANALYSIS_INSTRUCTIONS = (
+    "你是专业的短视频运镜与分镜分析师。请仔细观看这段参考视频，输出严格的 JSON 对象，"
+    "不要包含任何 JSON 之外的文字或 Markdown 代码块标记，字段如下：\n"
+    "{\n"
+    '  "summary": "对整体内容、题材与风格的一段话摘要",\n'
+    '  "composed_prompt": "可直接用于视频生成的整合提示词，需具体描述运镜、场景、主体、光线与风格",\n'
+    '  "style_tags": ["风格标签", "..."],\n'
+    '  "pacing": "整体节奏描述，例如：快节奏剪辑 / 舒缓长镜头",\n'
+    '  "shots": [\n'
+    "    {\n"
+    '      "time_range": "00:00-00:03",\n'
+    '      "camera_movement": "运镜方式，例如：推镜 / 摇镜 / 跟随",\n'
+    '      "scene": "场景描述",\n'
+    '      "subject_action": "主体动作",\n'
+    '      "lighting_mood": "光线与氛围",\n'
+    '      "transition_in": "该镜头开始处的转场方式"\n'
+    "    }\n"
+    "  ]\n"
+    "}"
+)
 
 # AiHubMix has no documented `/v1/images/generations` support for feeding a
 # reference image into a Qwen model — the `image` field `_image_reference_
@@ -153,6 +180,8 @@ class AiHubMixMediaProvider(GenerationProvider):
                 Operation.IMAGE_TO_IMAGE.value,
             }:
                 return self._submit_image(request, started)
+            if self._capability_tag == Operation.VIDEO_ANALYSIS.value:
+                return self._submit_video_analysis(request, started)
             return self._submit_video(request, started)
         except httpx.TimeoutException as exc:
             logger.warning(
@@ -320,6 +349,62 @@ class AiHubMixMediaProvider(GenerationProvider):
             mime_type="audio/mpeg",
             latency_ms=self._elapsed_ms(started),
             metadata={"provider": self.name, "model": self._model, "voice": voice},
+        )
+
+    # -- video understanding: video_analysis ---------------------------------
+
+    def _submit_video_analysis(self, request: GenerationRequest, started: float) -> GenerationResult:
+        """Native video-understanding call, synchronous like image/audio.
+
+        **Unverified against a live credential** — modelled on DashScope's
+        documented OpenAI-compatible contract for Qwen-VL (a `video_url`
+        content part inside an otherwise ordinary `/v1/chat/completions`
+        multimodal message), the same "verify before trusting the docs"
+        situation `_submit_qwen_image_edit` ran into for image editing. If a
+        real call disagrees with this shape (wrong path, different content
+        part name, a dedicated async task contract like the video-generation
+        endpoint instead of a synchronous chat call, ...), fix this method
+        and update this comment — do not assume it is still accurate once a
+        live check has been made.
+        """
+        video_url = _video_reference_url(request)
+        if video_url is None:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_video_reference")
+
+        user_text = _VIDEO_ANALYSIS_INSTRUCTIONS
+        if request.prompt.strip():
+            user_text += f"\n\n用户补充说明：{request.prompt.strip()}"
+
+        body: dict[str, object] = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "video_url", "video_url": {"url": video_url}},
+                        {"type": "text", "text": user_text},
+                    ],
+                }
+            ],
+            "temperature": 0.2,
+        }
+
+        with self._client() as client:
+            response = client.post(
+                media_request_path(self._creds.base_url, "/v1/chat/completions"), json=body
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+        result_json = _video_analysis_result_json(payload)
+        if not result_json:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_analysis_json")
+
+        return GenerationResult(
+            succeeded=True,
+            output_json=result_json,
+            latency_ms=self._elapsed_ms(started),
+            metadata={"provider": self.name, "model": self._model},
         )
 
     # -- video: text_to_video / image_to_video / video_to_video -------------
@@ -565,6 +650,56 @@ def build_video_payload(
             for ref in input_refs[:_MAX_INPUT_REFERENCES]
         ]
     return body
+
+
+def _video_reference_url(request: GenerationRequest) -> str | None:
+    """The source clip to analyze, as a signed URL.
+
+    Always URL-based, never inlined as base64 — same reasoning as video
+    generation's `frame_images`/`input_references`: a 3-minute reference
+    clip is routinely far larger than any sane inline request body.
+    """
+    for ref in request.references:
+        if ref.media_type == "video" and ref.object_key:
+            return s3.presign_get(ref.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+    for key in request.reference_object_keys:
+        return s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+    return None
+
+
+def _video_analysis_result_json(payload: object) -> dict[str, Any] | None:
+    """Pulls the structured breakdown out of a chat-completions-shaped reply.
+
+    Shares `app.llm.normalize`'s think-block stripping and JSON extraction
+    with the general LLM gateway rather than re-implementing them — a
+    reasoning-style video model wrapping its answer the same way the text
+    gateway's models do is exactly the case those helpers exist for.
+    """
+    if not isinstance(payload, dict):
+        return None
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return None
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    text = content if isinstance(content, str) else _flatten_content_parts(content)
+    if not text:
+        return None
+    return extract_json(strip_thinking(text))
+
+
+def _flatten_content_parts(content: object) -> str:
+    """Some OpenAI-compatible gateways answer multimodal turns with a list of
+    `{"type": "text", "text": ...}` parts instead of a plain string."""
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for part in content:
+        if isinstance(part, dict) and isinstance(part.get("text"), str):
+            parts.append(part["text"])
+    return "\n".join(parts)
 
 
 def _image_reference_urls(request: GenerationRequest) -> list[str]:
