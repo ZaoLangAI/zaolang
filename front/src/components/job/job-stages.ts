@@ -40,7 +40,10 @@ export const STAGE_FOR_EVENT: Record<string, Stage> = {
   generating: 'generating',
   provider_started: 'generating',
   progress: 'generating',
-  awaiting_input: 'generating',
+  // Still in planning — the author is answering the planner's follow-up.
+  // Mapping this to `generating` made the next empty stage (`quality`) look
+  // current, so the job page showed "质检" while nothing had been generated.
+  awaiting_input: 'planning',
   // `JobEventType.AUDIO` is reserved but never emitted today — if it ever
   // fires, fold it into `generating` rather than a dedicated dot that would
   // never light up for image/video jobs.

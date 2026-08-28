@@ -158,8 +158,11 @@ export function InlineImageResult({
   const activeIndex = STAGES.findIndex((stage) => !reached.has(stage));
   const finished = ['succeeded', 'failed', 'cancelled', 'expired'].includes(job.status);
   const latestEvent = events[events.length - 1];
-  const displayStage: Stage =
-    finished && job.status !== 'succeeded'
+  const awaitingInput = job.status === 'awaiting_input';
+  const showAwaitingPanel = awaitingInput && !job.cancel_requested;
+  const displayStage: Stage = awaitingInput
+    ? 'planning'
+    : finished && job.status !== 'succeeded'
       ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
       : (STAGES[activeIndex] ?? 'done');
   const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
@@ -330,6 +333,8 @@ export function InlineImageResult({
           refreshSrc={refreshOutputSrc}
           maxHeight={RESULT_STAGE_MAX_HEIGHT}
         />
+      ) : showAwaitingPanel ? (
+        <AwaitingInputPanel key={job.id} jobId={job.id} />
       ) : (
         <div className="relative aspect-video overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface-soft">
           <div className="absolute inset-0 grid place-items-center px-6">
@@ -355,8 +360,10 @@ export function InlineImageResult({
               ) : null}
               <ol className="mt-1 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
                 {STAGES.map((stage) => {
-                  const done = reached.has(stage);
-                  const active = stage === displayStage && !finished;
+                  const done = awaitingInput && stage === 'planning' ? false : reached.has(stage);
+                  const active = awaitingInput
+                    ? stage === 'planning'
+                    : stage === displayStage && !finished;
                   return (
                     <li
                       key={stage}
@@ -438,12 +445,11 @@ export function InlineImageResult({
       ) : null}
 
       {/* `job`/`completionJob` are both plain `GenerationJob`s that can
-        suspend at `awaiting_input` — mirrors `job-progress.tsx`'s own
-        rendering (the only other place `AwaitingInputPanel` is used), so a
-        job suspended here isn't stuck with no way to see or answer its
-        follow-up question just because image creation never navigates to
-        `/jobs/[jobId]`. */}
-      {job.status === 'awaiting_input' && !job.cancel_requested ? (
+        suspend at `awaiting_input`. A job with no output already renders
+        the panel in the preview slot above; keep a second copy only when
+        there is already a result to show, or when the independent
+        completion job (补全侧面/背面) is the one waiting. */}
+      {showAwaitingPanel && (hasMultipleOutputs || job.output_url) ? (
         <AwaitingInputPanel key={job.id} jobId={job.id} />
       ) : null}
       {completionJob?.status === 'awaiting_input' && !completionJob.cancel_requested ? (

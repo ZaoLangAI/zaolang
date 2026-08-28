@@ -1842,6 +1842,7 @@
     "backToCreate": "回到创作中心",
     "eventLog": "过程记录",
     "awaitingInputTitle": "有几个问题需要你确认",
+    "awaitingInputLoading": "正在加载问题",
     "awaitingInputIntro": "回答后任务会继续生成，不会重新计费。",
     "awaitingInputRequired": "必填",
     "awaitingInputChoosePlaceholder": "请选择",

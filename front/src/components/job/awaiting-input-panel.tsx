@@ -1,11 +1,12 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { hasMissingRequiredAnswer, QuestionField, type QuestionAnswer } from '@/components/studio/question-field';
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
+import { Spinner } from '@/components/ui/spinner';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { JobInputRequest } from '@/lib/api/types';
@@ -46,6 +47,7 @@ export function AwaitingInputPanel({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -72,7 +74,22 @@ export function AwaitingInputPanel({
     };
   }, [jobId, client, basePath, t]);
 
-  if (loading) return null;
+  useEffect(() => {
+    if (!request) return;
+    rootRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [request]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3.5 rounded-[var(--radius-md)] border border-primary/30 bg-primary/5 p-4">
+        <p className="flex items-center gap-2 text-sm font-medium text-text">
+          <IconSparkle className="size-4 text-primary" />
+          {t('awaitingInputTitle')}
+        </p>
+        <Spinner className="text-muted" label={t('awaitingInputLoading')} />
+      </div>
+    );
+  }
   if (!request) return error ? <p className="text-xs text-danger">{error}</p> : null;
 
   const missingRequired = hasMissingRequiredAnswer(request.questions, answers);
@@ -94,7 +111,10 @@ export function AwaitingInputPanel({
   };
 
   return (
-    <div className="flex flex-col gap-3.5 rounded-[var(--radius-md)] border border-primary/30 bg-primary/5 p-4">
+    <div
+      ref={rootRef}
+      className="flex flex-col gap-3.5 rounded-[var(--radius-md)] border border-primary/30 bg-primary/5 p-4"
+    >
       <p className="flex items-center gap-2 text-sm font-medium text-text">
         <IconSparkle className="size-4 text-primary" />
         {t('awaitingInputTitle')}

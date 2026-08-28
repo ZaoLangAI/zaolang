@@ -1842,6 +1842,7 @@
     "backToCreate": "制作センターへ戻る",
     "eventLog": "処理ログ",
     "awaitingInputTitle": "確認が必要な質問があります",
+    "awaitingInputLoading": "質問を読み込んでいます",
     "awaitingInputIntro": "回答すると生成が続行されます。再度クレジットは発生しません。",
     "awaitingInputRequired": "必須",
     "awaitingInputChoosePlaceholder": "選択してください",

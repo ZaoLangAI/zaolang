@@ -1842,6 +1842,7 @@
     "backToCreate": "Back to the create centre",
     "eventLog": "Event log",
     "awaitingInputTitle": "A few questions need your answer",
+    "awaitingInputLoading": "Loading questions",
     "awaitingInputIntro": "Answer to continue generating — you will not be charged again.",
     "awaitingInputRequired": "required",
     "awaitingInputChoosePlaceholder": "Choose",

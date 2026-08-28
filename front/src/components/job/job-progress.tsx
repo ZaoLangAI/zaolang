@@ -74,8 +74,11 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const finished = ['succeeded', 'failed', 'cancelled', 'expired'].includes(current.status);
   const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
   const latestEvent = events[events.length - 1];
-  const displayStage: Stage =
-    finished && current.status !== 'succeeded'
+  const awaitingInput = current.status === 'awaiting_input';
+  const showAwaitingPanel = awaitingInput && !current.cancel_requested;
+  const displayStage: Stage = awaitingInput
+    ? 'planning'
+    : finished && current.status !== 'succeeded'
       ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
       : (STAGES[activeIndex] ?? 'done');
 
@@ -332,6 +335,8 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
                 refreshSrc={refreshOutputSrc}
               />
             )
+          ) : showAwaitingPanel ? (
+            <AwaitingInputPanel key={jobId} jobId={jobId} />
           ) : (
             <div className="relative aspect-video overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface-soft">
               <div className="absolute inset-0 grid place-items-center px-6">
@@ -373,8 +378,10 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               className={cn('flex flex-wrap gap-x-6 gap-y-3', current.output_url ? 'mt-4' : null)}
             >
               {STAGES.map((stage, index) => {
-                const done = reached.has(stage);
-                const active = index === activeIndex && !finished;
+                const done = awaitingInput && stage === 'planning' ? false : reached.has(stage);
+                const active = awaitingInput
+                  ? stage === 'planning'
+                  : index === activeIndex && !finished;
                 return (
                   <li
                     key={stage}
@@ -453,7 +460,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
             <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
           ) : null}
 
-          {current.status === 'awaiting_input' && !current.cancel_requested ? (
+          {showAwaitingPanel && (hasMultipleOutputs || current.output_url) ? (
             <AwaitingInputPanel key={jobId} jobId={jobId} />
           ) : null}
           {current.cancel_requested && !finished ? (
