@@ -457,19 +457,29 @@ def test_unimplemented_media_protocol_is_rejected(client: TestClient, admin: Use
         assert response.status_code == 422, protocol
 
 
-def test_protocol_must_match_modalities(client: TestClient, admin: User) -> None:
-    openai_video = client.put(
-        "/v1/admin/llm-providers/ep-bad",
-        json=_media_payload(
-            model="gpt-image-1",
+def test_openai_protocol_now_accepts_video_via_the_openai_videos_api(
+    client: TestClient, admin: User
+) -> None:
+    """`openai`+video used to 422 — the OpenAI Videos API track
+    (`/v1/videos` create/retrieve/download_content) made this a legal
+    combination. `minimax`+image/audio (below) is the combination that still
+    doesn't make sense and still 422s."""
+    body = _upsert(
+        client,
+        admin,
+        "ep-openai-video",
+        _media_payload(
+            model="wan2.7-videoedit",
             input_modalities=["text"],
             output_modalities=["video"],
             protocol="openai",
         ),
-        headers=admin_header(admin),
     )
-    assert openai_video.status_code == 422
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-openai-video")
+    assert endpoint["protocol"] == "openai"
 
+
+def test_protocol_must_match_modalities(client: TestClient, admin: User) -> None:
     minimax_image = client.put(
         "/v1/admin/llm-providers/ep-bad",
         json=_media_payload(

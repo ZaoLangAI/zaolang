@@ -104,6 +104,38 @@ def test_media_video_probe_uses_official_h3_shape_without_undocumented_cancel(
     assert result.external_task_id == "task-1"
 
 
+def test_media_openai_video_probe_hits_v1_videos_not_the_native_task_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An `openai`-protocol video endpoint speaks the OpenAI Videos API, not
+    MiniMax's native `/ai/v1/videos` create shape — the probe must branch on
+    `endpoint.protocol`, not assume every video endpoint is native."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://media.invalid{path}")
+        return httpx.Response(200, json={"id": "video_1"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            model="wan2.7-videoedit",
+            input_modalities=["text"],
+            output_modalities=["video"],
+            protocol="openai",
+        )
+    )
+
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in calls] == ["/v1/videos"]
+    body = calls[0][1]["json"]  # type: ignore[index]
+    assert body["model"] == "wan2.7-videoedit"
+    assert body["seconds"] == 5
+    assert "resolution" not in body
+    assert "aspect_ratio" not in body
+
+
 def test_media_text_to_image_probe_uses_generations_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

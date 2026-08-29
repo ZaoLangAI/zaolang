@@ -170,6 +170,12 @@ def _revision_asset_urls(session, revision: CutRevision) -> dict[str, str]:  # t
 
 
 def _revision_response(session, revision: CutRevision) -> CutRevisionResponse:  # type: ignore[no-untyped-def]
+    # Revisions are immutable snapshots, so a revision persisted before a
+    # field like `markers` existed never gets rewritten — `canonicalize()`
+    # backfills it transparently here at serving time (same read-time
+    # upgrade path as `_normalize_track`), rather than serving the raw,
+    # possibly-missing-field dict straight from storage.
+    document = docs.canonicalize(revision.document_json)
     return CutRevisionResponse(
         id=revision.id,
         cut_id=revision.cut_id,
@@ -177,10 +183,8 @@ def _revision_response(session, revision: CutRevision) -> CutRevisionResponse:  
         parent_revision_id=revision.parent_revision_id,
         duration_ticks=revision.duration_ticks,
         content_hash=revision.content_hash,
-        summary=TimelineSummaryResponse.model_validate(
-            docs.timeline_summary(revision.document_json)
-        ),
-        document=dict(revision.document_json),
+        summary=TimelineSummaryResponse.model_validate(docs.timeline_summary(document)),
+        document=document,
         asset_urls=_revision_asset_urls(session, revision),
         created_at=revision.created_at,
     )

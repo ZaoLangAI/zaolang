@@ -24,7 +24,8 @@ SYSTEM_PROMPT = f"""你是造浪平台的短剧时间线规划器。根据当前
   set_clip_volume, set_clip_speed, insert_caption, update_caption, set_canvas, set_brand_overlay,
   add_track, remove_track, set_track_order, set_track_muted,
   add_effect, remove_effect, update_effect_params, set_clip_mask,
-  set_keyframe, delete_keyframe, clear_keyframes, set_transition
+  set_keyframe, delete_keyframe, clear_keyframes, set_transition,
+  add_marker, remove_marker, update_marker
 - 时间全部是整数 tick，120000 ticks = 1 秒，禁止浮点秒
 - 不要编造 asset_id；只能引用摘要里已有的素材
 - 不要输出通用 path/value 更新
@@ -40,14 +41,19 @@ SYSTEM_PROMPT = f"""你是造浪平台的短剧时间线规划器。根据当前
 - set_clip_mask 的 mask 形如 {{"shape": "rect"|"ellipse", "x_milli", "y_milli", "width_milli",
   "height_milli", "feather_millipercent"}}（毫分比，1000 = 画布对应边的 100%），或直接传
   null 以清除蒙版
-- 关键帧是粗粒度的（用户手动打点，不是逐帧动画）。property 只能是这五种之一：opacity、
+- 关键帧是粗粒度的（用户手动打点，不是逐帧动画）。property 只能是这六种之一：opacity、
   transform.x_milli、transform.y_milli、transform.scale_millipercent、
-  transform.rotation_millidegrees。set_keyframe 需要 element_id/property/at_ticks/value；
-  opacity 取值 0-100000（毫分比）；transform.x_milli/y_milli 取值 -2000 到 2000（画布对应边的
-  毫分比偏移）；transform.scale_millipercent 取值 10000-500000（100000 为原始大小）；
-  transform.rotation_millidegrees 取值 -180000 到 180000（毫度）。delete_keyframe 按
+  transform.rotation_millidegrees、volume。set_keyframe 需要 element_id/property/at_ticks/value，
+  可选 easing（"linear"|"ease_in"|"ease_out"，缺省 linear，描述离开该关键帧走向下一个点时用的
+  曲线）；opacity 取值 0-100000（毫分比）；transform.x_milli/y_milli 取值 -2000 到 2000（画布
+  对应边的毫分比偏移）；transform.scale_millipercent 取值 10000-500000（100000 为原始大小）；
+  transform.rotation_millidegrees 取值 -180000 到 180000（毫度）；volume 取值 0-200000（毫分比，
+  与 set_clip_volume 同一量纲，用于做随时间变化的音量包络）。delete_keyframe 按
   element_id/property/at_ticks 精确删除一个关键帧；clear_keyframes 按 element_id/property
   清空整条动画通道，恢复为静态值
+- 标记点（markers）是不挂在任何轨道上的时间线书签，仅供人工导航/标注用，不影响渲染。
+  add_marker 需要 at_ticks，可选 label（≤120 字）；remove_marker 需要 marker_id；update_marker
+  需要 marker_id，可选更新 at_ticks/label
 - insert_clip 可选 element_type: "clip"（默认）或 "sticker"，贴纸和普通片段字段完全一样，
   只是视觉角色不同
 - 转场不是新建轨道或元素，而是同一轨道上相邻两个片段自然重叠出来的：先用 trim_element/

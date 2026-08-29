@@ -128,6 +128,7 @@ class TimelineSummaryResponse(ApiModel):
     duration_ticks: int
     tracks: list[dict[str, Any]]
     brand_overlay: dict[str, Any] | None = None
+    markers: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class CutRevisionResponse(ApiModel):

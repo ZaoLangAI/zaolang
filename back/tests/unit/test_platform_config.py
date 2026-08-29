@@ -357,17 +357,47 @@ def test_unimplemented_and_mismatched_protocols_are_rejected() -> None:
                 "name": "错配",
                 "base_url": "https://media.invalid",
                 "kind": "media",
-                "model": "gpt-image-1",
-                "protocol": "openai",
+                "model": "minimax-h3",
+                "protocol": "minimax",
                 "input_modalities": ["text"],
-                "output_modalities": ["video"],
+                "output_modalities": ["image"],
             }
         )
 
 
+def test_openai_protocol_accepts_video_via_the_openai_videos_api() -> None:
+    """`openai`+video used to 422 (`_OPENAI_CAPABILITIES` had no video tags)
+    — the OpenAI Videos API track made this a legal combination. Not every
+    openai-protocol video model can actually honour a reference (see
+    `AiHubMixMediaProvider`), but that is the provider adapter's problem, not
+    this schema-level modality gate's."""
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "OpenAI 视频",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "wan2.7-videoedit",
+            "protocol": "openai",
+            "input_modalities": ["text"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.protocol == "openai"
+    assert endpoint.capabilities == {"text_to_video"}
+
+
 def test_a_mixed_media_endpoint_is_dropped_without_emptying_the_pool() -> None:
     """`get_typed` must not fall back to the empty default because one
-    leftover endpoint spans image and video capabilities."""
+    leftover endpoint spans image and video capabilities.
+
+    Explicit `protocol: "minimax"` (rather than leaving it to infer): now
+    that `openai` legitimately covers image *and* video capabilities (the
+    OpenAI Videos API track), an *inferred*-protocol endpoint mixing image
+    and video output would infer to `openai` and validate — this endpoint is
+    "bad" specifically because it's pinned to a protocol whose capability
+    set can't cover the mix, not because the mix itself is inherently
+    illegal everywhere.
+    """
     parsed = LlmProviderConfig.model_validate(
         {
             "endpoints": {
@@ -384,6 +414,7 @@ def test_a_mixed_media_endpoint_is_dropped_without_emptying_the_pool() -> None:
                     "base_url": "https://mixed.invalid",
                     "kind": "media",
                     "model": "multi",
+                    "protocol": "minimax",
                     "input_modalities": ["text", "image"],
                     "output_modalities": ["image", "video"],
                 },

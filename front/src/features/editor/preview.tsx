@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/button';
 
 import { AudioMixer } from './engine/audio-mixer';
 import { composeFrame, MediaPool } from './engine/compositor';
-import { TICKS_PER_SECOND, type CanonicalDocument, type ResolvedAsset } from './engine/ports';
+import {
+  TICKS_PER_SECOND,
+  type CanonicalDocument,
+  type EditCommand,
+  type ResolvedAsset,
+  type TimelineElement,
+} from './engine/ports';
+import { MaskOverlay } from './mask-overlay';
 import { useEditorUi } from './store';
 
 /**
@@ -22,11 +29,17 @@ export function Preview({
   assets,
   durationTicks,
   title,
+  selected,
+  disabled,
+  onApply,
 }: {
   document: CanonicalDocument;
   assets: ResolvedAsset[];
   durationTicks: number;
   title: string;
+  selected?: TimelineElement | undefined;
+  disabled?: boolean;
+  onApply?: (commands: EditCommand[]) => void;
 }) {
   const t = useTranslations('editor');
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,11 +77,18 @@ export function Preview({
     canvas.height = document.canvas.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    void composeFrame(ctx, canvas.width, canvas.height, document, playheadTicks, assets, pool).then(
-      () => {
+    void composeFrame(ctx, canvas.width, canvas.height, document, playheadTicks, assets, pool)
+      .then(() => {
         if (cancelled) return;
-      },
-    );
+      })
+      .catch((error: unknown) => {
+        // `composeFrame` already guards its own per-layer rendering, but an
+        // unhandled rejection here would otherwise surface as a full-page
+        // dev-overlay error (or a silently dead render loop in prod) rather
+        // than just a skipped frame — scrubbing/playback keeps working on
+        // the next tick either way.
+        if (!cancelled) console.error('[editor] preview frame failed', error);
+      });
     // Audio only actually sounds during playback — scrubbing while paused
     // stays silent, matching how a paused video element behaves elsewhere.
     if (playing) {
@@ -108,6 +128,39 @@ export function Preview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, durationTicks]);
 
+  const togglePlay = () => {
+    setPlaying((current) => {
+      const next = !current;
+      // Must run inside this gesture handler — browsers refuse to resume
+      // an AudioContext from any other call site. A `keydown` handler
+      // counts as a user gesture too, so Space works the same as the button.
+      if (next) void audioMixerRef.current?.resume();
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (empty) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      togglePlay();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empty]);
+
   if (empty) {
     return (
       <div className="grid min-h-0 flex-1 place-items-center rounded-[var(--radius-md)] border border-border bg-surface-soft text-sm text-muted">
@@ -116,27 +169,36 @@ export function Preview({
     );
   }
 
+  const maskOverlayTarget =
+    selected && (selected.type === 'clip' || selected.type === 'sticker') && selected.mask
+      ? selected
+      : undefined;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          className="h-auto w-auto max-h-full max-w-full rounded-[var(--radius-md)] border border-border bg-track object-contain"
+        <div
+          data-mask-surface
+          className="relative h-auto w-auto max-h-full max-w-full"
           style={{ aspectRatio: `${document.canvas.width} / ${document.canvas.height}` }}
-        />
+        >
+          <canvas
+            ref={canvasRef}
+            className="block h-full w-full rounded-[var(--radius-md)] border border-border bg-track object-contain"
+          />
+          {maskOverlayTarget && onApply ? (
+            <MaskOverlay
+              key={maskOverlayTarget.id}
+              mask={maskOverlayTarget.mask!}
+              elementId={maskOverlayTarget.id}
+              disabled={Boolean(disabled)}
+              onCommit={onApply}
+            />
+          ) : null}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            const next = !playing;
-            setPlaying(next);
-            // Must run inside this gesture handler — browsers refuse to
-            // resume an AudioContext from any other call site.
-            if (next) void audioMixerRef.current?.resume();
-          }}
-        >
+        <Button size="sm" variant="secondary" onClick={togglePlay} title={t('playPauseShortcutHint')}>
           {playing ? t('pause') : t('play')}
         </Button>
         <p className="text-xs text-muted">{t('previewScrubMuted')}</p>

@@ -39,6 +39,9 @@ class WorkVersionSummary(ApiModel):
     cover_url: str | None = None
     media_url: str | None = None
     media_type: MediaType | None = None
+    # The version's primary output. A remix studio submits this as a
+    # generation reference; `media_url` is only the signed playback URL.
+    output_asset_id: str | None = None
     ai_generated: bool = True
     created_at: dt.datetime
 

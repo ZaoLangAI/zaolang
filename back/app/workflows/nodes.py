@@ -1345,6 +1345,7 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         user_id=ctx.job.user_id,
         asset_ids=ctx.params.get("reference_asset_ids") or [],
         video_options=ctx.params.get("video_options"),
+        source_work_version_id=ctx.job.source_work_version_id,
     )
     if operation in _REFERENCE_REQUIRED and not references:
         return GenerationResult(
@@ -1363,6 +1364,7 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         seed=ctx.params.get("seed"),
         aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
         duration_seconds=duration,
+        resolution=(ctx.params.get("video_options") or {}).get("resolution"),
         references=references,
         extra=dict(ctx.params.get("extra") or {}),
     )
@@ -1472,11 +1474,13 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             seed=ctx.params.get("seed"),
             aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
             duration_seconds=int(ctx.params.get("duration_seconds") or 0),
+            resolution=(ctx.params.get("video_options") or {}).get("resolution"),
             references=media_service.provider_references_for(
                 ctx.session,
                 user_id=ctx.job.user_id,
                 asset_ids=ctx.params.get("reference_asset_ids") or [],
                 video_options=ctx.params.get("video_options"),
+                source_work_version_id=ctx.job.source_work_version_id,
             ),
             extra=dict(ctx.params.get("extra") or {}),
             attempt_number=attempt_number,

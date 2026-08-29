@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useEffect } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ErrorNotice } from '@/components/ui/primitives';
@@ -9,11 +10,22 @@ import type { ShortformProfile } from '@/lib/api/types';
 import type { CanonicalDocument, EditCommand, ResolvedAsset, TimelineElement } from '../engine/ports';
 import { TICKS_PER_SECOND } from '../engine/ports';
 import { Preview } from '../preview';
+import { useEditorUi } from '../store';
 import { Timeline } from '../timeline';
 import { EditorHeader } from './editor-header';
 import { MediaLibraryPanel } from './media-library-panel';
 import { PropertiesPanel } from './properties-panel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizable';
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
 
 /**
  * Adapted from OpenCut's `app/editor/[project_id]/page.tsx` `EditorLayout` —
@@ -26,10 +38,12 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizabl
 export function StudioShell({
   cutName,
   episodeId,
+  saveStatus,
   readonly,
   heldByOther,
   reclaiming,
   onReclaim,
+  leaseExpiresAt,
   document,
   assets,
   durationTicks,
@@ -42,7 +56,12 @@ export function StudioShell({
   onApply,
   onDeleteSelected,
   onSplitAtPlayhead,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   revisionId,
+  syncNonce,
   draftId,
   profiles,
   cutId,
@@ -53,10 +72,12 @@ export function StudioShell({
 }: {
   cutName: string;
   episodeId: string | null;
+  saveStatus: 'idle' | 'saving' | 'saved';
   readonly: boolean;
   heldByOther: boolean;
   reclaiming: boolean;
   onReclaim: () => void;
+  leaseExpiresAt: string | null;
   document: CanonicalDocument;
   assets: ResolvedAsset[];
   durationTicks: number;
@@ -69,7 +90,12 @@ export function StudioShell({
   onApply: (commands: EditCommand[]) => void;
   onDeleteSelected: () => void;
   onSplitAtPlayhead: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
   revisionId: string | null;
+  syncNonce: number;
   draftId: string | null;
   profiles: ShortformProfile[];
   cutId: string;
@@ -79,10 +105,67 @@ export function StudioShell({
   onRestore: (revisionId: string) => void;
 }) {
   const t = useTranslations('editor');
+  const playheadTicks = useEditorUi((state) => state.playheadTicks);
+  const setPlayhead = useEditorUi((state) => state.setPlayhead);
+
+  // Walkthrough finding: every edit required reaching for the mouse (no
+  // Delete/split/frame-step shortcuts), which made fine-grained trimming
+  // and cleanup noticeably slower than a desktop NLE. Space/play is handled
+  // locally inside `Preview` (it owns the playing state); this covers the
+  // shortcuts that operate on the shared selection/playhead instead.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (disabled || isTypingTarget(event.target)) return;
+      const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) onRedo();
+        else onUndo();
+        return;
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        if (selectedIds.length === 0) return;
+        event.preventDefault();
+        onDeleteSelected();
+      } else if (event.key === 's' || event.key === 'S') {
+        if (!selected) return;
+        event.preventDefault();
+        onSplitAtPlayhead();
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const frameTicks = Math.max(
+          1,
+          Math.round((TICKS_PER_SECOND * document.canvas.fps_den) / document.canvas.fps_num),
+        );
+        const delta = event.key === 'ArrowLeft' ? -frameTicks : frameTicks;
+        setPlayhead(Math.max(0, Math.min(durationTicks, playheadTicks + delta)));
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    disabled,
+    selectedIds,
+    selected,
+    onDeleteSelected,
+    onSplitAtPlayhead,
+    onUndo,
+    onRedo,
+    document.canvas.fps_den,
+    document.canvas.fps_num,
+    durationTicks,
+    playheadTicks,
+    setPlayhead,
+  ]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <EditorHeader title={cutName} episodeId={episodeId} />
+      <EditorHeader
+        title={cutName}
+        episodeId={episodeId}
+        saveStatus={saveStatus}
+        leaseExpiresAt={readonly ? null : leaseExpiresAt}
+      />
       {readonly ? (
         <div className="border-b border-border">
           <ErrorNotice
@@ -116,6 +199,9 @@ export function StudioShell({
                     assets={assets}
                     durationTicks={durationTicks}
                     title={cutName}
+                    selected={selected}
+                    disabled={disabled}
+                    onApply={onApply}
                   />
                   <p className="shrink-0 text-xs text-muted">
                     {t('canvasLabel')} · {document.canvas.width}×{document.canvas.height} ·{' '}
@@ -132,6 +218,7 @@ export function StudioShell({
                   assets={assets}
                   durationTicks={durationTicks}
                   revisionId={revisionId}
+                  syncNonce={syncNonce}
                   draftId={draftId}
                   disabled={disabled}
                   profiles={profiles}
@@ -153,8 +240,27 @@ export function StudioShell({
                 <Button
                   size="sm"
                   variant="secondary"
+                  disabled={disabled || !canUndo}
+                  onClick={onUndo}
+                  title={t('undoShortcutHint')}
+                >
+                  {t('undo')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={disabled || !canRedo}
+                  onClick={onRedo}
+                  title={t('redoShortcutHint')}
+                >
+                  {t('redo')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
                   disabled={disabled || selectedIds.length === 0}
                   onClick={onDeleteSelected}
+                  title={t('deleteSelectedShortcutHint')}
                 >
                   {t('deleteSelected')}
                 </Button>
@@ -163,12 +269,14 @@ export function StudioShell({
                   variant="secondary"
                   disabled={disabled || !selected}
                   onClick={onSplitAtPlayhead}
+                  title={t('splitAtPlayheadShortcutHint')}
                 >
                   {t('splitAtPlayhead')}
                 </Button>
               </div>
               <Timeline
                 document={document}
+                assets={assets}
                 durationTicks={durationTicks || TICKS_PER_SECOND}
                 disabled={disabled}
                 playheadLabel={t('playhead')}

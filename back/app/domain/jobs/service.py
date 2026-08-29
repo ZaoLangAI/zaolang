@@ -160,8 +160,15 @@ def submit(
     # the user a reservation.
     characters_service.apply_character_refs(session, user_id=user_id, params=params)
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
+    media_service.attach_licensed_source_video(
+        session, params=params, source_work_version_id=source_work_version_id
+    )
     media_service.validate_generation_references(
-        session, user_id=user_id, operation=operation, params=params
+        session,
+        user_id=user_id,
+        operation=operation,
+        params=params,
+        source_work_version_id=source_work_version_id,
     )
     shortform_service.assert_params_consistent(session, params)
 

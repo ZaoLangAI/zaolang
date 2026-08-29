@@ -19,12 +19,9 @@ from app.models.enums import ProviderKind
 from app.platform_config import service as config_service
 from app.platform_config.schemas import IMPLEMENTED_MEDIA_PROTOCOLS, LlmProviderConfig
 from app.providers.aihubmix_media import (
-    H3_ASPECT_RATIOS,
-    H3_MAX_DURATION_SECONDS,
-    H3_MIN_DURATION_SECONDS,
-    H3_RESOLUTION,
     MINIMAX_H3_MODEL,
     AiHubMixMediaProvider,
+    native_video_profile,
 )
 from app.providers.base import GenerationProvider, ProviderCapability
 
@@ -92,11 +89,20 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
             continue
         for tag in endpoint.capabilities:
             catalog_key = f"{endpoint_id}:{tag}"
-            is_h3_video = endpoint.model.strip().lower() == MINIMAX_H3_MODEL and tag in {
+            is_native_video = tag in {
                 "text_to_video",
                 "image_to_video",
                 "video_to_video",
             }
+            # Scoped to the native (`minimax`) protocol only — an `openai`
+            # video endpoint (the OpenAI Videos API track) sends none of
+            # these fields at all, even for the same model name, so it must
+            # not inherit the native adapter's range constraints.
+            video_profile = (
+                native_video_profile(endpoint.model)
+                if is_native_video and endpoint.protocol == "minimax"
+                else None
+            )
             configured_cost = costs_service.nominal_media_call_cost_micro_usd(
                 endpoint.media_pricing, capability=tag
             )
@@ -112,12 +118,28 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 cost_is_estimated=not configured_cost,
                 pricing=endpoint.media_pricing,
                 model_or_workflow=endpoint.model,
-                min_duration_seconds=H3_MIN_DURATION_SECONDS if is_h3_video else None,
-                max_duration_seconds=H3_MAX_DURATION_SECONDS if is_h3_video else None,
-                aspect_ratios=H3_ASPECT_RATIOS if is_h3_video else None,
-                resolutions=frozenset({H3_RESOLUTION}) if is_h3_video else None,
+                min_duration_seconds=(
+                    video_profile.min_duration_seconds if video_profile is not None else None
+                ),
+                max_duration_seconds=(
+                    video_profile.max_duration_seconds if video_profile is not None else None
+                ),
+                aspect_ratios=video_profile.aspect_ratios if video_profile is not None else None,
+                resolutions=video_profile.resolutions if video_profile is not None else None,
+                # `frame_images` (first/last-frame) is an H3-only concept —
+                # any other profiled native-video model (e.g.
+                # wan2.7-videoedit) only ever advertises `input_references`,
+                # so a `frame_images` request gets hard-filtered away from it
+                # at routing time instead of failing later as a schema
+                # violation on the provider's side. A model with no profile
+                # at all stays unrestricted, same as before this table
+                # existed.
                 reference_modes=(
-                    frozenset({"input_references", "frame_images"}) if is_h3_video else None
+                    None
+                    if video_profile is None
+                    else frozenset({"input_references", "frame_images"})
+                    if endpoint.model.strip().lower() == MINIMAX_H3_MODEL
+                    else frozenset({"input_references"})
                 ),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
@@ -126,6 +148,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                     base_url=endpoint.base_url,
                     api_key=endpoint.api_key,
                     timeout_ms=endpoint.timeout_ms,
+                    protocol=endpoint.protocol or "minimax",
                 )
             )
     return catalog
@@ -139,6 +162,7 @@ def _factory(
     base_url: str,
     api_key: str,
     timeout_ms: int,
+    protocol: str,
 ) -> Callable[[], GenerationProvider]:
     return lambda: AiHubMixMediaProvider(
         endpoint_id=endpoint_id,
@@ -147,4 +171,5 @@ def _factory(
         base_url=base_url,
         api_key=api_key,
         timeout_ms=timeout_ms,
+        protocol=protocol,
     )

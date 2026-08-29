@@ -35,6 +35,9 @@ const ALLOWED = new Set([
   'delete_keyframe',
   'clear_keyframes',
   'set_transition',
+  'add_marker',
+  'remove_marker',
+  'update_marker',
 ]);
 
 const TRACK_KINDS_ADDABLE = new Set(['video', 'audio']);
@@ -57,6 +60,7 @@ const ANIMATABLE_PROPERTIES = new Set([
   'transform.y_milli',
   'transform.scale_millipercent',
   'transform.rotation_millidegrees',
+  'volume',
 ]);
 const PROPERTY_RANGES: Record<string, [number, number]> = {
   opacity: [0, 100_000],
@@ -64,8 +68,12 @@ const PROPERTY_RANGES: Record<string, [number, number]> = {
   'transform.y_milli': [-2000, 2000],
   'transform.scale_millipercent': [10_000, 500_000],
   'transform.rotation_millidegrees': [-180_000, 180_000],
+  volume: [0, 200_000],
 };
 const MAX_KEYFRAMES_PER_CHANNEL = 64;
+const EASING_TYPES = new Set(['linear', 'ease_in', 'ease_out']);
+const DEFAULT_EASING = 'linear';
+const MAX_MARKERS = 200;
 
 const ELEMENT_TYPES_ADDABLE = new Set(['clip', 'sticker']);
 const TRANSITION_TYPES = new Set(['crossfade', 'dip_to_black']);
@@ -97,6 +105,7 @@ export function emptyDocument(width = 1080, height = 1920): CanonicalDocument {
       emptyTrack('trk_overlay', 'overlay'),
     ],
     brand_overlay: null,
+    markers: [],
   };
 }
 
@@ -174,6 +183,10 @@ function newElementId(): string {
 
 function newTrackId(): string {
   return `trk_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+}
+
+function newMarkerId(): string {
+  return `mrk_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
 }
 
 function applyOne(
@@ -435,12 +448,14 @@ function applyOne(
         throw new Error(`${command.property} 的值必须在 ${range[0]} 到 ${range[1]} 之间。`);
       }
       assertSafeTicks(command.at_ticks, 'at_ticks');
+      const easing = command.easing ?? DEFAULT_EASING;
+      if (!EASING_TYPES.has(easing)) throw new Error('不支持的缓动类型。');
       const existing = found.element.animations.channels[command.property];
       const points = (existing?.points ?? []).filter((point) => point.at_ticks !== command.at_ticks);
       if (points.length >= MAX_KEYFRAMES_PER_CHANNEL) {
         throw new Error(`单个属性最多 ${MAX_KEYFRAMES_PER_CHANNEL} 个关键帧。`);
       }
-      points.push({ at_ticks: command.at_ticks, value: command.value });
+      points.push({ at_ticks: command.at_ticks, value: command.value, easing });
       points.sort((a, b) => a.at_ticks - b.at_ticks);
       found.element.animations.channels[command.property] = { kind: 'number', points };
       return;
@@ -473,6 +488,31 @@ function applyOne(
       }
       if (command.edge === 'in') found.element.transition_in = transition;
       else found.element.transition_out = transition;
+      return;
+    }
+    case 'add_marker': {
+      if (document.markers.length >= MAX_MARKERS) throw new Error(`最多 ${MAX_MARKERS} 个标记点。`);
+      const markerId = command.marker_id ?? newMarkerId();
+      if (document.markers.some((marker) => marker.id === markerId)) {
+        throw new Error('标记点 id 已存在。');
+      }
+      assertSafeTicks(command.at_ticks, 'at_ticks');
+      if (command.label != null && command.label.length > 120) throw new Error('标记点文案最多 120 字符。');
+      document.markers.push({ id: markerId, at_ticks: command.at_ticks, label: command.label ?? null });
+      return;
+    }
+    case 'remove_marker': {
+      const next = document.markers.filter((marker) => marker.id !== command.marker_id);
+      if (next.length === document.markers.length) throw new Error('标记点不存在。');
+      document.markers = next;
+      return;
+    }
+    case 'update_marker': {
+      const marker = document.markers.find((item) => item.id === command.marker_id);
+      if (!marker) throw new Error('标记点不存在。');
+      if (command.label != null && command.label.length > 120) throw new Error('标记点文案最多 120 字符。');
+      if (command.at_ticks !== undefined) marker.at_ticks = command.at_ticks;
+      if (command.label !== undefined) marker.label = command.label ?? null;
       return;
     }
   }

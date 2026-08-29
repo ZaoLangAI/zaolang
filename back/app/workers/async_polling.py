@@ -24,6 +24,7 @@ import logging
 from dataclasses import asdict, fields
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents import router
@@ -31,7 +32,7 @@ from app.domain.costs import service as costs_service
 from app.domain.jobs import async_tasks
 from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
-from app.models import AsyncProviderTask, GenerationJob, ProviderAttempt
+from app.models import AsyncProviderTask, GenerationJob, JobEvent, ProviderAttempt
 from app.models.enums import (
     JobEventType,
     JobStatus,
@@ -116,7 +117,7 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
     result = provider.poll(task.external_task_id, request)
 
     if result.pending:
-        _heartbeat(session, job, task)
+        _heartbeat(session, job, task, result)
         async_tasks.reschedule(session, task)
         session.commit()
         return
@@ -155,7 +156,9 @@ def _cancel(session: Session, job: GenerationJob, task: AsyncProviderTask, provi
     session.commit()
 
 
-def _heartbeat(session: Session, job: GenerationJob, task: AsyncProviderTask) -> None:
+def _heartbeat(
+    session: Session, job: GenerationJob, task: AsyncProviderTask, result: GenerationResult
+) -> None:
     """The reason this whole mechanism exists from a user's point of view.
 
     Without it a video job would show one frozen status for minutes and then
@@ -163,6 +166,18 @@ def _heartbeat(session: Session, job: GenerationJob, task: AsyncProviderTask) ->
     job that died.
     """
     progress = min(_PROGRESS_CEILING, _PROGRESS_FLOOR + task.poll_count)
+    upstream_progress = _upstream_progress(result)
+    if upstream_progress is not None:
+        progress = max(progress, upstream_progress)
+    # The upstream's own number is not promised to be monotonic (OpenAI's
+    # can wobble tick to tick, MiniMax H3's status response carries no such
+    # field at all) — clamping to the last value this job actually emitted
+    # is what makes the bar visibly monotonic, not just `poll_count` alone.
+    last_progress = session.scalar(
+        select(func.max(JobEvent.progress)).where(JobEvent.job_id == job.id)
+    )
+    if last_progress is not None:
+        progress = max(progress, last_progress)
     _emit(
         session,
         job,
@@ -173,6 +188,22 @@ def _heartbeat(session: Session, job: GenerationJob, task: AsyncProviderTask) ->
         payload={"external_task_id": task.external_task_id, "poll_count": task.poll_count},
         node_id=task.node_id,
     )
+
+
+def _upstream_progress(result: GenerationResult) -> int | None:
+    """Maps an upstream-reported `0`–`100` progress (when the provider's
+    response happens to carry one — MiniMax H3's status response never has,
+    OpenAI Videos API's sometimes does) into the `_PROGRESS_FLOOR`–
+    `_PROGRESS_CEILING` window this heartbeat already owns. `None` when the
+    provider didn't report one, or reported something out of range — the
+    `poll_count`-based estimate in `_heartbeat` is the fallback either way.
+    """
+    raw = result.metadata.get("progress")
+    if not isinstance(raw, int | float) or isinstance(raw, bool):
+        return None
+    clamped = max(0.0, min(100.0, float(raw)))
+    span = _PROGRESS_CEILING - _PROGRESS_FLOOR
+    return int(_PROGRESS_FLOOR + span * clamped / 100)
 
 
 def _resume_succeeded(

@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { DevicePreview } from '@/components/media/device-preview';
 import { Poster } from '@/components/media/poster';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { IconClock, IconGear, IconMic, IconSparkle } from '@/components/ui/icons';
 import { Sheet } from '@/components/ui/sheet';
 import { DEFAULT_DEVICE_ID } from '@/lib/devices';
+import { refreshWorkMediaUrl } from '@/lib/refresh-media-src';
 import { useMinWidth } from '@/lib/use-media-query';
 import type { ReusableParams, WorkDetail } from '@/lib/api/types';
 import type { Asset } from '@/lib/upload';
@@ -108,6 +109,13 @@ export function GenerationStudioShell({
 
   const cover = previewOverrideUrl ?? source?.work.current_version?.cover_url ?? source?.work.cover_url;
   const previewTitle = source?.work.title ?? previewPlaceholder ?? t('promptLabel');
+  const sourceMediaType = source?.work.media_type ?? source?.work.current_version?.media_type;
+  const sourceVideoUrl = source?.work.current_version?.media_url;
+  const playSourceVideo = sourceMediaType === 'video' && Boolean(sourceVideoUrl) && !previewOverrideUrl;
+  const refreshSourceVideo = useCallback(
+    () => (source ? refreshWorkMediaUrl(source.work.id) : Promise.resolve(null)),
+    [source],
+  );
 
   return (
     <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[184px_minmax(0,1fr)_340px]">
@@ -132,6 +140,16 @@ export function GenerationStudioShell({
             <IconMic className="size-8" />
             <p className="text-xs">{t('audioPreviewHint')}</p>
           </div>
+        ) : playSourceVideo ? (
+          <DevicePreview
+            src={sourceVideoUrl}
+            poster={cover}
+            title={previewTitle}
+            mediaType="video"
+            defaultDeviceId={isPortraitPreview ? DEFAULT_DEVICE_ID : undefined}
+            maxHeight={480}
+            refreshSrc={refreshSourceVideo}
+          />
         ) : isPortraitPreview ? (
           // A vertical framing is the one the author cannot judge from a
           // 16:9 box, so that is where the phone frame earns its place.

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Asset, User
 from app.models.base import new_id
+from app.models.editor import EpisodeCut
 from app.models.enums import (
     AssetRole,
     JobStatus,
@@ -234,6 +235,98 @@ def test_stale_expected_revision_conflicts(
     )
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "REVISION_CONFLICT"
+
+
+def test_apply_commands_sees_a_concurrently_advanced_head_not_a_stale_cached_one(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """Regression test for a SQLAlchemy identity-map staleness bug in
+    `apply_commands`/`restore_revision`: both first read the `EpisodeCut` row
+    unlocked (via `_owned_cut`), then re-fetch it `with_for_update=True` to
+    lock it for the CAS check. If that row was already present in the
+    session's identity map (as it always is here, since it's the same
+    object), `Session.get(..., with_for_update=True)` alone re-issues the
+    locking SELECT but does *not* refresh the already-loaded Python
+    attributes from it — so `cut.head_revision_id` can keep reflecting
+    whatever it was at the first, unlocked read forever, even after the lock
+    is correctly acquired against a row that has since moved on. That made
+    the CAS check compare the caller's (correct, freshly-known) expected
+    revision against a stale in-memory head and reject it with a false
+    `REVISION_CONFLICT`.
+
+    This simulates "some other request already advanced the head" by writing
+    `head_revision_id` with a raw, ORM-bypassing UPDATE on the same session
+    (so the already-cached `EpisodeCut` instance is left stale, exactly like
+    two separate per-request sessions racing in production) and asserts that
+    a command batch whose `expected_revision_id` matches that *new* head
+    succeeds rather than 409ing.
+    """
+    from sqlalchemy import update as sa_update
+
+    from app.domain.editor import document as docs
+    from app.models.editor import CutRevision
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    cut = opened["cut"]
+    lease = opened["lease"]
+    original_head_id = cut["head_revision_id"]
+
+    # Loads `EpisodeCut` into `db`'s identity map exactly as `_owned_cut` does
+    # inside the handlers above, pinning `head_revision_id` in memory to
+    # `original_head_id`.
+    cut_row = db.get(EpisodeCut, cut["id"])
+    assert cut_row is not None
+    assert cut_row.head_revision_id == original_head_id
+
+    # Fabricate a second revision and move the head to it out from under the
+    # ORM, without touching `cut_row` — mirrors a concurrent writer's commit
+    # landing between another request's unlocked read and its locked re-fetch.
+    original = db.get(CutRevision, original_head_id)
+    assert original is not None
+    new_revision = CutRevision(
+        cut_id=cut["id"],
+        revision_no=original.revision_no + 1,
+        parent_revision_id=original.id,
+        document_json=docs.canonicalize(original.document_json),
+        asset_bindings_json=list(original.asset_bindings_json),
+        duration_ticks=original.duration_ticks,
+        content_hash="f" * 64,
+        command_summary_json={"source": "test-simulated-concurrent-writer"},
+        created_by_user_id=author.id,
+        created_at=original.created_at,
+    )
+    db.add(new_revision)
+    db.flush()
+    # `synchronize_session=False` is essential: SQLAlchemy 2.0's ORM-enabled
+    # `UPDATE` otherwise auto-syncs matching in-session objects (including
+    # `cut_row`), which would silently "fix" the very staleness this test
+    # needs to reproduce — a real second request wouldn't share Python
+    # objects with this one at all.
+    db.execute(
+        sa_update(EpisodeCut)
+        .where(EpisodeCut.id == cut["id"])
+        .values(head_revision_id=new_revision.id),
+        execution_options={"synchronize_session": False},
+    )
+    db.flush()
+    assert cut_row.head_revision_id == original_head_id, "sanity: ORM object must still look stale"
+
+    applied = client.post(
+        f"/v1/episode-cuts/{cut['id']}/revisions",
+        headers=auth_header(author),
+        json={
+            "schema_version": 1,
+            "batch_id": "bat_concurrent_head",
+            "expected_revision_id": new_revision.id,
+            "lease_id": lease["id"],
+            "lease_token": lease["token"],
+            "commands": [{"type": "set_canvas", "width": 1080, "height": 1920}],
+        },
+    )
+    assert applied.status_code == 201, applied.text
+    assert applied.json()["id"] != new_revision.id
 
 
 def test_a_second_browser_cannot_steal_the_write_lease(
@@ -580,6 +673,77 @@ def test_a_failed_command_batch_does_not_move_head(
     current = client.get(f"/v1/episode-cuts/{cut['id']}", headers=auth_header(author))
     assert current.status_code == 200
     assert current.json()["head_revision_id"] == head_id
+
+
+def test_editing_after_an_undo_does_not_collide_on_revision_no(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """Regression test for a false `REVISION_CONFLICT` after undo (restore to
+    an earlier revision) followed by a genuinely new edit.
+
+    `_persist_revision` used to number a new revision as `parent.revision_no
+    + 1`. Once the client has undone back to an earlier revision (restore is
+    just another head-moving write, invariant-wise), the next fresh edit's
+    parent has a *lower* `revision_no` than a revision that already exists
+    further along the now-abandoned branch — so `parent.revision_no + 1`
+    could collide with it and trip the `uq_cut_revisions_cut_revision`
+    unique constraint, which `apply_commands` mistranslated into a bogus 409
+    `REVISION_CONFLICT` even though nobody else touched the cut. Basing the
+    new number on the cut's current max `revision_no` instead (see the fix in
+    `service._persist_revision`) makes this collision impossible.
+    """
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    cut = opened["cut"]
+    lease = opened["lease"]
+    rev1_id = cut["head_revision_id"]
+
+    branch = client.post(
+        f"/v1/episode-cuts/{cut['id']}/revisions",
+        headers=auth_header(author),
+        json={
+            "schema_version": 1,
+            "batch_id": "bat_branch",
+            "expected_revision_id": rev1_id,
+            "lease_id": lease["id"],
+            "lease_token": lease["token"],
+            "commands": [{"type": "set_canvas", "width": 1440, "height": 2560}],
+        },
+    )
+    assert branch.status_code == 201, branch.text
+    rev2_id = branch.json()["id"]
+    assert rev2_id != rev1_id
+
+    undo = client.post(
+        f"/v1/episode-cuts/{cut['id']}/revisions:restore",
+        headers=auth_header(author),
+        json={
+            "revision_id": rev1_id,
+            "expected_revision_id": rev2_id,
+            "lease_id": lease["id"],
+            "lease_token": lease["token"],
+        },
+    )
+    assert undo.status_code == 201, undo.text
+    # Restoring to a revision whose content is byte-identical to `rev1`
+    # dedupes onto the existing row rather than minting a new one.
+    assert undo.json()["id"] == rev1_id
+
+    new_edit = client.post(
+        f"/v1/episode-cuts/{cut['id']}/revisions",
+        headers=auth_header(author),
+        json={
+            "schema_version": 1,
+            "batch_id": "bat_after_undo",
+            "expected_revision_id": rev1_id,
+            "lease_id": lease["id"],
+            "lease_token": lease["token"],
+            "commands": [{"type": "set_canvas", "width": 720, "height": 1280}],
+        },
+    )
+    assert new_edit.status_code == 201, new_edit.text
+    assert new_edit.json()["id"] not in (rev1_id, rev2_id)
 
 
 def test_bind_editor_export_requires_a_succeeded_output(

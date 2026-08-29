@@ -21,6 +21,7 @@ def _seed_media_endpoint(
     output_modalities: list[str] | None = None,
     enabled: bool = True,
     media_pricing: dict | None = None,
+    protocol: str | None = None,
 ) -> None:
     """Adds a media endpoint without disturbing anything already configured.
 
@@ -44,6 +45,7 @@ def _seed_media_endpoint(
         "input_modalities": input_modalities or ["image"],
         "output_modalities": output_modalities or ["image"],
         "media_pricing": media_pricing or {},
+        "protocol": protocol,
     }
     config_service.set_value(
         db,
@@ -235,6 +237,150 @@ def test_h3_is_hard_filtered_when_video_parameters_exceed_its_contract(db: Sessi
     )
     assert accepted.selected is not None
     assert accepted.selected.provider == provider_name
+
+
+def test_wan_videoedit_is_hard_filtered_by_its_own_narrower_profile(db: Session) -> None:
+    """`wan2.7-videoedit`'s profile (2-10s, five aspect ratios, 720p/1080p) is
+    narrower than H3's — the router must key its hard filter off the
+    per-model profile table, not a single duration/aspect-ratio constant
+    shared with H3."""
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+    )
+    bind_default_agents_to_catalog(db)
+    provider_name = "media-ep:video_to_video"
+
+    # An explicit `2K` is H3-only and still hard-filters wan. A remix
+    # omits `resolution` entirely so this filter does not fire — see
+    # `test_omitted_resolution_does_not_hard_filter_wan_videoedit`.
+    rejected = router.route(
+        db,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 12,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    candidate = next(item for item in rejected.candidates if item.provider == provider_name)
+    assert candidate.eligible is False
+    assert candidate.filter_reason == "duration_above_provider_maximum"
+
+    rejected_aspect = router.route(
+        db,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "21:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    candidate = next(
+        item for item in rejected_aspect.candidates if item.provider == provider_name
+    )
+    assert candidate.eligible is False
+
+    rejected_resolution = router.route(
+        db,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "2K", "reference_mode": "input_references"},
+        },
+    )
+    candidate = next(
+        item for item in rejected_resolution.candidates if item.provider == provider_name
+    )
+    assert candidate.eligible is False
+    assert candidate.filter_reason == "resolution_not_supported"
+
+    accepted = router.route(
+        db,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    assert accepted.selected is not None
+    assert accepted.selected.provider == provider_name
+
+
+def test_omitted_resolution_does_not_hard_filter_wan_videoedit(db: Session) -> None:
+    """A video remix omits `video_options.resolution` so cheaper edit models
+    stay in the candidate set. Only an explicit H3-only value (e.g. `2K`)
+    may eliminate wan here."""
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+    )
+    bind_default_agents_to_catalog(db)
+    provider_name = "media-ep:video_to_video"
+    decision = router.route(
+        db,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "video_options": {"reference_mode": "input_references"},
+        },
+    )
+    candidate = next(item for item in decision.candidates if item.provider == provider_name)
+    assert candidate.eligible is True
+    assert candidate.filter_reason != "resolution_not_supported"
+    assert decision.selected is not None
+    assert decision.selected.provider == provider_name
+
+
+def test_wan_videoedit_never_advertises_frame_images_unlike_h3(db: Session) -> None:
+    """`frame_images` is an H3-only concept — a differently-profiled native
+    video model must not be offered it."""
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:video_to_video"]
+    assert entry.reference_modes == frozenset({"input_references"})
+
+
+def test_an_openai_protocol_video_endpoint_carries_no_native_hard_filter(db: Session) -> None:
+    """The native `NativeVideoModelProfile` table only applies to the
+    `minimax` protocol's `/ai/v1/videos` contract — an `openai`-protocol
+    video endpoint must not inherit H3's or wan's physical limits just
+    because it happens to share a model name lookup path."""
+    _seed_media_endpoint(
+        db,
+        endpoint_id="openai-video-ep",
+        model="wan2.7-videoedit",
+        input_modalities=["text"],
+        output_modalities=["video"],
+        protocol="openai",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["openai-video-ep:text_to_video"]
+    assert entry.min_duration_seconds is None
+    assert entry.max_duration_seconds is None
+    assert entry.aspect_ratios is None
+    assert entry.resolutions is None
+    assert entry.reference_modes is None
 
 
 def test_a_configured_price_replaces_the_built_in_cost_estimate(db: Session) -> None:

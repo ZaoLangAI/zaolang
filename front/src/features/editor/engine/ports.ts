@@ -60,11 +60,18 @@ export type AnimatableProperty =
   | 'transform.x_milli'
   | 'transform.y_milli'
   | 'transform.scale_millipercent'
-  | 'transform.rotation_millidegrees';
+  | 'transform.rotation_millidegrees'
+  /** Same millipercent range `set_clip_volume` accepts — an alternative, time-varying way to drive the same value. */
+  | 'volume';
+
+/** Shapes the curve used interpolating *away from* this point towards the next one — see `animation.ts`'s `resolveNumberAtTime`. A closed set, same reasoning as `AnimatableProperty`. */
+export type EasingType = 'linear' | 'ease_in' | 'ease_out';
 
 export interface AnimationPoint {
   at_ticks: number;
   value: number;
+  /** Missing on points from before this field existed — treated as `'linear'` wherever read. */
+  easing?: EasingType;
 }
 
 export interface AnimationChannel {
@@ -121,12 +128,20 @@ export interface BrandOverlay {
   width_milli: number;
 }
 
+/** A timeline bookmark for navigation/annotation only — never drawn, never affects rendering. */
+export interface Marker {
+  id: string;
+  at_ticks: number;
+  label: string | null;
+}
+
 export interface CanonicalDocument {
   schema_version: 1;
   engine: 'zaolang-canonical';
   canvas: CanvasSpec;
   tracks: TimelineTrack[];
   brand_overlay: BrandOverlay | null;
+  markers: Marker[];
 }
 
 export interface AssetBinding {
@@ -211,6 +226,8 @@ export type EditCommand =
       property: AnimatableProperty;
       at_ticks: number;
       value: number;
+      /** Defaults to `'linear'` server-side when omitted. */
+      easing?: EasingType;
     }
   | {
       type: 'delete_keyframe';
@@ -224,7 +241,10 @@ export type EditCommand =
       element_id: string;
       edge: 'in' | 'out';
       transition: ClipTransition | null;
-    };
+    }
+  | { type: 'add_marker'; at_ticks: number; label?: string | null; marker_id?: string }
+  | { type: 'remove_marker'; marker_id: string }
+  | { type: 'update_marker'; marker_id: string; at_ticks?: number; label?: string | null };
 
 export interface EditCommandBatch {
   schema_version: 1;

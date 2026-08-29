@@ -23,7 +23,7 @@ disable-model-invocation: true
 | `back/app/api/rate_limit.py` | `RULES` bucket definitions and the Redis sliding-window implementation |
 | `back/app/api/middleware.py` | request_id, logging, CORS wiring |
 | `back/app/security/tokens.py` / `passwords.py` | JWT issuance and verification, argon2 |
-| `back/app/scripts/export_openapi.py` → `back/openapi.json` → `front/src/lib/api/schema.d.ts` | the one-way chain from contract to frontend types |
+| `back/app/scripts/export_openapi.py` → `back/openapi.json` → `front/src/lib/api/schema.d.ts` | the one-way chain from contract to frontend types. `WorkVersionSummary` incrementally exposes `output_asset_id` (`WorkVersion.primary_output_asset_id`) so a remix studio can put the licensed source clip into `reference_asset_ids` — `media_url` remains the signed playback URL only |
 
 ## Invariants
 

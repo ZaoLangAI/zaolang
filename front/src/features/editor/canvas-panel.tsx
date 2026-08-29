@@ -4,8 +4,8 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { TextInput } from '@/components/ui/field';
 
+import { AssetPicker } from './asset-picker';
 import type { CanonicalDocument, EditCommand } from './engine/ports';
 
 export function CanvasPanel({
@@ -53,13 +53,17 @@ export function CanvasPanel({
       </div>
       <div className="flex flex-col gap-2 border-t border-border pt-3">
         <p className="text-xs text-muted">{t('brandOverlayHint')}</p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <TextInput
-            label={t('brandOverlayAssetId')}
-            value={overlayAssetId}
-            onChange={(event) => setOverlayAssetId(event.target.value)}
+        <div className="flex flex-wrap items-center gap-2">
+          <AssetPicker
+            value={overlayAssetId || document.brand_overlay?.asset_id}
+            mediaType="image"
             disabled={disabled}
+            triggerLabel={t('brandOverlayPick')}
+            onSelect={(asset) => setOverlayAssetId(asset.id)}
           />
+          {overlayAssetId ? (
+            <span className="text-xs text-muted">{overlayAssetId}</span>
+          ) : null}
           <Button
             size="sm"
             disabled={disabled || !overlayAssetId.trim()}

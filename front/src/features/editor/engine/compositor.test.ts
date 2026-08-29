@@ -73,6 +73,30 @@ describe('resolveFrame — clip resolution', () => {
     const layers = resolveFrame(document, 0);
     expect(layers.clip!.volume).toBe(1);
   });
+
+  it('resolves volume from a keyframed channel instead of the static value when present', () => {
+    const document = documentWithClip({
+      volume_millipercent: 100_000,
+      animations: {
+        channels: {
+          volume: {
+            kind: 'number',
+            points: [
+              { at_ticks: 0, value: 0 },
+              { at_ticks: TICKS_PER_SECOND, value: 100_000 },
+            ],
+          },
+        },
+      },
+    });
+    expect(resolveFrame(document, 0).clip!.volume).toBeCloseTo(0, 5);
+    expect(resolveFrame(document, TICKS_PER_SECOND / 2).clip!.volume).toBeCloseTo(0.5, 5);
+  });
+
+  it('falls back to the static volume_millipercent when there is no volume channel', () => {
+    const document = documentWithClip({ volume_millipercent: 40_000 });
+    expect(resolveFrame(document, TICKS_PER_SECOND).clip!.volume).toBeCloseTo(0.4, 5);
+  });
 });
 
 describe('resolveFrame — effects and mask', () => {
@@ -355,6 +379,32 @@ describe('resolveAudioLayers', () => {
 
     const layers = resolveAudioLayers(document, TICKS_PER_SECOND);
     expect(layers.map((layer) => layer.asset_id)).toEqual(['ast_top']);
+  });
+
+  it('resolves an audio clip volume from a keyframed channel over the playhead', () => {
+    const document = emptyDocument(1080, 1920);
+    document.tracks.find((track) => track.kind === 'audio')!.elements.push(
+      clipElement({
+        id: 'el_audio',
+        asset_id: 'ast_audio',
+        track_id: 'trk_audio',
+        volume_millipercent: 100_000,
+        animations: {
+          channels: {
+            volume: {
+              kind: 'number',
+              points: [
+                { at_ticks: 0, value: 0 },
+                { at_ticks: 2 * TICKS_PER_SECOND, value: 100_000 },
+              ],
+            },
+          },
+        },
+      }),
+    );
+    const layers = resolveAudioLayers(document, TICKS_PER_SECOND);
+    const audioLayer = layers.find((layer) => layer.asset_id === 'ast_audio')!;
+    expect(audioLayer.volume).toBeCloseTo(0.5, 5);
   });
 
   it('derives a playbackRate-equivalent speedFactor from speed_millipercent', () => {

@@ -225,6 +225,12 @@ function MediaCard({
         type="button"
         disabled={disabled}
         onClick={onInsert}
+        // `aria-label`, not `title`: the button also has visible text content
+        // (duration + source badge), and most browsers' accessible-name
+        // computation prefers that visible text over `title` — so a
+        // screen reader announced "8.0s AI 生成" instead of the actual
+        // action. `aria-label` always wins regardless of visible content.
+        aria-label={t('mediaInsert')}
         title={t('mediaInsert')}
         className="flex flex-col text-left disabled:cursor-not-allowed disabled:opacity-60"
       >
@@ -236,10 +242,23 @@ function MediaCard({
               alt=""
               loading="lazy"
               decoding="async"
+              // Same asset URL is also loaded crossOrigin="anonymous" by the
+              // preview/export compositor's MediaPool — keeping this
+              // consistent avoids the browser caching a non-CORS response
+              // for a URL the compositor later needs to read pixels from
+              // (which would taint its canvas even though the bucket itself
+              // sends correct CORS headers).
+              crossOrigin="anonymous"
               className="size-full object-cover"
             />
           ) : asset.media_type === 'video' && asset.url ? (
-            <video src={asset.url} muted preload="metadata" className="size-full object-cover" />
+            <video
+              src={asset.url}
+              muted
+              preload="metadata"
+              crossOrigin="anonymous"
+              className="size-full object-cover"
+            />
           ) : (
             <IconWave className="size-6 text-muted" />
           )}

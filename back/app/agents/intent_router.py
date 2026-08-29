@@ -127,6 +127,10 @@ SELECT_PROVIDER_SYSTEM_PROMPT = f"""你是造浪平台的生成路线选择器�
 - cost_bias：整次请求级别（不是逐个候选）的成本倾向参考，来自意图判档的结果，
   只在部分请求里出现。越接近 1 越可以放心选更省成本的候选，越接近 0 越应该优先选效果更好的候选，
   同样是参考不是硬性指标。
+- 当 operation 是 video_to_video、且这次请求带着视频参考（对已有成片做二次改造，
+  而不是从零生成）时：在效果够用的前提下，优先更便宜的 video-edit / 视频编译类模型
+  （例如 wan2.7-videoedit），避免无必要地走全量视频生成。cost_is_estimated 为 true
+  的候选仍然不可只因为看起来便宜就选。
 只能从给定列表的 provider 字段里原样选一个，不要编造列表之外的名字。
 
 {JSON_INSTRUCTION}

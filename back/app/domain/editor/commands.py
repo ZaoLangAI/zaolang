@@ -34,6 +34,7 @@ ANIMATABLE_PROPERTIES = frozenset(
         "transform.y_milli",
         "transform.scale_millipercent",
         "transform.rotation_millidegrees",
+        "volume",
     }
 )
 PROPERTY_RANGES: dict[str, tuple[int, int]] = {
@@ -42,8 +43,21 @@ PROPERTY_RANGES: dict[str, tuple[int, int]] = {
     "transform.y_milli": (-2000, 2000),
     "transform.scale_millipercent": (10_000, 500_000),
     "transform.rotation_millidegrees": (-180_000, 180_000),
+    # Same millipercent range `set_clip_volume` already accepts — a `volume`
+    # keyframe channel is an alternative, time-varying way to drive the same
+    # underlying value, not a separate concept with its own scale.
+    "volume": (0, 200_000),
 }
 MAX_KEYFRAMES_PER_CHANNEL = 64
+
+# Attached to a keyframe point to shape the curve used when interpolating
+# *away from* that point towards the next one (see `animation.ts`'s
+# `resolveNumberAtTime`). Closed for the same reason `ANIMATABLE_PROPERTIES`
+# is: a fixed, tested set of curves, not an open-ended expression language.
+EASING_TYPES = frozenset({"linear", "ease_in", "ease_out"})
+DEFAULT_EASING = "linear"
+
+MAX_MARKERS = 200
 
 # 'sticker' is structurally identical to the default 'clip' — same fields,
 # same track kind, just a different visual role.
@@ -75,6 +89,9 @@ ALLOWED_TYPES = frozenset(
         "delete_keyframe",
         "clear_keyframes",
         "set_transition",
+        "add_marker",
+        "remove_marker",
+        "update_marker",
     }
 )
 
@@ -181,10 +198,13 @@ def _allowed_keys(command_type: str) -> set[str]:
         "remove_effect": {"element_id", "effect_index"},
         "update_effect_params": {"element_id", "effect_index", "params"},
         "set_clip_mask": {"element_id", "mask"},
-        "set_keyframe": {"element_id", "property", "at_ticks", "value"},
+        "set_keyframe": {"element_id", "property", "at_ticks", "value", "easing"},
         "delete_keyframe": {"element_id", "property", "at_ticks"},
         "clear_keyframes": {"element_id", "property"},
         "set_transition": {"element_id", "edge", "transition"},
+        "add_marker": {"at_ticks", "label", "marker_id"},
+        "remove_marker": {"marker_id"},
+        "update_marker": {"marker_id", "at_ticks", "label"},
     }
     return common | mapping[command_type]
 
@@ -253,6 +273,20 @@ def _validate_command(command: dict[str, Any]) -> None:
         low, high = PROPERTY_RANGES[command["property"]]
         if value < low or value > high:
             raise ValidationFailed(f"{command['property']} 的值必须在 {low} 到 {high} 之间。")
+        easing = command.get("easing")
+        if easing is not None and easing not in EASING_TYPES:
+            raise ValidationFailed("不支持的缓动类型。")
+    if command_type == "add_marker":
+        _require_int(command["at_ticks"], label="at_ticks")
+        label = command.get("label")
+        if label is not None and len(str(label)) > 120:
+            raise ValidationFailed("标记点文案最多 120 字符。")
+    if command_type == "update_marker":
+        if "at_ticks" in command and command["at_ticks"] is not None:
+            _require_int(command["at_ticks"], label="at_ticks")
+        label = command.get("label")
+        if label is not None and len(str(label)) > 120:
+            raise ValidationFailed("标记点文案最多 120 字符。")
     if command_type == "insert_clip" and "element_type" in command and command["element_type"] is not None:
         if command["element_type"] not in ELEMENT_TYPES_ADDABLE:
             raise ValidationFailed("不支持的元素类型。")
@@ -412,13 +446,16 @@ def _apply_one(
         if value < low or value > high:
             raise ValidationFailed(f"{prop} 的值必须在 {low} 到 {high} 之间。")
         at_ticks = int(command["at_ticks"])
+        easing = command.get("easing") or DEFAULT_EASING
+        if easing not in EASING_TYPES:
+            raise ValidationFailed("不支持的缓动类型。")
         animations = found[1].setdefault("animations", {"channels": {}})
         channels = animations.setdefault("channels", {})
         existing = channels.get(prop)
         points = [p for p in (existing.get("points") if existing else []) if p["at_ticks"] != at_ticks]
         if len(points) >= MAX_KEYFRAMES_PER_CHANNEL:
             raise ValidationFailed(f"单个属性最多 {MAX_KEYFRAMES_PER_CHANNEL} 个关键帧。")
-        points.append({"at_ticks": at_ticks, "value": value})
+        points.append({"at_ticks": at_ticks, "value": value, "easing": easing})
         points.sort(key=lambda p: p["at_ticks"])
         channels[prop] = {"kind": "number", "points": points}
     elif command_type == "delete_keyframe":
@@ -462,6 +499,35 @@ def _apply_one(
                 raise ValidationFailed("转场时长必须大于零且不超过该元素自身时长。")
             transition = {"type": transition["type"], "duration_ticks": duration}
         found[1][f"transition_{edge}"] = transition
+    elif command_type == "add_marker":
+        markers = document.setdefault("markers", [])
+        if len(markers) >= MAX_MARKERS:
+            raise ValidationFailed(f"最多 {MAX_MARKERS} 个标记点。")
+        marker_id = command.get("marker_id") or new_id("mrk")
+        if any(m["id"] == marker_id for m in markers):
+            raise ValidationFailed("标记点 id 已存在。")
+        markers.append(
+            {
+                "id": marker_id,
+                "at_ticks": int(command["at_ticks"]),
+                "label": command.get("label"),
+            }
+        )
+    elif command_type == "remove_marker":
+        markers = document.setdefault("markers", [])
+        next_markers = [m for m in markers if m["id"] != command["marker_id"]]
+        if len(next_markers) == len(markers):
+            raise ValidationFailed("标记点不存在。")
+        document["markers"] = next_markers
+    elif command_type == "update_marker":
+        markers = document.setdefault("markers", [])
+        marker = next((m for m in markers if m["id"] == command["marker_id"]), None)
+        if marker is None:
+            raise ValidationFailed("标记点不存在。")
+        if "at_ticks" in command and command["at_ticks"] is not None:
+            marker["at_ticks"] = int(command["at_ticks"])
+        if "label" in command:
+            marker["label"] = command["label"]
 
 
 def _add_track(document: dict[str, Any], command: dict[str, Any]) -> None:

@@ -9,18 +9,22 @@ import pytest
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.domain.errors import Conflict, Forbidden, ValidationFailed
+from app.domain.credits import service as credits_service
+from app.domain.errors import Conflict, Forbidden, LicenseNotRemixable, ValidationFailed
+from app.domain.jobs import service as jobs_service
 from app.domain.media import service as media_service
-from app.models import Asset, User
+from app.models import Asset, User, Work, WorkVersion
 from app.models.base import new_id
 from app.models.enums import (
     AssetRole,
     MediaType,
     ModerationStatus,
     Operation,
+    QualityTier,
     Visibility,
 )
 from app.storage import s3
+from tests.factories import make_work
 
 
 def _png(colour: tuple[int, int, int], size: tuple[int, int] = (64, 64)) -> bytes:
@@ -439,3 +443,111 @@ def test_a_private_asset_is_invisible_to_a_stranger(
     # MinIO/S3 signs with `X-Amz-Signature`; Tencent COS signs with its own
     # `q-signature` — whichever backend `STORAGE_BACKEND` selects locally.
     assert "X-Amz-Signature" in url or "q-signature=" in url
+
+
+def _remix_source_video(session: Session, owner: User) -> tuple[Asset, Work, WorkVersion]:
+    work, version = make_work(session, owner)
+    clip = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=128,
+        checksum_sha256="c" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(clip)
+    session.flush()
+    version.primary_output_asset_id = clip.id
+    session.flush()
+    return clip, work, version
+
+
+def test_remix_source_video_is_a_legal_generation_reference(
+    db: Session, author: User, remixer: User, admin: User
+) -> None:
+    clip, _work, version = _remix_source_video(db, author)
+    media_service.validate_generation_references(
+        db,
+        user_id=remixer.id,
+        operation=Operation.VIDEO_TO_VIDEO.value,
+        params={"reference_asset_ids": [clip.id]},
+        source_work_version_id=version.id,
+    )
+
+    stranger = _reference_asset(db, admin, MediaType.VIDEO)
+    with pytest.raises(ValidationFailed, match="不属于当前用户"):
+        media_service.validate_generation_references(
+            db,
+            user_id=remixer.id,
+            operation=Operation.VIDEO_TO_VIDEO.value,
+            params={"reference_asset_ids": [stranger.id]},
+            source_work_version_id=version.id,
+        )
+
+    with pytest.raises(ValidationFailed, match="不属于当前用户"):
+        media_service.validate_generation_references(
+            db,
+            user_id=remixer.id,
+            operation=Operation.VIDEO_TO_VIDEO.value,
+            params={"reference_asset_ids": [clip.id]},
+        )
+
+
+def test_view_only_source_cannot_be_used_as_a_remix_reference(
+    db: Session, author: User, remixer: User
+) -> None:
+    clip, work, version = _remix_source_video(db, author)
+    work.visibility = Visibility.PUBLIC_VIEW_ONLY
+    db.flush()
+    with pytest.raises(LicenseNotRemixable):
+        media_service.validate_generation_references(
+            db,
+            user_id=remixer.id,
+            operation=Operation.VIDEO_TO_VIDEO.value,
+            params={"reference_asset_ids": [clip.id]},
+            source_work_version_id=version.id,
+        )
+
+
+def test_provider_references_keep_a_licensed_source_after_visibility_changes(
+    db: Session, author: User, remixer: User
+) -> None:
+    """The worker must not re-assert remixability — a mid-job visibility
+    change must not drop the clip the submit path already authorized."""
+    clip, work, version = _remix_source_video(db, author)
+    work.visibility = Visibility.PUBLIC_VIEW_ONLY
+    db.flush()
+    refs = media_service.provider_references_for(
+        db,
+        user_id=remixer.id,
+        asset_ids=[clip.id],
+        source_work_version_id=version.id,
+    )
+    assert [item.object_key for item in refs] == [clip.object_key]
+
+
+def test_submit_prepends_a_licensed_source_video_when_the_client_omits_it(
+    db: Session, author: User, remixer: User
+) -> None:
+    credits_service.grant(db, remixer.id, 5_000, idempotency_key=new_id("grant"))
+    db.flush()
+    clip, _work, version = _remix_source_video(db, author)
+    params = {
+        "prompt": "改成暴雨将至",
+        "duration_seconds": 8,
+        "aspect_ratio": "16:9",
+        "video_options": {"reference_mode": "input_references"},
+    }
+    result = jobs_service.submit(
+        db,
+        user_id=remixer.id,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        params=params,
+        idempotency_key=new_id("idk"),
+        source_work_version_id=version.id,
+    )
+    assert result.job.request_json["reference_asset_ids"] == [clip.id]

@@ -22,7 +22,9 @@ def _png_b64(colour: tuple[int, int, int] = (10, 20, 30), size: tuple[int, int] 
     return base64.b64encode(buffer.getvalue()).decode()
 
 
-def _provider(capability_tag: str, model: str = "test-model") -> AiHubMixMediaProvider:
+def _provider(
+    capability_tag: str, model: str = "test-model", *, protocol: str = "minimax"
+) -> AiHubMixMediaProvider:
     return AiHubMixMediaProvider(
         endpoint_id="ep-test",
         capability_tag=capability_tag,
@@ -30,6 +32,7 @@ def _provider(capability_tag: str, model: str = "test-model") -> AiHubMixMediaPr
         base_url="https://aihubmix.invalid",
         api_key="test-key",
         timeout_ms=5_000,
+        protocol=protocol,
     )
 
 
@@ -459,6 +462,136 @@ def test_h3_video_payload_types_input_references_and_frame_images(
     assert "input_references" not in payloads[1]
 
 
+def test_h3_resolution_passthrough_defaults_to_2k_but_honours_768p(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": f"task-{len(payloads)}"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="minimax-h3")
+    provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5))
+    provider.submit(
+        _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5, resolution="768P")
+    )
+
+    assert payloads[0]["resolution"] == "2K"
+    assert payloads[1]["resolution"] == "768P"
+
+
+def test_h3_accepts_the_adaptive_aspect_ratio(monkeypatch: pytest.MonkeyPatch) -> None:
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="minimax-h3")
+    result = provider.submit(
+        _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5, aspect_ratio="adaptive")
+    )
+
+    assert result.pending is True
+    assert payloads[0]["aspect_ratio"] == "adaptive"
+
+
+def test_wan_videoedit_profile_rejects_a_duration_h3_would_accept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`wan2.7-videoedit`'s own profile is 2-10 seconds, narrower than H3's
+    4-15 — the per-model table, not a single shared constant, is what must
+    reject 12 seconds here."""
+
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not reach the network on a validation failure")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    provider = _provider(Operation.VIDEO_TO_VIDEO.value, model="wan2.7-videoedit")
+
+    with pytest.raises(ValueError, match="duration must be between 2 and 10"):
+        provider.submit(_request(Operation.VIDEO_TO_VIDEO.value, duration_seconds=12))
+
+
+def test_wan_videoedit_profile_has_no_default_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unlike H3, `wan2.7-videoedit`'s schema has no documented default —
+    omitting the field entirely (not fabricating one) is the correct
+    passthrough when the caller doesn't specify a resolution."""
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.VIDEO_TO_VIDEO.value, model="wan2.7-videoedit")
+    provider.submit(_request(Operation.VIDEO_TO_VIDEO.value, duration_seconds=8))
+
+    assert "resolution" not in payloads[0]
+
+
+def test_wan_videoedit_profile_honours_an_explicit_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.VIDEO_TO_VIDEO.value, model="wan2.7-videoedit")
+    provider.submit(
+        _request(Operation.VIDEO_TO_VIDEO.value, duration_seconds=8, resolution="1080p")
+    )
+
+    assert payloads[0]["resolution"] == "1080p"
+
+
+def test_wan_videoedit_profile_rejects_an_unsupported_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not reach the network on a validation failure")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    provider = _provider(Operation.VIDEO_TO_VIDEO.value, model="wan2.7-videoedit")
+
+    with pytest.raises(ValueError, match="resolution is unsupported: 2K"):
+        provider.submit(
+            _request(Operation.VIDEO_TO_VIDEO.value, duration_seconds=8, resolution="2K")
+        )
+
+
+def test_a_model_with_no_profile_gets_unopinionated_passthrough(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No registered `NativeVideoModelProfile` means no range validation and
+    no fabricated `resolution` field — the behaviour `build_video_payload`
+    always had before H3 became its first caller."""
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="some-unlisted-model")
+    result = provider.submit(
+        _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=99, aspect_ratio="7:3")
+    )
+
+    assert result.pending is True
+    assert "resolution" not in payloads[0]
+    assert payloads[0]["duration"] == 99
+    assert payloads[0]["aspect_ratio"] == "7:3"
+
+
 def test_h3_cancel_does_not_call_an_undocumented_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -607,6 +740,147 @@ def test_a_read_timeout_reports_how_long_we_waited(monkeypatch: pytest.MonkeyPat
     assert result.succeeded is False
     assert result.failure_code == "PROVIDER_TEMPORARY_FAILURE"
     assert result.metadata["detail"] == "ReadTimeout after 5s"
+
+
+def test_openai_video_submit_posts_to_v1_videos_without_a_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        captured["json"] = kwargs["json"]
+        return _FakeResponse(json_body={"id": "video_123"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
+    )
+    result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=8))
+
+    assert captured["url"] == "/v1/videos"
+    assert captured["json"] == {
+        "model": "wan2.7-videoedit",
+        "prompt": "一只在雨夜霓虹街道上奔跑的机械狐狸",
+        "seconds": 8,
+    }
+    assert result.pending is True
+    assert result.external_task_id == "video_123"
+
+
+def test_openai_video_submit_attaches_an_image_reference_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}"
+    )
+    captured: dict[str, object] = {}
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        captured["json"] = kwargs["json"]
+        return _FakeResponse(json_body={"id": "video_456"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="some-openai-model", protocol="openai")
+    provider.submit(
+        _request(
+            Operation.TEXT_TO_VIDEO.value,
+            references=[ProviderReference(object_key="ref.png", media_type="image")],
+        )
+    )
+
+    assert captured["json"]["input_reference"] == {
+        "image_url": "https://signed.invalid/ref.png"
+    }
+
+
+def test_openai_video_submit_missing_task_id_is_a_provider_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
+    )
+    result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+
+
+def test_openai_video_poll_stays_pending_and_reports_a_wobbly_progress_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirmed live against `wan2.7-videoedit`'s openai-shaped endpoint:
+    its real status vocabulary is `queued`/`processing`/`completed`/`failed`
+    — not the generic OpenAI docs' `in_progress` — so exclusion, not an
+    allow-list, is what must keep this pending."""
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/videos/video_789"
+        return _FakeResponse(json_body={"status": "processing", "progress": 42})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
+    )
+    result = provider.poll("video_789", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.pending is True
+    assert result.succeeded is False
+    assert result.metadata["progress"] == 42
+
+
+def test_openai_video_poll_downloads_the_finished_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_bytes = b"openai-mp4-bytes"
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        if url.endswith("/content"):
+            return _FakeResponse(content=video_bytes)
+        return _FakeResponse(json_body={"status": "completed"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
+    )
+    request = _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=8)
+    result = provider.poll("video_999", request)
+
+    assert result.succeeded is True
+    assert result.mime_type == "video/mp4"
+    assert result.duration_ms == 8_000
+    assert s3.get_object(result.object_key) == video_bytes
+
+
+def test_openai_video_poll_reports_a_failed_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={"status": "failed", "error": "上游拒绝"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
+    )
+    result = provider.poll("video_bad", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.pending is False
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_TASK_FAILED"
+
+
+def test_openai_video_cancel_always_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not call an undocumented cancel endpoint")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
+    )
+
+    assert provider.cancel("video_1") is False
 
 
 def test_join_media_url_does_not_double_v1() -> None:

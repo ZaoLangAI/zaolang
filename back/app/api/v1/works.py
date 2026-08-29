@@ -510,6 +510,7 @@ def _version_summary(session, version: WorkVersion) -> WorkVersionSummary:  # ty
         cover_url=media_urls.asset_url(session, version.cover_asset_id),
         media_url=media_urls.asset_url(session, version.primary_output_asset_id),
         media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
+        output_asset_id=version.primary_output_asset_id,
         ai_generated=version.ai_generated,
         created_at=version.immutable_created_at,
     )

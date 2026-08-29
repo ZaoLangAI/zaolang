@@ -432,10 +432,11 @@ def _intent_router(prompt: str) -> dict[str, Any]:
         # Cheapest effective cost wins, tie-broken by name — deterministic
         # and independent of dict/set ordering so routing tests stay stable
         # without a real model in the loop. The request-level `cost_bias`
-        # carried alongside the candidates is deliberately ignored here: it
-        # is a cost *preference* a real model weighs against quality, and
-        # folding it into a fake formula would make the offline path behave
-        # like the weighted router that was removed on purpose.
+        # and the live prompt's "prefer video-edit on video_to_video remix"
+        # hint are deliberately ignored here: they are preferences a real
+        # model weighs against quality, and folding them into a fake formula
+        # would make the offline path behave like the weighted router that
+        # was removed on purpose.
         winner = min(
             candidates,
             key=lambda c: (c.get("effective_cost_micro_usd", 0), str(c.get("provider", ""))),

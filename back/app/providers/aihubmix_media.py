@@ -42,10 +42,62 @@ _VIDEO_OPERATIONS = frozenset(
 )
 
 MINIMAX_H3_MODEL = "minimax-h3"
-H3_RESOLUTION = "2K"
-H3_MIN_DURATION_SECONDS = 4
-H3_MAX_DURATION_SECONDS = 15
-H3_ASPECT_RATIOS = frozenset({"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"})
+WAN_VIDEOEDIT_MODEL = "wan2.7-videoedit"
+H3_ASPECT_RATIOS = frozenset(
+    {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "3:2", "2:3", "9:21", "adaptive"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class NativeVideoModelProfile:
+    """One native (`/ai/v1/videos`) model's physical limits.
+
+    Sourced from AiHubMix's own machine-readable schema
+    (`https://aihubmix.com/call/schema/models/{model}/endpoints`), not
+    guessed — a value missing here that the schema actually allows is a bug,
+    not a deliberate restriction.
+    """
+
+    min_duration_seconds: int
+    max_duration_seconds: int
+    aspect_ratios: frozenset[str]
+    # What's legal to *send* the provider — used for `router`'s hard filter.
+    resolutions: frozenset[str]
+    # Sent when the caller doesn't specify one. `None` means "omit the field
+    # entirely and let the provider apply its own default" — not every
+    # model's schema even has a `resolution` field.
+    default_resolution: str | None
+
+
+# Every value here has been confirmed against AiHubMix's schema endpoint —
+# widening beyond what's actually documented there is not "supporting more",
+# it's fabricating a contract the provider itself never promised.
+_NATIVE_VIDEO_PROFILES: dict[str, NativeVideoModelProfile] = {
+    MINIMAX_H3_MODEL: NativeVideoModelProfile(
+        min_duration_seconds=4,
+        max_duration_seconds=15,
+        aspect_ratios=H3_ASPECT_RATIOS,
+        resolutions=frozenset({"768P", "2K"}),
+        default_resolution="2K",
+    ),
+    WAN_VIDEOEDIT_MODEL: NativeVideoModelProfile(
+        min_duration_seconds=2,
+        max_duration_seconds=10,
+        aspect_ratios=frozenset({"16:9", "9:16", "1:1", "4:3", "3:4"}),
+        resolutions=frozenset({"720p", "1080p"}),
+        default_resolution=None,
+    ),
+}
+
+
+def native_video_profile(model: str) -> NativeVideoModelProfile | None:
+    """The profile for a model's native `/ai/v1/videos` contract, if known.
+
+    `None` for anything not in the table above — callers must treat that as
+    "no additional validation, no hard filter", never as "reject it".
+    """
+    return _NATIVE_VIDEO_PROFILES.get(model.strip().lower())
+
 
 # AiHubMix accepts at most nine reference images per task and rejects the
 # whole request if given more.
@@ -162,10 +214,15 @@ class AiHubMixMediaProvider(GenerationProvider):
         base_url: str,
         api_key: str,
         timeout_ms: int,
+        # Defaults to the original (and, until the OpenAI Videos API track,
+        # only) native video contract so every existing call site/test that
+        # never passed this stays correct without a change.
+        protocol: str = "minimax",
     ) -> None:
         self.name = f"{endpoint_id}:{capability_tag}"
         self._capability_tag = capability_tag
         self._model = model
+        self._protocol = protocol
         self._creds = _EndpointCredentials(
             base_url=base_url.rstrip("/"), api_key=api_key, timeout_s=timeout_ms / 1000
         )
@@ -182,6 +239,8 @@ class AiHubMixMediaProvider(GenerationProvider):
                 return self._submit_image(request, started)
             if self._capability_tag == Operation.VIDEO_ANALYSIS.value:
                 return self._submit_video_analysis(request, started)
+            if self._capability_tag in _VIDEO_OPERATIONS and self._protocol == "openai":
+                return self._submit_openai_video(request, started)
             return self._submit_video(request, started)
         except httpx.TimeoutException as exc:
             logger.warning(
@@ -429,6 +488,7 @@ class AiHubMixMediaProvider(GenerationProvider):
             prompt=request.prompt,
             duration_seconds=request.duration_seconds,
             aspect_ratio=request.aspect_ratio,
+            resolution=request.resolution,
             seed=request.seed,
             references=references,
         )
@@ -453,6 +513,125 @@ class AiHubMixMediaProvider(GenerationProvider):
             metadata={"provider": self.name, "model": self._model},
         )
 
+    # -- video (openai protocol): the OpenAI Videos API track ---------------
+
+    def _submit_openai_video(self, request: GenerationRequest, started: float) -> GenerationResult:
+        """`POST /v1/videos` — `videos.create(model, prompt)` in the official
+        SDK's shape. Text-to-video only: confirmed live against AiHubMix's
+        own schema endpoint that `wan2.7-videoedit`'s openai-shaped video
+        contract has no `input_reference` field at all
+        (`additionalProperties: false`) — sending one would be a guaranteed
+        400 for the one model this track ships with today, so a reference is
+        only ever attached when the caller actually supplied one, keeping
+        this compatible with a future openai-protocol model whose schema
+        does accept it.
+        """
+        body: dict[str, object] = {"model": self._model, "prompt": request.prompt}
+        if request.duration_seconds:
+            body["seconds"] = request.duration_seconds
+        reference = _first_reference(request)
+        if reference is not None:
+            url = s3.presign_get(reference.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+            # Unverified shape — no openai-protocol model in this deployment
+            # accepts `input_reference` yet, so this has never been
+            # exercised against a live credential. Fix this once one does.
+            body["input_reference"] = (
+                {"video_url": url} if reference.media_type == "video" else {"image_url": url}
+            )
+
+        with self._client() as client:
+            create = client.post(media_request_path(self._creds.base_url, "/v1/videos"), json=body)
+            create.raise_for_status()
+            task_id = create.json().get("id")
+
+        if not task_id:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_task_id")
+
+        return GenerationResult(
+            succeeded=False,
+            pending=True,
+            mime_type="video/mp4",
+            duration_ms=request.duration_seconds * 1000,
+            latency_ms=self._elapsed_ms(started),
+            external_task_id=task_id,
+            metadata={"provider": self.name, "model": self._model},
+        )
+
+    def _poll_openai_video(
+        self, external_task_id: str, request: GenerationRequest, started: float
+    ) -> GenerationResult:
+        """`GET /v1/videos/{id}` + `GET /v1/videos/{id}/content`.
+
+        Status judged by exclusion (`!= "completed"` and not a known failure
+        status is pending) rather than a `{"queued", "in_progress"}`
+        allow-list: a live check against `wan2.7-videoedit`'s openai-shaped
+        endpoint found its real vocabulary is `queued`/`processing`/
+        `completed`/`failed` — `processing`, not the generic OpenAI docs'
+        `in_progress` — so an allow-list would have stuck this model in an
+        unknown-status limbo forever.
+        """
+        try:
+            with self._client() as client:
+                status_response = client.get(
+                    media_request_path(self._creds.base_url, f"/v1/videos/{external_task_id}")
+                )
+                status_response.raise_for_status()
+                payload = status_response.json()
+                status = str(payload.get("status") or "").lower()
+
+                if status != "completed" and status not in _TASK_FAILED_STATUSES:
+                    metadata: dict[str, object] = {"provider": self.name, "status": status}
+                    progress = payload.get("progress")
+                    if isinstance(progress, int | float):
+                        metadata["progress"] = progress
+                    return GenerationResult(
+                        succeeded=False,
+                        pending=True,
+                        external_task_id=external_task_id,
+                        latency_ms=self._elapsed_ms(started),
+                        metadata=metadata,
+                    )
+
+                if status in _TASK_FAILED_STATUSES:
+                    error = payload.get("error")
+                    message = error.get("message") if isinstance(error, dict) else error
+                    return self._failure(started, "PROVIDER_TASK_FAILED", str(message or status))
+
+                content = client.get(
+                    media_request_path(
+                        self._creds.base_url, f"/v1/videos/{external_task_id}/content"
+                    )
+                )
+                content.raise_for_status()
+                video_bytes = content.content
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "aihubmix openai video poll failed for task %s: %s", external_task_id, exc
+            )
+            return GenerationResult(
+                succeeded=False,
+                pending=True,
+                external_task_id=external_task_id,
+                latency_ms=self._elapsed_ms(started),
+                metadata={"provider": self.name, "detail": type(exc).__name__},
+            )
+
+        if not video_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "empty_video_content")
+
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp4"
+        s3.put_object(object_key, video_bytes, content_type="video/mp4")
+
+        return GenerationResult(
+            succeeded=True,
+            object_key=object_key,
+            mime_type="video/mp4",
+            duration_ms=request.duration_seconds * 1000,
+            latency_ms=self._elapsed_ms(started),
+            external_task_id=external_task_id,
+            metadata={"provider": self.name, "model": self._model, "upstream_status": status},
+        )
+
     def poll(self, external_task_id: str, request: GenerationRequest) -> GenerationResult:
         """One status check for a video task, plus the download when it is done.
 
@@ -463,6 +642,8 @@ class AiHubMixMediaProvider(GenerationProvider):
         behalf.
         """
         started = time.perf_counter()
+        if self._protocol == "openai":
+            return self._poll_openai_video(external_task_id, request, started)
         try:
             with self._client() as client:
                 status_response = client.get(
@@ -533,10 +714,13 @@ class AiHubMixMediaProvider(GenerationProvider):
         )
 
     def cancel(self, external_task_id: str) -> bool:
-        # The supplied H3 contract documents create/status/content only.  Do
-        # not invent a paid-task cancellation endpoint: a 404 here would give
-        # operators false confidence that the render had stopped.
-        if self._model.strip().lower() == MINIMAX_H3_MODEL:
+        # Every documented contract this provider speaks — native H3/
+        # wan2.7-videoedit and the OpenAI Videos API alike — only covers
+        # create/status/content; every `cancel_path` confirmed against
+        # AiHubMix's schema is empty. Do not invent a paid-task cancellation
+        # endpoint: a 404 here would give operators false confidence that
+        # the render had stopped.
+        if self._protocol == "openai" or native_video_profile(self._model) is not None:
             return False
         try:
             with self._client() as client:
@@ -591,21 +775,32 @@ def build_video_payload(
     prompt: str,
     duration_seconds: int,
     aspect_ratio: str,
+    resolution: str | None = None,
     seed: int | None = None,
     references: list[ProviderReference] | None = None,
 ) -> dict[str, object]:
-    """Build the one H3 request shape shared by validation and production.
+    """Build the one native-video request shape shared by validation and
+    production, for whichever model this is.
 
     Keeping the probe on the production builder prevents the exact regression
     that caused this incident: the button used a request which omitted a
     provider-required field while the worker used another hand-written shape.
+
+    A model with no registered `NativeVideoModelProfile` gets no range
+    validation and no `resolution` field — the same "unopinionated passthrough"
+    behaviour this function always had before H3 was its only caller, so
+    adding a new model here never breaks an unrelated one.
     """
 
-    if model.strip().lower() == MINIMAX_H3_MODEL:
-        if not H3_MIN_DURATION_SECONDS <= duration_seconds <= H3_MAX_DURATION_SECONDS:
-            raise ValueError("minimax-h3 duration must be between 4 and 15 seconds")
-        if aspect_ratio not in H3_ASPECT_RATIOS:
-            raise ValueError(f"minimax-h3 aspect ratio is unsupported: {aspect_ratio}")
+    profile = native_video_profile(model)
+    if profile is not None:
+        if not profile.min_duration_seconds <= duration_seconds <= profile.max_duration_seconds:
+            raise ValueError(
+                f"{model} duration must be between {profile.min_duration_seconds} and "
+                f"{profile.max_duration_seconds} seconds"
+            )
+        if aspect_ratio not in profile.aspect_ratios:
+            raise ValueError(f"{model} aspect ratio is unsupported: {aspect_ratio}")
 
     body: dict[str, object] = {
         "model": model,
@@ -613,8 +808,12 @@ def build_video_payload(
         "duration": duration_seconds,
         "aspect_ratio": aspect_ratio,
     }
-    if model.strip().lower() == MINIMAX_H3_MODEL:
-        body["resolution"] = H3_RESOLUTION
+    if profile is not None:
+        effective_resolution = resolution or profile.default_resolution
+        if effective_resolution is not None:
+            if effective_resolution not in profile.resolutions:
+                raise ValueError(f"{model} resolution is unsupported: {effective_resolution}")
+            body["resolution"] = effective_resolution
     if seed is not None:
         body["seed"] = seed
 
@@ -650,6 +849,17 @@ def build_video_payload(
             for ref in input_refs[:_MAX_INPUT_REFERENCES]
         ]
     return body
+
+
+def _first_reference(request: GenerationRequest) -> ProviderReference | None:
+    """The one reference the OpenAI Videos API track's `input_reference`
+    (singular — unlike the native track's `input_references` list) could
+    carry, if the caller supplied any at all."""
+    if request.references:
+        return request.references[0]
+    if request.reference_object_keys:
+        return ProviderReference(object_key=request.reference_object_keys[0], media_type="image")
+    return None
 
 
 def _video_reference_url(request: GenerationRequest) -> str | None:

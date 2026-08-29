@@ -6,9 +6,14 @@ import { useState } from 'react';
 import type { EditCommand } from './engine/ports';
 
 /**
- * Local drag state seeded from the selected element and keyed by element id
- * in the parent so switching selection remounts (and re-seeds) it. Commits
- * to the server on release instead of on every drag tick.
+ * Local drag state seeded from the selected element. The parent keys this
+ * by element id *and* a sync generation counter that bumps on every
+ * successful command/restore/reload, so both switching selection and any
+ * server round-trip remount (and re-seed) it — otherwise a commit that
+ * silently failed (e.g. a revision conflict) would leave this control
+ * showing the edit it tried to make forever, even after the rest of the
+ * app already recovered. Commits to the server on release instead of on
+ * every drag tick.
  */
 export function ClipAdjustControls({
   elementId,

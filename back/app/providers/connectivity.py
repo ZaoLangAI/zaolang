@@ -213,15 +213,25 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     api_key=endpoint.api_key,
                 )
 
-            response = client.post(
-                media_request_path(endpoint.base_url, "/ai/v1/videos"),
-                json=build_video_payload(
-                    model=endpoint.model,
-                    prompt="A static blue square, connectivity test.",
-                    duration_seconds=5,
-                    aspect_ratio="16:9",
-                ),
-            )
+            if endpoint.protocol == "openai":
+                response = client.post(
+                    media_request_path(endpoint.base_url, "/v1/videos"),
+                    json={
+                        "model": endpoint.model,
+                        "prompt": "A static blue square, connectivity test.",
+                        "seconds": 5,
+                    },
+                )
+            else:
+                response = client.post(
+                    media_request_path(endpoint.base_url, "/ai/v1/videos"),
+                    json=build_video_payload(
+                        model=endpoint.model,
+                        prompt="A static blue square, connectivity test.",
+                        duration_seconds=5,
+                        aspect_ratio="16:9",
+                    ),
+                )
             if response.status_code >= 400:
                 return _media_response(
                     started,

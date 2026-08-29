@@ -117,7 +117,7 @@ def test_text_to_video_sandbox_run_rejects_an_illegal_h3_duration(
     assert response.status_code == 422
     body = response.json()
     assert body["error"]["code"] == "VALIDATION_FAILED"
-    assert "4-15" in body["error"]["message"]
+    assert "2-15" in body["error"]["message"]
 
 
 def test_a_sandbox_run_walks_the_pipeline_without_touching_the_ledger(

@@ -10358,6 +10358,10 @@ export interface components {
             brand_overlay?: {
                 [key: string]: unknown;
             } | null;
+            /** Markers */
+            markers?: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * TokenPricingPayload
@@ -10672,15 +10676,17 @@ export interface components {
         VideoAssetKind: "general" | "scene_video" | "character_action" | "transition_video" | "cover_video";
         /**
          * VideoGenerationOptions
-         * @description Typed H3 options; arbitrary provider JSON and webhooks are forbidden.
+         * @description Typed native-video options; arbitrary provider JSON and webhooks are
+         *     forbidden. `resolution` is MiniMax H3's vocabulary (`2K`/`768P`) — a
+         *     differently-profiled native model with its own resolution spelling (e.g.
+         *     wan2.7-videoedit's `720p`/`1080p`) is simply hard-filtered out of routing
+         *     by `router._request_constraint_failure` when this field doesn't match its
+         *     `ProviderCapability.resolutions`, rather than this schema trying to union
+         *     every model's spelling into one enum.
          */
         VideoGenerationOptions: {
-            /**
-             * Resolution
-             * @default 2K
-             * @constant
-             */
-            resolution: "2K";
+            /** Resolution */
+            resolution?: ("2K" | "768P") | null;
             /**
              * Reference Mode
              * @default input_references
@@ -10904,6 +10910,8 @@ export interface components {
             /** Media Url */
             media_url?: string | null;
             media_type?: components["schemas"]["MediaType"] | null;
+            /** Output Asset Id */
+            output_asset_id?: string | null;
             /**
              * Ai Generated
              * @default true

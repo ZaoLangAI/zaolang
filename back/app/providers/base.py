@@ -39,6 +39,10 @@ class GenerationRequest:
     seed: int | None = None
     aspect_ratio: str = "16:9"
     duration_seconds: int = 0
+    # Video only. `None` means "let the provider profile's own default
+    # apply" — never send a bare literal here for a provider that has no
+    # concept of resolution (e.g. image/audio).
+    resolution: str | None = None
     references: list[ProviderReference] = field(default_factory=list)
     # Compatibility for checkpoints created before typed references existed.
     # They were image-only in the old UI, so the H3 adapter may safely migrate

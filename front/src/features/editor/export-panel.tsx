@@ -12,8 +12,17 @@ import { sha256Hex } from '@/lib/upload';
 
 import * as editorApi from './api';
 import { browserInstanceId } from './browser';
+import { runStructuralPrecheck, type PrecheckIssueKind } from './engine/export-precheck';
 import { SequentialExportRunner } from './engine/export-runner';
-import { TICKS_PER_SECOND, type CanonicalDocument, type ResolvedAsset } from './engine/ports';
+import {
+  TICKS_PER_SECOND,
+  type CanonicalDocument,
+  type ExportProgress,
+  type ResolvedAsset,
+} from './engine/ports';
+import { ExportPrecheckPanel } from './export-precheck-panel';
+
+const PRECHECK_SAMPLE_COUNT = 5;
 
 export function ExportPanel({
   revisionId,
@@ -35,14 +44,46 @@ export function ExportPanel({
   const t = useTranslations('editor');
   const { notify } = useToast();
   const router = useRouter();
+  const stageLabel: Record<ExportProgress['stage'], string> = {
+    encoding: t('exportStage.encoding'),
+    uploading: t('exportStage.uploading'),
+    verifying: t('exportStage.verifying'),
+  };
   const [picked, setPicked] = useState<Set<string>>(
     new Set(profiles.slice(0, 1).map((item) => item.key)),
   );
   const [busy, setBusy] = useState(false);
   const [lastExportId, setLastExportId] = useState<string | null>(null);
+  // Walkthrough finding: the loop below already had `progress.percent`/
+  // `progress.stage` in hand (sent to the backend as an export heartbeat)
+  // but only surfaced a generic button `loading` spinner — no percent, no
+  // stage. This mirrors that same data into the UI instead of discarding it.
+  const [progress, setProgress] = useState<Pick<ExportProgress, 'percent' | 'stage'> | null>(null);
   const runner = useMemo(() => new SequentialExportRunner(), []);
   const controllerRef = useRef<AbortController | null>(null);
   const claimedExportIdRef = useRef<string | null>(null);
+
+  // Walkthrough finding: an export only ever surfaced problems (a blank
+  // canvas, a keyframed pan that drifted a clip fully off-frame) after a
+  // full encode/upload round-trip. This runs the same `resolveFrame` truth
+  // the export itself will use across a handful of sampled ticks up front,
+  // so those two failure modes show up before the user spends the time.
+  const precheck = useMemo(
+    () => runStructuralPrecheck(document, durationTicks, PRECHECK_SAMPLE_COUNT),
+    [document, durationTicks],
+  );
+  const issueKey = precheck.issues.map((issue) => `${issue.kind}:${issue.atTicks}`).join(',');
+  // "Adjust state during render" (React's documented pattern for resetting
+  // derived state on a prop change) rather than an effect: an edit that
+  // fixes/introduces an issue must re-arm this gate on the very render that
+  // shows the new issue list, not one render later.
+  const [acknowledged, setAcknowledged] = useState({ key: issueKey, checked: false });
+  if (acknowledged.key !== issueKey) setAcknowledged({ key: issueKey, checked: false });
+  const issuesBlockExport = precheck.issues.length > 0 && !acknowledged.checked;
+  const issueLabel: Record<PrecheckIssueKind, string> = {
+    blank_frame: t('exportPrecheckBlankFrame'),
+    clip_off_canvas: t('exportPrecheckClipOffCanvas'),
+  };
 
   const run = async () => {
     if (!revisionId || picked.size === 0) return;
@@ -66,11 +107,13 @@ export function ExportPanel({
         max_duration_ticks: Math.min(durationTicks, 30 * TICKS_PER_SECOND),
       };
       let blob: Blob | undefined;
-      for await (const progress of runner.export(spec, document, assets, controller.signal)) {
-        await editorApi.heartbeatExport(claimed.id, progress.percent, progress.stage);
-        blob = progress.blob ?? blob;
+      for await (const step of runner.export(spec, document, assets, controller.signal)) {
+        await editorApi.heartbeatExport(claimed.id, step.percent, step.stage);
+        setProgress({ percent: step.percent, stage: step.stage });
+        blob = step.blob ?? blob;
       }
       if (!blob) throw new Error('empty_export');
+      setProgress({ percent: 100, stage: 'uploading' });
       const checksum = await sha256Hex(await blob.arrayBuffer());
       const presigned = await editorApi.presignExportUpload(claimed.id, {
         filename: 'cut.mp4',
@@ -84,6 +127,7 @@ export function ExportPanel({
         body: blob,
       });
       if (!put.ok) throw new Error(`upload ${put.status}`);
+      setProgress({ percent: 100, stage: 'verifying' });
       const done = await editorApi.completeExport(claimed.id, presigned.upload_session_id);
       setLastExportId(done.id);
       notify(t('exportDone'), 'success');
@@ -95,6 +139,7 @@ export function ExportPanel({
       }
     } finally {
       setBusy(false);
+      setProgress(null);
       controllerRef.current = null;
       claimedExportIdRef.current = null;
     }
@@ -142,11 +187,34 @@ export function ExportPanel({
           </label>
         ))}
       </fieldset>
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-muted">{t('exportPrecheckTitle')}</p>
+        <ExportPrecheckPanel document={document} assets={assets} samples={precheck.samples} />
+        {precheck.issues.length > 0 ? (
+          <div className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/5 p-2">
+            <ul className="flex flex-col gap-0.5 text-xs text-danger">
+              {precheck.issues.map((issue, index) => (
+                <li key={index}>
+                  {(issue.atTicks / TICKS_PER_SECOND).toFixed(1)}s · {issueLabel[issue.kind]}
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input
+                type="checkbox"
+                checked={acknowledged.checked}
+                onChange={(event) => setAcknowledged({ key: issueKey, checked: event.target.checked })}
+              />
+              {t('exportPrecheckAcknowledge')}
+            </label>
+          </div>
+        ) : null}
+      </div>
       <div className="flex gap-2">
         <Button
           onClick={() => void run()}
           loading={busy}
-          disabled={disabled || !revisionId || picked.size === 0}
+          disabled={disabled || !revisionId || picked.size === 0 || issuesBlockExport}
         >
           {t('startExport')}
         </Button>
@@ -156,6 +224,19 @@ export function ExportPanel({
           </Button>
         ) : null}
       </div>
+      {busy && progress ? (
+        <div className="flex flex-col gap-1">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-soft">
+            <div
+              className="h-full rounded-full bg-primary transition-[width]"
+              style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted">
+            {stageLabel[progress.stage]} · {Math.round(progress.percent)}%
+          </p>
+        </div>
+      ) : null}
       {draftId && lastExportId ? (
         <Button variant="secondary" onClick={() => void bind()} disabled={busy}>
           {t('bindAndPublish')}

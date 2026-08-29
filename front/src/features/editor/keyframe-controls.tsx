@@ -9,10 +9,13 @@ import { resolveNumberAtTime } from './engine/animation';
 import {
   TICKS_PER_SECOND,
   type AnimatableProperty,
+  type EasingType,
   type EditCommand,
   type ElementAnimations,
 } from './engine/ports';
 import { useEditorUi } from './store';
+
+const EASING_OPTIONS: EasingType[] = ['linear', 'ease_in', 'ease_out'];
 
 interface PropertyConfig {
   property: AnimatableProperty;
@@ -26,7 +29,10 @@ interface PropertyConfig {
   fromDisplay: (display: number) => number;
 }
 
-function propertyConfigs(t: (key: 'keyframeOpacity' | 'keyframeX' | 'keyframeY' | 'keyframeScale' | 'keyframeRotation') => string): PropertyConfig[] {
+function propertyConfigs(
+  t: (key: 'keyframeOpacity' | 'keyframeX' | 'keyframeY' | 'keyframeScale' | 'keyframeRotation' | 'keyframeVolume') => string,
+  baseVolumeMillipercent: number,
+): PropertyConfig[] {
   return [
     {
       property: 'opacity',
@@ -78,6 +84,18 @@ function propertyConfigs(t: (key: 'keyframeOpacity' | 'keyframeX' | 'keyframeY' 
       toDisplay: (v) => Math.round(v / 1_000),
       fromDisplay: (d) => d * 1_000,
     },
+    {
+      property: 'volume',
+      label: t('keyframeVolume'),
+      // Same dimension `set_clip_volume` uses — a fresh channel should start
+      // from the clip's current static volume, not an arbitrary default.
+      defaultValue: baseVolumeMillipercent,
+      min: 0,
+      max: 200,
+      step: 1,
+      toDisplay: (v) => Math.round(v / 1_000),
+      fromDisplay: (d) => d * 1_000,
+    },
   ];
 }
 
@@ -95,30 +113,37 @@ function secondsLabel(ticks: number): string {
 export function KeyframeControls({
   elementId,
   initialAnimations,
+  baseVolumeMillipercent,
   disabled,
   onCommit,
 }: {
   elementId: string;
   initialAnimations: ElementAnimations;
+  baseVolumeMillipercent: number;
   disabled: boolean;
   onCommit: (commands: EditCommand[]) => void;
 }) {
   const t = useTranslations('editor');
-  const properties = propertyConfigs(t);
+  const properties = propertyConfigs(t, baseVolumeMillipercent);
   const playheadTicks = useEditorUi((state) => state.playheadTicks);
   const [animations, setAnimations] = useState(initialAnimations);
   const [drafts, setDrafts] = useState<Partial<Record<AnimatableProperty, number>>>({});
+  const [easingDrafts, setEasingDrafts] = useState<Partial<Record<AnimatableProperty, EasingType>>>({});
 
   const addKeyframe = (config: PropertyConfig) => {
     const resolved = resolveNumberAtTime(animations, config.property, playheadTicks, config.defaultValue);
     const display = drafts[config.property] ?? config.toDisplay(resolved);
     const value = Math.round(config.fromDisplay(display));
-    onCommit([{ type: 'set_keyframe', element_id: elementId, property: config.property, at_ticks: playheadTicks, value }]);
+    const easing = easingDrafts[config.property] ?? 'linear';
+    onCommit([
+      { type: 'set_keyframe', element_id: elementId, property: config.property, at_ticks: playheadTicks, value, easing },
+    ]);
     setAnimations((current) => {
       const existing = current.channels[config.property]?.points ?? [];
-      const points = [...existing.filter((point) => point.at_ticks !== playheadTicks), { at_ticks: playheadTicks, value }].sort(
-        (a, b) => a.at_ticks - b.at_ticks,
-      );
+      const points = [
+        ...existing.filter((point) => point.at_ticks !== playheadTicks),
+        { at_ticks: playheadTicks, value, easing },
+      ].sort((a, b) => a.at_ticks - b.at_ticks);
       return { channels: { ...current.channels, [config.property]: { kind: 'number', points } } };
     });
   };
@@ -166,6 +191,21 @@ export function KeyframeControls({
                   className="w-16 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-1 py-0.5 text-fg"
                 />
               </label>
+              <select
+                value={easingDrafts[config.property] ?? 'linear'}
+                disabled={disabled}
+                onChange={(event) =>
+                  setEasingDrafts((current) => ({ ...current, [config.property]: event.target.value as EasingType }))
+                }
+                aria-label={t('keyframeEasing')}
+                className="rounded-[var(--radius-sm)] border border-border bg-surface-soft px-1 py-0.5 text-fg"
+              >
+                {EASING_OPTIONS.map((easing) => (
+                  <option key={easing} value={easing}>
+                    {t(`keyframeEasing_${easing}` as 'keyframeEasing_linear' | 'keyframeEasing_ease_in' | 'keyframeEasing_ease_out')}
+                  </option>
+                ))}
+              </select>
               <Button size="sm" variant="secondary" disabled={disabled} onClick={() => addKeyframe(config)}>
                 {t('keyframeAdd')}
               </Button>

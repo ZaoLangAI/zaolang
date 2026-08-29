@@ -38,7 +38,11 @@ export default async function RemixPage({ params }: Params) {
 
       {work.can_remix && work.reusable_params ? (
         <VideoGenerationStudio
-          operation="image_to_video"
+          operation={
+            (work.media_type ?? work.current_version?.media_type) === 'video'
+              ? 'video_to_video'
+              : 'image_to_video'
+          }
           source={{ work, params: work.reusable_params }}
         />
       ) : (

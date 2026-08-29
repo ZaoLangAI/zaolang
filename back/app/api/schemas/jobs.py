@@ -35,21 +35,41 @@ AUDIO_VOICES: frozenset[str] = frozenset({"alloy", "echo", "fable", "onyx", "nov
 VIDEO_OPERATIONS: frozenset[Operation] = frozenset(
     {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
 )
-# Mirrored from `app.providers.aihubmix_media` so the C-end schema does not
-# import a provider module. Keep the two in step.
-H3_MIN_DURATION_SECONDS = 4
-H3_MAX_DURATION_SECONDS = 15
-H3_VIDEO_ASPECT_RATIOS: frozenset[str] = frozenset({"16:9", "9:16", "1:1", "4:3", "3:4", "21:9"})
+# Mirrored from `app.providers.aihubmix_media`'s `_NATIVE_VIDEO_PROFILES` so
+# the C-end schema does not import a provider module. Keep the two in step.
+#
+# This is an upfront *ceiling*, not a per-model contract: it's the union
+# across every registered native-video profile (today MiniMax H3's 4–15s/ten
+# aspect ratios and wan2.7-videoedit's narrower 2–10s/five aspect ratios),
+# wide enough that neither profile's legal values get wrongly rejected here.
+# Fine-grained per-model legality is enforced later, per routing candidate,
+# by `router._request_constraint_failure` — a value that clears this gate but
+# doesn't fit the model the router eventually picks simply narrows which
+# providers are eligible, it never reaches a provider that can't honour it.
+VIDEO_MIN_DURATION_SECONDS = 2
+VIDEO_MAX_DURATION_SECONDS = 15
+VIDEO_ASPECT_RATIOS: frozenset[str] = frozenset(
+    {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "3:2", "2:3", "9:21", "adaptive"}
+)
 # Same default the C-end studio ships (`generation-studio.tsx`); a prompt-only
-# sandbox try-it must land inside the H3 4–15 window or route_score filters
-# every video provider as `duration_below_provider_minimum`.
+# sandbox try-it must land inside the shared 2–15s window or route_score
+# filters out every video provider as `duration_below_provider_minimum`.
 DEFAULT_SANDBOX_VIDEO_DURATION_SECONDS = 8
 
 
 class VideoGenerationOptions(ApiModel):
-    """Typed H3 options; arbitrary provider JSON and webhooks are forbidden."""
+    """Typed native-video options; arbitrary provider JSON and webhooks are
+    forbidden. `resolution` is MiniMax H3's vocabulary (`2K`/`768P`) — a
+    differently-profiled native model with its own resolution spelling (e.g.
+    wan2.7-videoedit's `720p`/`1080p`) is simply hard-filtered out of routing
+    by `router._request_constraint_failure` when this field doesn't match its
+    `ProviderCapability.resolutions`, rather than this schema trying to union
+    every model's spelling into one enum."""
 
-    resolution: Literal["2K"] = "2K"
+    # Omitted on a video remix so the router does not default-filter
+    # cheaper video-edit models that only speak `720p`/`1080p`. Create/new
+    # still sends `2K` or `768P` explicitly.
+    resolution: Literal["2K", "768P"] | None = None
     reference_mode: Literal["input_references", "frame_images"] = "input_references"
     first_frame_asset_id: str | None = Field(default=None, max_length=40)
     last_frame_asset_id: str | None = Field(default=None, max_length=40)
@@ -61,10 +81,11 @@ def apply_sandbox_generation_defaults(
     """Fills a video duration so a prompt-only sandbox try-it is routable.
 
     C-end submit already requires `duration_seconds > 0`. The sandbox dialog
-    historically did not, so MiniMax H3 hard-filtered the only catalog entry
-    as `duration_below_provider_minimum` and the job failed with "暂时没有
-    可用的生成路线". Explicit zero / omitted duration becomes 8 seconds —
-    the same default the C-end studio uses, inside the H3 4–15 window.
+    historically did not, so the only catalog entry (MiniMax H3, at the time)
+    hard-filtered as `duration_below_provider_minimum` and the job failed with
+    "暂时没有可用的生成路线". Explicit zero / omitted duration becomes 8
+    seconds — the same default the C-end studio uses, inside every registered
+    native-video profile's window.
     """
     if operation not in VIDEO_OPERATIONS:
         return params
@@ -86,8 +107,15 @@ def validate_generation_params(
     asset_kind: ImageAssetKind | None = None,
     video_asset_kind: VideoAssetKind | None = None,
     extra: Mapping[str, Any] | None = None,
+    licensed_source: bool = False,
 ) -> None:
-    """Shared C-end / sandbox rules. Raises `ValueError` on illegal combinations."""
+    """Shared C-end / sandbox rules. Raises `ValueError` on illegal combinations.
+
+    `licensed_source` is true when the request already carries a remix
+    `source_work_id` — `jobs_service.submit` injects that version's primary
+    output before references are ownership-checked, so an empty client list
+    is still a legal `video_to_video` shape.
+    """
     references = list(reference_asset_ids or [])
     characters = list(character_ids or [])
     scenes = list(scene_ids or [])
@@ -109,10 +137,12 @@ def validate_generation_params(
     if operation not in VIDEO_OPERATIONS and video_options is not None:
         raise ValueError("video_options 仅适用于视频生成。")
     if video_options is not None:
-        if not H3_MIN_DURATION_SECONDS <= duration_seconds <= H3_MAX_DURATION_SECONDS:
-            raise ValueError("MiniMax H3 视频时长必须为 4-15 秒。")
-        if aspect_ratio not in H3_VIDEO_ASPECT_RATIOS:
-            raise ValueError(f"MiniMax H3 画幅必须为: {sorted(H3_VIDEO_ASPECT_RATIOS)}。")
+        if not VIDEO_MIN_DURATION_SECONDS <= duration_seconds <= VIDEO_MAX_DURATION_SECONDS:
+            raise ValueError(
+                f"视频时长必须为 {VIDEO_MIN_DURATION_SECONDS}-{VIDEO_MAX_DURATION_SECONDS} 秒。"
+            )
+        if aspect_ratio not in VIDEO_ASPECT_RATIOS:
+            raise ValueError(f"画幅必须为: {sorted(VIDEO_ASPECT_RATIOS)}。")
         if video_options.reference_mode == "frame_images":
             if not video_options.first_frame_asset_id:
                 raise ValueError("首尾帧模式必须提供首帧图片。")
@@ -125,6 +155,8 @@ def validate_generation_params(
     has_frame_input = bool(video_options and video_options.first_frame_asset_id)
     if operation == Operation.IMAGE_TO_VIDEO and not references and not has_frame_input:
         raise ValueError("图生视频必须提供参考图。")
+    if operation == Operation.VIDEO_TO_VIDEO and not references and not licensed_source:
+        raise ValueError("视频转视频必须提供参考视频。")
     # `image_to_image` does NOT require a reference — the prompt is what's
     # mandatory; an attached image is optional extra context that rides
     # along with it (see `workflow_templates_service.canonical_operation`).
@@ -201,7 +233,10 @@ class GenerationParams(ApiModel):
     prompt: str = Field(default="", max_length=2000)
     negative_prompt: str | None = Field(default=None, max_length=1000)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
-    aspect_ratio: str = Field(default="16:9", pattern=r"^\d{1,2}:\d{1,2}$")
+    # `adaptive` is the one non-`W:H` literal — H3's own "let the render
+    # decide" aspect ratio (`VIDEO_ASPECT_RATIOS`, below) — so the pattern
+    # must accept it explicitly rather than only ever matching a ratio.
+    aspect_ratio: str = Field(default="16:9", pattern=r"^(\d{1,2}:\d{1,2}|adaptive)$")
     duration_seconds: int = Field(default=0, ge=0, le=MAX_GENERATION_DURATION_SECONDS)
     reference_asset_ids: list[str] = Field(default_factory=list, max_length=9)
     video_options: VideoGenerationOptions | None = None
@@ -347,6 +382,7 @@ class GenerationJobCreateRequest(ApiModel):
             asset_kind=self.params.asset_kind,
             video_asset_kind=self.params.video_asset_kind,
             extra=self.params.extra,
+            licensed_source=bool(self.source_work_id),
         )
         return self
 

@@ -17,25 +17,40 @@ interface PlayingSource {
   gain: GainNode;
 }
 
+// Module-scoped rather than per-`AudioMixer` instance: the timeline's
+// waveform strip (`timeline-media.tsx`) needs the *same* decoded
+// `AudioBuffer` the live-preview mixer already fetched, so a clip's waveform
+// never re-downloads or re-decodes audio the mixer has already paid for (and
+// vice versa — whichever asks first primes the cache for the other). A
+// single shared `AudioContext` also avoids hitting the browser's per-page
+// AudioContext limit if several editor panels each wanted their own.
+let sharedContext: AudioContext | null = null;
+const sharedBuffers = new Map<string, Promise<AudioBuffer | null>>();
+
+function getSharedContext(): AudioContext {
+  sharedContext ??= new AudioContext();
+  return sharedContext;
+}
+
+/** Fetches + decodes an asset's audio once and caches the result by asset id. */
+export function decodeAudioBuffer(assetId: string, url: string): Promise<AudioBuffer | null> {
+  let pending = sharedBuffers.get(assetId);
+  if (!pending) {
+    pending = fetch(url)
+      .then((response) => response.arrayBuffer())
+      .then((data) => getSharedContext().decodeAudioData(data))
+      .catch(() => null);
+    sharedBuffers.set(assetId, pending);
+  }
+  return pending;
+}
+
 export class AudioMixer {
   private readonly context: AudioContext;
-  private readonly buffers = new Map<string, Promise<AudioBuffer | null>>();
   private readonly playing = new Map<string, PlayingSource>();
 
   constructor() {
-    this.context = new AudioContext();
-  }
-
-  private bufferFor(assetId: string, url: string): Promise<AudioBuffer | null> {
-    let pending = this.buffers.get(assetId);
-    if (!pending) {
-      pending = fetch(url)
-        .then((response) => response.arrayBuffer())
-        .then((data) => this.context.decodeAudioData(data))
-        .catch(() => null);
-      this.buffers.set(assetId, pending);
-    }
-    return pending;
+    this.context = getSharedContext();
   }
 
   private stopOne(elementId: string): void {
@@ -66,11 +81,18 @@ export class AudioMixer {
       if (!nextIds.has(elementId)) this.stopOne(elementId);
     }
     for (const layer of layers) {
-      if (this.playing.has(layer.element_id)) continue;
+      const playing = this.playing.get(layer.element_id);
+      if (playing) {
+        // A `volume` keyframe channel makes `layer.volume` change from one
+        // sync to the next while the same node keeps playing — reflect that
+        // continuously instead of only reading it once at node creation.
+        playing.gain.gain.value = layer.volume;
+        continue;
+      }
       const url = assetUrls.get(layer.asset_id);
       if (!url) continue;
       const elementId = layer.element_id;
-      void this.bufferFor(layer.asset_id, url).then((buffer) => {
+      void decodeAudioBuffer(layer.asset_id, url).then((buffer) => {
         // The layer may have stopped being active (or already started via
         // a later sync) by the time decoding finishes — never resurrect it.
         if (!buffer || this.playing.has(elementId)) return;
@@ -99,8 +121,12 @@ export class AudioMixer {
     for (const elementId of [...this.playing.keys()]) this.stopOne(elementId);
   }
 
+  /**
+   * Only stops this mixer's own playing sources. Does *not* close the
+   * (now shared) `AudioContext` — the timeline's waveform strip may still
+   * be decoding through it, and a closed context can't be resumed.
+   */
   dispose(): void {
     this.stopAll();
-    void this.context.close();
   }
 }

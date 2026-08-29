@@ -464,7 +464,10 @@ def test_set_keyframe_inserts_sorted_and_replaces_same_tick() -> None:
         known_assets=set(),
     )
     points = _clip(document)["animations"]["channels"]["opacity"]["points"]
-    assert points == [{"at_ticks": 0, "value": 90_000}, {"at_ticks": 2 * 120_000, "value": 100_000}]
+    assert points == [
+        {"at_ticks": 0, "value": 90_000, "easing": "linear"},
+        {"at_ticks": 2 * 120_000, "value": 100_000, "easing": "linear"},
+    ]
 
 
 def test_set_keyframe_rejects_unknown_property_and_out_of_range_value() -> None:
@@ -479,6 +482,86 @@ def test_set_keyframe_rejects_unknown_property_and_out_of_range_value() -> None:
         commands.apply_batch(
             document,
             [{"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 999_999}],
+            known_assets=set(),
+        )
+
+
+def test_set_keyframe_defaults_easing_to_linear_and_accepts_an_explicit_value() -> None:
+    document = commands.apply_batch(
+        _document_with_clip(),
+        [
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 0,
+            },
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 120_000,
+                "value": 100_000,
+                "easing": "ease_in",
+            },
+        ],
+        known_assets=set(),
+    )
+    points = _clip(document)["animations"]["channels"]["opacity"]["points"]
+    assert points[0]["easing"] == "linear"
+    assert points[1]["easing"] == "ease_in"
+
+
+def test_set_keyframe_rejects_an_unsupported_easing_type() -> None:
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            _document_with_clip(),
+            [
+                {
+                    "type": "set_keyframe",
+                    "element_id": "el_clip",
+                    "property": "opacity",
+                    "at_ticks": 0,
+                    "value": 0,
+                    "easing": "bounce",
+                }
+            ],
+            known_assets=set(),
+        )
+
+
+def test_set_keyframe_accepts_volume_within_the_set_clip_volume_range() -> None:
+    document = commands.apply_batch(
+        _document_with_clip(),
+        [
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "volume",
+                "at_ticks": 0,
+                "value": 150_000,
+            }
+        ],
+        known_assets=set(),
+    )
+    points = _clip(document)["animations"]["channels"]["volume"]["points"]
+    assert points == [{"at_ticks": 0, "value": 150_000, "easing": "linear"}]
+
+
+def test_set_keyframe_rejects_a_volume_value_outside_0_to_200000() -> None:
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            _document_with_clip(),
+            [
+                {
+                    "type": "set_keyframe",
+                    "element_id": "el_clip",
+                    "property": "volume",
+                    "at_ticks": 0,
+                    "value": 250_000,
+                }
+            ],
             known_assets=set(),
         )
 
@@ -685,3 +768,134 @@ def test_planner_prompt_mentions_every_allowed_command_type() -> None:
         command_type for command_type in commands.ALLOWED_TYPES if command_type not in SYSTEM_PROMPT
     }
     assert not missing, f"editor_planner.SYSTEM_PROMPT is missing: {sorted(missing)}"
+
+
+def test_add_marker_with_explicit_id_and_label() -> None:
+    document = commands.apply_batch(
+        docs.empty_document(),
+        [{"type": "add_marker", "at_ticks": 1000, "label": "开场", "marker_id": "mrk_1"}],
+        known_assets=set(),
+    )
+    assert document["markers"] == [{"id": "mrk_1", "at_ticks": 1000, "label": "开场"}]
+
+
+def test_add_marker_generates_an_id_when_omitted() -> None:
+    document = commands.apply_batch(
+        docs.empty_document(),
+        [{"type": "add_marker", "at_ticks": 0}],
+        known_assets=set(),
+    )
+    assert len(document["markers"]) == 1
+    assert document["markers"][0]["id"]
+
+
+def test_add_marker_rejects_a_duplicate_id() -> None:
+    document = commands.apply_batch(
+        docs.empty_document(),
+        [{"type": "add_marker", "at_ticks": 0, "marker_id": "mrk_1"}],
+        known_assets=set(),
+    )
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            document,
+            [{"type": "add_marker", "at_ticks": 1000, "marker_id": "mrk_1"}],
+            known_assets=set(),
+        )
+
+
+def test_add_marker_rejects_a_label_over_120_chars() -> None:
+    with pytest.raises(ValidationFailed):
+        commands.validate_batch(
+            {
+                "schema_version": 1,
+                "batch_id": "bat_1",
+                "commands": [{"type": "add_marker", "at_ticks": 0, "label": "x" * 121}],
+            }
+        )
+
+
+def test_add_marker_rejects_over_the_max_marker_cap() -> None:
+    document = docs.empty_document()
+    for index in range(commands.MAX_MARKERS):
+        document = commands.apply_batch(
+            document,
+            [{"type": "add_marker", "at_ticks": index, "marker_id": f"mrk_{index}"}],
+            known_assets=set(),
+        )
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            document,
+            [{"type": "add_marker", "at_ticks": commands.MAX_MARKERS, "marker_id": "mrk_over"}],
+            known_assets=set(),
+        )
+
+
+def test_update_marker_changes_fields_and_rejects_a_missing_marker() -> None:
+    document = commands.apply_batch(
+        docs.empty_document(),
+        [{"type": "add_marker", "at_ticks": 0, "label": "old", "marker_id": "mrk_1"}],
+        known_assets=set(),
+    )
+    document = commands.apply_batch(
+        document,
+        [{"type": "update_marker", "marker_id": "mrk_1", "at_ticks": 500, "label": "new"}],
+        known_assets=set(),
+    )
+    assert document["markers"] == [{"id": "mrk_1", "at_ticks": 500, "label": "new"}]
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            document,
+            [{"type": "update_marker", "marker_id": "mrk_missing", "label": "x"}],
+            known_assets=set(),
+        )
+
+
+def test_remove_marker_deletes_it_and_rejects_a_missing_marker() -> None:
+    document = commands.apply_batch(
+        docs.empty_document(),
+        [{"type": "add_marker", "at_ticks": 0, "marker_id": "mrk_1"}],
+        known_assets=set(),
+    )
+    document = commands.apply_batch(
+        document,
+        [{"type": "remove_marker", "marker_id": "mrk_1"}],
+        known_assets=set(),
+    )
+    assert document["markers"] == []
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            document,
+            [{"type": "remove_marker", "marker_id": "mrk_1"}],
+            known_assets=set(),
+        )
+
+
+def test_canonicalize_sorts_markers_by_at_ticks() -> None:
+    document = docs.empty_document()
+    document["markers"] = [
+        {"id": "mrk_b", "at_ticks": 2000, "label": None},
+        {"id": "mrk_a", "at_ticks": 1000, "label": None},
+    ]
+    canonical = docs.canonicalize(document)
+    assert [m["id"] for m in canonical["markers"]] == ["mrk_a", "mrk_b"]
+
+
+def test_canonicalize_backfills_markers_for_a_document_stored_before_the_field_existed() -> None:
+    document = docs.empty_document()
+    del document["markers"]
+    backfilled = docs.canonicalize(document)
+    assert backfilled["markers"] == []
+
+
+def test_validate_document_rejects_duplicate_or_missing_marker_ids() -> None:
+    document = docs.empty_document()
+    document["markers"] = [{"id": "", "at_ticks": 0, "label": None}]
+    with pytest.raises(ValueError):
+        docs.validate_document(document)
+
+    document["markers"] = [
+        {"id": "mrk_1", "at_ticks": 0, "label": None},
+        {"id": "mrk_1", "at_ticks": 1000, "label": None},
+    ]
+    with pytest.raises(ValueError):
+        docs.validate_document(document)

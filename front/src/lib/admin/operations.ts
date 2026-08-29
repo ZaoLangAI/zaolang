@@ -168,7 +168,19 @@ export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
 };
 
 const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
-  openai: ['text_to_image', 'image_to_image', 'audio_generation'],
+  // Video joined via the OpenAI Videos API track — see backend
+  // `_OPENAI_CAPABILITIES` (`app/platform_config/schemas.py`). Not every
+  // openai-protocol video model accepts a reference (e.g. `wan2.7-
+  // videoedit`'s openai-shaped endpoint has no `input_reference` field);
+  // that is enforced by the provider adapter, not this modality gate.
+  openai: [
+    'text_to_image',
+    'image_to_image',
+    'audio_generation',
+    'text_to_video',
+    'image_to_video',
+    'video_to_video',
+  ],
   minimax: ['text_to_video', 'image_to_video', 'video_to_video'],
   comfyui: ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'video_to_video'],
   google: [],

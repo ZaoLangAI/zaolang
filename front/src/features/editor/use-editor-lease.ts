@@ -9,6 +9,10 @@ import { browserInstanceId } from './browser';
 import { useEditorUi } from './store';
 
 const HEARTBEAT_MS = 30_000;
+// Enough to notice the other tab's lease expiring soon after it does (the
+// 5-minute TTL only lapses once its own heartbeat stops), without hammering
+// the endpoint the way polling on every heartbeat interval would.
+const HELD_BY_OTHER_RETRY_MS = 10_000;
 
 export function useEditorLease(cutId: string) {
   const setReadonly = useEditorUi((state) => state.setReadonly);
@@ -125,6 +129,31 @@ export function useEditorLease(cutId: string) {
       releaseOnUnload();
     };
   }, [applyLease, cutId, failReadonly]);
+
+  // Auto-retries acquisition while another tab/session holds the lease, so
+  // the editor unlocks itself the moment that lease is released or expires
+  // instead of leaving the user to keep clicking "重新获取". Deliberately
+  // does *not* go through `reclaim()` — that flips `reclaiming` (the visible
+  // button spinner) on every attempt, which would flicker every 10s for
+  // something that is meant to be a quiet background check.
+  useEffect(() => {
+    if (!heldByOther) return;
+    let cancelled = false;
+    const instanceId = browserInstanceId();
+    const timer = window.setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const next = await editorApi.acquireLease(cutId, instanceId);
+        if (!cancelled) applyLease(next);
+      } catch (caught) {
+        if (!cancelled) failReadonly(isApiError(caught) && caught.code === 'LEASE_HELD');
+      }
+    }, HELD_BY_OTHER_RETRY_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [heldByOther, cutId, applyLease, failReadonly]);
 
   return { lease, token, heldByOther, reclaim, reclaiming };
 }

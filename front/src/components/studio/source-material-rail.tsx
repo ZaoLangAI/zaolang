@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { useRef, useState } from 'react';
 
+import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import type { StudioSource } from '@/components/studio/generation-studio-shell';
 import { IconClose, IconSparkle, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
@@ -49,21 +50,31 @@ export function SourceMaterialRail({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
 
+  const sourceMediaType = source?.work.media_type ?? source?.work.current_version?.media_type;
   const inherited = source
-    ? [
-        {
-          id: 'first-frame',
-          label: t('firstFrame'),
-          url: source.work.current_version?.cover_url ?? source.work.cover_url,
-          mediaType: 'image',
-        },
-        ...(source.params.style_tags ?? []).slice(0, 2).map((tag, index) => ({
-          id: `style-${tag}`,
-          label: index === 0 ? t('styleReference') : t('lightReference'),
-          url: source.work.cover_url,
-          mediaType: 'image',
-        })),
-      ]
+    ? sourceMediaType === 'video'
+      ? [
+          {
+            id: 'source-video',
+            label: t('sourceVideo'),
+            url: source.work.current_version?.media_url ?? source.work.cover_url,
+            mediaType: 'video',
+          },
+        ]
+      : [
+          {
+            id: 'first-frame',
+            label: t('firstFrame'),
+            url: source.work.current_version?.cover_url ?? source.work.cover_url,
+            mediaType: 'image',
+          },
+          ...(source.params.style_tags ?? []).slice(0, 2).map((tag, index) => ({
+            id: `style-${tag}`,
+            label: index === 0 ? t('styleReference') : t('lightReference'),
+            url: source.work.cover_url,
+            mediaType: 'image',
+          })),
+        ]
     : [];
 
   const total = inherited.length + uploads.length;
@@ -189,13 +200,7 @@ function Thumb({
     <figure className="overflow-hidden rounded-[var(--radius-sm)] border border-border">
       <div className="relative aspect-[4/3] bg-surface-soft">
         {url && mediaType === 'video' ? (
-          <video
-            src={url}
-            muted
-            playsInline
-            preload="metadata"
-            className="size-full object-cover"
-          />
+          <VideoFirstFrame src={url} label={label} />
         ) : url ? (
           <Image src={url} alt="" fill sizes="160px" className="object-cover" />
         ) : null}

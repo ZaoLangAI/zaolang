@@ -239,9 +239,13 @@ def _request_constraint_failure(
         return "aspect_ratio_not_supported"
     video_options = params.get("video_options")
     if isinstance(video_options, Mapping):
-        resolution = str(video_options.get("resolution") or "2K")
+        raw_resolution = video_options.get("resolution")
         reference_mode = str(video_options.get("reference_mode") or "input_references")
-        if capability.resolutions is not None and resolution not in capability.resolutions:
+        if (
+            raw_resolution
+            and capability.resolutions is not None
+            and str(raw_resolution) not in capability.resolutions
+        ):
             return "resolution_not_supported"
         if (
             capability.reference_modes is not None

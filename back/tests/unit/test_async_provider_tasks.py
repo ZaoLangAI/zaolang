@@ -20,11 +20,19 @@ from app.domain.credits import service as credits_service
 from app.domain.jobs import async_tasks
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
-from app.models import AsyncProviderTask, CreditLedgerEntry, JobEvent, ProviderAttempt, User
+from app.models import (
+    AsyncProviderTask,
+    CreditLedgerEntry,
+    JobEvent,
+    Notification,
+    ProviderAttempt,
+    User,
+)
 from app.models.base import new_id, utcnow
 from app.models.enums import (
     JobStatus,
     LedgerEntryType,
+    NotificationType,
     Operation,
     ProviderAttemptStatus,
     ProviderKind,
@@ -212,6 +220,53 @@ def test_heartbeat_progress_never_goes_backwards(
     assert progress == sorted(progress)
 
 
+def test_heartbeat_maps_upstream_progress_into_its_reserved_window(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    """OpenAI's video status response sometimes carries its own `0`-`100`
+    `progress` field; it must land inside the 46-70 heartbeat window rather
+    than leaking through raw, and must never regress the poll-count floor."""
+    job = _suspended(db, funded)
+    _due(db, job.id)
+    provider.outcomes = []
+
+    def _pending_with_progress(*_args, **_kwargs):
+        return GenerationResult(
+            succeeded=False, pending=True, external_task_id="ext_1", metadata={"progress": 50}
+        )
+
+    import types
+
+    provider.poll = types.MethodType(  # type: ignore[method-assign]
+        lambda self, external_task_id, request: _pending_with_progress(), provider
+    )
+
+    async_polling.poll_once(db)
+
+    event = db.scalar(
+        select(JobEvent).where(JobEvent.job_id == job.id).order_by(JobEvent.sequence.desc())
+    )
+    assert event is not None
+    assert async_polling._PROGRESS_FLOOR < event.progress < async_polling._PROGRESS_CEILING
+
+    # A later poll reporting a lower upstream number must not move the bar
+    # backwards from what poll_count already earned.
+    _due(db, job.id)
+    provider.poll = types.MethodType(
+        lambda self, external_task_id, request: GenerationResult(
+            succeeded=False, pending=True, external_task_id="ext_1", metadata={"progress": 1}
+        ),
+        provider,
+    )
+    previous_progress = event.progress
+    async_polling.poll_once(db)
+    latest = db.scalar(
+        select(JobEvent).where(JobEvent.job_id == job.id).order_by(JobEvent.sequence.desc())
+    )
+    assert latest is not None
+    assert latest.progress >= previous_progress
+
+
 def test_a_resume_crash_after_quality_check_keeps_the_checkpoint(
     db: Session, funded: User, provider: _AsyncProvider, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -282,6 +337,60 @@ def test_a_completed_render_resumes_the_workflow_through_to_settlement(
 
     attempt = db.scalar(select(ProviderAttempt).where(ProviderAttempt.job_id == job.id))
     assert attempt is not None and attempt.status == ProviderAttemptStatus.SUCCEEDED
+
+
+def test_an_async_video_success_upserts_the_same_notification_row_to_its_terminal_state(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    """The async render track goes through the same `sm.transition` calls a
+    synchronous job does, so it must land on the one notification row the
+    `queued` transition already created — not a second row, and not silence."""
+    job = _suspended(db, funded)
+    notes_while_running = list(
+        db.scalars(select(Notification).where(Notification.target_id == job.id))
+    )
+    assert len(notes_while_running) == 1
+    note_id = notes_while_running[0].id
+
+    provider.outcomes = [_finished()]
+    _due(db, job.id)
+    async_polling.poll_once(db)
+
+    db.refresh(job)
+    assert job.status == JobStatus.SUCCEEDED
+    notes = list(db.scalars(select(Notification).where(Notification.target_id == job.id)))
+    assert len(notes) == 1
+    assert notes[0].id == note_id
+    assert notes[0].type == NotificationType.JOB_SUCCEEDED
+    assert notes[0].payload_json["status"] == JobStatus.SUCCEEDED
+
+
+def test_an_async_video_failure_upserts_the_same_notification_row_to_its_terminal_state(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    job = _suspended(db, funded)
+    note_id = db.scalar(
+        select(Notification.id).where(Notification.target_id == job.id)
+    )
+    assert note_id is not None
+
+    provider.outcomes = [GenerationResult(succeeded=False, failure_code="PROVIDER_TEMPORARY_FAILURE")]
+    _due(db, job.id)
+    async_polling.poll_once(db)
+    while async_tasks.find_for_job(db, job.id) is not None:
+        provider.outcomes = [
+            GenerationResult(succeeded=False, failure_code="PROVIDER_TEMPORARY_FAILURE")
+        ]
+        _due(db, job.id)
+        async_polling.poll_once(db)
+
+    db.refresh(job)
+    assert JobStatus(job.status).is_terminal
+    notes = list(db.scalars(select(Notification).where(Notification.target_id == job.id)))
+    assert len(notes) == 1
+    assert notes[0].id == note_id
+    assert notes[0].type in {NotificationType.JOB_FAILED, NotificationType.JOB_CANCELLED}
+    assert notes[0].payload_json["status"] == job.status
 
 
 def test_a_partial_provider_output_still_enters_quality_and_keeps_its_marker(

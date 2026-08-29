@@ -783,7 +783,20 @@ def apply_commands(
     # writers computing the same next revision_no can't both pass the CAS
     # check in Python; the loser blocks here instead of racing the unique
     # constraint on cut_revisions(cut_id, revision_no).
-    cut = session.get(EpisodeCut, cut.id, with_for_update=True) or cut
+    #
+    # `populate_existing=True` is required here: `_owned_cut` above already
+    # loaded `cut` into the session's identity map with an *unlocked* read.
+    # Without it, `Session.get(..., with_for_update=True)` still emits the
+    # locking SELECT (and correctly blocks until any concurrent writer
+    # commits), but SQLAlchemy silently keeps the *stale* in-memory
+    # attributes from that first read instead of refreshing them from the
+    # just-fetched row — so `cut.head_revision_id` below can stay pinned to
+    # the pre-lock value forever, even though the lock itself was acquired
+    # against the live, current row. That made every command after a
+    # concurrent writer's commit fail the CAS check (or race the
+    # `revision_no` unique constraint into a 409) even when the caller's
+    # `expected_revision_id` was actually correct.
+    cut = session.get(EpisodeCut, cut.id, with_for_update=True, populate_existing=True) or cut
     lease = lease_service.require_write_lease(
         session, cut_id=cut.id, user_id=user_id, lease_id=lease_id, token=lease_token
     )
@@ -877,7 +890,11 @@ def restore_revision(
     `apply_commands`, not a special-cased mutation."""
     editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
     cut = _owned_cut(session, user_id=user_id, cut_id=cut_id)
-    cut = session.get(EpisodeCut, cut.id, with_for_update=True) or cut
+    # See the matching comment in `apply_commands`: `populate_existing=True`
+    # forces this locking re-fetch to actually refresh `cut`'s attributes
+    # (notably `head_revision_id`) instead of keeping the stale values from
+    # `_owned_cut`'s earlier unlocked read.
+    cut = session.get(EpisodeCut, cut.id, with_for_update=True, populate_existing=True) or cut
     lease = lease_service.require_write_lease(
         session, cut_id=cut.id, user_id=user_id, lease_id=lease_id, token=lease_token
     )
@@ -1159,12 +1176,26 @@ def _persist_revision(
     command_summary: dict[str, Any],
 ) -> CutRevision:
     digest = docs.content_hash(document, bindings)
-    revision_no = (parent.revision_no + 1) if parent else 1
     existing = session.scalar(
         select(CutRevision).where(CutRevision.cut_id == cut.id, CutRevision.content_hash == digest)
     )
     if existing is not None:
         return existing
+    # Deliberately *not* `(parent.revision_no + 1)`: undo/redo (`restore_revision`)
+    # can move `head` back to an old revision and then have a genuinely new
+    # edit applied on top of it. That new edit's parent has a lower
+    # `revision_no` than revisions that already exist later in a since-
+    # abandoned branch, so `parent.revision_no + 1` can collide with one of
+    # those and trip the `uq_cut_revisions_cut_revision` unique constraint —
+    # surfacing to the client as a bogus `REVISION_CONFLICT` even though
+    # nobody else touched the cut. `revision_no` only needs to be unique per
+    # cut and roughly monotonic for display purposes, not a strict
+    # `parent + 1` counter, so basing it on the cut's current max is safe and
+    # collision-free across branches.
+    current_max = session.scalar(
+        select(func.max(CutRevision.revision_no)).where(CutRevision.cut_id == cut.id)
+    )
+    revision_no = (current_max or 0) + 1
     revision = CutRevision(
         cut_id=cut.id,
         revision_no=revision_no,

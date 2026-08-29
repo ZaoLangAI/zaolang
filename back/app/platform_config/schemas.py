@@ -312,11 +312,21 @@ MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
     "kling",
 )
 IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset({"openai", "minimax", "dashscope"})
+# Video joined this set once the OpenAI Videos API track (`/v1/videos`
+# create/retrieve/download_content`) landed in `AiHubMixMediaProvider` — not
+# every model exposed on this protocol accepts a reference (`wan2.7-
+# videoedit`'s OpenAI-shaped endpoint schema has no `input_reference`
+# field), so `image_to_video`/`video_to_video` are declared here as "this
+# protocol *can* carry them for a model that supports it", not a promise
+# every openai-protocol video endpoint can edit.
 _OPENAI_CAPABILITIES = frozenset(
     {
         Operation.TEXT_TO_IMAGE.value,
         Operation.IMAGE_TO_IMAGE.value,
         Operation.AUDIO_GENERATION.value,
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
     }
 )
 _MINIMAX_CAPABILITIES = frozenset(

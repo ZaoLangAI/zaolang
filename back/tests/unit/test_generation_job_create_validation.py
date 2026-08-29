@@ -72,11 +72,44 @@ def test_h3_video_options_accept_the_documented_range_and_aspects() -> None:
     assert request.params.video_options is not None
     assert request.params.video_options.resolution == "2K"
 
-    with pytest.raises(ValidationError, match="4-15"):
+    with pytest.raises(ValidationError, match="2-15"):
         _request(
             Operation.TEXT_TO_VIDEO,
             duration_seconds=16,
             video_options={"resolution": "2K"},
+        )
+
+
+def test_video_options_accept_the_widened_aspect_ratio_and_resolution_set() -> None:
+    """`adaptive` and `768P` both joined the legal set alongside H3's
+    original six aspect ratios and the sole `2K` resolution."""
+    adaptive = _request(
+        Operation.TEXT_TO_VIDEO,
+        duration_seconds=5,
+        aspect_ratio="adaptive",
+        video_options={"resolution": "768P", "reference_mode": "input_references"},
+    )
+    assert adaptive.params.aspect_ratio == "adaptive"
+    assert adaptive.params.video_options is not None
+    assert adaptive.params.video_options.resolution == "768P"
+
+
+def test_video_options_reject_an_aspect_ratio_outside_the_documented_set() -> None:
+    with pytest.raises(ValidationError, match="画幅必须为"):
+        _request(
+            Operation.TEXT_TO_VIDEO,
+            duration_seconds=5,
+            aspect_ratio="7:3",
+            video_options={"resolution": "2K"},
+        )
+
+
+def test_video_options_reject_a_resolution_outside_2k_and_768p() -> None:
+    with pytest.raises(ValidationError):
+        _request(
+            Operation.TEXT_TO_VIDEO,
+            duration_seconds=5,
+            video_options={"resolution": "4K"},
         )
 
 
@@ -163,7 +196,7 @@ def test_validate_generation_params_rejects_a_zero_video_duration() -> None:
 
 
 def test_validate_generation_params_rejects_h3_duration_out_of_range() -> None:
-    with pytest.raises(ValueError, match="4-15"):
+    with pytest.raises(ValueError, match="2-15"):
         validate_generation_params(
             Operation.TEXT_TO_VIDEO,
             duration_seconds=16,
@@ -225,8 +258,34 @@ def test_every_other_operation_still_requires_a_non_empty_prompt() -> None:
         )
 
 
+def test_video_to_video_requires_a_reference_unless_a_licensed_source_is_attached() -> None:
+    with pytest.raises(ValidationError, match="必须提供参考视频"):
+        _request(Operation.VIDEO_TO_VIDEO, duration_seconds=8, video_options={"reference_mode": "input_references"})
+
+    uploaded = _request(
+        Operation.VIDEO_TO_VIDEO,
+        duration_seconds=8,
+        reference_asset_ids=["ast_uploaded"],
+        video_options={"reference_mode": "input_references"},
+    )
+    assert uploaded.params.reference_asset_ids == ["ast_uploaded"]
+
+    licensed = GenerationJobCreateRequest(
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        source_work_id="wrk_licensed",
+        params=GenerationParams(
+            prompt="改成暴雨",
+            duration_seconds=8,
+            video_options=VideoGenerationOptions(reference_mode="input_references"),
+        ),
+    )
+    assert licensed.params.reference_asset_ids == []
+    assert licensed.source_work_id == "wrk_licensed"
+
+
 def test_sandbox_prepare_rejects_an_illegal_h3_duration() -> None:
-    with pytest.raises(ValueError, match="4-15"):
+    with pytest.raises(ValueError, match="2-15"):
         prepare_sandbox_generation_params(
             Operation.TEXT_TO_VIDEO,
             {

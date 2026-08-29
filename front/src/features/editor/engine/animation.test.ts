@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { pointsFor, resolveNumberAtTime } from './animation';
-import type { ElementAnimations } from './ports';
+import type { AnimationPoint, ElementAnimations } from './ports';
 
-function animations(points: Array<{ at_ticks: number; value: number }>): ElementAnimations {
+function animations(points: AnimationPoint[]): ElementAnimations {
   return { channels: { opacity: { kind: 'number', points } } };
 }
 
@@ -58,6 +58,38 @@ describe('resolveNumberAtTime', () => {
     expect(resolveNumberAtTime(anims, 'opacity', 0, 0)).toBe(100);
     expect(resolveNumberAtTime(anims, 'transform.x_milli', 0, 0)).toBe(500);
     expect(resolveNumberAtTime(anims, 'transform.y_milli', 0, 0)).toBe(0);
+  });
+
+  it('interpolates linearly when a point has no easing at all (pre-easing documents)', () => {
+    const anims = animations([
+      { at_ticks: 0, value: 0 },
+      { at_ticks: 1000, value: 100 },
+    ]);
+    expect(resolveNumberAtTime(anims, 'opacity', 500, 0)).toBeCloseTo(50, 5);
+  });
+
+  it("reshapes the ratio per the departing point's easing", () => {
+    const easeIn = animations([
+      { at_ticks: 0, value: 0, easing: 'ease_in' },
+      { at_ticks: 1000, value: 100 },
+    ]);
+    // ease_in: ratio^2, so the midpoint lags behind the linear 50.
+    expect(resolveNumberAtTime(easeIn, 'opacity', 500, 0)).toBeCloseTo(25, 5);
+
+    const easeOut = animations([
+      { at_ticks: 0, value: 0, easing: 'ease_out' },
+      { at_ticks: 1000, value: 100 },
+    ]);
+    // ease_out: 1-(1-ratio)^2, so the midpoint runs ahead of the linear 50.
+    expect(resolveNumberAtTime(easeOut, 'opacity', 500, 0)).toBeCloseTo(75, 5);
+  });
+
+  it("uses the departing (left) point's easing, not the arriving point's", () => {
+    const anims = animations([
+      { at_ticks: 0, value: 0, easing: 'linear' },
+      { at_ticks: 1000, value: 100, easing: 'ease_in' },
+    ]);
+    expect(resolveNumberAtTime(anims, 'opacity', 500, 0)).toBeCloseTo(50, 5);
   });
 });
 

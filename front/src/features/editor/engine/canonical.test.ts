@@ -448,7 +448,9 @@ describe('applyBatch — keyframes', () => {
       { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 90_000 },
     ]);
     const element = result.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
-    expect(element.animations.channels.opacity!.points).toEqual([{ at_ticks: 0, value: 90_000 }]);
+    expect(element.animations.channels.opacity!.points).toEqual([
+      { at_ticks: 0, value: 90_000, easing: 'linear' },
+    ]);
   });
 
   it('rejects an unsupported property', () => {
@@ -514,6 +516,76 @@ describe('applyBatch — keyframes', () => {
     );
     const left = withMoreKeyframes.tracks.flatMap((track) => track.elements).find((item) => item.id === 'el_clip')!;
     expect(left.animations.channels.opacity!.points).toHaveLength(1);
+  });
+
+  it('defaults easing to linear when omitted and stores an explicit easing when given', () => {
+    const result = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 0 },
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 1000, value: 100_000, easing: 'ease_in' },
+    ]);
+    const points = result.tracks.flatMap((track) => track.elements)[0]!.animations.channels.opacity!.points;
+    expect(points[0]!.easing).toBe('linear');
+    expect(points[1]!.easing).toBe('ease_in');
+  });
+
+  it('rejects an unsupported easing type', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 0, easing: 'bounce' as never },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('accepts volume as an animatable property within its set_clip_volume-matching range', () => {
+    const result = apply(withClip(emptyDocument()), [
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'volume', at_ticks: 0, value: 150_000 },
+    ]);
+    const points = result.tracks.flatMap((track) => track.elements)[0]!.animations.channels.volume!.points;
+    expect(points).toEqual([{ at_ticks: 0, value: 150_000, easing: 'linear' }]);
+  });
+
+  it('rejects a volume keyframe value outside 0-200000', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [
+        { type: 'set_keyframe', element_id: 'el_clip', property: 'volume', at_ticks: 0, value: 250_000 },
+      ]),
+    ).toThrow(BatchRolledBackError);
+  });
+});
+
+describe('applyBatch — markers', () => {
+  it('adds a marker with an explicit id and label', () => {
+    const result = apply(emptyDocument(), [
+      { type: 'add_marker', at_ticks: 1000, label: '开场', marker_id: 'mrk_1' },
+    ]);
+    expect(result.markers).toEqual([{ id: 'mrk_1', at_ticks: 1000, label: '开场' }]);
+  });
+
+  it('rejects adding a marker whose id already exists', () => {
+    const withMarker = apply(emptyDocument(), [{ type: 'add_marker', at_ticks: 0, marker_id: 'mrk_1' }]);
+    expect(() => apply(withMarker, [{ type: 'add_marker', at_ticks: 1000, marker_id: 'mrk_1' }])).toThrow(
+      BatchRolledBackError,
+    );
+  });
+
+  it('updates a marker in place and rejects updating a marker that does not exist', () => {
+    const withMarker = apply(emptyDocument(), [
+      { type: 'add_marker', at_ticks: 0, label: 'old', marker_id: 'mrk_1' },
+    ]);
+    const updated = apply(withMarker, [{ type: 'update_marker', marker_id: 'mrk_1', at_ticks: 500, label: 'new' }]);
+    expect(updated.markers).toEqual([{ id: 'mrk_1', at_ticks: 500, label: 'new' }]);
+    expect(() => apply(withMarker, [{ type: 'update_marker', marker_id: 'mrk_missing', label: 'x' }])).toThrow(
+      BatchRolledBackError,
+    );
+  });
+
+  it('removes a marker and rejects removing one that does not exist', () => {
+    const withMarker = apply(emptyDocument(), [{ type: 'add_marker', at_ticks: 0, marker_id: 'mrk_1' }]);
+    const removed = apply(withMarker, [{ type: 'remove_marker', marker_id: 'mrk_1' }]);
+    expect(removed.markers).toEqual([]);
+    expect(() => apply(withMarker, [{ type: 'remove_marker', marker_id: 'mrk_missing' }])).toThrow(
+      BatchRolledBackError,
+    );
   });
 });
 

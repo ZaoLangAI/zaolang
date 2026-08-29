@@ -41,7 +41,7 @@ import { useResource } from '@/lib/use-resource';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
 type ReferenceMode = 'input_references' | 'frame_images';
-type Orientation = 'landscape' | 'portrait';
+type Orientation = 'landscape' | 'portrait' | 'adaptive';
 /** What a video job's output is *for* — mirrors the backend's `VideoAssetKind`
  * (`back/app/models/enums.py`), the video-side equivalent of
  * `ImageGenerationStudio`'s `AssetKind`. `character_action` auto-attaches
@@ -51,11 +51,19 @@ type Orientation = 'landscape' | 'portrait';
 type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
 
 // No `1:1`: every framing the studio offers is either wider or taller than
-// square, so orientation is always a meaningful first choice.
-const LANDSCAPE_ASPECTS = ['16:9', '4:3', '21:9'] as const;
-const PORTRAIT_ASPECTS = ['9:16', '3:4'] as const;
-const ASPECTS = [...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS] as const;
-const PORTRAIT_ASPECT = '9:16';
+// square, so orientation is always a meaningful first choice. The legal set
+// here is a subset of the backend's per-model `NativeVideoModelProfile` —
+// widest is MiniMax H3's ten ratios; a narrower-profiled native model (e.g.
+// `wan2.7-videoedit`) is simply hard-filtered out of routing if a value
+// outside its own profile is submitted (see `zaolang-frontend-ui` invariant
+// #10).
+const LANDSCAPE_ASPECTS = ['16:9', '4:3', '21:9', '3:2'] as const;
+const PORTRAIT_ASPECTS = ['9:16', '3:4', '2:3', '9:21'] as const;
+// A third orientation, not a member of either bucket above: the provider
+// picks the framing itself, so it has no landscape/portrait aspect list of
+// its own — see the `aspectOptions` derivation below.
+const ADAPTIVE_ASPECT = 'adaptive';
+const ASPECTS = [...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS, ADAPTIVE_ASPECT] as const;
 const DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
 // Mirrors the backend's `GenerationParams.character_ids`/`scene_ids` cap
 // (`max_length=4`) — the picker refuses a 5th selection client-side instead
@@ -64,10 +72,10 @@ const MAX_REFERENCE_SELECTION = 4;
 
 /**
  * `/create/new` (`text_to_video` / `image_to_video` modes) and
- * `/remix/[workId]` (always `image_to_video` — remix has no image/audio path
- * yet, see that page). Keeps the style preset / creation skill / system style
- * picker exactly as it was before the split (`ImageGenerationStudio` is the
- * one shell that dropped it).
+ * `/remix/[workId]` (`video_to_video` when the source work is a video,
+ * otherwise `image_to_video` — remix has no image/audio path). Keeps the
+ * style preset / creation skill / system style picker exactly as it was
+ * before the split (`ImageGenerationStudio` is the one shell that dropped it).
  */
 export function VideoGenerationStudio({
   operation: initialOperation,
@@ -85,7 +93,7 @@ export function VideoGenerationStudio({
   linkEpisodeId,
   linkBreakpointKey,
 }: {
-  operation: 'text_to_video' | 'image_to_video';
+  operation: 'text_to_video' | 'image_to_video' | 'video_to_video';
   /** A licensed remix source. Submitted as `source_work_id`. */
   source?: StudioSource;
   /** A work the idea came from, carried over from the discover feed. */
@@ -160,6 +168,7 @@ export function VideoGenerationStudio({
       ? draftDuration
       : 8;
   });
+  const [resolution, setResolution] = useState<'2K' | '768P'>('2K');
   const [seed, setSeed] = useState('');
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>('input_references');
   const [firstFrameAssetId, setFirstFrameAssetId] = useState('');
@@ -238,13 +247,19 @@ export function VideoGenerationStudio({
     if (Object.keys(extra).length > 0) setPresetExtra((current) => ({ ...current, ...extra }));
   };
 
-  const hasVideoReference = uploads.some((asset) => asset.media_type === 'video');
+  const sourceIsVideo =
+    (source?.work.media_type ?? source?.work.current_version?.media_type) === 'video';
+  const sourceOutputAssetId = source?.work.current_version?.output_asset_id ?? null;
+  const hasVideoReference =
+    uploads.some((asset) => asset.media_type === 'video') || sourceIsVideo;
   const hasImageReference = uploads.some((asset) => asset.media_type === 'image');
   let operation: Operation = initialOperation;
   if (initialOperation === 'text_to_video') {
     if (referenceMode === 'frame_images' && firstFrameAssetId) operation = 'image_to_video';
     else if (hasVideoReference) operation = 'video_to_video';
     else if (source || hasImageReference) operation = 'image_to_video';
+  } else if (sourceIsVideo && referenceMode !== 'frame_images') {
+    operation = 'video_to_video';
   }
 
   const charactersResource = useResource<Character[]>(
@@ -273,10 +288,21 @@ export function VideoGenerationStudio({
   // with `aspect` the moment a preset/skill/style applies one directly, and
   // then the "adjust while rendering" fix for that disagreement would have to
   // run every render. Deriving it removes the disagreement instead.
-  const orientation: Orientation = (LANDSCAPE_ASPECTS as readonly string[]).includes(aspect)
-    ? 'landscape'
-    : 'portrait';
-  const aspectOptions = orientation === 'landscape' ? LANDSCAPE_ASPECTS : PORTRAIT_ASPECTS;
+  const orientation: Orientation =
+    aspect === ADAPTIVE_ASPECT
+      ? 'adaptive'
+      : (LANDSCAPE_ASPECTS as readonly string[]).includes(aspect)
+        ? 'landscape'
+        : 'portrait';
+  // `adaptive` has no aspect-specific sub-list of its own — the provider
+  // picks the framing, so there is nothing further to choose below the
+  // orientation picker once it is selected.
+  const aspectOptions: readonly string[] =
+    orientation === 'landscape'
+      ? LANDSCAPE_ASPECTS
+      : orientation === 'portrait'
+        ? PORTRAIT_ASPECTS
+        : [];
   const imageUploads = uploads.filter((asset) => asset.media_type === 'image');
   const parsedSeed = seed.trim() ? Number(seed) : undefined;
   const seedValid =
@@ -311,9 +337,15 @@ export function VideoGenerationStudio({
       prompt: prompt.trim(),
       aspectRatio: aspect,
       seed: parsedSeed,
-      referenceAssetIds: referenceMode === 'frame_images' ? [] : uploads.map((asset) => asset.id),
+      referenceAssetIds:
+        referenceMode === 'frame_images'
+          ? []
+          : [
+              ...(sourceIsVideo && sourceOutputAssetId ? [sourceOutputAssetId] : []),
+              ...uploads.map((asset) => asset.id),
+            ],
       videoOptions: {
-        resolution: '2K',
+        ...(sourceIsVideo ? {} : { resolution }),
         reference_mode: referenceMode,
         first_frame_asset_id: referenceMode === 'frame_images' ? firstFrameAssetId || null : null,
         last_frame_asset_id: referenceMode === 'frame_images' ? lastFrameAssetId || null : null,
@@ -496,9 +528,15 @@ export function VideoGenerationStudio({
           label={t('orientation')}
           value={orientation}
           onChange={(value) =>
-            setAspect(value === 'landscape' ? LANDSCAPE_ASPECTS[0] : PORTRAIT_ASPECTS[0])
+            setAspect(
+              value === 'landscape'
+                ? LANDSCAPE_ASPECTS[0]
+                : value === 'portrait'
+                  ? PORTRAIT_ASPECTS[0]
+                  : ADAPTIVE_ASPECT,
+            )
           }
-          columns={2}
+          columns={3}
           options={[
             {
               value: 'landscape' as const,
@@ -510,14 +548,21 @@ export function VideoGenerationStudio({
               label: t('orientationPortrait'),
               icon: <IconPortrait className="size-4" />,
             },
+            {
+              value: 'adaptive' as const,
+              label: t('orientationAdaptive'),
+              icon: <IconGear className="size-4" />,
+            },
           ]}
         />
-        <OptionGroup
-          label={t('aspect')}
-          value={aspect}
-          onChange={setAspect}
-          options={aspectOptions.map((value) => ({ value, label: value }))}
-        />
+        {aspectOptions.length > 0 ? (
+          <OptionGroup
+            label={t('aspect')}
+            value={aspect}
+            onChange={setAspect}
+            options={aspectOptions.map((value) => ({ value, label: value }))}
+          />
+        ) : null}
         <OptionGroup
           label={t('duration')}
           value={duration}
@@ -533,9 +578,12 @@ export function VideoGenerationStudio({
         <Select
           label={t('resolution')}
           hint={t('resolutionHint')}
-          value="2K"
-          disabled
-          options={[{ value: '2K', label: '2K' }]}
+          value={resolution}
+          onChange={(event) => setResolution(event.target.value as '2K' | '768P')}
+          options={[
+            { value: '2K', label: '2K' },
+            { value: '768P', label: '768P' },
+          ]}
         />
         <TextInput
           label={t('seed')}
@@ -628,7 +676,7 @@ export function VideoGenerationStudio({
       uploads={uploads}
       onUploaded={(asset) => setUploads((current) => [...current, asset])}
       onRemove={removeUpload}
-      isPortraitPreview={aspect === PORTRAIT_ASPECT}
+      isPortraitPreview={orientation === 'portrait'}
       canSubmit={canSubmit}
       submitting={submitting}
       onSubmit={runSubmit}

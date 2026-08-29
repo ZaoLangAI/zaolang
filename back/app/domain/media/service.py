@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
+from app.domain.licensing import service as licensing
 from app.models import (
     Asset,
     ContentFingerprint,
@@ -34,6 +35,7 @@ from app.models import (
     Profile,
     ProvenanceManifest,
     UploadSession,
+    Work,
     WorkVersion,
 )
 from app.models.base import new_id, utcnow
@@ -249,18 +251,89 @@ def list_owned_media(
     return list(session.scalars(stmt))
 
 
+def _source_version_output_id(session: Session, source_work_version_id: str | None) -> str | None:
+    if not source_work_version_id:
+        return None
+    version = session.get(WorkVersion, source_work_version_id)
+    return version.primary_output_asset_id if version else None
+
+
+def licensed_remix_source_output_id(
+    session: Session,
+    *,
+    user_id: str,
+    source_work_version_id: str | None,
+) -> str | None:
+    """The source version's primary output, if this user may remix that work.
+
+    Only that one asset is exempt from the usual owner check — a remixer
+    still cannot attach an arbitrary foreign id. Call this at submit time;
+    the worker reuses the already-resolved `source_work_version_id` without
+    re-billing or re-asserting.
+    """
+    output_id = _source_version_output_id(session, source_work_version_id)
+    if not output_id:
+        return None
+    version = session.get(WorkVersion, source_work_version_id)
+    work = session.get(Work, version.work_id) if version else None
+    if work is None:
+        return None
+    licensing.assert_remixable(work, user_id, session)
+    return output_id
+
+
+def attach_licensed_source_video(
+    session: Session,
+    *,
+    params: dict[str, Any],
+    source_work_version_id: str | None,
+) -> None:
+    """Prepend the remix source clip when the client omitted it.
+
+    Image sources are left alone — `image_to_video` still needs a still the
+    caller actually attached. Authorization is the caller's job
+    (`jobs._resolve_source_version` already ran `assert_remixable`).
+    """
+    if not source_work_version_id:
+        return
+    version = session.get(WorkVersion, source_work_version_id)
+    if version is None or not version.primary_output_asset_id:
+        return
+    asset = session.get(Asset, version.primary_output_asset_id)
+    if asset is None or asset.media_type != MediaType.VIDEO:
+        return
+    refs = list(params.get("reference_asset_ids") or [])
+    if version.primary_output_asset_id not in refs:
+        params["reference_asset_ids"] = [version.primary_output_asset_id, *refs]
+
+
+def _asset_is_usable_reference(
+    asset: Asset | None,
+    *,
+    user_id: str,
+    licensed_source_id: str | None,
+) -> bool:
+    if asset is None:
+        return False
+    if asset.owner_user_id == user_id:
+        return True
+    return bool(licensed_source_id) and asset.id == licensed_source_id
+
+
 def validate_generation_references(
     session: Session,
     *,
     user_id: str,
     operation: str,
     params: dict[str, Any],
+    source_work_version_id: str | None = None,
 ) -> None:
     """Validate ownership and media types before credits are reserved.
 
     Asset ids are user input.  Resolving them later in a worker without this
     ownership check would let a guessed private id become a signed provider
-    URL, even though the object itself never becomes public.
+    URL, even though the object itself never becomes public. The one
+    exception is a remix-licensed source version's primary output.
     """
 
     ordinary_ids = list(params.get("reference_asset_ids") or [])
@@ -276,11 +349,15 @@ def validate_generation_references(
     if not requested:
         return
 
+    licensed_source_id = licensed_remix_source_output_id(
+        session, user_id=user_id, source_work_version_id=source_work_version_id
+    )
     rows = list(session.scalars(select(Asset).where(Asset.id.in_(requested))))
     by_id = {asset.id: asset for asset in rows}
     for asset_id in requested:
-        asset = by_id.get(asset_id)
-        if asset is None or asset.owner_user_id != user_id:
+        if not _asset_is_usable_reference(
+            by_id.get(asset_id), user_id=user_id, licensed_source_id=licensed_source_id
+        ):
             raise ValidationFailed(
                 "参考素材不存在或不属于当前用户。",
                 fields={"params.reference_asset_ids": "包含不可用素材"},
@@ -332,6 +409,7 @@ def provider_references_for(
     user_id: str,
     asset_ids: Sequence[str],
     video_options: dict[str, Any] | None = None,
+    source_work_version_id: str | None = None,
 ) -> list[ProviderReference]:
     """Resolve validated user assets into provider-neutral reference inputs."""
 
@@ -345,9 +423,16 @@ def provider_references_for(
     if not ordered:
         return []
 
+    licensed_source_id = _source_version_output_id(session, source_work_version_id)
     ids = [asset_id for asset_id, _ in ordered]
-    rows = session.scalars(select(Asset).where(Asset.id.in_(ids), Asset.owner_user_id == user_id))
-    by_id = {asset.id: asset for asset in rows}
+    rows = session.scalars(select(Asset).where(Asset.id.in_(ids)))
+    by_id = {
+        asset.id: asset
+        for asset in rows
+        if _asset_is_usable_reference(
+            asset, user_id=user_id, licensed_source_id=licensed_source_id
+        )
+    }
     return [
         ProviderReference(
             object_key=by_id[asset_id].object_key,

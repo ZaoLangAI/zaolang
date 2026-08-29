@@ -28,6 +28,7 @@ def empty_document(*, width: int = 1080, height: int = 1920) -> dict[str, Any]:
         "canvas": {"width": width, "height": height, "fps_num": 30, "fps_den": 1},
         "tracks": [video_track, audio_track, caption_track, overlay_track],
         "brand_overlay": None,
+        "markers": [],
     }
 
 
@@ -92,6 +93,14 @@ def canonicalize(document: dict[str, Any]) -> dict[str, Any]:
     payload = clone_document(document)
     payload["schema_version"] = SCHEMA_VERSION
     payload["engine"] = ENGINE
+    # `markers` didn't exist before this field was introduced — backfilled
+    # transparently here for the same reason `_normalize_track` backfills
+    # `order`/`label`/`muted`: revisions are immutable snapshots with no
+    # migration path, so old stored documents upgrade on read/write instead
+    # of through a SCHEMA_VERSION bump.
+    payload["markers"] = sorted(
+        (payload.get("markers") or []), key=lambda marker: marker.get("at_ticks", 0)
+    )
     tracks = []
     for track in payload.get("tracks") or []:
         normalized = _normalize_track(track)
@@ -133,6 +142,13 @@ def validate_document(document: dict[str, Any]) -> None:
         assert_safe_ticks(int(element.get("duration_ticks") or 0), label="duration_ticks")
         if int(element.get("duration_ticks") or 0) <= 0:
             raise ValueError("元素时长必须为正。")
+    seen_markers: set[str] = set()
+    for marker in document.get("markers") or []:
+        marker_id = str(marker.get("id") or "")
+        if not marker_id or marker_id in seen_markers:
+            raise ValueError("标记点 id 缺失或重复。")
+        seen_markers.add(marker_id)
+        assert_safe_ticks(int(marker.get("at_ticks") or 0), label="at_ticks")
 
 
 def timeline_summary(document: dict[str, Any]) -> dict[str, Any]:
@@ -164,4 +180,5 @@ def timeline_summary(document: dict[str, Any]) -> dict[str, Any]:
         "duration_ticks": duration_ticks(document),
         "tracks": tracks,
         "brand_overlay": document.get("brand_overlay"),
+        "markers": document.get("markers") or [],
     }

@@ -39,6 +39,13 @@ function audioBreakpoints(document: CanonicalDocument, maxTicks: number): number
       const end = start + element.duration_ticks;
       if (start > 0 && start < maxTicks) points.add(start);
       if (end > 0 && end < maxTicks) points.add(end);
+      // A `volume` keyframe channel means `resolveAudioLayers`' resolved
+      // volume can also change *within* a clip, not just at its start/end —
+      // add each keyframe tick so the offline mix re-samples there too,
+      // instead of holding one gain value for the whole clip.
+      for (const point of element.animations.channels.volume?.points ?? []) {
+        if (point.at_ticks > 0 && point.at_ticks < maxTicks) points.add(point.at_ticks);
+      }
     }
   }
   return [...points].sort((a, b) => a - b);

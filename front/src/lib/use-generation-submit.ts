@@ -22,7 +22,7 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   seed?: number;
   referenceAssetIds: string[];
   videoOptions?: {
-    resolution: '2K';
+    resolution?: '2K' | '768P';
     reference_mode: 'input_references' | 'frame_images';
     first_frame_asset_id?: string | null;
     last_frame_asset_id?: string | null;

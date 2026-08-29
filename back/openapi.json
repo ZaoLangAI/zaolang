@@ -24841,7 +24841,7 @@
           },
           "aspect_ratio": {
             "type": "string",
-            "pattern": "^\\d{1,2}:\\d{1,2}$",
+            "pattern": "^(\\d{1,2}:\\d{1,2}|adaptive)$",
             "title": "Aspect Ratio",
             "default": "16:9"
           },
@@ -33113,6 +33113,14 @@
               }
             ],
             "title": "Brand Overlay"
+          },
+          "markers": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Markers"
           }
         },
         "type": "object",
@@ -33678,10 +33686,19 @@
       "VideoGenerationOptions": {
         "properties": {
           "resolution": {
-            "type": "string",
-            "const": "2K",
-            "title": "Resolution",
-            "default": "2K"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "2K",
+                  "768P"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
           },
           "reference_mode": {
             "type": "string",
@@ -33719,7 +33736,7 @@
         },
         "type": "object",
         "title": "VideoGenerationOptions",
-        "description": "Typed H3 options; arbitrary provider JSON and webhooks are forbidden."
+        "description": "Typed native-video options; arbitrary provider JSON and webhooks are\nforbidden. `resolution` is MiniMax H3's vocabulary (`2K`/`768P`) — a\ndifferently-profiled native model with its own resolution spelling (e.g.\nwan2.7-videoedit's `720p`/`1080p`) is simply hard-filtered out of routing\nby `router._request_constraint_failure` when this field doesn't match its\n`ProviderCapability.resolutions`, rather than this schema trying to union\nevery model's spelling into one enum."
       },
       "VideoPricingPayload": {
         "properties": {
@@ -34267,6 +34284,17 @@
                 "type": "null"
               }
             ]
+          },
+          "output_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Asset Id"
           },
           "ai_generated": {
             "type": "boolean",

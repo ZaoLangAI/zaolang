@@ -161,11 +161,12 @@ function buildClipLayer(element: TimelineElement, atTicks: number, weight: numbe
   if (!element.asset_id) return null;
   const animations = element.animations;
   const baseOpacity = resolveNumberAtTime(animations, 'opacity', atTicks, 100_000) / 100_000;
+  const resolvedVolume = resolveNumberAtTime(animations, 'volume', atTicks, element.volume_millipercent);
   return {
     asset_id: element.asset_id,
     element_id: element.id,
     sourceSeconds: elementSourceSeconds(element, atTicks),
-    volume: Math.min(1, Math.max(0, element.volume_millipercent / 100_000)),
+    volume: Math.min(1, Math.max(0, resolvedVolume / 100_000)),
     effects: element.effects,
     mask: element.mask,
     opacity: Math.min(1, Math.max(0, baseOpacity * weight)),
@@ -219,12 +220,18 @@ function toAudioLayer(
   trackId: string,
   atTicks: number,
 ): ActiveAudioLayer {
+  const resolvedVolume = resolveNumberAtTime(
+    element.animations,
+    'volume',
+    atTicks,
+    element.volume_millipercent,
+  );
   return {
     asset_id: element.asset_id as string,
     element_id: element.id,
     track_id: trackId,
     sourceSeconds: elementSourceSeconds(element, atTicks),
-    volume: Math.min(1, Math.max(0, element.volume_millipercent / 100_000)),
+    volume: Math.min(1, Math.max(0, resolvedVolume / 100_000)),
     speedFactor: Math.max(element.speed_millipercent, 1) / 100_000,
   };
 }
@@ -266,6 +273,7 @@ export class MediaPool {
   // and `seeked` events firing normally.
   private readonly host: HTMLDivElement;
   private scratch: OffscreenCanvas | null = null;
+  private scratchTainted = false;
   private effectsScratch: OffscreenCanvas | null = null;
   private wasm: WasmCompositor | null | undefined;
   private wasmDimensions: { width: number; height: number } | null = null;
@@ -311,10 +319,28 @@ export class MediaPool {
 
   /** Reused scratch surface for cover-fitting a frame before GPU upload / fallback draw. */
   scratchCanvas(width: number, height: number): OffscreenCanvas {
-    if (!this.scratch || this.scratch.width !== width || this.scratch.height !== height) {
+    if (
+      !this.scratch ||
+      this.scratch.width !== width ||
+      this.scratch.height !== height ||
+      this.scratchTainted
+    ) {
       this.scratch = new OffscreenCanvas(width, height);
+      this.scratchTainted = false;
     }
     return this.scratch;
+  }
+
+  /**
+   * A canvas's "origin-clean" flag can only ever go from clean to tainted,
+   * never back — once a cross-origin draw taints `scratch` (e.g. a stale
+   * cache entry or transient CORS failure on the source video), every later
+   * frame reusing the same instance would stay poisoned forever. Call this
+   * when tainting is detected so the next `scratchCanvas()` call replaces it
+   * with a fresh one instead of compounding the failure across the session.
+   */
+  markScratchTainted(): void {
+    this.scratchTainted = true;
   }
 
   /** A second scratch buffer for `applyClipEffects`, kept separate from `scratchCanvas` since both can be read from in the same frame. */
@@ -496,38 +522,72 @@ async function renderClipLayer(
   const asset = assets.find((item) => item.asset_id === clip.asset_id);
   if (!asset) return;
   const video = pool.video(asset.asset_id, asset.url);
-  await seekVideo(video, clip.sourceSeconds);
+  try {
+    await seekVideo(video, clip.sourceSeconds);
 
-  const scratch = pool.scratchCanvas(canvasWidth, canvasHeight);
-  const scratchCtx = scratch.getContext('2d');
-  if (!scratchCtx) return;
-  scratchCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-  drawCover(
-    scratchCtx,
-    video,
-    video.videoWidth || canvasWidth,
-    video.videoHeight || canvasHeight,
-    canvasWidth,
-    canvasHeight,
-  );
-
-  const wasm = await pool.wasmCompositorFor(canvasWidth, canvasHeight);
-  const wasmCanvas = wasm?.canvas ?? null;
-  const rendered = wasm && wasmCanvas ? wasm.renderVideoFrame(scratch) : false;
-  const renderedSource: CanvasImageSource = rendered && wasmCanvas ? wasmCanvas : scratch;
-  const hasEffects = clip.effects.length > 0 || clip.mask;
-  const finalSource = hasEffects
-    ? applyClipEffects(
-        renderedSource,
+    const scratch = pool.scratchCanvas(canvasWidth, canvasHeight);
+    const scratchCtx = scratch.getContext('2d');
+    if (!scratchCtx) return;
+    scratchCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+    // A video that hasn't buffered an actual frame yet (readyState still
+    // HAVE_NOTHING/HAVE_METADATA — a stalled network fetch, a seek that
+    // timed out in `seekVideo`, ...) makes `drawImage` throw InvalidStateError
+    // rather than silently no-op. Skip the draw and leave this frame's clip
+    // area blank instead of letting that throw escape the render loop.
+    if (video.readyState >= 2) {
+      drawCover(
+        scratchCtx,
+        video,
+        video.videoWidth || canvasWidth,
+        video.videoHeight || canvasHeight,
         canvasWidth,
         canvasHeight,
-        clip.effects,
-        clip.mask,
-        rendered ? wasm : null,
-        pool.effectsScratchCanvas(canvasWidth, canvasHeight),
-      )
-    : renderedSource;
-  drawClipTransformed(ctx, finalSource, canvasWidth, canvasHeight, clip.opacity, clip.transform);
+      );
+    }
+
+    // A cross-origin source that fails strict CORS validation (stale cache
+    // entry from a non-crossOrigin request to the same URL elsewhere, a
+    // misconfigured bucket, a mid-flight signed-URL expiry, ...) taints this
+    // canvas. Reading it back throws synchronously and cheaply here, whereas
+    // the WASM compositor's GPU texture upload can fail on a tainted source
+    // *asynchronously* in a way no try/catch around it can observe — and
+    // once that happens the WASM module's internal state is unrecoverable
+    // for the rest of the session. Detecting the taint ourselves first means
+    // the GPU path is simply skipped for this one frame (Canvas2D still
+    // draws a tainted source onto another canvas just fine) instead of ever
+    // risking that crash.
+    let tainted = false;
+    try {
+      scratchCtx.getImageData(0, 0, 1, 1);
+    } catch {
+      tainted = true;
+      pool.markScratchTainted();
+    }
+
+    const wasm = tainted ? null : await pool.wasmCompositorFor(canvasWidth, canvasHeight);
+    const wasmCanvas = wasm?.canvas ?? null;
+    const rendered = wasm && wasmCanvas ? wasm.renderVideoFrame(scratch) : false;
+    const renderedSource: CanvasImageSource = rendered && wasmCanvas ? wasmCanvas : scratch;
+    const hasEffects = clip.effects.length > 0 || clip.mask;
+    const finalSource = hasEffects
+      ? applyClipEffects(
+          renderedSource,
+          canvasWidth,
+          canvasHeight,
+          clip.effects,
+          clip.mask,
+          rendered ? wasm : null,
+          pool.effectsScratchCanvas(canvasWidth, canvasHeight),
+        )
+      : renderedSource;
+    drawClipTransformed(ctx, finalSource, canvasWidth, canvasHeight, clip.opacity, clip.transform);
+  } catch (error) {
+    // Never let one bad frame (stalled decode, an unexpected GPU error,
+    // ...) throw out of the render loop — the caller already cleared the
+    // canvas to the background color, so worst case this frame's clip area
+    // stays blank instead of freezing/crashing the whole preview.
+    console.error('[editor] renderClipLayer failed, skipping this frame', error);
+  }
 }
 
 export async function composeFrame(
