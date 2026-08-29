@@ -729,6 +729,20 @@ def test_publishing_to_a_slot_the_role_does_not_own_is_refused(db: Session) -> N
         )
 
 
+def test_planner_clarify_prompt_never_asks_about_form_fixed_or_reference_known_params() -> None:
+    """时长/分辨率/画面比例在提交创作时已经是表单必填的结构化参数
+    （`back/app/api/schemas/jobs.py`），clarify 运行时永远不会真的缺失。
+    参考素材上的主体/背景同样已知。防止提示词回退到把这些当作可追问类别。
+    """
+    prompt = planner.CLARIFY_SYSTEM_PROMPT
+    assert "时长（视频时）" not in prompt
+    for keyword in ("时长", "分辨率", "画面比例"):
+        assert keyword in prompt
+    assert "has_reference_material" in prompt
+    for keyword in ("主体", "背景"):
+        assert keyword in prompt
+
+
 def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
     """A declared slot with no caller is an editor tab that changes nothing;
     a caller using an undeclared slot cannot be edited at all."""

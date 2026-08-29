@@ -9,7 +9,7 @@ import { useTheme } from '@/components/theme/theme-provider';
 import { Avatar } from '@/components/work/avatar';
 import { OptionGroup } from '@/components/studio/option-group';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Switch, TextArea, TextInput } from '@/components/ui/field';
 import {
   IconBell,
@@ -310,24 +310,17 @@ export function SettingsShell({ me }: { me: Me }) {
         {section === 'platforms' ? <PlatformConnect /> : null}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         title={t('deleteConfirmTitle')}
         description={t('deleteConfirmBody')}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              {tActions('cancel')}
-            </Button>
-            <Button variant="danger" onClick={() => void requestData('delete')}>
-              {tActions('confirm')}
-            </Button>
-          </>
-        }
+        confirmLabel={tActions('confirm')}
+        cancelLabel={tActions('cancel')}
+        onConfirm={() => void requestData('delete')}
       >
         <p className="text-sm text-muted">{t('deleteAccountDesc')}</p>
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

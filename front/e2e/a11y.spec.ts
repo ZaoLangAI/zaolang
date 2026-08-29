@@ -9,6 +9,9 @@ import { setTheme } from './support/theme';
  * 390×844. The narrow pass is not redundant: the phone layouts move controls
  * into sheets and fixed bars, and those are exactly the constructs that lose a
  * label or trap focus.
+ *
+ * Navigations wait for `load`, not `networkidle`: Discover may keep a hero
+ * video buffer open, and a signed-in studio holds the notification stream.
  */
 
 /** Pages reachable without a session, in both themes. */
@@ -25,7 +28,7 @@ for (const theme of ['dark', 'light'] as const) {
     for (const page of PUBLIC_PAGES) {
       test(`${page.label} has no accessibility violations`, async ({ page: browserPage }, info) => {
         await setTheme(browserPage, theme);
-        await browserPage.goto(page.path, { waitUntil: 'networkidle' });
+        await browserPage.goto(page.path, { waitUntil: 'load' });
         await expectNoAxeViolations(browserPage, info, `${page.label}-${theme}`);
         await expectNoHorizontalOverflow(browserPage);
       });
@@ -34,7 +37,7 @@ for (const theme of ['dark', 'light'] as const) {
 }
 
 test('the command palette is reachable and labelled', async ({ page }, info) => {
-  await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+  await page.goto('/zh-CN/discover', { waitUntil: 'load' });
   await page.keyboard.press('Meta+k');
   // The palette is a combobox with a listbox, per the ARIA pattern — not a
   // dialog, so waiting for one would time out.
@@ -48,7 +51,7 @@ test.describe('generation studio (signed in)', () => {
   test('the style gallery dialog and more-settings panel have no violations', async ({
     page,
   }, info) => {
-    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'load' });
     await expectNoAxeViolations(page, info, 'generation-studio');
     await expectNoHorizontalOverflow(page);
 

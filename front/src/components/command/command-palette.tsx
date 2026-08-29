@@ -33,7 +33,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const tScript = useTranslations('scriptStudio');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { status, openLogin } = useSession();
+  const { requireAuth } = useSession();
 
   const [open, setOpen] = useState(() => openSignal > 0);
   const [seenSignal, setSeenSignal] = useState(openSignal);
@@ -140,10 +140,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       group: t('groupNavigate'),
       label,
       run: () => {
-        // Protected destinations still need a session; opening the login
-        // dialog beats landing the user on an empty page.
         if (
-          status !== 'authenticated' &&
           [
             'learn-publish',
             'collection',
@@ -155,7 +152,7 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
           ].includes(id)
         ) {
           close();
-          openLogin();
+          requireAuth({ label, run: () => go(path) });
           return;
         }
         go(path);
@@ -190,9 +187,8 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   }, [
     close,
     go,
-    openLogin,
+    requireAuth,
     searchable,
-    status,
     t,
     tNav,
     tScript,

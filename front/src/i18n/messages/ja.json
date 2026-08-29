@@ -2030,6 +2030,9 @@
     "diffModified": "変更",
     "diffRemoved": "削除"
   },
+  "media": {
+    "lightboxTitle": "画像を見る"
+  },
   "nav": {
     "discover": "発見",
     "create": "制作",

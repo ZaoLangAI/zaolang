@@ -59,7 +59,7 @@ export function OptionGroup<T extends string | number>({
             <label
               key={String(option.value)}
               className={cn(
-                'flex min-w-24 shrink-0 cursor-pointer flex-col gap-0.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-center transition-colors xs:min-w-0 xs:shrink',
+                'flex min-w-24 shrink-0 cursor-pointer flex-col gap-0.5 rounded-[var(--radius-sm)] border px-3 py-2.5 text-center transition-colors active:brightness-[0.96] xs:min-w-0 xs:shrink',
                 'focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--focus)]',
                 selected
                   ? 'border-primary bg-primary/10 text-text'

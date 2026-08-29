@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import { Button, IconButton } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import {
@@ -19,14 +20,19 @@ import {
   IconUpload,
   IconVideo,
 } from '@/components/ui/icons';
-import { Badge, type BadgeTone, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
+import { MediaLightbox } from '@/components/ui/media-lightbox';
+import { Badge, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character, CreationSkillStatus, GenerationJob, Page } from '@/lib/api/types';
+import type { Character, GenerationJob, Page } from '@/lib/api/types';
 import { CHARACTER_COMPLETION_PROMPT, missingReferenceViews, referenceByView } from '@/lib/characters';
+import {
+  CREATION_SKILL_STATUS_LABEL_KEY,
+  CREATION_SKILL_STATUS_TONE,
+} from '@/lib/creation-skill-status';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
 
@@ -45,26 +51,8 @@ const VIEW_LABEL_KEY: Record<ReferenceView, 'viewFront' | 'viewSide' | 'viewBack
   back: 'viewBack',
 };
 
-// Reuses `skillLibrary`'s own status vocabulary rather than duplicating it —
-// a character is a `CreationSkillCategory.CHARACTER` skill under the hood
-// (see `app.domain.characters.service.CharacterView`), so "draft / pending
-// review / published / rejected" means exactly the same thing here.
-const STATUS_TONE: Record<CreationSkillStatus, BadgeTone> = {
-  draft: 'neutral',
-  pending_review: 'amber',
-  published: 'success',
-  rejected: 'danger',
-};
-
-const STATUS_LABEL_KEY: Record<
-  CreationSkillStatus,
-  'statusDraft' | 'statusPendingReview' | 'statusPublished' | 'statusRejected'
-> = {
-  draft: 'statusDraft',
-  pending_review: 'statusPendingReview',
-  published: 'statusPublished',
-  rejected: 'statusRejected',
-};
+// Status badges reuse `CREATION_SKILL_STATUS_*` — a character is a
+// `CreationSkillCategory.CHARACTER` skill under the hood.
 
 /** Only what the form needs to render a thumbnail and send an id back. */
 interface ReferenceImage {
@@ -110,43 +98,6 @@ function slotReferences(character: Character): Record<ReferenceView, ReferenceIm
     if (asset) slots[view] = { id: asset.asset_id, url: asset.url ?? '' };
   });
   return slots;
-}
-
-/** Full-screen preview for a reference thumbnail — closes on backdrop click
- * or Escape; clicking the image itself is a no-op so inspecting it doesn't
- * accidentally dismiss it. Not portalled like `Dialog`: this page has no
- * transformed ancestor that would otherwise clip a `fixed` layer. */
-function ReferenceLightbox({ url, onClose }: { url: string | null; onClose: () => void }) {
-  useEffect(() => {
-    if (!url) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [url, onClose]);
-
-  if (!url) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-6"
-      style={{ background: 'var(--overlay)' }}
-      onMouseDown={onClose}
-    >
-      {/* A plain `img` rather than `next/image`: it sizes to its actual
-          intrinsic dimensions (unknown here), so the click-to-close backdrop
-          only excludes the real pixels of the photo, not a fixed bounding
-          box that would swallow clicks on the blank margin around it. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={url}
-        alt=""
-        onMouseDown={(event) => event.stopPropagation()}
-        className="max-h-[85vh] max-w-[90vw] rounded-[var(--radius-md)] object-contain"
-      />
-    </div>
-  );
 }
 
 /** Lets the edit form point a reference slot at an asset the user already
@@ -748,7 +699,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                               {t('noReference')}
                             </div>
                           )}
-                          <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 text-[9px] leading-tight text-white">
+                          <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-overlay px-1 text-[9px] leading-tight text-text">
                             {t(VIEW_LABEL_KEY[view])}
                           </span>
                         </div>
@@ -758,8 +709,8 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                   {character.status !== 'draft' || character.access_credits > 0 ? (
                     <div className="flex items-center gap-1.5">
                       {character.status !== 'draft' ? (
-                        <Badge tone={STATUS_TONE[character.status]}>
-                          {tSkills(STATUS_LABEL_KEY[character.status])}
+                        <Badge tone={CREATION_SKILL_STATUS_TONE[character.status]}>
+                          {tSkills(CREATION_SKILL_STATUS_LABEL_KEY[character.status])}
                         </Badge>
                       ) : null}
                       {character.access_credits > 0 ? (
@@ -791,8 +742,8 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                               className="relative size-14 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft"
                             >
                               {clip.url ? <VideoFirstFrame src={clip.url} /> : null}
-                              <span className="absolute inset-0 grid place-items-center bg-black/20">
-                                <IconVideo className="size-4 text-white" />
+                              <span className="absolute inset-0 grid place-items-center bg-overlay">
+                                <IconVideo className="size-4 text-text" />
                               </span>
                             </a>
                           ))}
@@ -878,28 +829,25 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         }}
       />
 
-      <ReferenceLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
+      <MediaLightbox
+        open={lightboxUrl !== null}
+        src={lightboxUrl}
+        onClose={() => setLightboxUrl(null)}
+      />
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onClose={closeDeleteConfirm}
         title={t('deleteConfirmTitle')}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={closeDeleteConfirm} disabled={deletingId !== null}>
-              {tActions('cancel')}
-            </Button>
-            <Button variant="danger" loading={deletingId !== null} onClick={() => void remove()}>
-              {tActions('confirm')}
-            </Button>
-          </>
-        }
+        confirmLabel={tActions('confirm')}
+        cancelLabel={tActions('cancel')}
+        busy={deletingId !== null}
+        onConfirm={() => void remove()}
       >
         <p className="text-sm text-muted">
           {deleteTarget ? t('deleteConfirmBody', { name: deleteTarget.name }) : null}
         </p>
-      </Dialog>
+      </ConfirmDialog>
 
       <Dialog
         open={publishTarget !== null}

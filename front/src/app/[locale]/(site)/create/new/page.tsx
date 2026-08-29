@@ -1,8 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 
-import { AudioGenerationStudio } from '@/components/studio/audio-generation-studio';
-import { ImageGenerationStudio } from '@/components/studio/image-generation-studio';
-import { VideoGenerationStudio } from '@/components/studio/video-generation-studio';
+import { CreateStudio } from '@/components/studio/create-studio';
 import { BackLink } from '@/components/ui/back-link';
 import { GoBackLink } from '@/components/ui/go-back-link';
 import { PageHeading } from '@/components/ui/primitives';
@@ -187,42 +185,25 @@ export default async function NewCreationPage({
         <BackLink href="/create">{t('backToCreate')}</BackLink>
       )}
       <PageHeading eyebrow={t('eyebrow')} title={title} description={description} />
-      {operation === 'audio_generation' ? (
-        <AudioGenerationStudio
-          initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
-          reference={reference ?? undefined}
-        />
-      ) : operation === 'text_to_image' ? (
-        <ImageGenerationStudio
-          initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
-          reference={reference ?? undefined}
-          initialDraft={initialDraft}
-          initialAssetKind={resolvedAssetKind}
-          initialTargetCharacterId={targetCharacterId}
-          initialTargetSceneId={targetSceneId}
-          subjectNameHint={subjectNameHint?.trim().slice(0, 60) || undefined}
-          returnTo={sanitizedReturnTo}
-          returnLinkKind={resolvedReturnLinkKind}
-          returnLinkLabel={returnLinkLabel?.trim().slice(0, 60) || undefined}
-          linkEpisodeId={linkEpisodeId}
-        />
-      ) : (
-        <VideoGenerationStudio
-          operation={operation}
-          initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
-          reference={reference ?? undefined}
-          initialDraft={initialDraft}
-          initialStyleParams={style?.params}
-          initialStyleGalleryId={style?.id}
-          initialVideoAssetKind={resolvedVideoAssetKind}
-          initialTargetCharacterId={targetCharacterId}
-          subjectNameHint={subjectNameHint?.trim().slice(0, 60) || undefined}
-          initialReferenceCharacterIds={resolvedReferenceCharacterIds}
-          initialReferenceSceneIds={resolvedReferenceSceneIds}
-          linkEpisodeId={linkEpisodeId}
-          linkBreakpointKey={linkBreakpointKey}
-        />
-      )}
+      <CreateStudio
+        operation={operation}
+        initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
+        reference={reference ?? undefined}
+        initialDraft={initialDraft}
+        style={style}
+        initialAssetKind={resolvedAssetKind}
+        initialVideoAssetKind={resolvedVideoAssetKind}
+        initialTargetCharacterId={targetCharacterId}
+        initialTargetSceneId={targetSceneId}
+        subjectNameHint={subjectNameHint?.trim().slice(0, 60) || undefined}
+        returnTo={sanitizedReturnTo}
+        returnLinkKind={resolvedReturnLinkKind}
+        returnLinkLabel={returnLinkLabel?.trim().slice(0, 60) || undefined}
+        initialReferenceCharacterIds={resolvedReferenceCharacterIds}
+        initialReferenceSceneIds={resolvedReferenceSceneIds}
+        linkEpisodeId={linkEpisodeId}
+        linkBreakpointKey={linkBreakpointKey}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { ErrorNotice } from '@/components/ui/primitives';
@@ -221,24 +222,17 @@ export function ManageSkillDialog({
         </div>
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         title={t('deleteConfirmTitle')}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              {tActions('cancel')}
-            </Button>
-            <Button variant="danger" loading={busy} onClick={() => void remove()}>
-              {tActions('confirm')}
-            </Button>
-          </>
-        }
+        confirmLabel={tActions('confirm')}
+        cancelLabel={tActions('cancel')}
+        busy={busy}
+        onConfirm={() => void remove()}
       >
         <p className="text-sm text-muted">{t('deleteConfirmBody')}</p>
-      </Dialog>
+      </ConfirmDialog>
     </Dialog>
   );
 }

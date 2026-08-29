@@ -15,6 +15,11 @@ from sqlalchemy.orm import Session
 from app.models import GenerationJob
 from app.models.enums import JobOrigin, JobStatus
 
+# Stashed by `nodes._emit(..., publish=False)` so `WorkflowRunner._suspend`
+# can commit the `AWAITING_INPUT` JobEvent together with the input-request
+# row and the status transition, then Redis-publish.
+DEFERRED_JOB_EVENT_STATE_KEY = "_deferred_job_event"
+
 
 @dataclass(slots=True)
 class PipelineOutcome:

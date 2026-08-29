@@ -6,6 +6,7 @@ import { useState } from 'react';
 
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button, IconButton } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import {
@@ -17,13 +18,17 @@ import {
   IconUpload,
   IconVideo,
 } from '@/components/ui/icons';
-import { Badge, type BadgeTone, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
+import { Badge, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { CreationSkillStatus, Scene } from '@/lib/api/types';
+import type { Scene } from '@/lib/api/types';
+import {
+  CREATION_SKILL_STATUS_LABEL_KEY,
+  CREATION_SKILL_STATUS_TONE,
+} from '@/lib/creation-skill-status';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
 
@@ -35,22 +40,6 @@ const MAX_REFERENCE_ASSETS = 4;
 // published / rejected" means exactly the same thing here. Unlike a
 // character, a scene carries no portrait-consent gate, so publishing is a
 // direct action rather than a confirmation dialog.
-const STATUS_TONE: Record<CreationSkillStatus, BadgeTone> = {
-  draft: 'neutral',
-  pending_review: 'amber',
-  published: 'success',
-  rejected: 'danger',
-};
-
-const STATUS_LABEL_KEY: Record<
-  CreationSkillStatus,
-  'statusDraft' | 'statusPendingReview' | 'statusPublished' | 'statusRejected'
-> = {
-  draft: 'statusDraft',
-  pending_review: 'statusPendingReview',
-  published: 'statusPublished',
-  rejected: 'statusRejected',
-};
 
 /** Unlike a character's reference images, a scene's reference can be a
  * generated still *or* a generated clip — `kind` picks how the thumbnail
@@ -389,8 +378,8 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                 {scene.status !== 'draft' || scene.access_credits > 0 ? (
                   <div className="flex items-center gap-1.5">
                     {scene.status !== 'draft' ? (
-                      <Badge tone={STATUS_TONE[scene.status]}>
-                        {tSkills(STATUS_LABEL_KEY[scene.status])}
+                      <Badge tone={CREATION_SKILL_STATUS_TONE[scene.status]}>
+                        {tSkills(CREATION_SKILL_STATUS_LABEL_KEY[scene.status])}
                       </Badge>
                     ) : null}
                     {scene.access_credits > 0 ? (
@@ -470,26 +459,19 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
         </Sheet>
       )}
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onClose={closeDeleteConfirm}
         title={t('deleteConfirmTitle')}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={closeDeleteConfirm} disabled={deletingId !== null}>
-              {tActions('cancel')}
-            </Button>
-            <Button variant="danger" loading={deletingId !== null} onClick={() => void remove()}>
-              {tActions('confirm')}
-            </Button>
-          </>
-        }
+        confirmLabel={tActions('confirm')}
+        cancelLabel={tActions('cancel')}
+        busy={deletingId !== null}
+        onConfirm={() => void remove()}
       >
         <p className="text-sm text-muted">
           {deleteTarget ? t('deleteConfirmBody', { name: deleteTarget.name }) : null}
         </p>
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

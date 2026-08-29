@@ -1,0 +1,17 @@
+{
+  "zh-CN": {
+    "media": {
+      "lightboxTitle": "查看图片"
+    }
+  },
+  "en": {
+    "media": {
+      "lightboxTitle": "View image"
+    }
+  },
+  "ja": {
+    "media": {
+      "lightboxTitle": "画像を見る"
+    }
+  }
+}

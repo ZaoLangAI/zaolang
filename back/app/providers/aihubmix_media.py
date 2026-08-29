@@ -239,7 +239,9 @@ class AiHubMixMediaProvider(GenerationProvider):
                 return self._submit_image(request, started)
             if self._capability_tag == Operation.VIDEO_ANALYSIS.value:
                 return self._submit_video_analysis(request, started)
-            if self._capability_tag in _VIDEO_OPERATIONS and self._protocol == "openai":
+            if self._capability_tag in _VIDEO_OPERATIONS and (
+                self._protocol == "openai" or _uses_wan_openai_edit(self._model, request)
+            ):
                 return self._submit_openai_video(request, started)
             return self._submit_video(request, started)
         except httpx.TimeoutException as exc:
@@ -517,27 +519,38 @@ class AiHubMixMediaProvider(GenerationProvider):
 
     def _submit_openai_video(self, request: GenerationRequest, started: float) -> GenerationResult:
         """`POST /v1/videos` — `videos.create(model, prompt)` in the official
-        SDK's shape. Text-to-video only: confirmed live against AiHubMix's
-        own schema endpoint that `wan2.7-videoedit`'s openai-shaped video
-        contract has no `input_reference` field at all
-        (`additionalProperties: false`) — sending one would be a guaranteed
-        400 for the one model this track ships with today, so a reference is
-        only ever attached when the caller actually supplied one, keeping
-        this compatible with a future openai-protocol model whose schema
-        does accept it.
+        SDK's shape.
+
+        `wan2.7-videoedit` with a reference is the one documented exception:
+        the MiniMax facade cannot carry Wan's media types (see
+        `_uses_wan_openai_edit`), so that case also lands here with
+        `extra_body.input.media`. Published schema still omits
+        `input_reference`; a non-Wan model only attaches that field when
+        the caller actually supplied a reference.
         """
+        _validate_native_video_request(self._model, request)
         body: dict[str, object] = {"model": self._model, "prompt": request.prompt}
         if request.duration_seconds:
             body["seconds"] = request.duration_seconds
-        reference = _first_reference(request)
-        if reference is not None:
-            url = s3.presign_get(reference.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
-            # Unverified shape — no openai-protocol model in this deployment
-            # accepts `input_reference` yet, so this has never been
-            # exercised against a live credential. Fix this once one does.
-            body["input_reference"] = (
-                {"video_url": url} if reference.media_type == "video" else {"image_url": url}
-            )
+        if _uses_wan_openai_edit(self._model, request):
+            # Live 2026-08-29: `/ai/v1/videos` `extra` is ignored by the Wan
+            # forwarder, and `input_references[].type=video` is a create-time
+            # 400. The shape that create+poll both accept is this track's
+            # `extra_body.input.media` with Wan's own enum. Do not merge
+            # `request.extra` (product fields like `sound`) into it.
+            media = _wan_edit_media(request)
+            if media:
+                body["extra_body"] = {"input": {"media": media}}
+        else:
+            reference = _first_reference(request)
+            if reference is not None:
+                url = s3.presign_get(reference.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
+                # Unverified shape — no openai-protocol model in this deployment
+                # accepts `input_reference` yet, so this has never been
+                # exercised against a live credential. Fix this once one does.
+                body["input_reference"] = (
+                    {"video_url": url} if reference.media_type == "video" else {"image_url": url}
+                )
 
         with self._client() as client:
             create = client.post(media_request_path(self._creds.base_url, "/v1/videos"), json=body)
@@ -642,7 +655,7 @@ class AiHubMixMediaProvider(GenerationProvider):
         behalf.
         """
         started = time.perf_counter()
-        if self._protocol == "openai":
+        if self._protocol == "openai" or _uses_wan_openai_edit(self._model, request):
             return self._poll_openai_video(external_task_id, request, started)
         try:
             with self._client() as client:
@@ -840,7 +853,8 @@ def build_video_payload(
         # "Unknown request parameter: \`role\`."` on every submission. AiHubMix's
         # own docs don't cover minimax-h3 at all, so this endpoint's contract
         # is only known through what's actually been verified live: `type`+
-        # `url` only, nothing else.
+        # `url` only, nothing else. `wan2.7-videoedit` with a reference
+        # does not use this field — see `_uses_wan_openai_edit`.
         body["input_references"] = [
             {
                 "type": "video_url" if ref.media_type == "video" else "image_url",
@@ -849,6 +863,61 @@ def build_video_payload(
             for ref in input_refs[:_MAX_INPUT_REFERENCES]
         ]
     return body
+
+
+def _validate_native_video_request(model: str, request: GenerationRequest) -> None:
+    """The same physical limits `build_video_payload` enforces, for the
+    OpenAI-track Wan-edit branch that never calls that builder."""
+    profile = native_video_profile(model)
+    if profile is None:
+        return
+    if not profile.min_duration_seconds <= request.duration_seconds <= profile.max_duration_seconds:
+        raise ValueError(
+            f"{model} duration must be between {profile.min_duration_seconds} and "
+            f"{profile.max_duration_seconds} seconds"
+        )
+    if request.aspect_ratio not in profile.aspect_ratios:
+        raise ValueError(f"{model} aspect ratio is unsupported: {request.aspect_ratio}")
+    if request.resolution is not None and request.resolution not in profile.resolutions:
+        raise ValueError(f"{model} resolution is unsupported: {request.resolution}")
+
+
+def _has_video_references(request: GenerationRequest) -> bool:
+    if any(ref.object_key for ref in request.references):
+        return True
+    return bool(request.reference_object_keys)
+
+
+def _uses_wan_openai_edit(model: str, request: GenerationRequest) -> bool:
+    """`wan2.7-videoedit` + a reference must leave the MiniMax facade.
+
+    `/ai/v1/videos` only accepts `input_references[].type` in
+    `{image_url, video_url, audio_url}` (live create 400 on `video`,
+    `job_01m163ththh5yer79dtmv0q85d`). The gateway then forwards that
+    type unchanged into Wan's `input.media[].type`, which only accepts
+    `video` / `reference_image` (live poll failure on `video_url`,
+    `job_01m1608wr7hm49wzdggkynz6ay`). The published `extra` field is
+    ignored for this mapping. The shape that create+completed on a live
+    credential (2026-08-29) is `POST /v1/videos` with
+    `extra_body.input.media`.
+    """
+    return model.strip().lower() == WAN_VIDEOEDIT_MODEL and _has_video_references(request)
+
+
+def _wan_edit_media(request: GenerationRequest) -> list[dict[str, str]]:
+    refs = list(request.references)
+    if not refs and request.reference_object_keys:
+        refs = [
+            ProviderReference(object_key=key, media_type="image")
+            for key in request.reference_object_keys
+        ]
+    return [
+        {
+            "type": "video" if ref.media_type == "video" else "reference_image",
+            "url": s3.presign_get(ref.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS),
+        }
+        for ref in refs[:_MAX_INPUT_REFERENCES]
+    ]
 
 
 def _first_reference(request: GenerationRequest) -> ProviderReference | None:

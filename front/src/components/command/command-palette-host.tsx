@@ -17,8 +17,6 @@ export function CommandPaletteHost() {
   const [openSignal, setOpenSignal] = useState(0);
 
   useEffect(() => {
-    if (ready) return;
-
     const onKeyDown = (event: KeyboardEvent) => {
       const isPaletteShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k';
       const target = event.target as HTMLElement | null;
@@ -34,9 +32,12 @@ export function CommandPaletteHost() {
       }
     };
 
+    // Stay subscribed after the chunk mounts: there is a gap between
+    // `ready` flipping and `CommandPalette`'s own listener attaching, and
+    // a keydown in that gap would otherwise vanish.
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [ready]);
+  }, []);
 
   useEffect(() => {
     if (ready) return;

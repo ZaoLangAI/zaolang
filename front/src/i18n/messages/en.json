@@ -2030,6 +2030,9 @@
     "diffModified": "Changed",
     "diffRemoved": "Removed"
   },
+  "media": {
+    "lightboxTitle": "View image"
+  },
   "nav": {
     "discover": "Discover",
     "create": "Create",

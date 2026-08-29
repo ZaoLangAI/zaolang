@@ -27,6 +27,7 @@
   --amber: #d9ad59;
   --success: #79d79a;
   --danger: #ef6d6d;
+  --on-danger: #1a0808;
   --focus: #ffd0c4;
 
   /* Script block legend (文案创作): four content types, not status colours —
@@ -73,6 +74,7 @@
   --amber: #8a6410;
   --success: #1d7a44;
   --danger: #b4271f;
+  --on-danger: #fff6f3;
   --focus: #7a2a14;
 
   /* Same four content-type hues as the dark block, darkened/saturated for
@@ -111,6 +113,7 @@
   --color-amber: var(--amber);
   --color-success: var(--success);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
   --color-focus: var(--focus);
   --color-script-scene: var(--script-scene);
   --color-script-action: var(--script-action);
@@ -119,6 +122,7 @@
   --color-script-breakpoint: var(--script-breakpoint);
   --color-skeleton: var(--skeleton);
   --color-track: var(--track);
+  --color-overlay: var(--overlay);
 
   --radius-sm: 10px;
   --radius-md: 16px;

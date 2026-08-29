@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
+import { inputRequestRetryMs } from '@/components/job/input-request-retry';
 import { hasMissingRequiredAnswer, QuestionField, type QuestionAnswer } from '@/components/studio/question-field';
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
@@ -26,7 +27,8 @@ type JobHttp = {
  * Every caller renders this with `key={jobId}`, so a different job is a fresh
  * mount rather than a prop change on the same instance — the `useState`
  * initializers are the reset, and the fetch effect never needs to zero out
- * the previous job's answers/error itself.
+ * the previous job's answers/error itself. A 404 while still mounted is
+ * retried (the SSE frame can land before the input-request row commits).
  */
 export function AwaitingInputPanel({
   jobId,
@@ -51,26 +53,46 @@ export function AwaitingInputPanel({
 
   useEffect(() => {
     let active = true;
-    client
-      .get<JobInputRequest>(`${basePath}/${jobId}/input-request`)
-      .then((body) => {
-        if (!active) return;
-        setRequest(body);
-        setAnswers({});
-      })
-      .catch((caught) => {
-        if (!active) return;
-        // 404 just means the job moved on between the SSE event and this
-        // fetch (already answered elsewhere, or expired) — not an error.
-        if (!(caught instanceof ApiError && caught.isNotFound)) {
-          setError(caught instanceof ApiError ? caught.message : t('awaitingInputLoadError'));
-        }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempt = 0;
+
+    const load = () => {
+      client
+        .get<JobInputRequest>(`${basePath}/${jobId}/input-request`)
+        .then((body) => {
+          if (!active) return;
+          setRequest(body);
+          setAnswers({});
+          setLoading(false);
+        })
+        .catch((caught) => {
+          if (!active) return;
+          const isNotFound = caught instanceof ApiError && caught.isNotFound;
+          attempt += 1;
+          const delay = inputRequestRetryMs({
+            attempt,
+            isNotFound,
+            cancelled: !active,
+          });
+          if (delay != null) {
+            // 404 while this panel is still mounted: the SSE frame can land
+            // before the input-request row is committed. Keep the spinner
+            // and retry; the parent unmounts us once status leaves
+            // `awaiting_input` (answered / expired / cancelled).
+            timer = setTimeout(load, delay);
+            return;
+          }
+          if (!isNotFound) {
+            setError(caught instanceof ApiError ? caught.message : t('awaitingInputLoadError'));
+          }
+          setLoading(false);
+        });
+    };
+
+    load();
     return () => {
       active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [jobId, client, basePath, t]);
 

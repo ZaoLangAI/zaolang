@@ -454,12 +454,88 @@ def test_h3_video_payload_types_input_references_and_frame_images(
         "video_url",
     ]
     assert all("role" not in item for item in payloads[0]["input_references"])
+    assert "extra" not in payloads[0]
+    assert "extra_body" not in payloads[0]
     assert "frame_images" not in payloads[0]
     assert [item["frame_type"] for item in payloads[1]["frame_images"]] == [
         "first_frame",
         "last_frame",
     ]
     assert "input_references" not in payloads[1]
+
+
+def test_wan_videoedit_with_refs_uses_openai_extra_body_media(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two live failures on the MiniMax facade, then one live complete
+    on `/v1/videos` (2026-08-29): `input_references.type=video` is a
+    create 400; `video_url` create-succeeds then Wan rejects
+    `input.media.0.type`; `/ai/v1/videos` `extra` is ignored.
+    `extra_body.input.media` with Wan's enum is the shape that finished."""
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        s3,
+        "presign_get",
+        lambda key, **kwargs: f"https://signed.invalid/{key}",
+    )
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        captured["json"] = kwargs["json"]
+        return _FakeResponse(json_body={"id": "video_wan_edit"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.VIDEO_TO_VIDEO.value, model="wan2.7-videoedit")
+    result = provider.submit(
+        _request(
+            Operation.VIDEO_TO_VIDEO.value,
+            duration_seconds=8,
+            references=[
+                ProviderReference(object_key="source.mp4", media_type="video"),
+                ProviderReference(object_key="style.png", media_type="image"),
+            ],
+        )
+    )
+
+    assert captured["url"] == "/v1/videos"
+    body = captured["json"]
+    assert body["model"] == "wan2.7-videoedit"
+    assert body["seconds"] == 8
+    assert "input_references" not in body
+    assert "input_reference" not in body
+    assert "extra" not in body
+    assert body["extra_body"]["input"]["media"] == [
+        {"type": "video", "url": "https://signed.invalid/source.mp4"},
+        {"type": "reference_image", "url": "https://signed.invalid/style.png"},
+    ]
+    assert result.pending is True
+    assert result.external_task_id == "video_wan_edit"
+
+
+def test_wan_videoedit_with_refs_polls_the_openai_video_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A task created on `/v1/videos` is 404 on `/ai/v1/tasks/{id}`
+    (live 2026-08-29). Poll must stay on the OpenAI retrieve path even
+    when the endpoint's configured protocol is still `minimax`."""
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/videos/video_wan_edit"
+        return _FakeResponse(json_body={"status": "in_progress"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.VIDEO_TO_VIDEO.value, model="wan2.7-videoedit")
+    result = provider.poll(
+        "video_wan_edit",
+        _request(
+            Operation.VIDEO_TO_VIDEO.value,
+            references=[ProviderReference(object_key="source.mp4", media_type="video")],
+        ),
+    )
+
+    assert result.pending is True
+    assert result.succeeded is False
 
 
 def test_h3_resolution_passthrough_defaults_to_2k_but_honours_768p(
@@ -514,6 +590,14 @@ def test_wan_videoedit_profile_rejects_a_duration_h3_would_accept(
 
     with pytest.raises(ValueError, match="duration must be between 2 and 10"):
         provider.submit(_request(Operation.VIDEO_TO_VIDEO.value, duration_seconds=12))
+    with pytest.raises(ValueError, match="duration must be between 2 and 10"):
+        provider.submit(
+            _request(
+                Operation.VIDEO_TO_VIDEO.value,
+                duration_seconds=12,
+                references=[ProviderReference(object_key="source.mp4", media_type="video")],
+            )
+        )
 
 
 def test_wan_videoedit_profile_has_no_default_resolution(

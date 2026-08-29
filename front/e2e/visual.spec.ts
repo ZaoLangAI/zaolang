@@ -36,7 +36,7 @@ for (const theme of ['dark', 'light'] as const) {
           const problems = watchForPageErrors(page);
           await page.setViewportSize({ width: viewport.width, height: viewport.height });
           await setTheme(page, theme);
-          await page.goto(target.path, { waitUntil: 'networkidle' });
+          await page.goto(target.path, { waitUntil: 'load' });
           await expectTheme(page, theme);
 
           await expectNoHorizontalOverflow(page);
@@ -94,7 +94,7 @@ test.describe('signed in', () => {
         const problems = watchForPageErrors(page);
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await setTheme(page, theme);
-        await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'networkidle' });
+        await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'load' });
         await expectTheme(page, theme);
 
         // Below the `lg` breakpoint the params panel — including the style
@@ -139,7 +139,7 @@ test.describe('signed in', () => {
       }, info) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await setTheme(page, theme);
-        await page.goto('/zh-CN/collection', { waitUntil: 'networkidle' });
+        await page.goto('/zh-CN/collection', { waitUntil: 'load' });
 
         const targets = await seededPaths(page);
         expect(targets.length, 'seeded work and draft').toBeGreaterThan(0);
@@ -165,7 +165,7 @@ test.describe('signed in', () => {
 test.describe('reduced motion', () => {
   test('animations are suppressed when the user asks for it', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover', { waitUntil: 'load' });
 
     // Every animated element must resolve to an effectively instant duration;
     // a leftover long transition is what makes reduced-motion users seasick.

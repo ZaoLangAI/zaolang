@@ -3,9 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
-import { ErrorNotice } from '@/components/ui/primitives';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 
@@ -45,24 +43,17 @@ export function DeleteWorkDialog({
   };
 
   return (
-    <Dialog
+    <ConfirmDialog
       open={open}
       onClose={onClose}
       title={t('deleteWorkConfirmTitle')}
-      size="sm"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            {tActions('cancel')}
-          </Button>
-          <Button variant="danger" loading={busy} onClick={() => void remove()}>
-            {tActions('confirm')}
-          </Button>
-        </>
-      }
+      confirmLabel={tActions('confirm')}
+      cancelLabel={tActions('cancel')}
+      busy={busy}
+      error={error}
+      onConfirm={() => void remove()}
     >
-      {error ? <ErrorNotice title={error} /> : null}
       <p className="text-sm text-muted">{t('deleteWorkConfirmBody')}</p>
-    </Dialog>
+    </ConfirmDialog>
   );
 }

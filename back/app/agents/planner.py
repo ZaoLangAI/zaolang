@@ -98,8 +98,15 @@ MAX_CLARIFY_OPTIONS = 6
 CLARIFY_SYSTEM_PROMPT = f"""你是造浪平台的创作规划顾问，在正式规划生成方案之前判断用户的意图描述
 是否需要补充信息，才能规划出效果可靠的生成计划。
 规则：
-- 只有在缺少主体、场景、动作、镜头/构图、时长（视频时）这几类关键信息之一，
+- 只有在缺少主体、场景、动作、镜头/构图这几类关键信息之一，
   且缺失会明显影响生成质量时才提问
+- 时长、分辨率、画面比例/画幅已经在提交创作时通过独立的表单控件必填，属于结构化参数，
+  不是这段文字描述需要补充的信息：不要就这几项提问或建议调整，文字描述里没有出现
+  秒数/分辨率/横竖屏/比例不代表缺失，不需要为此生成问题
+- 当 has_reference_material 为 true 时（这是一次基于参考图片/参考视频的二次创作、续写或改编），
+  画面主体、场景/背景外观已经由参考素材本身决定，不要就"主体是谁""背景/场景是什么"这类
+  问题追问；只问参考素材回答不了的信息，例如具体想让参考素材发生的动作/剧情变化、
+  想保留还是替换的部分、运镜或节奏要求
 - 描述已经具体、可以直接规划时，needs_clarification 为 false，questions 为空数组
 - 每个问题只问一件事，问题数量不超过 {MAX_CLARIFY_QUESTIONS} 个，按对生成质量的影响从高到低排序
 - kind 为 single_choice 或 multi_choice 时必须给 2 到 {MAX_CLARIFY_OPTIONS} 个
@@ -120,6 +127,7 @@ def clarify(
     session: Session,
     *,
     intent: str,
+    has_reference_material: bool = False,
     user_id: str | None = None,
     agent_id: str | None = None,
     job_id: str | None = None,
@@ -129,12 +137,20 @@ def clarify(
     The fallback never blocks submission: a degraded or unparseable model
     call yields `needs_clarification=False`, so a gateway hiccup never
     becomes a dead end for the author (same reasoning as `copywriter.clarify`).
+
+    `has_reference_material` is true when this job already carries a
+    reference image/video (remix source clip, attached still, first/last
+    frame). The model must not then ask who/what the subject is or what
+    the background looks like — the reference already answers that.
     """
     outcome = run_agent(
         session,
         agent_name=AgentName.PLANNER,
         system_prompt=CLARIFY_SYSTEM_PROMPT,
-        user_prompt=json.dumps({"intent": intent}, ensure_ascii=False),
+        user_prompt=json.dumps(
+            {"intent": intent, "has_reference_material": has_reference_material},
+            ensure_ascii=False,
+        ),
         fallback=dict(CLARIFY_FALLBACK),
         job_id=job_id,
         user_id=user_id,

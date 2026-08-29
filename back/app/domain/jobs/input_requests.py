@@ -175,7 +175,10 @@ def resume_context(
     checkpoint = dict(request.state_checkpoint_json or {})
     ctx.state[request.output_key] = dict(checkpoint.get("output_value") or {})
     ctx.state["attempt_number"] = int(checkpoint.get("attempt_number") or 1)
-    ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 1)
+    # 0, not 1: a planning/`copy_generate` checkpoint written before
+    # `route_score` has `route_attempts=0`. `or 1` would treat that 0 as
+    # missing and the next `route_score` increment would skip attempt 1.
+    ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 0)
     ctx.state["tried_providers"] = set(checkpoint.get("tried_providers") or ())
     ctx.state["intent_hint"] = dict(checkpoint.get("intent_hint") or {})
     return ctx

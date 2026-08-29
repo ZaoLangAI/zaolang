@@ -15,9 +15,9 @@ import { DeleteWorkDialog } from '@/components/work/delete-work-dialog';
 import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
 import { WorkCard } from '@/components/work/work-card';
 import { Button, IconButton } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconPencil, IconPlus, IconRefresh, IconTrash, IconTrashX } from '@/components/ui/icons';
-import { EmptyState, ErrorNotice } from '@/components/ui/primitives';
+import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -26,11 +26,13 @@ import type {
   Collection,
   CreationSkillSummary,
   Draft,
+  Page,
   TrashWorkSummary,
   WorkSummary,
 } from '@/lib/api/types';
-import { cn } from '@/lib/cn';
+import { cn, controlPress } from '@/lib/cn';
 import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { useResource } from '@/lib/use-resource';
 
 const TABS = [
   'all',
@@ -62,9 +64,10 @@ function draftResumeHref(draft: Draft): string {
 /**
  * Tabbed library.
  *
- * Client-side because all five buckets come from the same three requests the
- * server already made; refetching per tab would be slower and would lose the
- * scroll position.
+ * Works and drafts arrive from the server (they also feed the page stats).
+ * Bookmarks, trash, collections and skills load the first time that tab is
+ * selected — or immediately when `?tab=` deep-links there — so the first
+ * paint is not waiting on four unused lists.
  */
 export function LibraryTabs({
   initialTab,
@@ -72,24 +75,17 @@ export function LibraryTabs({
   published,
   privateWorks,
   drafts,
-  bookmarks,
-  trash,
-  collections,
-  skills,
 }: {
   initialTab?: string;
   works: WorkSummary[];
   published: WorkSummary[];
   privateWorks: WorkSummary[];
   drafts: Draft[];
-  bookmarks: WorkSummary[];
-  trash: TrashWorkSummary[];
-  collections: Collection[];
-  skills: CreationSkillSummary[];
 }) {
   const t = useTranslations('collectionPage');
   const tVisibility = useTranslations('visibility');
   const tActions = useTranslations('actions');
+  const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { notify } = useToast();
@@ -108,6 +104,15 @@ export function LibraryTabs({
   const [purgingWork, setPurgingWork] = useState<TrashWorkSummary | null>(null);
   const [restoreBusyId, setRestoreBusyId] = useState<string | null>(null);
 
+  const bookmarks = useResource<Page<WorkSummary>>(
+    tab === 'bookmarks' ? '/v1/me/bookmarks?limit=60' : null,
+  );
+  const trash = useResource<Page<TrashWorkSummary>>(tab === 'trash' ? '/v1/me/trash?limit=60' : null);
+  const collections = useResource<Page<Collection>>(
+    tab === 'collections' ? '/v1/collections' : null,
+  );
+  const skills = useResource<Page<CreationSkillSummary>>(tab === 'skills' ? '/v1/skills' : null);
+
   const labels: Record<Tab, string> = {
     all: t('tabAll'),
     published: t('tabPublished'),
@@ -125,16 +130,33 @@ export function LibraryTabs({
       : tab === 'private'
         ? privateWorks
         : tab === 'bookmarks'
-          ? bookmarks
+          ? (bookmarks.data?.items ?? [])
           : tab === 'trash'
             ? []
             : works;
   const shownDrafts = tab === 'all' || tab === 'drafts' ? drafts : [];
-  const shownTrash = tab === 'trash' ? trash : [];
+  const shownTrash = tab === 'trash' ? (trash.data?.items ?? []) : [];
+  const collectionItems = collections.data?.items ?? [];
+  const skillItems = skills.data?.items ?? [];
+  const lazyLoading =
+    (tab === 'bookmarks' && bookmarks.status === 'loading') ||
+    (tab === 'trash' && trash.status === 'loading') ||
+    (tab === 'collections' && collections.status === 'loading') ||
+    (tab === 'skills' && skills.status === 'loading');
+  const lazyFailed =
+    (tab === 'bookmarks' && bookmarks.status === 'failed') ||
+    (tab === 'trash' && trash.status === 'failed') ||
+    (tab === 'collections' && collections.status === 'failed') ||
+    (tab === 'skills' && skills.status === 'failed');
   const empty =
-    tab === 'trash'
+    !lazyLoading &&
+    (tab === 'trash'
       ? shownTrash.length === 0
-      : shownWorks.length === 0 && shownDrafts.length === 0;
+      : tab === 'collections'
+        ? collectionItems.length === 0
+        : tab === 'skills'
+          ? skillItems.length === 0
+          : shownWorks.length === 0 && shownDrafts.length === 0);
 
   const canManageWorks = tab !== 'bookmarks' && tab !== 'trash';
 
@@ -143,6 +165,7 @@ export function LibraryTabs({
     try {
       await api.post(`/v1/works/${work.id}/untrash`);
       notify(t('restoreWorkDone'), 'success');
+      trash.refetch();
       router.refresh();
     } catch {
       notify(t('restoreWorkFailed'), 'error');
@@ -182,7 +205,8 @@ export function LibraryTabs({
             aria-selected={tab === id}
             onClick={() => setTab(id)}
             className={cn(
-              '-mb-px border-b-2 pb-3 text-sm transition-colors',
+              '-mb-px border-b-2 pb-3 text-sm',
+              controlPress,
               tab === id
                 ? 'border-primary text-text'
                 : 'border-transparent text-muted hover:text-text',
@@ -194,10 +218,21 @@ export function LibraryTabs({
       </div>
 
       <div className="mt-6">
-        {tab === 'collections' ? (
+        {lazyFailed ? (
+          <ErrorNotice title={tStates('error')} />
+        ) : lazyLoading ? (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true">
+            {Array.from({ length: 4 }, (_, index) => (
+              <li key={index}>
+                <Skeleton className="aspect-video w-full" />
+                <Skeleton className="mt-2 h-4 w-2/3" />
+              </li>
+            ))}
+          </ul>
+        ) : tab === 'collections' ? (
           <>
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {collections.map((collection) => (
+              {collectionItems.map((collection) => (
                 <li key={collection.id}>
                   <CollectionTile
                     collection={collection}
@@ -218,14 +253,14 @@ export function LibraryTabs({
                 </button>
               </li>
             </ul>
-            {collections.length === 0 ? (
+            {collectionItems.length === 0 ? (
               <p className="mt-4 text-xs text-muted">{t('emptyCollectionsHint')}</p>
             ) : null}
           </>
         ) : tab === 'skills' ? (
           <>
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {skills.map((skill) => (
+              {skillItems.map((skill) => (
                 <SkillCard
                   key={skill.id}
                   skill={skill}
@@ -245,7 +280,7 @@ export function LibraryTabs({
                 </button>
               </li>
             </ul>
-            {skills.length === 0 ? (
+            {skillItems.length === 0 ? (
               <p className="mt-4 text-xs text-muted">{t('emptySkillsHint')}</p>
             ) : null}
           </>
@@ -397,7 +432,7 @@ export function LibraryTabs({
         onClose={() => setCreateOpen(false)}
         onCreated={() => {
           setCreateOpen(false);
-          router.refresh();
+          collections.refetch();
         }}
       />
 
@@ -406,7 +441,7 @@ export function LibraryTabs({
         onClose={() => setCreateSkillOpen(false)}
         onCreated={() => {
           setCreateSkillOpen(false);
-          router.refresh();
+          skills.refetch();
         }}
       />
 
@@ -416,7 +451,7 @@ export function LibraryTabs({
           onClose={() => setManagingSkill(null)}
           onChanged={() => {
             setManagingSkill(null);
-            router.refresh();
+            skills.refetch();
           }}
         />
       ) : null}
@@ -439,30 +474,23 @@ export function LibraryTabs({
           onClose={() => setEditingCollection(null)}
           onChanged={() => {
             setEditingCollection(null);
-            router.refresh();
+            collections.refetch();
           }}
         />
       ) : null}
 
-      <Dialog
+      <ConfirmDialog
         open={deletingDraft !== null}
         onClose={() => setDeletingDraft(null)}
         title={t('deleteDraftConfirmTitle')}
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setDeletingDraft(null)}>
-              {tActions('cancel')}
-            </Button>
-            <Button variant="danger" loading={draftBusy} onClick={() => void deleteDraft()}>
-              {tActions('confirm')}
-            </Button>
-          </>
-        }
+        confirmLabel={tActions('confirm')}
+        cancelLabel={tActions('cancel')}
+        busy={draftBusy}
+        error={draftError}
+        onConfirm={() => void deleteDraft()}
       >
-        {draftError ? <ErrorNotice title={draftError} /> : null}
         <p className="text-sm text-muted">{t('deleteDraftConfirmBody')}</p>
-      </Dialog>
+      </ConfirmDialog>
 
       {trashingWork ? (
         <DeleteWorkDialog
@@ -484,6 +512,7 @@ export function LibraryTabs({
           onClose={() => setPurgingWork(null)}
           onPurged={() => {
             setPurgingWork(null);
+            trash.refetch();
             router.refresh();
           }}
         />

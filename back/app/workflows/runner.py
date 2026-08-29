@@ -28,6 +28,7 @@ from app.domain.jobs.cancellation import honor_user_cancel
 from app.domain.system_log import service as system_log
 from app.models import AgentRun
 from app.models.enums import JobStatus, SystemLogLevel, SystemLogSource
+from app.realtime import publisher
 from app.workflows import registry
 from app.workflows.graph import (
     HARD_MAX_NODE_VISITS,
@@ -35,7 +36,12 @@ from app.workflows.graph import (
     WorkflowGraph,
     WorkflowNode,
 )
-from app.workflows.types import NodeResult, PipelineOutcome, WorkflowContext
+from app.workflows.types import (
+    DEFERRED_JOB_EVENT_STATE_KEY,
+    NodeResult,
+    PipelineOutcome,
+    WorkflowContext,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +176,11 @@ class WorkflowRunner:
                 ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.RUNNING)
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.AWAITING_INPUT)
             ctx.session.commit()
+            # `_emit(..., publish=False)` stashed the frame so the C-end
+            # never sees `awaiting_input` before this row and status exist.
+            frame = ctx.state.pop(DEFERRED_JOB_EVENT_STATE_KEY, None)
+            if isinstance(frame, dict):
+                publisher.publish_job_event(ctx.job.id, frame)
             logger.info(
                 "job %s suspended at node %s awaiting the author's answer", ctx.job.id, node_id
             )

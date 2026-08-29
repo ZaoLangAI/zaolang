@@ -32,7 +32,9 @@ from app.domain.moderation_queue import service as moderation_queue
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.domain.style_gallery import service as style_gallery_service
-from app.models import Draft, ProviderAttempt
+from app.llm import client as llm_client
+from app.llm.client import StreamChunk
+from app.models import Draft, JobEvent, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
@@ -47,8 +49,6 @@ from app.models.enums import (
     QualityTier,
     VideoAssetKind,
 )
-from app.llm import client as llm_client
-from app.llm.client import StreamChunk
 from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
 from app.realtime import publisher
 from app.storage import s3
@@ -70,7 +70,12 @@ from app.workflows.configs import (
     SkillContextConfig,
     VideoAnalysisGenerateConfig,
 )
-from app.workflows.types import NodeResult, PipelineOutcome, WorkflowContext
+from app.workflows.types import (
+    DEFERRED_JOB_EVENT_STATE_KEY,
+    NodeResult,
+    PipelineOutcome,
+    WorkflowContext,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,17 @@ _SANDBOX_POLL_INTERVAL_SECONDS = 2.0
 _SANDBOX_POLL_CAP_MS = 120_000
 
 
+def _event_frame(event: JobEvent) -> dict[str, object]:
+    return {
+        "sequence": event.sequence,
+        "event_type": event.event_type,
+        "status": event.status,
+        "progress": event.progress,
+        "message": event.public_message,
+        "node_id": event.node_id,
+    }
+
+
 def _emit(
     ctx: WorkflowContext,
     event_type: JobEventType,
@@ -116,11 +132,18 @@ def _emit(
     *,
     internal_code: str | None = None,
     payload: dict[str, object] | None = None,
+    publish: bool = True,
 ) -> None:
-    """Writes a real `JobEvent` and publishes it.
+    """Writes a real `JobEvent` and, by default, publishes it.
 
     A no-op when `ctx.dry_run` is set: unit tests walk a graph without a
     persisted job, so there is no event stream to attach one to.
+
+    `publish=False` only appends the row (no commit, no Redis). The
+    `AWAITING_INPUT` path uses this so `WorkflowRunner._suspend` can commit
+    the event together with the `WorkflowInputRequest` row and the status
+    transition, then publish — otherwise the C-end mounts the question
+    panel on the SSE frame and GETs `/input-request` before the row exists.
     """
     scaled = _scale_for_character_views(ctx, progress)
     ctx.state["_last_event_status"] = status.value
@@ -138,18 +161,12 @@ def _emit(
         payload=payload,
         node_id=ctx.state.get("_current_node_id"),
     )
+    frame = _event_frame(event)
+    if not publish:
+        ctx.state[DEFERRED_JOB_EVENT_STATE_KEY] = frame
+        return
     ctx.session.commit()
-    publisher.publish_job_event(
-        ctx.job.id,
-        {
-            "sequence": event.sequence,
-            "event_type": event.event_type,
-            "status": event.status,
-            "progress": event.progress,
-            "message": event.public_message,
-            "node_id": event.node_id,
-        },
-    )
+    publisher.publish_job_event(ctx.job.id, frame)
 
 
 def publish_thinking(ctx: WorkflowContext, text: str) -> None:
@@ -338,6 +355,22 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
 PLAN_STATE_KEY = "plan"
 
 
+def _has_reference_material(ctx: WorkflowContext) -> bool:
+    """True once this job carries a reference image/video — a remix's source
+    clip (`media_service.attach_licensed_source_video` prepends it into
+    `reference_asset_ids`) or an `image_to_video` first/last frame. The
+    `clarify` sub-step below must not ask "who/what is the subject" or
+    "what is the background/scene" once one of these is present — the
+    reference material already answers that, not the intent text.
+    """
+    if ctx.params.get("reference_asset_ids"):
+        return True
+    video_options = ctx.params.get("video_options") or {}
+    return bool(
+        video_options.get("first_frame_asset_id") or video_options.get("last_frame_asset_id")
+    )
+
+
 def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult:
     """Runs the planner agent's plan slot, optionally pausing for a follow-up.
 
@@ -372,6 +405,7 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
         clarify_outcome = planner.clarify(
             ctx.session,
             intent=ctx.prompt,
+            has_reference_material=_has_reference_material(ctx),
             job_id=ctx.agent_job_id,
             user_id=ctx.job.user_id,
             agent_id=config.agent_id,
@@ -393,6 +427,7 @@ def execute_planning(ctx: WorkflowContext, config: PlanningConfig) -> NodeResult
         "规划智能体有几个问题需要你确认，请回答后继续",
         18,
         payload={"question_count": len(questions)},
+        publish=False,
     )
     return NodeResult(
         port="ok",
@@ -1001,7 +1036,12 @@ def _input_checkpoint(
         "state": {
             "output_value": ctx.state.get(output_key) or {},
             "attempt_number": ctx.state.get("attempt_number", 1),
-            "route_attempts": ctx.state.get("route_attempts", 1),
+            # 0, not 1: planning/`copy_generate` can suspend before
+            # `route_score` has ever run. Defaulting to 1 here made the
+            # resumed walk increment to 2, so the first real
+            # `ProviderAttempt` was recorded as attempt 2 (live:
+            # `job_01m1608wr7hm49wzdggkynz6ay`).
+            "route_attempts": ctx.state.get("route_attempts", 0),
             "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
             "intent_hint": ctx.state.get("intent_hint") or {},
         },
@@ -1049,6 +1089,7 @@ def execute_copy_generate(ctx: WorkflowContext, config: CopyGenerateConfig) -> N
         "文案智能体有几个问题需要你确认，请回答后继续",
         30,
         payload={"question_count": len(questions)},
+        publish=False,
     )
     return NodeResult(
         port="ok",

@@ -17,7 +17,7 @@ from app.domain.credits import service as credits_service
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
-from app.models import AgentRun, JobEvent, User
+from app.models import AgentRun, GenerationJob, JobEvent, User
 from app.models.base import new_id
 from app.models.enums import (
     CharacterViewAngle,
@@ -29,6 +29,7 @@ from app.models.enums import (
     QualityTier,
     VideoAssetKind,
 )
+from app.realtime import publisher
 from app.workflows import registry
 from app.workflows.configs import (
     JoinConfig,
@@ -597,7 +598,46 @@ def test_planning_with_the_clarify_marker_suspends_the_job_awaiting_input(
     assert request.output_key == "plan"
     question_ids = [q["id"] for q in request.questions_json]
     assert question_ids == ["subject_count", "camera"]
+    # Planning suspends before `route_score`; a default of 1 here used to
+    # make the first real provider attempt land as attempt 2.
+    assert request.state_checkpoint_json.get("route_attempts") == 0
 
+    awaiting_events = list(
+        db.scalars(
+            select(JobEvent).where(
+                JobEvent.job_id == ctx.job.id, JobEvent.event_type == JobEventType.AWAITING_INPUT
+            )
+        )
+    )
+    assert len(awaiting_events) == 1
+
+
+def test_awaiting_input_is_published_only_after_the_input_request_row_exists(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The C-end mounts AwaitingInputPanel on the SSE frame, then GETs
+    `/input-request`. Publishing that frame before `suspend` + `transition`
+    made the GET 404 and the panel never retried.
+
+    Both `nodes` and `runner` look up `publisher.publish_job_event` on the
+    module at call time, so patching here captures the live Redis publish.
+    """
+    snapshots: list[tuple[bool, JobStatus | None]] = []
+
+    def capture(job_id: str, payload: dict[str, object]) -> None:
+        if payload.get("event_type") != JobEventType.AWAITING_INPUT.value:
+            return
+        request = input_requests.find_for_job(db, job_id)
+        job = db.get(GenerationJob, job_id)
+        snapshots.append((request is not None, JobStatus(job.status) if job else None))
+
+    monkeypatch.setattr(publisher, "publish_job_event", capture)
+
+    ctx = _running_job(db, author, prompt=f"{PLANNER_CLARIFY_MARKER}：香港街头斗殴")
+    outcome = WorkflowRunner(_planning_graph()).run(ctx)
+
+    assert outcome.status == JobStatus.AWAITING_INPUT
+    assert snapshots == [(True, JobStatus.AWAITING_INPUT)]
     awaiting_events = list(
         db.scalars(
             select(JobEvent).where(
@@ -627,6 +667,25 @@ def test_sandbox_planning_clarify_still_suspends_awaiting_input(db: Session, aut
     request = input_requests.find_for_job(db, ctx.job.id)
     assert request is not None
     assert [q["id"] for q in request.questions_json] == ["subject_count", "camera"]
+
+
+def test_planning_clarify_skips_subject_when_reference_material_is_present(
+    db: Session, author: User
+) -> None:
+    """A remix / video-to-video job already carries the source clip on
+    `reference_asset_ids`. The clarify slot must not then ask who/what the
+    subject is — only questions the reference cannot answer (camera here).
+    The no-reference control is `test_sandbox_planning_clarify_still_
+    suspends_awaiting_input` (`["subject_count", "camera"]`).
+    """
+    ctx = _running_job(db, author, prompt=f"{PLANNER_CLARIFY_MARKER}：把这段改成夜戏")
+    ctx.params["reference_asset_ids"] = ["ast_test"]
+    outcome = WorkflowRunner(_planning_graph()).run(ctx)
+
+    assert outcome.status == JobStatus.AWAITING_INPUT
+    request = input_requests.find_for_job(db, ctx.job.id)
+    assert request is not None
+    assert [q["id"] for q in request.questions_json] == ["camera"]
 
 
 def test_planning_clarify_from_created_reaches_awaiting_input(db: Session, author: User) -> None:

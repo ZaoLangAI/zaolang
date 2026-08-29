@@ -12,19 +12,17 @@ import {
   stageLabelKey,
   type Stage,
 } from '@/components/job/job-stages';
-import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { DevicePreview } from '@/components/media/device-preview';
 import { OutputGallery } from '@/components/media/output-gallery';
+import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
-import { TextArea, TextInput } from '@/components/ui/field';
 import { IconBranch, IconCheck, IconSparkle } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { CreationSkillDetail, GenerationJob } from '@/lib/api/types';
+import type { GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { loadAnime, useReducedMotion } from '@/lib/motion';
 import { refreshAssetUrl, refreshJobOutputUrl } from '@/lib/refresh-media-src';
@@ -135,18 +133,12 @@ export function InlineImageResult({
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
   const tStudio = useTranslations('remixPage');
-  const tSkills = useTranslations('skillLibrary');
-  const tActions = useTranslations('actions');
   const tCharacters = useTranslations('characters');
   const { notify } = useToast();
   const router = useRouter();
 
   const [retrying, setRetrying] = useState(false);
   const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
-  const [coverSkillTitle, setCoverSkillTitle] = useState('');
-  const [coverSkillDescription, setCoverSkillDescription] = useState('');
-  const [coverSkillCredits, setCoverSkillCredits] = useState(0);
-  const [coverSkillBusy, setCoverSkillBusy] = useState(false);
 
   const reached = new Set<Stage>();
   for (const event of events) {
@@ -280,36 +272,6 @@ export function InlineImageResult({
       notify(isApiError(error) ? error.message : t('cancelFailed'), 'error');
     } finally {
       setRetrying(false);
-    }
-  };
-
-  const openSaveCoverSkill = () => {
-    setCoverSkillTitle('');
-    setCoverSkillDescription('');
-    setCoverSkillCredits(0);
-    setSavingCoverSkillOpen(true);
-  };
-
-  const saveCoverSkill = async () => {
-    if (!job.output_asset_id) return;
-    const title = coverSkillTitle.trim();
-    if (!title) return;
-    setCoverSkillBusy(true);
-    try {
-      await api.post<CreationSkillDetail>('/v1/skills', {
-        title,
-        description: coverSkillDescription.trim(),
-        category: 'cover_asset',
-        cover_asset_id: job.output_asset_id,
-        params: { cover_asset_id: job.output_asset_id },
-        access_credits: coverSkillCredits,
-      });
-      notify(t('saveCoverSkillDone'), 'success');
-      setSavingCoverSkillOpen(false);
-    } catch {
-      notify(t('saveCoverSkillFailed'), 'error');
-    } finally {
-      setCoverSkillBusy(false);
     }
   };
 
@@ -494,7 +456,7 @@ export function InlineImageResult({
           </Button>
         ) : null}
         {canSaveCoverSkill ? (
-          <Button variant="secondary" size="sm" onClick={openSaveCoverSkill}>
+          <Button variant="secondary" size="sm" onClick={() => setSavingCoverSkillOpen(true)}>
             {t('saveCoverSkill')}
           </Button>
         ) : null}
@@ -505,55 +467,11 @@ export function InlineImageResult({
         ) : null}
       </div>
 
-      <Dialog
+      <SaveCoverAsSkillDialog
         open={savingCoverSkillOpen}
-        onClose={() => {
-          if (!coverSkillBusy) setSavingCoverSkillOpen(false);
-        }}
-        title={t('saveCoverSkillTitle')}
-        size="sm"
-        footer={
-          <>
-            <Button
-              variant="ghost"
-              onClick={() => setSavingCoverSkillOpen(false)}
-              disabled={coverSkillBusy}
-            >
-              {tActions('cancel')}
-            </Button>
-            <Button
-              loading={coverSkillBusy}
-              disabled={coverSkillTitle.trim().length === 0}
-              onClick={() => void saveCoverSkill()}
-            >
-              {tActions('save')}
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-xs text-muted">{t('saveCoverSkillHint')}</p>
-          <TextInput
-            label={t('saveCoverSkillTitleLabel')}
-            required
-            maxLength={80}
-            value={coverSkillTitle}
-            onChange={(event) => setCoverSkillTitle(event.target.value)}
-          />
-          <TextArea
-            label={t('saveCoverSkillDescriptionLabel')}
-            maxLength={300}
-            value={coverSkillDescription}
-            onChange={(event) => setCoverSkillDescription(event.target.value)}
-          />
-          <AccessPriceField
-            value={coverSkillCredits}
-            onChange={setCoverSkillCredits}
-            label={tSkills('priceLabel')}
-            hint={tSkills('priceHint')}
-          />
-        </div>
-      </Dialog>
+        onClose={() => setSavingCoverSkillOpen(false)}
+        outputAssetId={job.output_asset_id}
+      />
     </div>
   );
 }

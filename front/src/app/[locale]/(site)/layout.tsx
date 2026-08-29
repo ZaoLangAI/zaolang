@@ -1,9 +1,10 @@
 import { Suspense } from 'react';
 import { getTranslations, setRequestLocale } from 'next-intl/server';
 
-import { LoginDialog } from '@/components/auth/login-dialog';
+import { LoginDialogHost } from '@/components/auth/login-dialog-host';
 import { SessionProvider } from '@/components/auth/session-provider';
 import { CommandPaletteHost } from '@/components/command/command-palette-host';
+import { MotionPrefetch } from '@/components/layout/motion-prefetch';
 import { TopBar } from '@/components/layout/top-bar';
 import { NotificationCenterProvider } from '@/components/notifications/notification-center-provider';
 import { NotificationToastStack } from '@/components/notifications/notification-toast-stack';
@@ -37,8 +38,9 @@ export default async function SiteLayout({
           <main id="main" className="flex-1">
             {children}
           </main>
-          <LoginDialog />
+          <LoginDialogHost />
           <CommandPaletteHost />
+          <MotionPrefetch />
           <NotificationToastStack />
         </div>
       </NotificationCenterProvider>

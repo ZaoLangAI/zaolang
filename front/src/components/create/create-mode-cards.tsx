@@ -16,8 +16,10 @@ import {
   IconSparkle,
   IconVideo,
 } from '@/components/ui/icons';
+import { Button } from '@/components/ui/button';
 import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
+import { prefetchStudio, type StudioPrefetchMode } from '@/lib/prefetch-studio';
 
 type ModeId = 'script' | 'image_creation' | 'video_creation' | 'audio_generation';
 
@@ -108,7 +110,10 @@ export function CreateModeCards({ className }: { className?: string }) {
         return (
           <li
             key={mode.id}
-            className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow hover:shadow-raised"
+            className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface shadow-card transition-shadow hover:shadow-raised"
+            onMouseEnter={() => {
+              if (mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
+            }}
           >
             <div
               className={cn('relative aspect-[16/10] overflow-hidden bg-surface-soft', mode.accent)}
@@ -138,16 +143,20 @@ export function CreateModeCards({ className }: { className?: string }) {
               <h3 className="mt-2 text-base font-semibold">{label.title}</h3>
               <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{label.desc}</p>
 
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                fullWidth
+                className="mt-4"
+                onFocus={() => {
+                  if (mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
+                }}
                 onClick={() =>
                   requireAuth({ label: label.title, run: () => router.push(mode.href) })
                 }
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-border px-4 py-2.5 text-sm transition-colors hover:border-border-strong hover:bg-surface-soft"
               >
                 {t('start')}
                 <IconArrowRight className="size-4" />
-              </button>
+              </Button>
             </div>
           </li>
         );

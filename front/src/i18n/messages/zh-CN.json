@@ -2030,6 +2030,9 @@
     "diffModified": "改动",
     "diffRemoved": "移除"
   },
+  "media": {
+    "lightboxTitle": "查看图片"
+  },
   "nav": {
     "discover": "发现",
     "create": "创作",

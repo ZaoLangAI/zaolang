@@ -9,6 +9,11 @@ import { expectTheme, setTheme } from '../support/theme';
  *
  * Assertions go through what a user can see, so a refactor that preserves the
  * behaviour preserves the test.
+ *
+ * Navigations wait for `load`, not `networkidle`: the site shell holds the
+ * notification SSE open when signed in, and Discover's hero may keep a
+ * video buffer in flight. Either connection makes Playwright's idle wait
+ * hang for the full test timeout even though the page is already usable.
  */
 
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:3001';
@@ -35,7 +40,7 @@ async function findPublicWorkId(page: Page, title: string): Promise<string> {
  */
 async function openPublicWork(page: Page, title: string) {
   const id = await findPublicWorkId(page, title);
-  await page.goto(`/zh-CN/work/${id}`, { waitUntil: 'networkidle' });
+  await page.goto(`/zh-CN/work/${id}`, { waitUntil: 'load' });
   await expect(page).toHaveURL(/\/work\/wrk_/);
 }
 
@@ -48,7 +53,7 @@ test.describe('anonymous browsing', () => {
   test.skip('a visitor can browse the feed and open a work', async ({ page }) => {
     const problems = watchForPageErrors(page);
     await page.goto(`/zh-CN/discover?q=${encodeURIComponent(SEEDED_FREE_REMIX)}`, {
-      waitUntil: 'networkidle',
+      waitUntil: 'load',
     });
 
     await expect(page.getByText(SEEDED_FREE_REMIX).first()).toBeVisible();
@@ -63,7 +68,7 @@ test.describe('anonymous browsing', () => {
   // its empty state (`discover.emptyFeed`) instead of a `role="list"`.
   // Restore once a fixture-creation helper can publish enough works to sort.
   test.skip('the inspiration wall can be sorted by recency', async ({ page }) => {
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover', { waitUntil: 'load' });
     await page.getByRole('navigation', { name: '排序' }).getByRole('link', { name: '最新' }).click();
     await expect(page).toHaveURL(/sort=recent/);
     await expect(page.getByRole('list', { name: '灵感推荐' })).toBeVisible();
@@ -77,7 +82,7 @@ test.describe('anonymous browsing', () => {
     // the popular sort. The title still appears as the tombstone in its remix's
     // lineage — that is the point of a tombstone — so the assertion is about the
     // wall, not about the string being absent from the page.
-    await page.goto('/zh-CN/discover?q=Night Tide', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover?q=Night Tide', { waitUntil: 'load' });
     await expect(
       page.getByRole('button', { name: '预览《Night Tide (withdrawn)》', exact: true }),
     ).toHaveCount(0);
@@ -126,7 +131,7 @@ test.describe('creation', () => {
   test.use({ storageState: STATE_FILES.consumer });
 
   test('a signed-in user can configure an H3 video generation', async ({ page }) => {
-    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'load' });
 
     await page.getByLabel('说说你想怎么改').fill('雨夜霓虹下的长镜头推进');
     // Resolution and seed live in the collapsed "更多设置" section.
@@ -155,7 +160,7 @@ test.describe('creation', () => {
   });
 
   test('a signed-in user can open the text-to-image studio', async ({ page }) => {
-    await page.goto('/zh-CN/create/new?mode=image_creation', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/create/new?mode=image_creation', { waitUntil: 'load' });
     await expect(page.getByRole('heading', { name: '图片创作' })).toBeVisible();
     await expect(page.getByRole('button', { name: '生成我的版本' })).toBeVisible();
 
@@ -170,14 +175,14 @@ test.describe('creation', () => {
   // `make seed` no longer creates. Restore once a fixture-creation helper can
   // leave a real draft behind.
   test.skip('the library shows the seeded draft awaiting publication', async ({ page }) => {
-    await page.goto('/zh-CN/collection', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/collection', { waitUntil: 'load' });
     await expect(page.getByText('潮汐之上 · 未完成').first()).toBeVisible();
   });
 
   test('the shortform studio offers the clarify step and a preview-first submit', async ({
     page,
   }) => {
-    await page.goto('/zh-CN/create/short', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/create/short', { waitUntil: 'load' });
 
     await page.getByLabel('画面描述').fill('女孩在海边');
 
@@ -217,7 +222,7 @@ test.describe('creation', () => {
   // publishes. Restore once a fixture-creation helper can publish a paid
   // creation skill for the suite.
   test.skip('a locked paid skill cannot be applied without unlocking', async ({ page }) => {
-    await page.goto('/zh-CN/skills?access=paid', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/skills?access=paid', { waitUntil: 'load' });
     await expect(page.getByRole('heading', { name: SEEDED_PAID_SKILL })).toBeVisible();
     await expect(page.getByText('8 积分').first()).toBeVisible();
 
@@ -225,7 +230,7 @@ test.describe('creation', () => {
     // picker (`useStyleAndSkillPicker`) only exists on the video/audio
     // studios — `ImageGenerationStudio` deliberately has no skill picker at
     // all — so this exercises the video studio, not the image one.
-    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'load' });
     await page.getByLabel('创作技能').selectOption({ label: '黄金时刻镜头 · 8 积分' });
     const unlock = page.getByRole('dialog');
     await expect(unlock).toContainText('积分解锁');
@@ -250,7 +255,7 @@ test.describe('theme', () => {
 
   test('switching to dark from the theme menu persists', async ({ page }) => {
     await setTheme(page, 'light');
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover', { waitUntil: 'load' });
 
     // Theme has its own menu now, so it is addressed by name rather than by
     // being the only popover in the top bar.
@@ -267,7 +272,7 @@ test.describe('command palette', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test('Cmd+K opens a labelled combobox and searches', async ({ page }) => {
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover', { waitUntil: 'load' });
 
     await page.keyboard.press('Meta+k');
     const input = page.getByRole('combobox', { name: '搜索页面、作品或操作' });
@@ -282,8 +287,9 @@ test.describe('command palette', () => {
   });
 
   test('the palette navigates to a page by name', async ({ page }) => {
-    await page.goto('/zh-CN/discover', { waitUntil: 'networkidle' });
+    await page.goto('/zh-CN/discover', { waitUntil: 'load' });
     await page.keyboard.press('Meta+k');
+    await expect(page.getByRole('combobox', { name: '搜索页面、作品或操作' })).toBeVisible();
 
     await page.getByRole('option', { name: '学习', exact: true }).click();
     await expect(page).toHaveURL(/\/learn/);

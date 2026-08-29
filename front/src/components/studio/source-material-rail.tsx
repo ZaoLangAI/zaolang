@@ -6,11 +6,13 @@ import { useRef, useState } from 'react';
 
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import type { StudioSource } from '@/components/studio/generation-studio-shell';
+import { IconButton } from '@/components/ui/button';
 import { IconClose, IconSparkle, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { Link } from '@/i18n/navigation';
 import type { WorkDetail } from '@/lib/api/types';
+import { cn, controlPress } from '@/lib/cn';
 import { type Asset, uploadFile } from '@/lib/upload';
 
 /**
@@ -112,7 +114,7 @@ export function SourceMaterialRail({
               <button
                 type="button"
                 onClick={() => onSelectUpload(asset)}
-                className="block w-full text-left focus-visible:outline-2"
+                className={cn('block w-full text-left focus-visible:outline-2', controlPress)}
               >
                 <Thumb
                   url={asset.url}
@@ -127,14 +129,15 @@ export function SourceMaterialRail({
                 mediaType={asset.media_type}
               />
             )}
-            <button
-              type="button"
-              aria-label={`${t('addMaterial')} ✕`}
+            <IconButton
+              label={`${t('addMaterial')} ✕`}
+              size="sm"
+              variant="secondary"
+              className="absolute right-1.5 top-1.5 size-6 rounded-full"
               onClick={() => onRemove(asset.id)}
-              className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-surface-raised/90 text-muted hover:text-text"
             >
               <IconClose className="size-3.5" />
-            </button>
+            </IconButton>
           </li>
         ))}
 
@@ -143,7 +146,10 @@ export function SourceMaterialRail({
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={busy || uploads.length >= 9}
-            className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-border text-[11px] text-muted transition-colors hover:border-border-strong hover:text-text disabled:opacity-60"
+            className={cn(
+              'flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-border text-[11px] text-muted hover:border-border-strong hover:text-text disabled:opacity-60',
+              controlPress,
+            )}
           >
             {busy ? <Spinner className="size-4" /> : <IconUpload className="size-4" />}
             {uploads.length >= 9 ? t('materialLimit') : t('addMaterial')}

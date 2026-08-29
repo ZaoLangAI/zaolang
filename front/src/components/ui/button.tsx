@@ -3,7 +3,7 @@
 import { forwardRef } from 'react';
 
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/cn';
+import { cn, controlPress } from '@/lib/cn';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link';
 type Size = 'sm' | 'md' | 'lg';
@@ -14,7 +14,7 @@ const variants: Record<Variant, string> = {
   secondary:
     'bg-surface-soft text-text border border-border hover:bg-surface-raised hover:border-muted/40',
   ghost: 'text-muted hover:text-text hover:bg-surface-soft',
-  danger: 'bg-danger text-white hover:brightness-110',
+  danger: 'bg-danger text-on-danger hover:brightness-110',
   link: 'text-primary underline-offset-4 hover:underline px-0',
 };
 
@@ -58,7 +58,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       aria-busy={loading || undefined}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex select-none items-center justify-center font-medium transition-colors',
+        'inline-flex select-none items-center justify-center font-medium',
+        controlPress,
         'disabled:cursor-not-allowed disabled:opacity-70',
         variants[variant],
         sizes[size],
@@ -118,7 +119,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       aria-busy={loading || undefined}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex shrink-0 select-none items-center justify-center transition-colors',
+        'inline-flex shrink-0 select-none items-center justify-center',
+        controlPress,
         'disabled:cursor-not-allowed disabled:opacity-70',
         variants[variant],
         iconButtonSizes[size],

@@ -3,8 +3,12 @@
 import { useTranslations } from 'next-intl';
 
 import { Poster } from '@/components/media/poster';
-import { Badge, type BadgeTone } from '@/components/ui/primitives';
-import type { CreationSkillStatus, CreationSkillSummary } from '@/lib/api/types';
+import { Badge } from '@/components/ui/primitives';
+import type { CreationSkillSummary } from '@/lib/api/types';
+import {
+  CREATION_SKILL_STATUS_LABEL_KEY,
+  CREATION_SKILL_STATUS_TONE,
+} from '@/lib/creation-skill-status';
 import { formatCount } from '@/lib/format';
 import type { Locale } from '@/i18n/routing';
 
@@ -25,23 +29,6 @@ const CATEGORY_LABEL_KEY: Record<
   scene_asset: 'categorySceneAsset',
   cover_asset: 'categoryCoverAsset',
   other: 'categoryOther',
-};
-
-const STATUS_TONE: Record<CreationSkillStatus, BadgeTone> = {
-  draft: 'neutral',
-  pending_review: 'amber',
-  published: 'success',
-  rejected: 'danger',
-};
-
-const STATUS_LABEL_KEY: Record<
-  CreationSkillStatus,
-  'statusDraft' | 'statusPendingReview' | 'statusPublished' | 'statusRejected'
-> = {
-  draft: 'statusDraft',
-  pending_review: 'statusPendingReview',
-  published: 'statusPublished',
-  rejected: 'statusRejected',
 };
 
 /**
@@ -77,7 +64,9 @@ export function SkillCard({
         <div className="flex items-center gap-1.5">
           <Badge tone="amber">{t(CATEGORY_LABEL_KEY[skill.category])}</Badge>
           {showStatus ? (
-            <Badge tone={STATUS_TONE[skill.status]}>{t(STATUS_LABEL_KEY[skill.status])}</Badge>
+            <Badge tone={CREATION_SKILL_STATUS_TONE[skill.status]}>
+              {t(CREATION_SKILL_STATUS_LABEL_KEY[skill.status])}
+            </Badge>
           ) : null}
           {skill.access_credits > 0 ? (
             <Badge tone="primary">{t('priceCredits', { credits: skill.access_credits })}</Badge>

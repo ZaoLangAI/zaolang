@@ -1,15 +1,18 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
+import { Poster } from '@/components/media/poster';
+import { IconButton } from '@/components/ui/button';
+import { IconChevronLeft, IconChevronRight } from '@/components/ui/icons';
+import { Skeleton } from '@/components/ui/primitives';
 import { WorkInfoPanel } from '@/components/work/work-info-panel';
 import { WorkStage } from '@/components/work/work-stage';
-import { IconChevronLeft, IconChevronRight } from '@/components/ui/icons';
 import { api } from '@/lib/api/client';
-import type { WorkDetail } from '@/lib/api/types';
-import { cn } from '@/lib/cn';
+import type { WorkDetail, WorkSummary } from '@/lib/api/types';
+import { cn, controlPress } from '@/lib/cn';
 import { useReducedMotion } from '@/lib/motion';
 
 /** Long enough to read a card, short enough that the rotation still feels alive. */
@@ -45,54 +48,91 @@ function slideTransform(offset: number): string {
   return `translate3d(${sign * SIDE_TRANSLATE_X_PCT}%, 0, ${-SIDE_TRANSLATE_Z_PX}px) rotateY(${-sign * SIDE_ROTATE_DEG}deg) scale(${SIDE_SCALE})`;
 }
 
+function neighborIds(slides: WorkSummary[], activeIndex: number): string[] {
+  const count = slides.length;
+  if (count === 0) return [];
+  const ids: string[] = [];
+  for (let workIndex = 0; workIndex < count; workIndex += 1) {
+    if (Math.abs(signedOffset(workIndex, activeIndex, count)) <= OFFSET_RANGE) {
+      ids.push(slides[workIndex]!.id);
+    }
+  }
+  return ids;
+}
+
 /**
  * The discover hero: a 3D "coverflow" carousel of currently popular works.
  *
- * Video and info pane share one transform and rotate as a single rigid card
- * — that's what reads as a stack of ad cards turning in space, rather than
- * two unrelated slideshows that happen to share a page. Only the active card
- * and its immediate neighbours are mounted, so at most three video players
- * ever exist in the DOM at once.
+ * The RSC only seeds the first slide's detail. Neighbours load as they enter
+ * the three-up window; only the active card mounts a `WorkStage` so at most
+ * one video player is live.
  */
-export function HeroCarousel({ works }: { works: WorkDetail[] }) {
+export function HeroCarousel({
+  slides,
+  initialDetails,
+}: {
+  slides: WorkSummary[];
+  initialDetails: Record<string, WorkDetail>;
+}) {
   const t = useTranslations('discover');
   const reducedMotion = useReducedMotion();
   const { status } = useSession();
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [details, setDetails] = useState<Record<string, WorkDetail>>(initialDetails);
+  const detailsRef = useRef(details);
+  detailsRef.current = details;
+  const requestedRef = useRef(new Set(Object.keys(initialDetails)));
 
-  // Only the active card and its immediate neighbours stay mounted (see
-  // below), so a card's own `bookmarked` state resets to `work.viewer_bookmarked`
-  // every time it rotates back into range. Tracking the latest toggle here,
-  // outside the card's lifetime, is what makes a bookmark stick through a
-  // full rotation instead of reverting the moment the card is remounted.
   const [bookmarkOverrides, setBookmarkOverrides] = useState<Record<string, boolean>>({});
 
-  const count = works.length;
-
-  // A filter change swaps in a different set of works; adjusted during render
-  // (rather than in an effect) so the stale index never paints, even for a
-  // single frame. Keyed on identity, not length, so a same-sized reshuffle
-  // still resets to the first slide.
-  const worksKey = works.map((work) => work.id).join('|');
-  const [trackedWorksKey, setTrackedWorksKey] = useState(worksKey);
-  if (trackedWorksKey !== worksKey) {
-    setTrackedWorksKey(worksKey);
+  const count = slides.length;
+  const slidesKey = slides.map((slide) => slide.id).join('|');
+  const [trackedSlidesKey, setTrackedSlidesKey] = useState(slidesKey);
+  if (trackedSlidesKey !== slidesKey) {
+    setTrackedSlidesKey(slidesKey);
     setIndex(0);
+    setDetails(initialDetails);
+    requestedRef.current = new Set(Object.keys(initialDetails));
   }
 
-  // The hero is fetched from the server *without* the viewer's session, so it
-  // stays cacheable — `work.viewer_bookmarked` on every card is really "was
-  // this bookmarked by nobody in particular". Once the session resolves in
-  // the browser, re-check each card against the signed-in viewer so a
-  // bookmark made in an earlier visit still shows up after a reload, not
-  // just across an in-page rotation.
+  const mountedIds = useMemo(() => neighborIds(slides, index), [slides, index]);
+  const mountedKey = mountedIds.join('|');
+
   useEffect(() => {
-    if (status !== 'authenticated' || worksKey === '') return;
+    const missing = mountedIds.filter((id) => !requestedRef.current.has(id));
+    if (missing.length === 0) return;
+    for (const id of missing) requestedRef.current.add(id);
     let cancelled = false;
     void Promise.all(
-      worksKey.split('|').map(async (workId) => {
+      missing.map(async (workId) => {
+        try {
+          return await api.get<WorkDetail>(`/v1/works/${workId}`);
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setDetails((current) => {
+        const next = { ...current };
+        for (const work of results) {
+          if (work) next[work.id] = work;
+        }
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mountedIds]);
+
+  useEffect(() => {
+    if (status !== 'authenticated' || mountedKey === '') return;
+    let cancelled = false;
+    void Promise.all(
+      mountedKey.split('|').map(async (workId) => {
         try {
           const detail = await api.get<WorkDetail>(`/v1/works/${workId}`);
           return [workId, detail.viewer_bookmarked] as const;
@@ -113,7 +153,7 @@ export function HeroCarousel({ works }: { works: WorkDetail[] }) {
     return () => {
       cancelled = true;
     };
-  }, [status, worksKey]);
+  }, [status, mountedKey]);
 
   useEffect(() => {
     if (count <= 1 || paused || reducedMotion) return;
@@ -135,29 +175,28 @@ export function HeroCarousel({ works }: { works: WorkDetail[] }) {
         if (!containerRef.current?.contains(event.relatedTarget as Node)) setPaused(false);
       }}
     >
-      {/* The clip and the 3D context are deliberately two elements, not one:
-          Safari drops the perspective transform to a blank box when
-          `overflow-hidden` and `perspective`/`transform-3d` land on the same
-          element, so the outer div only clips and the inner one only tilts. */}
       <div className={cn('relative overflow-hidden', CARD_HEIGHT)}>
         <div
           role="group"
           aria-label={t('featuredCarousel')}
           className="relative size-full perspective-distant transform-3d"
         >
-          {works.map((work, workIndex) => {
+          {slides.map((slide, workIndex) => {
             const offset = signedOffset(workIndex, index, count);
             if (Math.abs(offset) > OFFSET_RANGE) return null;
             const active = offset === 0;
-            const bookmarkOverride = bookmarkOverrides[work.id];
+            const detail = details[slide.id];
+            const bookmarkOverride = bookmarkOverrides[slide.id];
             const cardWork =
-              bookmarkOverride === undefined
-                ? work
-                : { ...work, viewer_bookmarked: bookmarkOverride };
+              detail === undefined
+                ? undefined
+                : bookmarkOverride === undefined
+                  ? detail
+                  : { ...detail, viewer_bookmarked: bookmarkOverride };
 
             return (
               <div
-                key={work.id}
+                key={slide.id}
                 inert={active ? undefined : true}
                 aria-hidden={active ? undefined : true}
                 className={cn(
@@ -172,19 +211,39 @@ export function HeroCarousel({ works }: { works: WorkDetail[] }) {
               >
                 <div className="flex h-full gap-3 sm:gap-5">
                   <div className="h-full flex-[3] overflow-hidden rounded-[var(--radius-lg)]">
-                    <WorkStage work={cardWork} lazyMedia fill className="h-full" />
+                    {active && cardWork ? (
+                      <WorkStage work={cardWork} lazyMedia fill className="h-full" />
+                    ) : (
+                      <Poster
+                        src={slide.cover_url}
+                        alt={slide.title}
+                        aspect="fill"
+                        className="h-full rounded-none border-0"
+                        mediaType={slide.media_type}
+                        priority={active}
+                      />
+                    )}
                   </div>
                   <aside
                     tabIndex={0}
                     className="h-full min-w-0 flex-[2] overflow-y-auto rounded-[var(--radius-lg)] border border-border bg-surface p-4 lg:p-6"
                   >
-                    <WorkInfoPanel
-                      work={cardWork}
-                      compact
-                      onBookmarkedChange={(next) =>
-                        setBookmarkOverrides((current) => ({ ...current, [work.id]: next }))
-                      }
-                    />
+                    {cardWork ? (
+                      <WorkInfoPanel
+                        work={cardWork}
+                        compact
+                        onBookmarkedChange={(next) =>
+                          setBookmarkOverrides((current) => ({ ...current, [slide.id]: next }))
+                        }
+                      />
+                    ) : (
+                      <div className="flex flex-col gap-3" aria-busy="true">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-7 w-[80%]" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-4 w-[66%]" />
+                      </div>
+                    )}
                   </aside>
                 </div>
               </div>
@@ -195,39 +254,42 @@ export function HeroCarousel({ works }: { works: WorkDetail[] }) {
 
       {count > 1 ? (
         <div className="mt-4 flex items-center justify-center gap-4">
-          <button
-            type="button"
-            aria-label={t('previousFeatured')}
+          <IconButton
+            variant="secondary"
+            size="sm"
+            label={t('previousFeatured')}
             onClick={() => goTo(index - 1)}
-            className="inline-flex size-9 items-center justify-center rounded-full border border-border text-muted transition-colors hover:border-primary/40 hover:text-text focus-visible:outline-2"
+            className="rounded-full"
           >
             <IconChevronLeft className="size-5" />
-          </button>
+          </IconButton>
 
           <div className="flex gap-2">
-            {works.map((work, tileIndex) => (
+            {slides.map((slide, tileIndex) => (
               <button
-                key={work.id}
+                key={slide.id}
                 type="button"
                 aria-label={t('goToSlide', { index: tileIndex + 1 })}
                 aria-current={tileIndex === index ? 'true' : undefined}
                 onClick={() => goTo(tileIndex)}
                 className={cn(
-                  'h-2 rounded-full transition-all',
+                  'h-2 rounded-full',
+                  controlPress,
                   tileIndex === index ? 'w-6 bg-primary' : 'w-2 bg-border hover:bg-muted/50',
                 )}
               />
             ))}
           </div>
 
-          <button
-            type="button"
-            aria-label={t('nextFeatured')}
+          <IconButton
+            variant="secondary"
+            size="sm"
+            label={t('nextFeatured')}
             onClick={() => goTo(index + 1)}
-            className="inline-flex size-9 items-center justify-center rounded-full border border-border text-muted transition-colors hover:border-primary/40 hover:text-text focus-visible:outline-2"
+            className="rounded-full"
           >
             <IconChevronRight className="size-5" />
-          </button>
+          </IconButton>
         </div>
       ) : null}
     </div>

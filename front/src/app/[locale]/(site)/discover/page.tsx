@@ -71,20 +71,21 @@ async function DiscoverHero({ filters }: { filters: Filters }) {
     },
   })) ?? { items: [] };
 
-  // The carousel shows several prominent works in full. Fetching each detail
-  // separately is what gives the panel its lineage, licence and reusable
-  // parameters. Public fetch keeps the hero cacheable — like/bookmark state is
-  // filled in by the client session.
-  const details = await Promise.all(
-    feed.items.map((item) => serverFetchOrNull<WorkDetail>(`/v1/works/${item.id}`)),
-  );
-  const featured = details.filter((work): work is WorkDetail => work !== null);
-  if (featured.length === 0) return null;
+  // Only the first slide's detail is resolved here so the wall is not held
+  // behind five extra round trips. Neighbours load as the carousel rotates.
+  const first = feed.items[0];
+  const firstDetail = first
+    ? await serverFetchOrNull<WorkDetail>(`/v1/works/${first.id}`)
+    : null;
+  if (feed.items.length === 0) return null;
 
   return (
     <section>
       <SectionHeading title={t('featuredLabel')} />
-      <HeroCarousel works={featured} />
+      <HeroCarousel
+        slides={feed.items}
+        initialDetails={firstDetail ? { [firstDetail.id]: firstDetail } : {}}
+      />
     </section>
   );
 }

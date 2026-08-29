@@ -290,7 +290,9 @@ def _planner(prompt: str) -> dict[str, Any]:
     # `plan`, `clarify` and `asset_plan` share one agent identity, so dispatch
     # tells them apart by shape: `plan`'s user turn always carries
     # `requested_operation` (even when its value is `None`), `asset_plan`'s
-    # always carries `asset_kind`, `clarify`'s carries only `intent`.
+    # always carries `asset_kind`. `clarify` never carries either — it may
+    # also include `has_reference_material`, which must not be treated as a
+    # plan/asset_plan discriminator.
     try:
         payload = json.loads(prompt)
     except (TypeError, ValueError):
@@ -298,7 +300,7 @@ def _planner(prompt: str) -> dict[str, Any]:
     if isinstance(payload, dict) and "asset_kind" in payload:
         return _planner_asset_plan(payload)
     if isinstance(payload, dict) and "requested_operation" not in payload:
-        return _planner_clarify(str(payload.get("intent", "")))
+        return _planner_clarify(payload)
     return _planner_plan(prompt)
 
 
@@ -320,37 +322,40 @@ def _planner_plan(prompt: str) -> dict[str, Any]:
     }
 
 
-def _planner_clarify(text: str) -> dict[str, Any]:
+def _planner_clarify(payload: dict[str, Any]) -> dict[str, Any]:
     """Mirrors `planner.CLARIFY_SYSTEM_PROMPT`'s minimal-info check.
 
     See `PLANNER_CLARIFY_MARKER` for why this is a marker rather than the
-    length threshold `_copy_clarify` uses.
+    length threshold `_copy_clarify` uses. When `has_reference_material` is
+    set the subject is already on the reference clip, so that question is
+    dropped — same rule as the live prompt.
     """
+    text = str(payload.get("intent", ""))
     if PLANNER_CLARIFY_MARKER not in text:
         return {"needs_clarification": False, "questions": []}
-    return {
-        "needs_clarification": True,
-        "questions": [
-            {
-                "id": "subject_count",
-                "kind": "single_choice",
-                "prompt": "画面里大约有多少个主体？",
-                "options": [
-                    {"value": "one", "label": "1 个"},
-                    {"value": "few", "label": "2-5 个"},
-                    {"value": "crowd", "label": "5 个以上"},
-                ],
-                "required": True,
-            },
-            {
-                "id": "camera",
-                "kind": "free_text",
-                "prompt": "希望用什么镜头语言呈现？",
-                "options": [],
-                "required": False,
-            },
-        ],
-    }
+    questions: list[dict[str, Any]] = [
+        {
+            "id": "subject_count",
+            "kind": "single_choice",
+            "prompt": "画面里大约有多少个主体？",
+            "options": [
+                {"value": "one", "label": "1 个"},
+                {"value": "few", "label": "2-5 个"},
+                {"value": "crowd", "label": "5 个以上"},
+            ],
+            "required": True,
+        },
+        {
+            "id": "camera",
+            "kind": "free_text",
+            "prompt": "希望用什么镜头语言呈现？",
+            "options": [],
+            "required": False,
+        },
+    ]
+    if payload.get("has_reference_material"):
+        questions = [q for q in questions if q["id"] != "subject_count"]
+    return {"needs_clarification": bool(questions), "questions": questions}
 
 
 # Keyed by `character_view` for `asset_kind == "character"`, by `asset_kind`

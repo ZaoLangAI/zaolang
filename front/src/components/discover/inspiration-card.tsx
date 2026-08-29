@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/primitives';
 import { IconHeart, IconTombstone } from '@/components/ui/icons';
 import type { Locale } from '@/i18n/routing';
 import type { WorkSummary } from '@/lib/api/types';
-import { cn } from '@/lib/cn';
+import { cn, controlPress } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { useRevealOnView } from '@/lib/use-reveal';
 
@@ -52,7 +52,10 @@ export function InspirationCard({
         type="button"
         onClick={() => onOpen(work)}
         aria-label={tDiscover('openPreview', { title: work.title })}
-        className="block w-full rounded-[var(--radius-md)] text-left focus-visible:outline-2"
+        className={cn(
+          'block w-full rounded-[var(--radius-md)] text-left focus-visible:outline-2',
+          controlPress,
+        )}
       >
         <Poster
           src={work.cover_url}
