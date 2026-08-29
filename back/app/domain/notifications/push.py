@@ -4,7 +4,7 @@
 接口契约与调用点已经就位——接真实 APNs 只需要替换这一个函数的函数体，换成
 `aioapns`/`httpx` 直连 `api.push.apple.com` 的 HTTP/2 请求，调用点不用动。
 
-创作类通知（生成任务 / 短剧导出）按 `(user_id, target_type, target_id)` upsert
+创作类通知（生成任务 / 短剧导出 / 草稿发布审核）按 `(user_id, target_type, target_id)` upsert
 同一行，随记录状态更新；社交与审核仍走 `notify()` 插入。
 """
 
@@ -23,6 +23,7 @@ from app.models import (
     CutRevision,
     DeliveryVariant,
     Device,
+    Draft,
     DramaEpisode,
     EditorExport,
     EpisodeCut,
@@ -49,6 +50,7 @@ DRAMA_EXPORT_OPERATION = "drama_export"
 CREATION_TARGET_JOB = "generation_job"
 CREATION_TARGET_EXPORT = "editor_export"
 CREATION_TARGET_SCRIPT = "episode_script"
+CREATION_TARGET_DRAFT = "draft"
 
 _JOB_ACTIONABLE = frozenset(
     {
@@ -190,6 +192,39 @@ def sync_script_notification(
         target_id=episode.id,
         bump_unread=bump,
         dispatch_push=bump,
+    )
+
+
+def sync_draft_publish_notification(
+    session: Session,
+    *,
+    draft: Draft,
+    published: bool,
+    work_id: str | None = None,
+    public_message: str | None = None,
+) -> Notification:
+    """Upserts the one notification that tracks this draft's publish review."""
+    if published:
+        ntype = NotificationType.DRAFT_PUBLISHED
+        title_key = "notification.draft_published"
+    else:
+        ntype = NotificationType.DRAFT_PUBLISH_REJECTED
+        title_key = "notification.draft_publish_rejected"
+    payload: dict[str, Any] = {"title": draft.title or "", "draft_id": draft.id}
+    if work_id:
+        payload["work_id"] = work_id
+    if public_message:
+        payload["public_message"] = public_message
+    return sync_creation_notification(
+        session,
+        user_id=draft.user_id,
+        type=ntype,
+        title_key=title_key,
+        payload=payload,
+        target_type=CREATION_TARGET_DRAFT,
+        target_id=draft.id,
+        bump_unread=True,
+        dispatch_push=True,
     )
 
 

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { TextArea, TextInput } from '@/components/ui/field';
 import { IconSparkle } from '@/components/ui/icons';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
+import { useToast } from '@/components/ui/toast';
 import { OptionGroup } from '@/components/studio/option-group';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -19,8 +20,9 @@ import { formatDate } from '@/lib/format';
 import { refreshDraftOutputUrl } from '@/lib/refresh-media-src';
 
 interface PublishResult {
-  work_id: string;
-  royalties_paid: Array<Record<string, unknown>>;
+  status: 'pending';
+  draft_id: string;
+  work_id?: string | null;
 }
 
 const VISIBILITIES: Visibility[] = ['public_remixable', 'public_view_only', 'private'];
@@ -70,6 +72,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
   const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const { notify } = useToast();
 
   const [title, setTitle] = useState(draft.title ?? '');
   const [description, setDescription] = useState(draft.description ?? '');
@@ -80,6 +83,9 @@ export function PublishForm({ draft }: { draft: Draft }) {
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isPending = draft.publish_status === 'pending';
+  const isRejected = draft.publish_status === 'rejected';
+  const formLocked = isPending;
   const previewTitle = title || t('title');
   const isPlayable = draft.output_media_type === 'video' || draft.output_media_type === 'audio';
   const specRows = draftSpecRows(draft, t, locale);
@@ -88,7 +94,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
     setPublishing(true);
     setError(null);
     try {
-      const result = await api.post<PublishResult>(
+      await api.post<PublishResult>(
         `/v1/drafts/${draft.id}/publish`,
         {
           title: title.trim(),
@@ -100,7 +106,12 @@ export function PublishForm({ draft }: { draft: Draft }) {
         },
         { idempotencyKey: newIdempotencyKey() },
       );
-      router.push(`/work/${result.work_id}`);
+      notify(t('submittedReview'), 'success');
+      if (draft.latest_job_id) {
+        router.push(`/jobs/${draft.latest_job_id}`);
+      } else {
+        router.push('/collection');
+      }
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
       setPublishing(false);
@@ -156,11 +167,26 @@ export function PublishForm({ draft }: { draft: Draft }) {
       </div>
 
       <aside className="flex flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4">
+        {isPending ? (
+          <div className="rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 px-4 py-3">
+            <p className="text-sm font-medium">{t('pendingTitle')}</p>
+            <p className="mt-1 text-xs text-muted">{t('pendingHint')}</p>
+          </div>
+        ) : null}
+
+        {isRejected ? (
+          <ErrorNotice
+            title={t('rejectedTitle')}
+            detail={draft.publish_failure_message ?? t('rejectedHint')}
+          />
+        ) : null}
+
         <TextInput
           label={t('titleField')}
           required
           value={title}
           maxLength={200}
+          disabled={formLocked}
           onChange={(event) => setTitle(event.target.value)}
         />
 
@@ -168,6 +194,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
           label={t('descriptionField')}
           value={description}
           maxLength={2000}
+          disabled={formLocked}
           onChange={(event) => setDescription(event.target.value)}
         />
 
@@ -175,6 +202,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
           label={t('visibilityField')}
           value={visibility}
           onChange={setVisibility}
+          disabled={formLocked}
           options={VISIBILITIES.map((value) => ({ value, label: tVisibility(value) }))}
         />
 
@@ -182,6 +210,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
           <AccessPriceField
             value={accessCredits}
             onChange={setAccessCredits}
+            disabled={formLocked}
             label={t('accessCredits')}
             hint={t('accessCreditsHint')}
           />
@@ -191,8 +220,9 @@ export function PublishForm({ draft }: { draft: Draft }) {
           <input
             type="checkbox"
             checked={rights}
+            disabled={formLocked}
             onChange={(event) => setRights(event.target.checked)}
-            className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
+            className="mt-0.5 size-4 shrink-0 accent-[var(--primary)] disabled:cursor-not-allowed"
           />
           {t('rightsConfirm')}
         </label>
@@ -201,8 +231,9 @@ export function PublishForm({ draft }: { draft: Draft }) {
           <input
             type="checkbox"
             checked={disclosure}
+            disabled={formLocked}
             onChange={(event) => setDisclosure(event.target.checked)}
-            className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
+            className="mt-0.5 size-4 shrink-0 accent-[var(--primary)] disabled:cursor-not-allowed"
           />
           {t('aiLabel')}
         </label>
@@ -217,10 +248,10 @@ export function PublishForm({ draft }: { draft: Draft }) {
             size="lg"
             fullWidth
             loading={publishing}
-            disabled={!title.trim() || !rights || !disclosure}
+            disabled={formLocked || !title.trim() || !rights || !disclosure}
             onClick={() => void publish()}
           >
-            {publishing ? t('publishing') : t('publishNow')}
+            {formLocked ? t('pendingTitle') : publishing ? t('publishing') : t('publishNow')}
           </Button>
         </div>
       </aside>

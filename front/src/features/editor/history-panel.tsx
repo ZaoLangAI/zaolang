@@ -51,8 +51,7 @@ export function HistoryPanel({
   if (!loaded) return null;
 
   return (
-    <section className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
-      <h2 className="text-sm font-semibold">{t('historyPanelTitle')}</h2>
+    <div className="flex flex-col gap-3">
       {revisions.length === 0 ? (
         <p className="text-xs text-muted">{t('historyEmpty')}</p>
       ) : (
@@ -82,6 +81,6 @@ export function HistoryPanel({
           ))}
         </ul>
       )}
-    </section>
+    </div>
   );
 }

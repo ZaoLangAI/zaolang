@@ -24,6 +24,7 @@ from app.domain.audit import service as audit
 from app.domain.credits.royalty import RoyaltyRule, distribute
 from app.domain.errors import (
     Conflict,
+    DomainError,
     Forbidden,
     ModerationRejected,
     NotFound,
@@ -32,6 +33,7 @@ from app.domain.errors import (
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage
 from app.domain.media import service as media_service
+from app.domain.moderation_policy import match_blocked_keyword, record_block_signal
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.notifications import push as notifications
 from app.domain.search import service as search_service
@@ -51,6 +53,7 @@ from app.models import (
 )
 from app.models.base import utcnow
 from app.models.enums import (
+    DraftPublishStatus,
     LifecycleStatus,
     ModerationStage,
     ModerationStatus,
@@ -58,7 +61,7 @@ from app.models.enums import (
     Visibility,
 )
 from app.platform_config import service as config_service
-from app.platform_config.schemas import RoyaltyConfig
+from app.platform_config.schemas import ContentModerationConfig, RoyaltyConfig
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +119,123 @@ def create_draft(
     return draft
 
 
+def request_publish(
+    session: Session,
+    *,
+    user_id: str,
+    draft_id: str,
+    title: str,
+    description: str | None,
+    visibility: str,
+    tags: list[str],
+    cover_asset_id: str | None,
+    rights_confirmed: bool,
+    access_credits: int = 0,
+) -> Draft:
+    """Accepts a publish intent. The eight-step transaction runs in a worker.
+
+    Keyword blocks stay synchronous so obvious refusals do not occupy a queue
+    slot. The LLM safety pass is the part that used to hold the HTTP request.
+    """
+    draft = _owned_unpublished_draft(session, user_id=user_id, draft_id=draft_id)
+    if draft.publish_status == DraftPublishStatus.PENDING:
+        raise Conflict("该草稿正在审核发布中。")
+    if draft.output_asset_id is None:
+        raise ValidationFailed("草稿还没有生成结果，无法发布。")
+    if not rights_confirmed:
+        raise ValidationFailed(
+            "请先确认你拥有所有新增素材的使用权。", fields={"rights_confirmed": "必须勾选"}
+        )
+
+    _assert_source_still_remixable(session, draft, user_id)
+    _reject_blocked_keywords(session, title=title, description=description, user_id=user_id)
+
+    draft.title = title
+    draft.description = description
+    draft.publish_status = DraftPublishStatus.PENDING
+    draft.publish_failure_message = None
+    draft.publish_params_json = {
+        "visibility": visibility,
+        "tags": list(tags),
+        "cover_asset_id": cover_asset_id,
+        "access_credits": access_credits,
+        "rights_confirmed": True,
+    }
+    session.flush()
+    return draft
+
+
+def enqueue_draft_publish(draft_id: str) -> None:
+    from app.workers import tasks
+
+    tasks.run_draft_publish.delay(draft_id)
+
+
+def revert_publish_request(session: Session, draft: Draft) -> None:
+    """Clears a pending accept when the worker message could not be queued."""
+    draft.publish_status = None
+    draft.publish_params_json = {}
+    draft.publish_failure_message = None
+    session.flush()
+
+
+def finalize_draft_publish(session: Session, draft_id: str) -> None:
+    """Worker body: safety then the remaining publish steps, then notify.
+
+    Idempotent. A draft that already has a work only re-sends the success
+    notification. A rejected (or never-submitted) draft is a no-op so a
+    redelivered message cannot recreate a work after the author was told no.
+    """
+    draft = session.get(Draft, draft_id)
+    if draft is None:
+        logger.warning("draft publish skipped: %s is gone", draft_id)
+        return
+    if draft.published_work_id is not None:
+        _notify_author_published(session, draft)
+        return
+    if draft.publish_status != DraftPublishStatus.PENDING:
+        return
+
+    params = dict(draft.publish_params_json or {})
+    title = draft.title or ""
+    if not title.strip():
+        _mark_publish_rejected(session, draft, "标题不能为空。")
+        return
+
+    cover = params.get("cover_asset_id")
+    cover_asset_id = cover if isinstance(cover, str) and cover else None
+    raw_tags = params.get("tags") or []
+    tags = [str(tag) for tag in raw_tags] if isinstance(raw_tags, list) else []
+
+    try:
+        publish(
+            session,
+            user_id=draft.user_id,
+            draft_id=draft.id,
+            title=title,
+            description=draft.description,
+            visibility=str(params.get("visibility") or Visibility.PUBLIC_VIEW_ONLY),
+            tags=tags,
+            cover_asset_id=cover_asset_id,
+            rights_confirmed=True,
+            access_credits=int(params.get("access_credits") or 0),
+        )
+    except ModerationRejected as exc:
+        _mark_publish_rejected(session, draft, exc.message)
+        return
+    except Conflict:
+        session.refresh(draft)
+        if draft.published_work_id is not None:
+            _notify_author_published(session, draft)
+            return
+        raise
+    except DomainError as exc:
+        _mark_publish_rejected(session, draft, exc.message)
+        return
+
+    _notify_author_published(session, draft)
+
+
 def publish(
     session: Session,
     *,
@@ -129,13 +249,7 @@ def publish(
     rights_confirmed: bool,
     access_credits: int = 0,
 ) -> PublishOutcome:
-    draft = session.get(Draft, draft_id)
-    if draft is None:
-        raise NotFound("草稿不存在。")
-    if draft.user_id != user_id:
-        raise Forbidden("不能发布他人的草稿。")
-    if draft.published_work_id is not None:
-        raise Conflict("该草稿已经发布。")
+    draft = _owned_unpublished_draft(session, user_id=user_id, draft_id=draft_id)
     if draft.output_asset_id is None:
         raise ValidationFailed("草稿还没有生成结果，无法发布。")
     if not rights_confirmed:
@@ -144,15 +258,7 @@ def publish(
         )
 
     # 1. The source may have been locked down since the draft was created.
-    source_version: WorkVersion | None = None
-    if draft.source_work_version_id:
-        source_version = session.get(WorkVersion, draft.source_work_version_id)
-        if source_version is None:
-            raise NotFound("来源版本不存在。")
-        source_work = session.get(Work, source_version.work_id)
-        if source_work is None:
-            raise NotFound("来源作品不存在。")
-        licensing.assert_source_still_remixable(source_work, user_id)
+    source_version = _assert_source_still_remixable(session, draft, user_id)
 
     # 2. Final safety pass over what will actually be public.
     from app.agents import safety
@@ -249,6 +355,8 @@ def publish(
     _notify_ancestors(session, version=version, actor_user_id=user_id, work=work)
 
     draft.published_work_id = work.id
+    draft.publish_status = None
+    draft.publish_failure_message = None
     session.flush()
     return PublishOutcome(work=work, version=version, lineage_edge=edge, royalties=royalties)
 
@@ -435,6 +543,71 @@ def purge(session: Session, *, user_id: str, work_id: str) -> str:
 
 def work_is_referenced(session: Session, work: Work) -> bool:
     return _is_referenced(session, work)
+
+
+def _owned_unpublished_draft(session: Session, *, user_id: str, draft_id: str) -> Draft:
+    draft = session.get(Draft, draft_id)
+    if draft is None:
+        raise NotFound("草稿不存在。")
+    if draft.user_id != user_id:
+        raise Forbidden("不能发布他人的草稿。")
+    if draft.published_work_id is not None:
+        raise Conflict("该草稿已经发布。")
+    return draft
+
+
+def _assert_source_still_remixable(
+    session: Session, draft: Draft, user_id: str
+) -> WorkVersion | None:
+    if not draft.source_work_version_id:
+        return None
+    source_version = session.get(WorkVersion, draft.source_work_version_id)
+    if source_version is None:
+        raise NotFound("来源版本不存在。")
+    source_work = session.get(Work, source_version.work_id)
+    if source_work is None:
+        raise NotFound("来源作品不存在。")
+    licensing.assert_source_still_remixable(source_work, user_id)
+    return source_version
+
+
+def _reject_blocked_keywords(
+    session: Session,
+    *,
+    title: str,
+    description: str | None,
+    user_id: str,
+) -> None:
+    config = config_service.get_typed(session, "content_moderation", ContentModerationConfig)
+    if not match_blocked_keyword([title, description or ""], config.blocked_keywords):
+        return
+    record_block_signal(config_key="content_moderation", subject_type="draft", user_id=user_id)
+    raise ModerationRejected("内容未通过安全检查，请调整描述后重试。")
+
+
+def _mark_publish_rejected(session: Session, draft: Draft, message: str) -> None:
+    draft.publish_status = DraftPublishStatus.REJECTED
+    draft.publish_failure_message = message
+    session.flush()
+    _notify_author_rejected(session, draft, message)
+
+
+def _notify_author_published(session: Session, draft: Draft) -> None:
+    notifications.sync_draft_publish_notification(
+        session,
+        draft=draft,
+        published=True,
+        work_id=draft.published_work_id,
+    )
+
+
+def _notify_author_rejected(session: Session, draft: Draft, message: str) -> None:
+    notifications.sync_draft_publish_notification(
+        session,
+        draft=draft,
+        published=False,
+        public_message=message,
+    )
 
 
 def _owned_work(session: Session, *, user_id: str, work_id: str) -> Work:

@@ -3019,7 +3019,7 @@
           "drafts"
         ],
         "summary": "Publish",
-        "description": "Publishes a draft as one transaction.\n\nEverything from the licence re-check to the ancestor notification either\nlands together or not at all.",
+        "description": "Accepts a publish intent. Safety review and Work creation run in a worker.",
         "operationId": "publish_v1_drafts__draft_id__publish_post",
         "parameters": [
           {
@@ -3046,6 +3046,22 @@
               ],
               "title": "Authorization"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -3059,7 +3075,7 @@
           }
         },
         "responses": {
-          "201": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -22856,6 +22872,15 @@
         "type": "object",
         "title": "DraftCreateRequest"
       },
+      "DraftPublishStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "rejected"
+        ],
+        "title": "DraftPublishStatus",
+        "description": "HTTP accept vs worker finish for a draft's pre-publish review.\n\n`None` on the column means not submitted. Success is `published_work_id`,\nnot a third status here."
+      },
       "DraftResponse": {
         "properties": {
           "id": {
@@ -22996,6 +23021,27 @@
               }
             ],
             "title": "Published Work Id"
+          },
+          "publish_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftPublishStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publish_failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publish Failure Message"
           },
           "created_at": {
             "type": "string",
@@ -27852,6 +27898,8 @@
           "job_cancelled",
           "work_liked",
           "work_remixed",
+          "draft_published",
+          "draft_publish_rejected",
           "royalty_received",
           "access_sold",
           "new_follower",
@@ -30376,18 +30424,17 @@
       },
       "PublishResponse": {
         "properties": {
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status",
+            "default": "pending"
+          },
+          "draft_id": {
+            "type": "string",
+            "title": "Draft Id"
+          },
           "work_id": {
-            "type": "string",
-            "title": "Work Id"
-          },
-          "work_version_id": {
-            "type": "string",
-            "title": "Work Version Id"
-          },
-          "visibility": {
-            "$ref": "#/components/schemas/Visibility"
-          },
-          "lineage_edge_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -30396,22 +30443,12 @@
                 "type": "null"
               }
             ],
-            "title": "Lineage Edge Id"
-          },
-          "royalties_paid": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Royalties Paid"
+            "title": "Work Id"
           }
         },
         "type": "object",
         "required": [
-          "work_id",
-          "work_version_id",
-          "visibility"
+          "draft_id"
         ],
         "title": "PublishResponse"
       },

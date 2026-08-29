@@ -104,6 +104,7 @@ export default async function NewCreationPage({
     referenceCharacterIds?: string;
     referenceSceneIds?: string;
     linkEpisodeId?: string;
+    linkBreakpointKey?: string;
   }>;
 }) {
   const {
@@ -123,6 +124,7 @@ export default async function NewCreationPage({
     referenceCharacterIds,
     referenceSceneIds,
     linkEpisodeId,
+    linkBreakpointKey,
   } = await searchParams;
   const t = await getTranslations('createPage');
 
@@ -218,6 +220,7 @@ export default async function NewCreationPage({
           initialReferenceCharacterIds={resolvedReferenceCharacterIds}
           initialReferenceSceneIds={resolvedReferenceSceneIds}
           linkEpisodeId={linkEpisodeId}
+          linkBreakpointKey={linkBreakpointKey}
         />
       )}
     </div>

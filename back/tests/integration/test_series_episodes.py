@@ -294,3 +294,66 @@ def test_outsider_cannot_delete_someone_elses_episode(
 
     deleted = client.delete(f"/v1/drama-episodes/{episode_id}", headers=auth_header(outsider))
     assert deleted.status_code == 404
+
+
+def test_create_draft_with_link_episode_id_writes_content_link(
+    client: TestClient, db: Session, author: User
+) -> None:
+    series_id = _create_series(client, author)
+    episode_id = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()["id"]
+
+    created = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={
+            "params": {
+                "prompt": "值班室",
+                "link_episode_id": episode_id,
+                "link_breakpoint_key": "内景 值班室#0",
+            }
+        },
+    )
+    assert created.status_code == 201, created.text
+    draft_id = created.json()["id"]
+    assert created.json()["params"]["link_episode_id"] == episode_id
+    assert created.json()["params"]["link_breakpoint_key"] == "内景 值班室#0"
+
+    links = client.get(
+        f"/v1/drama-episodes/{episode_id}/content-links",
+        headers=auth_header(author),
+    )
+    assert links.status_code == 200
+    assert any(
+        item["content_type"] == "draft" and item["content_ref_id"] == draft_id
+        for item in links.json()
+    )
+
+
+def test_create_draft_with_foreign_link_episode_id_still_creates_draft(
+    client: TestClient, db: Session, author: User
+) -> None:
+    outsider = make_user(db, email="draft-link-outsider@example.com", handle="draft-link-outsider")
+    series_id = _create_series(client, outsider)
+    episode_id = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(outsider),
+        json={"title": "第一集"},
+    ).json()["id"]
+
+    created = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "无关", "link_episode_id": episode_id}},
+    )
+    assert created.status_code == 201, created.text
+
+    links = client.get(
+        f"/v1/drama-episodes/{episode_id}/content-links",
+        headers=auth_header(outsider),
+    )
+    assert links.status_code == 200
+    assert links.json() == []

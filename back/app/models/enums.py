@@ -38,6 +38,17 @@ class LifecycleStatus(StrEnum):
     TOMBSTONE = "tombstone"
 
 
+class DraftPublishStatus(StrEnum):
+    """HTTP accept vs worker finish for a draft's pre-publish review.
+
+    `None` on the column means not submitted. Success is `published_work_id`,
+    not a third status here.
+    """
+
+    PENDING = "pending"
+    REJECTED = "rejected"
+
+
 class UserStatus(StrEnum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
@@ -350,6 +361,8 @@ class NotificationType(StrEnum):
     JOB_CANCELLED = "job_cancelled"
     WORK_LIKED = "work_liked"
     WORK_REMIXED = "work_remixed"
+    DRAFT_PUBLISHED = "draft_published"
+    DRAFT_PUBLISH_REJECTED = "draft_publish_rejected"
     ROYALTY_RECEIVED = "royalty_received"
     ACCESS_SOLD = "access_sold"
     NEW_FOLLOWER = "new_follower"

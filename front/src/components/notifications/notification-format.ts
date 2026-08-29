@@ -39,13 +39,20 @@ export const GROUPS = {
   royalty_received: { key: 'typeRoyalty' },
   access_sold: { key: 'typeAccessSold' },
   moderation: { key: 'typeModeration' },
+  draft_published: { key: 'typeModeration' },
+  draft_publish_rejected: { key: 'typeModeration' },
   system: { key: 'typeSystem' },
 } as const;
 
 export type IconComponent = (props: { className?: string }) => React.ReactNode;
 
 /** Notifications whose `target_type` upserts in place rather than inserting a new row each time. */
-export const CREATION_TARGET_TYPES = new Set(['generation_job', 'editor_export', 'episode_script']);
+export const CREATION_TARGET_TYPES = new Set([
+  'generation_job',
+  'editor_export',
+  'episode_script',
+  'draft',
+]);
 
 export function isCreationNotification(item: Notification): boolean {
   return item.target_type != null && CREATION_TARGET_TYPES.has(item.target_type);
@@ -154,6 +161,14 @@ const TITLE_KEYS: Record<
     params: { actor_name: String(p.follower_display_name || p.actor_name || '') },
   }),
   'notification.announcement': () => ({ key: 'announcement' }),
+  'notification.draft_published': (p) => ({
+    key: 'draftPublished',
+    params: { title: String(p.title ?? '') },
+  }),
+  'notification.draft_publish_rejected': (p) => ({
+    key: 'draftPublishRejected',
+    params: { title: String(p.title ?? ''), reason: String(p.public_message ?? '') },
+  }),
 };
 
 export function notificationText(item: Notification, tBody: TBody): string {
@@ -243,11 +258,18 @@ export function notificationVisual(item: Notification): {
   if (item.type === 'royalty_received' || item.type === 'access_sold') {
     return { icon: IconWallet, badge: null, tone: 'text-amber' };
   }
+  if (item.type === 'draft_published') {
+    return { icon: kindIcon, badge: IconCheck, tone: 'text-success' };
+  }
+  if (item.type === 'draft_publish_rejected') {
+    return { icon: kindIcon, badge: IconAlert, tone: 'text-danger' };
+  }
   if (item.type === 'moderation') return { icon: IconShield, badge: null, tone: 'text-muted' };
   return { icon: IconBell, badge: null, tone: 'text-muted' };
 }
 
 function creationIcon(item: Notification, payload: Record<string, unknown>): IconComponent {
+  if (item.target_type === 'draft') return IconSparkle;
   if (item.target_type === 'episode_script') return IconMessage;
   if (payload.is_remix === true) return IconRemix;
   if (typeof payload.shortform_profile === 'string' && payload.shortform_profile) return IconPhone;
@@ -290,6 +312,11 @@ export function targetHref(item: Notification): string | null {
   }
   if (item.target_type === 'episode_script' && item.target_id) {
     return `/create/script/${item.target_id}`;
+  }
+  if (item.target_type === 'draft' && item.target_id) {
+    const workId = payload.work_id;
+    if (typeof workId === 'string' && workId) return `/work/${workId}`;
+    return `/publish/${item.target_id}`;
   }
   if (item.target_type === 'work' && item.target_id) return `/work/${item.target_id}`;
   if (item.target_type === 'learn_post' && item.target_id) return `/learn/${item.target_id}`;

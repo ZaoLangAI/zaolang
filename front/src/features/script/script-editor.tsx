@@ -1,20 +1,24 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
+import * as editorApi from '@/features/editor/api';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
+import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
+import type { Draft } from '@/lib/api/types';
 
 import * as scriptApi from './api';
 import type { ScriptDetail, ScriptDocument } from './api';
 import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
 import { ScriptChatPanel } from './script-chat-panel';
+import { indexBreakpointVideos } from './script-breakpoint';
 import { ScriptDocumentView } from './script-document-view';
 import { useScriptTurnStream } from './use-script-turn-stream';
 
@@ -73,6 +77,7 @@ export function ScriptEditor({
   const [viewedScript, setViewedScript] = useState<ScriptDocument | null>(null);
   const [firstDraftError, setFirstDraftError] = useState<string | null>(null);
   const [retryIdea, setRetryIdea] = useState('');
+  const [linkedDrafts, setLinkedDrafts] = useState<Draft[]>([]);
   // A ref, not `useState`: this is purely a run-once guard, never read by
   // render — same pattern as `WorkflowPublishDialog`'s `wasOpen`.
   const pendingLinkApplied = useRef(false);
@@ -96,6 +101,34 @@ export function ScriptEditor({
       cancelled = true;
     };
   }, [episodeId, t]);
+
+  // Same source the episode workspace uses for "生成的视频" — a draft is
+  // linked the moment it is created from a breakpoint, so this chip can
+  // flip to "查看视频" without waiting for the job to finish.
+  useEffect(() => {
+    let cancelled = false;
+    void editorApi
+      .listContentLinks(episodeId)
+      .then((links) => {
+        const draftIds = links
+          .filter((link) => link.content_type === 'draft')
+          .map((link) => link.content_ref_id);
+        return Promise.all(
+          draftIds.map((id) => api.get<Draft>(`/v1/drafts/${id}`).catch(() => null)),
+        );
+      })
+      .then((results) => {
+        if (!cancelled) {
+          setLinkedDrafts(results.filter((draft): draft is Draft => draft !== null));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedDrafts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [episodeId]);
 
   // The first draft may still be streaming in from `ScriptLanding`. Once it
   // lands, refetch the canonical script through the normal REST endpoint
@@ -151,6 +184,11 @@ export function ScriptEditor({
   };
 
   const isViewingLatest = detail !== null && selectedTurnId === detail.turns.at(-1)?.id;
+
+  const videoBindings = useMemo(
+    () => indexBreakpointVideos(linkedDrafts, (viewedScript ?? detail?.script)?.scenes ?? []),
+    [linkedDrafts, viewedScript, detail?.script],
+  );
 
   const updateLink = async (
     update:
@@ -374,6 +412,7 @@ export function ScriptEditor({
             episodeId={episodeId}
             onLink={isViewingLatest ? (update) => void updateLink(update) : undefined}
             onSaveContent={isViewingLatest ? (next) => void saveContent(next) : undefined}
+            videoBindings={videoBindings}
           />
         )}
       </div>

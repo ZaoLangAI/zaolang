@@ -27,8 +27,16 @@ final class PublishViewModel {
         self.apiClient = apiClient
     }
 
+    var isPending: Bool { loadState.value?.publishStatus == .pending }
+
+    var isRejected: Bool { loadState.value?.publishStatus == .rejected }
+
     var canPublish: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && rightsConfirmed && aiDisclosureConfirmed && !isPublishing
+        !isPending
+            && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && rightsConfirmed
+            && aiDisclosureConfirmed
+            && !isPublishing
     }
 
     func load() async {

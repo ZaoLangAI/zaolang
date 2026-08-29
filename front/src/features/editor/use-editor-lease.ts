@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { isApiError } from '@/lib/api/errors';
 
@@ -14,8 +14,51 @@ export function useEditorLease(cutId: string) {
   const setReadonly = useEditorUi((state) => state.setReadonly);
   const [lease, setLease] = useState<editorApi.EditorLease | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [heldByOther, setHeldByOther] = useState(false);
+  const [reclaiming, setReclaiming] = useState(false);
   const leaseRef = useRef<editorApi.EditorLease | null>(null);
   const tokenRef = useRef<string | null>(null);
+
+  const applyLease = useCallback(
+    (next: editorApi.EditorLease) => {
+      leaseRef.current = next;
+      if (next.token) {
+        tokenRef.current = next.token;
+        setToken(next.token);
+      } else {
+        tokenRef.current = null;
+        setToken(null);
+      }
+      setLease(next);
+      setHeldByOther(false);
+      setReadonly(!tokenRef.current);
+    },
+    [setReadonly],
+  );
+
+  const failReadonly = useCallback(
+    (held: boolean) => {
+      leaseRef.current = null;
+      tokenRef.current = null;
+      setLease(null);
+      setToken(null);
+      setHeldByOther(held);
+      setReadonly(true);
+    },
+    [setReadonly],
+  );
+
+  const reclaim = useCallback(async () => {
+    setReclaiming(true);
+    try {
+      const next = await editorApi.acquireLease(cutId, browserInstanceId());
+      applyLease(next);
+    } catch (caught) {
+      failReadonly(isApiError(caught) && caught.code === 'LEASE_HELD');
+    } finally {
+      setReclaiming(false);
+    }
+  }, [applyLease, cutId, failReadonly]);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,18 +67,23 @@ export function useEditorLease(cutId: string) {
     const acquire = async () => {
       try {
         const next = await editorApi.acquireLease(cutId, instanceId);
-        if (cancelled) return;
-        leaseRef.current = next;
-        if (next.token) {
-          tokenRef.current = next.token;
-          setToken(next.token);
+        if (cancelled) {
+          // Strict Mode remounts immediately and may already hold a rotated
+          // token on this same lease — releasing that would steal it back.
+          const remountTookOver =
+            leaseRef.current !== null &&
+            (leaseRef.current.id !== next.id || tokenRef.current !== next.token);
+          if (next.token && !remountTookOver) {
+            void editorApi
+              .releaseLease(cutId, next.id, next.token, { keepalive: true })
+              .catch(() => undefined);
+          }
+          return;
         }
-        setLease(next);
-        setReadonly(!tokenRef.current);
+        applyLease(next);
       } catch (caught) {
         if (cancelled) return;
-        setReadonly(true);
-        if (isApiError(caught) && caught.code === 'LEASE_HELD') return;
+        failReadonly(isApiError(caught) && caught.code === 'LEASE_HELD');
       }
     };
 
@@ -65,7 +113,7 @@ export function useEditorLease(cutId: string) {
         leaseRef.current = next;
         setLease(next);
       } catch {
-        if (!cancelled) setReadonly(true);
+        if (!cancelled) failReadonly(false);
       }
     }, HEARTBEAT_MS);
 
@@ -76,7 +124,7 @@ export function useEditorLease(cutId: string) {
       window.removeEventListener('beforeunload', releaseOnUnload);
       releaseOnUnload();
     };
-  }, [cutId, setReadonly]);
+  }, [applyLease, cutId, failReadonly]);
 
-  return { lease, token };
+  return { lease, token, heldByOther, reclaim, reclaiming };
 }

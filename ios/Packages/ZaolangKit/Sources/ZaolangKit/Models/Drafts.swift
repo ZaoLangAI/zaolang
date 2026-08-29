@@ -34,6 +34,8 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
     public let width: Int?
     public let height: Int?
     public let publishedWorkID: String?
+    public let publishStatus: DraftPublishStatus?
+    public let publishFailureMessage: String?
     public let createdAt: Date
 
     private enum CodingKeys: String, CodingKey {
@@ -47,6 +49,8 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
         case durationMs = "duration_ms"
         case width, height
         case publishedWorkID = "published_work_id"
+        case publishStatus = "publish_status"
+        case publishFailureMessage = "publish_failure_message"
         case createdAt = "created_at"
     }
 
@@ -66,6 +70,8 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
         width = try c.decodeIfPresent(Int.self, forKey: .width)
         height = try c.decodeIfPresent(Int.self, forKey: .height)
         publishedWorkID = try c.decodeIfPresent(String.self, forKey: .publishedWorkID)
+        publishStatus = try c.decodeIfPresent(DraftPublishStatus.self, forKey: .publishStatus)
+        publishFailureMessage = try c.decodeIfPresent(String.self, forKey: .publishFailureMessage)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 
@@ -131,27 +137,21 @@ public struct PublishRequest: Encodable, Sendable {
 }
 
 public struct PublishResponse: Codable, Sendable, Equatable {
-    public let workID: String
-    public let workVersionID: String
-    public let visibility: RawOrUnknown<Visibility>
-    public let lineageEdgeID: String?
-    public let royaltiesPaid: [JSONValue]
+    public let status: String
+    public let draftID: String
+    public let workID: String?
 
     private enum CodingKeys: String, CodingKey {
+        case status
+        case draftID = "draft_id"
         case workID = "work_id"
-        case workVersionID = "work_version_id"
-        case visibility
-        case lineageEdgeID = "lineage_edge_id"
-        case royaltiesPaid = "royalties_paid"
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        workID = try c.decode(String.self, forKey: .workID)
-        workVersionID = try c.decode(String.self, forKey: .workVersionID)
-        visibility = try c.decode(RawOrUnknown<Visibility>.self, forKey: .visibility)
-        lineageEdgeID = try c.decodeIfPresent(String.self, forKey: .lineageEdgeID)
-        royaltiesPaid = try c.decodeIfPresent([JSONValue].self, forKey: .royaltiesPaid) ?? []
+        status = try c.decode(String.self, forKey: .status)
+        draftID = try c.decode(String.self, forKey: .draftID)
+        workID = try c.decodeIfPresent(String.self, forKey: .workID)
     }
 }
 

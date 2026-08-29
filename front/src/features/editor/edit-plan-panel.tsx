@@ -78,8 +78,7 @@ export function EditPlanPanel({
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
-      <h2 className="text-sm font-semibold">{t('planTitle')}</h2>
+    <div className="flex flex-col gap-3">
       <TextArea
         label={t('planGoal')}
         value={goal}
@@ -142,7 +141,7 @@ export function EditPlanPanel({
       {plan?.warnings?.length ? (
         <ErrorNotice title={t('planTitle')} detail={plan.warnings.map(String).join(' · ')} />
       ) : null}
-    </section>
+    </div>
   );
 }
 

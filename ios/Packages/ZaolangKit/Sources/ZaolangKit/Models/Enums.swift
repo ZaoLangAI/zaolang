@@ -132,7 +132,14 @@ public enum NotificationType: String, Codable, Sendable, CaseIterable {
     case accessSold = "access_sold"
     case newFollower = "new_follower"
     case moderation
+    case draftPublished = "draft_published"
+    case draftPublishRejected = "draft_publish_rejected"
     case system
+}
+
+public enum DraftPublishStatus: String, Codable, Sendable, CaseIterable {
+    case pending
+    case rejected
 }
 
 public enum LedgerEntryType: String, Codable, Sendable, CaseIterable {

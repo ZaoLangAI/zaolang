@@ -24,8 +24,7 @@ export function CanvasPanel({
     document.canvas.width === width && document.canvas.height === height;
 
   return (
-    <section className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
-      <h2 className="text-sm font-semibold">{t('canvasPanelTitle')}</h2>
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
@@ -93,6 +92,6 @@ export function CanvasPanel({
           </Button>
         ) : null}
       </div>
-    </section>
+    </div>
   );
 }

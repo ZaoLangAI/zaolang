@@ -160,9 +160,11 @@ struct RootTabView: View {
                 }
             )
         case .publish(let draftID):
-            PublishView(draftID: draftID) { workID in
-                router.createPath.append(CreateRoute.workDetail(workID: workID))
-            }
+            PublishView(draftID: draftID, onSubmitted: {
+                if !router.createPath.isEmpty {
+                    router.createPath.removeLast()
+                }
+            })
         case .workDetail(let workID):
             WorkDetailView(
                 workID: workID,
@@ -223,6 +225,10 @@ struct RootTabView: View {
                 onOpenLearn: { postID in
                     router.selectTab(.learn)
                     router.learnPath.append(LearnRoute.postDetail(postID: postID))
+                },
+                onOpenPublish: { draftID in
+                    router.selectTab(.create)
+                    router.createPath.append(CreateRoute.publish(draftID: draftID))
                 }
             )
         case .billing:

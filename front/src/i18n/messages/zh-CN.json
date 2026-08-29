@@ -1518,7 +1518,7 @@
     "gateDesktopTitle": "请在桌面宽度下剪辑",
     "gateDesktopHint": "窄屏只能查看提示，不会打开时间线。请用至少 1024 像素宽的窗口。",
     "readonlyLease": "当前为只读",
-    "leaseLost": "写入租约在另一标签页，或已过期。刷新本页不会覆盖别人的最新修订。",
+    "leaseLost": "写入租约在另一标签页。刷新本页不会覆盖别人的最新修订。",
     "loading": "正在打开剪辑",
     "playhead": "播放头",
     "insertCaption": "插入字幕",
@@ -1651,6 +1651,7 @@
     "generatedVideosTitle": "生成的视频",
     "generatedVideosHint": "文案创作生成的视频会出现在这里，可直接进入剪辑或跳过剪辑发布。",
     "generatedVideosEmpty": "还没有生成的视频",
+    "generatedVideoOpenDetail": "查看视频详情",
     "enterEditorAction": "进入剪辑",
     "enterEditorNoAsset": "该内容暂无可编辑的素材",
     "seasonLabel": "第 {season} 季",
@@ -1749,9 +1750,23 @@
     "propertiesEmptyHint": "选中一个片段以查看其属性",
     "addVideoTrack": "添加视频轨",
     "addAudioTrack": "添加音频轨",
+    "trackKindVideo": "视频",
+    "trackKindAudio": "音频",
+    "trackKindCaption": "字幕",
+    "trackKindOverlay": "叠加",
     "muteTrack": "静音轨道",
     "unmuteTrack": "取消静音",
     "removeTrack": "删除轨道",
+    "maskX": "X",
+    "maskY": "Y",
+    "maskWidth": "宽度",
+    "maskHeight": "高度",
+    "maskFeather": "羽化",
+    "keyframeOpacity": "不透明度",
+    "keyframeX": "X",
+    "keyframeY": "Y",
+    "keyframeScale": "缩放",
+    "keyframeRotation": "旋转",
     "transcribeTitle": "字幕转写",
     "transcribeClose": "关闭",
     "transcribeInProgress": "正在转写…",
@@ -1769,7 +1784,9 @@
     "transitionType": {
       "crossfade": "交叉淡化",
       "dip_to_black": "淡入黑场"
-    }
+    },
+    "leaseNotReady": "本页还没有写入权。可以重新获取；若仍失败，多半是另一标签页占用了租约。",
+    "reclaimLease": "重新获取编辑权"
   },
   "iosOnboarding": {
     "page1Title": "每一次二创都留下创作链",
@@ -1814,12 +1831,30 @@
     "stageQuality": "质检",
     "stageDone": "完成",
     "funCaptions": {
-      "queued": ["排队中，马上就轮到你啦", "正在等待创作引擎腾出手"],
-      "safety": ["安全审核中，请稍候", "正在做一次安全检查"],
-      "planning": ["正在构思画面细节", "灵感正在组织中"],
-      "generating": ["正在挥毫泼墨", "像素正在努力就位"],
-      "quality": ["质检把关中", "正在挑剔地检查每个细节"],
-      "done": ["马上就好啦", "最后一步，即将呈现"]
+      "queued": [
+        "排队中，马上就轮到你啦",
+        "正在等待创作引擎腾出手"
+      ],
+      "safety": [
+        "安全审核中，请稍候",
+        "正在做一次安全检查"
+      ],
+      "planning": [
+        "正在构思画面细节",
+        "灵感正在组织中"
+      ],
+      "generating": [
+        "正在挥毫泼墨",
+        "像素正在努力就位"
+      ],
+      "quality": [
+        "质检把关中",
+        "正在挑剔地检查每个细节"
+      ],
+      "done": [
+        "马上就好啦",
+        "最后一步，即将呈现"
+      ]
     },
     "characterViewsTitle": "视图进度 {current}/{total}",
     "outputItemLabel": "输出 {index}/{total}",
@@ -2011,7 +2046,9 @@
     "opRemix": "二创",
     "opDramaExport": "短剧导出",
     "accessSoldWork": "有人解锁了你的作品，你获得 {amount} 积分。",
-    "accessSoldSkill": "有人解锁了你的技能「{title}」，你获得 {amount} 积分。"
+    "accessSoldSkill": "有人解锁了你的技能「{title}」，你获得 {amount} 积分。",
+    "draftPublished": "你的作品「{title}」已通过审核并发布。",
+    "draftPublishRejected": "你的作品「{title}」未通过发布审核：{reason}"
   },
   "notificationsPage": {
     "title": "通知中心",
@@ -2158,7 +2195,12 @@
     "accessCredits": "二创解锁价格",
     "accessCreditsHint": "0 为免费开放二创。付费授权仅限站内二创，不再标 CC-BY。",
     "accessFree": "免费",
-    "accessCustom": "自定义"
+    "accessCustom": "自定义",
+    "submittedReview": "已提交审核，通过后会通知你",
+    "pendingTitle": "正在审核发布",
+    "pendingHint": "审核通过后会通知你。通过前不能再次提交。",
+    "rejectedTitle": "发布未通过审核",
+    "rejectedHint": "请修改标题或简介后重新提交。"
   },
   "region": {
     "label": "地区",
@@ -2375,6 +2417,7 @@
       "dialogue": "对话",
       "breakpoint": "建议切分"
     },
+    "viewGeneratedVideo": "查看视频",
     "linkCharacter": "关联角色卡",
     "linkScene": "关联场景卡",
     "linkLoading": "加载中…",

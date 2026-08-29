@@ -24,7 +24,7 @@ enum NotificationGroup {
         case .newFollower: self = .follow
         case .jobProgress, .jobSucceeded, .jobFailed, .jobCancelled: self = .job
         case .royaltyReceived, .accessSold: self = .royalty
-        case .moderation: self = .moderation
+        case .moderation, .draftPublished, .draftPublishRejected: self = .moderation
         case .system, nil: self = .system
         }
     }
@@ -35,6 +35,7 @@ enum NotificationDestination: Equatable {
     case job(jobID: String)
     case profile(handle: String)
     case learn(postID: String)
+    case publish(draftID: String)
 }
 
 extension NotificationResponse {
@@ -118,6 +119,13 @@ extension NotificationResponse {
             )
         case "notification.announcement":
             return L10n.t("notificationBody.announcement")
+        case "notification.draft_published":
+            return L10n.t("notificationBody.draftPublished", ["title": payload.string("title") ?? ""])
+        case "notification.draft_publish_rejected":
+            return L10n.t(
+                "notificationBody.draftPublishRejected",
+                ["title": payload.string("title") ?? "", "reason": payload.string("public_message") ?? ""]
+            )
         default:
             for field in ["title", "work_title", "actor_name", "message"] {
                 if let value = payload.string(field), !value.isEmpty { return value }
@@ -143,6 +151,8 @@ extension NotificationResponse {
         case .newFollower: return "person.fill"
         case .royaltyReceived, .accessSold: return "banknote"
         case .moderation: return "shield.fill"
+        case .draftPublished: return "checkmark.circle"
+        case .draftPublishRejected: return "exclamationmark.triangle"
         case .jobSucceeded: return "checkmark.circle"
         case .jobFailed: return "exclamationmark.triangle"
         case .jobCancelled: return "xmark.circle"
@@ -159,6 +169,11 @@ extension NotificationResponse {
             return targetID.map { .job(jobID: $0) }
         case "learn_post":
             return targetID.map { .learn(postID: $0) }
+        case "draft":
+            if let workID = payload.string("work_id"), !workID.isEmpty {
+                return .work(workID: workID)
+            }
+            return targetID.map { .publish(draftID: $0) }
         case "user":
             if let handle = payload.string("follower_handle"), !handle.isEmpty {
                 return .profile(handle: handle)

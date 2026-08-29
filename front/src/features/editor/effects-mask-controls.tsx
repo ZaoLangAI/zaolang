@@ -65,6 +65,20 @@ export function EffectsMaskControls({
   onCommit: (commands: EditCommand[]) => void;
 }) {
   const t = useTranslations('editor');
+  const effectLabel: Record<EffectType, string> = {
+    blur: t('effectType.blur'),
+    brightness: t('effectType.brightness'),
+    contrast: t('effectType.contrast'),
+    saturate: t('effectType.saturate'),
+    grayscale: t('effectType.grayscale'),
+  };
+  const maskFieldLabel = {
+    x_milli: t('maskX'),
+    y_milli: t('maskY'),
+    width_milli: t('maskWidth'),
+    height_milli: t('maskHeight'),
+    feather_millipercent: t('maskFeather'),
+  } as const;
   const [effects, setEffects] = useState(initialEffects);
   const [mask, setMask] = useState(initialMask);
 
@@ -117,7 +131,7 @@ export function EffectsMaskControls({
         <div className="flex flex-wrap gap-2">
           {EFFECT_TYPES.map((type) => (
             <Button key={type} size="sm" variant="secondary" disabled={disabled} onClick={() => addEffect(type)}>
-              {t(`effectType.${type}`)}
+              {effectLabel[type]}
             </Button>
           ))}
         </div>
@@ -132,7 +146,7 @@ export function EffectsMaskControls({
               return (
                 <li key={`${effect.type}-${index}`} className="flex items-center gap-2">
                   <label className="flex flex-1 flex-col gap-1">
-                    {t(`effectType.${effect.type}`)} {Math.round(value)}
+                    {effectLabel[effect.type]} {Math.round(value)}
                     <input
                       type="range"
                       min={range.min}
@@ -188,15 +202,15 @@ export function EffectsMaskControls({
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                ['x_milli', 'maskX'],
-                ['y_milli', 'maskY'],
-                ['width_milli', 'maskWidth'],
-                ['height_milli', 'maskHeight'],
-                ['feather_millipercent', 'maskFeather'],
+                'x_milli',
+                'y_milli',
+                'width_milli',
+                'height_milli',
+                'feather_millipercent',
               ] as const
-            ).map(([field, labelKey]) => (
+            ).map((field) => (
               <label key={field} className="flex flex-col gap-1">
-                {t(labelKey)}
+                {maskFieldLabel[field]}
                 <input
                   type="number"
                   min={0}

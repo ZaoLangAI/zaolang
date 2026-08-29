@@ -110,20 +110,22 @@ export function Preview({
 
   if (empty) {
     return (
-      <div className="grid aspect-video place-items-center rounded-[var(--radius-md)] border border-border bg-surface-soft text-sm text-muted">
+      <div className="grid min-h-0 flex-1 place-items-center rounded-[var(--radius-md)] border border-border bg-surface-soft text-sm text-muted">
         {title}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <canvas
-        ref={canvasRef}
-        className="w-full rounded-[var(--radius-md)] border border-border bg-black"
-        style={{ aspectRatio: `${document.canvas.width} / ${document.canvas.height}` }}
-      />
-      <div className="flex items-center gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          className="h-auto w-auto max-h-full max-w-full rounded-[var(--radius-md)] border border-border bg-track object-contain"
+          style={{ aspectRatio: `${document.canvas.width} / ${document.canvas.height}` }}
+        />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
         <Button
           size="sm"
           variant="secondary"

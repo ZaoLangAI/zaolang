@@ -1518,7 +1518,7 @@
     "gateDesktopTitle": "Open this on a desktop-width screen",
     "gateDesktopHint": "Narrow viewports only show this notice. Use a window at least 1024 pixels wide.",
     "readonlyLease": "Read-only",
-    "leaseLost": "Another tab holds the write lease, or it expired. Refreshing will not overwrite the new head revision.",
+    "leaseLost": "Another tab holds the write lease. Refreshing will not overwrite the new head revision.",
     "loading": "Opening the cut",
     "playhead": "Playhead",
     "insertCaption": "Insert caption",
@@ -1651,6 +1651,7 @@
     "generatedVideosTitle": "Generated videos",
     "generatedVideosHint": "Videos generated from the script show up here — jump straight into editing or skip it and publish.",
     "generatedVideosEmpty": "No generated videos yet",
+    "generatedVideoOpenDetail": "View video details",
     "enterEditorAction": "Enter editor",
     "enterEditorNoAsset": "No editable asset for this content yet",
     "seasonLabel": "Season {season}",
@@ -1749,9 +1750,23 @@
     "propertiesEmptyHint": "Select a clip to see its properties",
     "addVideoTrack": "Add video track",
     "addAudioTrack": "Add audio track",
+    "trackKindVideo": "Video",
+    "trackKindAudio": "Audio",
+    "trackKindCaption": "Caption",
+    "trackKindOverlay": "Overlay",
     "muteTrack": "Mute track",
     "unmuteTrack": "Unmute track",
     "removeTrack": "Remove track",
+    "maskX": "X",
+    "maskY": "Y",
+    "maskWidth": "Width",
+    "maskHeight": "Height",
+    "maskFeather": "Feather",
+    "keyframeOpacity": "Opacity",
+    "keyframeX": "X",
+    "keyframeY": "Y",
+    "keyframeScale": "Scale",
+    "keyframeRotation": "Rotation",
     "transcribeTitle": "Transcript",
     "transcribeClose": "Close",
     "transcribeInProgress": "Transcribing…",
@@ -1769,7 +1784,9 @@
     "transitionType": {
       "crossfade": "Crossfade",
       "dip_to_black": "Dip to black"
-    }
+    },
+    "leaseNotReady": "This tab does not have write access yet. Try reclaiming it; if that fails, another tab still holds the lease.",
+    "reclaimLease": "Reclaim editing"
   },
   "iosOnboarding": {
     "page1Title": "Every remix keeps its lineage",
@@ -1814,12 +1831,30 @@
     "stageQuality": "Quality",
     "stageDone": "Done",
     "funCaptions": {
-      "queued": ["Standing in line for you", "Warming up the engines"],
-      "safety": ["Running a safety check", "Making sure everything's above board"],
-      "planning": ["Sketching out the plan", "Ideas are falling into place"],
-      "generating": ["Pixels hard at work", "Painting away"],
-      "quality": ["Double-checking the details", "Quality control on duty"],
-      "done": ["Almost there", "Putting on the finishing touches"]
+      "queued": [
+        "Standing in line for you",
+        "Warming up the engines"
+      ],
+      "safety": [
+        "Running a safety check",
+        "Making sure everything's above board"
+      ],
+      "planning": [
+        "Sketching out the plan",
+        "Ideas are falling into place"
+      ],
+      "generating": [
+        "Pixels hard at work",
+        "Painting away"
+      ],
+      "quality": [
+        "Double-checking the details",
+        "Quality control on duty"
+      ],
+      "done": [
+        "Almost there",
+        "Putting on the finishing touches"
+      ]
     },
     "characterViewsTitle": "View progress {current}/{total}",
     "outputItemLabel": "Output {index} of {total}",
@@ -2011,7 +2046,9 @@
     "opRemix": "remix",
     "opDramaExport": "drama export",
     "accessSoldWork": "Someone unlocked your work. You earned {amount} credits.",
-    "accessSoldSkill": "Someone unlocked your skill “{title}”. You earned {amount} credits."
+    "accessSoldSkill": "Someone unlocked your skill “{title}”. You earned {amount} credits.",
+    "draftPublished": "Your work “{title}” passed review and is now published.",
+    "draftPublishRejected": "Your work “{title}” did not pass publish review: {reason}"
   },
   "notificationsPage": {
     "title": "Notifications",
@@ -2158,7 +2195,12 @@
     "accessCredits": "Remix unlock price",
     "accessCreditsHint": "0 keeps remixes free. A paid unlock is an in-app license, not CC-BY.",
     "accessFree": "Free",
-    "accessCustom": "Custom"
+    "accessCustom": "Custom",
+    "submittedReview": "Submitted for review. We'll notify you when it is published.",
+    "pendingTitle": "Review in progress",
+    "pendingHint": "We'll notify you when it passes. You can't submit again until then.",
+    "rejectedTitle": "Publish review did not pass",
+    "rejectedHint": "Edit the title or description and submit again."
   },
   "region": {
     "label": "Region",
@@ -2375,6 +2417,7 @@
       "dialogue": "Dialogue",
       "breakpoint": "Suggested cut"
     },
+    "viewGeneratedVideo": "View video",
     "linkCharacter": "Link character card",
     "linkScene": "Link scene card",
     "linkLoading": "Loading…",

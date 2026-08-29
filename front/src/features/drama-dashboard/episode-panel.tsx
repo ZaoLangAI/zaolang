@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { SignInPrompt } from '@/components/auth/sign-in-prompt';
+import { Poster } from '@/components/media/poster';
 import { BackLink } from '@/components/ui/back-link';
 import { Button } from '@/components/ui/button';
 import { Select, TextInput } from '@/components/ui/field';
@@ -25,18 +26,28 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { Draft } from '@/lib/api/types';
+import type { Draft, WorkDetail } from '@/lib/api/types';
 import { formatRelative } from '@/lib/format';
 
 import { AnalyticsPanel } from './analytics-panel';
 import { DeleteEpisodeDialog } from './delete-episode-dialog';
 import { pascalCase } from './format';
+import { generatedVideoDetailHref } from './generated-video-href';
 import { PublishPanel } from './publish-panel';
 
 const EPISODE_KINDS = ['main', 'trailer', 'teaser', 'bts', 'recap', 'other'] as const;
 const STATUSES = ['draft', 'production', 'published', 'archived'] as const;
 const VIDEO_CONTENT_TYPES = new Set(['draft', 'work']);
 const META_SAVE_DEBOUNCE_MS = 500;
+
+function draftCardLabel(draft: Draft | undefined, fallback: string): string {
+  const prompt = draft?.params?.prompt;
+  if (typeof prompt === 'string' && prompt.trim()) {
+    const firstLine = prompt.trim().split('\n')[0] ?? '';
+    return firstLine || fallback;
+  }
+  return draft?.title?.trim() || fallback;
+}
 
 /**
  * `/create/short/episodes/{episodeId}`: the episode's own workspace.
@@ -53,6 +64,9 @@ const META_SAVE_DEBOUNCE_MS = 500;
  * The old standalone "打开文案" button is gone too — its destination is
  * now a clickable script-summary card (prompt/character/scene counts,
  * timestamps) fetched on its own and rendered ahead of "生成的视频".
+ * Each generated-video poster links to that clip's detail (`/work/{id}`
+ * once published, otherwise `/jobs/{latest_job_id}`); "进入剪辑" stays
+ * a separate action and must not ride the same navigation.
  */
 export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const t = useTranslations('editor');
@@ -68,6 +82,7 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const [exports, setExports] = useState<editorApi.EpisodeExport[]>([]);
   const [script, setScript] = useState<scriptApi.ScriptDetail | null>(null);
   const [draftDetails, setDraftDetails] = useState<Record<string, Draft>>({});
+  const [workDetails, setWorkDetails] = useState<Record<string, WorkDetail>>({});
   const [loaded, setLoaded] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [enteringEditorFor, setEnteringEditorFor] = useState<string | null>(null);
@@ -157,6 +172,31 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
       });
     });
     // Only re-runs when a not-yet-fetched draft id shows up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [links]);
+
+  useEffect(() => {
+    const workIds = links
+      .filter((link) => link.content_type === 'work')
+      .map((link) => link.content_ref_id)
+      .filter((id) => !(id in workDetails));
+    if (workIds.length === 0) return;
+    void Promise.all(
+      workIds.map((id) =>
+        api
+          .get<WorkDetail>(`/v1/works/${id}`)
+          .then((work) => [id, work] as const)
+          .catch(() => null),
+      ),
+    ).then((results) => {
+      setWorkDetails((current) => {
+        const next = { ...current };
+        for (const entry of results) {
+          if (entry) next[entry[0]] = entry[1];
+        }
+        return next;
+      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [links]);
 
@@ -381,26 +421,85 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
             {videoLinks.length === 0 ? (
               <p className="text-sm text-muted">{t('generatedVideosEmpty')}</p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {videoLinks.map((link) => (
-                  <li
-                    key={link.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3"
-                  >
-                    <span className="min-w-0 truncate text-sm">
-                      {t(`contentType${pascalCase(link.content_type)}`)} · {link.content_ref_id}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={<IconWand className="size-3.5" />}
-                      loading={enteringEditorFor === link.id}
-                      onClick={() => enterEditor(link)}
+              <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {videoLinks.map((link) => {
+                  const typeLabel = t(`contentType${pascalCase(link.content_type)}`);
+                  const draft =
+                    link.content_type === 'draft' ? draftDetails[link.content_ref_id] : undefined;
+                  const work =
+                    link.content_type === 'work' ? workDetails[link.content_ref_id] : undefined;
+                  const label =
+                    link.content_type === 'draft'
+                      ? draftCardLabel(draft, typeLabel)
+                      : (work?.title ?? typeLabel);
+                  const detailHref = generatedVideoDetailHref({
+                    contentType: link.content_type,
+                    contentRefId: link.content_ref_id,
+                    draft,
+                  });
+                  const poster = (
+                    <>
+                      {draft ? (
+                        <Poster
+                          src={draft.output_media_type === 'audio' ? null : draft.output_url}
+                          alt={label}
+                          mediaType={draft.output_media_type}
+                          aspect="video"
+                          className="rounded-none transition-transform duration-300 group-hover:scale-[1.01]"
+                          lazy
+                        />
+                      ) : (
+                        <Poster
+                          src={work?.cover_url ?? work?.current_version?.media_url}
+                          alt={label}
+                          mediaType={
+                            work?.cover_url
+                              ? undefined
+                              : (work?.current_version?.media_type ?? work?.media_type)
+                          }
+                          aspect="video"
+                          className="rounded-none transition-transform duration-300 group-hover:scale-[1.01]"
+                          lazy
+                        />
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 bg-gradient-to-t from-surface/95 via-surface/55 to-transparent px-3 py-3 pt-10">
+                        <p className="min-w-0 flex-1 truncate text-xs text-text">{label}</p>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="shrink-0 whitespace-nowrap"
+                          icon={<IconWand className="size-3.5" />}
+                          loading={enteringEditorFor === link.id}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            enterEditor(link);
+                          }}
+                        >
+                          {t('enterEditorAction')}
+                        </Button>
+                      </div>
+                    </>
+                  );
+                  return (
+                    <li
+                      key={link.id}
+                      className="group overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-colors hover:border-border-strong"
                     >
-                      {t('enterEditorAction')}
-                    </Button>
-                  </li>
-                ))}
+                      {detailHref ? (
+                        <Link
+                          href={detailHref}
+                          aria-label={t('generatedVideoOpenDetail')}
+                          className="relative block focus-visible:outline-2"
+                        >
+                          {poster}
+                        </Link>
+                      ) : (
+                        <div className="relative">{poster}</div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

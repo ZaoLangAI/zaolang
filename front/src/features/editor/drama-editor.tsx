@@ -20,7 +20,7 @@ import { useEditorLease } from './use-editor-lease';
 export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string | null }) {
   const t = useTranslations('editor');
   const { notify } = useToast();
-  const { lease, token } = useEditorLease(cutId);
+  const { lease, token, heldByOther, reclaim, reclaiming } = useEditorLease(cutId);
   const readonly = useEditorUi((state) => state.readonly);
   const selectedIds = useEditorUi((state) => state.selectedIds);
   const playheadTicks = useEditorUi((state) => state.playheadTicks);
@@ -130,7 +130,11 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
     <EditorGate>
       <StudioShell
         cutName={cut.name}
+        episodeId={cut.episode_id}
         readonly={readonly}
+        heldByOther={heldByOther}
+        reclaiming={reclaiming}
+        onReclaim={() => void reclaim()}
         document={document}
         assets={assets}
         durationTicks={cut.head?.duration_ticks ?? 0}

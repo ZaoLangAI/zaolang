@@ -271,6 +271,59 @@ def test_a_second_browser_cannot_steal_the_write_lease(
     assert second.json()["error"]["code"] == "LEASE_HELD"
 
 
+def test_same_browser_reacquire_rotates_the_write_token(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "续租剧", "target_platforms": ["manual_download"]},
+    ).json()
+    episode = client.post(
+        f"/v1/drama-series/{series['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "一"},
+    ).json()
+    cut = client.post(
+        f"/v1/drama-episodes/{episode['id']}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": asset.id},
+    ).json()
+    first = client.post(
+        f"/v1/episode-cuts/{cut['id']}/leases",
+        headers=auth_header(author),
+        json={"browser_instance_id": "browser-a"},
+    )
+    assert first.status_code == 201, first.text
+    first_token = first.json()["token"]
+    assert first_token
+    second = client.post(
+        f"/v1/episode-cuts/{cut['id']}/leases",
+        headers=auth_header(author),
+        json={"browser_instance_id": "browser-a"},
+    )
+    assert second.status_code == 201, second.text
+    second_token = second.json()["token"]
+    assert second_token
+    assert second_token != first_token
+    assert second.json()["id"] == first.json()["id"]
+    stale = client.post(
+        f"/v1/episode-cuts/{cut['id']}/leases/{first.json()['id']}/heartbeat",
+        headers={**auth_header(author), "X-Editor-Lease-Token": first_token},
+        json={"browser_instance_id": "browser-a"},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "LEASE_HELD"
+    alive = client.post(
+        f"/v1/episode-cuts/{cut['id']}/leases/{second.json()['id']}/heartbeat",
+        headers={**auth_header(author), "X-Editor-Lease-Token": second_token},
+        json={"browser_instance_id": "browser-a"},
+    )
+    assert alive.status_code == 200, alive.text
+
+
 def test_a_stranger_cannot_open_someone_elses_series(
     client: TestClient, db: Session, author: User, admin: User
 ) -> None:

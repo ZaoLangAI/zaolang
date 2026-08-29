@@ -5,6 +5,12 @@ import { useTranslations } from 'next-intl';
 import type { ScriptBlockType, ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import { EditableInlineText } from './editable-text';
 import { ScriptBlockRow, ScriptLegend } from './script-block';
+import {
+  breakpointKey,
+  breakpointOrdinalInScene,
+  resolveBreakpointHref,
+  type BreakpointVideoBinding,
+} from './script-breakpoint';
 import { ScriptLinkPicker } from './script-link-picker';
 
 /** Seed prompt for a character's auto-created/updated image: the traits the
@@ -164,32 +170,6 @@ function breakpointSegmentPrompt(scene: ScriptScene, breakpointBlockIndex: numbe
 }
 
 /**
- * The video-side counterpart of `buildCreateHref` above, for the breakpoint
- * chip: `referenceCharacterIds`/`referenceSceneIds` name new params —
- * deliberately distinct from `targetCharacterId`/`targetSceneId`, which mean
- * "auto-attach the output here", not "use this as generation input". No
- * `returnTo` round-trip: unlike the image jump-out, this consumes refs that
- * are already linked, creates nothing new to report back, and video
- * generation still lands on `/jobs/[jobId]`, which has no return-link surface.
- */
-function buildBreakpointVideoHref({
-  characterIds,
-  sceneId,
-  prompt,
-}: {
-  characterIds: string[];
-  sceneId: string | null;
-  prompt: string;
-}): string | undefined {
-  if (characterIds.length === 0 && !sceneId) return undefined;
-  const params = new URLSearchParams({ mode: 'video_creation' });
-  if (prompt) params.set('prompt', prompt);
-  if (characterIds.length) params.set('referenceCharacterIds', characterIds.join(','));
-  if (sceneId) params.set('referenceSceneIds', sceneId);
-  return `/create/new?${params.toString()}`;
-}
-
-/**
  * The full script, top to bottom: characters, then every scene in order with
  * its blocks colour-coded by type. Always renders the *whole* current
  * document — there is no diff view, matching the requirement that only the
@@ -212,6 +192,7 @@ export function ScriptDocumentView({
   episodeId,
   onLink,
   onSaveContent,
+  videoBindings,
 }: {
   document: ScriptDocument;
   episodeId?: string;
@@ -221,6 +202,8 @@ export function ScriptDocumentView({
       | { kind: 'scene'; heading: string; refId: string | null },
   ) => void;
   onSaveContent?: (next: ScriptDocument) => void;
+  /** Drafts already linked to this episode, keyed by `breakpointKey`. */
+  videoBindings?: Record<string, BreakpointVideoBinding>;
 }) {
   const t = useTranslations('scriptStudio');
 
@@ -341,25 +324,35 @@ export function ScriptDocumentView({
               ) : null}
             </div>
             <div className="flex flex-col gap-1.5">
-              {scene.blocks.map((block, blockIndex) => (
-                <ScriptBlockRow
-                  key={blockIndex}
-                  block={block}
-                  onSave={
-                    onSaveContent
-                      ? (next) => saveBlockText(sceneIndex, blockIndex, next)
-                      : undefined
-                  }
-                  breakpointVideoHref={
-                    block.type === 'breakpoint'
-                      ? buildBreakpointVideoHref({
-                          ...resolveBreakpointRefs(document, scene, blockIndex),
-                          prompt: breakpointSegmentPrompt(scene, blockIndex),
-                        })
-                      : undefined
-                  }
-                />
-              ))}
+              {scene.blocks.map((block, blockIndex) => {
+                const key =
+                  block.type === 'breakpoint'
+                    ? breakpointKey(scene.heading, breakpointOrdinalInScene(scene, blockIndex))
+                    : null;
+                const chip =
+                  key !== null
+                    ? resolveBreakpointHref({
+                        episodeId,
+                        key,
+                        ...resolveBreakpointRefs(document, scene, blockIndex),
+                        prompt: breakpointSegmentPrompt(scene, blockIndex),
+                        binding: videoBindings?.[key],
+                      })
+                    : undefined;
+                return (
+                  <ScriptBlockRow
+                    key={blockIndex}
+                    block={block}
+                    onSave={
+                      onSaveContent
+                        ? (next) => saveBlockText(sceneIndex, blockIndex, next)
+                        : undefined
+                    }
+                    breakpointVideoHref={chip?.href}
+                    viewGenerated={chip?.viewGenerated}
+                  />
+                );
+              })}
             </div>
           </div>
         ))}

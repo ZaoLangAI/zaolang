@@ -198,6 +198,21 @@ def run_quality_check(job_id: str) -> str:
         return job.status if job else "missing"
 
 
+@celery_app.task(name="app.workers.tasks.run_draft_publish", bind=True, max_retries=2)
+def run_draft_publish(self: Task, draft_id: str) -> str:
+    """Finishes a draft publish after the HTTP accept: safety, then Work."""
+    from app.domain.publishing import service as publishing
+
+    with session_scope() as session:
+        try:
+            publishing.finalize_draft_publish(session, draft_id)
+        except Exception as exc:
+            if _is_transient_worker_error(exc):
+                raise self.retry(exc=exc, countdown=10) from exc
+            raise
+    return "done"
+
+
 @celery_app.task(name="app.workers.tasks.expire_stale_jobs")
 def expire_stale_jobs() -> int:
     """Settles jobs whose worker died mid-flight.
@@ -518,6 +533,7 @@ __all__ = [
     "reconcile_credits",
     "reconcile_webhooks",
     "run_audio_generation",
+    "run_draft_publish",
     "run_generation",
     "run_quality_check",
     "run_video_analysis",

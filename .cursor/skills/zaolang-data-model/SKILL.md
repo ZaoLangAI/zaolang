@@ -17,7 +17,7 @@ Schema is defined in exactly one place: `back/app/models/` is ground truth, and 
 | `back/app/models/base.py` | `Base`, `TimestampMixin`, `new_id()`, naming conventions |
 | `back/app/models/enums.py` | every enum + the `JOB_TRANSITIONS` state table + `JobStatus.is_terminal` + `JobOrigin` (`user` / `sandbox`) |
 | `back/app/models/identity.py` | `User` / `Profile` (preference fields `theme` / `locale` / `region` live here) / `Follow` |
-| `back/app/models/works.py` | `Work` / `WorkVersion` / `LicenseSnapshot` / `LineageEdge` / `Draft` / `Like` / `Bookmark` / `Collection` / `Tag` / `StylePreset` |
+| `back/app/models/works.py` | `Work` / `WorkVersion` / `LicenseSnapshot` / `LineageEdge` / `Draft` (`publish_status` pending/rejected/null, `publish_params_json`, `publish_failure_message` — HTTP accept vs worker finish; success is `published_work_id`, not a third status) / `Like` / `Bookmark` / `Collection` / `Tag` / `StylePreset`. Do not reuse `PublicationIntent` for this (that table is post-publish off-platform distribution) |
 | `back/app/models/generation.py` | `Workflow(Version)` / `GenerationJob` (`origin`, `graph_override_json`) / `JobEvent` / `ProviderAttempt` / `ProviderStat` / `AgentRun` (`input_json`, `thinking_text` — raw reasoning, never stuffed into `output_json`; same semantics as `EpisodeScriptTurn.thinking_text`) |
 | `back/app/models/credits.py` | `CreditAccount` / `CreditLedgerEntry` / `CreditPackage` / `PaymentIntent` / `WebhookEvent` |
 | `back/app/models/media.py` | `Asset` / `UploadSession` / `AssetConsent` / `ContentFingerprint` / `ProvenanceManifest` |

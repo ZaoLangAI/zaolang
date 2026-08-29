@@ -25,7 +25,11 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizabl
  */
 export function StudioShell({
   cutName,
+  episodeId,
   readonly,
+  heldByOther,
+  reclaiming,
+  onReclaim,
   document,
   assets,
   durationTicks,
@@ -48,7 +52,11 @@ export function StudioShell({
   onRestore,
 }: {
   cutName: string;
+  episodeId: string | null;
   readonly: boolean;
+  heldByOther: boolean;
+  reclaiming: boolean;
+  onReclaim: () => void;
   document: CanonicalDocument;
   assets: ResolvedAsset[];
   durationTicks: number;
@@ -74,17 +82,25 @@ export function StudioShell({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <EditorHeader title={cutName} />
+      <EditorHeader title={cutName} episodeId={episodeId} />
       {readonly ? (
         <div className="border-b border-border">
-          <ErrorNotice title={t('readonlyLease')} detail={t('leaseLost')} />
+          <ErrorNotice
+            title={t('readonlyLease')}
+            detail={heldByOther ? t('leaseLost') : t('leaseNotReady')}
+            action={
+              <Button size="sm" variant="secondary" loading={reclaiming} onClick={onReclaim}>
+                {t('reclaimLease')}
+              </Button>
+            }
+          />
         </div>
       ) : null}
       <div className="min-h-0 flex-1">
         <ResizablePanelGroup direction="vertical">
-          <ResizablePanel defaultSize={72} minSize={40}>
+          <ResizablePanel defaultSize={58} minSize={32} className="min-h-0 min-w-0 overflow-hidden">
             <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel defaultSize={22} minSize={15} maxSize={40}>
+              <ResizablePanel defaultSize={22} minSize={15} maxSize={40} className="min-h-0 min-w-0 overflow-hidden">
                 <MediaLibraryPanel
                   disabled={disabled}
                   onApply={onApply}
@@ -93,15 +109,15 @@ export function StudioShell({
                 />
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={53} minSize={30}>
-                <div className="flex h-full flex-col gap-2 overflow-y-auto p-3">
+              <ResizablePanel defaultSize={53} minSize={30} className="min-h-0 min-w-0 overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden p-3">
                   <Preview
                     document={document}
                     assets={assets}
                     durationTicks={durationTicks}
                     title={cutName}
                   />
-                  <p className="text-xs text-muted">
+                  <p className="shrink-0 text-xs text-muted">
                     {t('canvasLabel')} · {document.canvas.width}×{document.canvas.height} ·{' '}
                     {t('durationLabel', {
                       seconds: (Math.max(durationTicks, 0) / TICKS_PER_SECOND).toFixed(1),
@@ -110,7 +126,7 @@ export function StudioShell({
                 </div>
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
+              <ResizablePanel defaultSize={25} minSize={15} maxSize={40} className="min-h-0 min-w-0 overflow-hidden">
                 <PropertiesPanel
                   document={document}
                   assets={assets}
@@ -131,9 +147,9 @@ export function StudioShell({
             </ResizablePanelGroup>
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel defaultSize={28} minSize={15} maxSize={60}>
-            <div className="flex h-full flex-col gap-2 overflow-y-auto p-3">
-              <div className="flex flex-wrap gap-2">
+          <ResizablePanel defaultSize={42} minSize={24} maxSize={60} className="min-h-0 min-w-0 overflow-hidden">
+            <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden p-3">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="secondary"

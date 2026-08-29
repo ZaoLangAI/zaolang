@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,6 +31,7 @@ from app.models import (
 )
 from app.models.base import new_id
 from app.models.enums import (
+    DraftPublishStatus,
     LedgerEntryType,
     LifecycleStatus,
     ModerationStage,
@@ -39,7 +41,9 @@ from app.models.enums import (
     QualityTier,
     Visibility,
 )
+from app.platform_config import service as config_service
 from app.workers import pipeline
+from tests.conftest import auth_header
 
 pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
@@ -415,3 +419,234 @@ def test_a_tombstoned_ancestor_keeps_the_chain_resolvable(
     )
     assert edge is not None
     assert edge.parent_author_snapshot_json.get("user_id") == author.id
+
+
+def _request_publish(
+    db: Session,
+    user: User,
+    draft: Draft,
+    *,
+    title: str = "雾谷",
+    visibility: str = Visibility.PUBLIC_REMIXABLE,
+) -> Draft:
+    return publishing.request_publish(
+        db,
+        user_id=user.id,
+        draft_id=draft.id,
+        title=title,
+        description="山谷里的晨雾。",
+        visibility=visibility,
+        tags=["cinematic"],
+        cover_asset_id=None,
+        rights_confirmed=True,
+    )
+
+
+def _ready_draft(db: Session, user: User) -> Draft:
+    _fund(db, user)
+    draft = publishing.create_draft(db, user_id=user.id, source_work_id=None)
+    _generate_into_draft(db, user, draft)
+    return draft
+
+
+def _publish_body(**overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "title": "雾谷",
+        "description": "山谷里的晨雾。",
+        "visibility": Visibility.PUBLIC_REMIXABLE,
+        "rights_confirmed": True,
+        "ai_disclosure_confirmed": True,
+    }
+    body.update(overrides)
+    return body
+
+
+def test_blocked_keywords_reject_the_request_before_pending(db: Session, author: User) -> None:
+    config_service.set_value(
+        db,
+        "content_moderation",
+        {"blocked_keywords": ["forbidden-publish-word"]},
+        actor_user_id=None,
+        note="test",
+    )
+    draft = _ready_draft(db, author)
+
+    with pytest.raises(ModerationRejected):
+        _request_publish(db, author, draft, title="a forbidden-publish-word title")
+
+    db.refresh(draft)
+    assert draft.publish_status is None
+    assert draft.published_work_id is None
+
+
+def test_a_pending_draft_cannot_be_submitted_again(db: Session, author: User) -> None:
+    draft = _ready_draft(db, author)
+    _request_publish(db, author, draft)
+
+    with pytest.raises(Conflict):
+        _request_publish(db, author, draft)
+
+
+def test_finalize_publish_creates_a_work_and_notifies(db: Session, author: User) -> None:
+    draft = _ready_draft(db, author)
+    _request_publish(db, author, draft)
+    publishing.finalize_draft_publish(db, draft.id)
+    db.refresh(draft)
+
+    assert draft.published_work_id is not None
+    assert draft.publish_status is None
+    note = db.scalar(
+        select(Notification).where(
+            Notification.user_id == author.id,
+            Notification.target_type == "draft",
+            Notification.target_id == draft.id,
+        )
+    )
+    assert note is not None
+    assert note.type == NotificationType.DRAFT_PUBLISHED
+    assert note.payload_json.get("work_id") == draft.published_work_id
+
+
+def test_finalize_llm_rejection_leaves_no_work_and_allows_retry(db: Session, author: User) -> None:
+    draft = _ready_draft(db, author)
+    before = len(list(db.scalars(select(Work))))
+    _request_publish(db, author, draft, title="未成年人的亲密画面")
+    publishing.finalize_draft_publish(db, draft.id)
+    db.refresh(draft)
+
+    assert draft.publish_status == DraftPublishStatus.REJECTED
+    assert draft.published_work_id is None
+    assert len(list(db.scalars(select(Work)))) == before
+    rejected = db.scalar(
+        select(Notification).where(
+            Notification.user_id == author.id,
+            Notification.target_type == "draft",
+            Notification.target_id == draft.id,
+        )
+    )
+    assert rejected is not None
+    assert rejected.type == NotificationType.DRAFT_PUBLISH_REJECTED
+
+    _request_publish(db, author, draft, title="雾谷")
+    publishing.finalize_draft_publish(db, draft.id)
+    db.refresh(draft)
+    assert draft.published_work_id is not None
+
+
+def test_finalize_on_an_already_published_draft_only_notifies(
+    db: Session, author: User, original: publishing.PublishOutcome
+) -> None:
+    draft = db.scalar(select(Draft).where(Draft.published_work_id == original.work.id))
+    assert draft is not None
+    publishing.finalize_draft_publish(db, draft.id)
+    first = db.scalar(
+        select(Notification).where(
+            Notification.user_id == author.id,
+            Notification.target_type == "draft",
+            Notification.target_id == draft.id,
+        )
+    )
+    assert first is not None
+    first_id = first.id
+    publishing.finalize_draft_publish(db, draft.id)
+    notes = list(
+        db.scalars(
+            select(Notification).where(
+                Notification.user_id == author.id,
+                Notification.target_type == "draft",
+                Notification.target_id == draft.id,
+            )
+        )
+    )
+    assert len(notes) == 1
+    assert notes[0].id == first_id
+
+
+def test_http_publish_returns_202_without_creating_a_work(
+    client: TestClient,
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(publishing, "enqueue_draft_publish", lambda _draft_id: None)
+    draft = _ready_draft(db, author)
+    before = len(list(db.scalars(select(Work))))
+
+    response = client.post(
+        f"/v1/drafts/{draft.id}/publish",
+        json=_publish_body(),
+        headers={**auth_header(author), "Idempotency-Key": new_id("idk")},
+    )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["draft_id"] == draft.id
+    assert body.get("work_id") is None
+    db.refresh(draft)
+    assert draft.publish_status == DraftPublishStatus.PENDING
+    assert len(list(db.scalars(select(Work)))) == before
+
+
+def test_http_publish_replays_the_same_idempotency_key(
+    client: TestClient,
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(publishing, "enqueue_draft_publish", lambda _draft_id: None)
+    draft = _ready_draft(db, author)
+    headers = {**auth_header(author), "Idempotency-Key": "idk-publish-replay"}
+    first = client.post(f"/v1/drafts/{draft.id}/publish", json=_publish_body(), headers=headers)
+    second = client.post(f"/v1/drafts/{draft.id}/publish", json=_publish_body(), headers=headers)
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert second.json() == first.json()
+
+
+def test_http_publish_rejects_a_second_pending_submit(
+    client: TestClient,
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(publishing, "enqueue_draft_publish", lambda _draft_id: None)
+    draft = _ready_draft(db, author)
+    first = client.post(
+        f"/v1/drafts/{draft.id}/publish",
+        json=_publish_body(),
+        headers={**auth_header(author), "Idempotency-Key": new_id("idk")},
+    )
+    second = client.post(
+        f"/v1/drafts/{draft.id}/publish",
+        json=_publish_body(),
+        headers={**auth_header(author), "Idempotency-Key": new_id("idk")},
+    )
+    assert first.status_code == 202
+    assert second.status_code == 409
+
+
+def test_http_publish_blocks_keywords_synchronously(
+    client: TestClient,
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueued: list[str] = []
+    monkeypatch.setattr(publishing, "enqueue_draft_publish", enqueued.append)
+    config_service.set_value(
+        db,
+        "content_moderation",
+        {"blocked_keywords": ["forbidden-publish-word"]},
+        actor_user_id=None,
+        note="test",
+    )
+    draft = _ready_draft(db, author)
+    response = client.post(
+        f"/v1/drafts/{draft.id}/publish",
+        json=_publish_body(title="a forbidden-publish-word title"),
+        headers={**auth_header(author), "Idempotency-Key": new_id("idk")},
+    )
+    assert response.status_code == 422
+    assert enqueued == []
+    db.refresh(draft)
+    assert draft.publish_status is None

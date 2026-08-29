@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
-from app.models.enums import LicenseType, LifecycleStatus, MediaType, Visibility
+from app.models.enums import (
+    DraftPublishStatus,
+    LicenseType,
+    LifecycleStatus,
+    MediaType,
+    Visibility,
+)
 
 
 class AuthorSummary(ApiModel):
@@ -186,6 +192,8 @@ class DraftResponse(ApiModel):
     width: int | None = None
     height: int | None = None
     published_work_id: str | None = None
+    publish_status: DraftPublishStatus | None = None
+    publish_failure_message: str | None = None
     created_at: dt.datetime
 
 
@@ -202,11 +210,9 @@ class PublishRequest(ApiModel):
 
 
 class PublishResponse(ApiModel):
-    work_id: str
-    work_version_id: str
-    visibility: Visibility
-    lineage_edge_id: str | None = None
-    royalties_paid: list[dict[str, Any]] = Field(default_factory=list)
+    status: Literal["pending"] = "pending"
+    draft_id: str
+    work_id: str | None = None
 
 
 class VisibilityUpdateRequest(ApiModel):

@@ -120,8 +120,7 @@ export function ExportPanel({
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4">
-      <h2 className="text-sm font-semibold">{t('exportTitle')}</h2>
+    <div className="flex flex-col gap-3">
       <p className="text-xs text-muted">{t('exportHint')}</p>
       <p className="text-xs text-muted">{t('hardLimitHint')}</p>
       <p className="text-xs text-muted">{t('sequentialHint')}</p>
@@ -162,6 +161,6 @@ export function ExportPanel({
           {t('bindAndPublish')}
         </Button>
       ) : null}
-    </section>
+    </div>
   );
 }

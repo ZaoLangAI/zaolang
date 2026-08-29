@@ -73,6 +73,14 @@ final class PushManager: NSObject {
         case "work":
             router.selectTab(.discover)
             router.discoverPath.append(DiscoverRoute.workDetail(workID: targetID))
+        case "draft":
+            if let workID = userInfo["work_id"] as? String, !workID.isEmpty {
+                router.selectTab(.discover)
+                router.discoverPath.append(DiscoverRoute.workDetail(workID: workID))
+            } else {
+                router.selectTab(.create)
+                router.createPath.append(CreateRoute.publish(draftID: targetID))
+            }
         default:
             break
         }

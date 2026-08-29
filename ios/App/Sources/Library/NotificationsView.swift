@@ -8,6 +8,7 @@ struct NotificationsView: View {
     let onOpenJob: (String) -> Void
     let onOpenProfile: (String) -> Void
     let onOpenLearn: (String) -> Void
+    let onOpenPublish: (String) -> Void
 
     @State private var viewModel: NotificationsViewModel?
     @State private var filterUnreadOnly = false
@@ -107,6 +108,7 @@ struct NotificationsView: View {
         case .job(let jobID): onOpenJob(jobID)
         case .profile(let handle): onOpenProfile(handle)
         case .learn(let postID): onOpenLearn(postID)
+        case .publish(let draftID): onOpenPublish(draftID)
         }
     }
 

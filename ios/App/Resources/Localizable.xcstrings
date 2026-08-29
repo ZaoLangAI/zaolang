@@ -6671,6 +6671,29 @@
         }
       }
     },
+    "jobPage.awaitingInputLoading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading questions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "質問を読み込んでいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载问题"
+          }
+        }
+      }
+    },
     "jobPage.awaitingInputRequired": {
       "extractionState": "manual",
       "localizations": {
@@ -10098,6 +10121,52 @@
         }
       }
     },
+    "notificationBody.draftPublishRejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your work “{title}” did not pass publish review: {reason}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品「{title}」は公開審査を通過しませんでした：{reason}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的作品「{title}」未通过发布审核：{reason}"
+          }
+        }
+      }
+    },
+    "notificationBody.draftPublished": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your work “{title}” passed review and is now published."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作品「{title}」は審査を通過し、公開されました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的作品「{title}」已通过审核并发布。"
+          }
+        }
+      }
+    },
     "notificationBody.exportCancelled": {
       "extractionState": "manual",
       "localizations": {
@@ -12766,6 +12835,52 @@
         }
       }
     },
+    "publishPage.pendingHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We'll notify you when it passes. You can't submit again until then."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通過したら通知します。完了するまで再提出できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "审核通过后会通知你。通过前不能再次提交。"
+          }
+        }
+      }
+    },
+    "publishPage.pendingTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review in progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公開を審査中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在审核发布"
+          }
+        }
+      }
+    },
     "publishPage.previewLabel": {
       "extractionState": "manual",
       "localizations": {
@@ -12881,6 +12996,52 @@
         }
       }
     },
+    "publishPage.rejectedHint": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit the title or description and submit again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトルや説明を直して、もう一度提出してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请修改标题或简介后重新提交。"
+          }
+        }
+      }
+    },
+    "publishPage.rejectedTitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publish review did not pass"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公開審査を通過しませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发布未通过审核"
+          }
+        }
+      }
+    },
     "publishPage.resolution": {
       "extractionState": "manual",
       "localizations": {
@@ -12923,6 +13084,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "我确认拥有全部素材的使用权，并同意按所选许可分享。"
+          }
+        }
+      }
+    },
+    "publishPage.submittedReview": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitted for review. We'll notify you when it is published."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "審査に提出しました。通過したら通知します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已提交审核，通过后会通知你"
           }
         }
       }

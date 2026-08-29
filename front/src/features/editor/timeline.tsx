@@ -16,13 +16,6 @@ import {
 } from './engine/ports';
 import { useEditorUi } from './store';
 
-const TRACK_KIND_LABEL_KEY: Record<TimelineTrack['kind'], string> = {
-  video: 'trackKindVideo',
-  audio: 'trackKindAudio',
-  caption: 'trackKindCaption',
-  overlay: 'trackKindOverlay',
-};
-
 const MIN_DURATION_TICKS = Math.round(TICKS_PER_SECOND * 0.1);
 
 function secondsLabel(ticks: number): string {
@@ -55,6 +48,12 @@ export function Timeline({
   onCommand: (commands: EditCommand[]) => void;
 }) {
   const t = useTranslations('editor');
+  const kindLabel: Record<TimelineTrack['kind'], string> = {
+    video: t('trackKindVideo'),
+    audio: t('trackKindAudio'),
+    caption: t('trackKindCaption'),
+    overlay: t('trackKindOverlay'),
+  };
   const selectedIds = useEditorUi((state) => state.selectedIds);
   const playheadTicks = useEditorUi((state) => state.playheadTicks);
   const setPlayhead = useEditorUi((state) => state.setPlayhead);
@@ -176,7 +175,7 @@ export function Timeline({
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       <input
         type="range"
         min={0}
@@ -186,27 +185,28 @@ export function Timeline({
         aria-label={playheadLabel}
         disabled={disabled}
         onChange={(event) => setPlayhead(Number(event.target.value))}
-        className="w-full accent-primary"
+        className="w-full shrink-0 accent-primary"
       />
-      <ul className="flex flex-col gap-2">
+      <ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {sortedTracks.map((track) => {
           const isAddable = track.kind === 'video' || track.kind === 'audio';
           const isOnlyOfKind = (trackCountByKind[track.kind] ?? 0) <= 1;
           return (
             <li
               key={track.id}
-              className="rounded-[var(--radius-sm)] border border-border bg-surface-soft p-2"
+              className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-2 py-1.5"
             >
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <p className="text-[11px] uppercase tracking-wide text-muted">
-                  {track.label || t(TRACK_KIND_LABEL_KEY[track.kind])}
+              <div className="flex w-20 shrink-0 flex-col items-start gap-0.5">
+                <p className="w-full truncate text-[11px] text-muted">
+                  {track.label || kindLabel[track.kind]}
                 </p>
                 {isAddable ? (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5">
                     <IconButton
                       label={track.muted ? t('unmuteTrack') : t('muteTrack')}
                       variant="ghost"
                       size="sm"
+                      className="size-7"
                       disabled={disabled}
                       onClick={() =>
                         onCommand([
@@ -224,6 +224,7 @@ export function Timeline({
                       label={t('removeTrack')}
                       variant="ghost"
                       size="sm"
+                      className="size-7"
                       disabled={disabled || isOnlyOfKind || track.elements.length > 0}
                       onClick={() => onCommand([{ type: 'remove_track', track_id: track.id }])}
                     >
@@ -232,7 +233,7 @@ export function Timeline({
                   </div>
                 ) : null}
               </div>
-              <div data-lane className="relative h-10 overflow-hidden rounded-sm bg-track">
+              <div data-lane className="relative h-10 min-w-0 flex-1 overflow-hidden rounded-sm bg-track">
                 <span
                   className="absolute inset-y-0 w-px bg-primary"
                   style={{ left: `${(playheadTicks / span) * 100}%` }}
@@ -287,7 +288,7 @@ export function Timeline({
           );
         })}
       </ul>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex shrink-0 flex-wrap gap-2">
         <IconButton
           label={t('addVideoTrack')}
           variant="secondary"

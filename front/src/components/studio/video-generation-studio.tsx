@@ -83,6 +83,7 @@ export function VideoGenerationStudio({
   initialReferenceCharacterIds,
   initialReferenceSceneIds,
   linkEpisodeId,
+  linkBreakpointKey,
 }: {
   operation: 'text_to_video' | 'image_to_video';
   /** A licensed remix source. Submitted as `source_work_id`. */
@@ -129,6 +130,9 @@ export function VideoGenerationStudio({
   /** The short-drama workspace's "去视频创作" jump-out (`?linkEpisodeId=`) —
    * see `GenerationSubmitInput.linkEpisodeId`. */
   linkEpisodeId?: string;
+  /** Which script breakpoint this submit belongs to — see
+   * `GenerationSubmitInput.linkBreakpointKey`. */
+  linkBreakpointKey?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -327,6 +331,7 @@ export function VideoGenerationStudio({
       autoAttachAsset: isCharacterActionKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterActionKind ? subjectNameHint : undefined,
       linkEpisodeId,
+      linkBreakpointKey,
     });
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';

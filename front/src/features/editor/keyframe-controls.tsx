@@ -16,7 +16,7 @@ import { useEditorUi } from './store';
 
 interface PropertyConfig {
   property: AnimatableProperty;
-  labelKey: string;
+  label: string;
   defaultValue: number;
   min: number;
   max: number;
@@ -26,58 +26,60 @@ interface PropertyConfig {
   fromDisplay: (display: number) => number;
 }
 
-const PROPERTIES: PropertyConfig[] = [
-  {
-    property: 'opacity',
-    labelKey: 'keyframeOpacity',
-    defaultValue: 100_000,
-    min: 0,
-    max: 100,
-    step: 1,
-    toDisplay: (v) => Math.round(v / 1_000),
-    fromDisplay: (d) => d * 1_000,
-  },
-  {
-    property: 'transform.x_milli',
-    labelKey: 'keyframeX',
-    defaultValue: 0,
-    min: -200,
-    max: 200,
-    step: 1,
-    toDisplay: (v) => Math.round(v / 10),
-    fromDisplay: (d) => d * 10,
-  },
-  {
-    property: 'transform.y_milli',
-    labelKey: 'keyframeY',
-    defaultValue: 0,
-    min: -200,
-    max: 200,
-    step: 1,
-    toDisplay: (v) => Math.round(v / 10),
-    fromDisplay: (d) => d * 10,
-  },
-  {
-    property: 'transform.scale_millipercent',
-    labelKey: 'keyframeScale',
-    defaultValue: 100_000,
-    min: 10,
-    max: 500,
-    step: 1,
-    toDisplay: (v) => Math.round(v / 1_000),
-    fromDisplay: (d) => d * 1_000,
-  },
-  {
-    property: 'transform.rotation_millidegrees',
-    labelKey: 'keyframeRotation',
-    defaultValue: 0,
-    min: -180,
-    max: 180,
-    step: 1,
-    toDisplay: (v) => Math.round(v / 1_000),
-    fromDisplay: (d) => d * 1_000,
-  },
-];
+function propertyConfigs(t: (key: 'keyframeOpacity' | 'keyframeX' | 'keyframeY' | 'keyframeScale' | 'keyframeRotation') => string): PropertyConfig[] {
+  return [
+    {
+      property: 'opacity',
+      label: t('keyframeOpacity'),
+      defaultValue: 100_000,
+      min: 0,
+      max: 100,
+      step: 1,
+      toDisplay: (v) => Math.round(v / 1_000),
+      fromDisplay: (d) => d * 1_000,
+    },
+    {
+      property: 'transform.x_milli',
+      label: t('keyframeX'),
+      defaultValue: 0,
+      min: -200,
+      max: 200,
+      step: 1,
+      toDisplay: (v) => Math.round(v / 10),
+      fromDisplay: (d) => d * 10,
+    },
+    {
+      property: 'transform.y_milli',
+      label: t('keyframeY'),
+      defaultValue: 0,
+      min: -200,
+      max: 200,
+      step: 1,
+      toDisplay: (v) => Math.round(v / 10),
+      fromDisplay: (d) => d * 10,
+    },
+    {
+      property: 'transform.scale_millipercent',
+      label: t('keyframeScale'),
+      defaultValue: 100_000,
+      min: 10,
+      max: 500,
+      step: 1,
+      toDisplay: (v) => Math.round(v / 1_000),
+      fromDisplay: (d) => d * 1_000,
+    },
+    {
+      property: 'transform.rotation_millidegrees',
+      label: t('keyframeRotation'),
+      defaultValue: 0,
+      min: -180,
+      max: 180,
+      step: 1,
+      toDisplay: (v) => Math.round(v / 1_000),
+      fromDisplay: (d) => d * 1_000,
+    },
+  ];
+}
 
 function secondsLabel(ticks: number): string {
   return `${(ticks / TICKS_PER_SECOND).toFixed(1)}s`;
@@ -102,6 +104,7 @@ export function KeyframeControls({
   onCommit: (commands: EditCommand[]) => void;
 }) {
   const t = useTranslations('editor');
+  const properties = propertyConfigs(t);
   const playheadTicks = useEditorUi((state) => state.playheadTicks);
   const [animations, setAnimations] = useState(initialAnimations);
   const [drafts, setDrafts] = useState<Partial<Record<AnimatableProperty, number>>>({});
@@ -141,7 +144,7 @@ export function KeyframeControls({
     <div className="flex flex-col gap-3 border-t border-border pt-3 text-xs text-muted">
       <p className="text-sm font-semibold text-fg">{t('keyframesTitle')}</p>
       <p className="text-xs text-muted">{t('keyframesHint')}</p>
-      {PROPERTIES.map((config) => {
+      {properties.map((config) => {
         const points = animations.channels[config.property]?.points ?? [];
         const resolved = resolveNumberAtTime(animations, config.property, playheadTicks, config.defaultValue);
         const draft = drafts[config.property] ?? config.toDisplay(resolved);
@@ -149,7 +152,7 @@ export function KeyframeControls({
           <div key={config.property} className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <label className="flex flex-1 items-center gap-2">
-                {t(config.labelKey)}
+                {config.label}
                 <input
                   type="number"
                   min={config.min}

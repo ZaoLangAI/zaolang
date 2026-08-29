@@ -5,7 +5,7 @@ import ZaolangKit
 struct PublishView: View {
     @Environment(AppEnvironment.self) private var environment
     let draftID: String
-    let onPublished: (String) -> Void
+    let onSubmitted: () -> Void
 
     @State private var viewModel: PublishViewModel?
 
@@ -19,8 +19,8 @@ struct PublishView: View {
                 }
                 await viewModel?.load()
             }
-            .onChange(of: viewModel?.publishResult?.workID) { _, workID in
-                if let workID { onPublished(workID) }
+            .onChange(of: viewModel?.publishResult?.status) { _, status in
+                if status == "pending" { onSubmitted() }
             }
     }
 
@@ -53,13 +53,31 @@ struct PublishView: View {
                 DraftSpecSection(draft: draft)
             }
 
+            if viewModel.isPending {
+                Section {
+                    Text(L10n.t("publishPage.pendingTitle"))
+                    Text(L10n.t("publishPage.pendingHint")).font(.footnote).foregroundStyle(Color.zl.textMuted)
+                }
+            }
+
+            if viewModel.isRejected {
+                Section {
+                    Text(L10n.t("publishPage.rejectedTitle")).foregroundStyle(Color.zl.danger)
+                    Text(draft.publishFailureMessage ?? L10n.t("publishPage.rejectedHint"))
+                        .font(.footnote)
+                        .foregroundStyle(Color.zl.textMuted)
+                }
+            }
+
             Section {
                 TextField(L10n.t("publishPage.titleField"), text: Binding(get: { viewModel.title }, set: { viewModel.title = $0 }))
+                    .disabled(viewModel.isPending)
                 TextField(
                     L10n.t("publishPage.descriptionField"),
                     text: Binding(get: { viewModel.description }, set: { viewModel.description = $0 }),
                     axis: .vertical
                 )
+                .disabled(viewModel.isPending)
             }
 
             Section(L10n.t("publishPage.visibilityField")) {
@@ -68,6 +86,7 @@ struct PublishView: View {
                     Text(L10n.t("visibility.public_view_only")).tag(Visibility.publicViewOnly)
                     Text(L10n.t("visibility.private")).tag(Visibility.`private`)
                 }
+                .disabled(viewModel.isPending)
             }
 
             if draft.isRemix, let license = draft.license {
@@ -84,6 +103,7 @@ struct PublishView: View {
                     Text(L10n.t("publishPage.aiLabel")).font(.footnote)
                 }
             }
+            .disabled(viewModel.isPending)
 
             Section {
                 Button {
@@ -94,12 +114,13 @@ struct PublishView: View {
                         if viewModel.isPublishing {
                             ProgressView()
                         } else {
-                            Text(L10n.t("publishPage.publishNow")).font(.body.weight(.semibold))
+                            Text(L10n.t(viewModel.isPending ? "publishPage.pendingTitle" : "publishPage.publishNow"))
+                                .font(.body.weight(.semibold))
                         }
                         Spacer()
                     }
                 }
-                .disabled(!viewModel.canPublish)
+                .disabled(!viewModel.canPublish || viewModel.isPending)
 
                 if let error = viewModel.publishError {
                     Text(error).font(.footnote).foregroundStyle(Color.zl.danger)

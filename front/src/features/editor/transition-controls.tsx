@@ -77,6 +77,10 @@ function EdgeControls({
   onCommit: (commands: EditCommand[]) => void;
 }) {
   const t = useTranslations('editor');
+  const transitionLabel: Record<TransitionType, string> = {
+    crossfade: t('transitionType.crossfade'),
+    dip_to_black: t('transitionType.dip_to_black'),
+  };
   const [type, setType] = useState<TransitionType | 'none'>(initial?.type ?? 'none');
   const [seconds, setSeconds] = useState(initial ? initial.duration_ticks / TICKS_PER_SECOND : Math.min(1, maxSeconds));
 
@@ -99,7 +103,7 @@ function EdgeControls({
           <option value="none">{t('transitionNone')}</option>
           {TRANSITION_TYPES.map((option) => (
             <option key={option} value={option}>
-              {t(`transitionType.${option}` as never)}
+              {transitionLabel[option]}
             </option>
           ))}
         </select>

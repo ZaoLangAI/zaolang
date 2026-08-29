@@ -223,11 +223,19 @@ class Draft(Base, TimestampMixin):
     published_work_id: Mapped[str | None] = mapped_column(
         ForeignKey("works.id", ondelete="SET NULL"), nullable=True
     )
+    # HTTP accept vs worker finish. Null = not submitted; success is
+    # `published_work_id`, not a third status (see `DraftPublishStatus`).
+    publish_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    publish_params_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    publish_failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_cut_revision_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     delivery_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
-    __table_args__ = (Index("ix_drafts_user_id", "user_id"),)
+    __table_args__ = (
+        Index("ix_drafts_user_id", "user_id"),
+        Index("ix_drafts_publish_status", "publish_status"),
+    )
 
 
 class PublicationIntent(Base, TimestampMixin):

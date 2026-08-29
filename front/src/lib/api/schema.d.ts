@@ -719,10 +719,7 @@ export interface paths {
         put?: never;
         /**
          * Publish
-         * @description Publishes a draft as one transaction.
-         *
-         *     Everything from the licence re-check to the ancestor notification either
-         *     lands together or not at all.
+         * @description Accepts a publish intent. Safety review and Work creation run in a worker.
          */
         post: operations["publish_v1_drafts__draft_id__publish_post"];
         delete?: never;
@@ -6452,6 +6449,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * DraftPublishStatus
+         * @description HTTP accept vs worker finish for a draft's pre-publish review.
+         *
+         *     `None` on the column means not submitted. Success is `published_work_id`,
+         *     not a third status here.
+         * @enum {string}
+         */
+        DraftPublishStatus: "pending" | "rejected";
         /** DraftResponse */
         DraftResponse: {
             /** Id */
@@ -6482,6 +6488,9 @@ export interface components {
             height?: number | null;
             /** Published Work Id */
             published_work_id?: string | null;
+            publish_status?: components["schemas"]["DraftPublishStatus"] | null;
+            /** Publish Failure Message */
+            publish_failure_message?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -8305,7 +8314,7 @@ export interface components {
          * NotificationType
          * @enum {string}
          */
-        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "royalty_received" | "access_sold" | "new_follower" | "moderation" | "system";
+        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "draft_published" | "draft_publish_rejected" | "royalty_received" | "access_sold" | "new_follower" | "moderation" | "system";
         /** OkResponse */
         OkResponse: {
             /**
@@ -9259,17 +9268,16 @@ export interface components {
         };
         /** PublishResponse */
         PublishResponse: {
+            /**
+             * Status
+             * @default pending
+             * @constant
+             */
+            status: "pending";
+            /** Draft Id */
+            draft_id: string;
             /** Work Id */
-            work_id: string;
-            /** Work Version Id */
-            work_version_id: string;
-            visibility: components["schemas"]["Visibility"];
-            /** Lineage Edge Id */
-            lineage_edge_id?: string | null;
-            /** Royalties Paid */
-            royalties_paid?: {
-                [key: string]: unknown;
-            }[];
+            work_id?: string | null;
         };
         /**
          * QualityTier
@@ -12668,6 +12676,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "Idempotency-Key"?: string | null;
             };
             path: {
                 draft_id: string;
@@ -12681,7 +12690,7 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

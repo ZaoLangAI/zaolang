@@ -80,6 +80,7 @@ celery_app.conf.update(
         "app.workers.tasks.run_audio_generation": {"queue": "audio_generation"},
         "app.workers.tasks.run_video_analysis": {"queue": "video_analysis"},
         "app.workers.tasks.run_quality_check": {"queue": "quality_check"},
+        "app.workers.tasks.run_draft_publish": {"queue": "quality_check"},
         "app.workers.tasks.reconcile_webhooks": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_jobs": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_stale_input_requests": {"queue": "webhook_reconcile"},

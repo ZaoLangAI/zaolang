@@ -122,13 +122,18 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   draftParams?: Record<string, unknown>;
   /**
    * The short-drama workspace's own deep link (`?linkEpisodeId=`, read back
-   * by `/create/new`'s `page.tsx`) — associates the draft this submit
-   * creates with that episode as a `candidate` the moment the draft exists,
-   * not gated on the job succeeding (a still-running or even failed attempt
-   * is still material worth keeping visible in the workspace). Best-effort:
-   * a failure here must never block the generation itself.
+   * by `/create/new`'s `page.tsx`) — written onto the new draft as
+   * `params.link_episode_id` so `POST /v1/drafts` can attach it as a
+   * `candidate` content-link in the same transaction. A still-running or
+   * failed attempt is still material worth keeping visible in the workspace.
    */
   linkEpisodeId?: string;
+  /**
+   * Which script breakpoint this video belongs to (`{heading}#{ordinal}`).
+   * Stored on the draft as `params.link_breakpoint_key` so the script
+   * studio can flip that chip from "建议切分" to "查看视频".
+   */
+  linkBreakpointKey?: string;
 }
 
 
@@ -253,22 +258,13 @@ export function useGenerationSubmit(
                   ? { shortform_profile: input.shortformProfile }
                   : undefined),
                 ...input.draftParams,
+                ...(input.linkEpisodeId ? { link_episode_id: input.linkEpisodeId } : undefined),
+                ...(input.linkBreakpointKey
+                  ? { link_breakpoint_key: input.linkBreakpointKey }
+                  : undefined),
               },
             });
             pendingDraft.current = draft.id;
-            if (input.linkEpisodeId) {
-              api
-                .post(`/v1/drama-episodes/${input.linkEpisodeId}/content-links`, {
-                  content_type: 'draft',
-                  content_ref_id: draft.id,
-                  role: 'candidate',
-                })
-                .catch(() => {
-                  // Best-effort — the episode workspace's own content-links
-                  // list is just a convenience view, never the source of
-                  // truth for what the draft is.
-                });
-            }
           }
 
           const job = await api.post<GenerationJob>(

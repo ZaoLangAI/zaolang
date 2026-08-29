@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api import idempotency
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.works import (
     DraftCreateRequest,
@@ -14,13 +17,15 @@ from app.api.schemas.works import (
     PublishRequest,
     PublishResponse,
 )
-from app.domain.errors import Forbidden, NotFound, ValidationFailed
+from app.domain.errors import Forbidden, NotFound, ProviderTemporaryFailure, ValidationFailed
 from app.domain.publishing import service as publishing
 from app.models import Asset, Draft, LicenseSnapshot
-from app.models.enums import MediaType, Visibility
+from app.models.enums import DraftPublishStatus, MediaType
 from app.presenters import media_urls
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
+
+PUBLISH_ENDPOINT = "POST /v1/drafts/{draft_id}/publish"
 
 
 @router.post("", response_model=DraftResponse, status_code=201)
@@ -55,21 +60,36 @@ def get_draft(draft_id: str, user: CurrentUser, session: DbSession) -> DraftResp
     return _response(session, _owned(session, draft_id, user.id))
 
 
-@router.post("/{draft_id}/publish", response_model=PublishResponse, status_code=201)
+@router.post("/{draft_id}/publish", response_model=PublishResponse, status_code=202)
 def publish(
-    draft_id: str, payload: PublishRequest, user: CurrentUser, session: DbSession
+    draft_id: str,
+    payload: PublishRequest,
+    user: CurrentUser,
+    session: DbSession,
+    idempotency_key: IdempotencyKey,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> PublishResponse:
-    """Publishes a draft as one transaction.
-
-    Everything from the licence re-check to the ancestor notification either
-    lands together or not at all.
-    """
+    """Accepts a publish intent. Safety review and Work creation run in a worker."""
     if not payload.ai_disclosure_confirmed:
         raise ValidationFailed(
             "请确认作品由 AI 生成的声明。", fields={"ai_disclosure_confirmed": "必须勾选"}
         )
 
-    outcome = publishing.publish(
+    request_hash = idempotency.hash_request(
+        {"draft_id": draft_id, **payload.model_dump(mode="json")}
+    )
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=PUBLISH_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            return PublishResponse.model_validate(replay.response_snapshot)
+
+    draft = publishing.request_publish(
         session,
         user_id=user.id,
         draft_id=draft_id,
@@ -81,15 +101,29 @@ def publish(
         rights_confirmed=payload.rights_confirmed,
         access_credits=payload.access_credits,
     )
+    response = PublishResponse(status="pending", draft_id=draft.id)
     session.commit()
 
-    return PublishResponse(
-        work_id=outcome.work.id,
-        work_version_id=outcome.version.id,
-        visibility=Visibility(outcome.work.visibility),
-        lineage_edge_id=outcome.lineage_edge.id if outcome.lineage_edge else None,
-        royalties_paid=outcome.royalties,
-    )
+    try:
+        publishing.enqueue_draft_publish(draft.id)
+    except Exception as exc:
+        publishing.revert_publish_request(session, draft)
+        session.commit()
+        raise ProviderTemporaryFailure("发布任务未能入队，请重试。") from exc
+
+    if idempotency_key:
+        idempotency.remember(
+            session,
+            user_id=user.id,
+            endpoint=PUBLISH_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+            status_code=202,
+            response=response.model_dump(mode="json"),
+        )
+        session.commit()
+
+    return response
 
 
 @router.delete("/{draft_id}", status_code=204)
@@ -97,6 +131,8 @@ def delete_draft(draft_id: str, user: CurrentUser, session: DbSession) -> None:
     draft = _owned(session, draft_id, user.id)
     if draft.published_work_id is not None:
         raise ValidationFailed("已发布的草稿不能删除。")
+    if draft.publish_status == DraftPublishStatus.PENDING:
+        raise ValidationFailed("正在审核发布的草稿不能删除。")
     session.delete(draft)
     session.commit()
 
@@ -123,6 +159,9 @@ def _response(session, draft: Draft) -> DraftResponse:  # type: ignore[no-untype
             )
 
     asset = session.get(Asset, draft.output_asset_id) if draft.output_asset_id else None
+    publish_status = None
+    if draft.publish_status:
+        publish_status = DraftPublishStatus(draft.publish_status)
     return DraftResponse(
         id=draft.id,
         source_work_version_id=draft.source_work_version_id,
@@ -138,5 +177,7 @@ def _response(session, draft: Draft) -> DraftResponse:  # type: ignore[no-untype
         width=asset.width if asset else None,
         height=asset.height if asset else None,
         published_work_id=draft.published_work_id,
+        publish_status=publish_status,
+        publish_failure_message=draft.publish_failure_message,
         created_at=draft.created_at,
     )

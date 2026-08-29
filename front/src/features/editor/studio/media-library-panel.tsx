@@ -170,9 +170,9 @@ function MediaView({
       ) : items.length === 0 ? (
         <p className="text-xs text-muted">{t('mediaLibraryEmpty')}</p>
       ) : (
-        <ul className="grid grid-cols-2 gap-2">
+        <ul className="grid min-w-0 grid-cols-2 gap-2">
           {items.map((asset) => (
-            <li key={asset.id}>
+            <li key={asset.id} className="min-w-0">
               <MediaCard
                 asset={asset}
                 disabled={disabled}
@@ -220,7 +220,7 @@ function MediaCard({
     asset.duration_ms != null ? `${(asset.duration_ms / 1000).toFixed(1)}s` : null;
 
   return (
-    <div className="group flex w-full flex-col overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface-soft transition-colors hover:border-primary">
+    <div className="group flex w-full min-w-0 flex-col overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface-soft transition-colors hover:border-primary">
       <button
         type="button"
         disabled={disabled}

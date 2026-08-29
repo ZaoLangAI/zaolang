@@ -1518,7 +1518,7 @@
     "gateDesktopTitle": "デスクトップ幅で開いてください",
     "gateDesktopHint": "狭い画面では案内のみです。幅 1024 ピクセル以上のウィンドウを使ってください。",
     "readonlyLease": "読み取り専用",
-    "leaseLost": "別のタブが書き込みリースを持っているか、期限切れです。再読み込みしても新しい head は上書きしません。",
+    "leaseLost": "別のタブが書き込みリースを持っています。再読み込みしても新しい head は上書きしません。",
     "loading": "カットを開いています",
     "playhead": "再生ヘッド",
     "insertCaption": "字幕を挿入",
@@ -1651,6 +1651,7 @@
     "generatedVideosTitle": "生成された動画",
     "generatedVideosHint": "台本作成から生成された動画がここに表示されます。編集に進むか、編集をスキップして公開できます。",
     "generatedVideosEmpty": "まだ生成された動画がありません",
+    "generatedVideoOpenDetail": "動画の詳細を見る",
     "enterEditorAction": "編集に入る",
     "enterEditorNoAsset": "この素材はまだ編集できません",
     "seasonLabel": "シーズン {season}",
@@ -1749,9 +1750,23 @@
     "propertiesEmptyHint": "クリップを選択するとプロパティが表示されます",
     "addVideoTrack": "ビデオトラックを追加",
     "addAudioTrack": "オーディオトラックを追加",
+    "trackKindVideo": "ビデオ",
+    "trackKindAudio": "オーディオ",
+    "trackKindCaption": "字幕",
+    "trackKindOverlay": "オーバーレイ",
     "muteTrack": "トラックをミュート",
     "unmuteTrack": "ミュートを解除",
     "removeTrack": "トラックを削除",
+    "maskX": "X",
+    "maskY": "Y",
+    "maskWidth": "幅",
+    "maskHeight": "高さ",
+    "maskFeather": "フェザー",
+    "keyframeOpacity": "不透明度",
+    "keyframeX": "X",
+    "keyframeY": "Y",
+    "keyframeScale": "スケール",
+    "keyframeRotation": "回転",
     "transcribeTitle": "文字起こし",
     "transcribeClose": "閉じる",
     "transcribeInProgress": "文字起こし中…",
@@ -1769,7 +1784,9 @@
     "transitionType": {
       "crossfade": "クロスフェード",
       "dip_to_black": "ブラックへディップ"
-    }
+    },
+    "leaseNotReady": "このタブはまだ書き込み権がありません。再取得できます。失敗する場合は、別のタブがリースを保持しています。",
+    "reclaimLease": "編集権を再取得"
   },
   "iosOnboarding": {
     "page1Title": "リミックスのたびに創作の系譜が残る",
@@ -1814,12 +1831,30 @@
     "stageQuality": "品質",
     "stageDone": "完了",
     "funCaptions": {
-      "queued": ["順番待ち中です", "エンジンを準備しています"],
-      "safety": ["安全チェック中です", "念のため確認しています"],
-      "planning": ["構成を練っています", "アイデアを整理中です"],
-      "generating": ["せっせと生成中です", "ピクセルが頑張っています"],
-      "quality": ["品質チェック中です", "細部まで確認しています"],
-      "done": ["もうすぐ完成です", "仕上げの真っ最中です"]
+      "queued": [
+        "順番待ち中です",
+        "エンジンを準備しています"
+      ],
+      "safety": [
+        "安全チェック中です",
+        "念のため確認しています"
+      ],
+      "planning": [
+        "構成を練っています",
+        "アイデアを整理中です"
+      ],
+      "generating": [
+        "せっせと生成中です",
+        "ピクセルが頑張っています"
+      ],
+      "quality": [
+        "品質チェック中です",
+        "細部まで確認しています"
+      ],
+      "done": [
+        "もうすぐ完成です",
+        "仕上げの真っ最中です"
+      ]
     },
     "characterViewsTitle": "ビュー進捗 {current}/{total}",
     "outputItemLabel": "出力 {index}/{total}",
@@ -2011,7 +2046,9 @@
     "opRemix": "二次創作",
     "opDramaExport": "短編書き出し",
     "accessSoldWork": "作品が解除され、{amount} クレジットを獲得しました。",
-    "accessSoldSkill": "スキル「{title}」が解除され、{amount} クレジットを獲得しました。"
+    "accessSoldSkill": "スキル「{title}」が解除され、{amount} クレジットを獲得しました。",
+    "draftPublished": "作品「{title}」は審査を通過し、公開されました。",
+    "draftPublishRejected": "作品「{title}」は公開審査を通過しませんでした：{reason}"
   },
   "notificationsPage": {
     "title": "通知センター",
@@ -2158,7 +2195,12 @@
     "accessCredits": "リミックス解除価格",
     "accessCreditsHint": "0 は無料公開です。有料解除はアプリ内許諾であり、CC-BY ではありません。",
     "accessFree": "無料",
-    "accessCustom": "カスタム"
+    "accessCustom": "カスタム",
+    "submittedReview": "審査に提出しました。通過したら通知します。",
+    "pendingTitle": "公開を審査中",
+    "pendingHint": "通過したら通知します。完了するまで再提出できません。",
+    "rejectedTitle": "公開審査を通過しませんでした",
+    "rejectedHint": "タイトルや説明を直して、もう一度提出してください。"
   },
   "region": {
     "label": "地域",
@@ -2375,6 +2417,7 @@
       "dialogue": "セリフ",
       "breakpoint": "推奨カット点"
     },
+    "viewGeneratedVideo": "動画を見る",
     "linkCharacter": "キャラクターカードを関連付け",
     "linkScene": "シーンカードを関連付け",
     "linkLoading": "読み込み中…",
