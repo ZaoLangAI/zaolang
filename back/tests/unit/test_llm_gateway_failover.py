@@ -715,6 +715,145 @@ def test_stream_wall_clock_timeout_cuts_off_a_silently_stalled_stream(
     assert result.text == "hello"
 
 
+def test_stream_retries_thinking_only_timeout_on_the_same_endpoint(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reasoning-only wall-clock cut used to skip the one budget-expansion
+    retry (`error is not None`) and raise `LLM 网关不可用: TimeoutError`
+    while thinking was already on screen. The second attempt stays on the
+    same endpoint — no mid-stream failover."""
+    _seed_endpoint(db, endpoint_id="primary-ep", model="primary-model", role="primary")
+    _seed_endpoint(db, endpoint_id="backup-ep", model="backup-model", role="backup")
+    calls: list[str] = []
+
+    def _stream_gateway(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs["model"])
+        if len(calls) == 1:
+            yield llm_client.StreamDelta(reasoning="还在拆维度")
+            raise TimeoutError("stream exceeded 300s wall clock")
+        yield llm_client.StreamDelta(content='{"ok": true}', finish_reason="stop")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    result = llm_client.StreamResult()
+    chunks = list(
+        llm_client.stream_complete(
+            session=db,
+            agent_name="copy",
+            model="primary-model",
+            messages=[{"role": "user", "content": "x"}],
+            result=result,
+            is_usable=lambda text: "{" in text,
+        )
+    )
+
+    assert calls == ["primary-model", "primary-model"]
+    assert chunks == [
+        llm_client.StreamChunk(kind="thinking", text="还在拆维度"),
+        llm_client.StreamChunk(kind="content", text='{"ok": true}'),
+    ]
+    assert result.text == '{"ok": true}'
+
+
+def test_stream_retries_unusable_yielded_content_on_the_same_endpoint(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A few content tokens that fail `is_usable` (truncated / decoy JSON)
+    used to skip the budget-expansion retry because `yielded_from_endpoint`
+    was already set. Same endpoint only — no mid-stream failover."""
+    _seed_endpoint(db, endpoint_id="primary-ep", model="primary-model", role="primary")
+    _seed_endpoint(db, endpoint_id="backup-ep", model="backup-model", role="backup")
+    calls: list[str] = []
+
+    def _stream_gateway(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs["model"])
+        if len(calls) == 1:
+            yield llm_client.StreamDelta(content='{"answer":"$your_answer"}', finish_reason="stop")
+        else:
+            yield llm_client.StreamDelta(
+                content='{"prompt": "x", "detail_level": "sparse"}', finish_reason="stop"
+            )
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    result = llm_client.StreamResult()
+    chunks = list(
+        llm_client.stream_complete(
+            session=db,
+            agent_name="copy",
+            model="primary-model",
+            messages=[{"role": "user", "content": "x"}],
+            result=result,
+            is_usable=lambda text: "detail_level" in text,
+            retry_nudge="现在只输出 JSON",
+        )
+    )
+
+    assert calls == ["primary-model", "primary-model"]
+    assert any(chunk.text == '{"answer":"$your_answer"}' for chunk in chunks)
+    assert result.text == '{"prompt": "x", "detail_level": "sparse"}'
+
+
+def test_stream_retry_appends_nudge_as_a_user_turn(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_endpoint(db)
+    seen: list[list[dict[str, str]]] = []
+
+    def _stream_gateway(**kwargs):  # type: ignore[no-untyped-def]
+        seen.append(list(kwargs["messages"]))
+        yield llm_client.StreamDelta(reasoning="还在拆维度", finish_reason="length")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    result = llm_client.StreamResult()
+    list(
+        llm_client.stream_complete(
+            session=db,
+            agent_name="copy",
+            model="test-llm",
+            messages=[{"role": "user", "content": "x"}],
+            result=result,
+            is_usable=lambda _text: False,
+            retry_nudge="现在只输出 JSON",
+        )
+    )
+
+    assert len(seen) == 2
+    assert seen[0] == [{"role": "user", "content": "x"}]
+    assert seen[1][-1] == {"role": "user", "content": "现在只输出 JSON"}
+
+
+def test_stream_thinking_only_timeout_after_retry_is_empty_not_an_outage(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two thinking-only timeouts must not wrap as a gateway outage — the
+    caller already saw tokens and can surface `parse_ok=False` itself."""
+    _seed_endpoint(db, endpoint_id="primary-ep", model="primary-model", role="primary")
+    _seed_endpoint(db, endpoint_id="backup-ep", model="backup-model", role="backup")
+    calls: list[str] = []
+
+    def _stream_gateway(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs["model"])
+        yield llm_client.StreamDelta(reasoning="还在想")
+        raise TimeoutError("stream exceeded 300s wall clock")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    result = llm_client.StreamResult()
+    chunks = list(
+        llm_client.stream_complete(
+            session=db,
+            agent_name="copy",
+            model="primary-model",
+            messages=[{"role": "user", "content": "x"}],
+            result=result,
+            is_usable=lambda _text: False,
+        )
+    )
+
+    assert calls == ["primary-model", "primary-model"]
+    assert all(chunk.kind == "thinking" for chunk in chunks)
+    assert result.text == ""
+    assert result.thinking == "还在想"
+
+
 def test_complete_assembles_streamed_thinking_into_one_result(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -116,7 +116,22 @@ def create_draft(
     )
     session.add(draft)
     session.flush()
+    _maybe_link_draft_to_episode(session, user_id=user_id, draft=draft)
     return draft
+
+
+def _maybe_link_draft_to_episode(session: Session, *, user_id: str, draft: Draft) -> None:
+    """Best-effort `candidate` content-link when the studio jump-out set
+    `params.link_episode_id`. A missing/foreign episode must not roll the
+    draft back — the content-link list is a convenience view."""
+    episode_id = draft.params_json.get("link_episode_id")
+    if not isinstance(episode_id, str) or not episode_id:
+        return
+    from app.domain.editor import service as editor_service
+
+    editor_service.maybe_link_draft(
+        session, user_id=user_id, episode_id=episode_id, draft_id=draft.id
+    )
 
 
 def request_publish(

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Draft } from '@/lib/api/types';
 
-import { generatedVideoDetailHref } from './generated-video-href';
+import { generatedVideoDetailHref, isGeneratedVideoCard } from './generated-video-href';
 
 const draft = (overrides: Partial<Draft> = {}): Draft =>
   ({
@@ -58,5 +58,42 @@ describe('generatedVideoDetailHref', () => {
     expect(
       generatedVideoDetailHref({ contentType: 'editor_export', contentRefId: 'exp_1' }),
     ).toBeUndefined();
+  });
+});
+
+describe('isGeneratedVideoCard', () => {
+  it('keeps a published work without waiting for extra details', () => {
+    expect(isGeneratedVideoCard({ contentType: 'work' })).toBe(true);
+  });
+
+  it('keeps a draft that produced an output', () => {
+    expect(
+      isGeneratedVideoCard({
+        contentType: 'draft',
+        draft: draft({ output_asset_id: 'ast_1', latest_job_id: 'job_1' }),
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps a draft that already published even if the asset id is gone', () => {
+    expect(
+      isGeneratedVideoCard({
+        contentType: 'draft',
+        draft: draft({ published_work_id: 'w_pub' }),
+      }),
+    ).toBe(true);
+  });
+
+  it('hides a failed or still-running draft with no output', () => {
+    expect(
+      isGeneratedVideoCard({
+        contentType: 'draft',
+        draft: draft({ latest_job_id: 'job_failed', output_asset_id: null }),
+      }),
+    ).toBe(false);
+  });
+
+  it('hides a draft whose record has not loaded yet', () => {
+    expect(isGeneratedVideoCard({ contentType: 'draft' })).toBe(false);
   });
 });

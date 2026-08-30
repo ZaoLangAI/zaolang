@@ -38,9 +38,23 @@ class Series(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     shortform_profile_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Every remaining creation path (`app.domain.editor.service`,
+    # `app.domain.script_writing.service`) writes `[]` here and nothing reads
+    # it back — the roster it was for was `kind=cast`, which this table no
+    # longer has live rows of (see migration `ada14f32676f`). Kept rather than
+    # dropped in this batch: removing a column is a structural, migration-
+    # gated change earmarked for its own separate review, not bundled with
+    # this dead-code pass.
     character_ids_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
-    kind: Mapped[str] = mapped_column(String(16), default="cast", nullable=False)
+    # Every creation path (`app.domain.editor.service`,
+    # `app.domain.script_writing.service`) has passed `kind=drama` explicitly
+    # since the `kind=cast` roster CRUD was removed; this default only matters
+    # to a hypothetical caller that forgets to set it.
+    kind: Mapped[str] = mapped_column(String(16), default="drama", nullable=False)
     default_locale: Mapped[str] = mapped_column(String(16), default="zh-CN", nullable=False)
+    # No read or write path anywhere in the app touches this column — same
+    # "evaluate, don't drop in this batch" status as `character_ids_json`
+    # above; dropping it needs its own migration and review.
     brand_pack_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )

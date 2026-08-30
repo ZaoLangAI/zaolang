@@ -84,6 +84,11 @@ class Work(Base, TimestampMixin):
         Index("ix_works_visibility_lifecycle_status", "visibility", "lifecycle_status"),
         Index("ix_works_published_at", "published_at"),
         Index("ix_works_series_id_episode_number", "series_id", "episode_number"),
+        # `browse(sort="popular"|"remixed")` orders by these and cursors
+        # through `(count, id)` pairs — both columns cover the sort and the
+        # keyset-pagination WHERE clause in one index.
+        Index("ix_works_like_count_id", "like_count", "id"),
+        Index("ix_works_remix_count_id", "remix_count", "id"),
     )
 
     @property
@@ -193,6 +198,9 @@ class LineageEdge(Base):
     __table_args__ = (
         Index("ix_lineage_edges_parent", "parent_work_version_id"),
         Index("ix_lineage_edges_created_by", "created_by_user_id"),
+        # The admin statistics center's daily remix-count trend range-scans
+        # `created_at` with no other filter.
+        Index("ix_lineage_edges_created_at", "created_at"),
     )
 
 
@@ -300,6 +308,11 @@ class Collection(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    __table_args__ = (
+        # `list_collections` filters by owner and sorts by `created_at`.
+        Index("ix_collections_owner_user_id_created_at", "owner_user_id", "created_at"),
+    )
+
 
 class CollectionItem(Base, TimestampMixin):
     __tablename__ = "collection_items"
@@ -313,6 +326,10 @@ class CollectionItem(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("collection_id", "work_id", name="uq_collection_items_pair"),
+        # `_collection_response` filters by `collection_id` and orders by
+        # `position` — the unique constraint above only covers a
+        # `(collection_id, work_id)` lookup, not this sort.
+        Index("ix_collection_items_collection_id_position", "collection_id", "position"),
     )
 
 

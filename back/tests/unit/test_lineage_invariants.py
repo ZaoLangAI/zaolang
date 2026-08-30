@@ -102,6 +102,18 @@ def test_descendants_finds_the_whole_subtree(db: Session, author: User, remixer:
     assert len(edges) == 3
 
 
+def test_descendant_count_matches_the_full_walk(db: Session, author: User, remixer: User) -> None:
+    """The recursive-CTE count must agree with `descendants()`'s own walk —
+    it exists purely to avoid materializing the edge rows, not to change the
+    answer."""
+    versions = _chain(db, [author, remixer], 4)
+
+    assert lineage.descendant_count(db, versions[0].id) == len(
+        lineage.descendants(db, versions[0].id)
+    )
+    assert lineage.descendant_count(db, versions[-1].id) == 0
+
+
 def test_tombstoned_ancestor_keeps_its_slot_but_hides_content(
     db: Session, author: User, remixer: User
 ) -> None:

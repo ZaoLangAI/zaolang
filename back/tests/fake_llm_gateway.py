@@ -106,6 +106,7 @@ def fake_stream_complete(
     preferred_endpoint_ids: Sequence[str] = (),
     is_usable: Any = None,
     expect_json: bool = False,
+    retry_nudge: str | None = None,
 ) -> Iterator[StreamChunk]:
     """Signature-compatible with `app.llm.client.stream_complete`.
 
@@ -123,6 +124,7 @@ def fake_stream_complete(
         preferred_endpoint_ids,
         is_usable,
         expect_json,
+        retry_nudge,
     )
     text = _dispatch_stream(agent_name, messages)
     thinking = f"fake:{agent_name} 正在构思……"

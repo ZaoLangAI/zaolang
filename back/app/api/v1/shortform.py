@@ -33,9 +33,6 @@ def list_profiles(
     return ShortformProfilesResponse(
         default_profile=catalog.default_profile,
         profiles=[_profile_response(key, p) for key, p in sorted(catalog.profiles.items())],
-        enable_clarifying_questions=catalog.enable_clarifying_questions,
-        enable_preview_picker=catalog.enable_preview_picker,
-        preview_candidate_count=catalog.preview_candidate_count,
     )
 
 

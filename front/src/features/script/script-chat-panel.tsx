@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { LiveThinking, ThinkingDisclosure } from '@/components/ai/thinking-disclosure';
+import { Button } from '@/components/ui/button';
 import { IconArrowUp } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
@@ -119,6 +120,7 @@ export function ScriptChatPanel({
   const [message, setMessage] = useState('');
   const [referencedSkillIds, setReferencedSkillIds] = useState<string[]>([]);
   const [mention, setMention] = useState<MentionState | null>(null);
+  const wasStreaming = useRef(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -134,6 +136,22 @@ export function ScriptChatPanel({
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [turns.length, streaming, liveText, liveThinking]);
+
+  // Keep the composer populated through a failed turn so the author can
+  // hit retry (or edit and resend) instead of re-typing. Only clear after
+  // a stream that started here actually completes without an error.
+  useEffect(() => {
+    if (streaming) {
+      wasStreaming.current = true;
+      return;
+    }
+    if (wasStreaming.current && !streamError) {
+      setMessage('');
+      setReferencedSkillIds([]);
+      setMention(null);
+    }
+    wasStreaming.current = false;
+  }, [streaming, streamError]);
 
   // Closes the mention menu on any click outside the composer — a click on
   // one of its own option buttons is *inside* `composerRef`, so this never
@@ -236,9 +254,6 @@ export function ScriptChatPanel({
     const trimmed = message.trim();
     if (!trimmed || streaming) return;
     onSend(trimmed, referencedSkillIds);
-    setMessage('');
-    setReferencedSkillIds([]);
-    setMention(null);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -341,7 +356,16 @@ export function ScriptChatPanel({
         ) : null}
       </ul>
 
-      {streamError ? <ErrorNotice title={streamError} /> : null}
+      {streamError ? (
+        <ErrorNotice
+          title={streamError}
+          action={
+            <Button size="sm" disabled={streaming || message.trim().length === 0} onClick={send}>
+              {t('retryTurn')}
+            </Button>
+          }
+        />
+      ) : null}
 
       <div
         ref={composerRef}

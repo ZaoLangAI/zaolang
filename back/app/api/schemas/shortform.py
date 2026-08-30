@@ -58,9 +58,6 @@ class ShortformProfileResponse(ApiModel):
 class ShortformProfilesResponse(ApiModel):
     default_profile: str
     profiles: list[ShortformProfileResponse]
-    enable_clarifying_questions: bool
-    enable_preview_picker: bool
-    preview_candidate_count: int
 
 
 class PromptEnhanceRequest(ApiModel):

@@ -4768,6 +4768,8 @@ export interface components {
             attempt_count: number;
             /** Failure Code */
             failure_code?: string | null;
+            /** Failure Message */
+            failure_message?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -4836,6 +4838,8 @@ export interface components {
             attempt_count: number;
             /** Failure Code */
             failure_code?: string | null;
+            /** Failure Message */
+            failure_message?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -5048,7 +5052,7 @@ export interface components {
             /** Reasoning Model */
             reasoning_model?: boolean | null;
             /** Default For Asset Kind */
-            default_for_asset_kind?: ("character" | "scene" | "cover") | null;
+            default_for_asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
         };
         /**
          * AgentProfileUpdateRequest
@@ -5076,7 +5080,7 @@ export interface components {
             /** Reasoning Model */
             reasoning_model?: boolean | null;
             /** Default For Asset Kind */
-            default_for_asset_kind?: ("character" | "scene" | "cover") | null;
+            default_for_asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
         };
         /**
          * AgentProfileView
@@ -5110,7 +5114,7 @@ export interface components {
             /** Is Default */
             is_default: boolean;
             /** Default For Asset Kind */
-            default_for_asset_kind?: ("character" | "scene" | "cover") | null;
+            default_for_asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
             /** Enabled */
             enabled: boolean;
             /** Default Endpoint Id */
@@ -9768,6 +9772,15 @@ export interface components {
             /** Turns */
             turns: components["schemas"]["ScriptTurnSummary"][];
             /**
+             * Source Idea
+             * @default
+             */
+            source_idea: string;
+            /** Source Referenced Skill Ids */
+            source_referenced_skill_ids?: string[];
+            /** Last Error */
+            last_error?: string | null;
+            /**
              * Created At
              * Format: date-time
              */
@@ -9811,14 +9824,15 @@ export interface components {
         };
         /**
          * ScriptRetryRequest
-         * @description Re-describes the idea for `POST /v1/scripts/{episode_id}/retry` —
-         *     the original text was never persisted anywhere on the episode shell
-         *     (see `script_writing_service.retry_new_script`), so there is nothing to
-         *     default this to; the caller (the empty-shell page) must ask again.
+         * @description Re-runs the first draft for an empty episode shell.
+         *
+         *     `idea` is optional: omitting it (or sending a blank string) reuses
+         *     `DramaEpisode.source_idea` persisted by `prepare_new_script`. Sending a
+         *     new idea overwrites that stored prompt before the stream starts.
          */
         ScriptRetryRequest: {
             /** Idea */
-            idea: string;
+            idea?: string | null;
             /** Referenced Skill Ids */
             referenced_skill_ids?: string[];
         };
@@ -10105,12 +10119,6 @@ export interface components {
             default_profile: string;
             /** Profiles */
             profiles: components["schemas"]["ShortformProfileResponse"][];
-            /** Enable Clarifying Questions */
-            enable_clarifying_questions: boolean;
-            /** Enable Preview Picker */
-            enable_preview_picker: boolean;
-            /** Preview Candidate Count */
-            preview_candidate_count: number;
         };
         /**
          * SkillTemplateView
@@ -10146,6 +10154,8 @@ export interface components {
              * @default default
              */
             slot: string;
+            /** Asset Kind */
+            asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
         };
         /** StorageUsageResponse */
         StorageUsageResponse: {

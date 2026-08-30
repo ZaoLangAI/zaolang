@@ -52,12 +52,14 @@ class ScriptCreateRequest(ApiModel):
 
 
 class ScriptRetryRequest(ApiModel):
-    """Re-describes the idea for `POST /v1/scripts/{episode_id}/retry` —
-    the original text was never persisted anywhere on the episode shell
-    (see `script_writing_service.retry_new_script`), so there is nothing to
-    default this to; the caller (the empty-shell page) must ask again."""
+    """Re-runs the first draft for an empty episode shell.
 
-    idea: str = Field(min_length=1, max_length=2000)
+    `idea` is optional: omitting it (or sending a blank string) reuses
+    `DramaEpisode.source_idea` persisted by `prepare_new_script`. Sending a
+    new idea overwrites that stored prompt before the stream starts.
+    """
+
+    idea: str | None = Field(default=None, max_length=2000)
     referenced_skill_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
@@ -136,6 +138,14 @@ class ScriptDetailResponse(ApiModel):
     status: str
     script: ScriptDocument
     turns: list[ScriptTurnSummary]
+    # The author's first-draft prompt, so the empty-shell page can retry
+    # without asking them to re-type it. Empty when this episode predates
+    # persistence *and* no nearby `script_draft` AgentRun could be recovered.
+    source_idea: str = ""
+    source_referenced_skill_ids: list[str] = Field(default_factory=list)
+    # Latest failed-generation excerpt from the episode's script notification,
+    # so a refresh still shows why the first draft did not land.
+    last_error: str | None = None
     created_at: dt.datetime
     updated_at: dt.datetime
 

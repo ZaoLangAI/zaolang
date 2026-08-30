@@ -481,12 +481,12 @@ def create_content_link(
 def list_content_links(
     episode_id: str, user: CurrentUser, session: DbSession
 ) -> list[EpisodeContentLinkResponse]:
-    return [
-        content_link_response(item)
-        for item in editor_service.list_content_links(
-            session, user_id=user.id, episode_id=episode_id
-        )
-    ]
+    links = editor_service.list_content_links(
+        session, user_id=user.id, episode_id=episode_id
+    )
+    # Heal upserts missing draft links; persist so the next read stays filled.
+    session.commit()
+    return [content_link_response(item) for item in links]
 
 
 @router.delete("/drama-episodes/{episode_id}/content-links/{link_id}", status_code=204)

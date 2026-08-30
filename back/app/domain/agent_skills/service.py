@@ -43,14 +43,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROFILE_KEY = "default"
 UNSET_BINDING = object()
 
-# `default_for_asset_kind` only makes sense for the role that runs "AI 润色"
-# (`app.agents.copywriter.enhance_prompt`) and only for the asset-kind
-# values that have a roster/library of their own — `general` jobs on either
-# axis keep using the role's ordinary `is_default` agent instead of a
-# kind-specific one. Image and video buckets share this one frozenset:
-# their string values are deliberately distinct (see `VideoAssetKind`'s
-# docstring), so there is no collision risk letting them share one lookup.
+# `default_for_asset_kind` only makes sense for the `copy` role. Image and
+# video buckets (`ASSET_KIND_BUCKETS`) are the client-facing asset kinds
+# that have a roster/library of their own — their string values are
+# deliberately distinct (see `VideoAssetKind`'s docstring), so there is no
+# collision risk letting them share one lookup. `COPY_REQUEST_BUCKET` is an
+# internal routing key for every other copy request (generic polish,
+# suggest, clarify, script) and is never an `ImageAssetKind` / `VideoAssetKind`
+# value a client sends. `general` on either axis is not a bucket: those
+# jobs resolve to the `copy` bucket, then to the role's `is_default` agent.
 ASSET_KIND_AGENT_ROLE = AgentName.COPY.value
+COPY_REQUEST_BUCKET = "copy"
 ASSET_KIND_BUCKETS: frozenset[str] = frozenset(
     {
         ImageAssetKind.CHARACTER.value,
@@ -61,6 +64,7 @@ ASSET_KIND_BUCKETS: frozenset[str] = frozenset(
         VideoAssetKind.COVER.value,
     }
 )
+ASSIGNABLE_REQUEST_BUCKETS: frozenset[str] = ASSET_KIND_BUCKETS | {COPY_REQUEST_BUCKET}
 
 # The roles the shipped pipeline invokes by name.
 DEFAULT_NODES: list[dict[str, Any]] = [
@@ -394,13 +398,13 @@ def _promote_default(session: Session, row: AgentProfile) -> None:
 
 
 def default_profile_for_asset_kind(session: Session, role: str, kind: str) -> AgentProfile | None:
-    """The `role`'s agent that "AI 润色" should route to for this image kind.
+    """The `role`'s agent assigned to this request-routing bucket.
 
-    Returns `None` for an unrecognised or unconfigured kind — the caller
-    (`app.agents.copywriter.enhance_prompt`) falls back to `default_profile`
-    in that case, exactly as if no `asset_kind` had been supplied at all.
+    `kind` is either a client-facing asset kind in `ASSET_KIND_BUCKETS` or
+    the internal `COPY_REQUEST_BUCKET`. Returns `None` for an unrecognised
+    or unconfigured kind — callers then fall back to `default_profile`.
     """
-    if kind not in ASSET_KIND_BUCKETS:
+    if kind not in ASSIGNABLE_REQUEST_BUCKETS:
         return None
     return session.scalar(
         select(AgentProfile).where(
@@ -411,13 +415,41 @@ def default_profile_for_asset_kind(session: Session, role: str, kind: str) -> Ag
     )
 
 
+def resolve_copy_agent_id(
+    session: Session,
+    *,
+    asset_kind: str = "",
+    agent_id: str | None = None,
+) -> str | None:
+    """Which `copy` agent a frontend request should run.
+
+    An explicit `agent_id` always wins (workflow bindings, admin debug).
+    Otherwise a client-facing asset kind that has a dedicated default is
+    used; every other request — `general`, empty, or an unconfigured video
+    kind — lands on the `copy` bucket. `None` lets `resolve_prompt` fall
+    through to the role's `is_default` agent.
+    """
+    if agent_id:
+        return agent_id
+    if asset_kind in ASSET_KIND_BUCKETS:
+        specific = default_profile_for_asset_kind(session, ASSET_KIND_AGENT_ROLE, asset_kind)
+        if specific is not None:
+            return specific.id
+    copy_default = default_profile_for_asset_kind(
+        session, ASSET_KIND_AGENT_ROLE, COPY_REQUEST_BUCKET
+    )
+    return copy_default.id if copy_default is not None else None
+
+
 def _validated_asset_kind_bucket(role: str, kind: str) -> str:
     if role != ASSET_KIND_AGENT_ROLE:
         raise ValidationFailed(
             f"只有 {ASSET_KIND_AGENT_ROLE} 角色的智能体可以设为资产类型专属默认。"
         )
-    if kind not in ASSET_KIND_BUCKETS:
-        raise ValidationFailed(f"未知的资产类型: {kind}，可选值为 {sorted(ASSET_KIND_BUCKETS)}。")
+    if kind not in ASSIGNABLE_REQUEST_BUCKETS:
+        raise ValidationFailed(
+            f"未知的资产类型: {kind}，可选值为 {sorted(ASSIGNABLE_REQUEST_BUCKETS)}。"
+        )
     return kind
 
 

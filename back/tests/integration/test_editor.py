@@ -510,6 +510,100 @@ def test_cut_from_job_skips_a_trashed_series_when_picking_the_fallback(
     assert new_series.json()["status"] == "active"
 
 
+def test_cut_from_job_reuses_draft_link_episode_id(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """A script-studio video jump-out already named the episode on the
+    draft. `from-job` must attach the cut there instead of minting a
+    second series or episode."""
+    _enable_editor(db, admin)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "已有短剧", "target_platforms": ["manual_download"]},
+    ).json()
+    episode = client.post(
+        f"/v1/drama-series/{series['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()
+    draft = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "值班室", "link_episode_id": episode["id"]}},
+    )
+    assert draft.status_code == 201, draft.text
+
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    job.draft_id = draft.json()["id"]
+    db.flush()
+
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["episode_id"] == episode["id"]
+
+    listed = client.get(
+        f"/v1/drama-series/{series['id']}/episodes", headers=auth_header(author)
+    )
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [episode["id"]]
+
+    series_list = client.get("/v1/drama-series", headers=auth_header(author))
+    assert series_list.status_code == 200
+    assert [item["id"] for item in series_list.json()] == [series["id"]]
+
+
+def test_cut_from_job_rejects_a_foreign_link_episode_id(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """A present `link_episode_id` that the caller does not own must 4xx
+    rather than falling through to the shell-creating fallback."""
+    _enable_editor(db, admin)
+    outsider = make_user(db, email="from-job-outsider@example.com", handle="fromjobout")
+    foreign_series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(outsider),
+        json={"title": "别人的短剧", "target_platforms": ["manual_download"]},
+    ).json()
+    foreign_episode = client.post(
+        f"/v1/drama-series/{foreign_series['id']}/episodes",
+        headers=auth_header(outsider),
+        json={"title": "第一集"},
+    ).json()
+    # Creating the draft is allowed — `create_draft` swallows a foreign
+    # episode so the content-link never blocks generation. `from-job` must
+    # not treat that swallowed id as a reason to mint a new shell.
+    draft = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "无关", "link_episode_id": foreign_episode["id"]}},
+    )
+    assert draft.status_code == 201, draft.text
+
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    job.draft_id = draft.json()["id"]
+    db.flush()
+
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert response.status_code == 404
+
+    series_list = client.get("/v1/drama-series", headers=auth_header(author))
+    assert series_list.status_code == 200
+    assert series_list.json() == []
+
+
 @contextmanager
 def _committed_client(committed_db: Session) -> Iterator[TestClient]:
     from app.api.deps import get_db

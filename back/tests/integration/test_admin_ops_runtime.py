@@ -13,10 +13,11 @@ from app.agents import router
 from app.domain.credits import service as credits_service
 from app.domain.jobs import async_tasks
 from app.domain.jobs import service as jobs_service
+from app.domain.jobs import state_machine as sm
 from app.domain.workflow_templates import service as workflow_templates_service
-from app.models import AuditLog, GenerationJob, User
+from app.models import AuditLog, GenerationJob, ProviderAttempt, User
 from app.models.base import new_id, utcnow
-from app.models.enums import JobStatus, Operation, ProviderKind, QualityTier
+from app.models.enums import JobStatus, Operation, ProviderAttemptStatus, ProviderKind, QualityTier
 from app.providers.base import GenerationRequest, GenerationResult, ProviderCapability
 from app.workers import pipeline
 from app.workflows.defaults import default_graph
@@ -384,6 +385,47 @@ def test_job_detail_replays_the_whole_chain(
     assert body["events"]
     assert body["attempts"]
     assert body["agent_runs"]
+
+
+def test_job_detail_surfaces_provider_error_detail(
+    client: TestClient, db: Session, admin: User, queued_job: GenerationJob
+) -> None:
+    """Ops needs the HTTP/timeout body, not just the public failure sentence.
+
+    Providers persist that text under `raw_metadata_redacted_json.detail`;
+    reading `.error` instead left `error_message` empty on every real
+    failure the console is meant to explain.
+    """
+    sm.transition(
+        db,
+        queued_job.id,
+        JobStatus.FAILED,
+        failure_code="PROVIDER_INVALID_RESPONSE",
+        failure_message="生成失败，积分已退回。",
+    )
+    db.add(
+        ProviderAttempt(
+            job_id=queued_job.id,
+            provider="ep_test:text_to_image",
+            model_or_workflow_version="test-model",
+            attempt_number=1,
+            status=ProviderAttemptStatus.FAILED,
+            failure_code="PROVIDER_INVALID_RESPONSE",
+            raw_metadata_redacted_json={
+                "provider": "aihubmix",
+                "detail": "HTTP 400: image size is invalid",
+            },
+            created_at=utcnow(),
+        )
+    )
+    db.commit()
+
+    body = client.get(f"/v1/admin/jobs/{queued_job.id}", headers=admin_header(admin)).json()
+    assert body["failure_code"] == "PROVIDER_INVALID_RESPONSE"
+    assert body["failure_message"] == "生成失败，积分已退回。"
+    assert body["attempts"]
+    assert body["attempts"][0]["error_code"] == "PROVIDER_INVALID_RESPONSE"
+    assert body["attempts"][0]["error_message"] == "HTTP 400: image size is invalid"
 
 
 def test_job_summaries_resolve_names_instead_of_raw_ids(

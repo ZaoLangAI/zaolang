@@ -18700,6 +18700,17 @@
             ],
             "title": "Failure Code"
           },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -18923,6 +18934,17 @@
               }
             ],
             "title": "Failure Code"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
           },
           "created_at": {
             "type": "string",
@@ -19390,7 +19412,8 @@
                 "enum": [
                   "character",
                   "scene",
-                  "cover"
+                  "cover",
+                  "copy"
                 ]
               },
               {
@@ -19513,7 +19536,8 @@
                 "enum": [
                   "character",
                   "scene",
-                  "cover"
+                  "cover",
+                  "copy"
                 ]
               },
               {
@@ -19576,7 +19600,8 @@
                 "enum": [
                   "character",
                   "scene",
-                  "cover"
+                  "cover",
+                  "copy"
                 ]
               },
               {
@@ -31711,6 +31736,29 @@
             "type": "array",
             "title": "Turns"
           },
+          "source_idea": {
+            "type": "string",
+            "title": "Source Idea",
+            "default": ""
+          },
+          "source_referenced_skill_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Referenced Skill Ids"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -31791,9 +31839,15 @@
       "ScriptRetryRequest": {
         "properties": {
           "idea": {
-            "type": "string",
-            "maxLength": 2000,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Idea"
           },
           "referenced_skill_ids": {
@@ -31806,11 +31860,8 @@
           }
         },
         "type": "object",
-        "required": [
-          "idea"
-        ],
         "title": "ScriptRetryRequest",
-        "description": "Re-describes the idea for `POST /v1/scripts/{episode_id}/retry` —\nthe original text was never persisted anywhere on the episode shell\n(see `script_writing_service.retry_new_script`), so there is nothing to\ndefault this to; the caller (the empty-shell page) must ask again."
+        "description": "Re-runs the first draft for an empty episode shell.\n\n`idea` is optional: omitting it (or sending a blank string) reuses\n`DramaEpisode.source_idea` persisted by `prepare_new_script`. Sending a\nnew idea overwrites that stored prompt before the stream starts."
       },
       "ScriptScene": {
         "properties": {
@@ -32504,27 +32555,12 @@
             },
             "type": "array",
             "title": "Profiles"
-          },
-          "enable_clarifying_questions": {
-            "type": "boolean",
-            "title": "Enable Clarifying Questions"
-          },
-          "enable_preview_picker": {
-            "type": "boolean",
-            "title": "Enable Preview Picker"
-          },
-          "preview_candidate_count": {
-            "type": "integer",
-            "title": "Preview Candidate Count"
           }
         },
         "type": "object",
         "required": [
           "default_profile",
-          "profiles",
-          "enable_clarifying_questions",
-          "enable_preview_picker",
-          "preview_candidate_count"
+          "profiles"
         ],
         "title": "ShortformProfilesResponse"
       },
@@ -32577,6 +32613,23 @@
             "type": "string",
             "title": "Slot",
             "default": "default"
+          },
+          "asset_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "character",
+                  "scene",
+                  "cover",
+                  "copy"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Kind"
           }
         },
         "type": "object",

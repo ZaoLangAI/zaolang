@@ -201,6 +201,10 @@ class GenerationJob(Base, TimestampMixin):
         UniqueConstraint("user_id", "idempotency_key", name="uq_generation_jobs_idempotency"),
         Index("ix_generation_jobs_user_id_status", "user_id", "status"),
         Index("ix_generation_jobs_status_created_at", "status", "created_at"),
+        # `(status, created_at)` above cannot serve a range scan that filters
+        # on `created_at` alone (not its leading column) — the admin job list
+        # default view and the daily-stats aggregation both do exactly that.
+        Index("ix_generation_jobs_created_at", "created_at"),
     )
 
 
@@ -231,8 +235,12 @@ class JobEvent(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        # The unique constraint below already creates a `(job_id, sequence)`
+        # B-tree in Postgres — the same leading columns in the same order as
+        # a separate `Index` would give. A second explicit index here would
+        # serve no query the constraint's own index cannot, and would only
+        # cost every insert an extra write.
         UniqueConstraint("job_id", "sequence", name="uq_job_events_job_sequence"),
-        Index("ix_job_events_job_id_sequence", "job_id", "sequence"),
     )
 
 
@@ -268,6 +276,9 @@ class ProviderAttempt(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "attempt_number", name="uq_provider_attempts_job_attempt"),
         Index("ix_provider_attempts_provider_status", "provider", "status"),
+        # The statistics center's daily-trend queries filter on `created_at`
+        # alone, with no other column that could serve as a leading index key.
+        Index("ix_provider_attempts_created_at", "created_at"),
     )
 
 
@@ -356,4 +367,8 @@ class AgentRun(Base):
     __table_args__ = (
         Index("ix_agent_runs_job_id", "job_id"),
         Index("ix_agent_runs_agent_name_created_at", "agent_name", "created_at"),
+        # Several statistics/observability queries range-scan `created_at`
+        # without filtering by `agent_name` first, which the composite index
+        # above cannot serve.
+        Index("ix_agent_runs_created_at", "created_at"),
     )

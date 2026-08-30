@@ -26,7 +26,3 @@ def ticks_from_ms(duration_ms: int | None) -> int:
     if duration_ms is None or duration_ms <= 0:
         return TICKS_PER_SECOND
     return int(duration_ms) * TICKS_PER_SECOND // 1000
-
-
-def ms_from_ticks(ticks: int) -> int:
-    return ticks * 1000 // TICKS_PER_SECOND

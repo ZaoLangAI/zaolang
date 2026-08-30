@@ -119,10 +119,10 @@ def test_rollout_bucketing_is_stable_for_a_given_user(db: Session, admin: User) 
 
 def test_a_partial_rollout_excludes_anonymous_callers(db: Session, admin: User) -> None:
     value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
-    value["rollout_percentages"] = {"shortform_studio": 10}
+    value["rollout_percentages"] = {"video_generation": 10}
     config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
 
-    assert config_service.is_enabled(db, "shortform_studio", user_id=None) is False
+    assert config_service.is_enabled(db, "video_generation", user_id=None) is False
 
 
 def test_rollout_percentages_stay_within_range(db: Session, admin: User) -> None:
@@ -246,46 +246,6 @@ def test_a_new_shortform_spec_takes_effect_without_a_restart(db: Session, admin:
     profiles = config_service.get_typed(db, "shortform", ShortformConfig).profiles
     assert profiles["douyin_square"].aspect_ratio == "1:1"
     assert profiles["douyin_square"].max_title_length == 55
-
-
-def test_the_clarify_and_preview_toggles_default_on_with_three_candidates(
-    db: Session,
-) -> None:
-    config = config_service.get_typed(db, "shortform", ShortformConfig)
-
-    assert config.enable_clarifying_questions is True
-    assert config.enable_preview_picker is True
-    assert config.preview_candidate_count == 3
-
-
-def test_the_preview_candidate_count_cannot_exceed_three(db: Session, admin: User) -> None:
-    """A guard rail: a fat-fingered edit must not silently multiply everyone's
-    preview cost."""
-    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
-    value["preview_candidate_count"] = 5
-
-    with pytest.raises(ValidationFailed):
-        config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
-
-
-def test_the_preview_picker_can_be_switched_off_independently_of_clarify(
-    db: Session, admin: User
-) -> None:
-    value = copy.deepcopy(DEFAULT_CONFIGS["shortform"])
-    value["enable_preview_picker"] = False
-    config_service.set_value(db, "shortform", value, actor_user_id=admin.id)
-
-    config = config_service.get_typed(db, "shortform", ShortformConfig)
-    assert config.enable_preview_picker is False
-    assert config.enable_clarifying_questions is True
-
-
-def test_the_shortform_studio_flag_can_be_turned_off(db: Session, admin: User) -> None:
-    value = copy.deepcopy(DEFAULT_CONFIGS["feature_flags"])
-    value["shortform_studio"] = False
-    config_service.set_value(db, "feature_flags", value, actor_user_id=admin.id)
-
-    assert config_service.is_enabled(db, "shortform_studio") is False
 
 
 def test_the_video_surcharge_must_cover_every_tier(db: Session, admin: User) -> None:
@@ -567,7 +527,9 @@ def test_output_budget_adds_a_thinking_margin_for_reasoning_capped_by_the_ceilin
     from app.platform_config.schemas import REASONING_THINKING_MARGIN_TOKENS
 
     endpoint = _general_endpoint(max_output_tokens=16_384)
-    assert endpoint.output_budget(512, reasoning_model=True) == 512 + REASONING_THINKING_MARGIN_TOKENS
+    assert (
+        endpoint.output_budget(512, reasoning_model=True) == 512 + REASONING_THINKING_MARGIN_TOKENS
+    )
     assert endpoint.output_budget(512, reasoning_model=False) == 512
     # A request already close to (or past) the ceiling still gets capped by
     # it, margin included.

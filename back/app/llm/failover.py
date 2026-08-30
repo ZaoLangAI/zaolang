@@ -115,7 +115,12 @@ def lease(endpoint_id: str) -> Iterator[None]:
     finally:
         with contextlib.suppress(redis.RedisError):
             if int(client.decr(key)) < 0:
-                client.set(key, 0)
+                # Not `client.set(key, 0)`: a bare `SET` overwrites the value
+                # without carrying over the `EXPIRE` set on acquisition above,
+                # leaving a permanent key with no TTL. Deleting instead is
+                # equivalent — `current_concurrency` already treats a missing
+                # key as 0 — and never outlives its lease.
+                client.delete(key)
 
 
 def record_outcome(

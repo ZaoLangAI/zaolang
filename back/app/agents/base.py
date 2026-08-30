@@ -361,6 +361,7 @@ def run_agent_stream(
     expect_json: bool = False,
     is_usable: Callable[[str], bool] | None = None,
     extra_messages: list[dict[str, str]] | None = None,
+    retry_nudge: str | None = None,
 ) -> tuple[Iterator[llm_client.StreamChunk], Callable[[Session | None], StreamOutcome]]:
     """Streaming counterpart to `run_agent`.
 
@@ -391,8 +392,9 @@ def run_agent_stream(
     `app.domain.script_writing.service`, the first caller that actually
     displays the `"thinking"` ones).
 
-    `is_usable` passes straight through to `llm_client.stream_complete` — see
-    its own docstring for exactly which retry decision it gates.
+    `is_usable` and `retry_nudge` pass straight through to
+    `llm_client.stream_complete` — see its own docstring for exactly which
+    retry decision they gate.
     """
     resolved = agent_skills_service.resolve_prompt(
         session, agent_name, system_prompt, agent_id=agent_id, slot=slot
@@ -424,6 +426,7 @@ def run_agent_stream(
         preferred_endpoint_ids=binding.preferred_endpoint_ids,
         is_usable=is_usable,
         expect_json=expect_json,
+        retry_nudge=retry_nudge,
     )
 
     def finalize(persist_session: Session | None = None) -> StreamOutcome:

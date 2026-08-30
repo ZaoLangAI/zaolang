@@ -68,23 +68,39 @@ class RateLimiter:
         key = f"rl:{bucket}:{identity}"
         now_ms = int(time.time() * 1000)
         window_ms = rule.window_seconds * 1000
+        ttl = rule.window_seconds + 1
 
         try:
             pipe = self.client.pipeline()
             pipe.zremrangebyscore(key, 0, now_ms - window_ms)
-            # The member must be unique per call. Keying it on the timestamp
-            # alone would let a burst inside one millisecond overwrite itself
-            # and count as a single request — exactly the burst worth catching.
-            pipe.zadd(key, {f"{now_ms}-{uuid.uuid4().hex}": now_ms})
             pipe.zcard(key)
-            pipe.expire(key, rule.window_seconds + 1)
-            _, _, count, _ = pipe.execute()
+            _, count = pipe.execute()
         except redis.RedisError:
             # Availability beats strictness: a Redis outage must not lock every
             # user out of the product.
             return
 
-        if int(count) > rule.limit:
+        # Check before adding: a caller already at the limit must not still
+        # write a member. Otherwise sustained abusive traffic makes this set
+        # grow with the request rate instead of staying bounded near `limit`.
+        already_over = int(count) >= rule.limit
+        if already_over:
+            with contextlib.suppress(redis.RedisError):
+                self.client.expire(key, ttl)
+        else:
+            try:
+                pipe = self.client.pipeline()
+                # The member must be unique per call. Keying it on the
+                # timestamp alone would let a burst inside one millisecond
+                # overwrite itself and count as a single request — exactly
+                # the burst worth catching.
+                pipe.zadd(key, {f"{now_ms}-{uuid.uuid4().hex}": now_ms})
+                pipe.expire(key, ttl)
+                pipe.execute()
+            except redis.RedisError:
+                return
+
+        if already_over:
             retry_after = rule.window_seconds
             # Local import: `system_log` reuses `get_redis` from this module,
             # so importing it at module scope would be circular.

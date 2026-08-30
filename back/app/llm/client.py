@@ -54,7 +54,10 @@ CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60
 # reasoning model that streams live (the whole point of this contract change)
 # gives this loop frequent chances to notice the clock; one that goes fully
 # silent for this long is instead caught by `endpoint.timeout_ms` first.
-STREAM_WALL_CLOCK_TIMEOUT_SECONDS = 180
+# Thinking deltas do *not* reset this clock (a slow think would hang
+# forever); 300s is the room a copy-enhance / script pass needs to finish
+# JSON after a long think, not a per-delta idle.
+STREAM_WALL_CLOCK_TIMEOUT_SECONDS = 300
 
 
 @dataclass(slots=True)
@@ -574,6 +577,7 @@ def stream_complete(
     preferred_endpoint_ids: Sequence[str] = (),
     is_usable: Callable[[str], bool] | None = None,
     expect_json: bool = False,
+    retry_nudge: str | None = None,
 ) -> Iterator[StreamChunk]:
     """Streams typed chunks for one agent turn, filling `result` as it goes.
 
@@ -602,21 +606,24 @@ def stream_complete(
     same way once the stream ends: an empty `content` pass falls back to
     `strip_thinking`-cleaned reasoning for `result.text` (the
     glm-5.3-flash case, where the answer itself ended up in the reasoning
-    channel), and a pass with neither is retried once with a larger budget
-    capped by those same fields. A retry that still produces no visible text
-    leaves `result.text` empty so the caller can surface `parse_ok=False` —
-    it is not recorded as a successful empty string. `result.thinking` always
-    holds the raw reasoning text collected for the attempt that finished the
-    call, regardless of whether it was also used to recover `result.text`.
+    channel), and a pass with neither — or a thinking-only pass that hits
+    the wall-clock / transport timeout before JSON arrives — is retried
+    once with a larger budget capped by those same fields. A retry that
+    still produces no visible text leaves `result.text` empty so the
+    caller can surface `parse_ok=False` rather than wrapping the timeout
+    as a gateway outage (thinking already reached the UI). `result.thinking`
+    always holds the raw reasoning text collected for the attempt that
+    finished the call, regardless of whether it was also used to recover
+    `result.text`.
 
     `is_usable`, when given, gates that same retry decision one step
-    further for a *recovered* pass (never for a pass that already yielded
-    real `content` — see the no-mid-stream-failover note below): recovered
-    text that is non-empty but still fails this check (e.g. a script caller
-    finding no parseable JSON in it) is treated the same as empty text for
-    one retry, instead of being handed back as if it were a usable answer.
-    Prose thinking that never resolves into anything the caller can use must
-    not masquerade as a successful `result.text`.
+    further: recovered thinking, or content that already reached the UI but
+    still fails the check (truncated / decoy JSON), is treated as empty for
+    one same-endpoint retry. Mid-stream failover to another endpoint is
+    still forbidden. `retry_nudge`, when given, is appended as a user turn
+    on that retry so a reasoning model that spent the first budget thinking
+    is told to emit the payload now. Prose thinking that never resolves
+    into anything the caller can use must not masquerade as `result.text`.
 
     Deliberately no mid-stream failover: once a chunk has been yielded from
     an endpoint, that endpoint is used for the rest of the turn even if it
@@ -660,6 +667,7 @@ def stream_complete(
         agent_name=agent_name,
         is_usable=is_usable,
         expect_json=expect_json,
+        retry_nudge=retry_nudge,
     )
 
 
@@ -677,6 +685,7 @@ def _stream_complete_from_endpoints(
     agent_name: str,
     is_usable: Callable[[str], bool] | None = None,
     expect_json: bool = False,
+    retry_nudge: str | None = None,
 ) -> Iterator[StreamChunk]:
     """The session-free half of `stream_complete` — endpoint list is already
     resolved, so the caller's DbSession can close before this generator runs."""
@@ -703,6 +712,8 @@ def _stream_complete_from_endpoints(
         )
         truncation_expanded = False
         yielded_from_endpoint = False
+        streamed_any = False
+        attempt_messages = messages
         while True:
             accumulated: list[str] = []
             reasoning_parts: list[str] = []
@@ -713,17 +724,19 @@ def _stream_complete_from_endpoints(
                     for delta in _stream_gateway(
                         client=client,
                         model=endpoint.model,
-                        messages=messages,
+                        messages=attempt_messages,
                         max_tokens=attempt_budget,
                         temperature=temperature,
                         expect_json=expect_json,
                     ):
                         if delta.reasoning:
                             reasoning_parts.append(delta.reasoning)
+                            streamed_any = True
                             yield StreamChunk(kind="thinking", text=delta.reasoning)
                         if delta.content:
                             accumulated.append(delta.content)
                             yielded_from_endpoint = True
+                            streamed_any = True
                             yield StreamChunk(kind="content", text=delta.content)
                         if (
                             time.perf_counter() - attempt_started
@@ -747,24 +760,36 @@ def _stream_complete_from_endpoints(
                 recovered = strip_thinking(thinking)
                 if recovered:
                     visible = recovered
+                elif "{" in thinking:
+                    # An unterminated `<think>` would otherwise wipe a JSON
+                    # payload that only ever lived inside the reasoning
+                    # channel — keep the raw trace for `is_usable`.
+                    visible = thinking
 
             # Retry when nothing usable survived recovery — either nothing
             # came back at all, or (when the caller cares, e.g. a script
-            # parser) what was recovered still isn't something it can use. A
-            # reasoning-only pass with `finish_reason=length` whose recovered
-            # text *is* usable is the glm-5.3-flash success case: the answer
-            # is in `visible` after `strip_thinking`, and a second attempt
-            # would wipe it.
-            recovered_unusable = (
-                not yielded_from_endpoint
-                and visible
-                and is_usable is not None
-                and not is_usable(visible)
+            # parser / enhance JSON shape) what arrived still isn't
+            # something it can use. A reasoning-only pass with
+            # `finish_reason=length` whose recovered text *is* usable is
+            # the glm-5.3-flash success case: the answer is in `visible`
+            # after `strip_thinking`, and a second attempt would wipe it.
+            #
+            # A wall-clock / transport timeout mid-think used to skip this
+            # retry (`error is not None`) and surface as "LLM 网关不可用:
+            # TimeoutError" even though thinking had already reached the UI.
+            # Same-endpoint budget expansion is still allowed; mid-stream
+            # failover to another endpoint is not. Unusable *content* (a
+            # decoy object, or JSON cut off mid-object) also gets that one
+            # retry — the polish UI only commits on `complete`, so a second
+            # same-endpoint attempt does not rewrite a bubble mid-sentence.
+            recovered_unusable = bool(
+                visible and is_usable is not None and not is_usable(visible)
             )
+            transport_retryable = error is None or isinstance(error, (TimeoutError, OpenAIError))
             should_retry = (
-                error is None
+                transport_retryable
                 and not truncation_expanded
-                and not yielded_from_endpoint
+                and (not yielded_from_endpoint or recovered_unusable)
                 and (not visible or recovered_unusable)
             )
             if should_retry:
@@ -772,6 +797,8 @@ def _stream_complete_from_endpoints(
                 attempt_budget = endpoint.expand_output_budget(
                     attempt_budget, prompt_tokens=prompt_tokens
                 )
+                if retry_nudge:
+                    attempt_messages = [*messages, {"role": "user", "content": retry_nudge}]
                 continue
 
             if recovered_unusable:
@@ -782,7 +809,7 @@ def _stream_complete_from_endpoints(
                 # text at all so the caller can surface `parse_ok=False`.
                 visible = ""
 
-            if accumulated or visible or error is None:
+            if accumulated or visible or error is None or streamed_any:
                 failover.record_outcome(
                     endpoint_id,
                     success=True,

@@ -39,6 +39,35 @@ logger = logging.getLogger(__name__)
 # A job stuck in a non-terminal state past this point is presumed lost.
 STALE_JOB_TIMEOUT = dt.timedelta(minutes=30)
 
+# Per-task hard/soft wall-clock budgets (seconds). A queue mixes tasks of very
+# different latency profiles (`webhook_reconcile` alone carries everything
+# from a single-row lease sweep to a from-scratch retention purge), so these
+# are set per task rather than once per worker/queue. `soft_time_limit` lets
+# a task raise `SoftTimeLimitExceeded` and unwind through the normal
+# exception path (`GenerationTask.on_failure` settles the job exactly like
+# any other failure); `time_limit` is the SIGKILL backstop a few seconds
+# later for a task that does not unwind in time. Every value here must stay
+# comfortably under `celery_app.py`'s `broker_transport_options.
+# visibility_timeout`, or a still-legitimately-running task risks a second,
+# duplicate delivery.
+_QUICK = {"soft_time_limit": 60, "time_limit": 90}
+_MODERATE = {"soft_time_limit": 120, "time_limit": 180}
+_GENERATION = {"soft_time_limit": 300, "time_limit": 360}
+# Image jobs run several reasoning-model judgment calls plus a provider
+# render in one Celery task. A single character-kind pass already sits
+# near five minutes with glm-5.3-flash; `_GENERATION` (audio) is too tight.
+# `dispatch_generation` then adds `_IMAGE_EXTRA_VIEW` per extra
+# `character_views` entry (the in-task loop after `asset_output_advance`).
+# The cap is the 3-view maximum — stay well under `visibility_timeout`.
+_IMAGE_GENERATION = {"soft_time_limit": 420, "time_limit": 480}
+_IMAGE_EXTRA_VIEW = {"soft_time_limit": 180, "time_limit": 240}
+_IMAGE_GENERATION_CAP = {"soft_time_limit": 780, "time_limit": 960}
+_LONG_GENERATION = {"soft_time_limit": 480, "time_limit": 600}
+_BATCH = {"soft_time_limit": 300, "time_limit": 450}
+# The slowest class: video/audio analysis (watching a whole clip before
+# answering) and first-run retention purges over an unbounded backlog.
+_SLOW = {"soft_time_limit": 600, "time_limit": 900}
+
 # Only these warrant Celery countdown retries. Business crashes are settled by
 # the pipeline before re-raise; orphan job ids are permanent and must not retry.
 _TRANSIENT_WORKER_ERRORS: tuple[type[BaseException], ...] = (
@@ -155,7 +184,11 @@ def _settle_worker_failure(job_id: str, *, task_id: str, exc: BaseException | No
 
 
 @celery_app.task(
-    name="app.workers.tasks.run_generation", bind=True, base=GenerationTask, max_retries=2
+    name="app.workers.tasks.run_generation",
+    bind=True,
+    base=GenerationTask,
+    max_retries=2,
+    **_IMAGE_GENERATION,
 )
 def run_generation(self: Task, job_id: str) -> str:
     return _run_generation_task(self, job_id)
@@ -166,6 +199,7 @@ def run_generation(self: Task, job_id: str) -> str:
     bind=True,
     base=GenerationTask,
     max_retries=2,
+    **_LONG_GENERATION,
 )
 def run_video_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-def]
     return _run_generation_task(self, job_id)
@@ -176,6 +210,7 @@ def run_video_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-d
     bind=True,
     base=GenerationTask,
     max_retries=2,
+    **_GENERATION,
 )
 def run_audio_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-def]
     return _run_generation_task(self, job_id)
@@ -186,19 +221,20 @@ def run_audio_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-d
     bind=True,
     base=GenerationTask,
     max_retries=2,
+    **_SLOW,
 )
 def run_video_analysis(self, job_id: str) -> str:  # type: ignore[no-untyped-def]
     return _run_generation_task(self, job_id)
 
 
-@celery_app.task(name="app.workers.tasks.run_quality_check")
+@celery_app.task(name="app.workers.tasks.run_quality_check", **_QUICK)
 def run_quality_check(job_id: str) -> str:
     with session_scope() as session:
         job = session.get(GenerationJob, job_id)
         return job.status if job else "missing"
 
 
-@celery_app.task(name="app.workers.tasks.run_draft_publish", bind=True, max_retries=2)
+@celery_app.task(name="app.workers.tasks.run_draft_publish", bind=True, max_retries=2, **_MODERATE)
 def run_draft_publish(self: Task, draft_id: str) -> str:
     """Finishes a draft publish after the HTTP accept: safety, then Work."""
     from app.domain.publishing import service as publishing
@@ -213,7 +249,7 @@ def run_draft_publish(self: Task, draft_id: str) -> str:
     return "done"
 
 
-@celery_app.task(name="app.workers.tasks.expire_stale_jobs")
+@celery_app.task(name="app.workers.tasks.expire_stale_jobs", **_MODERATE)
 def expire_stale_jobs() -> int:
     """Settles jobs whose worker died mid-flight.
 
@@ -292,7 +328,7 @@ def expire_stale_jobs() -> int:
     return expired
 
 
-@celery_app.task(name="app.workers.tasks.poll_async_provider_tasks")
+@celery_app.task(name="app.workers.tasks.poll_async_provider_tasks", **_QUICK)
 def poll_async_provider_tasks() -> int:
     """Advances every job parked on an external render.
 
@@ -307,7 +343,7 @@ def poll_async_provider_tasks() -> int:
         return poll_once(session)
 
 
-@celery_app.task(name="app.workers.tasks.expire_stale_input_requests")
+@celery_app.task(name="app.workers.tasks.expire_stale_input_requests", **_MODERATE)
 def expire_stale_input_requests() -> int:
     """Releases credits for questions nobody came back to answer.
 
@@ -374,7 +410,7 @@ def expire_stale_input_requests() -> int:
     return expired
 
 
-@celery_app.task(name="app.workers.tasks.reconcile_webhooks")
+@celery_app.task(name="app.workers.tasks.reconcile_webhooks", **_BATCH)
 def reconcile_webhooks() -> int:
     """Processes webhook events that arrived but were never handled."""
     with session_scope() as session:
@@ -386,7 +422,7 @@ def reconcile_webhooks() -> int:
         return len(pending)
 
 
-@celery_app.task(name="app.workers.tasks.reconcile_credits")
+@celery_app.task(name="app.workers.tasks.reconcile_credits", **_BATCH)
 def reconcile_credits() -> str:
     """Writes a ledger health snapshot for the ops console."""
     from app.domain.credits import reconciliation
@@ -396,7 +432,7 @@ def reconcile_credits() -> str:
         return report.id
 
 
-@celery_app.task(name="app.workers.tasks.purge_expired_exports")
+@celery_app.task(name="app.workers.tasks.purge_expired_exports", **_BATCH)
 def purge_expired_exports() -> int:
     """Deletes the storage object behind export bundles past their retention window."""
     from app.domain.compliance import service as compliance_service
@@ -407,7 +443,31 @@ def purge_expired_exports() -> int:
         return purged
 
 
-@celery_app.task(name="app.workers.tasks.run_media_analysis")
+@celery_app.task(name="app.workers.tasks.purge_expired_records", **_SLOW)
+def purge_expired_records() -> dict[str, int]:
+    """Prunes the append-only tables that have no natural cap of their own.
+
+    Without this, `idempotency_records` / `webhook_events` / `system_logs` /
+    `job_events` grow forever — see `app.domain.retention.service` for why
+    each one's window was picked and why `AuditLog`/`CreditLedgerEntry` are
+    deliberately excluded.
+    """
+    from app.domain.retention import service as retention_service
+
+    with session_scope() as session:
+        counts = {
+            "idempotency_records": retention_service.purge_idempotency_records(session),
+            "webhook_events": retention_service.purge_webhook_events(session),
+            "system_logs": retention_service.purge_system_logs(session),
+            "job_events": retention_service.purge_job_events(session),
+        }
+    total = sum(counts.values())
+    if total:
+        logger.info("purge_expired_records deleted %s rows: %s", total, counts)
+    return counts
+
+
+@celery_app.task(name="app.workers.tasks.run_media_analysis", **_SLOW)
 def run_media_analysis(analysis_id: str) -> str:
     from app.domain.editor import analysis as media_analysis
     from app.domain.errors import NotFound
@@ -424,7 +484,7 @@ def run_media_analysis(analysis_id: str) -> str:
         return row.status
 
 
-@celery_app.task(name="app.workers.tasks.run_editor_transcription")
+@celery_app.task(name="app.workers.tasks.run_editor_transcription", **_SLOW)
 def run_editor_transcription(analysis_id: str) -> str:
     """Same queue, same row shape, same shrug-and-skip-on-missing-row
     behavior as `run_media_analysis` — this is a second analyzer identity on
@@ -442,7 +502,7 @@ def run_editor_transcription(analysis_id: str) -> str:
         return row.status
 
 
-@celery_app.task(name="app.workers.tasks.expire_editor_leases")
+@celery_app.task(name="app.workers.tasks.expire_editor_leases", **_QUICK)
 def expire_editor_leases() -> int:
     from sqlalchemy import update
 
@@ -461,7 +521,7 @@ def expire_editor_leases() -> int:
         return matched
 
 
-@celery_app.task(name="app.workers.tasks.expire_orphan_editor_uploads")
+@celery_app.task(name="app.workers.tasks.expire_orphan_editor_uploads", **_MODERATE)
 def expire_orphan_editor_uploads() -> int:
     """Marks expired editor uploads so they are not completed after the lease dies."""
     from sqlalchemy import select
@@ -491,7 +551,7 @@ def expire_orphan_editor_uploads() -> int:
     return deleted
 
 
-@celery_app.task(name="app.workers.tasks.pull_episode_metrics")
+@celery_app.task(name="app.workers.tasks.pull_episode_metrics", **_BATCH)
 def pull_episode_metrics() -> int:
     """Refreshes every submitted post's play/like/comment/share snapshot.
 
@@ -505,30 +565,66 @@ def pull_episode_metrics() -> int:
         return distribution_service.pull_episode_metrics(session)
 
 
+def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
+    """Wall-clock budget for one `run_generation` invocation.
+
+    Multiplies the single-pass floor by how many character views this job
+    will loop through in the same Celery task. Anything that is not a
+    multi-view `character` job (including a missing `request_json`) is one
+    pass. Capped at the 3-view ceiling so a malformed list cannot outrun
+    `visibility_timeout`.
+    """
+    params = job.request_json if isinstance(getattr(job, "request_json", None), dict) else {}
+    raw_kind = params.get("asset_kind")
+    raw_views = params.get("character_views")
+    extra = max(
+        jobs_service.character_output_count(
+            asset_kind=raw_kind if isinstance(raw_kind, str) else None,
+            character_views=raw_views if isinstance(raw_views, list) else None,
+        )
+        - 1,
+        0,
+    )
+    return {
+        "soft_time_limit": min(
+            _IMAGE_GENERATION["soft_time_limit"] + _IMAGE_EXTRA_VIEW["soft_time_limit"] * extra,
+            _IMAGE_GENERATION_CAP["soft_time_limit"],
+        ),
+        "time_limit": min(
+            _IMAGE_GENERATION["time_limit"] + _IMAGE_EXTRA_VIEW["time_limit"] * extra,
+            _IMAGE_GENERATION_CAP["time_limit"],
+        ),
+    }
+
+
 def dispatch_generation(job: GenerationJob) -> None:
     """Routes a job to the queue matching its latency profile.
 
     Video renders take minutes; putting them on the image queue would block
-    every quick job behind them.
+    every quick job behind them. Image jobs also carry a per-invocation
+    time limit: a multi-view character completion loops the generate
+    cycle in one task, so `apply_async` stretches the default budget.
     """
     from app.models.enums import Operation
 
     video_ops = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
     if job.operation in video_ops:
-        task = run_video_generation
-    elif job.operation == Operation.AUDIO_GENERATION:
-        task = run_audio_generation
-    elif job.operation == Operation.VIDEO_ANALYSIS:
-        task = run_video_analysis
-    else:
-        task = run_generation
-    task.delay(job.id)
+        run_video_generation.delay(job.id)
+        return
+    if job.operation == Operation.AUDIO_GENERATION:
+        run_audio_generation.delay(job.id)
+        return
+    if job.operation == Operation.VIDEO_ANALYSIS:
+        run_video_analysis.delay(job.id)
+        return
+    run_generation.apply_async((job.id,), **image_generation_time_limits(job))
 
 
 __all__ = [
     "dispatch_generation",
     "expire_stale_input_requests",
     "expire_stale_jobs",
+    "image_generation_time_limits",
     "poll_async_provider_tasks",
     "reconcile_credits",
     "reconcile_webhooks",

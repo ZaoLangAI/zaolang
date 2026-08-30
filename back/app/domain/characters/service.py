@@ -10,10 +10,10 @@ The `Series(kind=cast)` roster CRUD that used to live in this module
 removed with the old single-clip `ShortformStudio` it only ever served —
 short-drama series management now lives entirely under
 `app.domain.editor.service`'s `Series(kind=drama)` path (see
-`.cursor/skills/zaolang-editor-drama`). `delete_character` below still cleans
-a deleted character out of any pre-existing cast roster's `character_ids_json`
-for data hygiene, since those rows are not otherwise reachable for editing
-anymore.
+`.cursor/skills/zaolang-editor-drama`). Every remaining `Series` creation path
+passes `kind=drama` explicitly, and the leftover `kind=cast` rows this used to
+scan for on every `delete_character` call have been purged by migration
+`ada14f32676f` — there is nothing left for that cleanup loop to do.
 
 Nothing here talks to a TTS or face-consistency provider directly.
 `voice_description` and reference images are carried through to the job so
@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.skill_library import service as skill_library_service
-from app.models import Asset, CreationSkill, Series
+from app.models import Asset, CreationSkill
 from app.models.base import utcnow
 from app.models.enums import (
     CharacterViewAngle,
@@ -39,7 +39,6 @@ from app.models.enums import (
     CreationSkillStatus,
     CreationSkillVisibility,
     MediaType,
-    SeriesKind,
 )
 from app.presenters import media_urls
 
@@ -339,15 +338,6 @@ def update_character(
 
 def delete_character(session: Session, *, user_id: str, character_id: str) -> None:
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
-    # Leaving a stale id in a series' roster would surface as a silent no-op
-    # the next time the cast is resolved, so the roster is cleaned up here.
-    for series in session.scalars(
-        select(Series).where(Series.owner_user_id == user_id, Series.kind == SeriesKind.CAST)
-    ):
-        if skill.id in series.character_ids_json:
-            series.character_ids_json = [
-                cid for cid in series.character_ids_json if cid != skill.id
-            ]
     skill_library_service.delete(session, skill=skill, actor_user_id=user_id)
 
 

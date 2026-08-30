@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session
 
 from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound, ValidationFailed
-from app.models import Asset, Series, User
+from app.models import Asset, User
 from app.models.base import new_id
-from app.models.enums import CharacterViewAngle, MediaType, SeriesKind
+from app.models.enums import CharacterViewAngle, MediaType
 from tests.conftest import make_user
 
 
@@ -390,40 +390,3 @@ def test_apply_character_refs_rejects_someone_elses_character(db: Session, autho
     params: dict[str, object] = {"character_ids": [character.id]}
     with pytest.raises(NotFound):
         characters_service.apply_character_refs(db, user_id=author.id, params=params)
-
-
-# ---- Series roster cleanup ---------------------------------------------------
-#
-# The `Series(kind=cast)` CRUD (`create_series`/`add_character_to_series`/
-# `get_series_detail`/...) was removed with `ShortformStudio` — see
-# `app.domain.characters.service`'s module docstring. `delete_character` below
-# still needs to be verified against `Series` directly since it no longer has
-# any service-layer helpers to build a roster with.
-
-
-def test_deleting_a_character_removes_it_from_every_series_roster(
-    db: Session, author: User
-) -> None:
-    series = Series(
-        owner_user_id=author.id,
-        title="深海霓虹",
-        character_ids_json=[],
-        kind=SeriesKind.CAST,
-    )
-    db.add(series)
-    db.flush()
-    character = characters_service.create_character(
-        db,
-        user_id=author.id,
-        name="林夏",
-        description=None,
-        reference_asset_ids=[],
-        voice_description=None,
-    )
-    series.character_ids_json = [character.id]
-    db.flush()
-
-    characters_service.delete_character(db, user_id=author.id, character_id=character.id)
-
-    db.refresh(series)
-    assert character.id not in series.character_ids_json

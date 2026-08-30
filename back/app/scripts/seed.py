@@ -36,6 +36,7 @@ from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import (
     AccessGrant,
     AgentNode,
+    AgentProfile,
     AgentRun,
     AgentSkill,
     Announcement,
@@ -259,6 +260,7 @@ def run(*, reset: bool = False) -> dict[str, int]:
         users = _seed_users(session)
         agent_skills_service.ensure_default_nodes(session)
         agent_skills_service.ensure_default_profiles(session)
+        ensure_default_copy_request_agent(session)
         ensure_default_enhance_asset_agents(session)
         workflow_templates_service.ensure_default_templates(session)
         _seed_llm_providers(session)
@@ -320,23 +322,48 @@ def _seed_users(session: Session) -> dict[str, User]:
     return users
 
 
+def ensure_default_copy_request_agent(session: Session) -> None:
+    """Marks the copy role's `is_default` agent as the `copy` request bucket.
+
+    Idempotent: an operator who already pointed the bucket at another
+    profile is left alone. Does not create a new agent — 「文案生成 · 默认」
+    is the role default `ensure_default_profiles` already planted.
+
+    After the bucket is claimed, factory `suggest` text is synced onto the
+    seeded copy agents so a re-run of seed picks up a rewritten
+    `copywriter.SYSTEM_PROMPT` without asking an operator to fill-from-template.
+    """
+    if (
+        agent_skills_service.default_profile_for_asset_kind(
+            session, "copy", agent_skills_service.COPY_REQUEST_BUCKET
+        )
+        is None
+    ):
+        default = agent_skills_service.default_profile(session, "copy")
+        if default is not None:
+            agent_skills_service.update_profile(
+                session, default.id, default_for_asset_kind=agent_skills_service.COPY_REQUEST_BUCKET
+            )
+    sync_seeded_copy_agent_prompts(session)
+
+
 _ENHANCE_ASSET_AGENT_SPECS: dict[str, tuple[str, str, str, str]] = {
     "character": (
         "enhance-character",
         "文案润色 · 角色",
-        "角色资产的画面描述润色，额外关注人物一致性与表情神态，并要求全身入镜、纯色背景。",
+        "角色立绘教练：把同一个人写到能进库、出三视图，强制全身入镜与纯色背景。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_CHARACTER,
     ),
     "scene": (
         "enhance-scene",
         "文案润色 · 场景",
-        "场景资产的画面描述润色，额外关注环境细节与氛围。",
+        "场景空镜教练：把空间本身写清楚，画面不得出现任何人物痕迹。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_SCENE,
     ),
     "cover": (
         "enhance-cover",
         "文案润色 · 封面",
-        "封面资产的画面描述润色，额外关注视觉焦点与文字安全区。",
+        "封面海报教练：单一主视觉、缩略图可读，并预留标题安全区。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_COVER,
     ),
 }
@@ -353,6 +380,11 @@ def ensure_default_enhance_asset_agents(session: Session) -> None:
     so `agent_skills_service.resolve_prompt` finds a real published version
     rather than falling back to the code-level constant `enhance_prompt`
     also passes as a default.
+
+    A later rewrite of those constants is synced onto the *seeded* keys
+    (`enhance-character` / `enhance-scene` / `enhance-cover`) when the
+    active draft still looks like a factory prompt. An operator's own
+    wording, or a different profile occupying the bucket, is not clobbered.
     """
     for bucket, spec in _ENHANCE_ASSET_AGENT_SPECS.items():
         key, display_name, description, system_prompt = spec
@@ -377,6 +409,123 @@ def ensure_default_enhance_asset_agents(session: Session) -> None:
             tool_grants=[],
             actor_user_id=None,
             reason=f"seed: {bucket} 资产的润色专属智能体",
+        )
+    sync_seeded_copy_agent_prompts(session)
+
+
+# First sentences of every factory draft we have shipped for these agents.
+# A published prompt that still opens with one of these is treated as
+# product-owned and is safe to replace when the module constant moves;
+# anything else is an operator edit and is left alone.
+_FACTORY_SUGGEST_OPENERS = (
+    "你是造浪平台的文案助手。",
+    "你是造浪平台的作品发布文案助手。",
+)
+_FACTORY_ENHANCE_OPENERS = {
+    "character": (
+        "你是造浪平台的提示词教练。",
+        "你是造浪平台的角色立绘提示词教练。",
+    ),
+    "scene": (
+        "你是造浪平台的提示词教练。",
+        "你是造浪平台的场景空镜提示词教练。",
+    ),
+    "cover": (
+        "你是造浪平台的提示词教练。",
+        "你是造浪平台的封面海报提示词教练。",
+    ),
+}
+_FACTORY_ENHANCE_DESCRIPTIONS = {
+    "角色资产的画面描述润色，额外关注人物一致性与表情神态，并要求全身入镜、纯色背景。",
+    "场景资产的画面描述润色，额外关注环境细节与氛围。",
+    "封面资产的画面描述润色，额外关注视觉焦点与文字安全区。",
+}
+
+
+def _active_skill(session: Session, profile_id: str, slot: str) -> AgentSkill | None:
+    return session.scalar(
+        select(AgentSkill).where(
+            AgentSkill.profile_id == profile_id,
+            AgentSkill.slot == slot,
+            AgentSkill.is_active.is_(True),
+        )
+    )
+
+
+def _looks_like_factory_prompt(text: str, openers: tuple[str, ...]) -> bool:
+    stripped = text.strip()
+    return not stripped or stripped.startswith(openers)
+
+
+def _publish_factory_prompt(
+    session: Session,
+    *,
+    profile: AgentProfile,
+    slot: str,
+    prompt: str,
+    openers: tuple[str, ...],
+    reason: str,
+) -> None:
+    skill = _active_skill(session, profile.id, slot)
+    current = skill.prompt_template if skill is not None else ""
+    if current == prompt:
+        return
+    if current and not _looks_like_factory_prompt(current, openers):
+        return
+    agent_skills_service.publish(
+        session,
+        profile_id=profile.id,
+        slot=slot,
+        prompt_template=prompt,
+        tool_grants=list(skill.tool_grants_json) if skill is not None else [],
+        actor_user_id=None,
+        reason=reason,
+    )
+
+
+def sync_seeded_copy_agent_prompts(session: Session) -> None:
+    """Publishes the current module constants onto the seeded copy agents.
+
+    Runtime `resolve_prompt` prefers the active `AgentSkill` over the
+    code-level fallback, so rewriting `copywriter.SYSTEM_PROMPT` /
+    `ENHANCE_SYSTEM_PROMPT_*` is invisible until those rows move. This
+    keeps the four product-owned agents (`文案生成 · 默认` plus the three
+    文案润色 keys) on the factory draft without touching a custom prompt
+    or a different profile an operator pointed the bucket at.
+    """
+    suggest_targets: list[AgentProfile] = []
+    role_default = agent_skills_service.default_profile(session, "copy")
+    if role_default is not None:
+        suggest_targets.append(role_default)
+    copy_bucket = agent_skills_service.default_profile_for_asset_kind(
+        session, "copy", agent_skills_service.COPY_REQUEST_BUCKET
+    )
+    if copy_bucket is not None and (role_default is None or copy_bucket.id != role_default.id):
+        suggest_targets.append(copy_bucket)
+    for profile in suggest_targets:
+        _publish_factory_prompt(
+            session,
+            profile=profile,
+            slot=copywriter_agent.SUGGEST_SLOT,
+            prompt=copywriter_agent.SYSTEM_PROMPT,
+            openers=_FACTORY_SUGGEST_OPENERS,
+            reason="seed: 同步文案生成工厂提示词",
+        )
+
+    for bucket, spec in _ENHANCE_ASSET_AGENT_SPECS.items():
+        key, _display_name, description, system_prompt = spec
+        profile = agent_skills_service.find_profile(session, "copy", key)
+        if profile is None:
+            continue
+        if profile.description in _FACTORY_ENHANCE_DESCRIPTIONS or not profile.description:
+            agent_skills_service.update_profile(session, profile.id, description=description)
+        _publish_factory_prompt(
+            session,
+            profile=profile,
+            slot=copywriter_agent.ENHANCE_SLOT,
+            prompt=system_prompt,
+            openers=_FACTORY_ENHANCE_OPENERS[bucket],
+            reason=f"seed: 同步{bucket}润色工厂提示词",
         )
     session.flush()
 

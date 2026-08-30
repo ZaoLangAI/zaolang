@@ -45,7 +45,12 @@ class User(Base, TimestampMixin):
 
     profile: Mapped[Profile] = relationship(back_populates="user", uselist=False)
 
-    __table_args__ = (Index("ix_users_status", "status"),)
+    __table_args__ = (
+        Index("ix_users_status", "status"),
+        # The admin statistics center's daily signup trend range-scans
+        # `created_at` with no other filter.
+        Index("ix_users_created_at", "created_at"),
+    )
 
     def has_role(self, role: str) -> bool:
         return role in self.roles

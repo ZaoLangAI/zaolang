@@ -6,9 +6,11 @@ import type { ScriptScene } from './api';
 import {
   breakpointKey,
   breakpointOrdinalInScene,
+  breakpointSegmentBlocks,
   buildBreakpointVideoHref,
   indexBreakpointVideos,
   resolveBreakpointHref,
+  trailingBreakpoint,
 } from './script-breakpoint';
 
 const scene = (heading: string, breakpointCount: number): ScriptScene => ({
@@ -164,5 +166,62 @@ describe('indexBreakpointVideos', () => {
       [scene('值班室', 1)],
     );
     expect(indexed['值班室#0']?.latestJobId).toBe('job_keyed');
+  });
+
+  it('binds a keyless draft onto the trailing unclosed segment', () => {
+    const open: ScriptScene = {
+      heading: '雷达峰顶',
+      ref_id: null,
+      blocks: [
+        { type: 'action', character: null, text: '天线转向太阳' },
+        { type: 'dialogue', character: '周岩', text: '他们回话了。' },
+      ],
+    };
+    const indexed = indexBreakpointVideos(
+      [draft({ params: { prompt: '雷达峰顶，黎明' } })],
+      [open],
+    );
+    expect(indexed['雷达峰顶#0']?.latestJobId).toBe('job_1');
+  });
+});
+
+describe('trailingBreakpoint', () => {
+  it('returns heading#0 when a scene has shootable copy and no closer', () => {
+    const open: ScriptScene = {
+      heading: '监听室',
+      ref_id: null,
+      blocks: [
+        { type: 'scene', character: null, text: '夜，水银灯' },
+        { type: 'action', character: null, text: '周岩翻开台账' },
+      ],
+    };
+    expect(trailingBreakpoint(open)).toEqual({ key: '监听室#0', blockIndex: 2 });
+    expect(breakpointSegmentBlocks(open, 2).map((block) => block.type)).toEqual([
+      'scene',
+      'action',
+    ]);
+  });
+
+  it('uses the next ordinal after existing breakpoints', () => {
+    const mixed: ScriptScene = {
+      heading: '值班室',
+      ref_id: null,
+      blocks: [
+        { type: 'action', character: null, text: 'a' },
+        { type: 'breakpoint', character: null, text: 'cut' },
+        { type: 'dialogue', character: '林', text: 'hi' },
+      ],
+    };
+    expect(trailingBreakpoint(mixed)).toEqual({ key: '值班室#1', blockIndex: 3 });
+    expect(breakpointSegmentBlocks(mixed, 3).map((block) => block.text)).toEqual(['hi']);
+  });
+
+  it('is omitted when the last block is already a breakpoint', () => {
+    expect(trailingBreakpoint(scene('走廊', 1))).toBeNull();
+  });
+
+  it('is omitted when the unclosed tail has no shootable copy', () => {
+    const empty: ScriptScene = { heading: '空', ref_id: null, blocks: [] };
+    expect(trailingBreakpoint(empty)).toBeNull();
   });
 });

@@ -15,6 +15,10 @@ export interface CreateStreamState {
   liveThinking: string;
   error: string | null;
   result: ScriptTurnCompleteEvent | null;
+  /** Kept across a failed first draft so the empty-shell page can retry
+   * without asking the author to re-type the idea. */
+  idea: string;
+  referencedSkillIds: string[];
 }
 
 const EMPTY_STATE: CreateStreamState = {
@@ -24,6 +28,8 @@ const EMPTY_STATE: CreateStreamState = {
   liveThinking: '',
   error: null,
   result: null,
+  idea: '',
+  referencedSkillIds: [],
 };
 
 /**
@@ -127,7 +133,16 @@ export function startCreate(
   controller?.abort();
   const nextController = new AbortController();
   controller = nextController;
-  state = { episodeId: null, streaming: true, liveText: '', liveThinking: '', error: null, result: null };
+  state = {
+    episodeId: null,
+    streaming: true,
+    liveText: '',
+    liveThinking: '',
+    error: null,
+    result: null,
+    idea: input.idea,
+    referencedSkillIds: input.referencedSkillIds,
+  };
   for (const listener of listeners) listener();
 
   void drainCreateStream(
@@ -142,11 +157,23 @@ export function startCreate(
  * turn (see `retryScript`'s docstring) — reuses this exact `episode_id`
  * instead of minting a new one, unlike `startCreate`.
  */
-export function startRetry(episodeId: string, input: { idea: string; referencedSkillIds: string[] }): void {
+export function startRetry(
+  episodeId: string,
+  input: { idea?: string; referencedSkillIds?: string[] },
+): void {
   controller?.abort();
   const nextController = new AbortController();
   controller = nextController;
-  state = { episodeId, streaming: true, liveText: '', liveThinking: '', error: null, result: null };
+  state = {
+    episodeId,
+    streaming: true,
+    liveText: '',
+    liveThinking: '',
+    error: null,
+    result: null,
+    idea: input.idea?.trim() || state.idea,
+    referencedSkillIds: input.referencedSkillIds ?? state.referencedSkillIds,
+  };
   for (const listener of listeners) listener();
 
   void drainCreateStream(

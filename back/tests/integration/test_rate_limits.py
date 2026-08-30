@@ -6,6 +6,7 @@ another, so the tests check isolation as much as they check the ceiling.
 
 from __future__ import annotations
 
+import contextlib
 from typing import ClassVar
 
 import pytest
@@ -51,6 +52,24 @@ def test_exceeding_a_bucket_raises_with_a_retry_hint() -> None:
         with pytest.raises(RateLimited) as excinfo:
             rate_limit.enforce("auth_attempt", identity)
         assert excinfo.value.retry_after_seconds == rule.window_seconds
+    finally:
+        rate_limit.reset("auth_attempt", identity)
+
+
+def test_sustained_abuse_does_not_grow_the_backing_set_past_the_limit() -> None:
+    """A caller who keeps hammering a bucket after being throttled must not
+    make the Redis sorted set grow with the request rate — it should plateau
+    at (approximately) `limit` members, not `rate * window`."""
+    identity = "test:sustained-abuse"
+    rate_limit.reset("auth_attempt", identity)
+    rule = rate_limit.RULES["auth_attempt"]
+    try:
+        for _ in range(rule.limit * 3):
+            with contextlib.suppress(Exception):
+                rate_limit.enforce("auth_attempt", identity)
+
+        size = rate_limit.get_redis().zcard(f"rl:auth_attempt:{identity}")
+        assert size <= rule.limit
     finally:
         rate_limit.reset("auth_attempt", identity)
 

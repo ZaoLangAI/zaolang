@@ -117,6 +117,9 @@ def _advance(session: Session, task: AsyncProviderTask) -> None:
     result = provider.poll(task.external_task_id, request)
 
     if result.pending:
+        if async_tasks.exceeded_max_poll_duration(task):
+            _give_up_on_dead_upstream(session, job, task)
+            return
         _heartbeat(session, job, task, result)
         async_tasks.reschedule(session, task)
         session.commit()
@@ -225,6 +228,37 @@ def _resume_succeeded(
         port="succeeded",
         park={"kind": "succeeded", "result": asdict(result)},
     )
+
+
+def _give_up_on_dead_upstream(
+    session: Session, job: GenerationJob, task: AsyncProviderTask
+) -> None:
+    """Stops polling a render that has never once answered within the
+    platform's wall-clock budget (`async_tasks.MAX_POLL_DURATION_SECONDS`).
+
+    `expire_stale_jobs` deliberately never touches a job with a live
+    `AsyncProviderTask` row, so without this the reserved credits and the
+    heartbeat-every-15s poll would both continue indefinitely for an upstream
+    that silently stopped answering (as opposed to one that eventually
+    reports `failed`, which `_resume_failed` already handles).
+    """
+    logger.warning(
+        "async task %s (job %s) exceeded the poll duration budget without a "
+        "terminal upstream answer; giving up",
+        task.id,
+        job.id,
+    )
+    system_log.emit(
+        source=SystemLogSource.PIPELINE,
+        event="async_task_poll_budget_exceeded",
+        message="外部渲染任务长时间未返回结果，已放弃轮询并释放预留积分",
+        dedup_key=f"job:{job.id}",
+        level=SystemLogLevel.WARNING,
+        job_id=job.id,
+        details={"async_task_id": task.id, "poll_count": task.poll_count},
+    )
+    _close_attempt(session, task, ProviderAttemptStatus.FAILED, None)
+    _resume_failed(session, job, task, code="PROVIDER_TIMEOUT")
 
 
 def _resume_failed(

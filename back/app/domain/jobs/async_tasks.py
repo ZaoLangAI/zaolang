@@ -31,12 +31,22 @@ logger = logging.getLogger(__name__)
 
 # Platform policy, not a provider's: how often to check on an external render.
 # `TASK_TIMEOUT_SECONDS` is the lease `expire_stale_jobs` uses to tell a live
-# poll apart from a dead Beat — `reschedule` renews it. The poller itself
-# keeps asking until the upstream returns succeeded or failed. The lease must
-# stay well under `app.workers.tasks.STALE_JOB_TIMEOUT`, or the sweeper would
+# poll apart from a dead Beat — `reschedule` renews it. The lease must stay
+# well under `app.workers.tasks.STALE_JOB_TIMEOUT`, or the sweeper would
 # expire a job that is still legitimately rendering.
 POLL_INTERVAL_SECONDS = 15
 TASK_TIMEOUT_SECONDS = 480
+
+# The poller keeps asking until the upstream returns succeeded or failed, or
+# until this wall-clock budget (measured from the row's `created_at`, not the
+# renewable `deadline_at` lease) runs out. Without a ceiling here a provider
+# that never answers keeps a heartbeat firing every `POLL_INTERVAL_SECONDS`,
+# the reserved credits held forever, and `expire_stale_jobs` can never help —
+# it deliberately skips any job with a live `AsyncProviderTask` row (see
+# `app.workers.tasks.expire_stale_jobs`). Two hours is generous for the
+# longest real render this platform submits (video) while still bounding the
+# worst case to a knowable number.
+MAX_POLL_DURATION_SECONDS = 2 * 60 * 60
 
 # How long one tick may hold a row before another may take it over.
 # Comfortably longer than a poll plus a download, short enough that a worker
@@ -87,6 +97,21 @@ def suspend(
 
 def find_for_job(session: Session, job_id: str) -> AsyncProviderTask | None:
     return session.scalar(select(AsyncProviderTask).where(AsyncProviderTask.job_id == job_id))
+
+
+def exceeded_max_poll_duration(task: AsyncProviderTask, *, now: dt.datetime | None = None) -> bool:
+    """Whether the poller has been asking about this render for too long.
+
+    Deliberately keyed on `created_at` (immutable) rather than `deadline_at`
+    (renewed every tick) — the latter can never elapse on a task that is
+    still being polled, which is exactly the "dead upstream" case this guards
+    against.
+    """
+    moment = now or utcnow()
+    created_at = task.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=dt.UTC)
+    return moment - created_at >= dt.timedelta(seconds=MAX_POLL_DURATION_SECONDS)
 
 
 def claim_due(

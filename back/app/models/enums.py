@@ -420,6 +420,12 @@ class AgentName(StrEnum):
 
 
 class SeriesKind(StrEnum):
+    # No creation path writes this value any more (see
+    # `app.domain.characters.service`'s module docstring and migration
+    # `ada14f32676f`, which purged the leftover rows). Kept rather than
+    # dropped in this batch: removing an enum member read by nothing is a
+    # smaller structural change than the two columns above, but still
+    # earmarked for its own separate review rather than bundled here.
     CAST = "cast"
     DRAMA = "drama"
 
@@ -467,8 +473,6 @@ class EpisodeCutStatus(StrEnum):
     EDITING = "editing"
     READY = "ready"
     ARCHIVED = "archived"
-
-
 
 
 class EpisodeKind(StrEnum):

@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { AgentDebugChatDialog } from '@/components/admin/agents/agent-debug-chat-dialog';
@@ -14,6 +14,12 @@ import { IconGear, IconMessage, IconPencil, IconTrash } from '@/components/ui/ic
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
+import {
+  assetKindLabelKey,
+  copyEditorSlot,
+  recommendedCopyTemplateKey,
+  templatesForCopyAgent,
+} from '@/lib/admin/copy-routing';
 import { operationLabelKey } from '@/lib/admin/operations';
 import { atLeast } from '@/lib/admin/rbac';
 import { toolGrantLabelKey } from '@/lib/admin/tool-grants';
@@ -362,7 +368,12 @@ function AgentCard({
     <div className="flex h-full flex-col gap-2 rounded-[var(--radius-md)] border border-border bg-surface p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-[11px] text-muted">{profile.key}</span>
-        {profile.is_default ? <Badge tone="primary">{t('defaultAgent')}</Badge> : null}
+        <span className="flex flex-wrap items-center gap-1">
+          {profile.is_default ? <Badge tone="primary">{t('defaultAgent')}</Badge> : null}
+          {profile.default_for_asset_kind ? (
+            <Badge tone="primary">{t(assetKindLabelKey(profile.default_for_asset_kind))}</Badge>
+          ) : null}
+        </span>
       </div>
       <p className="text-sm font-medium text-text">{profile.display_name}</p>
       {profile.description ? <p className="text-xs text-muted">{profile.description}</p> : null}
@@ -383,7 +394,13 @@ function AgentCard({
       <div className="flex flex-wrap items-center gap-1">
         <span className="text-[11px] text-muted">{t('usedBy')}</span>
         {usedBy.length === 0 ? (
-          <Badge tone="neutral">{profile.is_default ? t('usedByFallback') : t('usedByNone')}</Badge>
+          <Badge tone="neutral">
+            {profile.is_default
+              ? t('usedByFallback')
+              : profile.default_for_asset_kind
+                ? t(assetKindLabelKey(profile.default_for_asset_kind))
+                : t('usedByNone')}
+          </Badge>
         ) : (
           usedBy.map((operation) => (
             <Badge key={operation} tone={mismatched.includes(operation) ? 'amber' : 'success'}>
@@ -473,7 +490,9 @@ export function AgentSkillEditorDialog({
   const locale = useLocale() as Locale;
 
   const slots = node.prompt_slots ?? [];
-  const [slot, setSlot] = useState(slots[0]?.key ?? 'default');
+  const isCopyRole = profile.role === 'copy';
+  const inferredSlot = isCopyRole ? copyEditorSlot(profile) : (slots[0]?.key ?? 'default');
+  const [slot, setSlot] = useState(inferredSlot);
   const [versions, setVersions] = useState<AgentSkill[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [promptTemplate, setPromptTemplate] = useState('');
@@ -484,7 +503,13 @@ export function AgentSkillEditorDialog({
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<SkillTemplate[]>([]);
+  // Stay on "no template" until the operator actually picks one. Pre-selecting
+  // the recommended key without applying it makes the dropdown lie: it shows
+  // 「文案润色 · 角色」while the textarea still holds the published (often
+  // generic) prompt, and clicking the already-selected option never fires
+  // `onChange`.
   const [templateKey, setTemplateKey] = useState('');
+  const appliedTemplateRef = useRef(false);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [debuggingDraft, setDebuggingDraft] = useState(false);
 
@@ -506,10 +531,24 @@ export function AgentSkillEditorDialog({
       .catch(() => setAvailableTools([]));
   }, [editable, node.role]);
 
+  const editorSlot = isCopyRole ? inferredSlot : slot;
   // A role's templates are written for one slot — offering `copy`'s prompt
   // polisher while editing its tag suggester would fill in the wrong prompt.
-  // Role-agnostic templates suit any slot.
-  const slotTemplates = templates.filter((template) => !template.role || template.slot === slot);
+  // Role-agnostic templates suit any slot. Copy additionally narrows by
+  // the agent's request-routing bucket so a character agent is only offered
+  // the character starting prompt, not the generic enhance draft or
+  // scene/cover specialised drafts.
+  const slotTemplates = useMemo(
+    () =>
+      isCopyRole
+        ? templatesForCopyAgent(templates, editorSlot, profile.default_for_asset_kind)
+        : templates.filter((template) => !template.role || template.slot === editorSlot),
+    [isCopyRole, templates, editorSlot, profile.default_for_asset_kind],
+  );
+  const recommendedTemplateKey = isCopyRole
+    ? recommendedCopyTemplateKey(profile.default_for_asset_kind)
+    : '';
+  const selectedTemplate = slotTemplates.find((template) => template.key === templateKey);
 
   const toolLabel = (tool: string) => {
     const key = toolGrantLabelKey(tool);
@@ -520,8 +559,10 @@ export function AgentSkillEditorDialog({
    * the published text is what decides whether content gets rejected. */
   const applyTemplate = (key: string) => {
     setTemplateKey(key);
-    const template = templates.find((item) => item.key === key);
-    if (!template) return;
+    if (!key) return;
+    const template = slotTemplates.find((item) => item.key === key);
+    if (!template?.prompt_template) return;
+    appliedTemplateRef.current = true;
     setPromptTemplate(template.prompt_template);
     setToolGrants(template.tool_grants ?? []);
   };
@@ -530,22 +571,45 @@ export function AgentSkillEditorDialog({
     () =>
       adminApi
         .get<{ items: AgentSkill[] }>('/v1/admin/agent-skills', {
-          query: { profile_id: profile.id, slot },
+          query: { profile_id: profile.id, slot: editorSlot },
         })
         .then((page) => {
           setVersions(page.items);
-          const active = page.items.find((version) => version.is_active);
-          setPromptTemplate(active?.prompt_template ?? '');
-          setToolGrants(active?.tool_grants ?? []);
+          // A late skill fetch must not clobber a template the operator just
+          // picked — that is how a character agent ended up showing the
+          // generic enhance draft after 「从模板填充」.
+          if (!appliedTemplateRef.current) {
+            const active = page.items.find((version) => version.is_active);
+            setPromptTemplate(active?.prompt_template ?? '');
+            setToolGrants(active?.tool_grants ?? []);
+          }
           setLoadFailed(false);
         })
         .catch(() => setLoadFailed(true)),
-    [profile.id, slot],
+    [profile.id, editorSlot],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (appliedTemplateRef.current || versions === null) return;
+    const published = versions.find((version) => version.is_active)?.prompt_template ?? '';
+    if (published.trim()) return;
+    const fallbackKey =
+      recommendedTemplateKey &&
+      slotTemplates.some((template) => template.key === recommendedTemplateKey)
+        ? recommendedTemplateKey
+        : (slotTemplates[0]?.key ?? '');
+    if (!fallbackKey) return;
+    const template = slotTemplates.find((item) => item.key === fallbackKey);
+    if (!template?.prompt_template) return;
+    appliedTemplateRef.current = true;
+    setTemplateKey(fallbackKey);
+    setPromptTemplate(template.prompt_template);
+    setToolGrants(template.tool_grants ?? []);
+  }, [versions, slotTemplates, recommendedTemplateKey]);
 
   const publish = async () => {
     setBusy(true);
@@ -554,7 +618,7 @@ export function AgentSkillEditorDialog({
       const active = versions?.find((version) => version.is_active) ?? null;
       await adminApi.post<AgentSkill>('/v1/admin/agent-skills', {
         profile_id: profile.id,
-        slot,
+        slot: editorSlot,
         prompt_template: promptTemplate,
         tool_grants: toolGrants,
         reason: summarizeSkillChange(active, {
@@ -606,7 +670,7 @@ export function AgentSkillEditorDialog({
       description={t('editSkillDesc')}
     >
       <div className="flex flex-col gap-6">
-        {slots.length > 1 ? (
+        {slots.length > 1 && !isCopyRole ? (
           <section>
             <h3 className="text-sm font-semibold">{t('promptSlot')}</h3>
             <p className="mt-1 text-xs text-muted">{t('promptSlotHint')}</p>
@@ -645,19 +709,27 @@ export function AgentSkillEditorDialog({
             <section className="flex flex-col gap-4">
               <h3 className="text-sm font-semibold">{t('publishNewVersion')}</h3>
               {slotTemplates.length > 0 ? (
-                <Select
-                  label={t('fillFromTemplate')}
-                  hint={t('fillFromTemplateHint')}
-                  value={templateKey}
-                  onChange={(event) => applyTemplate(event.target.value)}
-                  options={[
-                    { value: '', label: t('fillFromTemplatePlaceholder') },
-                    ...slotTemplates.map((template) => ({
-                      value: template.key,
-                      label: template.label,
-                    })),
-                  ]}
-                />
+                <div className="flex flex-col gap-1.5">
+                  <Select
+                    label={t('fillFromTemplate')}
+                    hint={t('fillFromTemplateHint')}
+                    value={templateKey}
+                    onChange={(event) => applyTemplate(event.target.value)}
+                    options={[
+                      { value: '', label: t('fillFromTemplatePlaceholder') },
+                      ...slotTemplates.map((template) => ({
+                        value: template.key,
+                        label:
+                          template.key === recommendedTemplateKey
+                            ? t('fillFromTemplateRecommended', { label: template.label })
+                            : template.label,
+                      })),
+                    ]}
+                  />
+                  {selectedTemplate?.description ? (
+                    <p className="text-xs text-muted">{selectedTemplate.description}</p>
+                  ) : null}
+                </div>
               ) : null}
               <TextArea
                 label={t('promptTemplate')}

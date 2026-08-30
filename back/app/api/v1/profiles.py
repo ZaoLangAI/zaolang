@@ -9,7 +9,7 @@ from app.api.deps import CurrentUser, DbSession, OptionalUser
 from app.api.schemas.auth import PublicProfileResponse
 from app.api.schemas.common import Page
 from app.api.schemas.works import TrashWorkSummary, WorkSummary
-from app.api.v1.works import _summary
+from app.api.v1.works import _summaries
 from app.domain.errors import NotFound
 from app.domain.publishing import service as publishing
 from app.models import Bookmark, Follow, Profile, Work, WorkVersion
@@ -82,7 +82,7 @@ def profile_works(
         )
 
     rows = session.execute(stmt).all()
-    return Page(items=[_summary(session, work, version, viewer) for work, version in rows])
+    return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
 
 
 @router.get("/me/trash", response_model=Page[TrashWorkSummary])
@@ -99,13 +99,15 @@ def my_trash(
         .order_by(Work.trashed_at.desc().nullslast(), Work.id.desc())
         .limit(limit)
     ).all()
+    pairs = [(work, version) for work, version in rows]
+    summaries = _summaries(session, pairs, viewer)
     return Page(
         items=[
             TrashWorkSummary(
-                **_summary(session, work, version, viewer).model_dump(),
+                **summary.model_dump(),
                 referenced=publishing.work_is_referenced(session, work),
             )
-            for work, version in rows
+            for (work, _version), summary in zip(pairs, summaries, strict=True)
         ]
     )
 
@@ -122,7 +124,7 @@ def my_bookmarks(
         .order_by(Bookmark.created_at.desc())
         .limit(limit)
     ).all()
-    return Page(items=[_summary(session, work, version, viewer) for work, version in rows])
+    return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
 
 
 def _count(session, model, condition) -> int:  # type: ignore[no-untyped-def]

@@ -821,27 +821,84 @@ def test_an_externally_rendered_video_reports_progress_before_it_finishes(
     assert progress_after == sorted(progress_after)
 
 
+class _DispatchRecorder:
+    """Captures both `delay` (video/audio/analysis) and image `apply_async`."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self.calls: list[dict[str, object]] = []
+
+    def delay(self, job_id: str) -> None:
+        self.calls.append({"method": "delay", "job_id": job_id})
+
+    def apply_async(self, args: tuple[object, ...], **kwargs: object) -> None:
+        self.calls.append({"method": "apply_async", "args": args, **kwargs})
+
+
 def test_video_work_is_dispatched_to_the_long_queue(monkeypatch) -> None:
     """A four-minute render on the image queue would block every quick job
     behind it."""
-    routed: list[str] = []
-
-    class _Recorder:
-        def __init__(self, label: str) -> None:
-            self.label = label
-
-        def delay(self, job_id: str) -> None:
-            routed.append(self.label)
-
-    monkeypatch.setattr(tasks, "run_generation", _Recorder("image"))
-    monkeypatch.setattr(tasks, "run_video_generation", _Recorder("video"))
-    monkeypatch.setattr(tasks, "run_video_analysis", _Recorder("video_analysis"))
+    image = _DispatchRecorder("image")
+    video = _DispatchRecorder("video")
+    video_analysis = _DispatchRecorder("video_analysis")
+    monkeypatch.setattr(tasks, "run_generation", image)
+    monkeypatch.setattr(tasks, "run_video_generation", video)
+    monkeypatch.setattr(tasks, "run_video_analysis", video_analysis)
 
     tasks.dispatch_generation(GenerationJob(id="job_x", operation=Operation.TEXT_TO_VIDEO.value))
     tasks.dispatch_generation(GenerationJob(id="job_y", operation=Operation.TEXT_TO_IMAGE.value))
     tasks.dispatch_generation(GenerationJob(id="job_z", operation=Operation.VIDEO_ANALYSIS.value))
 
-    assert routed == ["video", "image", "video_analysis"]
+    assert video.calls == [{"method": "delay", "job_id": "job_x"}]
+    assert video_analysis.calls == [{"method": "delay", "job_id": "job_z"}]
+    assert image.calls == [
+        {
+            "method": "apply_async",
+            "args": ("job_y",),
+            "soft_time_limit": 420,
+            "time_limit": 480,
+        }
+    ]
+
+
+def test_image_dispatch_stretches_time_limit_for_character_views(monkeypatch) -> None:
+    """A multi-view character job loops generate+quality in one task."""
+    image = _DispatchRecorder("image")
+    monkeypatch.setattr(tasks, "run_generation", image)
+
+    two = GenerationJob(
+        id="job_two",
+        operation=Operation.IMAGE_TO_IMAGE.value,
+        request_json={
+            "asset_kind": "character",
+            "character_views": ["side", "back"],
+        },
+    )
+    three = GenerationJob(
+        id="job_three",
+        operation=Operation.TEXT_TO_IMAGE.value,
+        request_json={
+            "asset_kind": "character",
+            "character_views": ["front", "side", "back"],
+        },
+    )
+    tasks.dispatch_generation(two)
+    tasks.dispatch_generation(three)
+
+    assert image.calls == [
+        {
+            "method": "apply_async",
+            "args": ("job_two",),
+            "soft_time_limit": 600,
+            "time_limit": 720,
+        },
+        {
+            "method": "apply_async",
+            "args": ("job_three",),
+            "soft_time_limit": 780,
+            "time_limit": 960,
+        },
+    ]
 
 
 def test_latency_specific_celery_tasks_do_not_double_bind(monkeypatch) -> None:

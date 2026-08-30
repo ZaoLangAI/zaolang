@@ -81,6 +81,10 @@ class CreditLedgerEntry(Base):
         UniqueConstraint("idempotency_key", name="uq_credit_ledger_idempotency"),
         Index("ix_credit_ledger_account_created", "account_id", "created_at"),
         Index("ix_credit_ledger_type", "type"),
+        # The reconciliation report's global daily totals range-scan
+        # `created_at` across every account, which the account-scoped
+        # composite index above cannot serve.
+        Index("ix_credit_ledger_created_at", "created_at"),
     )
 
 

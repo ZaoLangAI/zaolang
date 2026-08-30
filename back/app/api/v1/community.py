@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api import sse_quota
 from app.api.deps import CurrentUser, DbSession, OptionalUser
 from app.api.schemas.common import CountResponse, OkResponse, Page
 from app.api.schemas.jobs import NotificationResponse, ReportCreateRequest
@@ -26,6 +27,7 @@ from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound
 from app.domain.notifications import push as notifications
 from app.models import (
+    Asset,
     Collection,
     CollectionItem,
     EditorExport,
@@ -74,7 +76,7 @@ def list_collections(user: CurrentUser, session: DbSession) -> Page[CollectionRe
         .where(Collection.owner_user_id == user.id)
         .order_by(Collection.created_at.desc())
     )
-    return Page(items=[_collection_response(session, c) for c in rows])
+    return Page(items=_collection_responses(session, list(rows)))
 
 
 @router.patch("/collections/{collection_id}", response_model=CollectionResponse)
@@ -192,7 +194,7 @@ def list_presets(
         stmt = stmt.where(StylePreset.owner_user_id == viewer.id)
     else:
         stmt = stmt.where(StylePreset.is_public.is_(True))
-    return Page(items=[_preset_response(session, p) for p in session.scalars(stmt)])
+    return Page(items=_preset_responses(session, list(session.scalars(stmt))))
 
 
 @router.post("/style-presets/{preset_id}/apply", response_model=StylePresetResponse)
@@ -295,19 +297,24 @@ def stream_notifications(user: CurrentUser) -> StreamingResponse:
     time a `StreamingResponse` generator body runs; everything it needs comes
     from `publisher.subscribe_notifications`, which is pure Redis.
     """
+    stream_slot = sse_quota.reserve("notifications", user.id)
 
     def generate() -> Iterator[str]:
         started = time.monotonic()
         last_heartbeat = started
-        for payload in publisher.subscribe_notifications(user.id):
-            if time.monotonic() - started > NOTIFICATION_STREAM_MAX_DURATION_SECONDS:
-                break
-            if not payload:
-                if time.monotonic() - last_heartbeat > NOTIFICATION_STREAM_HEARTBEAT_SECONDS:
-                    last_heartbeat = time.monotonic()
-                    yield ": heartbeat\n\n"
-                continue
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        try:
+            for payload in publisher.subscribe_notifications(user.id):
+                if time.monotonic() - started > NOTIFICATION_STREAM_MAX_DURATION_SECONDS:
+                    break
+                if not payload:
+                    if time.monotonic() - last_heartbeat > NOTIFICATION_STREAM_HEARTBEAT_SECONDS:
+                        last_heartbeat = time.monotonic()
+                        sse_quota.touch("notifications", user.id, stream_slot)
+                        yield ": heartbeat\n\n"
+                    continue
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        finally:
+            sse_quota.release("notifications", user.id, stream_slot)
 
     return StreamingResponse(
         generate(),
@@ -394,37 +401,94 @@ def _owned_collection(session, collection_id: str, user_id: str) -> Collection: 
 
 
 def _collection_response(session, collection: Collection) -> CollectionResponse:  # type: ignore[no-untyped-def]
-    items = list(
-        session.scalars(
-            select(CollectionItem)
-            .where(CollectionItem.collection_id == collection.id)
-            .order_by(CollectionItem.position)
-            .limit(4)
-        )
+    return _collection_responses(session, [collection])[0]
+
+
+_COVER_PREVIEW_COUNT = 4
+
+
+def _collection_responses(  # type: ignore[no-untyped-def]
+    session,
+    collections: list[Collection],
+) -> list[CollectionResponse]:
+    """Batched `_collection_response`: the cover-preview items, the works and
+    versions they point at, and the item counts are each fetched in one query
+    for the whole page instead of ~3 queries (plus a `session.get` pair per
+    preview item) per collection."""
+    if not collections:
+        return []
+    collection_ids = [c.id for c in collections]
+
+    rank = (
+        func.row_number()
+        .over(partition_by=CollectionItem.collection_id, order_by=CollectionItem.position)
+        .label("rank")
     )
-    covers: list[str] = []
-    for item in items:
-        work = session.get(Work, item.work_id)
+    ranked = (
+        select(CollectionItem.collection_id, CollectionItem.work_id, rank)
+        .where(CollectionItem.collection_id.in_(collection_ids))
+        .subquery()
+    )
+    top_items = session.execute(
+        select(ranked.c.collection_id, ranked.c.work_id)
+        .where(ranked.c.rank <= _COVER_PREVIEW_COUNT)
+        .order_by(ranked.c.collection_id, ranked.c.rank)
+    ).all()
+
+    work_ids = {work_id for _, work_id in top_items}
+    works_by_id = (
+        {work.id: work for work in session.scalars(select(Work).where(Work.id.in_(work_ids)))}
+        if work_ids
+        else {}
+    )
+    version_ids = {
+        work.current_version_id for work in works_by_id.values() if work.current_version_id
+    }
+    versions_by_id = (
+        {
+            version.id: version
+            for version in session.scalars(
+                select(WorkVersion).where(WorkVersion.id.in_(version_ids))
+            )
+        }
+        if version_ids
+        else {}
+    )
+    asset_ids = {
+        version.cover_asset_id for version in versions_by_id.values() if version.cover_asset_id
+    }
+    if asset_ids:
+        session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+
+    covers_by_collection: dict[str, list[str]] = {}
+    for collection_id, work_id in top_items:
+        work = works_by_id.get(work_id)
         if work is None or not work.current_version_id:
             continue
-        version = session.get(WorkVersion, work.current_version_id)
+        version = versions_by_id.get(work.current_version_id)
         url = media_urls.asset_url(session, version.cover_asset_id) if version else None
         if url:
-            covers.append(url)
+            covers_by_collection.setdefault(collection_id, []).append(url)
 
-    total = session.scalar(
-        select(func.count())
-        .select_from(CollectionItem)
-        .where(CollectionItem.collection_id == collection.id)
+    counts_by_collection = dict(
+        session.execute(
+            select(CollectionItem.collection_id, func.count())
+            .where(CollectionItem.collection_id.in_(collection_ids))
+            .group_by(CollectionItem.collection_id)
+        ).all()
     )
-    return CollectionResponse(
-        id=collection.id,
-        name=collection.name,
-        description=collection.description,
-        is_public=collection.is_public,
-        item_count=int(total or 0),
-        cover_urls=covers,
-    )
+
+    return [
+        CollectionResponse(
+            id=collection.id,
+            name=collection.name,
+            description=collection.description,
+            is_public=collection.is_public,
+            item_count=int(counts_by_collection.get(collection.id, 0)),
+            cover_urls=covers_by_collection.get(collection.id, []),
+        )
+        for collection in collections
+    ]
 
 
 def _notification_response(
@@ -451,23 +515,50 @@ def _notification_response(
 
 
 def _preset_response(session, preset: StylePreset) -> StylePresetResponse:  # type: ignore[no-untyped-def]
-    profile = session.scalar(select(Profile).where(Profile.user_id == preset.owner_user_id))
-    owner = (
-        AuthorSummary(
-            user_id=preset.owner_user_id,
-            display_name=profile.display_name,
-            handle=profile.handle,
-            avatar_url=media_urls.asset_url(session, profile.avatar_asset_id),
+    return _preset_responses(session, [preset])[0]
+
+
+def _preset_responses(  # type: ignore[no-untyped-def]
+    session,
+    presets: list[StylePreset],
+) -> list[StylePresetResponse]:
+    """Batched `_preset_response`: one owner-profile query for the whole page
+    instead of one per preset."""
+    if not presets:
+        return []
+    owner_ids = {preset.owner_user_id for preset in presets}
+    profiles_by_owner = {
+        profile.user_id: profile
+        for profile in session.scalars(select(Profile).where(Profile.user_id.in_(owner_ids)))
+    }
+    asset_ids = {
+        profile.avatar_asset_id for profile in profiles_by_owner.values() if profile.avatar_asset_id
+    }
+    if asset_ids:
+        session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+
+    result = []
+    for preset in presets:
+        profile = profiles_by_owner.get(preset.owner_user_id)
+        owner = (
+            AuthorSummary(
+                user_id=preset.owner_user_id,
+                display_name=profile.display_name,
+                handle=profile.handle,
+                avatar_url=media_urls.asset_url(session, profile.avatar_asset_id),
+            )
+            if profile
+            else None
         )
-        if profile
-        else None
-    )
-    return StylePresetResponse(
-        id=preset.id,
-        name=preset.name,
-        description=preset.description,
-        params=preset.params_json,
-        is_public=preset.is_public,
-        apply_count=preset.apply_count,
-        owner=owner,
-    )
+        result.append(
+            StylePresetResponse(
+                id=preset.id,
+                name=preset.name,
+                description=preset.description,
+                params=preset.params_json,
+                is_public=preset.is_public,
+                apply_count=preset.apply_count,
+                owner=owner,
+            )
+        )
+    return result

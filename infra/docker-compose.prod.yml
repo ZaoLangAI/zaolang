@@ -38,7 +38,18 @@ services:
 
   redis:
     image: redis:8-alpine
-    command: ['redis-server', '--appendonly', 'yes']
+    # Without maxmemory the default policy is `noeviction` — once memory fills,
+    # every write (rate limiting, Celery enqueue, pubsub) starts erroring
+    # instead of gracefully evicting. `volatile-lru` only evicts keys that
+    # carry a TTL, so Celery's broker lists (no TTL) are never silently
+    # dropped under pressure.
+    command:
+      [
+        'redis-server',
+        '--appendonly', 'yes',
+        '--maxmemory', '${REDIS_MAXMEMORY:-512mb}',
+        '--maxmemory-policy', 'volatile-lru',
+      ]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -146,6 +157,12 @@ services:
       - zaolang-worker@%h
       - -Q
       - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution,video_analysis
+      # Unset, Celery defaults to the host's CPU count, which is whatever the
+      # container happens to be scheduled onto — not a deliberate choice.
+      # This worker shares one prefork pool across 8 queues of very different
+      # latency (a `video_generation_long` render next to a fast
+      # `quality_check`), so an explicit, ops-tunable size is worth pinning.
+      - --concurrency=${WORKER_CONCURRENCY:-4}
       - --loglevel=info
     restart: unless-stopped
 

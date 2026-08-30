@@ -1592,3 +1592,37 @@ def test_a_shipped_template_carries_the_prompt_the_code_actually_uses(
     assert shipped["prompt_template"] == safety.SYSTEM_PROMPT
 
 
+def test_copy_enhance_asset_templates_match_the_module_constants(
+    client: TestClient, admin: User, agent_roles: None
+) -> None:
+    """The three image-asset polish templates must stay on the `enhance` slot
+    and keep pointing at `copywriter.ENHANCE_SYSTEM_PROMPT_*` — a copied
+    string here would silently diverge the first time the constant changes."""
+    from app.agents import copywriter
+
+    templates = client.get(
+        "/v1/admin/agent-skill-templates",
+        params={"role": "copy"},
+        headers=admin_header(admin),
+    ).json()["items"]
+    by_key = {template["key"]: template for template in templates}
+
+    expected = {
+        "copy-enhance-character": ("character", copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER),
+        "copy-enhance-cover": ("cover", copywriter.ENHANCE_SYSTEM_PROMPT_COVER),
+        "copy-enhance-scene": ("scene", copywriter.ENHANCE_SYSTEM_PROMPT_SCENE),
+    }
+    for key, (kind, prompt) in expected.items():
+        assert key in by_key, f"missing shipped template {key}"
+        shipped = by_key[key]
+        assert shipped["slot"] == copywriter.ENHANCE_SLOT
+        assert shipped["asset_kind"] == kind
+        assert shipped["prompt_template"] == prompt
+
+    generic = by_key["copy-enhance"]
+    assert generic["asset_kind"] is None
+    assert generic["prompt_template"] == copywriter.ENHANCE_SYSTEM_PROMPT
+    assert by_key["copy-suggest"]["asset_kind"] == "copy"
+    assert by_key["copy-suggest"]["prompt_template"] == copywriter.SYSTEM_PROMPT
+
+

@@ -322,6 +322,7 @@ export function AgentProfileDialog({
             onChange={(event) => setAssetKindDefault(event.target.value)}
             options={[
               { value: '', label: t('assetKindDefaultNone') },
+              { value: 'copy', label: t('assetKindDefaultCopy') },
               { value: 'character', label: t('assetKindDefaultCharacter') },
               { value: 'scene', label: t('assetKindDefaultScene') },
               { value: 'cover', label: t('assetKindDefaultCover') },

@@ -10,8 +10,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
+from app.api import sse_quota
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
@@ -38,7 +39,7 @@ from app.domain.jobs.cancellation import (
     should_honor_immediately,
 )
 from app.domain.licensing import service as licensing
-from app.models import Draft, GenerationJob, Work, WorkVersion
+from app.models import Asset, Draft, GenerationJob, Work, WorkVersion
 from app.models.base import new_id
 from app.models.enums import (
     CharacterViewAngle,
@@ -152,6 +153,12 @@ def list_jobs(
     """
     stmt = (
         select(GenerationJob)
+        # Neither ever reaches `_job_response`'s output — `routing_trace_json`
+        # is ops-console-only replay data, and `graph_override_json` is a
+        # sandbox-only snapshot excluded from this list by the `origin`
+        # filter below anyway. Deferring both means this list, unlike the
+        # admin job console, never pays to read them off disk.
+        .options(defer(GenerationJob.routing_trace_json), defer(GenerationJob.graph_override_json))
         .where(
             GenerationJob.user_id == user.id,
             GenerationJob.origin != JobOrigin.SANDBOX,
@@ -166,7 +173,7 @@ def list_jobs(
     if operation is not None:
         stmt = stmt.where(GenerationJob.operation == operation.value)
     jobs = list(session.scalars(stmt))
-    return Page(items=[_job_response(session, job) for job in jobs])
+    return Page(items=_job_responses(session, jobs))
 
 
 @router.get("/generation-jobs/{job_id}", response_model=GenerationJobResponse)
@@ -335,6 +342,7 @@ def stream_events(
     """
     jobs_service.get_owned_job(session, job_id, user.id)
     after = _parse_last_event_id(last_event_id)
+    stream_slot = sse_quota.reserve("job_events", user.id)
 
     # Read the backfill here rather than inside the generator: it is a bounded
     # query, and doing it while the request session is still open avoids opening
@@ -355,38 +363,42 @@ def stream_events(
         started = time.monotonic()
         last_sequence = after
 
-        for payload in backfill:
-            last_sequence = int(payload["sequence"])
-            yield _sse(last_sequence, payload)
+        try:
+            for payload in backfill:
+                last_sequence = int(payload["sequence"])
+                yield _sse(last_sequence, payload)
 
-        if backfill and JobStatus(str(backfill[-1]["status"])).is_terminal:
-            # The job finished before the client connected, so there is nothing
-            # left to wait for; holding the connection open would occupy a
-            # worker for no reason.
-            return
+            if backfill and JobStatus(str(backfill[-1]["status"])).is_terminal:
+                # The job finished before the client connected, so there is
+                # nothing left to wait for; holding the connection open would
+                # occupy a worker for no reason.
+                return
 
-        last_heartbeat = time.monotonic()
-        for payload in publisher.subscribe(job_id):
-            if time.monotonic() - started > SSE_MAX_DURATION_SECONDS:
-                break
-            if not payload:
-                if time.monotonic() - last_heartbeat > SSE_HEARTBEAT_SECONDS:
-                    last_heartbeat = time.monotonic()
-                    yield ": heartbeat\n\n"
-                continue
+            last_heartbeat = time.monotonic()
+            for payload in publisher.subscribe(job_id):
+                if time.monotonic() - started > SSE_MAX_DURATION_SECONDS:
+                    break
+                if not payload:
+                    if time.monotonic() - last_heartbeat > SSE_HEARTBEAT_SECONDS:
+                        last_heartbeat = time.monotonic()
+                        sse_quota.touch("job_events", user.id, stream_slot)
+                        yield ": heartbeat\n\n"
+                    continue
 
-            if payload.get("event_type") == "thinking":
-                # Live-only: no `id:`, does not advance Last-Event-ID.
-                yield _sse_live(payload)
-                continue
-            sequence = int(payload.get("sequence", 0))
-            # Pub/sub can deliver an event the backfill already sent.
-            if sequence <= last_sequence:
-                continue
-            last_sequence = sequence
-            yield _sse(sequence, payload)
-            if payload.get("status") in {s.value for s in JobStatus if s.is_terminal}:
-                break
+                if payload.get("event_type") == "thinking":
+                    # Live-only: no `id:`, does not advance Last-Event-ID.
+                    yield _sse_live(payload)
+                    continue
+                sequence = int(payload.get("sequence", 0))
+                # Pub/sub can deliver an event the backfill already sent.
+                if sequence <= last_sequence:
+                    continue
+                last_sequence = sequence
+                yield _sse(sequence, payload)
+                if payload.get("status") in {s.value for s in JobStatus if s.is_terminal}:
+                    break
+        finally:
+            sse_quota.release("job_events", user.id, stream_slot)
 
     return StreamingResponse(
         generate(),
@@ -441,8 +453,36 @@ def _enqueue(job: GenerationJob) -> None:
     tasks.dispatch_generation(job)
 
 
+def _job_responses(session: Session, jobs: list[GenerationJob]) -> list[GenerationJobResponse]:
+    """Batched `_job_response` for list responses: one bulk asset prefetch plus
+    one bulk progress query for the whole page, instead of several queries
+    per row (`progress_for`'s `ORDER BY ... LIMIT 1`, and one `session.get`
+    per distinct asset id via `media_urls`)."""
+    if not jobs:
+        return []
+
+    asset_ids: set[str] = set()
+    for job in jobs:
+        if job.output_asset_id:
+            asset_ids.add(job.output_asset_id)
+        if job.output_asset_ids_json:
+            asset_ids.update(job.output_asset_ids_json)
+        reference_id = _first_reference_asset_id(job)
+        if reference_id:
+            asset_ids.add(reference_id)
+    if asset_ids:
+        session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+
+    progress_by_job = jobs_service.progress_for_batch(session, jobs)
+    return [_job_response(session, job, progress=progress_by_job.get(job.id)) for job in jobs]
+
+
 def _job_response(
-    session: Session, job: GenerationJob, *, include_events: bool = False
+    session: Session,
+    job: GenerationJob,
+    *,
+    include_events: bool = False,
+    progress: int | None = None,
 ) -> GenerationJobResponse:
     route = job.selected_route_summary_json or {}
     events: list[JobEventResponse] = []
@@ -466,7 +506,7 @@ def _job_response(
         status=JobStatus(job.status),
         operation=Operation(job.operation),
         quality_tier=job.quality_tier,
-        progress=jobs_service.progress_for(session, job),
+        progress=progress if progress is not None else jobs_service.progress_for(session, job),
         quoted_credits=job.quoted_credits,
         reserved_credits=job.reserved_credits,
         actual_credits=job.actual_credits,
@@ -511,7 +551,7 @@ def _prompt_of(job: GenerationJob) -> str | None:
     return prompt if isinstance(prompt, str) else None
 
 
-def _reference_url_of(session: Session, job: GenerationJob) -> str | None:
+def _first_reference_asset_id(job: GenerationJob) -> str | None:
     # Signing costs a request to the storage backend, so this stays scoped to
     # the one operation that actually needs its input echoed back — every
     # other operation's client already knows its own reference (it just
@@ -522,7 +562,12 @@ def _reference_url_of(session: Session, job: GenerationJob) -> str | None:
     references = params.get("reference_asset_ids")
     if not isinstance(references, list) or not references:
         return None
-    return media_urls.asset_url(session, references[0])
+    return references[0] if isinstance(references[0], str) else None
+
+
+def _reference_url_of(session: Session, job: GenerationJob) -> str | None:
+    reference_id = _first_reference_asset_id(job)
+    return media_urls.asset_url(session, reference_id) if reference_id else None
 
 
 def _analysis_of(job: GenerationJob) -> VideoAnalysisResult | None:

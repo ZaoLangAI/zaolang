@@ -57,6 +57,14 @@ class DramaEpisode(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     synopsis: Mapped[str | None] = mapped_column(Text, nullable=True)
     script_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    # The author's original first-draft prompt. Written by script writing
+    # (`prepare_new_script` / `retry_new_script`) so an empty shell can be
+    # retried without asking for the idea again. Not `synopsis` — that is
+    # episode metadata the editor API already PATCHes independently.
+    source_idea: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_referenced_skill_ids_json: Mapped[list[Any]] = mapped_column(
+        default=list, nullable=False
+    )
     status: Mapped[str] = mapped_column(
         String(24), default=DramaEpisodeStatus.DRAFT, nullable=False
     )

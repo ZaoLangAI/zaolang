@@ -38,6 +38,7 @@ from app.domain.publishing import service as publishing
 from app.domain.search import service as search_service
 from app.models import (
     AccessGrant,
+    Asset,
     Bookmark,
     LicenseSnapshot,
     Like,
@@ -105,7 +106,7 @@ def list_works(
     # browse feed is cursor-pageable.
     resumable = has_more and bool(page) and not q
     return Page(
-        items=[_summary(session, r.work, r.version, viewer) for r in page],
+        items=_summaries(session, [(r.work, r.version) for r in page], viewer),
         next_cursor=page[-1].work.id if resumable else None,
         has_more=has_more,
     )
@@ -147,7 +148,7 @@ def get_work(
         reusable_params=_reusable_params(version) if can_remix else None,
         license=_license_info(session, version),
         ancestors=_ancestors(session, version.id),
-        descendant_count=len(lineage_service.descendants(session, version.id)),
+        descendant_count=lineage_service.descendant_count(session, version.id),
         viewer_liked=_has_interaction(session, Like, viewer, work.id),
         viewer_bookmarked=_has_interaction(session, Bookmark, viewer, work.id),
         can_remix=can_remix,
@@ -191,7 +192,7 @@ def similar(
 ) -> Page[WorkSummary]:
     _, version = _load_visible(session, work_id, viewer)
     results = search_service.similar_works(session, work_version_id=version.id, limit=limit)
-    return Page(items=[_summary(session, r.work, r.version, viewer) for r in results])
+    return Page(items=_summaries(session, [(r.work, r.version) for r in results], viewer))
 
 
 @router.get("/work-versions/{child_version_id}/diff", response_model=VersionDiffResponse)
@@ -473,32 +474,75 @@ def _load_visible(session, work_id: str, viewer: User | None) -> tuple[Work, Wor
 
 
 def _summary(session, work: Work, version: WorkVersion, viewer: User | None) -> WorkSummary:  # type: ignore[no-untyped-def]
-    cover_size = media_urls.asset_size(session, version.cover_asset_id)
-    return WorkSummary(
-        id=work.id,
-        title=version.title,
-        visibility=Visibility(work.visibility),
-        lifecycle_status=LifecycleStatus(work.lifecycle_status),
-        cover_url=media_urls.asset_url(session, version.cover_asset_id),
-        cover_width=cover_size[0] if cover_size else None,
-        cover_height=cover_size[1] if cover_size else None,
-        media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
-        author=_author(session, work.owner_user_id),
-        stats=WorkStats(
-            view_count=work.view_count,
-            like_count=work.like_count,
-            comment_count=work.comment_count,
-            remix_count=work.remix_count,
-        ),
-        tags=_tags(session, work.id),
-        remixable=licensing.visibility_allows_remix(work)
-        or (viewer is not None and viewer.id == work.owner_user_id),
-        access_credits=work.access_credits,
-        viewer_unlocked=access_service.viewer_unlocked_work(
-            session, work, viewer.id if viewer else None
-        ),
-        published_at=work.published_at,
+    return _summaries(session, [(work, version)], viewer)[0]
+
+
+def _summaries(  # type: ignore[no-untyped-def]
+    session,
+    pairs: list[tuple[Work, WorkVersion]],
+    viewer: User | None,
+) -> list[WorkSummary]:
+    """Batched `_summary`: one query per lookup kind for the whole page instead
+    of per row. `session.get` in `media_urls` already checks the identity map
+    before issuing SQL, so warming it with a single bulk `SELECT ... IN (...)`
+    is enough to make every later `asset_url`/`asset_size`/`media_type_of`
+    call free — no change needed to those helpers or to single-item callers.
+    """
+    if not pairs:
+        return []
+
+    owner_ids = {work.owner_user_id for work, _ in pairs}
+    profiles_by_owner = _profiles_by_user_id(session, owner_ids)
+
+    asset_ids = {
+        asset_id
+        for _, version in pairs
+        for asset_id in (version.cover_asset_id, version.primary_output_asset_id)
+        if asset_id
+    } | {
+        profile.avatar_asset_id for profile in profiles_by_owner.values() if profile.avatar_asset_id
+    }
+    if asset_ids:
+        session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+
+    work_ids = [work.id for work, _ in pairs]
+    tags_by_work = _tags_by_work_id(session, work_ids)
+
+    unlocked_by_work = access_service.viewer_unlocked_works_batch(
+        session, [work for work, _ in pairs], viewer.id if viewer else None
     )
+
+    summaries = []
+    for work, version in pairs:
+        cover_size = media_urls.asset_size(session, version.cover_asset_id)
+        summaries.append(
+            WorkSummary(
+                id=work.id,
+                title=version.title,
+                visibility=Visibility(work.visibility),
+                lifecycle_status=LifecycleStatus(work.lifecycle_status),
+                cover_url=media_urls.asset_url(session, version.cover_asset_id),
+                cover_width=cover_size[0] if cover_size else None,
+                cover_height=cover_size[1] if cover_size else None,
+                media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
+                author=_author_view(
+                    session, work.owner_user_id, profiles_by_owner.get(work.owner_user_id)
+                ),
+                stats=WorkStats(
+                    view_count=work.view_count,
+                    like_count=work.like_count,
+                    comment_count=work.comment_count,
+                    remix_count=work.remix_count,
+                ),
+                tags=tags_by_work.get(work.id, []),
+                remixable=licensing.visibility_allows_remix(work)
+                or (viewer is not None and viewer.id == work.owner_user_id),
+                access_credits=work.access_credits,
+                viewer_unlocked=unlocked_by_work.get(work.id, False),
+                published_at=work.published_at,
+            )
+        )
+    return summaries
 
 
 def _version_summary(session, version: WorkVersion) -> WorkVersionSummary:  # type: ignore[no-untyped-def]
@@ -518,6 +562,10 @@ def _version_summary(session, version: WorkVersion) -> WorkVersionSummary:  # ty
 
 def _author(session, user_id: str) -> AuthorSummary:  # type: ignore[no-untyped-def]
     profile = session.scalar(select(Profile).where(Profile.user_id == user_id))
+    return _author_view(session, user_id, profile)
+
+
+def _author_view(session, user_id: str, profile: Profile | None) -> AuthorSummary:  # type: ignore[no-untyped-def]
     if profile is None:
         return AuthorSummary(user_id=user_id, display_name="未知作者", handle=user_id)
     return AuthorSummary(
@@ -528,6 +576,15 @@ def _author(session, user_id: str) -> AuthorSummary:  # type: ignore[no-untyped-
     )
 
 
+def _profiles_by_user_id(session, user_ids: set[str]) -> dict[str, Profile]:  # type: ignore[no-untyped-def]
+    if not user_ids:
+        return {}
+    return {
+        profile.user_id: profile
+        for profile in session.scalars(select(Profile).where(Profile.user_id.in_(user_ids)))
+    }
+
+
 def _tags(session, work_id: str) -> list[str]:  # type: ignore[no-untyped-def]
     return list(
         session.scalars(
@@ -536,6 +593,20 @@ def _tags(session, work_id: str) -> list[str]:  # type: ignore[no-untyped-def]
             .where(WorkTag.work_id == work_id)
         )
     )
+
+
+def _tags_by_work_id(session, work_ids: list[str]) -> dict[str, list[str]]:  # type: ignore[no-untyped-def]
+    if not work_ids:
+        return {}
+    result: dict[str, list[str]] = {}
+    rows = session.execute(
+        select(WorkTag.work_id, Tag.slug)
+        .join(Tag, Tag.id == WorkTag.tag_id)
+        .where(WorkTag.work_id.in_(work_ids))
+    )
+    for work_id, slug in rows:
+        result.setdefault(work_id, []).append(slug)
+    return result
 
 
 def _unlock_response(

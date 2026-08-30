@@ -77,10 +77,12 @@ export function ScriptEditor({
   const [viewedScript, setViewedScript] = useState<ScriptDocument | null>(null);
   const [firstDraftError, setFirstDraftError] = useState<string | null>(null);
   const [retryIdea, setRetryIdea] = useState('');
+  const [retrySkillIds, setRetrySkillIds] = useState<string[]>([]);
   const [linkedDrafts, setLinkedDrafts] = useState<Draft[]>([]);
   // A ref, not `useState`: this is purely a run-once guard, never read by
   // render — same pattern as `WorkflowPublishDialog`'s `wasOpen`.
   const pendingLinkApplied = useRef(false);
+  const retryIdeaSeeded = useRef(false);
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
 
@@ -330,23 +332,45 @@ export function ScriptEditor({
   const hasTurns = detail.turns.length > 0;
   const firstDraftStreaming = !hasTurns && (createStream?.streaming ?? false);
 
+  const seededIdea = (createStream?.idea || detail.source_idea || '').trim();
+  const seededSkillIds =
+    createStream?.referencedSkillIds?.length
+      ? createStream.referencedSkillIds
+      : detail.source_referenced_skill_ids;
+  if (!retryIdeaSeeded.current && seededIdea) {
+    retryIdeaSeeded.current = true;
+    setRetryIdea(seededIdea);
+    setRetrySkillIds(seededSkillIds);
+  }
+  const emptyShellError = firstDraftError ?? detail.last_error ?? null;
+
   // A shell with no turn at all — its first-draft stream either failed
   // outright or was interrupted (a page refresh loses `create-stream-
-  // store.ts`'s in-memory progress) before ever writing one. Either way
-  // the original idea text was never persisted anywhere on the episode
-  // (see `retry_new_script`'s docstring on the backend), so recovering
-  // means asking for it again rather than a single "retry" button.
+  // store.ts`'s in-memory progress) before ever writing one. The original
+  // idea is persisted on the episode (`source_idea`) so retry does not
+  // require re-typing; the textarea is an optional edit, not a gate.
   if (!hasTurns && !firstDraftStreaming) {
+    const ideaForRetry = retryIdea.trim() || seededIdea;
     const submitRetry = () => {
-      const trimmed = retryIdea.trim();
-      if (!trimmed) return;
+      if (!ideaForRetry) return;
       setFirstDraftError(null);
-      startRetry(episodeId, { idea: trimmed, referencedSkillIds: [] });
+      startRetry(episodeId, {
+        idea: retryIdea.trim() || undefined,
+        referencedSkillIds: retrySkillIds,
+      });
     };
     return (
       <div className="flex flex-col gap-4">
-        {firstDraftError ? (
-          <ErrorNotice title={firstDraftError} detail={t('firstDraftFailedHint')} />
+        {emptyShellError ? (
+          <ErrorNotice
+            title={emptyShellError}
+            detail={t('firstDraftFailedHint')}
+            action={
+              <Button size="sm" disabled={!ideaForRetry} onClick={submitRetry}>
+                {t('retryFirstDraft')}
+              </Button>
+            }
+          />
         ) : (
           <EmptyState title={t('firstDraftMissing')} description={t('firstDraftMissingHint')} />
         )}
@@ -361,7 +385,7 @@ export function ScriptEditor({
           />
           <div className="flex items-center justify-end gap-2">
             {backToScripts}
-            <Button disabled={retryIdea.trim().length === 0} onClick={submitRetry}>
+            <Button disabled={!ideaForRetry} onClick={submitRetry}>
               {t('retryFirstDraft')}
             </Button>
           </div>

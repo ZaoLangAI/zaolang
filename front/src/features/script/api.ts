@@ -62,6 +62,11 @@ export interface ScriptDetail {
   status: string;
   script: ScriptDocument;
   turns: ScriptTurnSummary[];
+  /** Author's first-draft prompt, so an empty shell can be retried without re-typing. */
+  source_idea: string;
+  source_referenced_skill_ids: string[];
+  /** Latest failed-generation excerpt for this episode, if any. */
+  last_error: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -178,22 +183,21 @@ export function createScript(
  * Re-runs a first draft for an episode shell whose original stream never
  * finished (a page refresh or dropped connection lost `create-stream-store.ts`'s
  * in-memory progress) — reuses this exact `episode_id`/`Series` instead of
- * `createScript`, which always mints a brand-new one. The original idea
- * text was never persisted anywhere, so the caller must supply it again.
+ * `createScript`, which always mints a brand-new one. `idea` may be omitted
+ * when the episode already stored `source_idea`.
  */
 export function retryScript(
   episodeId: string,
-  input: { idea: string; referencedSkillIds: string[] },
+  input: { idea?: string; referencedSkillIds?: string[] } = {},
   signal?: AbortSignal,
 ) {
-  return streamPost(
-    `/v1/scripts/${episodeId}/retry`,
-    {
-      idea: input.idea,
-      referenced_skill_ids: input.referencedSkillIds,
-    },
-    signal,
-  );
+  const body: { idea?: string; referenced_skill_ids?: string[] } = {};
+  const idea = input.idea?.trim();
+  if (idea) body.idea = idea;
+  if (input.referencedSkillIds?.length) {
+    body.referenced_skill_ids = input.referencedSkillIds;
+  }
+  return streamPost(`/v1/scripts/${episodeId}/retry`, body, signal);
 }
 
 export function sendTurn(

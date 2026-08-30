@@ -96,6 +96,10 @@ class AdminJobSummary(ApiModel):
     actual_credits: int | None = None
     attempt_count: int = 0
     failure_code: str | None = None
+    # User-facing sentence written by the pipeline (`execute_fail`, worker
+    # crash handlers). Deliberately generic — the provider HTTP body lives
+    # on `ProviderAttemptView.error_message` (`raw_metadata.detail`).
+    failure_message: str | None = None
     created_at: dt.datetime
     finished_at: dt.datetime | None = None
     # `True` when a live `AsyncProviderTask` is well past its own deadline —
@@ -949,10 +953,12 @@ class AgentProfileView(ApiModel):
     category: Literal["judgment", "assist"] = "judgment"
     operations: list[str] = Field(default_factory=list)
     is_default: bool
-    # Only ever set on a `copy`-role profile — which `ImageAssetKind` bucket
-    # "AI 润色" routes to this agent for. `None` means this agent is not a
-    # kind-specific default (it may still be the role's ordinary default).
-    default_for_asset_kind: Literal["character", "scene", "cover"] | None = None
+    # Only ever set on a `copy`-role profile — which request-routing bucket
+    # frontend copy calls resolve to (`character`/`scene`/`cover` for AI
+    # polish, `copy` for every other copy request). `None` means this agent
+    # is not a kind-specific default (it may still be the role's ordinary
+    # default).
+    default_for_asset_kind: Literal["character", "scene", "cover", "copy"] | None = None
     enabled: bool
     # Null means the agent draws from the shared `kind="general"` pool,
     # which is what every agent did before per-agent bindings existed.
@@ -988,7 +994,7 @@ class AgentProfileCreateRequest(ApiModel):
     reasoning_model: bool | None = None
     # Validated service-side to only apply to `role == "copy"`; setting it
     # clears whichever other profile previously held that bucket.
-    default_for_asset_kind: Literal["character", "scene", "cover"] | None = None
+    default_for_asset_kind: Literal["character", "scene", "cover", "copy"] | None = None
 
 
 class AgentProfileUpdateRequest(ApiModel):
@@ -1013,7 +1019,7 @@ class AgentProfileUpdateRequest(ApiModel):
     # Omission keeps the current value; explicit `null` clears it; a bucket
     # value promotes this agent and demotes whichever profile held it before
     # — same tri-state distinction as `reasoning_model` above.
-    default_for_asset_kind: Literal["character", "scene", "cover"] | None = None
+    default_for_asset_kind: Literal["character", "scene", "cover", "copy"] | None = None
 
 
 class SkillTemplateView(ApiModel):
@@ -1032,6 +1038,9 @@ class SkillTemplateView(ApiModel):
     tool_grants: list[str] = Field(default_factory=list)
     role: str | None = None
     slot: str = "default"
+    # Which request-routing bucket this starting prompt is written for.
+    # Empty means it is a generic fallback on that slot (e.g. `copy-enhance`).
+    asset_kind: Literal["character", "scene", "cover", "copy"] | None = None
 
 
 class AgentSkillView(ApiModel):

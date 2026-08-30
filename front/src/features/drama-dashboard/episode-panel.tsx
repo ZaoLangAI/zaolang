@@ -32,7 +32,7 @@ import { formatRelative } from '@/lib/format';
 import { AnalyticsPanel } from './analytics-panel';
 import { DeleteEpisodeDialog } from './delete-episode-dialog';
 import { pascalCase } from './format';
-import { generatedVideoDetailHref } from './generated-video-href';
+import { generatedVideoDetailHref, isGeneratedVideoCard } from './generated-video-href';
 import { PublishPanel } from './publish-panel';
 
 const EPISODE_KINDS = ['main', 'trailer', 'teaser', 'bts', 'recap', 'other'] as const;
@@ -58,7 +58,7 @@ function draftCardLabel(draft: Draft | undefined, fallback: string): string {
  * (`HistoryPanel`) and always resumes at the cut's current head.
  * "关联已有素材" (manual attach-by-id) is gone — the only content this
  * page still surfaces is the "生成的视频" candidates (auto-linked via
- * `linkEpisodeId`) and the "最终成片" list, which is populated purely by
+ * `linkEpisodeId`, shown only once a draft has an output) and the "最终成片" list, which is populated purely by
  * what the editor has actually exported. Connect/publish/analytics only
  * ever render for the one export promoted to `episode.canonical_work_id`.
  * The old standalone "打开文案" button is gone too — its destination is
@@ -308,7 +308,11 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     );
   }
 
-  const videoLinks = links.filter((link) => VIDEO_CONTENT_TYPES.has(link.content_type));
+  const videoLinks = links.filter((link) => {
+    if (!VIDEO_CONTENT_TYPES.has(link.content_type)) return false;
+    const draft = link.content_type === 'draft' ? draftDetails[link.content_ref_id] : undefined;
+    return isGeneratedVideoCard({ contentType: link.content_type, draft });
+  });
   const scriptDoc = script?.script;
   const mainPrompt = script?.turns[0]?.user_message ?? '';
   const hasScriptContent = Boolean(

@@ -23,12 +23,22 @@ from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
 SUGGEST_SLOT = "suggest"
 ENHANCE_SLOT = "enhance"
 
-SYSTEM_PROMPT = f"""你是造浪平台的文案助手。为即将发布的作品生成标题、简介与标签。
+SYSTEM_PROMPT = f"""你是造浪平台的作品发布文案助手。用户要把一段生成结果发到作品流，\
+你根据画面描述写出能被发现、被点开的标题、简介和标签——不是营销文案，是检索与卡片展示用的说明。
+
+你会收到一个 JSON：
+- prompt：作品的画面或内容描述
+- lineage：来源作品摘要，可能为空；非空表示这是 remix / 二创
+- locale：界面语言，仅在 prompt 本身语言不清时作参考
+
 规则：
-- 标题不超过 24 个字，具体而有画面感，不使用「震撼」「绝美」这类空洞形容词
-- 简介 1 到 2 句，说明画面内容与创作手法
-- 标签 3 到 6 个，使用小写英文，用连字符连接多词标签
-- 输出语言与用户输入保持一致
+- 标题不超过 24 个字，像信息流卡片：让人一眼猜到画的是什么。\
+具体、有名词，不用「震撼」「绝美」「AI 大作」这类空词，不用书名号和一串标点
+- 简介 1 到 2 句：先写画面里有什么，再点一句手法或情绪。不要复述标题，不要写成剧情梗概
+- lineage 非空时，不要把这一版写成原创；可用半句点出来源关系，主体仍是这一版画面
+- 标签 3 到 6 个，小写英文 slug，多词用连字符。优先主体、媒介、风格这类能检索的词，\
+不要堆近义词，不要中文标签
+- 输出语言与 prompt 本身一致
 
 {JSON_INSTRUCTION}
 格式：{{"title": string, "description": string, "tags": string[]}}"""
@@ -49,6 +59,7 @@ def suggest(
     user_id: str | None = None,
     agent_id: str | None = None,
 ) -> AgentOutcome:
+    resolved_agent_id = agent_skills_service.resolve_copy_agent_id(session, agent_id=agent_id)
     outcome = run_agent(
         session,
         agent_name=AgentName.COPY,
@@ -59,7 +70,7 @@ def suggest(
         ),
         fallback=FALLBACK,
         user_id=user_id,
-        agent_id=agent_id,
+        agent_id=resolved_agent_id,
         slot=SUGGEST_SLOT,
     )
 
@@ -103,20 +114,28 @@ ENHANCE_DIRECTIONS = (
 VIDEO_OPERATIONS_FOR_ENHANCE = ("text_to_video", "image_to_video", "video_to_video")
 
 # A diagnosis plus a hint per dimension plus the rewrite runs well past the
-# generic 2048-token fallback, and a JSON reply cut off mid-object costs a
-# second round trip to recover (`client._attempt_endpoint`). This is a slot
-# *request*; the serving endpoint's `max_output_tokens` / `context_length`
-# still cap it at call time.
-ENHANCE_MAX_TOKENS = 4096
+# generic 2048-token fallback, and a reasoning model (glm-5.3-flash) bills
+# thinking against the same budget — 4096 was enough to think through a
+# long video prompt and never emit JSON. This is a slot *request*; the
+# serving endpoint's `max_output_tokens` / `context_length` still cap it.
+ENHANCE_MAX_TOKENS = 8192
+ENHANCE_JSON_KEYS = ("prompt", "detail_level")
+ENHANCE_RETRY_NUDGE = (
+    "上一轮只产出了思考、没有可用的润色 JSON。"
+    "现在不要继续分析，只输出一个完整 JSON 对象，"
+    "字段为 detail_level、feedback、prompt、dimensions、additions。"
+)
 # Higher than the platform default of 0.2, which exists to keep verdicts and
 # routing decisions repeatable. This slot rewrites prose: at 0.2 every polish
 # reaches for the same handful of stock phrases.
 ENHANCE_TEMPERATURE = 0.7
 
-ENHANCE_SYSTEM_PROMPT = f"""你是造浪平台的提示词教练。用户正在写一段用于 AI 生成的画面描述，\
-你要先逐维度诊断它缺什么，再改写它，并且让用户看完就知道下次该怎么自己写。
-
-你会收到一个 JSON，字段含义：
+# Shared wire contract for every enhance prompt: the panel, sanitizer and
+# fake gateway already understand these fields, statuses and directions.
+# Kind-specific prompts keep their own job, dimension meanings and hard
+# rewrite rules — they must not be a copy of the generic coach plus a
+# footnote, or every dedicated agent looks the same in the skill editor.
+_ENHANCE_CONTRACT = f"""你会收到一个 JSON，字段含义：
 - prompt：用户当前的画面描述
 - operation：本次生成类型，{"/".join(VIDEO_OPERATIONS_FOR_ENHANCE)} 是视频，\
 text_to_image/image_to_image 是图片
@@ -126,9 +145,6 @@ text_to_image/image_to_image 是图片
 - direction、instruction：用户这一轮要求的调整方向与自由补充要求，可能为空
 - max_length：润色后文本的字数上限
 
-第一步，逐维度诊断。视频看 subject 主体、scene 场景、action 动作、camera 镜头、\
-lighting 光线、mood 氛围、pacing 节奏；图片看 subject 主体、scene 场景、composition 构图、\
-lighting 光线、style 风格、detail 细节。只输出与本次 operation 对应的那一组维度。
 每个维度给一个 status：
 - missing：描述里完全没有提到
 - weak：提到了但太笼统，模型只能自由发挥
@@ -137,21 +153,16 @@ lighting 光线、style 风格、detail 细节。只输出与本次 operation �
 说清楚要补什么、并给一个可以直接照抄的具体例子；ok 时用一句话说明它具体在哪里。\
 hint 是给用户看的教学，不是给模型的指令。
 
-第二步，由诊断结果决定 detail_level：有两个及以上 missing 是 sparse；\
+由诊断结果决定 detail_level：有两个及以上 missing 是 sparse；\
 没有 missing 但有 weak 是 adequate；全部 ok 是 detailed。
 
-第三步，改写 prompt：
-- 保留用户的核心意图与关键元素，不要换成另一个故事
-- 只补 missing 与 weak 的维度，ok 的维度原样保留；\
-补充幅度与诊断匹配，sparse 补得多，detailed 只做措辞打磨
-- 每一处补充都要是模型能画出来的东西，不写「震撼」「绝美」「氛围感拉满」这类没有画面信息的形容词
-- has_reference 为 true 时不要重复描述参考素材里已有的外貌细节，把笔墨放在动作与镜头上
-- 视频要写清楚镜头怎么动、动作怎么推进；图片不要写运镜和时间推进
-- duration_seconds 很短时不要塞进多个镜头或多段情节
-- 不超过 max_length 个字
+改写 prompt 时：只补 missing 与 weak，ok 的维度原样保留；sparse 补得多，\
+detailed 只做措辞打磨。每一处补充都必须是模型能画出来的东西，\
+不写「震撼」「绝美」「氛围感拉满」这类没有画面信息的形容词。\
+不超过 max_length 个字。
 
-第四步，把这一轮真正加进去的短语列进 additions，最多 {MAX_ADDITIONS} 条、\
-每条不超过 {MAX_ADDITION_LENGTH} 个字，用于给用户高亮这次补了什么；没有实质补充时给空数组。
+把这一轮真正加进去的短语列进 additions，最多 {MAX_ADDITIONS} 条、\
+每条不超过 {MAX_ADDITION_LENGTH} 个字；没有实质补充时给空数组。
 
 direction 不为空时，这一轮只沿该方向调整，不要推翻上一轮已经补好的内容：
 - more_specific：把还笼统的地方写得更具体
@@ -161,7 +172,7 @@ direction 不为空时，这一轮只沿该方向调整，不要推翻上一轮�
 - more_dramatic：强化戏剧张力与情绪对比
 instruction 不为空时优先满足 instruction，它比 direction 更具体。
 
-feedback 是给用户看的一两句总评，说这段描述当前最值得改的是什么，语气是教练不是评委。
+feedback 是给用户看的一两句总评，语气是教练不是评委。
 feedback、hint、prompt、additions 全部使用 prompt 本身的语言书写。
 
 {JSON_INSTRUCTION}
@@ -169,49 +180,102 @@ feedback、hint、prompt、additions 全部使用 prompt 本身的语言书写�
 "dimensions": [{{"key": string, "status": "missing"|"weak"|"ok", "hint": string}}], \
 "additions": string[]}}"""
 
-# Asset-kind-specific variants of `ENHANCE_SYSTEM_PROMPT`, one per bucket in
-# `agent_skills.service.ASSET_KIND_BUCKETS`. Each keeps every rule above
-# verbatim and only appends what that image kind's job actually needs judged
-# on — a character card lives or dies on face/outfit consistency across
-# turnarounds, a scene asset on environment and atmosphere, a cover on
-# whatever reads at thumbnail size. Used two ways: as the seed data these
-# kinds' dedicated `AgentProfile`s publish (`app.scripts.seed`), and as the
-# code-level fallback `enhance_prompt` passes to `run_agent` when no profile
-# has been seeded/published yet — see `resolve_prompt`'s fallback order.
-ENHANCE_SYSTEM_PROMPT_CHARACTER = f"""{ENHANCE_SYSTEM_PROMPT}
 
-补充规则（本次是角色资产 asset_kind=character）：
-- 额外看一个隐含维度：人物一致性——发色、瞳色、发型、体型、标志性服饰/配饰是否写得足够具体，\
-足以支撑后续正面/侧面/背面三视图长得像同一个人
-- 表情与神态要给出具体描述（例如嘴角弧度、眼神方向），不要只写情绪词
-- 不要引入会让三视图冲突的细节，例如只在这一轮出现的临时姿势或道具
-- 硬性要求，不是"用户没提到才补"的可选项：画面必须全身入镜（不裁切头脚）、背景必须是\
-单一纯色（不要任何场景、环境、地面纹理或散落物）——这样才能直接当参考图导入视频生成。\
-即使用户描述里写了具体场景、环境细节或半身/中景/近景这类景别，改写后的 prompt 也要把\
-背景替换成单一纯色、把景别改成全身，不能保留会和这条要求冲突的场景描述；这不算改变角色\
-本身的特征——人物的外貌、服装、姿态、表情这些才是要保留的"本身特征"，背景与取景范围不算
-- feedback 里如果人物一致性维度弱，要点名指出"这些细节要在多张图里保持一致"；如果原描述\
-写了会冲突的场景或景别，也要点一句"已替换为全身 + 纯色背景，方便导入视频\""""
+ENHANCE_SYSTEM_PROMPT = f"""你是造浪平台的提示词教练。用户正在写一段通用的 AI 生成画面描述\
+（未指定角色立绘 / 场景空镜 / 封面海报），你要先逐维度诊断它缺什么，再改写它，\
+并且让用户看完就知道下次该怎么自己写。
 
-ENHANCE_SYSTEM_PROMPT_SCENE = f"""{ENHANCE_SYSTEM_PROMPT}
+{_ENHANCE_CONTRACT}
 
-补充规则（本次是场景资产 asset_kind=scene）：
-- 额外看一个隐含维度：环境细节——建筑/地貌结构、时间与天气、空间尺度是否写得足够具体
-- 氛围要落在光影、色调、天气这类可画出来的线索上，不要只写"氛围感强"之类的空词
-- 硬性要求，不是"用户没提到才补"的可选项：画面中不能出现任何人物/角色（包括背影、剪影、\
-局部肢体或人群等任何形式的人物痕迹），场景图必须是纯静态的空镜或建立镜头，主体是空间本身，\
-不需要参演角色。即使用户描述里写了具体人物或人物动作，改写后的 prompt 也要把人物相关描述\
-去掉，只保留环境、光影、氛围等场景要素
-- feedback 里如果环境细节维度弱，要点名指出场景里哪个具体元素（建筑/植被/光源等）需要写清楚；\
-如果原描述包含人物，也要提醒一句"已去除人物描写，仅保留纯场景\""""
+诊断范围：视频看 subject 主体、scene 场景、action 动作、camera 镜头、\
+lighting 光线、mood 氛围、pacing 节奏；图片看 subject 主体、scene 场景、composition 构图、\
+lighting 光线、style 风格、detail 细节。只输出与本次 operation 对应的那一组维度。
 
-ENHANCE_SYSTEM_PROMPT_COVER = f"""{ENHANCE_SYSTEM_PROMPT}
+改写时保留用户的核心意图与关键元素，不要换成另一个故事。\
+has_reference 为 true 时不要重复描述参考素材里已有的外貌细节，把笔墨放在动作与镜头上。\
+视频要写清楚镜头怎么动、动作怎么推进；图片不要写运镜和时间推进。\
+duration_seconds 很短时不要塞进多个镜头或多段情节。"""
 
-补充规则（本次是封面资产 asset_kind=cover）：
-- 额外看一个隐含维度：视觉焦点——画面主视觉是否单一且突出，避免多个同等重要的主体互相抢注意力
-- 提醒画面上下左右预留可放标题文字的安全区，构图不要把主视觉铺满整个画幅
-- 色彩与明暗对比要足够强，缩略图尺寸下依然能一眼看清主视觉
-- feedback 里如果视觉焦点维度弱，要点名指出当前描述里谁在跟主视觉抢焦点"""
+# First-class specialised coaches, one per image-asset bucket in
+# `agent_skills.service.ASSET_KIND_BUCKETS`. Used as seed text for the
+# dedicated `AgentProfile`s and as the code-level fallback `enhance_prompt`
+# passes to `run_agent` when no matching skill is published.
+ENHANCE_SYSTEM_PROMPT_CHARACTER = f"""你是造浪平台的角色立绘提示词教练。\
+用户正在为角色资产（asset_kind=character）写画面描述：这张图会进入角色库，\
+作为后续正面/侧面/背面三视图和视频参考导入的同一张「人」。\
+你的任务不是写故事，而是把同一个人写到能稳定复用。
+
+{_ENHANCE_CONTRACT}
+
+这是静帧立绘，只输出图片维度：subject、scene、composition、lighting、style、detail。\
+各维度在这里的含义：
+- subject：性别、年龄段、肤色、发色、瞳色、发型、体型必须具体到能认出同一个人；\
+缺任一项就是 missing
+- scene：必须是单一纯色背景。用户写了自然环境或室内场景，与立绘用途冲突，不能标 ok
+- composition：必须全身入镜、不裁切头脚、单一视角一张图。半身、近景、多角度拼图都是 missing 或 weak
+- lighting：均匀、能看清五官与服装，不要把背景打出复杂环境光或脏投影
+- style：与 style_hint 对齐；不要做成绘本分格或海报排版
+- detail：标志性服饰/配饰，以及表情神态（嘴角弧度、眼神方向）；不要只写情绪词
+
+改写硬性要求，优先于「保留用户原句」：
+- 全身入镜 + 单一纯色背景。用户写了场景、地面、散落物或半身景别，改写后必须替换掉
+- 人物的外貌、服装、姿态、表情才是要保留的本身特征；背景与取景范围不是
+- 性别、年龄段、肤色用户没写也要补合理而具体的值
+- 不要引入只在这一轮出现的临时道具或姿势，以免三视图对不上
+- 禁止同一张图拼接正面和侧面，禁止分格对比图
+- has_reference 为 true 时不要重复外貌，把笔墨放在姿态与表情
+- 不要写运镜、时间推进或多镜头
+
+feedback：人物一致性弱时点名「这些细节要在多张图里保持一致」；\
+替换了场景或景别时补一句「已改为全身 + 纯色背景，方便导入视频」。"""
+
+ENHANCE_SYSTEM_PROMPT_SCENE = f"""你是造浪平台的场景空镜提示词教练。\
+用户正在为场景资产（asset_kind=scene）写画面描述：这张图会进入场景库，\
+作为短剧的建立镜头或空镜，主体是空间本身，不是故事里的人。
+
+{_ENHANCE_CONTRACT}
+
+这是静帧空镜，只输出图片维度：subject、scene、composition、lighting、style、detail。\
+各维度在这里的含义：
+- subject：空间主体（建筑、地貌、室内结构），不是人物
+- scene：时间、天气、空间尺度、周边环境是否具体
+- composition：静态空镜或建立镜头，空间层次清楚，没有角色站位
+- lighting：可画出来的光影、色温、光源位置
+- style：氛围落到色调、天气、材质，不写「氛围感强」
+- detail：可辨认的材质、植被、陈设、光源；不要道具堆到抢掉空间
+
+改写硬性要求，优先于「保留用户原句」：
+- 画面不能出现任何人物痕迹（背影、剪影、局部肢体、人群）
+- 用户写了人物或人物动作，改写后必须去掉，只留环境、光影、氛围
+- 不要写成角色互动或剧情高潮
+- 不要写运镜、时间推进或多镜头
+
+feedback：环境弱时点名哪个具体元素（建筑/植被/光源）要写清；\
+去掉人物时补一句「已去除人物描写，仅保留纯场景」。"""
+
+ENHANCE_SYSTEM_PROMPT_COVER = f"""你是造浪平台的封面海报提示词教练。\
+用户正在为封面资产（asset_kind=cover）写画面描述：这张图会作为作品或短剧系列封面，\
+要在信息流缩略图尺寸下一眼可读，并给标题留位置。
+
+{_ENHANCE_CONTRACT}
+
+这是静帧海报，只输出图片维度：subject、scene、composition、lighting、style、detail。\
+各维度在这里的含义：
+- subject：单一主视觉——谁是这张封面的英雄
+- scene：只服务主视觉的环境，不要并列第二套同等重要的故事
+- composition：上下左右预留标题文字安全区，主视觉不要铺满画幅；适合竖版裁切
+- lighting：明暗对比够强，缩小后仍能看清主视觉
+- style：海报感、抓人，但每处补充必须能画出来
+- detail：删掉跟主视觉抢焦点的次要主体
+
+改写硬性要求：
+- 主视觉必须单一；多个同等主体并列时改写后只留一个
+- 构图必须留出可放标题的安全区
+- 可以有人物，但人物是封面英雄，不是角色立绘——不要求纯色背景或强制全身
+- 可以暗示钩子，不要写出剧透关键转折的具体情节
+- 不要写运镜、时间推进或多镜头
+
+feedback：焦点弱时点名当前描述里谁在跟主视觉抢焦点。"""
 
 _ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
     "character": ENHANCE_SYSTEM_PROMPT_CHARACTER,
@@ -225,30 +289,53 @@ _ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
 # `character_action`/... — see its docstring) — so it stays explicit in the
 # code that this is the video-language table, not something that could
 # silently pick up an image-worded prompt for a video job.
-ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION = f"""{ENHANCE_SYSTEM_PROMPT}
+ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION = f"""你是造浪平台的角色动作片段提示词教练。\
+用户正在为角色动作视频（video_asset_kind=character_action）写画面描述：\
+这一段要让已有角色完成一个可执行的单一动作，供短剧正片使用。
 
-补充规则（本次是角色动作片段 video_asset_kind=character_action）：
-- 额外看一个隐含维度：动作可执行性——动作的起幅与落幅是否写清楚，是否是单一主体可以\
-实际完成的具体动作，不要写抽象的情绪化描述（如"霸气登场"）
-- has_reference 为 true 时不要重复描述角色外貌，把笔墨放在动作细节与镜头跟随方式上
-- 不要引入需要多人协同、容易在生成中出现肢体穿模的复杂互动动作
-- feedback 里如果动作可执行性维度弱，要点名指出动作的起止节点需要写得更具体"""
+{_ENHANCE_CONTRACT}
 
-ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
+只输出视频维度：subject、scene、action、camera、lighting、mood、pacing。\
+action 在这里是动作可执行性：起幅与落幅、单一主体能否实际做完；不要写「霸气登场」这类抽象情绪。
 
-补充规则（本次是转场/运镜衔接片段 video_asset_kind=transition_video）：
-- 额外看一个隐含维度：节奏与可拼接性——是否写清楚了纯运镜/光效/过渡元素，\
-而不是带有明确叙事内容的镜头
-- 不要引入具体角色或场景的叙事描述，这类片段的作用是衔接前后正片镜头，不是讲故事
-- feedback 里如果节奏与可拼接性维度弱，要点名指出当前描述里哪部分更像正片叙事而非转场"""
+改写硬性要求：
+- 写清一个具体动作的起止，不要多人协同或容易穿模的复杂互动
+- has_reference 为 true 时不要重复角色外貌，把笔墨放在动作细节与镜头如何跟随
+- duration_seconds 很短时不要塞进多个动作或镜头
 
-ENHANCE_SYSTEM_PROMPT_COVER_VIDEO = f"""{ENHANCE_SYSTEM_PROMPT}
+feedback：动作可执行性弱时点名起止节点要写得更具体。"""
 
-补充规则（本次是预告/封面视频 video_asset_kind=cover_video）：
-- 额外看一个隐含维度：视觉冲击与节奏——开场 1-2 秒是否有足够抓人的画面，\
-节奏是否紧凑不拖沓
-- 提醒可以暗示剧情钩子但不要写出会剧透关键转折的具体情节
-- feedback 里如果视觉冲击与节奏维度弱，要点名指出当前描述哪里显得平淡或拖沓"""
+ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO = f"""你是造浪平台的转场衔接提示词教练。\
+用户正在为转场/运镜片段（video_asset_kind=transition_video）写画面描述：\
+这一段用来衔接前后正片，不是讲故事。
+
+{_ENHANCE_CONTRACT}
+
+只输出视频维度：subject、scene、action、camera、lighting、mood、pacing。\
+pacing 在这里是可拼接性：纯运镜、光效、过渡元素，而不是带叙事的正片镜头。
+
+改写硬性要求：
+- 不要引入具体角色或场景的叙事描写
+- 写清镜头怎么动、光效怎么过渡，让前后正片接得上
+- 不要写成独立短片
+
+feedback：节奏与可拼接性弱时点名哪部分更像正片叙事而非转场。"""
+
+ENHANCE_SYSTEM_PROMPT_COVER_VIDEO = f"""你是造浪平台的预告封面视频提示词教练。\
+用户正在为预告/封面视频（video_asset_kind=cover_video）写画面描述：\
+开场要在 1 到 2 秒抓住注意力，节奏紧凑，可暗示钩子但不能剧透。
+
+{_ENHANCE_CONTRACT}
+
+只输出视频维度：subject、scene、action、camera、lighting、mood、pacing。\
+pacing 在这里是开场冲击：前两秒有没有抓人的画面，整段是否拖沓。
+
+改写硬性要求：
+- 前 1 到 2 秒必须有单一、强烈的主视觉
+- 可以暗示剧情钩子，不要写出关键转折的具体情节
+- duration_seconds 很短时不要塞进多段情节
+
+feedback：视觉冲击或节奏弱时点名哪里平淡或拖沓。"""
 
 _VIDEO_ENHANCE_SYSTEM_PROMPTS: dict[str, str] = {
     "character_action": ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
@@ -284,28 +371,22 @@ def enhance_prompt(
     `general`) or `VideoAssetKind` (`character_action`/
     `transition_video`/`cover_video`/`general`) value, whichever axis is
     active — empty for an audio polish, and the two never collide (see
-    `VideoAssetKind`'s docstring). When it names one of the asset buckets
-    (`agent_skills.service.ASSET_KIND_BUCKETS`, spanning both axes) and the
-    caller has not pinned an `agent_id` itself, this routes to that bucket's
-    dedicated default agent — see `agent_skills.service
-    .default_profile_for_asset_kind` — and always uses that bucket's
-    specialised system prompt (image: `_ENHANCE_SYSTEM_PROMPTS`; video:
-    `_VIDEO_ENHANCE_SYSTEM_PROMPTS`) as the code-level fallback, so the extra
-    diagnostic rules apply even before an operator has published a matching
-    `AgentSkill`.
+    `VideoAssetKind`'s docstring). Routing goes through
+    `agent_skills.service.resolve_copy_agent_id`: a dedicated default for a
+    client-facing asset kind wins, everything else (including `general`)
+    lands on the `copy` request bucket. The specialised system prompt
+    (image: `_ENHANCE_SYSTEM_PROMPTS`; video: `_VIDEO_ENHANCE_SYSTEM_PROMPTS`)
+    is still the code-level fallback, so the extra diagnostic rules apply
+    even before an operator has published a matching `AgentSkill`.
 
     The fallback keeps the caller's own text rather than a static placeholder,
     so a degraded model call never empties the field it was meant to improve.
     Callers still have to treat `outcome.degraded` as a failure — the echoed
     text is not a polish (see `app.domain.prompts.enhance`).
     """
-    resolved_agent_id = agent_id
-    if resolved_agent_id is None and asset_kind in agent_skills_service.ASSET_KIND_BUCKETS:
-        specific = agent_skills_service.default_profile_for_asset_kind(
-            session, agent_skills_service.ASSET_KIND_AGENT_ROLE, asset_kind
-        )
-        if specific is not None:
-            resolved_agent_id = specific.id
+    resolved_agent_id = agent_skills_service.resolve_copy_agent_id(
+        session, asset_kind=asset_kind, agent_id=agent_id
+    )
     enhance_system_prompt = (
         _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
         or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
@@ -355,13 +436,9 @@ def stream_enhance_prompt(
     agent_id: str | None = None,
 ) -> tuple[Iterator[StreamChunk], Callable[[Session | None], AgentOutcome]]:
     """HTTP-SSE counterpart to `enhance_prompt`."""
-    resolved_agent_id = agent_id
-    if resolved_agent_id is None and asset_kind in agent_skills_service.ASSET_KIND_BUCKETS:
-        specific = agent_skills_service.default_profile_for_asset_kind(
-            session, agent_skills_service.ASSET_KIND_AGENT_ROLE, asset_kind
-        )
-        if specific is not None:
-            resolved_agent_id = specific.id
+    resolved_agent_id = agent_skills_service.resolve_copy_agent_id(
+        session, asset_kind=asset_kind, agent_id=agent_id
+    )
     enhance_system_prompt = (
         _ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
         or _VIDEO_ENHANCE_SYSTEM_PROMPTS.get(asset_kind)
@@ -392,11 +469,12 @@ def stream_enhance_prompt(
         temperature=ENHANCE_TEMPERATURE,
         expect_json=True,
         is_usable=_enhance_text_is_usable,
+        retry_nudge=ENHANCE_RETRY_NUDGE,
     )
 
     def finish(persist_session: Session | None = None) -> AgentOutcome:
         stream = finalize(persist_session)
-        parsed = extract_json(strip_thinking(stream.raw_text))
+        parsed = _parse_enhance_json(stream.raw_text, stream.thinking)
         parse_failed = parsed is None
         if parse_failed:
             _mark_enhance_run_failed(persist_session, stream.agent_run_id)
@@ -414,14 +492,34 @@ def stream_enhance_prompt(
     return chunks, finish
 
 
+def _parse_enhance_json(*parts: str) -> dict[str, Any] | None:
+    """Finds an enhance-shaped object, not the first `{...}` in the trace.
+
+    glm-5.3-flash thinking narrates the harness (`{"answer":"$your_answer"}`)
+    before it ever writes `prompt` / `detail_level`. A bare `extract_json`
+    treated that decoy as success and the sanitizer echoed the author's
+    text back as a polish.
+    """
+    for part in parts:
+        if not part:
+            continue
+        parsed = extract_json(strip_thinking(part), required_keys=ENHANCE_JSON_KEYS)
+        if parsed is not None:
+            return parsed
+        parsed = extract_json(part, required_keys=ENHANCE_JSON_KEYS)
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _enhance_text_is_usable(text: str) -> bool:
     """`is_usable` gate for a recovered reasoning-only polish pass.
 
     Same contract as `_script_text_is_usable`: thinking prose that never
-    resolves into a JSON object must trigger one budget expansion, not be
-    handed back as a successful `result.text`.
+    resolves into an enhance-shaped JSON object must trigger one budget
+    expansion, not be handed back as a successful `result.text`.
     """
-    return extract_json(strip_thinking(text)) is not None
+    return _parse_enhance_json(text) is not None
 
 
 def _mark_enhance_run_failed(session: Session | None, agent_run_id: str) -> None:
@@ -461,6 +559,11 @@ def _enhance_user_prompt(
             "direction": direction,
             "instruction": instruction,
             "max_length": max_length,
+            "output_now": (
+                "立即输出完整 JSON（必须含 prompt 与 detail_level）。"
+                "思考不要讨论输出格式，不要写 {\"answer\": ...} 占位。"
+                "可见内容的第一个字符必须是 {。"
+            ),
         },
         ensure_ascii=False,
     )
@@ -562,6 +665,7 @@ def clarify(
     yields `needs_clarification=False`, so a gateway hiccup never becomes a
     dead end for the author.
     """
+    resolved_agent_id = agent_skills_service.resolve_copy_agent_id(session, agent_id=agent_id)
     outcome = run_agent(
         session,
         agent_name=AgentName.COPY,
@@ -569,7 +673,7 @@ def clarify(
         user_prompt=json.dumps({"prompt": prompt}, ensure_ascii=False),
         fallback=dict(CLARIFY_FALLBACK),
         user_id=user_id,
-        agent_id=agent_id,
+        agent_id=resolved_agent_id,
         slot=CLARIFY_SLOT,
     )
     questions = outcome.data.get("questions")
@@ -938,6 +1042,7 @@ def stream_draft_script(
     Mirrors `run_agent_stream`'s `(chunks, finalize)` contract — the caller
     must drain `chunks` before calling `finalize()`.
     """
+    resolved_agent_id = agent_skills_service.resolve_copy_agent_id(session, agent_id=agent_id)
     user_prompt = json.dumps(
         {"idea": idea, "title": title, "referenced_skills": referenced_skills or []},
         ensure_ascii=False,
@@ -948,7 +1053,7 @@ def stream_draft_script(
         system_prompt=SCRIPT_DRAFT_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         user_id=user_id,
-        agent_id=agent_id,
+        agent_id=resolved_agent_id,
         slot=SCRIPT_DRAFT_SLOT,
         max_tokens=SCRIPT_MAX_TOKENS,
         is_usable=_script_text_is_usable,
@@ -994,6 +1099,7 @@ def stream_revise_script(
     updated script out. The fallback on parse failure is the caller's own
     `current_script`, unchanged — a degraded turn must never blank out a
     document the user has already built up over several turns."""
+    resolved_agent_id = agent_skills_service.resolve_copy_agent_id(session, agent_id=agent_id)
     user_prompt = json.dumps(
         {
             "message": message,
@@ -1008,7 +1114,7 @@ def stream_revise_script(
         system_prompt=SCRIPT_REVISE_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         user_id=user_id,
-        agent_id=agent_id,
+        agent_id=resolved_agent_id,
         slot=SCRIPT_REVISE_SLOT,
         max_tokens=SCRIPT_MAX_TOKENS,
         is_usable=_script_text_is_usable,

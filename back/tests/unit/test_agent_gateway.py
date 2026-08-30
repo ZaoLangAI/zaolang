@@ -553,6 +553,21 @@ def test_default_for_asset_kind_rejects_a_kind_outside_the_three_buckets(db: Ses
         )
 
 
+def test_the_copy_request_bucket_is_assignable(db: Session) -> None:
+    """`copy` is the catch-all routing key for non-asset polish / suggest /
+    script — it is assignable even though it is not an ImageAssetKind."""
+    _seeded(db)
+    profile = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="copy-catch-all",
+        display_name="文案生成",
+        default_for_asset_kind="copy",
+    )
+    assert profile.default_for_asset_kind == "copy"
+    assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "copy").id == profile.id
+
+
 def test_promoting_a_second_asset_kind_default_demotes_the_first(db: Session) -> None:
     """Mirrors `is_default`: at most one profile per `(role, bucket)`."""
     _seeded(db)
@@ -650,6 +665,155 @@ def test_ensure_default_enhance_asset_agents_is_idempotent(db: Session) -> None:
     db.refresh(character_profile)
     assert character_profile.default_for_asset_kind is None
     assert agent_skills_service.default_profile_for_asset_kind(db, "copy", "character") is None
+
+
+def test_ensure_default_copy_request_agent_marks_the_role_default(db: Session) -> None:
+    from app.scripts import seed as seed_script
+
+    _seeded(db)
+    seed_script.ensure_default_copy_request_agent(db)
+    default = agent_skills_service.default_profile(db, "copy")
+    assert default is not None
+    assert default.default_for_asset_kind == "copy"
+    first_id = default.id
+
+    seed_script.ensure_default_copy_request_agent(db)
+    db.refresh(default)
+    assert default.default_for_asset_kind == "copy"
+    assert default.id == first_id
+
+    other = agent_skills_service.create_profile(
+        db, role="copy", key="copy-repointed", display_name="另挂", default_for_asset_kind="copy"
+    )
+    db.refresh(default)
+    assert default.default_for_asset_kind is None
+    seed_script.ensure_default_copy_request_agent(db)
+    db.refresh(default)
+    db.refresh(other)
+    assert other.default_for_asset_kind == "copy"
+    assert default.default_for_asset_kind is None
+
+
+def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> None:
+    """Runtime resolve prefers the published row, so a rewritten module
+    constant is invisible until the seeded agents' active drafts move."""
+    from app.scripts import seed as seed_script
+
+    _seeded(db)
+    seed_script.ensure_default_copy_request_agent(db)
+    seed_script.ensure_default_enhance_asset_agents(db)
+
+    copy_default = agent_skills_service.default_profile(db, "copy")
+    assert copy_default is not None
+    character = agent_skills_service.find_profile(db, "copy", "enhance-character")
+    scene = agent_skills_service.find_profile(db, "copy", "enhance-scene")
+    cover = agent_skills_service.find_profile(db, "copy", "enhance-cover")
+    assert character is not None and scene is not None and cover is not None
+
+    agent_skills_service.publish(
+        db,
+        profile_id=copy_default.id,
+        slot=copywriter.SUGGEST_SLOT,
+        prompt_template="你是造浪平台的文案助手。旧的作品文案稿。",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="old factory",
+    )
+    agent_skills_service.publish(
+        db,
+        profile_id=character.id,
+        slot=copywriter.ENHANCE_SLOT,
+        prompt_template="你是造浪平台的提示词教练。旧的角色润色稿。",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="old factory",
+    )
+    agent_skills_service.update_profile(
+        db,
+        character.id,
+        description="角色资产的画面描述润色，额外关注人物一致性与表情神态，并要求全身入镜、纯色背景。",
+    )
+    agent_skills_service.publish(
+        db,
+        profile_id=scene.id,
+        slot=copywriter.ENHANCE_SLOT,
+        prompt_template="你是运营自己写的场景润色提示词，不要覆盖。",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="operator edit",
+    )
+    cover_before = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=cover.id, slot=copywriter.ENHANCE_SLOT
+    )
+
+    seed_script.sync_seeded_copy_agent_prompts(db)
+
+    suggest, _ = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=copy_default.id, slot=copywriter.SUGGEST_SLOT
+    )
+    character_prompt, _ = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=character.id, slot=copywriter.ENHANCE_SLOT
+    )
+    scene_prompt, _ = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=scene.id, slot=copywriter.ENHANCE_SLOT
+    )
+    cover_after = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=cover.id, slot=copywriter.ENHANCE_SLOT
+    )
+    assert suggest == copywriter.SYSTEM_PROMPT
+    assert character_prompt == copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
+    assert scene_prompt == "你是运营自己写的场景润色提示词，不要覆盖。"
+    assert cover_after == cover_before
+    db.refresh(character)
+    assert character.description == (
+        "角色立绘教练：把同一个人写到能进库、出三视图，强制全身入镜与纯色背景。"
+    )
+
+
+def test_seed_does_not_republish_when_factory_copy_prompts_are_current(db: Session) -> None:
+    from app.scripts import seed as seed_script
+
+    _seeded(db)
+    seed_script.ensure_default_enhance_asset_agents(db)
+    character = agent_skills_service.find_profile(db, "copy", "enhance-character")
+    assert character is not None
+    versions_before = agent_skills_service.list_versions(
+        db, profile_id=character.id, slot=copywriter.ENHANCE_SLOT
+    )
+    seed_script.sync_seeded_copy_agent_prompts(db)
+    versions_after = agent_skills_service.list_versions(
+        db, profile_id=character.id, slot=copywriter.ENHANCE_SLOT
+    )
+    assert [row.version for row in versions_after] == [row.version for row in versions_before]
+    prompt, _ = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=character.id, slot=copywriter.ENHANCE_SLOT
+    )
+    assert prompt == copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
+
+
+def test_resolve_copy_agent_id_prefers_asset_kind_then_the_copy_bucket(db: Session) -> None:
+    _seeded(db)
+    character = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="enhance-character",
+        display_name="角色",
+        default_for_asset_kind="character",
+    )
+    catch_all = agent_skills_service.create_profile(
+        db, role="copy", key="copy-all", display_name="文案", default_for_asset_kind="copy"
+    )
+    other = agent_skills_service.create_profile(db, role="copy", key="pinned", display_name="钉死")
+
+    assert (
+        agent_skills_service.resolve_copy_agent_id(db, asset_kind="character") == character.id
+    )
+    assert agent_skills_service.resolve_copy_agent_id(db, asset_kind="general") == catch_all.id
+    assert agent_skills_service.resolve_copy_agent_id(db, asset_kind="") == catch_all.id
+    assert (
+        agent_skills_service.resolve_copy_agent_id(db, asset_kind="character", agent_id=other.id)
+        == other.id
+    )
 
 
 def test_intent_routers_two_prompts_do_not_overwrite_each_other(db: Session) -> None:

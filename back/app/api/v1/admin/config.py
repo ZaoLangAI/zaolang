@@ -45,7 +45,6 @@ router = APIRouter(tags=["admin:config"])
 FLAG_DESCRIPTIONS = {
     "video_generation": "视频生成能力",
     "public_registration": "开放注册",
-    "shortform_studio": "短视频工作室",
     "drama_studio_enabled": "短剧工作室",
     "web_editor_enabled": "桌面浏览器剪辑器",
     "variant_export_enabled": "交付变体导出",

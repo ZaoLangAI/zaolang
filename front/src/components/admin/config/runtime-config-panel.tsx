@@ -297,7 +297,6 @@ function ConfigForm({
         {[
           'video_generation',
           'public_registration',
-          'shortform_studio',
           'drama_studio_enabled',
           'web_editor_enabled',
           'variant_export_enabled',
@@ -527,31 +526,6 @@ function ShortformForm({ value, disabled, onChange }: FormProps) {
         onChange={(event) => onChange({ ...value, default_profile: event.target.value })}
         options={Object.keys(profiles).map((key) => ({ value: key, label: key }))}
       />
-      <div className="grid gap-3 rounded-[var(--radius-sm)] border border-border p-3 sm:grid-cols-3">
-        <Switch
-          label="enable_clarifying_questions"
-          checked={value.enable_clarifying_questions ?? true}
-          disabled={disabled}
-          onChange={(checked) => onChange({ ...value, enable_clarifying_questions: checked })}
-        />
-        <Switch
-          label="enable_preview_picker"
-          checked={value.enable_preview_picker ?? true}
-          disabled={disabled}
-          onChange={(checked) => onChange({ ...value, enable_preview_picker: checked })}
-        />
-        <TextInput
-          label="preview_candidate_count"
-          type="number"
-          min={2}
-          max={3}
-          disabled={disabled || !value.enable_preview_picker}
-          value={value.preview_candidate_count ?? 3}
-          onChange={(event) =>
-            onChange({ ...value, preview_candidate_count: Number(event.target.value) })
-          }
-        />
-      </div>
       {Object.entries(profiles).map(([key, profile]) => (
         <fieldset key={key} className="rounded border border-border p-3">
           <legend className="px-1 font-mono text-xs">{key}</legend>

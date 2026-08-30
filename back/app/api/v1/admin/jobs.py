@@ -243,7 +243,7 @@ def job_detail(job_id: str, session: DbSession, user: Viewer, _: AdminRead) -> A
                 latency_ms=a.latency_ms,
                 cost_credits=a.cost_minor,
                 error_code=a.failure_code,
-                error_message=str(a.raw_metadata_redacted_json.get("error", "")) or None,
+                error_message=_attempt_error_message(a.raw_metadata_redacted_json),
                 created_at=a.created_at,
             )
             for a in attempts
@@ -639,6 +639,23 @@ def _summary(session, job: GenerationJob) -> AdminJobSummary:  # type: ignore[no
     )
 
 
+def _attempt_error_message(metadata: dict[str, Any] | None) -> str | None:
+    """Provider failures store the HTTP/timeout body under `detail`.
+
+    Older rows and a few poll paths used `error`. Empty strings are
+    treated as missing so the ops console does not render a blank line.
+    """
+    if not metadata:
+        return None
+    raw = metadata.get("detail")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = metadata.get("error")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    return text or None
+
+
 def _build_summary(
     job: GenerationJob,
     *,
@@ -662,6 +679,7 @@ def _build_summary(
         actual_credits=job.actual_credits,
         attempt_count=attempt_count,
         failure_code=job.failure_code,
+        failure_message=job.failure_message,
         created_at=job.created_at,
         finished_at=job.finished_at,
         stuck=stuck,

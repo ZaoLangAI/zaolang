@@ -136,15 +136,6 @@ class ShortformProfile(ConfigSection):
 class ShortformConfig(ConfigSection):
     profiles: dict[str, ShortformProfile]
     default_profile: str = "douyin_vertical"
-    # Finer-grained kill switches underneath `FeatureFlags.shortform_studio`:
-    # the studio surface can stay open while either of these ships off
-    # instantly without a deploy.
-    enable_clarifying_questions: bool = True
-    enable_preview_picker: bool = True
-    # How many `QualityTier.PREVIEW` drafts the studio submits before the
-    # user picks one to promote. Capped at 3 so a fat-fingered admin edit
-    # cannot silently multiply everyone's preview cost.
-    preview_candidate_count: int = Field(default=3, ge=2, le=3)
 
     @model_validator(mode="after")
     def _default_profile_exists(self) -> ShortformConfig:
@@ -169,7 +160,6 @@ class MarketplaceConfig(ConfigSection):
 class FeatureFlags(ConfigSection):
     video_generation: bool = True
     public_registration: bool = True
-    shortform_studio: bool = True
     drama_studio_enabled: bool = False
     web_editor_enabled: bool = False
     variant_export_enabled: bool = False
@@ -191,7 +181,6 @@ class FeatureFlags(ConfigSection):
     def _percentages_in_range(self) -> FeatureFlags:
         allowed = {
             "video_generation",
-            "shortform_studio",
             "drama_studio_enabled",
             "web_editor_enabled",
             "variant_export_enabled",
@@ -841,7 +830,6 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
     "feature_flags": {
         "video_generation": True,
         "public_registration": True,
-        "shortform_studio": True,
         "drama_studio_enabled": False,
         "web_editor_enabled": False,
         "variant_export_enabled": False,
@@ -888,9 +876,6 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
             },
         },
         "default_profile": "douyin_vertical",
-        "enable_clarifying_questions": True,
-        "enable_preview_picker": True,
-        "preview_candidate_count": 3,
     },
     # Empty by default: with no endpoints configured, `app/llm/client.py` has
     # nothing to call and every request fails immediately until an operator

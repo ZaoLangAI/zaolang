@@ -162,21 +162,6 @@ def mark_failed(session: Session, intent: PublicationIntent) -> PublicationInten
     return intent
 
 
-def export_url_for(session: Session, *, work_id: str, user_id: str) -> str | None:
-    """Fresh signed URL for a work's deliverable.
-
-    Minted per response rather than stored on the intent: the stored one would
-    be expired by the time anyone read the history back.
-    """
-    work = session.get(Work, work_id)
-    if work is None:
-        return None
-    version = session.get(WorkVersion, work.current_version_id or "")
-    if version is None:
-        return None
-    return _download_url(session, asset_id=version.primary_output_asset_id, user_id=user_id)
-
-
 # --- internals -----------------------------------------------------------
 
 

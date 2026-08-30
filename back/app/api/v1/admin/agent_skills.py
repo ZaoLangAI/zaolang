@@ -358,6 +358,7 @@ def list_agent_skill_templates(
                 tool_grants=list(template.tool_grants),
                 role=template.role,
                 slot=template.slot,
+                asset_kind=template.asset_kind,
             )
             for template in skill_templates.templates_for(category=category, role=role)
         ]

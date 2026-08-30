@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.script_writing import service as script_writing_service
 from app.llm.client import StreamChunk
-from app.models import Notification, User
+from app.models import DramaEpisode, Notification, User
 from app.models.enums import CreationSkillCategory, NotificationType
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
@@ -331,6 +331,8 @@ def test_create_script_surfaces_an_error_when_the_draft_fails_to_parse(
     body = detail.json()
     assert body["turns"] == []
     assert body["script"]["scenes"] == []
+    assert body["source_idea"] == "深夜便利店的秘密"
+    assert body["last_error"]
 
     # `list_scripts` no longer requires a turn to exist — a failed first
     # draft must stay discoverable (and retryable) rather than vanishing.
@@ -438,6 +440,89 @@ def test_retry_script_regenerates_the_first_draft_for_an_empty_shell(
     # No second episode/series was created along the way.
     listed = client.get("/v1/scripts", headers=auth_header(author))
     assert len(listed.json()) == 1
+
+
+def test_retry_script_reuses_stored_idea_when_body_omits_it(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed first draft already persisted `source_idea` — retry must
+    not demand the author type it again."""
+    from app.llm import client as llm_client
+    from tests.fake_llm_gateway import fake_stream_complete
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    def empty_stream(**kwargs: Any) -> Any:
+        kwargs["result"].text = ""
+        yield from ()
+
+    monkeypatch.setattr(llm_client, "stream_complete", empty_stream)
+
+    failed = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(failed.text) if kind == "start")[
+        "episode_id"
+    ]
+    assert client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author)).json()[
+        "source_idea"
+    ] == "深夜便利店的秘密"
+
+    monkeypatch.setattr(llm_client, "stream_complete", fake_stream_complete)
+
+    retried = client.post(
+        f"/v1/scripts/{episode_id}/retry",
+        json={},
+        headers=auth_header(author),
+    )
+    assert retried.status_code == 202
+    events = _parse_sse(retried.text)
+    assert [kind for kind, _ in events][0] == "start"
+    assert [kind for kind, _ in events][-1] == "complete"
+    complete = next(data for kind, data in events if kind == "complete")
+    assert complete["episode_id"] == episode_id
+    assert complete["turn_no"] == 1
+    detail = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author)).json()
+    assert len(detail["turns"]) == 1
+    assert detail["turns"][0]["user_message"] == "深夜便利店的秘密"
+    assert detail["last_error"] is None
+
+
+def test_get_script_recovers_source_idea_from_a_nearby_agent_run(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shells created before `source_idea` existed still one-click retry
+    after GET backfills the prompt from the original `script_draft` run."""
+    from app.llm import client as llm_client
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    def empty_stream(**kwargs: Any) -> Any:
+        kwargs["result"].text = ""
+        yield from ()
+
+    monkeypatch.setattr(llm_client, "stream_complete", empty_stream)
+
+    failed = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(failed.text) if kind == "start")[
+        "episode_id"
+    ]
+    episode = db.get(DramaEpisode, episode_id)
+    assert episode is not None
+    episode.source_idea = None
+    episode.source_referenced_skill_ids_json = []
+    db.flush()
+
+    body = client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author)).json()
+    assert body["source_idea"] == "深夜便利店的秘密"
 
 
 def test_retry_script_rejects_an_episode_that_already_has_a_turn(

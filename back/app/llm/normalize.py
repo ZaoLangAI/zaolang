@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -47,31 +48,47 @@ def strip_thinking(text: str) -> str:
     return cleaned.strip()
 
 
-def extract_json(text: str) -> dict[str, Any] | None:
+def extract_json(
+    text: str, *, required_keys: tuple[str, ...] | None = None
+) -> dict[str, Any] | None:
     """Finds a JSON object inside free-form model output.
 
-    Tries the whole string, then a fenced block, then the outermost balanced
-    braces. Returns None rather than raising so the caller can decide between
-    a repair round-trip and a fallback.
+    Tries the whole string, then a fenced block, then balanced braces.
+    When `required_keys` is set, skip objects that miss any of those keys
+    (glm-5.3-flash thinking often embeds a harness decoy like
+    `{"answer":"$your_answer"}` before the real payload). Returns None
+    rather than raising so the caller can decide between a repair
+    round-trip and a fallback.
     """
     candidate = text.strip()
     if not candidate:
         return None
 
-    parsed = _try_load(candidate)
+    parsed = _accept(_try_load(candidate), required_keys)
     if parsed is not None:
         return parsed
 
     fenced = FENCED_JSON.search(candidate)
     if fenced:
-        parsed = _try_load(fenced.group(1))
+        parsed = _accept(_try_load(fenced.group(1)), required_keys)
         if parsed is not None:
             return parsed
 
-    span = _outermost_object(candidate)
-    if span is not None:
-        return _try_load(span)
+    for span in _iter_objects(candidate):
+        parsed = _accept(_try_load(span), required_keys)
+        if parsed is not None:
+            return parsed
     return None
+
+
+def _accept(
+    parsed: dict[str, Any] | None, required_keys: tuple[str, ...] | None
+) -> dict[str, Any] | None:
+    if parsed is None:
+        return None
+    if required_keys and any(key not in parsed for key in required_keys):
+        return None
+    return parsed
 
 
 def _try_load(raw: str) -> dict[str, Any] | None:
@@ -82,11 +99,21 @@ def _try_load(raw: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _outermost_object(text: str) -> str | None:
-    """Scans for a balanced `{...}`, ignoring braces inside string literals."""
-    start = text.find("{")
-    if start == -1:
-        return None
+def _iter_objects(text: str) -> Iterator[str]:
+    """Yields each balanced `{...}` starting at successive opening braces."""
+    start = 0
+    while True:
+        index = text.find("{", start)
+        if index == -1:
+            return
+        span = _object_at(text, index)
+        if span is not None:
+            yield span
+        start = index + 1
+
+
+def _object_at(text: str, start: int) -> str | None:
+    """Scans for a balanced `{...}` from `start`, ignoring braces in strings."""
     depth = 0
     in_string = False
     escaped = False
@@ -109,6 +136,13 @@ def _outermost_object(text: str) -> str | None:
             if depth == 0:
                 return text[start : index + 1]
     return None
+
+
+def _outermost_object(text: str) -> str | None:
+    index = text.find("{")
+    if index == -1:
+        return None
+    return _object_at(text, index)
 
 
 def normalize_completion(raw: Any, *, expect_json: bool) -> NormalizedResponse:

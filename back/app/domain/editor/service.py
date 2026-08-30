@@ -580,10 +580,45 @@ def create_content_link(
     return link
 
 
+def maybe_link_draft(
+    session: Session, *, user_id: str, episode_id: str, draft_id: str
+) -> EpisodeContentLink | None:
+    """Attach a draft as a `candidate` when the caller owns both. Foreign
+    or missing episodes raise so `create_draft` can swallow them without
+    rolling the draft back."""
+    try:
+        return create_content_link(
+            session,
+            user_id=user_id,
+            episode_id=episode_id,
+            content_type=EpisodeContentType.DRAFT,
+            content_ref_id=draft_id,
+            role=EpisodeContentRole.CANDIDATE,
+        )
+    except (NotFound, Forbidden):
+        return None
+
+
+def ensure_linked_drafts(session: Session, *, user_id: str, episode_id: str) -> None:
+    """Heal drafts that already carry `params.link_episode_id` but never got
+    a content-link row (the write path used to persist the param only)."""
+    drafts = session.scalars(
+        select(Draft).where(
+            Draft.user_id == user_id,
+            Draft.params_json.contains({"link_episode_id": episode_id}),
+        )
+    )
+    for draft in drafts:
+        maybe_link_draft(
+            session, user_id=user_id, episode_id=episode_id, draft_id=draft.id
+        )
+
+
 def list_content_links(
     session: Session, *, user_id: str, episode_id: str
 ) -> list[EpisodeContentLink]:
     episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    ensure_linked_drafts(session, user_id=user_id, episode_id=episode.id)
     stmt = (
         select(EpisodeContentLink)
         .where(EpisodeContentLink.episode_id == episode.id)
@@ -637,6 +672,24 @@ def list_cuts(session: Session, *, user_id: str, episode_id: str) -> list[Episod
     return list(session.scalars(stmt))
 
 
+def _linked_episode_id_from_job(session: Session, job: GenerationJob) -> str | None:
+    """The script-studio jump-out writes `params.link_episode_id` on the
+    draft. A missing draft, or a missing/non-string value, means this job
+    is not that path — the caller may fall back to minting a shell.
+    A *present* id is never treated as absent: resolving it is the
+    caller's job, including the 4xx when the episode is gone or foreign.
+    """
+    if not job.draft_id:
+        return None
+    draft = session.get(Draft, job.draft_id)
+    if draft is None:
+        return None
+    episode_id = (draft.params_json or {}).get("link_episode_id")
+    if not isinstance(episode_id, str) or not episode_id:
+        return None
+    return episode_id
+
+
 def create_cut_from_job(
     session: Session,
     *,
@@ -651,6 +704,20 @@ def create_cut_from_job(
         raise NotFound("生成任务不存在。")
     if job.status != JobStatus.SUCCEEDED or not job.output_asset_id:
         raise ValidationFailed("只有成功且带成片的任务才能进入剪辑。")
+    # A script-studio video jump-out already named the episode. Reuse it —
+    # never mint a second series/episode, even if `series_id` was also sent.
+    # A present-but-foreign/missing id must 4xx rather than fall through to
+    # the shell-creating fallback below.
+    linked_episode_id = _linked_episode_id_from_job(session, job)
+    if linked_episode_id is not None:
+        episode = _owned_episode(session, user_id=user_id, episode_id=linked_episode_id)
+        return create_cut_from_asset(
+            session,
+            user_id=user_id,
+            episode_id=episode.id,
+            asset_id=job.output_asset_id,
+            job_id=job.id,
+        )
     if series_id:
         series = require_drama_series(session, user_id=user_id, series_id=series_id)
     else:
@@ -665,8 +732,9 @@ def create_cut_from_job(
         ).first()
         # Auto-created fallback series (user jumped straight from a generation
         # job into "进入剪辑" without going through the series library's
-        # create dialog) — `target_platforms` defaults to manual download
-        # only, editable later via `PATCH /v1/drama-series/{id}`.
+        # create dialog, and the draft carried no `link_episode_id`) —
+        # `target_platforms` defaults to manual download only, editable later
+        # via `PATCH /v1/drama-series/{id}`.
         series = existing or create_drama_series(
             session,
             user_id=user_id,

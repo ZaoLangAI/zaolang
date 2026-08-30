@@ -191,7 +191,16 @@ def _keyword_search(
     stmt = _visible_works().where(
         or_(
             func.lower(WorkVersion.title).like(pattern),
-            func.lower(func.coalesce(WorkVersion.description, "")).like(pattern),
+            # Written as `IS NOT NULL AND lower(description) LIKE ...` rather
+            # than `lower(coalesce(description, '')) LIKE ...`: `text` is
+            # never empty here (the caller short-circuits to `browse()`
+            # first), so the two are equivalent, but this form matches the
+            # `lower(description)` GIN trigram index byte-for-byte —
+            # `coalesce(...)`'s bound parameter would not.
+            and_(
+                WorkVersion.description.is_not(None),
+                func.lower(WorkVersion.description).like(pattern),
+            ),
         )
     )
     if remixable_only:

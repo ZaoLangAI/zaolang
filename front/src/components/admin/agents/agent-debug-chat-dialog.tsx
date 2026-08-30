@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextArea } from '@/components/ui/field';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
+import { copyEditorSlot } from '@/lib/admin/copy-routing';
 import { getAdminToken } from '@/lib/api/admin-client';
 import type { AgentNode, AgentProfile } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
@@ -71,8 +72,11 @@ export function AgentDebugChatDialog({
   const t = useTranslations('adminAgents');
   const tAdmin = useTranslations('admin');
   const slots = node.prompt_slots ?? [];
+  const isCopyRole = profile.role === 'copy';
 
-  const [slot, setSlot] = useState(slots[0]?.key ?? 'default');
+  const [slot, setSlot] = useState(
+    isCopyRole ? copyEditorSlot(profile) : (slots[0]?.key ?? 'default'),
+  );
   const [source, setSource] = useState<Source>(draftPromptTemplate ? 'draft' : 'published');
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [input, setInput] = useState('');
@@ -207,7 +211,7 @@ export function AgentDebugChatDialog({
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end gap-3">
-          {slots.length > 1 ? (
+          {slots.length > 1 && !isCopyRole ? (
             <div className="min-w-44 flex-1">
               <Select
                 label={t('promptSlot')}

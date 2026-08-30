@@ -38,6 +38,21 @@ def test_json_is_extracted_from_surrounding_prose() -> None:
     assert extract_json(text) == {"decision": "reject", "reason_code": "X"}
 
 
+def test_extract_json_skips_decoy_objects_when_keys_are_required() -> None:
+    """glm-5.3-flash thinking embeds the harness fallback before the payload."""
+    text = (
+        'If unsure default to {"answer":"$your_answer"}. '
+        'Then emit {"prompt": "黄昏海边的女孩", "detail_level": "sparse"}.'
+    )
+
+    assert extract_json(text) == {"answer": "$your_answer"}
+    assert extract_json(text, required_keys=("prompt", "detail_level")) == {
+        "prompt": "黄昏海边的女孩",
+        "detail_level": "sparse",
+    }
+    assert extract_json('{"answer":"$your_answer"}', required_keys=("prompt", "detail_level")) is None
+
+
 def test_braces_inside_strings_do_not_break_extraction() -> None:
     text = '{"note": "包含 } 和 { 的文本", "ok": true}'
 

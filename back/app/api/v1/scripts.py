@@ -373,6 +373,11 @@ def get_script(
     episode, turns = script_writing_service.get_script(
         session, user_id=user.id, episode_id=episode_id
     )
+    last_error = script_writing_service.script_last_error(session, episode_id=episode.id)
+    # Persist a historical empty-shell backfill (`source_idea` recovered
+    # from a nearby AgentRun) so the next retry can omit the idea body.
+    # A clean read is a no-op commit.
+    session.commit()
     return ScriptDetailResponse(
         episode_id=episode.id,
         series_id=episode.series_id,
@@ -380,6 +385,9 @@ def get_script(
         status=episode.status,
         script=ScriptDocument.model_validate(episode.script_json or {}),
         turns=[_turn_summary(turn) for turn in turns],
+        source_idea=episode.source_idea or "",
+        source_referenced_skill_ids=list(episode.source_referenced_skill_ids_json or []),
+        last_error=last_error,
         created_at=episode.created_at,
         updated_at=episode.updated_at,
     )

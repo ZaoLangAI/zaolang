@@ -180,6 +180,20 @@ export function JobsConsole() {
   const agentRuns = job?.agent_runs ?? [];
   const events = job?.events ?? [];
   const logRows = relatedLogs.data?.items ?? [];
+  const failedAttempts = attempts.filter(
+    (attempt) => Boolean(attempt.error_message) || Boolean(attempt.error_code),
+  );
+  const fallbackLogMessage = [...logRows]
+    .reverse()
+    .find((entry) => entry.source === 'pipeline' || entry.level === 'error')?.message;
+  const showFailure = Boolean(
+    job &&
+      (['failed', 'expired', 'cancelled'].includes(job.status) ||
+        job.failure_code ||
+        job.failure_message ||
+        failedAttempts.length > 0 ||
+        fallbackLogMessage),
+  );
 
   // Each segment is the gap between two consecutive events, labelled by the
   // stage that just finished — "how long safety took before planning started".
@@ -343,6 +357,42 @@ export function JobsConsole() {
                 }}
               />
             ) : null}
+            {showFailure ? (
+              <section>
+                <h3 className="mb-3 text-sm font-semibold">{t('failure')}</h3>
+                <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-danger/40 bg-danger/8 p-3 text-xs">
+                  <DetailList
+                    items={[
+                      ...(job.failure_code
+                        ? [{ label: t('failureCode'), value: job.failure_code }]
+                        : []),
+                      ...(job.failure_message
+                        ? [{ label: t('failurePublicMessage'), value: job.failure_message }]
+                        : []),
+                      {
+                        label: t('failureActual'),
+                        value:
+                          failedAttempts.length > 0 ? (
+                            <ul className="flex flex-col gap-2">
+                              {failedAttempts.map((attempt) => (
+                                <li key={attempt.id} className="whitespace-pre-wrap break-words">
+                                  {attempt.error_code ? (
+                                    <span className="font-mono">{attempt.error_code}</span>
+                                  ) : null}
+                                  {attempt.error_code && attempt.error_message ? ' · ' : null}
+                                  {attempt.error_message}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            (fallbackLogMessage ?? t('failureNone'))
+                          ),
+                      },
+                    ]}
+                  />
+                </div>
+              </section>
+            ) : null}
             <DetailList
               items={[
                 {
@@ -465,18 +515,25 @@ export function JobsConsole() {
                   {attempts.map((attempt) => (
                     <li
                       key={attempt.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2"
+                      className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border px-3 py-2"
                     >
-                      <span className="font-mono">
-                        #{attempt.attempt_number} {attempt.provider}
-                      </span>
-                      <span className="tabular text-muted">
-                        {attempt.status} · {formatNumber(attempt.latency_ms ?? 0, locale)}ms
-                        {attempt.cost_credits != null
-                          ? ` · ${formatNumber(attempt.cost_credits, locale)} ${t('colCredits')}`
-                          : ''}
-                        {attempt.error_code ? ` · ${attempt.error_code}` : ''}
-                      </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono">
+                          #{attempt.attempt_number} {attempt.provider}
+                        </span>
+                        <span className="tabular text-muted">
+                          {attempt.status} · {formatNumber(attempt.latency_ms ?? 0, locale)}ms
+                          {attempt.cost_credits != null
+                            ? ` · ${formatNumber(attempt.cost_credits, locale)} ${t('colCredits')}`
+                            : ''}
+                          {attempt.error_code ? ` · ${attempt.error_code}` : ''}
+                        </span>
+                      </div>
+                      {attempt.error_message ? (
+                        <p className="whitespace-pre-wrap break-words text-danger">
+                          {attempt.error_message}
+                        </p>
+                      ) : null}
                     </li>
                   ))}
                 </ol>
@@ -530,18 +587,28 @@ export function JobsConsole() {
                   {logRows.map((entry) => (
                     <li
                       key={entry.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-border px-3 py-2"
+                      className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border px-3 py-2"
                     >
-                      <span className="flex items-center gap-2">
-                        <Badge tone={LOG_SOURCE_TONE[entry.source] ?? 'neutral'}>
-                          {entry.source}
-                        </Badge>
-                        <span className="font-mono">{entry.event}</span>
-                        <span className="max-w-[220px] truncate text-muted">{entry.message}</span>
-                      </span>
-                      <span className="tabular whitespace-nowrap text-muted">
-                        {formatDateTime(entry.occurred_at, locale)}
-                      </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="flex items-center gap-2">
+                          <Badge tone={LOG_SOURCE_TONE[entry.source] ?? 'neutral'}>
+                            {entry.source}
+                          </Badge>
+                          <span className="font-mono">{entry.event}</span>
+                        </span>
+                        <span className="tabular whitespace-nowrap text-muted">
+                          {formatDateTime(entry.occurred_at, locale)}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap break-words text-muted">{entry.message}</p>
+                      {entry.details && Object.keys(entry.details).length > 0 ? (
+                        <details>
+                          <summary className="cursor-pointer text-muted">{t('relatedLogDetails')}</summary>
+                          <pre className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-surface-soft p-2 font-mono text-[11px] whitespace-pre-wrap">
+                            {JSON.stringify(entry.details, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
                     </li>
                   ))}
                 </ol>

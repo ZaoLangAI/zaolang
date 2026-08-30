@@ -59,4 +59,9 @@ class SystemLog(Base, TimestampMixin):
         Index("ix_system_logs_created_at", "created_at"),
         Index("ix_system_logs_source_event", "source", "event"),
         Index("ix_system_logs_job_id", "job_id"),
+        # `search()` orders and range-filters by `updated_at` (last seen in
+        # this dedup window), not `created_at` — without this the admin log
+        # center's default view and its `since`/`until`/`before` filters
+        # cannot use an index at all.
+        Index("ix_system_logs_updated_at", "updated_at"),
     )

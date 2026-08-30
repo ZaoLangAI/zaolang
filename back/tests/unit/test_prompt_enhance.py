@@ -125,6 +125,7 @@ def test_the_stream_polish_slot_asks_for_its_own_budget_and_creativity(
     assert captured["temperature"] == copywriter.ENHANCE_TEMPERATURE
     assert captured["expect_json"] is True
     assert captured["is_usable"] is copywriter._enhance_text_is_usable
+    assert captured["retry_nudge"] == copywriter.ENHANCE_RETRY_NUDGE
 
 
 def test_enhance_routes_to_the_asset_kinds_dedicated_agent(db: Session, author: User) -> None:
@@ -154,9 +155,10 @@ def test_enhance_routes_to_the_asset_kinds_dedicated_agent(db: Session, author: 
 def test_enhance_without_a_matching_bucket_keeps_the_roles_ordinary_default(
     db: Session, author: User
 ) -> None:
-    """`general`/empty `asset_kind`, and any string outside the three buckets,
-    must all fall back to `default_profile(role="copy")` exactly as before
-    this feature existed — even with a `scene`-specific agent configured."""
+    """`general`/empty `asset_kind`, and any string outside the image/video
+    buckets, resolve through the `copy` request bucket and then the role
+    default — so with no `copy` bucket claimed they still land on
+    `default_profile(role="copy")`, even with a `scene`-specific agent."""
     default = agent_skills_service.default_profile(db, "copy")
     assert default is not None
     agent_skills_service.create_profile(
@@ -207,6 +209,50 @@ def test_an_explicit_agent_id_wins_over_asset_kind_routing(db: Session, author: 
     assert run is not None
     assert run.agent_profile_id == other.id
     assert run.agent_profile_id != specific.id
+
+
+def test_general_enhance_and_suggest_route_to_the_copy_request_bucket(
+    db: Session, author: User
+) -> None:
+    """A dedicated `copy` bucket, not `is_default`, is what generic polish
+    and work-copy generation resolve to once that bucket is claimed."""
+    default = agent_skills_service.default_profile(db, "copy")
+    assert default is not None
+    catch_all = agent_skills_service.create_profile(
+        db,
+        role="copy",
+        key="copy-catch-all",
+        display_name="文案生成",
+        default_for_asset_kind="copy",
+    )
+    assert catch_all.id != default.id
+
+    polish = copywriter.enhance_prompt(
+        db,
+        prompt="女孩在海边",
+        max_length=600,
+        operation="text_to_image",
+        asset_kind="general",
+        user_id=author.id,
+    )
+    polish_run = db.get(AgentRun, polish.agent_run_id)
+    assert polish_run is not None
+    assert polish_run.agent_profile_id == catch_all.id
+
+    suggestion = copywriter.suggest(db, prompt="女孩在海边", user_id=author.id)
+    suggest_run = db.get(AgentRun, suggestion.agent_run_id)
+    assert suggest_run is not None
+    assert suggest_run.agent_profile_id == catch_all.id
+
+    followup = copywriter.clarify(db, prompt="女孩在海边", user_id=author.id)
+    followup_run = db.get(AgentRun, followup.agent_run_id)
+    assert followup_run is not None
+    assert followup_run.agent_profile_id == catch_all.id
+
+    pinned = copywriter.suggest(db, prompt="女孩在海边", user_id=author.id, agent_id=default.id)
+    pinned_run = db.get(AgentRun, pinned.agent_run_id)
+    assert pinned_run is not None
+    assert pinned_run.agent_profile_id == default.id
 
 
 def test_the_prompt_context_asset_kind_reaches_the_copy_agent(db: Session, author: User) -> None:
@@ -268,11 +314,40 @@ def test_stream_enhance_routes_to_the_asset_kinds_dedicated_agent(
     assert run.degraded is False
 
 
-def test_enhance_text_is_usable_requires_a_json_object() -> None:
-    assert copywriter._enhance_text_is_usable('{"prompt": "黄昏海边的女孩"}') is True
-    assert copywriter._enhance_text_is_usable('<think>先构思</think>{"prompt": "x"}') is True
+def test_enhance_text_is_usable_requires_enhance_shaped_json() -> None:
+    usable = '{"prompt": "黄昏海边的女孩", "detail_level": "sparse"}'
+    assert copywriter._enhance_text_is_usable(usable) is True
+    assert copywriter._enhance_text_is_usable(f"<think>先构思</think>{usable}") is True
+    assert copywriter._enhance_text_is_usable('{"prompt": "黄昏海边的女孩"}') is False
+    assert (
+        copywriter._enhance_text_is_usable(
+            'If unsure use {"answer":"$your_answer"} then keep thinking'
+        )
+        is False
+    )
+    assert (
+        copywriter._enhance_text_is_usable(
+            'If unsure {"answer":"$your_answer"} then ' + usable
+        )
+        is True
+    )
     assert copywriter._enhance_text_is_usable("先分析这段描述缺什么") is False
     assert copywriter._enhance_text_is_usable("") is False
+
+
+def test_parse_enhance_json_skips_a_harness_decoy_in_thinking() -> None:
+    thinking = (
+        'If unsure default to {"answer":"$your_answer"}. '
+        'Then emit {"prompt": "黄昏海边的女孩", "detail_level": "sparse"}.'
+    )
+    assert copywriter._parse_enhance_json("", thinking) == {
+        "prompt": "黄昏海边的女孩",
+        "detail_level": "sparse",
+    }
+    assert copywriter._parse_enhance_json('{"answer":"$your_answer"}', thinking) == {
+        "prompt": "黄昏海边的女孩",
+        "detail_level": "sparse",
+    }
 
 
 @pytest.mark.real_gateway_seams
@@ -310,6 +385,44 @@ def test_stream_enhance_retries_when_recovered_thinking_is_not_json(
     run = db.get(AgentRun, outcome.agent_run_id)
     assert run is not None
     assert run.degraded is False
+
+
+@pytest.mark.real_gateway_seams
+def test_stream_enhance_retries_when_thinking_only_has_a_decoy_object(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live glm-5.3-flash shape: thinking embeds `{"answer":...}` and
+    never writes content. A bare `extract_json` used to treat that decoy as
+    success and echo the author's prompt back. The second attempt, nudged,
+    must emit a real enhance object."""
+    calls: list[list[dict[str, str]]] = []
+    payload = (
+        '{"detail_level": "sparse", "feedback": "补主体与光线", '
+        '"prompt": "黄昏海边的女孩，逆光剪影", "dimensions": [], "additions": ["逆光剪影"]}'
+    )
+
+    def _stream_gateway(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(list(kwargs["messages"]))
+        if len(calls) == 1:
+            yield llm_client.StreamDelta(
+                reasoning='If unsure default to {"answer":"$your_answer"} and keep analysing.',
+                finish_reason="length",
+            )
+        else:
+            yield llm_client.StreamDelta(content=payload, finish_reason="stop")
+
+    monkeypatch.setattr(llm_client, "_stream_gateway", _stream_gateway)
+    chunks, finish = copywriter.stream_enhance_prompt(
+        db, prompt="女孩在海边", max_length=600, user_id=author.id
+    )
+    list(chunks)
+    outcome = finish(db)
+
+    assert len(calls) == 2
+    assert calls[1][-1]["content"] == copywriter.ENHANCE_RETRY_NUDGE
+    assert outcome.degraded is False
+    assert "逆光" in str(outcome.data["prompt"])
+    assert outcome.data["detail_level"] == "sparse"
 
 
 @pytest.mark.real_gateway_seams
@@ -371,3 +484,44 @@ def test_the_fake_gateway_mirrors_the_agents_dimension_sets() -> None:
     assert fake_llm_gateway._ENHANCE_VIDEO_DIMENSIONS == copywriter.VIDEO_DIMENSIONS
     assert fake_llm_gateway._ENHANCE_IMAGE_DIMENSIONS == copywriter.IMAGE_DIMENSIONS
     assert set(fake_llm_gateway._ENHANCE_DIRECTION_PHRASES) == set(copywriter.ENHANCE_DIRECTIONS)
+
+
+def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
+    """Dedicated polish agents must read as their own coach, not the generic
+    enhance prompt plus a footnote — that is what made every fill-from-template
+    look the same in `/admin/agents`."""
+    generic = copywriter.ENHANCE_SYSTEM_PROMPT
+    character = copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
+    scene = copywriter.ENHANCE_SYSTEM_PROMPT_SCENE
+    cover = copywriter.ENHANCE_SYSTEM_PROMPT_COVER
+
+    assert not character.startswith(generic)
+    assert not scene.startswith(generic)
+    assert not cover.startswith(generic)
+    assert "角色立绘" in character
+    assert "全身" in character and "纯色" in character
+    assert "性别" in character and "肤色" in character
+    assert "场景空镜" in scene
+    assert "人物痕迹" in scene
+    assert "封面海报" in cover
+    assert "安全区" in cover
+    assert "作品发布文案" in copywriter.SYSTEM_PROMPT
+    assert "lineage" in copywriter.SYSTEM_PROMPT
+    action = copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION
+    transition = copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO
+    cover_video = copywriter.ENHANCE_SYSTEM_PROMPT_COVER_VIDEO
+    assert not action.startswith(generic)
+    assert "角色动作" in action and "起幅" in action
+    assert "转场" in transition
+    assert "前 1 到 2 秒" in cover_video
+    for prompt in (
+        generic,
+        character,
+        scene,
+        cover,
+        action,
+        transition,
+        cover_video,
+        copywriter.SYSTEM_PROMPT,
+    ):
+        assert "只输出一个 JSON 对象" in prompt

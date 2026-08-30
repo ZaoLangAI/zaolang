@@ -349,3 +349,25 @@ def progress_for(session: Session, job: GenerationJob) -> int:
         .limit(1)
     )
     return int(latest or 0)
+
+
+def progress_for_batch(session: Session, jobs: list[GenerationJob]) -> dict[str, int]:
+    """Batched `progress_for` for list responses: one `DISTINCT ON` query for
+    every non-terminal job in the page instead of one `ORDER BY ... LIMIT 1`
+    per row."""
+    result = {job.id: 100 for job in jobs if JobStatus(job.status).is_terminal}
+    pending_ids = [job.id for job in jobs if job.id not in result]
+    if not pending_ids:
+        return result
+
+    rows = session.execute(
+        select(JobEvent.job_id, JobEvent.progress)
+        .where(JobEvent.job_id.in_(pending_ids))
+        .order_by(JobEvent.job_id, JobEvent.sequence.desc())
+        .distinct(JobEvent.job_id)
+    )
+    for job_id, progress in rows:
+        result[job_id] = int(progress or 0)
+    for job_id in pending_ids:
+        result.setdefault(job_id, 0)
+    return result

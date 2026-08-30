@@ -34,6 +34,9 @@ class SkillTemplate:
     # `None` means the template suits any role in its category.
     role: str | None = None
     slot: str = DEFAULT_SLOT
+    # Which copy request-routing bucket this starting prompt is written for.
+    # `None` means it is a generic fallback on that slot (e.g. `copy-enhance`).
+    asset_kind: str | None = None
 
 
 _GENERIC_CLASSIFY = """你是造浪平台的内容分类器。把输入内容归入下列类别之一，并说明依据。
@@ -110,21 +113,52 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="copy-suggest",
         label="文案生成 · 作品文案",
-        description="为待发布作品生成标题、简介与标签。",
+        description="为即将发布的作品流卡片写标题、简介与检索标签，remix 时点出来源关系。",
         category=ASSIST,
         prompt_template=copywriter.SYSTEM_PROMPT,
         tool_grants=("suggest_tags",),
         role="copy",
         slot=copywriter.SUGGEST_SLOT,
+        asset_kind="copy",
     ),
     SkillTemplate(
         key="copy-enhance",
         label="文案生成 · 提示词润色",
-        description="在保留作者意图的前提下把画面描述写得更具体。",
+        description="通用画面描述的诊断式润色，未指定角色立绘、场景空镜或封面海报时使用。",
         category=ASSIST,
         prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT,
         role="copy",
         slot=copywriter.ENHANCE_SLOT,
+    ),
+    SkillTemplate(
+        key="copy-enhance-character",
+        label="文案润色 · 角色",
+        description="角色立绘教练：把同一个人写到能进库、出三视图，强制全身入镜与纯色背景。",
+        category=ASSIST,
+        prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER,
+        role="copy",
+        slot=copywriter.ENHANCE_SLOT,
+        asset_kind="character",
+    ),
+    SkillTemplate(
+        key="copy-enhance-cover",
+        label="文案润色 · 封面",
+        description="封面海报教练：单一主视觉、缩略图可读，并预留标题安全区。",
+        category=ASSIST,
+        prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT_COVER,
+        role="copy",
+        slot=copywriter.ENHANCE_SLOT,
+        asset_kind="cover",
+    ),
+    SkillTemplate(
+        key="copy-enhance-scene",
+        label="文案润色 · 场景",
+        description="场景空镜教练：把空间本身写清楚，画面不得出现任何人物痕迹。",
+        category=ASSIST,
+        prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT_SCENE,
+        role="copy",
+        slot=copywriter.ENHANCE_SLOT,
+        asset_kind="scene",
     ),
     SkillTemplate(
         key="copy-clarify",

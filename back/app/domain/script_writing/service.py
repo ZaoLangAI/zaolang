@@ -34,8 +34,10 @@ LLM call itself holds no DB connection, so a 60s thinking model cannot sit
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import exists, select
@@ -49,7 +51,7 @@ from app.domain.notifications import push
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.llm.client import StreamChunk
-from app.models import DramaEpisode, EpisodeCut, EpisodeScriptTurn, Series
+from app.models import AgentRun, DramaEpisode, EpisodeCut, EpisodeScriptTurn, Notification, Series
 from app.models.enums import DramaEpisodeStatus, SeriesKind, SeriesStatus
 from app.platform_config import service as config_service
 
@@ -58,6 +60,13 @@ MAX_REFERENCED_SKILLS = 5
 MAX_IDEA_LEN = 2000
 MAX_MESSAGE_LEN = 2000
 MAX_TITLE_LEN = 60
+# How far after `DramaEpisode.created_at` a `script_draft` AgentRun still
+# counts as *this* empty shell's original attempt — AgentRun has no
+# episode_id, so a later draft for a different episode by the same user
+# must not be attributed here. The stream's own wall clock is 300s; this
+# window is just wide enough for a slow thinking model plus a couple of
+# same-page retries, not a next-day session on another script.
+_SOURCE_IDEA_RECOVER_WINDOW = timedelta(minutes=15)
 
 
 def _require_script_studio(session: Session, *, user_id: str | None) -> None:
@@ -148,6 +157,96 @@ def _resolve_referenced_skills(
 
 def _skill_hints(referenced: list[dict[str, str]]) -> list[dict[str, str]]:
     return [{"title": s["title"], "description": s["description"]} for s in referenced]
+
+
+def _store_source_prompt(
+    episode: DramaEpisode, *, idea: str, skill_ids: list[str]
+) -> None:
+    episode.source_idea = idea
+    episode.source_referenced_skill_ids_json = list(skill_ids)
+
+
+def _idea_from_agent_run(run: AgentRun) -> tuple[str, list[str]]:
+    """Unpacks `stream_draft_script`'s JSON user_prompt back into idea + ids."""
+    raw = (run.input_json or {}).get("user_prompt")
+    payload: Any
+    if isinstance(raw, dict):
+        payload = raw
+    elif isinstance(raw, str):
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            return "", []
+    else:
+        return "", []
+    if not isinstance(payload, dict):
+        return "", []
+    idea = str(payload.get("idea") or "").strip()[:MAX_IDEA_LEN]
+    skills = payload.get("referenced_skills") or []
+    ids: list[str] = []
+    if isinstance(skills, list):
+        for item in skills[:MAX_REFERENCED_SKILLS]:
+            if isinstance(item, dict) and item.get("id"):
+                ids.append(str(item["id"]))
+    return idea, ids
+
+
+def _hydrate_source_idea(
+    session: Session, *, episode: DramaEpisode, user_id: str
+) -> None:
+    """Fills `source_idea` on a historical empty shell from a nearby run.
+
+    New shells persist the idea in `prepare_new_script`. Episodes created
+    before that column existed still have a `script_draft` AgentRun whose
+    `input_json.user_prompt` carries the original idea — recover it so the
+    empty-shell page can one-click retry. No-op when the idea is already
+    stored, or when the episode already has a turn (retry is blocked then).
+    """
+    if (episode.source_idea or "").strip():
+        return
+    has_turn = session.scalar(
+        select(exists().where(EpisodeScriptTurn.episode_id == episode.id))
+    )
+    if has_turn:
+        return
+    window_start = episode.created_at - timedelta(seconds=30)
+    window_end = episode.created_at + _SOURCE_IDEA_RECOVER_WINDOW
+    run = session.scalar(
+        select(AgentRun)
+        .where(
+            AgentRun.user_id == user_id,
+            AgentRun.prompt_slot == copywriter.SCRIPT_DRAFT_SLOT,
+            AgentRun.created_at >= window_start,
+            AgentRun.created_at <= window_end,
+        )
+        .order_by(AgentRun.created_at.desc())
+        .limit(1)
+    )
+    if run is None:
+        return
+    idea, skill_ids = _idea_from_agent_run(run)
+    if not idea:
+        return
+    _store_source_prompt(episode, idea=idea, skill_ids=skill_ids)
+    session.flush()
+
+
+def script_last_error(session: Session, *, episode_id: str) -> str | None:
+    """The most recent failed-generation excerpt for this episode, if any."""
+    note = session.scalar(
+        select(Notification)
+        .where(
+            Notification.target_type == push.CREATION_TARGET_SCRIPT,
+            Notification.target_id == episode_id,
+        )
+        .limit(1)
+    )
+    if note is None:
+        return None
+    error = (note.payload_json or {}).get("error")
+    if not isinstance(error, str) or not error.strip():
+        return None
+    return error.strip()
 
 
 @dataclass(slots=True)
@@ -254,6 +353,9 @@ def prepare_new_script(
     )
     session.add(episode)
     session.flush()
+    _store_source_prompt(
+        episode, idea=idea, skill_ids=[s["id"] for s in referenced]
+    )
     _notify_script(session, episode, status="generating", kind="draft", series=series)
 
     return NewScriptPrep(
@@ -266,17 +368,18 @@ def retry_new_script(
     *,
     user_id: str,
     episode_id: str,
-    idea: str,
+    idea: str | None = None,
     referenced_skill_ids: list[str] | None = None,
 ) -> NewScriptPrep:
     """Re-runs the first-draft stream for an episode shell that
     `prepare_new_script` already created but that never got a finished turn
     — a page refresh or a dropped connection mid-stream loses
-    `create-stream-store.ts`'s in-memory progress, and by the time the user
-    comes back there is nothing server-side to resume: the original `idea`
-    text was only ever an LLM prompt, never persisted on `DramaEpisode`
-    itself, so this asks for it again rather than trying to recover it from
-    nothing.
+    `create-stream-store.ts`'s in-memory progress.
+
+    `idea` is optional: a blank/omitted value reuses `episode.source_idea`
+    (persisted on create, or recovered from a nearby `script_draft`
+    AgentRun for shells that predate that column). Sending a new idea
+    overwrites the stored prompt so the next retry can omit the body.
 
     Deliberately does not call `prepare_new_script` again: that always mints
     a brand-new `Series`+`DramaEpisode` pair, which would leave the original
@@ -291,12 +394,15 @@ def retry_new_script(
     )
     if has_turn:
         raise ValidationFailed("该剧本已生成初稿，无法重新生成。")
-    idea = idea.strip()[:MAX_IDEA_LEN]
+    _hydrate_source_idea(session, episode=episode, user_id=user_id)
+    idea = (idea or "").strip()[:MAX_IDEA_LEN] or (episode.source_idea or "").strip()[:MAX_IDEA_LEN]
     if not idea:
         raise ValidationFailed("请先描述你的创意。")
-    referenced = _resolve_referenced_skills(
-        session, user_id=user_id, skill_ids=referenced_skill_ids
+    skill_ids = list(referenced_skill_ids or []) or list(
+        episode.source_referenced_skill_ids_json or []
     )
+    referenced = _resolve_referenced_skills(session, user_id=user_id, skill_ids=skill_ids)
+    _store_source_prompt(episode, idea=idea, skill_ids=[s["id"] for s in referenced])
     _notify_script(session, episode, status="generating", kind="draft")
     # `title=""`, not `episode.title`: `prepare_new_script` already filled
     # `episode.title` with a fallback (`idea[:24]` or "未命名短剧") since a
@@ -561,6 +667,8 @@ def get_script(
             .order_by(EpisodeScriptTurn.turn_no.asc())
         )
     )
+    if not turns:
+        _hydrate_source_idea(session, episode=episode, user_id=user_id)
     return episode, turns
 
 

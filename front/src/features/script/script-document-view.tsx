@@ -8,7 +8,9 @@ import { ScriptBlockRow, ScriptLegend } from './script-block';
 import {
   breakpointKey,
   breakpointOrdinalInScene,
+  breakpointSegmentBlocks,
   resolveBreakpointHref,
+  trailingBreakpoint,
   type BreakpointVideoBinding,
 } from './script-breakpoint';
 import { ScriptLinkPicker } from './script-link-picker';
@@ -78,22 +80,6 @@ function buildCreateHref({
     params.set(assetKind === 'character' ? 'targetCharacterId' : 'targetSceneId', targetId);
   }
   return `/create/new?${params.toString()}`;
-}
-
-/** A `breakpoint` block closes exactly one segment of exactly one scene (see
- * `ScriptDocument` — `breakpoint` blocks live inside `scene.blocks`, never
- * spanning scenes) — the blocks from the previous `breakpoint` (or the
- * scene's start) up to this one. Shared by `resolveBreakpointRefs` and
- * `breakpointSegmentPrompt` below so both walk the exact same slice. */
-function breakpointSegmentBlocks(scene: ScriptScene, breakpointBlockIndex: number) {
-  let segmentStart = 0;
-  for (let index = breakpointBlockIndex - 1; index >= 0; index -= 1) {
-    if (scene.blocks[index]?.type === 'breakpoint') {
-      segmentStart = index + 1;
-      break;
-    }
-  }
-  return scene.blocks.slice(segmentStart, breakpointBlockIndex);
 }
 
 /**
@@ -167,6 +153,28 @@ function breakpointSegmentPrompt(scene: ScriptScene, breakpointBlockIndex: numbe
     return texts.length ? `${label}${texts.join('；')}` : null;
   }).filter((section): section is string => section !== null);
   return sections.join('\n');
+}
+
+function sceneCloserChip({
+  document,
+  scene,
+  episodeId,
+  videoBindings,
+}: {
+  document: ScriptDocument;
+  scene: ScriptScene;
+  episodeId?: string;
+  videoBindings?: Record<string, BreakpointVideoBinding>;
+}) {
+  const closer = trailingBreakpoint(scene);
+  if (!closer) return null;
+  return resolveBreakpointHref({
+    episodeId,
+    key: closer.key,
+    ...resolveBreakpointRefs(document, scene, closer.blockIndex),
+    prompt: breakpointSegmentPrompt(scene, closer.blockIndex),
+    binding: videoBindings?.[closer.key],
+  });
 }
 
 /**
@@ -300,62 +308,72 @@ export function ScriptDocumentView({
       ) : null}
 
       <div className="flex flex-col gap-5">
-        {document.scenes.map((scene, sceneIndex) => (
-          <div key={sceneIndex} className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold">{scene.heading}</h3>
-              {onLink ? (
-                <ScriptLinkPicker
-                  kind="scene"
-                  refId={scene.ref_id}
-                  onChange={(refId) => onLink({ kind: 'scene', heading: scene.heading, refId })}
-                  createHref={
-                    episodeId
-                      ? buildCreateHref({
-                          episodeId,
-                          assetKind: 'scene',
-                          prompt: sceneImagePrompt(scene),
-                          subjectNameHint: scene.heading,
-                          targetId: scene.ref_id,
-                        })
-                      : undefined
-                  }
-                />
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              {scene.blocks.map((block, blockIndex) => {
-                const key =
-                  block.type === 'breakpoint'
-                    ? breakpointKey(scene.heading, breakpointOrdinalInScene(scene, blockIndex))
-                    : null;
-                const chip =
-                  key !== null
-                    ? resolveBreakpointHref({
-                        episodeId,
-                        key,
-                        ...resolveBreakpointRefs(document, scene, blockIndex),
-                        prompt: breakpointSegmentPrompt(scene, blockIndex),
-                        binding: videoBindings?.[key],
-                      })
-                    : undefined;
-                return (
-                  <ScriptBlockRow
-                    key={blockIndex}
-                    block={block}
-                    onSave={
-                      onSaveContent
-                        ? (next) => saveBlockText(sceneIndex, blockIndex, next)
+        {document.scenes.map((scene, sceneIndex) => {
+          const closerChip = sceneCloserChip({ document, scene, episodeId, videoBindings });
+          return (
+            <div key={sceneIndex} className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold">{scene.heading}</h3>
+                {onLink ? (
+                  <ScriptLinkPicker
+                    kind="scene"
+                    refId={scene.ref_id}
+                    onChange={(refId) => onLink({ kind: 'scene', heading: scene.heading, refId })}
+                    createHref={
+                      episodeId
+                        ? buildCreateHref({
+                            episodeId,
+                            assetKind: 'scene',
+                            prompt: sceneImagePrompt(scene),
+                            subjectNameHint: scene.heading,
+                            targetId: scene.ref_id,
+                          })
                         : undefined
                     }
-                    breakpointVideoHref={chip?.href}
-                    viewGenerated={chip?.viewGenerated}
                   />
-                );
-              })}
+                ) : null}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {scene.blocks.map((block, blockIndex) => {
+                  const key =
+                    block.type === 'breakpoint'
+                      ? breakpointKey(scene.heading, breakpointOrdinalInScene(scene, blockIndex))
+                      : null;
+                  const chip =
+                    key !== null
+                      ? resolveBreakpointHref({
+                          episodeId,
+                          key,
+                          ...resolveBreakpointRefs(document, scene, blockIndex),
+                          prompt: breakpointSegmentPrompt(scene, blockIndex),
+                          binding: videoBindings?.[key],
+                        })
+                      : undefined;
+                  return (
+                    <ScriptBlockRow
+                      key={blockIndex}
+                      block={block}
+                      onSave={
+                        onSaveContent
+                          ? (next) => saveBlockText(sceneIndex, blockIndex, next)
+                          : undefined
+                      }
+                      breakpointVideoHref={chip?.href}
+                      viewGenerated={chip?.viewGenerated}
+                    />
+                  );
+                })}
+                {closerChip ? (
+                  <ScriptBlockRow
+                    block={{ type: 'breakpoint', character: null, text: '' }}
+                    breakpointVideoHref={closerChip.href}
+                    viewGenerated={closerChip.viewGenerated}
+                  />
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

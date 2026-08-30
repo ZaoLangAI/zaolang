@@ -1,6 +1,6 @@
 import type { Draft } from '@/lib/api/types';
 
-import type { ScriptScene } from './api';
+import type { ScriptBlock, ScriptScene } from './api';
 
 /** Stable id for one breakpoint inside one scene — `{heading}#{ordinal}`. */
 export function breakpointKey(heading: string, ordinal: number): string {
@@ -14,6 +14,46 @@ export function breakpointOrdinalInScene(scene: ScriptScene, breakpointBlockInde
     if (scene.blocks[index]?.type === 'breakpoint') ordinal += 1;
   }
   return ordinal;
+}
+
+/** Blocks from the previous `breakpoint` (or the scene start) up to `breakpointBlockIndex`. */
+export function breakpointSegmentBlocks(
+  scene: ScriptScene,
+  breakpointBlockIndex: number,
+): ScriptBlock[] {
+  let segmentStart = 0;
+  for (let index = breakpointBlockIndex - 1; index >= 0; index -= 1) {
+    if (scene.blocks[index]?.type === 'breakpoint') {
+      segmentStart = index + 1;
+      break;
+    }
+  }
+  return scene.blocks.slice(segmentStart, breakpointBlockIndex);
+}
+
+function segmentHasShootableContent(blocks: ScriptBlock[]): boolean {
+  return blocks.some((block) => block.type !== 'breakpoint' && block.text.trim());
+}
+
+/**
+ * A scene whose last block is not a `breakpoint` still has an unclosed
+ * shootable tail — the UI draws a synthetic chip there (never persisted).
+ */
+export function sceneHasUnclosedSegment(scene: ScriptScene): boolean {
+  if (scene.blocks.length === 0) return false;
+  if (scene.blocks[scene.blocks.length - 1]?.type === 'breakpoint') return false;
+  return segmentHasShootableContent(breakpointSegmentBlocks(scene, scene.blocks.length));
+}
+
+/** Virtual closer after the last real block — key is `{heading}#{existing count}`. */
+export function trailingBreakpoint(
+  scene: ScriptScene,
+): { key: string; blockIndex: number } | null {
+  if (!sceneHasUnclosedSegment(scene)) return null;
+  return {
+    key: breakpointKey(scene.heading, breakpointOrdinalInScene(scene, scene.blocks.length)),
+    blockIndex: scene.blocks.length,
+  };
 }
 
 /**
@@ -124,6 +164,9 @@ export function indexBreakpointVideos(
       const key = breakpointKey(heading, ordinal);
       if (!(key in byKey)) return ordinal;
       ordinal += 1;
+    }
+    if (sceneHasUnclosedSegment(scene) && !(breakpointKey(heading, ordinal) in byKey)) {
+      return ordinal;
     }
     return null;
   };

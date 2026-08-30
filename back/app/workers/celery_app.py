@@ -74,6 +74,14 @@ celery_app.conf.update(
     task_ignore_result=True,
     result_expires=60 * 60 * 24,
     broker_connection_retry_on_startup=True,
+    # Redis's default (~3600s) combined with `task_acks_late=True` means a
+    # task that legitimately runs longer than an hour gets silently
+    # re-delivered to another worker mid-flight — a duplicate execution, not
+    # a retry. Every task below sets its own hard `time_limit`; this only
+    # needs to clear the largest of them (900s, `run_video_analysis`/
+    # `run_media_analysis`) with real headroom for worker restarts and
+    # broker hiccups.
+    broker_transport_options={"visibility_timeout": 1800},
     task_routes={
         "app.workers.tasks.run_generation": {"queue": "image_generation"},
         "app.workers.tasks.run_video_generation": {"queue": "video_generation_long"},
@@ -91,6 +99,11 @@ celery_app.conf.update(
         "app.workers.tasks.expire_orphan_editor_uploads": {"queue": "webhook_reconcile"},
         "app.workers.tasks.pull_episode_metrics": {"queue": "platform_distribution"},
         "app.workers.tasks.purge_expired_exports": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.purge_expired_records": {"queue": "webhook_reconcile"},
+        # Beat schedules this below, but a missing route here would silently
+        # land it on `task_default_queue` (`image_generation`) instead,
+        # competing with real generation work for the same worker slot.
+        "app.workers.tasks.reconcile_credits": {"queue": "webhook_reconcile"},
     },
     beat_schedule={
         "expire-stale-jobs": {
@@ -134,6 +147,13 @@ celery_app.conf.update(
         # once a day is plenty to keep expired export bundles from lingering.
         "purge-expired-exports": {
             "task": "app.workers.tasks.purge_expired_exports",
+            "schedule": 86400.0,
+        },
+        # Prunes idempotency/webhook/system-log/job-event rows past their own
+        # retention window (`app.domain.retention.service`) — without this,
+        # these append-only tables have no natural cap and grow forever.
+        "purge-expired-records": {
+            "task": "app.workers.tasks.purge_expired_records",
             "schedule": 86400.0,
         },
     },

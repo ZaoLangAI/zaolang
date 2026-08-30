@@ -92,6 +92,43 @@ def viewer_unlocked_work(session: Session, work: Work, viewer_id: str | None) ->
     )
 
 
+def viewer_unlocked_works_batch(
+    session: Session, works: list[Work], viewer_id: str | None
+) -> dict[str, bool]:
+    """Batched form of `viewer_unlocked_work` for list responses.
+
+    Owner and free-work cases are decided from `works` alone; only a priced
+    work owned by someone else needs the `AccessGrant` table, and even then
+    every such work in the page shares one `IN` query instead of one each.
+    """
+    result: dict[str, bool] = {}
+    priced_ids: list[str] = []
+    for work in works:
+        if (viewer_id is not None and work.owner_user_id == viewer_id) or (
+            work.access_credits or 0
+        ) <= 0:
+            result[work.id] = True
+        elif viewer_id is None:
+            result[work.id] = False
+        else:
+            priced_ids.append(work.id)
+
+    if priced_ids and viewer_id is not None:
+        granted_ids = set(
+            session.scalars(
+                select(AccessGrant.subject_id).where(
+                    AccessGrant.buyer_user_id == viewer_id,
+                    AccessGrant.subject_type == AccessSubjectType.WORK.value,
+                    AccessGrant.subject_id.in_(priced_ids),
+                )
+            )
+        )
+        for work_id in priced_ids:
+            result[work_id] = work_id in granted_ids
+
+    return result
+
+
 def viewer_unlocked_skill(session: Session, skill: CreationSkill, viewer_id: str | None) -> bool:
     if viewer_id is not None and skill.owner_user_id == viewer_id:
         return True

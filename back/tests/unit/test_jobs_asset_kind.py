@@ -13,9 +13,10 @@ from app.domain.credits import service as credits_service
 from app.domain.credits.pricing import quote as compute_quote
 from app.domain.jobs import service as jobs_service
 from app.domain.workflow_templates import service as workflow_templates_service
-from app.models import User
+from app.models import GenerationJob, User
 from app.models.base import new_id
 from app.models.enums import ImageAssetKind, Operation, QualityTier
+from app.workers import tasks
 from app.workflows.defaults import asset_graph, default_graph
 
 
@@ -193,3 +194,49 @@ def test_submit_reserves_credits_for_every_requested_character_view(
     )
     baseline = compute_quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     assert result.quote.credits == baseline.credits * 2
+
+
+def _limits_job(**request: object) -> GenerationJob:
+    return GenerationJob(
+        id="job_limits",
+        operation=Operation.TEXT_TO_IMAGE.value,
+        request_json=dict(request),
+    )
+
+
+def test_image_generation_time_limits_single_pass() -> None:
+    """A free-form or single-view image job stays on the raised one-pass floor."""
+    assert tasks.image_generation_time_limits(_limits_job()) == {
+        "soft_time_limit": 420,
+        "time_limit": 480,
+    }
+    assert tasks.image_generation_time_limits(
+        _limits_job(asset_kind=ImageAssetKind.CHARACTER.value, character_views=["front"])
+    ) == {"soft_time_limit": 420, "time_limit": 480}
+    assert tasks.image_generation_time_limits(
+        GenerationJob(id="job_bare", operation=Operation.TEXT_TO_IMAGE.value)
+    ) == {"soft_time_limit": 420, "time_limit": 480}
+
+
+def test_image_generation_time_limits_scale_with_character_views() -> None:
+    two = _limits_job(
+        asset_kind=ImageAssetKind.CHARACTER.value, character_views=["side", "back"]
+    )
+    three = _limits_job(
+        asset_kind=ImageAssetKind.CHARACTER.value,
+        character_views=["front", "side", "back"],
+    )
+    assert tasks.image_generation_time_limits(two) == {
+        "soft_time_limit": 600,
+        "time_limit": 720,
+    }
+    assert tasks.image_generation_time_limits(three) == {
+        "soft_time_limit": 780,
+        "time_limit": 960,
+    }
+
+
+def test_image_generation_time_limits_ignore_views_on_non_character_kind() -> None:
+    assert tasks.image_generation_time_limits(
+        _limits_job(asset_kind=ImageAssetKind.SCENE.value, character_views=["front", "side"])
+    ) == {"soft_time_limit": 420, "time_limit": 480}

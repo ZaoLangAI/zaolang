@@ -545,6 +545,49 @@ def test_a_render_past_its_deadline_keeps_polling(
     assert job.status == JobStatus.RUNNING
 
 
+def test_a_dead_upstream_that_never_answers_is_eventually_given_up_on(
+    db: Session, funded: User, provider: _AsyncProvider
+) -> None:
+    """A render whose upstream never says succeeded or failed — just `pending`
+    forever — must not tie up the job's reservation forever. `deadline_at` is
+    renewed every tick specifically so it can never trip on its own here;
+    `MAX_POLL_DURATION_SECONDS`, measured from the immutable `created_at`, is
+    the only thing that can end this."""
+    job = _suspended(db, funded)
+
+    def _stale_and_due() -> AsyncProviderTask:
+        task = _due(db, job.id)
+        task.created_at = utcnow() - dt.timedelta(
+            seconds=async_tasks.MAX_POLL_DURATION_SECONDS + 1
+        )
+        db.flush()
+        return task
+
+    _stale_and_due()
+    for _ in range(10):
+        if async_tasks.find_for_job(db, job.id) is None:
+            break
+        async_polling.poll_once(db)
+        if async_tasks.find_for_job(db, job.id) is not None:
+            _stale_and_due()
+    else:
+        pytest.fail("job never reached a terminal state")
+
+    db.refresh(job)
+    assert JobStatus(job.status).is_terminal
+    account = credits_service.get_or_create_account(db, funded.id)
+    assert account.reserved_balance == 0
+    failed_attempts = list(
+        db.scalars(
+            select(ProviderAttempt).where(
+                ProviderAttempt.job_id == job.id,
+                ProviderAttempt.status == ProviderAttemptStatus.FAILED,
+            )
+        )
+    )
+    assert len(failed_attempts) >= 1
+
+
 def test_a_render_past_its_deadline_still_settles_when_upstream_finishes(
     db: Session, funded: User, provider: _AsyncProvider
 ) -> None:
