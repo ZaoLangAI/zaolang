@@ -8,7 +8,7 @@ from app.models.access import AccessGrant
 from app.models.agent_skills import AgentNode, AgentProfile, AgentSkill
 from app.models.async_tasks import AsyncProviderTask
 from app.models.base import Base, TimestampMixin, new_id, utcnow
-from app.models.characters import Series
+from app.models.characters import Series, SeriesCollaborator
 from app.models.credits import (
     CreditAccount,
     CreditLedgerEntry,
@@ -160,6 +160,7 @@ __all__ = [
     "RedemptionRecord",
     "ReportCase",
     "Series",
+    "SeriesCollaborator",
     "StyleGalleryEntry",
     "StylePreset",
     "SystemLog",

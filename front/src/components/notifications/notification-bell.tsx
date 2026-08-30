@@ -10,6 +10,7 @@ import {
   notificationVisual,
   targetHref,
 } from '@/components/notifications/notification-format';
+import { Button } from '@/components/ui/button';
 import { IconBell } from '@/components/ui/icons';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -29,9 +30,10 @@ export function NotificationBell() {
   const t = useTranslations('notificationsPage');
   const tBody = useTranslations('notificationBody');
   const locale = useLocale() as Locale;
-  const { unreadCount, recent, markOne } = useNotificationCenter();
+  const { unreadCount, recent, markAllRead, markOne } = useNotificationCenter();
 
   const [open, setOpen] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,11 +72,28 @@ export function NotificationBell() {
           aria-label={t('title')}
           className="absolute right-0 z-40 mt-2 w-80 rounded-[var(--radius-md)] border border-border bg-surface-raised p-2 shadow-raised"
         >
-          <div className="flex items-center justify-between px-2 pb-1 pt-1">
-            <p className="text-sm font-medium text-text">{t('title')}</p>
-            {unreadCount > 0 ? (
-              <span className="tabular text-xs text-muted">{t('unreadCount', { count: unreadCount })}</span>
-            ) : null}
+          <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-1">
+            <p className="min-w-0 text-sm font-medium text-text">{t('title')}</p>
+            <div className="flex shrink-0 items-center gap-2">
+              {unreadCount > 0 ? (
+                <span className="tabular text-xs text-muted">
+                  {t('unreadCount', { count: unreadCount })}
+                </span>
+              ) : null}
+              <Button
+                variant="link"
+                size="sm"
+                loading={markingAll}
+                disabled={unreadCount === 0}
+                className="h-auto px-0 text-xs"
+                onClick={() => {
+                  setMarkingAll(true);
+                  void markAllRead().finally(() => setMarkingAll(false));
+                }}
+              >
+                {t('markAllRead')}
+              </Button>
+            </div>
           </div>
 
           {recent.length === 0 ? (

@@ -15,6 +15,7 @@ import * as editorApi from '@/features/editor/api';
 import { Link, useRouter } from '@/i18n/navigation';
 import { isApiError } from '@/lib/api/errors';
 
+import { CollaboratorsPanel } from './collaborators-panel';
 import { episodeStatusTone, pascalCase } from './format';
 import { PurgeSeriesDialog } from './purge-series-dialog';
 import { SeriesAnalyticsOverview } from './series-analytics-overview';
@@ -95,10 +96,11 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
   }
 
   const isTrashed = series.status === 'trashed';
+  const isCollaborator = series.viewer_role === 'collaborator';
 
   return (
     <div className="flex flex-col gap-8">
-      {isTrashed ? (
+      {isTrashed && !isCollaborator ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-danger/30 bg-danger/10 px-4 py-3">
           <p className="text-sm text-danger">{t('seriesTrashedBanner')}</p>
           <div className="flex flex-wrap gap-2">
@@ -143,7 +145,7 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
             >
               {t('seriesEditAction')}
             </Button>
-            {!isTrashed ? (
+            {!isTrashed && !isCollaborator ? (
               <Button
                 size="sm"
                 variant="ghost"
@@ -161,6 +163,13 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
             <p className="mt-1 text-sm text-muted">{series.description}</p>
           ) : null}
           <div className="mt-3 flex flex-wrap gap-1.5">
+            {isCollaborator ? (
+              <Badge tone="primary">
+                {t('collaborationBadgeCreatedBy', { name: series.owner.display_name })}
+              </Badge>
+            ) : series.is_collaboration ? (
+              <Badge tone="primary">{t('collaborationBadgeOwner')}</Badge>
+            ) : null}
             {series.planned_episode_count ? (
               <Badge tone="neutral">
                 {t('seriesPlannedEpisodeCountBadge', { count: series.planned_episode_count })}
@@ -180,7 +189,14 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
         </div>
       </div>
 
-      <SeriesAnalyticsOverview seriesId={series.id} />
+      {!isCollaborator ? <SeriesAnalyticsOverview seriesId={series.id} /> : null}
+
+      <CollaboratorsPanel
+        series={series}
+        onChanged={() => {
+          void editorApi.getDramaSeries(seriesId).then(setSeries);
+        }}
+      />
 
       <section>
         <SectionHeading

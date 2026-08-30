@@ -9,6 +9,7 @@ import { Poster } from '@/components/media/poster';
 import { Button, IconButton } from '@/components/ui/button';
 import {
   IconArrowUp,
+  IconBell,
   IconPlus,
   IconRefresh,
   IconSearch,
@@ -23,6 +24,7 @@ import { Link } from '@/i18n/navigation';
 import { isApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
 
+import { CollaborationInvitesDialog } from './collaboration-invites-dialog';
 import { pascalCase, SERIES_GENRES } from './format';
 import { PurgeSeriesDialog } from './purge-series-dialog';
 import { SeriesFormDialog } from './series-form-dialog';
@@ -57,6 +59,22 @@ export function DashboardShell() {
   const [genre, setGenre] = useState<string | null>(null);
   const [sort, setSort] = useState<SortField>('updated_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const [invites, setInvites] = useState<editorApi.CollaborationInvite[]>([]);
+  const [invitesOpen, setInvitesOpen] = useState(false);
+
+  const reloadInvites = () => {
+    if (status !== 'authenticated') return;
+    void editorApi
+      .listMyCollaborationInvites()
+      .then(setInvites)
+      .catch(() => undefined);
+  };
+
+  useEffect(() => {
+    reloadInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   const reload = () => {
     if (status !== 'authenticated') return;
@@ -163,6 +181,19 @@ export function DashboardShell() {
           </div>
           <Button
             size="sm"
+            variant="ghost"
+            icon={<IconBell className="size-3.5" />}
+            onClick={() => setInvitesOpen(true)}
+          >
+            {t('collaborationInvitesEntry')}
+            {invites.length > 0 ? (
+              <Badge tone="primary" className="ml-1">
+                {invites.length}
+              </Badge>
+            ) : null}
+          </Button>
+          <Button
+            size="sm"
             variant={view === 'trash' ? 'secondary' : 'ghost'}
             icon={<IconTrash className="size-3.5" />}
             onClick={() => setView((current) => (current === 'trash' ? 'active' : 'trash'))}
@@ -260,7 +291,7 @@ export function DashboardShell() {
                       <IconTrashX className="size-4" />
                     </IconButton>
                   </span>
-                ) : (
+                ) : series.viewer_role === 'owner' ? (
                   <IconButton
                     label={t('trashSeries')}
                     variant="secondary"
@@ -274,13 +305,22 @@ export function DashboardShell() {
                   >
                     <IconTrash className="size-4" />
                   </IconButton>
-                )}
+                ) : null}
                 <div className="flex flex-1 flex-col gap-2 p-4">
                   <h3 className="truncate text-sm font-semibold">{series.title}</h3>
-                  {series.english_title ? (
+                  {series.viewer_role === 'collaborator' ? (
+                    <p className="truncate text-xs text-muted">
+                      {t('collaborationBadgeCreatedBy', { name: series.owner.display_name })}
+                    </p>
+                  ) : series.english_title ? (
                     <p className="truncate text-xs text-muted">{series.english_title}</p>
                   ) : null}
                   <div className="mt-auto flex flex-wrap gap-1.5 pt-2">
+                    {series.viewer_role === 'collaborator' ? (
+                      <Badge tone="primary">{t('collaborationBadge')}</Badge>
+                    ) : series.is_collaboration ? (
+                      <Badge tone="primary">{t('collaborationBadgeOwner')}</Badge>
+                    ) : null}
                     <Badge tone="neutral">
                       {t('seriesScriptCount', { count: series.script_count })}
                     </Badge>
@@ -330,6 +370,16 @@ export function DashboardShell() {
         onSaved={(series) => {
           setItems((current) => [series, ...current]);
           notify(t('seriesCreated'), 'success');
+        }}
+      />
+
+      <CollaborationInvitesDialog
+        invites={invites}
+        open={invitesOpen}
+        onClose={() => setInvitesOpen(false)}
+        onResolved={(invite) => {
+          setInvites((current) => current.filter((item) => item.id !== invite.id));
+          reload();
         }}
       />
     </div>

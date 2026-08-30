@@ -10,15 +10,18 @@ import {
   useState,
 } from 'react';
 
+import { useTranslations } from 'next-intl';
+
 import { useSession } from '@/components/auth/session-provider';
 import { isCreationNotification } from '@/components/notifications/notification-format';
-import { NOTIFICATIONS_CHANGED } from '@/components/notifications/notification-list';
+import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import type { Notification } from '@/lib/api/types';
 import { useNotificationStream } from '@/lib/use-notification-stream';
 
 const RECENT_LIMIT = 5;
 export const TOAST_DURATION_MS = 5_000;
+export const NOTIFICATIONS_CHANGED = 'zl-notifications-changed';
 
 export interface NotificationToastEntry {
   /** `target_id` for a creation notification — stable across its status updates. */
@@ -41,6 +44,8 @@ const NotificationCenterContext = createContext<NotificationCenterValue | null>(
 export function NotificationCenterProvider({ children }: { children: React.ReactNode }) {
   const { status } = useSession();
   const authenticated = status === 'authenticated';
+  const { notify } = useToast();
+  const tStates = useTranslations('states');
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [recent, setRecent] = useState<Notification[]>([]);
@@ -169,9 +174,15 @@ export function NotificationCenterProvider({ children }: { children: React.React
     setRecent((current) => current.map((item) => ({ ...item, read: true })));
     for (const [id] of readState.current) readState.current.set(id, true);
     setUnreadCount(0);
-    await api.post('/v1/notifications/read');
-    window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
-  }, []);
+    try {
+      await api.post('/v1/notifications/read');
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+    } catch (error) {
+      await loadSnapshot().catch(() => undefined);
+      notify(tStates('error'), 'error');
+      throw error;
+    }
+  }, [loadSnapshot, notify, tStates]);
 
   const markOne = useCallback(async (id: string) => {
     setRecent((current) =>

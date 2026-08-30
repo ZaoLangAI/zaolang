@@ -3,6 +3,10 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
+import {
+  NOTIFICATIONS_CHANGED,
+  useNotificationCenter,
+} from '@/components/notifications/notification-center-provider';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
@@ -15,13 +19,12 @@ import { formatRelative } from '@/lib/format';
 
 import { GROUPS, notificationText, notificationVisual, targetHref } from './notification-format';
 
-const NOTIFICATIONS_CHANGED = 'zl-notifications-changed';
-
 export function NotificationList({ initial }: { initial: Notification[] }) {
   const t = useTranslations('notificationsPage');
   const tBody = useTranslations('notificationBody');
   const locale = useLocale() as Locale;
   const { notify } = useToast();
+  const { markAllRead } = useNotificationCenter();
 
   const [items, setItems] = useState(initial);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -32,11 +35,13 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
 
   const markAll = async () => {
     setBusy(true);
+    const previous = items;
+    setItems((current) => current.map((item) => ({ ...item, read: true })));
     try {
-      await api.post('/v1/notifications/read');
-      setItems((current) => current.map((item) => ({ ...item, read: true })));
-      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+      await markAllRead();
       notify(t('allRead'), 'success');
+    } catch {
+      setItems(previous);
     } finally {
       setBusy(false);
     }
@@ -153,4 +158,4 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
   );
 }
 
-export { NOTIFICATIONS_CHANGED };
+export { NOTIFICATIONS_CHANGED } from '@/components/notifications/notification-center-provider';

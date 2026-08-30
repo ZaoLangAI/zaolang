@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domain.editor import collaborators
 from app.domain.editor import commands as command_codec
 from app.domain.editor import document as docs
 from app.domain.editor import flags as editor_flags
@@ -79,6 +80,31 @@ def _owned_episode(session: Session, *, user_id: str, episode_id: str) -> DramaE
     return episode
 
 
+def _accessible_series(session: Session, *, user_id: str, series_id: str) -> Series:
+    """Owner **or** active co-creator (`collaborators.is_active_member`) —
+    the gate for the *management* surface (series metadata, episode CRUD,
+    script writing, content links). Never used by the timeline editor
+    (`_owned_cut` and everything under it stay on the strict `_owned_series`/
+    `_owned_episode` above) or by trash/untrash/purge — see
+    `zaolang-editor-drama`."""
+    series = session.get(Series, series_id)
+    if series is None:
+        raise NotFound("剧集不存在。")
+    if series.owner_user_id != user_id and not collaborators.is_active_member(
+        session, user_id=user_id, series_id=series_id
+    ):
+        raise NotFound("剧集不存在。")
+    return series
+
+
+def _accessible_episode(session: Session, *, user_id: str, episode_id: str) -> DramaEpisode:
+    episode = session.get(DramaEpisode, episode_id)
+    if episode is None:
+        raise NotFound("剧集分集不存在。")
+    _accessible_series(session, user_id=user_id, series_id=episode.series_id)
+    return episode
+
+
 def _owned_cut(session: Session, *, user_id: str, cut_id: str) -> EpisodeCut:
     cut = session.get(EpisodeCut, cut_id)
     if cut is None:
@@ -89,6 +115,16 @@ def _owned_cut(session: Session, *, user_id: str, cut_id: str) -> EpisodeCut:
 
 def require_drama_series(session: Session, *, user_id: str, series_id: str) -> Series:
     series = _owned_series(session, user_id=user_id, series_id=series_id)
+    if series.kind != SeriesKind.DRAMA:
+        raise ValidationFailed("该系列不是短剧制作项目。")
+    return series
+
+
+def require_accessible_drama_series(session: Session, *, user_id: str, series_id: str) -> Series:
+    """Same as `require_drama_series`, but also accepts an active
+    co-creator — used only by the management-level routes (`GET`/`PATCH
+    /v1/drama-series/{id}`), never by trash/untrash/purge."""
+    series = _accessible_series(session, user_id=user_id, series_id=series_id)
     if series.kind != SeriesKind.DRAMA:
         raise ValidationFailed("该系列不是短剧制作项目。")
     return series
@@ -177,7 +213,7 @@ def update_drama_series(
     target_platforms: list[str] | None = None,
     logo_asset_id: str | None = None,
 ) -> Series:
-    series = require_drama_series(session, user_id=user_id, series_id=series_id)
+    series = require_accessible_drama_series(session, user_id=user_id, series_id=series_id)
     if title is not None:
         series.title = title.strip() or series.title
     if description is not None:
@@ -253,16 +289,24 @@ def list_drama_series(
     sort_dir: str = "desc",
     status: str | None = None,
 ) -> list[Series]:
-    stmt = select(Series).where(Series.owner_user_id == user_id, Series.kind == SeriesKind.DRAMA)
+    stmt = select(Series).where(Series.kind == SeriesKind.DRAMA)
     if status == SeriesStatus.TRASHED:
-        stmt = stmt.where(Series.status == SeriesStatus.TRASHED)
+        # A co-creator has no trash/untrash/purge rights (see
+        # `zaolang-editor-drama`), so the recycle bin view only ever shows
+        # the caller's own trashed series — never an owner's, even if the
+        # caller is an active collaborator on that series.
+        stmt = stmt.where(Series.owner_user_id == user_id, Series.status == SeriesStatus.TRASHED)
     else:
-        stmt = stmt.where(Series.status != SeriesStatus.TRASHED)
+        collab_series_ids = collaborators.collaborator_series_ids(session, user_id=user_id)
+        stmt = stmt.where(
+            or_(Series.owner_user_id == user_id, Series.id.in_(collab_series_ids))
+            if collab_series_ids
+            else Series.owner_user_id == user_id,
+            Series.status != SeriesStatus.TRASHED,
+        )
     if q:
         needle = f"%{q.strip()}%"
-        stmt = stmt.where(
-            or_(Series.title.ilike(needle), Series.english_title.ilike(needle))
-        )
+        stmt = stmt.where(or_(Series.title.ilike(needle), Series.english_title.ilike(needle)))
     if genre:
         if genre not in _VALID_GENRES:
             raise ValidationFailed(f"未知题材类型: {genre}。")
@@ -404,7 +448,7 @@ def create_episode(
     the full timeline editor (`create_cut_from_job`/`acquire_lease`/
     `apply_commands`/exports/AI) still requires `FLAG_EDITOR` and friends —
     see `zaolang-editor-drama`."""
-    series = _owned_series(session, user_id=user_id, series_id=series_id)
+    series = _accessible_series(session, user_id=user_id, series_id=series_id)
     number = episode_number
     if number is None:
         current = session.scalars(
@@ -441,7 +485,7 @@ def create_episode(
 
 
 def list_episodes(session: Session, *, user_id: str, series_id: str) -> list[DramaEpisode]:
-    series = _owned_series(session, user_id=user_id, series_id=series_id)
+    series = _accessible_series(session, user_id=user_id, series_id=series_id)
     stmt = (
         select(DramaEpisode)
         .where(DramaEpisode.series_id == series.id)
@@ -451,7 +495,7 @@ def list_episodes(session: Session, *, user_id: str, series_id: str) -> list[Dra
 
 
 def get_episode(session: Session, *, user_id: str, episode_id: str) -> DramaEpisode:
-    return _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    return _accessible_episode(session, user_id=user_id, episode_id=episode_id)
 
 
 def update_episode(
@@ -466,7 +510,7 @@ def update_episode(
     episode_number: int | None = None,
     status: str | None = None,
 ) -> DramaEpisode:
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
     next_season = season_number if season_number is not None else episode.season_number
     next_number = episode_number if episode_number is not None else episode.episode_number
     if next_season != episode.season_number or next_number != episode.episode_number:
@@ -494,22 +538,140 @@ def update_episode(
     return episode
 
 
-def delete_episode(session: Session, *, user_id: str, episode_id: str) -> None:
-    """Hard-deletes an episode. Blocked while it has any `EpisodeCut` rows
-    (`ondelete=RESTRICT`) — there is no way to delete a cut in this codebase
-    today (a cut gets a revision immediately on creation, and revisions are
-    themselves RESTRICT-linked), so an episode that has entered the timeline
-    editor cannot be deleted at all, not even after removing its cuts one by
-    one. `EpisodeContentLink`/`EpisodeScriptTurn` are `ondelete=CASCADE` and
-    need no precheck. This intentionally runs its own unflagged count query
-    rather than reusing `list_cuts`, which gates on `FLAG_EDITOR` — basic
-    episode CRUD is not flag-gated (see `create_episode`'s docstring)."""
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
-    cut_count = session.scalar(
-        select(func.count()).select_from(EpisodeCut).where(EpisodeCut.episode_id == episode.id)
+_PUBLISHED_OUTPUT_MESSAGE = "该集已有已发布成片，不能删除。"
+
+
+def _editor_graph_ids(
+    session: Session, episode_id: str
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Cut / revision / variant / export ids hanging off one episode."""
+    cut_ids = list(
+        session.scalars(select(EpisodeCut.id).where(EpisodeCut.episode_id == episode_id))
     )
-    if cut_count:
-        raise ValidationFailed("该集已进入剪辑，暂不支持删除。")
+    if not cut_ids:
+        return [], [], [], []
+    revision_ids = list(
+        session.scalars(select(CutRevision.id).where(CutRevision.cut_id.in_(cut_ids)))
+    )
+    variant_ids = (
+        list(
+            session.scalars(
+                select(DeliveryVariant.id).where(DeliveryVariant.cut_revision_id.in_(revision_ids))
+            )
+        )
+        if revision_ids
+        else []
+    )
+    export_ids = (
+        list(
+            session.scalars(select(EditorExport.id).where(EditorExport.variant_id.in_(variant_ids)))
+        )
+        if variant_ids
+        else []
+    )
+    return cut_ids, revision_ids, variant_ids, export_ids
+
+
+def _assert_episode_unpublished_for_delete(session: Session, episode: DramaEpisode) -> None:
+    """Refuse hard-delete once the episode has a public projection.
+
+    `canonical_work_id` is what publishing trusts; a bound draft with
+    `published_work_id` is the same gate for an export that already became
+    a work even if the author never clicked "设为最终成片"."""
+    if episode.canonical_work_id:
+        raise ValidationFailed(_PUBLISHED_OUTPUT_MESSAGE)
+    _cut_ids, _revision_ids, _variant_ids, export_ids = _editor_graph_ids(session, episode.id)
+    if not export_ids:
+        return
+    published = session.scalar(
+        select(Draft.id)
+        .where(
+            Draft.editor_export_id.in_(export_ids),
+            Draft.published_work_id.is_not(None),
+        )
+        .limit(1)
+    )
+    if published:
+        raise ValidationFailed(_PUBLISHED_OUTPUT_MESSAGE)
+
+
+def purge_unpublished_editor_graph(session: Session, episode: DramaEpisode) -> None:
+    """Tears down the unpublished editor chain so the episode row can go.
+
+    FKs stay `RESTRICT` on purpose — this walks the graph in delete-safe
+    order instead of changing `ondelete` (which would let any other path
+    accidentally wipe revisions). `EditorLease` / `EditorCommandEvent`
+    cascade off the cut. Callers must already own `episode` and must not
+    require `FLAG_EDITOR` — basic episode CRUD is unflagged."""
+    _assert_episode_unpublished_for_delete(session, episode)
+    cut_ids, revision_ids, variant_ids, export_ids = _editor_graph_ids(session, episode.id)
+    if not cut_ids:
+        return
+
+    draft_filters = []
+    if export_ids:
+        draft_filters.append(Draft.editor_export_id.in_(export_ids))
+    if variant_ids:
+        draft_filters.append(Draft.delivery_variant_id.in_(variant_ids))
+    if revision_ids:
+        draft_filters.append(Draft.source_cut_revision_id.in_(revision_ids))
+    if draft_filters:
+        for draft in session.scalars(select(Draft).where(or_(*draft_filters))):
+            if draft.published_work_id:
+                raise ValidationFailed(_PUBLISHED_OUTPUT_MESSAGE)
+            draft.editor_export_id = None
+            draft.delivery_variant_id = None
+            draft.source_cut_revision_id = None
+        session.flush()
+
+    if export_ids:
+        for export in session.scalars(select(EditorExport).where(EditorExport.id.in_(export_ids))):
+            session.delete(export)
+        session.flush()
+    if variant_ids:
+        for variant in session.scalars(
+            select(DeliveryVariant).where(DeliveryVariant.id.in_(variant_ids))
+        ):
+            session.delete(variant)
+        session.flush()
+    for plan in session.scalars(select(EditPlan).where(EditPlan.cut_id.in_(cut_ids))):
+        session.delete(plan)
+    session.flush()
+
+    for cut in session.scalars(select(EpisodeCut).where(EpisodeCut.id.in_(cut_ids))):
+        cut.head_revision_id = None
+    session.flush()
+
+    if revision_ids:
+        revisions = list(
+            session.scalars(
+                select(CutRevision)
+                .where(CutRevision.id.in_(revision_ids))
+                .order_by(CutRevision.revision_no.desc())
+            )
+        )
+        # One flush per row: a batched `DELETE` ignores this Python
+        # order and trips `parent_revision_id` `RESTRICT`.
+        for revision in revisions:
+            session.delete(revision)
+            session.flush()
+
+    for cut in session.scalars(select(EpisodeCut).where(EpisodeCut.id.in_(cut_ids))):
+        session.delete(cut)
+    session.flush()
+
+
+def delete_episode(session: Session, *, user_id: str, episode_id: str) -> None:
+    """Hard-deletes an episode. Unpublished `EpisodeCut` / revision /
+    variant / export rows are torn down first (`purge_unpublished_editor_graph`)
+    because those tables are `ondelete=RESTRICT`. A published output
+    (`canonical_work_id`, or an export bound to a draft that already has a
+    work) is a 422 — the public work stays. `EpisodeContentLink` /
+    `EpisodeScriptTurn` are `ondelete=CASCADE` and need no precheck. This
+    intentionally does not go through `list_cuts`, which gates on
+    `FLAG_EDITOR` — basic episode CRUD is not flag-gated."""
+    episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
+    purge_unpublished_editor_graph(session, episode)
     session.delete(episode)
     session.flush()
 
@@ -549,7 +711,7 @@ def create_content_link(
     content_ref_id: str,
     role: str = EpisodeContentRole.CANDIDATE,
 ) -> EpisodeContentLink:
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
     owner_id = _content_owner_user_id(
         session, content_type=content_type, content_ref_id=content_ref_id
     )
@@ -609,15 +771,13 @@ def ensure_linked_drafts(session: Session, *, user_id: str, episode_id: str) -> 
         )
     )
     for draft in drafts:
-        maybe_link_draft(
-            session, user_id=user_id, episode_id=episode_id, draft_id=draft.id
-        )
+        maybe_link_draft(session, user_id=user_id, episode_id=episode_id, draft_id=draft.id)
 
 
 def list_content_links(
     session: Session, *, user_id: str, episode_id: str
 ) -> list[EpisodeContentLink]:
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
     ensure_linked_drafts(session, user_id=user_id, episode_id=episode.id)
     stmt = (
         select(EpisodeContentLink)
@@ -628,7 +788,7 @@ def list_content_links(
 
 
 def delete_content_link(session: Session, *, user_id: str, episode_id: str, link_id: str) -> None:
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
     link = session.get(EpisodeContentLink, link_id)
     if link is None or link.episode_id != episode.id:
         raise NotFound("关联记录不存在。")
@@ -643,7 +803,7 @@ def set_canonical_work(
     the public projection should trust as current — see
     `EpisodeContentRole`'s docstring for why this is a dedicated column
     rather than just "the link with role=final"."""
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
+    episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
     if work_id is not None:
         work = session.get(Work, work_id)
         if work is None or work.owner_user_id != user_id:
@@ -711,15 +871,14 @@ def create_cut_from_job(
     linked_episode_id = _linked_episode_id_from_job(session, job)
     if linked_episode_id is not None:
         episode = _owned_episode(session, user_id=user_id, episode_id=linked_episode_id)
-        return create_cut_from_asset(
+    elif series_id:
+        series = require_drama_series(session, user_id=user_id, series_id=series_id)
+        episode = create_episode(
             session,
             user_id=user_id,
-            episode_id=episode.id,
-            asset_id=job.output_asset_id,
-            job_id=job.id,
+            series_id=series.id,
+            title=(title or "新一集").strip() or "新一集",
         )
-    if series_id:
-        series = require_drama_series(session, user_id=user_id, series_id=series_id)
     else:
         existing = session.scalars(
             select(Series)
@@ -741,19 +900,42 @@ def create_cut_from_job(
             title=(title or "短剧").strip() or "短剧",
             target_platforms=[DistributionChannel.MANUAL_DOWNLOAD.value],
         )
-    episode = create_episode(
-        session,
-        user_id=user_id,
-        series_id=series.id,
-        title=(title or "新一集").strip() or "新一集",
-    )
-    return create_cut_from_asset(
+        episode = create_episode(
+            session,
+            user_id=user_id,
+            series_id=series.id,
+            title=(title or "新一集").strip() or "新一集",
+        )
+    cut, revision = create_cut_from_asset(
         session,
         user_id=user_id,
         episode_id=episode.id,
         asset_id=job.output_asset_id,
         job_id=job.id,
     )
+    _link_job_draft_to_episode(session, user_id=user_id, job=job, episode_id=episode.id)
+    return cut, revision
+
+
+def _link_job_draft_to_episode(
+    session: Session, *, user_id: str, job: GenerationJob, episode_id: str
+) -> None:
+    """After `from-job` mints or reuses an episode, attach the job's draft
+    so the episode workspace's "生成的视频" list is not empty. Also persist
+    `params.link_episode_id` when the fallback path created a new shell —
+    `ensure_linked_drafts` can then heal a missing content-link later."""
+    if not job.draft_id:
+        return
+    draft = session.get(Draft, job.draft_id)
+    if draft is None or draft.user_id != user_id:
+        return
+    params = dict(draft.params_json or {})
+    existing_link = params.get("link_episode_id")
+    if not isinstance(existing_link, str) or not existing_link:
+        params["link_episode_id"] = episode_id
+        draft.params_json = params
+        session.flush()
+    maybe_link_draft(session, user_id=user_id, episode_id=episode_id, draft_id=draft.id)
 
 
 def create_cut_from_asset(

@@ -42,6 +42,9 @@ export const GROUPS = {
   draft_published: { key: 'typeModeration' },
   draft_publish_rejected: { key: 'typeModeration' },
   system: { key: 'typeSystem' },
+  series_collab_invited: { key: 'typeCollaboration' },
+  series_collab_accepted: { key: 'typeCollaboration' },
+  series_collab_removed: { key: 'typeCollaboration' },
 } as const;
 
 export type IconComponent = (props: { className?: string }) => React.ReactNode;
@@ -169,6 +172,31 @@ const TITLE_KEYS: Record<
     key: 'draftPublishRejected',
     params: { title: String(p.title ?? ''), reason: String(p.public_message ?? '') },
   }),
+  'notification.series_collab_invited': (p) => ({
+    key: 'seriesCollabInvited',
+    params: {
+      series: String(p.series_title ?? ''),
+      actor_name: String(p.inviter_display_name ?? ''),
+    },
+  }),
+  'notification.series_collab_accepted': (p) => ({
+    key: 'seriesCollabAccepted',
+    params: {
+      series: String(p.series_title ?? ''),
+      actor_name: String(p.actor_display_name ?? ''),
+    },
+  }),
+  'notification.series_collab_removed': (p) => ({
+    key: 'seriesCollabRemoved',
+    params: { series: String(p.series_title ?? '') },
+  }),
+  'notification.series_collab_left': (p) => ({
+    key: 'seriesCollabLeft',
+    params: {
+      series: String(p.series_title ?? ''),
+      actor_name: String(p.actor_display_name ?? ''),
+    },
+  }),
 };
 
 export function notificationText(item: Notification, tBody: TBody): string {
@@ -265,6 +293,13 @@ export function notificationVisual(item: Notification): {
     return { icon: kindIcon, badge: IconAlert, tone: 'text-danger' };
   }
   if (item.type === 'moderation') return { icon: IconShield, badge: null, tone: 'text-muted' };
+  if (
+    item.type === 'series_collab_invited' ||
+    item.type === 'series_collab_accepted' ||
+    item.type === 'series_collab_removed'
+  ) {
+    return { icon: IconUser, badge: null, tone: 'text-primary' };
+  }
   return { icon: IconBell, badge: null, tone: 'text-muted' };
 }
 
@@ -317,6 +352,12 @@ export function targetHref(item: Notification): string | null {
     const workId = payload.work_id;
     if (typeof workId === 'string' && workId) return `/work/${workId}`;
     return `/publish/${item.target_id}`;
+  }
+  if (item.target_type === 'series_collaboration') {
+    // Both the invite-accept flow and the owner's member roster live inside
+    // `/create/short` (the dashboard's collaboration-invites popover and
+    // each series' own collaborators panel) — see `zaolang-editor-drama`.
+    return '/create/short';
   }
   if (item.target_type === 'work' && item.target_id) return `/work/${item.target_id}`;
   if (item.target_type === 'learn_post' && item.target_id) return `/learn/${item.target_id}`;

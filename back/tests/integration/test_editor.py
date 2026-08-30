@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import Asset, User
+from app.models import Asset, Draft, GenerationJob, User
 from app.models.base import new_id
 from app.models.editor import EpisodeCut
 from app.models.enums import (
@@ -467,6 +467,49 @@ def test_cut_from_job_opens_a_timeline_on_success(
     assert body["head_revision_id"]
 
 
+def test_cut_from_job_fallback_writes_content_link_and_link_episode_id(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """A job-page jump-out with no `link_episode_id` mints a shell *and*
+    attaches the source draft so the episode workspace is not empty."""
+    _enable_editor(db, admin)
+    draft = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "没有挂集"}},
+    )
+    assert draft.status_code == 201, draft.text
+    draft_id = draft.json()["id"]
+
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    job.draft_id = draft_id
+    db.flush()
+
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert response.status_code == 201, response.text
+    episode_id = response.json()["episode_id"]
+
+    links = client.get(
+        f"/v1/drama-episodes/{episode_id}/content-links", headers=auth_header(author)
+    )
+    assert links.status_code == 200, links.text
+    assert any(
+        item["content_type"] == "draft" and item["content_ref_id"] == draft_id
+        for item in links.json()
+    )
+
+    db.expire_all()
+    stored = db.get(Draft, draft_id)
+    assert stored is not None
+    assert stored.params_json.get("link_episode_id") == episode_id
+
+
 def test_cut_from_job_skips_a_trashed_series_when_picking_the_fallback(
     client: TestClient, db: Session, author: User, admin: User
 ) -> None:
@@ -548,15 +591,101 @@ def test_cut_from_job_reuses_draft_link_episode_id(
     assert response.status_code == 201, response.text
     assert response.json()["episode_id"] == episode["id"]
 
-    listed = client.get(
-        f"/v1/drama-series/{series['id']}/episodes", headers=auth_header(author)
+    links = client.get(
+        f"/v1/drama-episodes/{episode['id']}/content-links", headers=auth_header(author)
     )
+    assert links.status_code == 200, links.text
+    assert any(
+        item["content_type"] == "draft" and item["content_ref_id"] == draft.json()["id"]
+        for item in links.json()
+    )
+
+    listed = client.get(f"/v1/drama-series/{series['id']}/episodes", headers=auth_header(author))
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [episode["id"]]
 
     series_list = client.get("/v1/drama-series", headers=auth_header(author))
     assert series_list.status_code == 200
     assert [item["id"] for item in series_list.json()] == [series["id"]]
+
+
+def test_cut_from_job_with_series_id_writes_content_link(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """Passing `series_id` (no `link_episode_id`) still mints under that
+    series and must attach the job's draft so the new shell is visible."""
+    _enable_editor(db, admin)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "指定短剧", "target_platforms": ["manual_download"]},
+    ).json()
+    draft = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "没有挂集"}},
+    )
+    assert draft.status_code == 201, draft.text
+    draft_id = draft.json()["id"]
+
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    job.draft_id = draft_id
+    db.flush()
+
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id, "series_id": series["id"], "title": "从任务来"},
+    )
+    assert response.status_code == 201, response.text
+    episode_id = response.json()["episode_id"]
+    episode = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert episode.status_code == 200
+    assert episode.json()["series_id"] == series["id"]
+
+    links = client.get(
+        f"/v1/drama-episodes/{episode_id}/content-links", headers=auth_header(author)
+    )
+    assert any(
+        item["content_type"] == "draft" and item["content_ref_id"] == draft_id
+        for item in links.json()
+    )
+    db.expire_all()
+    stored = db.get(Draft, draft_id)
+    assert stored is not None
+    assert stored.params_json.get("link_episode_id") == episode_id
+
+
+def test_cut_from_job_without_draft_still_creates_cut(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """A succeeded job with no draft is still a valid editor entry; the
+    linker is a no-op and must not 500 the cut create."""
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    db.flush()
+    assert job.draft_id is None
+
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert response.status_code == 201, response.text
+    episode_id = response.json()["episode_id"]
+    links = client.get(
+        f"/v1/drama-episodes/{episode_id}/content-links", headers=auth_header(author)
+    )
+    assert links.status_code == 200
+    assert links.json() == []
+    db.expire_all()
+    leftover = db.get(GenerationJob, job.id)
+    assert leftover is not None
+    assert leftover.output_asset_id == asset.id
 
 
 def test_cut_from_job_rejects_a_foreign_link_episode_id(
@@ -1111,7 +1240,10 @@ def test_get_operation_exposes_transcript_only_to_the_asset_owner(
     db.commit()
     row = media_analysis.enqueue_transcription(db, asset_id=asset.id)
     row.status = MediaAnalysisStatus.SUCCEEDED
-    row.transcript_json = {"language": "zh", "segments": [{"start_ms": 0, "end_ms": 1000, "text": "hi"}]}
+    row.transcript_json = {
+        "language": "zh",
+        "segments": [{"start_ms": 0, "end_ms": 1000, "text": "hi"}],
+    }
     db.commit()
 
     owner_view = client.get(f"/v1/editor-operations/{row.id}", headers=auth_header(author))

@@ -31,6 +31,7 @@ import { formatRelative } from '@/lib/format';
 
 import { AnalyticsPanel } from './analytics-panel';
 import { DeleteEpisodeDialog } from './delete-episode-dialog';
+import { isEpisodeDeleteBlocked, resumeEditorHref } from './episode-delete-gate';
 import { pascalCase } from './format';
 import { generatedVideoDetailHref, isGeneratedVideoCard } from './generated-video-href';
 import { PublishPanel } from './publish-panel';
@@ -96,28 +97,40 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const skipNextAutoSaveRef = useRef(true);
   const [justSaved, setJustSaved] = useState(false);
   const savedIndicatorTimeoutRef = useRef<number | null>(null);
+  const [viewerRole, setViewerRole] = useState<'owner' | 'collaborator'>('owner');
 
   const load = useCallback(() => {
     if (status !== 'authenticated') return;
-    void Promise.all([
-      editorApi.getEpisode(episodeId),
-      editorApi.listContentLinks(episodeId),
-      editorApi.listEpisodeCuts(episodeId),
-    ])
-      .then(([episodeRow, linkRows, cutRows]) => {
+    void Promise.all([editorApi.getEpisode(episodeId), editorApi.listContentLinks(episodeId)])
+      .then(([episodeRow, linkRows]) => {
         setEpisode(episodeRow);
         skipNextAutoSaveRef.current = true;
         setTitle(episodeRow.title);
         setKind(episodeRow.episode_kind);
         setEpisodeStatus(episodeRow.status);
         setLinks(linkRows);
-        setCuts(cutRows);
         setLoaded(true);
+        // Publish/platform-connect/analytics stay owner-only even on a
+        // shared series (see `zaolang-editor-drama`) — fetched separately
+        // so a slow/failed lookup never blocks the episode workspace itself.
+        void editorApi
+          .getDramaSeries(episodeRow.series_id)
+          .then((seriesRow) => setViewerRole(seriesRow.viewer_role))
+          .catch(() => undefined);
       })
       .catch((error: unknown) => {
         if (isApiError(error) && error.isNotFound) setNotFound(true);
         else notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
         setLoaded(true);
+      });
+    void editorApi
+      .listEpisodeCuts(episodeId)
+      .then(setCuts)
+      .catch((error: unknown) => {
+        setCuts([]);
+        if (!(isApiError(error) && error.isNotFound)) {
+          notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+        }
       });
   }, [episodeId, notify, status, t]);
 
@@ -329,6 +342,11 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   // script studio that's flag-gated off entirely (`script === null`),
   // which keeps the generic `scriptSummaryEmpty` copy below.
   const scriptPending = script !== null && !hasScriptContent;
+  const deleteBlocked = isEpisodeDeleteBlocked({
+    canonicalWorkId: episode.canonical_work_id,
+    exports,
+  });
+  const resumeHref = resumeEditorHref(cuts);
 
   return (
     <div className="flex flex-col gap-6">
@@ -361,12 +379,22 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
               onChange={(event) => setEpisodeStatus(event.target.value)}
               options={STATUSES.map((value) => ({ value, label: t(`status${pascalCase(value)}`) }))}
             />
+            {resumeHref ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<IconWand className="size-3.5" />}
+                onClick={() => router.push(resumeHref)}
+              >
+                {t('resumeEditorAction')}
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="danger"
               icon={<IconTrash className="size-3.5" />}
-              disabled={cuts.length > 0}
-              title={cuts.length > 0 ? t('deleteEpisodeBlockedHasCuts') : undefined}
+              disabled={deleteBlocked}
+              title={deleteBlocked ? t('deleteEpisodeBlockedPublished') : undefined}
               onClick={() => setDeleteOpen(true)}
             >
               {t('deleteEpisodeAction')}
@@ -570,7 +598,7 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
             )}
           </section>
 
-          {episode.canonical_work_id ? (
+          {episode.canonical_work_id && viewerRole !== 'collaborator' ? (
             <section>
               <SectionHeading title={t('connectPublishTitle')} description={t('connectPublishHint')} />
               <p className="mb-3 text-xs text-muted">

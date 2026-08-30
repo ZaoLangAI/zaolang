@@ -11,10 +11,10 @@ import * as editorApi from '@/features/editor/api';
 import { isApiError } from '@/lib/api/errors';
 
 /**
- * Owner confirmation to hard-delete an episode. The caller is expected to
- * only ever open this when the episode has no cuts yet (see
- * `EpisodePanel`'s disabled-button check) — the backend enforces the same
- * rule, so a stale click still fails cleanly with a clear message.
+ * Owner confirmation to hard-delete an episode. Unpublished cuts /
+ * revisions / exports are torn down with the row; a published output
+ * still 422s. The caller disables the trigger when
+ * `canonical_work_id` or a published export is already present.
  */
 export function DeleteEpisodeDialog({
   episodeId,
@@ -66,6 +66,7 @@ export function DeleteEpisodeDialog({
     >
       {error ? <ErrorNotice title={error} /> : null}
       <p className="text-sm text-muted">{t('deleteEpisodeConfirmBody')}</p>
+      <p className="mt-2 text-sm text-muted">{t('deleteEpisodeConfirmUnpublished')}</p>
     </Dialog>
   );
 }

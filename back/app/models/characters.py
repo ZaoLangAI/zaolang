@@ -20,10 +20,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
+from app.models.enums import SeriesCollaboratorStatus
 
 
 class Series(Base, TimestampMixin):
@@ -82,4 +83,46 @@ class Series(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_series_owner_user_id", "owner_user_id"),
         Index("ix_series_owner_user_id_kind", "owner_user_id", "kind"),
+    )
+
+
+class SeriesCollaborator(Base, TimestampMixin):
+    """A co-creation membership on a `kind=drama` `Series`.
+
+    One row per `(series_id, user_id)` — an invite (`pending`), an active
+    co-creator, or a past `declined`/`removed` relationship that got kept
+    (never deleted) so re-inviting the same person reuses the row instead of
+    piling up duplicates. Only `status=active` counts as a real co-creator;
+    see `app.domain.editor.collaborators.is_active_member`, which is the one
+    place other domain code should ask "does this user have access to this
+    series" — never query this table directly elsewhere.
+
+    Deliberately scoped to the *management* surface (series metadata,
+    episodes, script writing, content links) — never consulted by the
+    timeline editor (`EpisodeCut`/`EditorLease`/etc.), the recycle bin
+    (trash/untrash/purge), or distribution/publishing, which all remain
+    strictly `Series.owner_user_id`-gated. See `zaolang-editor-drama`.
+    """
+
+    __tablename__ = "series_collaborators"
+
+    id: Mapped[str] = id_column("scl")
+    series_id: Mapped[str] = mapped_column(
+        ForeignKey("series.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    invited_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default=SeriesCollaboratorStatus.PENDING, nullable=False
+    )
+    responded_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("series_id", "user_id", name="uq_series_collaborators_series_user"),
+        Index("ix_series_collaborators_series_id", "series_id"),
+        Index("ix_series_collaborators_user_id_status", "user_id", "status"),
     )

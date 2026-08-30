@@ -13,11 +13,33 @@ from sqlalchemy.orm import Session
 
 from app.domain.script_writing import service as script_writing_service
 from app.llm.client import StreamChunk
-from app.models import DramaEpisode, Notification, User
-from app.models.enums import CreationSkillCategory, NotificationType
+from app.models import (
+    Asset,
+    DeliveryVariant,
+    Draft,
+    DramaEpisode,
+    EditorExport,
+    EpisodeCut,
+    Notification,
+    Series,
+    User,
+    Work,
+)
+from app.models.base import new_id
+from app.models.enums import (
+    AssetRole,
+    CreationSkillCategory,
+    DeliveryVariantStatus,
+    EditorExportStatus,
+    MediaType,
+    ModerationStatus,
+    NotificationType,
+    Visibility,
+)
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
 from tests.conftest import auth_header
+from tests.factories import make_work
 
 
 def _script_notes(db: Session, user: User, episode_id: str) -> list[Notification]:
@@ -190,6 +212,7 @@ def test_create_script_replay_with_the_same_idempotency_key_preserves_thinking(
 
     _enable_script_studio(db, author)
     _patch_stream_session(monkeypatch, db)
+
     # `_remember_idempotent` deliberately opens its own session via
     # `app.db.session_scope` (see its docstring) rather than reusing the
     # route's own — in production that session's a separate, later-committed
@@ -229,7 +252,7 @@ def test_create_script_replay_with_the_same_idempotency_key_preserves_thinking(
 def test_create_script_attaches_to_existing_series(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """"新增一集" from an existing series' detail page must attach the new
+    """ "新增一集" from an existing series' detail page must attach the new
     episode to that series (auto-incrementing episode_number), not spin up a
     second series."""
     _enable_script_studio(db, author)
@@ -467,9 +490,10 @@ def test_retry_script_reuses_stored_idea_when_body_omits_it(
     episode_id = next(data for kind, data in _parse_sse(failed.text) if kind == "start")[
         "episode_id"
     ]
-    assert client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author)).json()[
-        "source_idea"
-    ] == "深夜便利店的秘密"
+    assert (
+        client.get(f"/v1/scripts/{episode_id}", headers=auth_header(author)).json()["source_idea"]
+        == "深夜便利店的秘密"
+    )
 
     monkeypatch.setattr(llm_client, "stream_complete", fake_stream_complete)
 
@@ -920,14 +944,12 @@ def test_delete_script_rejects_another_users_episode(
     assert detail.status_code == 200
 
 
-def test_delete_script_blocked_once_opened_in_the_editor(
+def test_delete_script_cascades_unpublished_cuts(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Once an `EpisodeCut` exists, deleting outright would hit the DB's own
-    `RESTRICT` on `episode_cuts.episode_id` — `delete_script` must catch this
-    itself and leave everything intact."""
-    from app.models import DramaEpisode, EpisodeCut
-
+    """Unpublished `EpisodeCut` rows used to 422 (and would otherwise hit
+    `RESTRICT` on `episode_cuts.episode_id`). They now tear down with the
+    script so an empty shell that only ever opened the editor can go."""
     _enable_script_studio(db, author)
     _patch_stream_session(monkeypatch, db)
 
@@ -944,9 +966,151 @@ def test_delete_script_blocked_once_opened_in_the_editor(
     db.flush()
 
     response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
-    assert response.status_code == 422
+    assert response.status_code == 204, response.text
+    assert db.get(DramaEpisode, episode_id) is None
 
+
+def _enable_editor(session: Session, actor: User) -> None:
+    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(mode="json")
+    value.update({"web_editor_enabled": True})
+    config_service.set_value(session, "feature_flags", value, actor_user_id=actor.id, note="test")
+
+
+def _video_asset(session: Session, owner: User) -> Asset:
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=2048,
+        checksum_sha256="e" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        width=1080,
+        height=1920,
+        duration_ms=10_000,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+def test_delete_script_blocked_when_canonical_work_set(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+    work, _version = make_work(db, author)
+    episode = db.get(DramaEpisode, episode_id)
+    assert episode is not None
+    episode.canonical_work_id = work.id
+    db.flush()
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 422, response.text
     assert db.get(DramaEpisode, episode_id) is not None
+
+
+def test_delete_script_blocked_when_export_bound_to_published_draft(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _enable_editor(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+    work, _version = make_work(db, author)
+    asset = _video_asset(db, author)
+    cut = client.post(
+        f"/v1/drama-episodes/{episode_id}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": asset.id, "name": "主剪辑"},
+    )
+    assert cut.status_code == 201, cut.text
+    variant = DeliveryVariant(
+        cut_revision_id=cut.json()["head_revision_id"],
+        profile_key="douyin_9_16",
+        aspect_ratio="9:16",
+        width=1080,
+        height=1920,
+        spec_json={"profile_key": "douyin_9_16"},
+        spec_hash="f" * 64,
+        status=DeliveryVariantStatus.READY,
+    )
+    db.add(variant)
+    db.flush()
+    export = EditorExport(
+        variant_id=variant.id,
+        status=EditorExportStatus.SUCCEEDED,
+        operation_key="op_delete_script",
+        attempt=1,
+    )
+    db.add(export)
+    db.flush()
+    db.add(
+        Draft(
+            user_id=author.id,
+            title="已发布剪辑草稿",
+            editor_export_id=export.id,
+            published_work_id=work.id,
+        )
+    )
+    db.flush()
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 422, response.text
+    assert db.get(DramaEpisode, episode_id) is not None
+    assert db.get(Work, work.id) is not None
+    assert db.get(EditorExport, export.id) is not None
+
+
+def test_delete_script_leaves_sibling_episode_and_series(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`delete_script` only drops the 1:1 series when no other episode
+    still points at it — a sibling added later must keep both the series
+    and that extra episode."""
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+    series_id = db.get(DramaEpisode, episode_id).series_id
+    sibling = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第二集"},
+    )
+    assert sibling.status_code == 201, sibling.text
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+    assert db.get(DramaEpisode, episode_id) is None
+    assert db.get(DramaEpisode, sibling.json()["id"]) is not None
+    assert db.get(Series, series_id) is not None
 
 
 def test_list_scripts_shows_zero_turn_shells_too(

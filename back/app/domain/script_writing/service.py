@@ -40,18 +40,20 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.agents import copywriter
 from app.db import session_scope
 from app.domain.characters import service as characters_service
+from app.domain.editor import collaborators
+from app.domain.editor import service as editor_service
 from app.domain.errors import DomainError, NotFound, ValidationFailed
 from app.domain.notifications import push
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
 from app.llm.client import StreamChunk
-from app.models import AgentRun, DramaEpisode, EpisodeCut, EpisodeScriptTurn, Notification, Series
+from app.models import AgentRun, DramaEpisode, EpisodeScriptTurn, Notification, Series
 from app.models.enums import DramaEpisodeStatus, SeriesKind, SeriesStatus
 from app.platform_config import service as config_service
 
@@ -75,11 +77,19 @@ def _require_script_studio(session: Session, *, user_id: str | None) -> None:
 
 
 def _owned_episode(session: Session, *, user_id: str, episode_id: str) -> DramaEpisode:
+    """Despite the name, this is the *accessible* check (owner or active
+    co-creator) — script writing is part of the management-level surface a
+    共创 collaborator gets full access to, same as basic episode CRUD
+    (`editor_service._accessible_episode`). See `zaolang-editor-drama`."""
     episode = session.get(DramaEpisode, episode_id)
     if episode is None:
         raise NotFound("剧本不存在。")
     series = session.get(Series, episode.series_id)
-    if series is None or series.owner_user_id != user_id:
+    if series is None:
+        raise NotFound("剧本不存在。")
+    if series.owner_user_id != user_id and not collaborators.is_active_member(
+        session, user_id=user_id, series_id=series.id
+    ):
         raise NotFound("剧本不存在。")
     return episode
 
@@ -159,9 +169,7 @@ def _skill_hints(referenced: list[dict[str, str]]) -> list[dict[str, str]]:
     return [{"title": s["title"], "description": s["description"]} for s in referenced]
 
 
-def _store_source_prompt(
-    episode: DramaEpisode, *, idea: str, skill_ids: list[str]
-) -> None:
+def _store_source_prompt(episode: DramaEpisode, *, idea: str, skill_ids: list[str]) -> None:
     episode.source_idea = idea
     episode.source_referenced_skill_ids_json = list(skill_ids)
 
@@ -191,9 +199,7 @@ def _idea_from_agent_run(run: AgentRun) -> tuple[str, list[str]]:
     return idea, ids
 
 
-def _hydrate_source_idea(
-    session: Session, *, episode: DramaEpisode, user_id: str
-) -> None:
+def _hydrate_source_idea(session: Session, *, episode: DramaEpisode, user_id: str) -> None:
     """Fills `source_idea` on a historical empty shell from a nearby run.
 
     New shells persist the idea in `prepare_new_script`. Episodes created
@@ -204,9 +210,7 @@ def _hydrate_source_idea(
     """
     if (episode.source_idea or "").strip():
         return
-    has_turn = session.scalar(
-        select(exists().where(EpisodeScriptTurn.episode_id == episode.id))
-    )
+    has_turn = session.scalar(select(exists().where(EpisodeScriptTurn.episode_id == episode.id)))
     if has_turn:
         return
     window_start = episode.created_at - timedelta(seconds=30)
@@ -314,7 +318,11 @@ def prepare_new_script(
 
     if series_id:
         series = session.get(Series, series_id)
-        if series is None or series.owner_user_id != user_id:
+        if series is None:
+            raise NotFound("剧集不存在。")
+        if series.owner_user_id != user_id and not collaborators.is_active_member(
+            session, user_id=user_id, series_id=series.id
+        ):
             raise NotFound("剧集不存在。")
         if series.kind != SeriesKind.DRAMA:
             raise ValidationFailed("该系列不是短剧制作项目。")
@@ -353,9 +361,7 @@ def prepare_new_script(
     )
     session.add(episode)
     session.flush()
-    _store_source_prompt(
-        episode, idea=idea, skill_ids=[s["id"] for s in referenced]
-    )
+    _store_source_prompt(episode, idea=idea, skill_ids=[s["id"] for s in referenced])
     _notify_script(session, episode, status="generating", kind="draft", series=series)
 
     return NewScriptPrep(
@@ -389,9 +395,7 @@ def retry_new_script(
     """
     _require_script_studio(session, user_id=user_id)
     episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
-    has_turn = session.scalar(
-        select(exists().where(EpisodeScriptTurn.episode_id == episode.id))
-    )
+    has_turn = session.scalar(select(exists().where(EpisodeScriptTurn.episode_id == episode.id)))
     if has_turn:
         raise ValidationFailed("该剧本已生成初稿，无法重新生成。")
     _hydrate_source_idea(session, episode=episode, user_id=user_id)
@@ -626,27 +630,35 @@ def stream_turn(prep: TurnPrep, *, user_id: str, result: TurnResult) -> Iterator
 
 
 def list_scripts(session: Session, *, user_id: str) -> list[DramaEpisode]:
-    """Every `kind=drama` episode the caller owns, including a 0-turn shell
-    whose first draft is still streaming (in another tab/device) or failed
-    outright — `prepare_new_script`/`retry_new_script` are the only paths
-    that create such a shell today (the drama editor's own
-    `POST /v1/drama-series/{id}/episodes` has no frontend caller), so
-    dropping the "has a turn" requirement no longer hides a script the user
-    is actively waiting on or needs to retry; the caller renders a 0-turn
-    row differently via `turn_count == 0` rather than this list silently
-    excluding it.
+    """Every `kind=drama` episode the caller owns **or actively co-creates**,
+    including a 0-turn shell whose first draft is still streaming (in
+    another tab/device) or failed outright — `prepare_new_script`/
+    `retry_new_script` are the only paths that create such a shell today
+    (the drama editor's own `POST /v1/drama-series/{id}/episodes` has no
+    frontend caller), so dropping the "has a turn" requirement no longer
+    hides a script the user is actively waiting on or needs to retry; the
+    caller renders a 0-turn row differently via `turn_count == 0` rather
+    than this list silently excluding it.
 
     Excludes episodes whose series is in the recycle bin, mirroring
     `list_drama_series`' default — trashing a series should hide its
     scripts from this general list too, not just from the series dashboard;
     a direct link to the episode still works, same as the dashboard's own
-    trashed-series detail page."""
+    trashed-series detail page. A co-creator has no trash rights, so this
+    only ever excludes on the *owner's* trash state, same as
+    `list_drama_series`."""
     _require_script_studio(session, user_id=user_id)
+    collab_series_ids = collaborators.collaborator_series_ids(session, user_id=user_id)
+    owner_or_collaborator = (
+        or_(Series.owner_user_id == user_id, Series.id.in_(collab_series_ids))
+        if collab_series_ids
+        else Series.owner_user_id == user_id
+    )
     stmt = (
         select(DramaEpisode)
         .join(Series, Series.id == DramaEpisode.series_id)
         .where(
-            Series.owner_user_id == user_id,
+            owner_or_collaborator,
             Series.kind == SeriesKind.DRAMA,
             Series.status != SeriesStatus.TRASHED,
         )
@@ -686,25 +698,22 @@ def get_turn_snapshot(
 def delete_script(session: Session, *, user_id: str, episode_id: str) -> None:
     """Deletes a script the caller owns.
 
-    Blocked once the episode has left this flow's exclusive care: a
-    published episode (`canonical_work_id` set) or one that has already been
-    opened in the drama editor and has an `EpisodeCut` — the latter check
-    also doubles as protection against the DB-level `RESTRICT` on
-    `episode_cuts.episode_id`, which would otherwise surface as a raw
-    `IntegrityError` instead of a friendly message. `EpisodeScriptTurn` rows
-    cascade automatically (`ondelete="CASCADE"`); the owning `Series` is
-    deleted too, but only when no other `DramaEpisode` still references it —
-    `prepare_new_script` always creates a fresh 1:1 `Series`+`DramaEpisode`
-    pair for this flow, but nothing prevents a future episode from being
-    added under the same series later.
+    A published episode (`canonical_work_id` set) still 422s — that work
+    is the public projection. Unpublished `EpisodeCut` rows are torn down
+    first via `purge_unpublished_editor_graph` so the `RESTRICT` on
+    `episode_cuts.episode_id` does not surface as a raw `IntegrityError`.
+    `EpisodeScriptTurn` rows cascade automatically (`ondelete="CASCADE"`);
+    the owning `Series` is deleted too, but only when no other
+    `DramaEpisode` still references it — `prepare_new_script` always
+    creates a fresh 1:1 `Series`+`DramaEpisode` pair for this flow, but
+    nothing prevents a future episode from being added under the same
+    series later.
     """
     _require_script_studio(session, user_id=user_id)
     episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
     if episode.canonical_work_id is not None:
         raise ValidationFailed("已发布的剧本不能删除。")
-    has_cuts = session.scalar(select(exists().where(EpisodeCut.episode_id == episode.id)))
-    if has_cuts:
-        raise ValidationFailed("该剧本已在剪辑台生成分镜，无法删除。")
+    editor_service.purge_unpublished_editor_graph(session, episode)
 
     series_id = episode.series_id
     session.delete(episode)

@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
+from app.api.schemas.works import AuthorSummary
 
 
 class DramaSeriesCreateRequest(ApiModel):
@@ -54,6 +55,49 @@ class DramaSeriesResponse(ApiModel):
     published_count: int = 0
     created_at: dt.datetime
     updated_at: dt.datetime
+    owner: AuthorSummary
+    # "owner" for the series' own creator, "collaborator" for an active
+    # co-creator viewing it — drives the frontend's 共创 badge/permission
+    # branching (trash/publish/platform-connect stay owner-only regardless
+    # of `is_collaboration`). See `zaolang-editor-drama`.
+    viewer_role: str = "owner"
+    # True once the series has at least one *active* collaborator — shown
+    # even to the owner, so they can tell at a glance which of their own
+    # series are shared.
+    is_collaboration: bool = False
+    collaborator_count: int = 0
+
+
+class CollaboratorInviteRequest(ApiModel):
+    # Either the target's `Profile.handle` or their registered `User.email` —
+    # `collaborators._find_profile_by_identifier` tells them apart by
+    # whether "@" appears anywhere but the first character.
+    identifier: str = Field(min_length=1, max_length=320)
+
+
+class CollaboratorResponse(ApiModel):
+    id: str
+    user_id: str
+    handle: str
+    display_name: str
+    avatar_url: str | None = None
+    status: str
+    invited_by_user_id: str
+    created_at: dt.datetime
+    responded_at: dt.datetime | None = None
+
+
+class CollaborationInviteResponse(ApiModel):
+    """One pending invite in the current user's own inbox — enough to
+    render `CollaborationInvitesDialog` without a follow-up request per
+    invite."""
+
+    id: str
+    series_id: str
+    series_title: str
+    series_logo_url: str | None = None
+    inviter: AuthorSummary
+    created_at: dt.datetime
 
 
 class DramaEpisodeCreateRequest(ApiModel):

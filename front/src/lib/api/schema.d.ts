@@ -1801,6 +1801,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drama-series/{series_id}/collaborators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collaborators */
+        get: operations["list_collaborators_v1_drama_series__series_id__collaborators_get"];
+        put?: never;
+        /** Invite Collaborator */
+        post: operations["invite_collaborator_v1_drama_series__series_id__collaborators_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-series/{series_id}/collaborators/{collaborator_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Collaborator */
+        delete: operations["remove_collaborator_v1_drama_series__series_id__collaborators__collaborator_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/collaboration-invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Collaboration Invites */
+        get: operations["list_collaboration_invites_v1_collaboration_invites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/collaboration-invites/{collaborator_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Collaboration Invite */
+        post: operations["accept_collaboration_invite_v1_collaboration_invites__collaborator_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/collaboration-invites/{collaborator_id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decline Collaboration Invite */
+        post: operations["decline_collaboration_invite_v1_collaboration_invites__collaborator_id__decline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/drama-series/{series_id}/episodes": {
         parameters: {
             query?: never;
@@ -5708,6 +5794,57 @@ export interface components {
             /** Currency */
             currency: string;
         };
+        /**
+         * CollaborationInviteResponse
+         * @description One pending invite in the current user's own inbox — enough to
+         *     render `CollaborationInvitesDialog` without a follow-up request per
+         *     invite.
+         */
+        CollaborationInviteResponse: {
+            /** Id */
+            id: string;
+            /** Series Id */
+            series_id: string;
+            /** Series Title */
+            series_title: string;
+            /** Series Logo Url */
+            series_logo_url?: string | null;
+            inviter: components["schemas"]["AuthorSummary"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CollaboratorInviteRequest */
+        CollaboratorInviteRequest: {
+            /** Identifier */
+            identifier: string;
+        };
+        /** CollaboratorResponse */
+        CollaboratorResponse: {
+            /** Id */
+            id: string;
+            /** User Id */
+            user_id: string;
+            /** Handle */
+            handle: string;
+            /** Display Name */
+            display_name: string;
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /** Status */
+            status: string;
+            /** Invited By User Id */
+            invited_by_user_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Responded At */
+            responded_at?: string | null;
+        };
         /** CollectionCreateRequest */
         CollectionCreateRequest: {
             /** Name */
@@ -6650,6 +6787,22 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            owner: components["schemas"]["AuthorSummary"];
+            /**
+             * Viewer Role
+             * @default owner
+             */
+            viewer_role: string;
+            /**
+             * Is Collaboration
+             * @default false
+             */
+            is_collaboration: boolean;
+            /**
+             * Collaborator Count
+             * @default 0
+             */
+            collaborator_count: number;
         };
         /** DramaSeriesUpdateRequest */
         DramaSeriesUpdateRequest: {
@@ -8318,7 +8471,7 @@ export interface components {
          * NotificationType
          * @enum {string}
          */
-        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "draft_published" | "draft_publish_rejected" | "royalty_received" | "access_sold" | "new_follower" | "moderation" | "system";
+        NotificationType: "job_progress" | "job_succeeded" | "job_failed" | "job_cancelled" | "work_liked" | "work_remixed" | "draft_published" | "draft_publish_rejected" | "royalty_received" | "access_sold" | "new_follower" | "moderation" | "system" | "series_collab_invited" | "series_collab_accepted" | "series_collab_removed";
         /** OkResponse */
         OkResponse: {
             /**
@@ -15126,6 +15279,205 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collaborators_v1_drama_series__series_id__collaborators_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollaboratorResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_collaborator_v1_drama_series__series_id__collaborators_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CollaboratorInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollaboratorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_collaborator_v1_drama_series__series_id__collaborators__collaborator_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+                collaborator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_collaboration_invites_v1_collaboration_invites_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollaborationInviteResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_collaboration_invite_v1_collaboration_invites__collaborator_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                collaborator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollaboratorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decline_collaboration_invite_v1_collaboration_invites__collaborator_id__decline_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                collaborator_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CollaboratorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

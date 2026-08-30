@@ -368,6 +368,9 @@ class NotificationType(StrEnum):
     NEW_FOLLOWER = "new_follower"
     MODERATION = "moderation"
     SYSTEM = "system"
+    SERIES_COLLAB_INVITED = "series_collab_invited"
+    SERIES_COLLAB_ACCEPTED = "series_collab_accepted"
+    SERIES_COLLAB_REMOVED = "series_collab_removed"
 
 
 class ReportReason(StrEnum):
@@ -451,6 +454,20 @@ class SeriesGenre(StrEnum):
     FANTASY = "fantasy"
     ERA = "era"
     OTHER = "other"
+
+
+class SeriesCollaboratorStatus(StrEnum):
+    """A `SeriesCollaborator` row's lifecycle. `pending` is an outstanding
+    invite the invitee hasn't responded to yet; only `active` counts as an
+    actual co-creator (see `app.domain.editor.collaborators.is_active_member`).
+    `declined`/`removed` rows are kept (never deleted) so re-inviting the same
+    user reuses the row instead of accumulating duplicates — see the unique
+    constraint on `(series_id, user_id)`."""
+
+    PENDING = "pending"
+    ACTIVE = "active"
+    DECLINED = "declined"
+    REMOVED = "removed"
 
 
 class DramaEpisodeStatus(StrEnum):

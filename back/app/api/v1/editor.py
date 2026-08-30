@@ -14,6 +14,9 @@ from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.editor import (
     ApplyCommandsRequest,
     BindEditorExportRequest,
+    CollaborationInviteResponse,
+    CollaboratorInviteRequest,
+    CollaboratorResponse,
     CutCreateRequest,
     CutFromJobRequest,
     CutRevisionResponse,
@@ -50,7 +53,9 @@ from app.api.schemas.editor import (
     VariantBatchCreateRequest,
 )
 from app.api.schemas.jobs import UploadPresignResponse
+from app.api.schemas.works import AuthorSummary
 from app.domain.editor import analysis as media_analysis
+from app.domain.editor import collaborators
 from app.domain.editor import document as docs
 from app.domain.editor import exports as export_service
 from app.domain.editor import flags as editor_flags
@@ -65,7 +70,9 @@ from app.models import (
     EditPlan,
     EpisodeCut,
     MediaAnalysis,
+    Profile,
     Series,
+    SeriesCollaborator,
 )
 from app.models.enums import EditorExportStatus, EditPlanStatus, MediaAnalysisStatus
 from app.presenters.media_urls import asset_url
@@ -96,12 +103,38 @@ def _operation_status_is_terminal(status: str) -> bool:
     return False
 
 
+def _author_summary(
+    session: DbSession, user_id: str, profile: Profile | None = None
+) -> AuthorSummary:
+    if profile is None:
+        profile = collaborators.profiles_by_user_id(session, [user_id]).get(user_id)
+    if profile is None:
+        return AuthorSummary(user_id=user_id, display_name="未知作者", handle=user_id)
+    return AuthorSummary(
+        user_id=user_id,
+        display_name=profile.display_name,
+        handle=profile.handle,
+        avatar_url=asset_url(session, profile.avatar_asset_id),
+    )
+
+
 def _series_response(
     session: DbSession,
     series: Series,
     stats: dict[str, int] | None = None,
+    *,
+    viewer_user_id: str | None = None,
+    owner_profile: Profile | None = None,
+    collaborator_count: int | None = None,
 ) -> DramaSeriesResponse:
     counts = stats or {}
+    if collaborator_count is None:
+        collaborator_count = len(collaborators.active_members(session, series_id=series.id))
+    viewer_role = (
+        "owner"
+        if viewer_user_id is None or viewer_user_id == series.owner_user_id
+        else "collaborator"
+    )
     return DramaSeriesResponse(
         id=series.id,
         title=series.title,
@@ -123,6 +156,25 @@ def _series_response(
         published_count=counts.get("published_count", 0),
         created_at=series.created_at,
         updated_at=series.updated_at,
+        owner=_author_summary(session, series.owner_user_id, owner_profile),
+        viewer_role=viewer_role,
+        is_collaboration=collaborator_count > 0,
+        collaborator_count=collaborator_count,
+    )
+
+
+def _collaborator_response(session: DbSession, row: SeriesCollaborator) -> CollaboratorResponse:
+    profile = collaborators.profiles_by_user_id(session, [row.user_id]).get(row.user_id)
+    return CollaboratorResponse(
+        id=row.id,
+        user_id=row.user_id,
+        handle=profile.handle if profile else row.user_id,
+        display_name=profile.display_name if profile else "未知用户",
+        avatar_url=asset_url(session, profile.avatar_asset_id) if profile else None,
+        status=row.status,
+        invited_by_user_id=row.invited_by_user_id,
+        created_at=row.created_at,
+        responded_at=row.responded_at,
     )
 
 
@@ -287,7 +339,7 @@ def create_drama_series(
         logo_asset_id=payload.logo_asset_id,
     )
     session.commit()
-    return _series_response(session, series)
+    return _series_response(session, series, viewer_user_id=user.id)
 
 
 @router.get("/drama-series", response_model=list[DramaSeriesResponse])
@@ -304,14 +356,32 @@ def list_drama_series(
         session, user_id=user.id, q=q, genre=genre, sort=sort, sort_dir=sort_dir, status=status
     )
     stats = editor_service.series_stats(session, series_ids=[item.id for item in rows])
-    return [_series_response(session, item, stats.get(item.id)) for item in rows]
+    owner_profiles = collaborators.profiles_by_user_id(
+        session, [item.owner_user_id for item in rows]
+    )
+    collab_counts = collaborators.active_member_counts(
+        session, series_ids=[item.id for item in rows]
+    )
+    return [
+        _series_response(
+            session,
+            item,
+            stats.get(item.id),
+            viewer_user_id=user.id,
+            owner_profile=owner_profiles.get(item.owner_user_id),
+            collaborator_count=collab_counts.get(item.id, 0),
+        )
+        for item in rows
+    ]
 
 
 @router.get("/drama-series/{series_id}", response_model=DramaSeriesResponse)
 def get_drama_series(series_id: str, user: CurrentUser, session: DbSession) -> DramaSeriesResponse:
-    series = editor_service.require_drama_series(session, user_id=user.id, series_id=series_id)
+    series = editor_service.require_accessible_drama_series(
+        session, user_id=user.id, series_id=series_id
+    )
     stats = editor_service.series_stats(session, series_ids=[series.id])
-    return _series_response(session, series, stats.get(series.id))
+    return _series_response(session, series, stats.get(series.id), viewer_user_id=user.id)
 
 
 @router.patch("/drama-series/{series_id}", response_model=DramaSeriesResponse)
@@ -336,7 +406,7 @@ def update_drama_series(
     )
     session.commit()
     stats = editor_service.series_stats(session, series_ids=[series.id])
-    return _series_response(session, series, stats.get(series.id))
+    return _series_response(session, series, stats.get(series.id), viewer_user_id=user.id)
 
 
 @router.delete("/drama-series/{series_id}", status_code=204)
@@ -360,7 +430,7 @@ def untrash_drama_series(
     series = editor_service.untrash_drama_series(session, user_id=user.id, series_id=series_id)
     session.commit()
     stats = editor_service.series_stats(session, series_ids=[series.id])
-    return _series_response(session, series, stats.get(series.id))
+    return _series_response(session, series, stats.get(series.id), viewer_user_id=user.id)
 
 
 @router.delete("/drama-series/{series_id}/purge", status_code=204)
@@ -372,6 +442,122 @@ def purge_drama_series(
 ) -> None:
     editor_service.purge_drama_series(session, user_id=user.id, series_id=series_id)
     session.commit()
+
+
+@router.post(
+    "/drama-series/{series_id}/collaborators",
+    response_model=CollaboratorResponse,
+    status_code=201,
+)
+def invite_collaborator(
+    series_id: str,
+    payload: CollaboratorInviteRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("series_collab_invite"))],
+) -> CollaboratorResponse:
+    row = collaborators.invite(
+        session, owner_user_id=user.id, series_id=series_id, identifier=payload.identifier
+    )
+    session.commit()
+    return _collaborator_response(session, row)
+
+
+@router.get(
+    "/drama-series/{series_id}/collaborators",
+    response_model=list[CollaboratorResponse],
+)
+def list_collaborators(
+    series_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> list[CollaboratorResponse]:
+    rows = collaborators.list_members(session, user_id=user.id, series_id=series_id)
+    return [_collaborator_response(session, item) for item in rows]
+
+
+@router.delete(
+    "/drama-series/{series_id}/collaborators/{collaborator_id}",
+    status_code=204,
+)
+def remove_collaborator(
+    series_id: str,
+    collaborator_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> None:
+    collaborators.remove(
+        session, actor_user_id=user.id, series_id=series_id, collaborator_id=collaborator_id
+    )
+    session.commit()
+
+
+@router.get("/collaboration-invites", response_model=list[CollaborationInviteResponse])
+def list_collaboration_invites(
+    user: CurrentUser, session: DbSession
+) -> list[CollaborationInviteResponse]:
+    rows = collaborators.list_my_invites(session, user_id=user.id)
+    series_by_id = {
+        series.id: series
+        for series in (
+            session.get(Series, row.series_id)
+            for row in rows
+        )
+        if series is not None
+    }
+    inviter_profiles = collaborators.profiles_by_user_id(
+        session, [row.invited_by_user_id for row in rows]
+    )
+    results: list[CollaborationInviteResponse] = []
+    for row in rows:
+        series = series_by_id.get(row.series_id)
+        if series is None:
+            continue
+        results.append(
+            CollaborationInviteResponse(
+                id=row.id,
+                series_id=series.id,
+                series_title=series.title,
+                series_logo_url=asset_url(session, series.logo_asset_id),
+                inviter=_author_summary(
+                    session, row.invited_by_user_id, inviter_profiles.get(row.invited_by_user_id)
+                ),
+                created_at=row.created_at,
+            )
+        )
+    return results
+
+
+@router.post(
+    "/collaboration-invites/{collaborator_id}/accept",
+    response_model=CollaboratorResponse,
+)
+def accept_collaboration_invite(
+    collaborator_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> CollaboratorResponse:
+    row = collaborators.accept(session, user_id=user.id, collaborator_id=collaborator_id)
+    session.commit()
+    return _collaborator_response(session, row)
+
+
+@router.post(
+    "/collaboration-invites/{collaborator_id}/decline",
+    response_model=CollaboratorResponse,
+)
+def decline_collaboration_invite(
+    collaborator_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> CollaboratorResponse:
+    row = collaborators.decline(session, user_id=user.id, collaborator_id=collaborator_id)
+    session.commit()
+    return _collaborator_response(session, row)
 
 
 @router.post(

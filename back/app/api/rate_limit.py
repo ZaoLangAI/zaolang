@@ -41,6 +41,10 @@ RULES: dict[str, RateLimitRule] = {
     # A real platform push per channel (upload + create_post) — heavier than
     # `authenticated_write`, lighter than `generation_submit`'s per-provider cost.
     "platform_publish": RateLimitRule(limit=20, window_seconds=60),
+    # Inviting a co-creator pushes a notification to a stranger — sensitive
+    # in the same way a login attempt is, so it gets its own strict budget
+    # rather than sharing `editor_write`'s much looser one.
+    "series_collab_invite": RateLimitRule(limit=10, window_seconds=300),
     "mcp_tool": RateLimitRule(limit=60, window_seconds=60),
     # Back office gets its own budget so consumer traffic can never starve an
     # operator during an incident.

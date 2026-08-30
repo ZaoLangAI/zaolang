@@ -1,7 +1,7 @@
 import { api } from '@/lib/api/client';
 import { ApiError, isApiError } from '@/lib/api/errors';
 import { streamPost } from '@/lib/sse-post';
-import type { Asset, Page, ShortformProfiles } from '@/lib/api/types';
+import type { Asset, AuthorSummary, Page, ShortformProfiles } from '@/lib/api/types';
 
 import type { CanonicalDocument, EditCommand } from './engine/ports';
 
@@ -26,6 +26,39 @@ export interface DramaSeries {
   published_count: number;
   created_at: string;
   updated_at: string;
+  owner: AuthorSummary;
+  /** "owner" for the caller's own series, "collaborator" when viewing a
+   * series someone else invited them into (see `back/app/domain/editor
+   * /collaborators.py`). Drives which management actions render — trash,
+   * publish, platform-connect and analytics stay owner-only regardless of
+   * `is_collaboration`. */
+  viewer_role: 'owner' | 'collaborator';
+  /** True once the series has at least one *active* collaborator — shown
+   * to the owner too, so they can tell which of their own series are
+   * shared. */
+  is_collaboration: boolean;
+  collaborator_count: number;
+}
+
+export interface SeriesCollaborator {
+  id: string;
+  user_id: string;
+  handle: string;
+  display_name: string;
+  avatar_url: string | null;
+  status: 'pending' | 'active' | 'declined' | 'removed';
+  invited_by_user_id: string;
+  created_at: string;
+  responded_at: string | null;
+}
+
+export interface CollaborationInvite {
+  id: string;
+  series_id: string;
+  series_title: string;
+  series_logo_url: string | null;
+  inviter: AuthorSummary;
+  created_at: string;
 }
 
 export interface DramaSeriesCreateInput {
@@ -225,6 +258,30 @@ export function untrashDramaSeries(seriesId: string) {
 
 export function purgeDramaSeries(seriesId: string) {
   return api.delete<void>(`/v1/drama-series/${seriesId}/purge`);
+}
+
+export function listCollaborators(seriesId: string) {
+  return api.get<SeriesCollaborator[]>(`/v1/drama-series/${seriesId}/collaborators`);
+}
+
+export function inviteCollaborator(seriesId: string, identifier: string) {
+  return api.post<SeriesCollaborator>(`/v1/drama-series/${seriesId}/collaborators`, { identifier });
+}
+
+export function removeCollaborator(seriesId: string, collaboratorId: string) {
+  return api.delete<void>(`/v1/drama-series/${seriesId}/collaborators/${collaboratorId}`);
+}
+
+export function listMyCollaborationInvites() {
+  return api.get<CollaborationInvite[]>('/v1/collaboration-invites');
+}
+
+export function acceptCollaborationInvite(collaboratorId: string) {
+  return api.post<SeriesCollaborator>(`/v1/collaboration-invites/${collaboratorId}/accept`);
+}
+
+export function declineCollaborationInvite(collaboratorId: string) {
+  return api.post<SeriesCollaborator>(`/v1/collaboration-invites/${collaboratorId}/decline`);
 }
 
 export function listEpisodes(seriesId: string) {
