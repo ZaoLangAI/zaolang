@@ -96,6 +96,7 @@ celery_app.conf.update(
         "app.workers.tasks.run_media_analysis": {"queue": "media_analysis"},
         "app.workers.tasks.run_editor_transcription": {"queue": "media_analysis"},
         "app.workers.tasks.expire_editor_leases": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.expire_stale_editor_exports": {"queue": "webhook_reconcile"},
         "app.workers.tasks.expire_orphan_editor_uploads": {"queue": "webhook_reconcile"},
         "app.workers.tasks.pull_episode_metrics": {"queue": "platform_distribution"},
         "app.workers.tasks.purge_expired_exports": {"queue": "webhook_reconcile"},
@@ -131,6 +132,10 @@ celery_app.conf.update(
         },
         "expire-editor-leases": {
             "task": "app.workers.tasks.expire_editor_leases",
+            "schedule": 60.0,
+        },
+        "expire-stale-editor-exports": {
+            "task": "app.workers.tasks.expire_stale_editor_exports",
             "schedule": 60.0,
         },
         "expire-orphan-editor-uploads": {

@@ -540,6 +540,10 @@ class GenerationJobResponse(ApiModel):
     # stream, and to label `output_asset_ids`/`output_urls`' entries, which
     # are recorded in the same front → side → back order as this list.
     character_views: list[CharacterViewAngle] | None = None
+    # Echoes `GenerationParams.duration_seconds` back — lets a client re-quote
+    # a promoted tier for this same job (video pricing depends on it) without
+    # having kept the original submit form's state around.
+    duration_seconds: int | None = None
     # Which character/scene skill this job's output actually landed on —
     # the target the client passed, or the id of a skill
     # `execute_asset_output_link` auto-created. `None` for `GENERAL`/`COVER`
@@ -655,6 +659,25 @@ class CheckoutResponse(ApiModel):
     external_reference: str
     amount_minor: int
     currency: str
+
+
+class CheckoutConfirmRequest(ApiModel):
+    external_reference: str = Field(min_length=1, max_length=128)
+
+
+class CheckoutConfirmResponse(ApiModel):
+    status: str
+    available_balance: int
+
+
+class CheckoutIntentResponse(ApiModel):
+    external_reference: str
+    package_slug: str
+    credits: int
+    bonus_credits: int
+    amount_minor: int
+    currency: str
+    status: str
 
 
 class RedeemCodeRequest(ApiModel):

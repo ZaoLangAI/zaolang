@@ -31,4 +31,15 @@ public extension APIClient {
     func retryGenerationJob(id: String, idempotencyKey: String) async throws -> GenerationJobResponse {
         try await send(APIRequest(method: .post, path: "/v1/generation-jobs/\(id)/retry", idempotencyKey: idempotencyKey))
     }
+
+    /// SSE 帧可能先于这一行提交到数据库落地，调用方在 404 时应当短暂重试而不是
+    /// 立刻当成"无待答问题"——见 web 端 `AwaitingInputPanel` 同样的处理。
+    func fetchInputRequest(jobID: String) async throws -> JobInputRequestResponse {
+        try await send(.get("/v1/generation-jobs/\(jobID)/input-request"))
+    }
+
+    /// 回答后任务在原地继续跑，不重新计费——响应就是同一个 job 的最新投影。
+    func answerJob(jobID: String, answers: [JobAnswerItem]) async throws -> GenerationJobResponse {
+        try await send(.post("/v1/generation-jobs/\(jobID)/answer", body: JobAnswerRequest(answers: answers)))
+    }
 }

@@ -611,9 +611,9 @@ DELIVERY_VARIANT_TRANSITIONS: dict[DeliveryVariantStatus, frozenset[DeliveryVari
             DeliveryVariantStatus.CANCELLED,
         }
     ),
-    DeliveryVariantStatus.SUCCEEDED: frozenset(),
-    DeliveryVariantStatus.FAILED: frozenset(),
-    DeliveryVariantStatus.CANCELLED: frozenset(),
+    DeliveryVariantStatus.SUCCEEDED: frozenset({DeliveryVariantStatus.EXPORTING}),
+    DeliveryVariantStatus.FAILED: frozenset({DeliveryVariantStatus.EXPORTING}),
+    DeliveryVariantStatus.CANCELLED: frozenset({DeliveryVariantStatus.EXPORTING}),
 }
 
 

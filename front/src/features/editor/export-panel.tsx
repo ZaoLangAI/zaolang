@@ -21,6 +21,7 @@ import {
   type ResolvedAsset,
 } from './engine/ports';
 import { ExportPrecheckPanel } from './export-precheck-panel';
+import { canvasOrientation, pickDefaultProfileKey, profileOrientationKey } from './export-profile';
 
 const PRECHECK_SAMPLE_COUNT = 5;
 
@@ -32,6 +33,7 @@ export function ExportPanel({
   draftId,
   disabled,
   profiles,
+  defaultProfile,
 }: {
   revisionId: string | null;
   document: CanonicalDocument;
@@ -40,6 +42,7 @@ export function ExportPanel({
   draftId: string | null;
   disabled: boolean;
   profiles: ShortformProfile[];
+  defaultProfile: string | null;
 }) {
   const t = useTranslations('editor');
   const { notify } = useToast();
@@ -49,9 +52,16 @@ export function ExportPanel({
     uploading: t('exportStage.uploading'),
     verifying: t('exportStage.verifying'),
   };
+  const defaultKey = pickDefaultProfileKey(profiles, document.canvas, defaultProfile);
+  const selectionSeed = `${defaultKey ?? ''}:${canvasOrientation(document.canvas)}`;
   const [picked, setPicked] = useState<Set<string>>(
-    new Set(profiles.slice(0, 1).map((item) => item.key)),
+    () => new Set(defaultKey ? [defaultKey] : []),
   );
+  const [pickedSeed, setPickedSeed] = useState(selectionSeed);
+  if (pickedSeed !== selectionSeed) {
+    setPickedSeed(selectionSeed);
+    setPicked(new Set(defaultKey ? [defaultKey] : []));
+  }
   const [busy, setBusy] = useState(false);
   const [lastExportId, setLastExportId] = useState<string | null>(null);
   // Walkthrough finding: the loop below already had `progress.percent`/
@@ -95,10 +105,11 @@ export function ExportPanel({
       await editorApi.queueExports(variants.map((item) => item.id));
       const claimed = await editorApi.claimExport(browserInstanceId());
       claimedExportIdRef.current = claimed.id;
+      const variant = variants.find((item) => item.id === claimed.variant_id) ?? variants[0];
       const spec = {
-        profile_key: claimed.variant_id,
-        width: variants[0]?.width ?? 1080,
-        height: variants[0]?.height ?? 1920,
+        profile_key: variant?.profile_key ?? claimed.variant_id,
+        width: variant?.width ?? 1080,
+        height: variant?.height ?? 1920,
         fps_num: 30,
         fps_den: 1,
         format: 'mp4' as const,
@@ -112,8 +123,9 @@ export function ExportPanel({
         setProgress({ percent: step.percent, stage: step.stage });
         blob = step.blob ?? blob;
       }
-      if (!blob) throw new Error('empty_export');
+      if (!blob || blob.size === 0) throw new Error('empty_export');
       setProgress({ percent: 100, stage: 'uploading' });
+      await editorApi.heartbeatExport(claimed.id, 100, 'uploading');
       const checksum = await sha256Hex(await blob.arrayBuffer());
       const presigned = await editorApi.presignExportUpload(claimed.id, {
         filename: 'cut.mp4',
@@ -128,6 +140,7 @@ export function ExportPanel({
       });
       if (!put.ok) throw new Error(`upload ${put.status}`);
       setProgress({ percent: 100, stage: 'verifying' });
+      await editorApi.heartbeatExport(claimed.id, 100, 'verifying');
       const done = await editorApi.completeExport(claimed.id, presigned.upload_session_id);
       setLastExportId(done.id);
       notify(t('exportDone'), 'success');
@@ -135,6 +148,16 @@ export function ExportPanel({
       if (error instanceof DOMException && error.name === 'AbortError') {
         notify(t('exportCancelled'), 'info');
       } else {
+        const exportId = claimedExportIdRef.current;
+        if (exportId) {
+          void editorApi
+            .failExport(
+              exportId,
+              'export_failed',
+              isApiError(error) ? error.message : t('commandFailed'),
+            )
+            .catch(() => undefined);
+        }
         notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
       }
     } finally {
@@ -152,11 +175,11 @@ export function ExportPanel({
   };
 
   const bind = async () => {
-    if (!draftId || !lastExportId) return;
+    if (!lastExportId) return;
     setBusy(true);
     try {
-      await editorApi.bindEditorExport(draftId, lastExportId);
-      router.push(`/publish/${draftId}`);
+      const bound = await editorApi.ensureBoundDraft(lastExportId, draftId);
+      router.push(`/publish/${bound.draft_id}`);
     } catch (error) {
       notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
     } finally {
@@ -183,7 +206,8 @@ export function ExportPanel({
                 setPicked(next);
               }}
             />
-            {profile.key} · {profile.width}×{profile.height}
+            {profile.key} · {profile.aspect_ratio} · {t(profileOrientationKey(profile))} ·{' '}
+            {profile.width}×{profile.height}
           </label>
         ))}
       </fieldset>
@@ -237,7 +261,7 @@ export function ExportPanel({
           </p>
         </div>
       ) : null}
-      {draftId && lastExportId ? (
+      {lastExportId ? (
         <Button variant="secondary" onClick={() => void bind()} disabled={busy}>
           {t('bindAndPublish')}
         </Button>

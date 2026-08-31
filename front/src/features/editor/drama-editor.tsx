@@ -31,6 +31,7 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
   const [cut, setCut] = useState<editorApi.EpisodeCut | null>(null);
   const [document, setDocument] = useState<CanonicalDocument>(emptyDocument());
   const [profiles, setProfiles] = useState<ShortformProfile[]>([]);
+  const [defaultProfile, setDefaultProfile] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -108,8 +109,11 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
       } catch (error) {
         if (!cancelled) setLoadError(isApiError(error) ? error.message : t('unavailable'));
       }
-      const profiles = await editorApi.loadShortformProfiles();
-      if (!cancelled) setProfiles(profiles.profiles);
+      const catalog = await editorApi.loadShortformProfiles();
+      if (!cancelled) {
+        setProfiles(catalog.profiles);
+        setDefaultProfile(catalog.default_profile);
+      }
     };
     void run();
     return () => {
@@ -286,6 +290,7 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
         syncNonce={syncNonce}
         draftId={draftId}
         profiles={profiles}
+        defaultProfile={defaultProfile}
         cutId={cut.id}
         leaseId={lease?.id ?? null}
         leaseToken={token}

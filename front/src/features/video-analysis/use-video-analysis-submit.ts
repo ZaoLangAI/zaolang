@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import * as videoAnalysisApi from '@/features/video-analysis/api';
+import { newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { GenerationJob, QualityTier, Quote } from '@/lib/api/types';
 
@@ -39,6 +40,13 @@ export function useVideoAnalysisSubmit(
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * One key per pending submission, not one per click — a network failure
+   * leaves the server's outcome unknown, and re-minting a key on retry
+   * would let that lost request *and* the retry both reserve credits.
+   */
+  const pendingIdempotencyKey = useRef<string | null>(null);
+
   const latestQuote = useRef(0);
   useEffect(() => {
     if (sessionStatus !== 'authenticated') return;
@@ -66,14 +74,22 @@ export function useVideoAnalysisSubmit(
         setSubmitting(true);
         setError(null);
         try {
+          pendingIdempotencyKey.current ??= newIdempotencyKey();
           const job = await videoAnalysisApi.submitVideoAnalysis({
             qualityTier,
             referenceAssetId,
             notes,
+            idempotencyKey: pendingIdempotencyKey.current,
           });
+          pendingIdempotencyKey.current = null;
           onSubmitted(job);
         } catch (caught) {
           setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
+          // A changed request under the same key would 409 forever; only
+          // that case forces a fresh key on the next attempt.
+          if (caught instanceof ApiError && caught.code === 'IDEMPOTENCY_CONFLICT') {
+            pendingIdempotencyKey.current = null;
+          }
         } finally {
           setSubmitting(false);
         }

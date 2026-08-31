@@ -521,6 +521,17 @@ def expire_editor_leases() -> int:
         return matched
 
 
+@celery_app.task(name="app.workers.tasks.expire_stale_editor_exports", **_QUICK)
+def expire_stale_editor_exports() -> int:
+    """Fails browser exports whose 45s runner lease has expired."""
+    from app.domain.editor import exports as export_service
+
+    with session_scope() as session:
+        reclaimed = export_service.reclaim_stale_exports(session)
+        session.commit()
+        return reclaimed
+
+
 @celery_app.task(name="app.workers.tasks.expire_orphan_editor_uploads", **_MODERATE)
 def expire_orphan_editor_uploads() -> int:
     """Marks expired editor uploads so they are not completed after the lease dies."""

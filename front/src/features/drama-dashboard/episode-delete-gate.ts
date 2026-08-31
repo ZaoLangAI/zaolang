@@ -13,7 +13,22 @@ export function isEpisodeDeleteBlocked(input: {
   );
 }
 
-export function resumeEditorHref(cuts: Array<{ id: string }>): string | undefined {
+const DELETABLE_EXPORT_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
+
+/** A 最终成片 row can be removed only once it is terminal and unpublished. */
+export function isExportRecordDeletable(item: {
+  status: string;
+  published_work_id?: string | null;
+}): boolean {
+  return !item.published_work_id && DELETABLE_EXPORT_STATUSES.has(item.status);
+}
+
+export function resumeEditorHref(
+  cuts: Array<{ id: string }>,
+  draftId?: string | null,
+): string | undefined {
   const cutId = cuts[0]?.id;
-  return cutId ? `/studio-editor/${cutId}` : undefined;
+  if (!cutId) return undefined;
+  const suffix = draftId ? `?draftId=${encodeURIComponent(draftId)}` : '';
+  return `/studio-editor/${cutId}${suffix}`;
 }

@@ -67,7 +67,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Logout */
+        /**
+         * Logout
+         * @description Deleting the cookie alone left a copied/leaked refresh token valid for
+         *     up to 14 more days — this also kills the token by its `sid`, so a logout
+         *     the user actually asked for takes effect immediately, not just locally.
+         */
         post: operations["logout_v1_auth_logout_post"];
         delete?: never;
         options?: never;
@@ -290,7 +295,13 @@ export interface paths {
          * Version Diff
          * @description Field-by-field comparison against the parent version.
          *
-         *     Powers the "what changed" panel in the lineage graph.
+         *     Powers the "what changed" panel in the lineage graph. Both versions' own
+         *     works must be visible to the caller (same 404-shaped `assert_viewable` as
+         *     every other work read), and the field-level *values* only reveal once
+         *     `can_remix` holds for the child's work — the same gate the work detail's
+         *     own `reusable_params` uses. Without this, an unauthenticated caller could
+         *     read a paid or view-only work's prompt/seed straight off this endpoint
+         *     even though the detail page itself withholds them.
          */
         get: operations["version_diff_v1_work_versions__child_version_id__diff_get"];
         put?: never;
@@ -1374,6 +1385,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/credits/checkout/{external_reference}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Checkout Intent
+         * @description Feeds the mock checkout page the amount to display before confirming.
+         */
+        get: operations["get_checkout_intent_v1_credits_checkout__external_reference__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/credits/checkout/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Checkout
+         * @description Settles a payment intent from the mock checkout page.
+         *
+         *     A real provider calls the webhook on its own; the mock provider has no
+         *     server to do that, and the browser must never hold `payment_webhook_secret`
+         *     to sign one itself. This is the client-confirmable equivalent, gated by
+         *     ownership of the intent and reusing the same `purchase` + `payment_reference`
+         *     idempotency as the webhook — a replayed confirm or a race with the webhook
+         *     can never double-credit.
+         */
+        post: operations["confirm_checkout_v1_credits_checkout_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/webhooks/payments/mock": {
         parameters: {
             query?: never;
@@ -2353,6 +2411,47 @@ export interface paths {
         /** Bind Editor Export */
         post: operations["bind_editor_export_v1_drafts__draft_id__bind_editor_export_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/editor-exports/{export_id}/ensure-bound-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ensure Bound Draft */
+        post: operations["ensure_bound_draft_v1_editor_exports__export_id__ensure_bound_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/editor-exports/{export_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Export
+         * @description Drop one unpublished row from the episode's 最终成片 list.
+         *
+         *     A published bind (or a work version already stamped with this
+         *     export) is 422. In-flight exports must be cancelled first. The
+         *     bound draft is unbound, not deleted.
+         */
+        delete: operations["delete_export_v1_editor_exports__export_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4953,13 +5052,6 @@ export interface components {
         };
         /** AdminSessionResponse */
         AdminSessionResponse: {
-            /** Access Token */
-            access_token: string;
-            /**
-             * Token Type
-             * @default Bearer
-             */
-            token_type: string;
             /**
              * Expires At
              * Format: date-time
@@ -5776,6 +5868,35 @@ export interface components {
          * @enum {string}
          */
         CharacterViewAngle: "general" | "front" | "side" | "back";
+        /** CheckoutConfirmRequest */
+        CheckoutConfirmRequest: {
+            /** External Reference */
+            external_reference: string;
+        };
+        /** CheckoutConfirmResponse */
+        CheckoutConfirmResponse: {
+            /** Status */
+            status: string;
+            /** Available Balance */
+            available_balance: number;
+        };
+        /** CheckoutIntentResponse */
+        CheckoutIntentResponse: {
+            /** External Reference */
+            external_reference: string;
+            /** Package Slug */
+            package_slug: string;
+            /** Credits */
+            credits: number;
+            /** Bonus Credits */
+            bonus_credits: number;
+            /** Amount Minor */
+            amount_minor: number;
+            /** Currency */
+            currency: string;
+            /** Status */
+            status: string;
+        };
         /** CheckoutRequest */
         CheckoutRequest: {
             /** Package Id */
@@ -6927,6 +7048,16 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** EnsureBoundDraftRequest */
+        EnsureBoundDraftRequest: {
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /** Draft Id */
+            draft_id?: string | null;
+        };
         /** EpisodeContentLinkCreateRequest */
         EpisodeContentLinkCreateRequest: {
             /** Content Type */
@@ -7207,6 +7338,8 @@ export interface components {
             video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
             /** Linked Character Id */
             linked_character_id?: string | null;
             /** Linked Scene Id */
@@ -8145,6 +8278,29 @@ export interface components {
             /** Project Id */
             project_id: string;
         };
+        /**
+         * MeFeaturesResponse
+         * @description The subset of `FeatureFlags` a consumer client needs to decide what to
+         *     show, independent of whether the underlying API 404s once clicked.
+         *
+         *     Evaluated per-user (percentage rollout included, see
+         *     `platform_config.service.is_enabled`) so two users can legitimately see
+         *     different values for the same flag during a staged rollout.
+         */
+        MeFeaturesResponse: {
+            /** Script Studio */
+            script_studio: boolean;
+            /** Video Analysis */
+            video_analysis: boolean;
+            /** Web Editor */
+            web_editor: boolean;
+            /** Video Generation */
+            video_generation: boolean;
+            /** Drama Studio */
+            drama_studio: boolean;
+            /** Marketplace */
+            marketplace: boolean;
+        };
         /** MeResponse */
         MeResponse: {
             /** Id */
@@ -8174,6 +8330,7 @@ export interface components {
              * @default 0
              */
             reserved_credits: number;
+            features: components["schemas"]["MeFeaturesResponse"];
         };
         /**
          * MediaPricingPayload
@@ -11732,7 +11889,9 @@ export interface operations {
     version_diff_v1_work_versions__child_version_id__diff_get: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 child_version_id: string;
             };
@@ -14266,6 +14425,74 @@ export interface operations {
             };
         };
     };
+    get_checkout_intent_v1_credits_checkout__external_reference__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                external_reference: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutIntentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_checkout_v1_credits_checkout_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutConfirmResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     payment_webhook_v1_webhooks_payments_mock_post: {
         parameters: {
             query?: never;
@@ -16642,6 +16869,77 @@ export interface operations {
                         [key: string]: string;
                     };
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ensure_bound_draft_v1_editor_exports__export_id__ensure_bound_draft_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnsureBoundDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_export_v1_editor_exports__export_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

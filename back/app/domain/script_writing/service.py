@@ -65,10 +65,11 @@ MAX_TITLE_LEN = 60
 # How far after `DramaEpisode.created_at` a `script_draft` AgentRun still
 # counts as *this* empty shell's original attempt — AgentRun has no
 # episode_id, so a later draft for a different episode by the same user
-# must not be attributed here. The stream's own wall clock is 300s; this
-# window is just wide enough for a slow thinking model plus a couple of
-# same-page retries, not a next-day session on another script.
-_SOURCE_IDEA_RECOVER_WINDOW = timedelta(minutes=15)
+# must not be attributed here. The stream's own wall clock is 600s per
+# attempt (plus one same-endpoint retry); this window is just wide enough
+# for a slow thinking model plus that retry, not a next-day session on
+# another script.
+_SOURCE_IDEA_RECOVER_WINDOW = timedelta(minutes=30)
 
 
 def _require_script_studio(session: Session, *, user_id: str | None) -> None:

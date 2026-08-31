@@ -35,6 +35,7 @@ export function PropertiesPanel({
   draftId,
   disabled,
   profiles,
+  defaultProfile,
   selected,
   cutId,
   leaseId,
@@ -51,6 +52,7 @@ export function PropertiesPanel({
   draftId: string | null;
   disabled: boolean;
   profiles: ShortformProfile[];
+  defaultProfile: string | null;
   selected: TimelineElement | undefined;
   cutId: string;
   leaseId: string | null;
@@ -142,6 +144,7 @@ export function PropertiesPanel({
                 draftId={draftId}
                 disabled={disabled}
                 profiles={profiles}
+                defaultProfile={defaultProfile}
               />
             </CollapsibleSection>
             <CollapsibleSection label={t('historyPanelTitle')}>

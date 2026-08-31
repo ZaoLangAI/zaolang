@@ -1,8 +1,8 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
-import { adminApi, setAdminToken } from '@/lib/api/admin-client';
+import { adminApi } from '@/lib/api/admin-client';
 import { highestRole, type AdminRole } from '@/lib/admin/rbac';
 
 export interface AdminSession {
@@ -10,7 +10,6 @@ export interface AdminSession {
   email: string;
   roles: string[];
   max_role: string;
-  access_token: string;
 }
 
 interface AdminSessionContextValue {
@@ -24,9 +23,12 @@ const AdminSessionContext = createContext<AdminSessionContextValue | null>(null)
 /**
  * Holds the console session for client components.
  *
- * The token is put into the admin client on mount so client-side writes carry
- * it explicitly, rather than relying on the cookie alone: the API treats the
- * bearer token as the credential and the cookie only as its transport.
+ * No token lives here on purpose: the console session is entirely the
+ * httpOnly `zl_admin_session` cookie, sent automatically via
+ * `credentials: 'include'` (see `admin-client.ts`). `session` itself only
+ * ever carries RBAC-display fields (`AdminSessionResponse` has no
+ * `access_token` at all) — passing it down as a Server Component prop can't
+ * leak the JWT into the page the way returning it here used to.
  */
 export function AdminSessionProvider({
   session,
@@ -37,14 +39,8 @@ export function AdminSessionProvider({
 }) {
   const [current] = useState(session);
 
-  useEffect(() => {
-    setAdminToken(current.access_token);
-    return () => setAdminToken(null);
-  }, [current.access_token]);
-
   const signOut = useCallback(async () => {
     await adminApi.post('/v1/admin/auth/logout');
-    setAdminToken(null);
     window.location.assign(`${window.location.pathname.split('/admin')[0]}/admin/login`);
   }, []);
 

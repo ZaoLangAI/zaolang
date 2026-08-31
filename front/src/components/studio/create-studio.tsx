@@ -39,6 +39,7 @@ export function CreateStudio({
   initialPrompt,
   reference,
   initialDraft,
+  initialJobId,
   style,
   initialAssetKind,
   initialVideoAssetKind,
@@ -57,6 +58,8 @@ export function CreateStudio({
   initialPrompt?: string;
   reference?: WorkDetail;
   initialDraft?: Draft;
+  /** Notification click-through — which job under `initialDraft` to show. */
+  initialJobId?: string;
   style?: StyleGalleryEntry | null;
   initialAssetKind?: ImageAssetKind;
   initialVideoAssetKind?: VideoAssetKind;
@@ -80,6 +83,7 @@ export function CreateStudio({
         initialPrompt={initialPrompt}
         reference={reference}
         initialDraft={initialDraft}
+        initialJobId={initialJobId}
         initialAssetKind={initialAssetKind}
         initialTargetCharacterId={initialTargetCharacterId}
         initialTargetSceneId={initialTargetSceneId}

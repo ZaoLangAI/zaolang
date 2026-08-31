@@ -4,7 +4,9 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { LiveThinking } from '@/components/ai/thinking-disclosure';
+import { useSession } from '@/components/auth/session-provider';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
+import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import {
   CHARACTER_VIEW_LABEL_KEY,
   STAGE_FOR_EVENT,
@@ -20,18 +22,18 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconCheck, IconClock, IconCopy, IconSparkle } from '@/components/ui/icons';
 import { Badge, ErrorNotice, type BadgeTone } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
-import { checkEditorAvailable } from '@/features/editor/api';
 import { createCutFromJob } from '@/features/editor/from-job';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import { api } from '@/lib/api/client';
+import { api, newIdempotencyKey } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { GenerationJob } from '@/lib/api/types';
+import type { Draft, GenerationJob } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDateTime } from '@/lib/format';
 import { loadAnime, useReducedMotion } from '@/lib/motion';
 import { refreshAssetUrl, refreshJobOutputUrl } from '@/lib/refresh-media-src';
 import { useJobStream } from '@/lib/use-job-stream';
+import { useResource } from '@/lib/use-resource';
 
 const PROGRESS_DURATION = 650;
 const STAGE_POP_DURATION = 420;
@@ -45,6 +47,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { notify } = useToast();
+  const { user } = useSession();
 
   const { job, events, connected, reconnecting, liveThinking, applyJob } = useJobStream(
     jobId,
@@ -53,8 +56,15 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
-  const [editorAvailable, setEditorAvailable] = useState<boolean | null>(null);
   const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  /**
+   * One key for this failed job's retry, not one per click — a network
+   * failure leaves the server's outcome unknown, and re-minting a key would
+   * let a second click double-reserve credits for the same retry.
+   */
+  const pendingRetryKey = useRef<string | null>(null);
 
   const current = job ?? initial;
   const reached = new Set<Stage>();
@@ -164,6 +174,32 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
     }
   };
 
+  // A new job (see `POST .../retry`'s own doc comment on why it's a new job
+  // rather than reopening this one), so success navigates to it rather than
+  // patching `current` in place — this page's SSE stream is scoped to `jobId`.
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      pendingRetryKey.current ??= newIdempotencyKey();
+      const next = await api.post<GenerationJob>(
+        `/v1/generation-jobs/${jobId}/retry`,
+        undefined,
+        { idempotencyKey: pendingRetryKey.current },
+      );
+      pendingRetryKey.current = null;
+      router.push(`/jobs/${next.id}`);
+    } catch (error) {
+      // A changed request under the same key would 409 forever; only that
+      // case forces a fresh key on the next attempt.
+      if (isApiError(error) && error.code === 'IDEMPOTENCY_CONFLICT') {
+        pendingRetryKey.current = null;
+      }
+      notify(isApiError(error) ? error.message : t('cancelFailed'), 'error');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const enterEditor = async () => {
     setOpeningEditor(true);
     // Opened synchronously (before the await below) so the browser attributes
@@ -195,18 +231,13 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
       current.operation === 'image_to_video' ||
       current.operation === 'video_to_video');
 
-  useEffect(() => {
-    if (!canEnterEditor) return;
-    let cancelled = false;
-    void checkEditorAvailable().then((available) => {
-      if (!cancelled) setEditorAvailable(available);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [canEnterEditor]);
-
-  const showEnterEditor = canEnterEditor && editorAvailable !== false;
+  // Reads the flag straight off `/v1/auth/me` rather than probing
+  // `GET /drama-series` — that probe could succeed while `web_editor_enabled`
+  // itself was off (the series list has no flag check of its own), flashing
+  // a button that then 404s on `create_cut_from_job`. `undefined` (session
+  // not loaded yet) fails open, same as the old probe's own "don't hide on
+  // a transient error" stance.
+  const showEnterEditor = canEnterEditor && (user?.features.web_editor ?? true);
 
   // A cover-kind job's output is a single, standalone image with no roster
   // to maintain (unlike a character/scene) — see `CreationSkillCategory.
@@ -214,6 +245,21 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   // this `POST /v1/skills` call with the job's own output as the thumbnail.
   const canSaveCoverSkill =
     current.status === 'succeeded' && current.asset_kind === 'cover' && Boolean(current.output_asset_id);
+
+  // A preview-tier success is a cheap, fast sample — this is the only route
+  // from it to a full-priced standard/cinematic render (`POST .../promote`
+  // reserves that as its own new job, see the dialog's own doc comment).
+  const canPromote = current.status === 'succeeded' && current.quality_tier === 'preview';
+
+  // Fetched only once there's a draft worth asking about, so the "去发布"
+  // button can tell "already submitted, wait" and "already live" apart from
+  // a fresh, unsubmitted draft — a plain "发布" label on all three used to
+  // invite a second, `Conflict`-refused submit on a draft already pending.
+  const draftResource = useResource<Draft>(
+    current.status === 'succeeded' && current.draft_id ? `/v1/drafts/${current.draft_id}` : null,
+  );
+  const draftPublishStatus = draftResource.data?.publish_status ?? null;
+  const publishedWorkId = draftResource.data?.published_work_id ?? null;
 
   const refreshOutputSrc = useCallback(async () => {
     if (current.output_asset_id) return refreshAssetUrl(current.output_asset_id);
@@ -413,7 +459,7 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={current.failure_message ?? t('failedTitle')}
               detail={`${t('failedHint')}${current.failure_code ? ` · ${tJob('errorCode', { code: current.failure_code })}` : ''}`}
               action={
-                <Button size="sm" variant="secondary" onClick={() => router.push('/create')}>
+                <Button size="sm" variant="secondary" loading={retrying} onClick={() => void retry()}>
                   {tJob('retry')}
                 </Button>
               }
@@ -421,7 +467,15 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
           ) : null}
 
           {current.status === 'cancelled' ? (
-            <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
+            <ErrorNotice
+              title={t('cancelledTitle')}
+              detail={t('failedHint')}
+              action={
+                <Button size="sm" variant="secondary" loading={retrying} onClick={() => void retry()}>
+                  {tJob('retry')}
+                </Button>
+              }
+            />
           ) : null}
 
           {showAwaitingPanel && (hasMultipleOutputs || current.output_url) ? (
@@ -445,16 +499,34 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               </Button>
             ) : null}
             {current.status === 'succeeded' && current.draft_id ? (
-              <Button
-                variant={showEnterEditor ? 'secondary' : 'primary'}
-                onClick={() => router.push(`/publish/${current.draft_id}`)}
-              >
-                {tJob('publish')}
-              </Button>
+              publishedWorkId ? (
+                <Button
+                  variant={showEnterEditor ? 'secondary' : 'primary'}
+                  onClick={() => router.push(`/work/${publishedWorkId}`)}
+                >
+                  {t('openWork')}
+                </Button>
+              ) : draftPublishStatus === 'pending' ? (
+                <Button variant="secondary" disabled>
+                  {t('publishPending')}
+                </Button>
+              ) : (
+                <Button
+                  variant={showEnterEditor ? 'secondary' : 'primary'}
+                  onClick={() => router.push(`/publish/${current.draft_id}`)}
+                >
+                  {tJob('publish')}
+                </Button>
+              )
             ) : null}
             {canSaveCoverSkill ? (
               <Button variant="secondary" onClick={() => setSavingCoverSkillOpen(true)}>
                 {t('saveCoverSkill')}
+              </Button>
+            ) : null}
+            {canPromote ? (
+              <Button variant="secondary" onClick={() => setPromoteOpen(true)}>
+                {t('promote')}
               </Button>
             ) : null}
             {!finished ? (
@@ -555,6 +627,13 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
         open={savingCoverSkillOpen}
         onClose={() => setSavingCoverSkillOpen(false)}
         outputAssetId={current.output_asset_id}
+      />
+
+      <PromoteJobDialog
+        open={promoteOpen}
+        onClose={() => setPromoteOpen(false)}
+        job={current}
+        onPromoted={(promoted) => router.push(`/jobs/${promoted.id}`)}
       />
     </div>
   );

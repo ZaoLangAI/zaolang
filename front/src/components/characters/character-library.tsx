@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
@@ -25,9 +25,10 @@ import { Badge, Card, EmptyState, ErrorNotice } from '@/components/ui/primitives
 import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
+import { useRouter } from '@/i18n/navigation';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character, GenerationJob, Page } from '@/lib/api/types';
+import type { Character, GenerationJob, Page, Quote } from '@/lib/api/types';
 import { CHARACTER_COMPLETION_PROMPT, missingReferenceViews, referenceByView } from '@/lib/characters';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
@@ -201,7 +202,9 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const t = useTranslations('characters');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
+  const tCredits = useTranslations('credits');
   const { notify } = useToast();
+  const router = useRouter();
 
   const [characters, setCharacters] = useState(initial);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -234,6 +237,13 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   // whichever one some other cell (or character) happens to be running.
   const [completingKey, setCompletingKey] = useState<string | null>(null);
   const [deletingViewKey, setDeletingViewKey] = useState<string | null>(null);
+  /**
+   * One idempotency key per pending completion, not one per click — a
+   * network failure leaves the server's outcome unknown, and re-minting a
+   * key on retry could reserve credits twice for the same views. Cleared
+   * once the completion job actually comes back with an id.
+   */
+  const pendingCompletionKeys = useRef<Map<string, string>>(new Map());
 
   const openCreate = () => {
     setEditing(null);
@@ -427,6 +437,32 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
     const key = `${character.id}:${views.join(',')}`;
     setCompletingKey(key);
     try {
+      // Priced before submitting, not just left to the submit's own
+      // `INSUFFICIENT_CREDITS` failure — a multi-view completion costs one
+      // image per view, and this page has no estimate box anywhere near the
+      // button to have warned the user beforehand otherwise.
+      const quote = await api.post<Quote>('/v1/generation-jobs/quote', {
+        operation: 'image_to_image',
+        quality_tier: 'standard',
+        asset_kind: 'character',
+        character_views: views,
+      });
+      if (!quote.sufficient) {
+        notify(tCredits('insufficientDetail', { count: quote.credits }), 'error');
+        router.push('/billing');
+        return;
+      }
+    } catch {
+      notify(tStates('errorHint'), 'error');
+      setCompletingKey(null);
+      return;
+    }
+    let idempotencyKey = pendingCompletionKeys.current.get(key);
+    if (!idempotencyKey) {
+      idempotencyKey = newIdempotencyKey();
+      pendingCompletionKeys.current.set(key, idempotencyKey);
+    }
+    try {
       const job = await api.post<GenerationJob>(
         '/v1/generation-jobs',
         {
@@ -442,8 +478,9 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
             auto_attach_asset: true,
           },
         },
-        { idempotencyKey: newIdempotencyKey() },
+        { idempotencyKey },
       );
+      pendingCompletionKeys.current.delete(key);
       const finished = await pollCompletionJob(job.id);
       if (finished.status !== 'succeeded') {
         notifyViewCompletion(views, false);
@@ -454,7 +491,13 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         current.map((item) => (item.id === refreshed.id ? refreshed : item)),
       );
       notifyViewCompletion(views, true);
-    } catch {
+    } catch (caught) {
+      // A changed request under the same key would 409 forever; only that
+      // case forces a fresh key, everything else (network, timeout, a real
+      // failure) keeps it so a retry can't double-reserve.
+      if (caught instanceof ApiError && caught.code === 'IDEMPOTENCY_CONFLICT') {
+        pendingCompletionKeys.current.delete(key);
+      }
       notifyViewCompletion(views, false);
     } finally {
       setCompletingKey(null);

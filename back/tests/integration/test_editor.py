@@ -1019,6 +1019,404 @@ def test_bind_editor_export_requires_a_succeeded_output(
     assert bound.json()["export_id"] == export.id
 
 
+def _succeeded_export(
+    db: Session, revision_id: str, asset: Asset, *, operation_key: str
+) -> Any:
+    from app.models import DeliveryVariant, EditorExport
+    from app.models.enums import DeliveryVariantStatus, EditorExportStatus
+
+    variant = DeliveryVariant(
+        cut_revision_id=revision_id,
+        profile_key="douyin_vertical",
+        aspect_ratio="9:16",
+        width=1080,
+        height=1920,
+        spec_json={"profile_key": "douyin_vertical", "op": operation_key},
+        spec_hash=(operation_key + "h" * 64)[:64],
+        status=DeliveryVariantStatus.READY,
+    )
+    db.add(variant)
+    db.flush()
+    export = EditorExport(
+        variant_id=variant.id,
+        status=EditorExportStatus.SUCCEEDED,
+        operation_key=operation_key,
+        attempt=1,
+        output_asset_id=asset.id,
+    )
+    db.add(export)
+    db.flush()
+    return export
+
+
+def test_ensure_bound_draft_requires_confirmation(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_noconfirm"
+    )
+    refused = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": False},
+    )
+    assert refused.status_code == 422
+
+
+def test_ensure_bound_draft_requires_a_succeeded_export(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import DeliveryVariant, EditorExport
+    from app.models.enums import DeliveryVariantStatus, EditorExportStatus
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    variant = DeliveryVariant(
+        cut_revision_id=opened["cut"]["head_revision_id"],
+        profile_key="douyin_vertical",
+        aspect_ratio="9:16",
+        width=1080,
+        height=1920,
+        spec_json={"profile_key": "douyin_vertical"},
+        spec_hash="e" * 64,
+        status=DeliveryVariantStatus.READY,
+    )
+    db.add(variant)
+    db.flush()
+    export = EditorExport(
+        variant_id=variant.id,
+        status=EditorExportStatus.ENCODING,
+        operation_key="op_encoding",
+        attempt=1,
+    )
+    db.add(export)
+    db.flush()
+    refused = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert refused.status_code == 422
+
+
+def test_ensure_bound_draft_mints_when_no_source_draft(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_mint"
+    )
+    created = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert created.status_code == 200, created.text
+    draft_id = created.json()["draft_id"]
+    assert draft_id.startswith("drf_")
+    listed = client.get(
+        f"/v1/drama-episodes/{opened['cut']['episode_id']}/exports",
+        headers=auth_header(author),
+    )
+    assert listed.status_code == 200, listed.text
+    row = next(item for item in listed.json() if item["id"] == export.id)
+    assert row["bound_draft_id"] == draft_id
+
+
+def test_ensure_bound_draft_reuses_unpublished_source_draft(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import Draft, EpisodeContentLink
+    from app.models.enums import EpisodeContentRole, EpisodeContentType
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    draft = Draft(user_id=author.id, title="生成草稿", output_asset_id=asset.id)
+    db.add(draft)
+    db.flush()
+    db.add(
+        EpisodeContentLink(
+            episode_id=opened["cut"]["episode_id"],
+            content_type=EpisodeContentType.DRAFT,
+            content_ref_id=draft.id,
+            role=EpisodeContentRole.CANDIDATE,
+        )
+    )
+    db.flush()
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_reuse"
+    )
+    bound = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert bound.status_code == 200, bound.text
+    assert bound.json()["draft_id"] == draft.id
+    db.refresh(draft)
+    assert draft.editor_export_id == export.id
+
+
+def test_ensure_bound_draft_mints_when_source_draft_is_published(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import Draft, EpisodeContentLink
+    from app.models.enums import EpisodeContentRole, EpisodeContentType
+    from tests.factories import make_work
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    work, _version = make_work(db, author)
+    draft = Draft(
+        user_id=author.id,
+        title="已发布生成稿",
+        output_asset_id=asset.id,
+        published_work_id=work.id,
+    )
+    db.add(draft)
+    db.flush()
+    db.add(
+        EpisodeContentLink(
+            episode_id=opened["cut"]["episode_id"],
+            content_type=EpisodeContentType.DRAFT,
+            content_ref_id=draft.id,
+            role=EpisodeContentRole.CANDIDATE,
+        )
+    )
+    db.flush()
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_pubsrc"
+    )
+    created = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert created.status_code == 200, created.text
+    assert created.json()["draft_id"] != draft.id
+
+
+def test_ensure_bound_draft_is_idempotent_for_an_unpublished_bind(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_again"
+    )
+    first = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert first.status_code == 200, first.text
+    second = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["draft_id"] == first.json()["draft_id"]
+
+
+def test_ensure_bound_draft_rejects_an_already_published_bind(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import Draft
+    from tests.factories import make_work
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_pubbind"
+    )
+    work, _version = make_work(db, author)
+    draft = Draft(
+        user_id=author.id,
+        title="已发布成片",
+        editor_export_id=export.id,
+        published_work_id=work.id,
+    )
+    db.add(draft)
+    db.flush()
+    refused = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert refused.status_code == 409
+
+
+def test_ensure_bound_draft_requires_auth(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_anon"
+    )
+    response = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        json={"confirmed": True},
+    )
+    assert response.status_code == 401
+
+
+def test_delete_export_removes_unpublished_record_and_unbinds_draft(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import DeliveryVariant, Draft, EditorExport
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_del"
+    )
+    bound = client.post(
+        f"/v1/editor-exports/{export.id}/ensure-bound-draft",
+        headers=auth_header(author),
+        json={"confirmed": True},
+    )
+    assert bound.status_code == 200, bound.text
+    draft_id = bound.json()["draft_id"]
+    variant_id = export.variant_id
+    export_id = export.id
+
+    deleted = client.delete(
+        f"/v1/editor-exports/{export_id}",
+        headers=auth_header(author),
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    listed = client.get(
+        f"/v1/drama-episodes/{opened['cut']['episode_id']}/exports",
+        headers=auth_header(author),
+    )
+    assert listed.status_code == 200, listed.text
+    assert all(item["id"] != export_id for item in listed.json())
+
+    db.expire_all()
+    leftover_draft = db.get(Draft, draft_id)
+    assert leftover_draft is not None
+    assert leftover_draft.editor_export_id is None
+    assert leftover_draft.delivery_variant_id is None
+    assert leftover_draft.source_cut_revision_id is None
+    assert db.get(EditorExport, export_id) is None
+    assert db.get(DeliveryVariant, variant_id) is not None
+    assert db.get(Asset, asset.id) is not None
+
+
+def test_delete_export_rejects_a_published_bind(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import Draft
+    from tests.factories import make_work
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_delpub"
+    )
+    work, _version = make_work(db, author)
+    draft = Draft(
+        user_id=author.id,
+        title="已发布成片",
+        editor_export_id=export.id,
+        published_work_id=work.id,
+    )
+    db.add(draft)
+    db.flush()
+    refused = client.delete(
+        f"/v1/editor-exports/{export.id}",
+        headers=auth_header(author),
+    )
+    assert refused.status_code == 422
+    listed = client.get(
+        f"/v1/drama-episodes/{opened['cut']['episode_id']}/exports",
+        headers=auth_header(author),
+    )
+    assert any(item["id"] == export.id for item in listed.json())
+
+
+def test_delete_export_rejects_in_flight(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.models import DeliveryVariant, EditorExport
+    from app.models.enums import DeliveryVariantStatus, EditorExportStatus
+
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    variant = DeliveryVariant(
+        cut_revision_id=opened["cut"]["head_revision_id"],
+        profile_key="douyin_vertical",
+        aspect_ratio="9:16",
+        width=1080,
+        height=1920,
+        spec_json={"profile_key": "douyin_vertical"},
+        spec_hash="d" * 64,
+        status=DeliveryVariantStatus.EXPORTING,
+    )
+    db.add(variant)
+    db.flush()
+    export = EditorExport(
+        variant_id=variant.id,
+        status=EditorExportStatus.ENCODING,
+        operation_key="op_delflight",
+        attempt=1,
+    )
+    db.add(export)
+    db.flush()
+    refused = client.delete(
+        f"/v1/editor-exports/{export.id}",
+        headers=auth_header(author),
+    )
+    assert refused.status_code == 422
+
+
+def test_delete_export_requires_auth(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_delanon"
+    )
+    response = client.delete(f"/v1/editor-exports/{export.id}")
+    assert response.status_code == 401
+
+
+def test_delete_export_hides_another_owners_row(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    opened = _open_cut(client, author, asset)
+    export = _succeeded_export(
+        db, opened["cut"]["head_revision_id"], asset, operation_key="op_delother"
+    )
+    outsider = make_user(db, email="export-outsider@example.com", handle="export-outsider")
+    refused = client.delete(
+        f"/v1/editor-exports/{export.id}",
+        headers=auth_header(outsider),
+    )
+    assert refused.status_code == 404
+
+
 def test_operation_sse_skips_events_already_seen(
     client: TestClient, db: Session, author: User, admin: User
 ) -> None:
@@ -1253,3 +1651,201 @@ def test_get_operation_exposes_transcript_only_to_the_asset_owner(
     other_view = client.get(f"/v1/editor-operations/{row.id}", headers=auth_header(remixer))
     assert other_view.status_code == 200, other_view.text
     assert other_view.json()["result"] == {}
+
+
+def _ready_variant(session: Session, revision_id: str, *, digest: str = "q") -> Any:
+    from app.models import DeliveryVariant
+    from app.models.enums import DeliveryVariantStatus
+
+    variant = DeliveryVariant(
+        cut_revision_id=revision_id,
+        profile_key="douyin_9_16",
+        aspect_ratio="9:16",
+        width=1080,
+        height=1920,
+        spec_json={"profile_key": "douyin_9_16"},
+        spec_hash=digest * 64,
+        status=DeliveryVariantStatus.READY,
+    )
+    session.add(variant)
+    session.flush()
+    return variant
+
+
+def test_queue_exports_reclaims_an_expired_in_flight_variant(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    import datetime as dt
+
+    from sqlalchemy import select
+
+    from app.domain.editor import exports as export_service
+    from app.domain.editor import state_machine as editor_sm
+    from app.models import EditorExport
+    from app.models.base import utcnow
+    from app.models.enums import DeliveryVariantStatus, EditorExportStatus
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = _ready_variant(db, opened["cut"]["head_revision_id"], digest="e")
+    first = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-expired"
+    )[0]
+    editor_sm.transition_export(db, first.id, EditorExportStatus.CLAIMED)
+    editor_sm.transition_export(db, first.id, EditorExportStatus.ENCODING)
+    first.progress = 100
+    first.lease_expires_at = utcnow() - dt.timedelta(seconds=60)
+    db.flush()
+
+    retried = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-retry"
+    )
+    assert len(retried) == 1
+    assert retried[0].id != first.id
+    assert retried[0].status == EditorExportStatus.QUEUED
+    db.refresh(first)
+    db.refresh(variant)
+    assert first.status == EditorExportStatus.FAILED
+    assert first.failure_code == "stale_lease"
+    assert variant.status == DeliveryVariantStatus.EXPORTING
+    ids = list(db.scalars(select(EditorExport.id).where(EditorExport.variant_id == variant.id)))
+    assert set(ids) == {first.id, retried[0].id}
+
+
+def test_queue_exports_conflicts_while_the_runner_lease_is_live(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    import pytest
+    from sqlalchemy import func, select
+
+    from app.domain.editor import exports as export_service
+    from app.domain.errors import Conflict
+    from app.models import EditorExport
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = _ready_variant(db, opened["cut"]["head_revision_id"], digest="l")
+    first = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-live"
+    )[0]
+    claimed = export_service.claim_next(
+        db,
+        user_id=author.id,
+        runner_instance_id="runner-live",
+        capabilities={"chrome_or_edge": True},
+    )
+    assert claimed is not None
+    assert claimed.id == first.id
+
+    with pytest.raises(Conflict, match="正在导出"):
+        export_service.queue_exports(
+            db, user_id=author.id, variant_ids=[variant.id], operation_key="op-steal"
+        )
+    assert (
+        db.scalar(select(func.count(EditorExport.id)).where(EditorExport.variant_id == variant.id))
+        == 1
+    )
+
+
+def test_queue_exports_can_restart_a_succeeded_variant(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.domain.editor import exports as export_service
+    from app.models.enums import DeliveryVariantStatus, EditorExportStatus
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = _ready_variant(db, opened["cut"]["head_revision_id"], digest="s")
+    first = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-done"
+    )[0]
+    first.status = EditorExportStatus.SUCCEEDED
+    variant.status = DeliveryVariantStatus.SUCCEEDED
+    db.flush()
+
+    retried = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-again"
+    )
+    assert retried[0].id != first.id
+    assert retried[0].status == EditorExportStatus.QUEUED
+    db.refresh(first)
+    db.refresh(variant)
+    assert first.status == EditorExportStatus.SUCCEEDED
+    assert variant.status == DeliveryVariantStatus.EXPORTING
+
+
+def test_queue_exports_is_idempotent_for_the_same_operation_key(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from sqlalchemy import func, select
+
+    from app.domain.editor import exports as export_service
+    from app.models import EditorExport
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = _ready_variant(db, opened["cut"]["head_revision_id"], digest="i")
+    first = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-same"
+    )
+    second = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-same"
+    )
+    assert first[0].id == second[0].id
+    assert (
+        db.scalar(select(func.count(EditorExport.id)).where(EditorExport.variant_id == variant.id))
+        == 1
+    )
+
+
+def test_reclaim_stale_exports_fails_an_expired_encoding_row(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    import datetime as dt
+
+    from app.domain.editor import exports as export_service
+    from app.domain.editor import state_machine as editor_sm
+    from app.models.base import utcnow
+    from app.models.enums import DeliveryVariantStatus, EditorExportStatus
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = _ready_variant(db, opened["cut"]["head_revision_id"], digest="r")
+    export = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-reclaim"
+    )[0]
+    editor_sm.transition_export(db, export.id, EditorExportStatus.CLAIMED)
+    editor_sm.transition_export(db, export.id, EditorExportStatus.ENCODING)
+    export.progress = 100
+    export.lease_expires_at = utcnow() - dt.timedelta(seconds=60)
+    db.flush()
+
+    assert export_service.reclaim_stale_exports(db) == 1
+    db.refresh(export)
+    db.refresh(variant)
+    assert export.status == EditorExportStatus.FAILED
+    assert export.failure_code == "stale_lease"
+    assert variant.status == DeliveryVariantStatus.FAILED
+    assert export_service.reclaim_stale_exports(db) == 0
+
+
+def test_complete_export_accepts_an_encoding_row_after_upload(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.domain.editor import exports as export_service
+    from app.domain.editor import state_machine as editor_sm
+    from app.domain.editor.exports import _advance_export_to_verifying
+    from app.models.enums import EditorExportStatus
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = _ready_variant(db, opened["cut"]["head_revision_id"], digest="c")
+    export = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-complete"
+    )[0]
+    editor_sm.transition_export(db, export.id, EditorExportStatus.CLAIMED)
+    editor_sm.transition_export(db, export.id, EditorExportStatus.ENCODING)
+    advanced = _advance_export_to_verifying(db, export)
+    assert advanced.status == EditorExportStatus.VERIFYING
+    finished = editor_sm.transition_export(db, advanced.id, EditorExportStatus.SUCCEEDED)
+    assert finished.status == EditorExportStatus.SUCCEEDED

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
+import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import {
   CHARACTER_VIEW_LABEL_KEY,
   STAGE_FOR_EVENT,
@@ -71,6 +72,7 @@ export function InlineImageResult({
   onCancel,
   onUseAsReference,
   onRetried,
+  onPromoted,
   returnTo,
   returnLinkKind,
   returnLinkLabel,
@@ -79,6 +81,7 @@ export function InlineImageResult({
   canCompleteCharacterViews,
   completingCharacterViews,
   onCompleteCharacterViews,
+  completionCredits,
 }: {
   job: GenerationJob;
   events: StreamedEvent[];
@@ -90,6 +93,11 @@ export function InlineImageResult({
   onCancel: () => void;
   onUseAsReference: (job: GenerationJob) => void;
   onRetried: (job: GenerationJob) => void;
+  /** A preview-tier `job` succeeded and got upgraded to a full standard/
+   * cinematic render — the new job (see `PromoteJobDialog`'s own doc
+   * comment on why it's a separate job) becomes the studio's active one,
+   * same shape as `onRetried`. */
+  onPromoted: (job: GenerationJob) => void;
   /**
    * Set only when this session started from the script studio's "生成角色图
    * /场景图" jump-out (`ImageGenerationStudio`'s own `returnTo` prop,
@@ -129,6 +137,11 @@ export function InlineImageResult({
    * terminal) — independent of `job`'s own state. */
   completingCharacterViews?: boolean;
   onCompleteCharacterViews?: () => void;
+  /** Priced by `ImageGenerationStudio`'s own quote for exactly the views this
+   * click would request — shown so the button's cost isn't a surprise the
+   * user only discovers after the balance drops (see `zaolang-credits-billing`
+   * invariant on completion pricing). */
+  completionCredits?: number | null;
 }) {
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
@@ -139,6 +152,7 @@ export function InlineImageResult({
 
   const [retrying, setRetrying] = useState(false);
   const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
 
   const reached = new Set<Stage>();
   for (const event of events) {
@@ -262,6 +276,7 @@ export function InlineImageResult({
   const canSaveCoverSkill =
     job.status === 'succeeded' && job.asset_kind === 'cover' && Boolean(job.output_asset_id);
   const showCompleteCharacterViews = Boolean(canCompleteCharacterViews && onCompleteCharacterViews);
+  const canPromote = job.status === 'succeeded' && job.quality_tier === 'preview';
 
   const retry = async () => {
     setRetrying(true);
@@ -443,7 +458,9 @@ export function InlineImageResult({
           >
             {completingCharacterViews
               ? tCharacters('completingViews')
-              : tCharacters('completeViews')}
+              : completionCredits != null
+                ? tCharacters('completeViewsCredits', { count: completionCredits })
+                : tCharacters('completeViews')}
           </Button>
         ) : null}
         {job.status === 'succeeded' && draftId ? (
@@ -460,6 +477,11 @@ export function InlineImageResult({
             {t('saveCoverSkill')}
           </Button>
         ) : null}
+        {canPromote ? (
+          <Button variant="secondary" size="sm" onClick={() => setPromoteOpen(true)}>
+            {t('promote')}
+          </Button>
+        ) : null}
         {job.status === 'failed' || job.status === 'cancelled' ? (
           <Button variant="secondary" size="sm" loading={retrying} onClick={() => void retry()}>
             {tJob('retry')}
@@ -471,6 +493,13 @@ export function InlineImageResult({
         open={savingCoverSkillOpen}
         onClose={() => setSavingCoverSkillOpen(false)}
         outputAssetId={job.output_asset_id}
+      />
+
+      <PromoteJobDialog
+        open={promoteOpen}
+        onClose={() => setPromoteOpen(false)}
+        job={job}
+        onPromoted={onPromoted}
       />
     </div>
   );

@@ -29,7 +29,7 @@ from app.api.schemas.jobs import (
     VideoAnalysisResult,
 )
 from app.domain.credits import service as credits_service
-from app.domain.errors import NotFound, ValidationFailed
+from app.domain.errors import NotFound, ProviderTemporaryFailure, ValidationFailed
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
@@ -44,6 +44,7 @@ from app.models.base import new_id
 from app.models.enums import (
     CharacterViewAngle,
     ImageAssetKind,
+    JobEventType,
     JobOrigin,
     JobStatus,
     Operation,
@@ -121,14 +122,10 @@ def create_job(
         source_work_version_id=source_version_id,
         max_credits=payload.max_credits,
     )
-    if payload.draft_id:
-        draft = session.get(Draft, payload.draft_id)
-        if draft is not None and draft.user_id == user.id:
-            draft.latest_job_id = result.job.id
     session.commit()
 
     if not result.replayed:
-        _enqueue(result.job)
+        _enqueue_or_fail(session, result.job)
     return _job_response(session, result.job, include_events=True)
 
 
@@ -234,7 +231,7 @@ def retry_job(
     session.commit()
 
     if not result.replayed:
-        _enqueue(result.job)
+        _enqueue_or_fail(session, result.job)
     return _job_response(session, result.job, include_events=True)
 
 
@@ -273,14 +270,10 @@ def promote_job(
         max_credits=payload.max_credits,
     )
     result.job.promoted_from_job_id = original.id
-    if original.draft_id:
-        draft = session.get(Draft, original.draft_id)
-        if draft is not None and draft.user_id == user.id:
-            draft.latest_job_id = result.job.id
     session.commit()
 
     if not result.replayed:
-        _enqueue(result.job)
+        _enqueue_or_fail(session, result.job)
     return _job_response(session, result.job, include_events=True)
 
 
@@ -453,6 +446,39 @@ def _enqueue(job: GenerationJob) -> None:
     tasks.dispatch_generation(job)
 
 
+def _enqueue_or_fail(session: Session, job: GenerationJob) -> None:
+    """Enqueues the Celery task, failing the job and releasing its reservation
+    if the broker itself is unreachable.
+
+    Credits were reserved inside the transaction that just committed
+    (`jobs_service.submit`); a broker outage here must not leave that
+    reservation stuck for the ~30 minutes it would take `expire_stale_jobs`
+    to notice on its own.
+    """
+    try:
+        _enqueue(job)
+    except Exception as exc:
+        sm.transition(
+            session,
+            job.id,
+            JobStatus.FAILED,
+            failure_code="ENQUEUE_FAILED",
+            failure_message="任务入队失败，积分已退回，请重试。",
+        )
+        jobs_service.settle_release(session, job, reason="enqueue_failed")
+        sm.append_event(
+            session,
+            job.id,
+            event_type=JobEventType.FAILED,
+            status=JobStatus.FAILED,
+            public_message="任务入队失败，积分已退回，请重试。",
+            progress=100,
+            internal_code="ENQUEUE_FAILED",
+        )
+        session.commit()
+        raise ProviderTemporaryFailure("任务入队失败，请重试。") from exc
+
+
 def _job_responses(session: Session, jobs: list[GenerationJob]) -> list[GenerationJobResponse]:
     """Batched `_job_response` for list responses: one bulk asset prefetch plus
     one bulk progress query for the whole page, instead of several queries
@@ -530,6 +556,7 @@ def _job_response(
         asset_kind=_asset_kind_of(job),
         video_asset_kind=_video_asset_kind_of(job),
         character_views=_character_views_of(job),
+        duration_seconds=_duration_seconds_of(job),
         linked_character_id=job.linked_character_id,
         linked_scene_id=job.linked_scene_id,
         draft_id=job.draft_id,
@@ -549,6 +576,12 @@ def _prompt_of(job: GenerationJob) -> str | None:
     params = job.request_json if isinstance(job.request_json, dict) else {}
     prompt = params.get("prompt")
     return prompt if isinstance(prompt, str) else None
+
+
+def _duration_seconds_of(job: GenerationJob) -> int | None:
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    duration = params.get("duration_seconds")
+    return duration if isinstance(duration, int) else None
 
 
 def _first_reference_asset_id(job: GenerationJob) -> str | None:

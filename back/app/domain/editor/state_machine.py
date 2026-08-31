@@ -69,6 +69,11 @@ def transition_plan(session: Session, plan_id: str, target: EditPlanStatus) -> E
 def transition_variant(
     session: Session, variant_id: str, target: DeliveryVariantStatus
 ) -> DeliveryVariant:
+    variant = session.get(DeliveryVariant, variant_id)
+    if variant is None:
+        raise NotFound("交付变体不存在。")
+    if variant.status == target.value:
+        return variant
     sources = [
         status.value
         for status, allowed in DELIVERY_VARIANT_TRANSITIONS.items()
@@ -81,9 +86,7 @@ def transition_variant(
         .values(status=target.value),
     )
     if matched != 1:
-        variant = session.get(DeliveryVariant, variant_id)
-        if variant is None:
-            raise NotFound("交付变体不存在。")
+        session.refresh(variant)
         raise InvalidJobTransition(f"变体状态 {variant.status} 不能迁移到 {target.value}。")
     session.expire_all()
     variant = session.get(DeliveryVariant, variant_id)

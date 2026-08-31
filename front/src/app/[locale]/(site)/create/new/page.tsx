@@ -6,6 +6,11 @@ import { GoBackLink } from '@/components/ui/go-back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
+import {
+  readDraftReturnContext,
+  sanitizeReturnTo,
+  studioSessionKey,
+} from '@/lib/studio-session';
 
 // `image_creation`/`video_creation` are URL-level modes only — the merged
 // "图片创作"/"视频创作" cards from `create-mode-cards.tsx` — not backend
@@ -54,19 +59,18 @@ type VideoAssetKind = (typeof VIDEO_ASSET_KINDS)[number];
 const LINK_KINDS = ['character', 'scene'] as const;
 type LinkKind = (typeof LINK_KINDS)[number];
 
-// The script studio's "生成角色图/场景图" jump-out is the only caller of
-// this deep link today, and it only ever points back at one route shape —
-// keeping the whitelist this narrow (rather than "any same-origin path")
-// is what rules out an open redirect without needing a full URL parse.
-function sanitizeReturnTo(raw: string | undefined): string | undefined {
-  if (!raw || !raw.startsWith('/create/script/')) return undefined;
-  return raw;
-}
-
 // Comma-joined id list from the script studio's "建议切分" video jump-out
 // (`buildBreakpointVideoHref`) — capped to match `GenerationParams.character_ids`/
 // `scene_ids`'s own `max_length=4` so the studio never even offers more than
 // the backend would accept.
+// `GenerationJob.id` is `job_` + a 26-char Crockford token (`new_id`),
+// stored in a `String(40)` column — reject anything else so a crafted
+// query string cannot be forwarded into `GET /v1/generation-jobs/{id}`.
+function parseJobId(raw: string | undefined): string | undefined {
+  if (!raw || raw.length > 40 || !/^job_[0-9A-Za-z]+$/.test(raw)) return undefined;
+  return raw;
+}
+
 function parseReferenceIds(raw: string | undefined): string[] | undefined {
   if (!raw) return undefined;
   const ids = raw
@@ -103,6 +107,7 @@ export default async function NewCreationPage({
     referenceSceneIds?: string;
     linkEpisodeId?: string;
     linkBreakpointKey?: string;
+    jobId?: string;
   }>;
 }) {
   const {
@@ -123,6 +128,7 @@ export default async function NewCreationPage({
     referenceSceneIds,
     linkEpisodeId,
     linkBreakpointKey,
+    jobId,
   } = await searchParams;
   const t = await getTranslations('createPage');
 
@@ -154,10 +160,18 @@ export default async function NewCreationPage({
         undefined)
       : undefined;
 
+  // A notification click is `?draftId=&jobId=`; draft cards are
+  // `?draftId=` only and resume `latest_job_id`. The jump-out trio is
+  // restored from the draft when the URL does not carry it (see
+  // `draftReturnParams`). `jobId` is validated here so the studio never
+  // has to distrust a raw query string.
+  const resolvedJobId = parseJobId(jobId);
+
   // Only meaningful for the image studio (the script studio's jump-out
   // always starts one of those) — validated and defaulted here so the
   // component itself never has to distrust its own props.
-  const sanitizedReturnTo = sanitizeReturnTo(returnTo);
+  const draftReturn = readDraftReturnContext(initialDraft?.params);
+  const sanitizedReturnTo = sanitizeReturnTo(returnTo) ?? draftReturn.returnTo;
   const resolvedAssetKind: AssetKind | undefined = ASSET_KINDS.includes(assetKind as AssetKind)
     ? (assetKind as AssetKind)
     : undefined;
@@ -173,7 +187,9 @@ export default async function NewCreationPage({
     returnLinkKind as LinkKind,
   )
     ? (returnLinkKind as LinkKind)
-    : undefined;
+    : draftReturn.returnLinkKind;
+  const resolvedReturnLinkLabel =
+    returnLinkLabel?.trim().slice(0, 60) || draftReturn.returnLinkLabel;
   const resolvedReferenceCharacterIds = parseReferenceIds(referenceCharacterIds);
   const resolvedReferenceSceneIds = parseReferenceIds(referenceSceneIds);
 
@@ -186,10 +202,21 @@ export default async function NewCreationPage({
       )}
       <PageHeading eyebrow={t('eyebrow')} title={title} description={description} />
       <CreateStudio
+        key={studioSessionKey({
+          draftId: initialDraft?.id ?? draftId,
+          jobId: resolvedJobId,
+          mode: resolvedMode,
+          assetKind: resolvedAssetKind,
+          videoAssetKind: resolvedVideoAssetKind,
+          targetCharacterId,
+          targetSceneId,
+          subjectNameHint: subjectNameHint?.trim().slice(0, 60),
+        })}
         operation={operation}
         initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
         reference={reference ?? undefined}
         initialDraft={initialDraft}
+        initialJobId={resolvedJobId}
         style={style}
         initialAssetKind={resolvedAssetKind}
         initialVideoAssetKind={resolvedVideoAssetKind}
@@ -198,7 +225,7 @@ export default async function NewCreationPage({
         subjectNameHint={subjectNameHint?.trim().slice(0, 60) || undefined}
         returnTo={sanitizedReturnTo}
         returnLinkKind={resolvedReturnLinkKind}
-        returnLinkLabel={returnLinkLabel?.trim().slice(0, 60) || undefined}
+        returnLinkLabel={resolvedReturnLinkLabel}
         initialReferenceCharacterIds={resolvedReferenceCharacterIds}
         initialReferenceSceneIds={resolvedReferenceSceneIds}
         linkEpisodeId={linkEpisodeId}

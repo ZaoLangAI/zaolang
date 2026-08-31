@@ -177,6 +177,45 @@ def test_the_consumer_job_list_hides_sandbox_runs_but_keeps_user_jobs(
     assert hidden.status_code == 404
 
 
+def test_a_broker_outage_after_commit_releases_the_reservation(
+    client: TestClient, db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The job row and its reservation are committed before the Celery task is
+    dispatched — if the broker itself is unreachable at that point, the
+    reservation must come back immediately rather than sitting stuck until
+    `expire_stale_jobs` notices roughly half an hour later."""
+
+    def _unreachable_broker(_job: GenerationJob) -> None:
+        raise RuntimeError("broker unreachable")
+
+    monkeypatch.setattr(tasks, "dispatch_generation", _unreachable_broker)
+    before = credits_service.get_or_create_account(db, funded.id).available_balance
+
+    response = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "text_to_image",
+            "quality_tier": "standard",
+            "params": {"prompt": "海边的黄昏，长镜头", "aspect_ratio": "16:9"},
+        },
+        headers=auth_header(funded),
+    )
+    assert response.status_code == 503, response.text
+
+    job = db.scalar(
+        select(GenerationJob)
+        .where(GenerationJob.user_id == funded.id)
+        .order_by(GenerationJob.created_at.desc())
+    )
+    assert job is not None
+    assert job.status == JobStatus.FAILED
+    assert job.failure_code == "ENQUEUE_FAILED"
+
+    after = credits_service.get_or_create_account(db, funded.id).available_balance
+    assert after == before
+    assert _ledger(db, funded, LedgerEntryType.RELEASE)
+
+
 def test_the_same_idempotency_key_produces_one_job_and_one_reservation(
     db: Session, funded: User
 ) -> None:

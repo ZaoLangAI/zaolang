@@ -150,6 +150,8 @@ def _clear_redis_state() -> Iterator[None]:
             client.delete(key)
         for key in client.scan_iter(match="admin:llm-validate:*", count=500):
             client.delete(key)
+        for key in client.scan_iter(match="revoked_session:*", count=500):
+            client.delete(key)
 
     flush()
     yield

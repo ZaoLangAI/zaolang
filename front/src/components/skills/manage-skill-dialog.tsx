@@ -14,13 +14,19 @@ import { api } from '@/lib/api/client';
 import type { CreationSkillCategory, CreationSkillDetail, CreationSkillSummary } from '@/lib/api/types';
 import { useResource } from '@/lib/use-resource';
 
-// `character`/`scene_asset`/`cover_asset` are excluded from the re-file
-// dropdown: an `IMAGE_ASSET_SKILL_CATEGORIES` skill is only ever managed
-// from its own dedicated page (`/create/characters`, `/create/scenes`),
-// which never opens this generic dialog on one — see `list_mine`'s matching
-// exclusion, which keeps one from ever reaching this dialog in the first
-// place.
+// `character`/`scene_asset` are managed from their own dedicated page
+// (`/create/characters`, `/create/scenes`) and never reach this dialog —
+// see `list_mine`'s matching exclusion. `cover_asset` is the one
+// `IMAGE_ASSET_SKILL_CATEGORIES` member that *does* open this dialog, from
+// the skill plaza (its own card has no dedicated management page) — see
+// `IMAGE_ASSET_ONLY_CATEGORIES` below, which is why re-filing away from
+// `cover_asset` isn't offered either.
 const CATEGORIES: CreationSkillCategory[] = ['scene', 'lens', 'style', 'other'];
+const IMAGE_ASSET_ONLY_CATEGORIES = new Set<CreationSkillCategory>([
+  'character',
+  'scene_asset',
+  'cover_asset',
+]);
 const CATEGORY_LABEL_KEY: Record<
   CreationSkillCategory,
   | 'categoryScene'
@@ -174,12 +180,14 @@ export function ManageSkillDialog({
           value={description}
           onChange={(event) => setDescription(event.target.value)}
         />
-        <Select
-          label={t('categoryLabel')}
-          value={category}
-          onChange={(event) => setCategory(event.target.value as CreationSkillCategory)}
-          options={CATEGORIES.map((value) => ({ value, label: t(CATEGORY_LABEL_KEY[value]) }))}
-        />
+        {IMAGE_ASSET_ONLY_CATEGORIES.has(skill.category) ? null : (
+          <Select
+            label={t('categoryLabel')}
+            value={category}
+            onChange={(event) => setCategory(event.target.value as CreationSkillCategory)}
+            options={CATEGORIES.map((value) => ({ value, label: t(CATEGORY_LABEL_KEY[value]) }))}
+          />
+        )}
         <AccessPriceField
           value={accessCredits}
           onChange={setAccessCredits}

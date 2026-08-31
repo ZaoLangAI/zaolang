@@ -1,9 +1,8 @@
-import { getLocale, getTranslations } from 'next-intl/server';
+import { getTranslations } from 'next-intl/server';
 
-import { SkillCard } from '@/components/skills/skill-card';
+import { SkillPlazaGrid } from '@/components/skills/skill-plaza-grid';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { Link } from '@/i18n/navigation';
-import type { Locale } from '@/i18n/routing';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { CreationSkillCategory, CreationSkillSummary, Page } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
@@ -52,7 +51,6 @@ export default async function SkillLibraryPage({
 }) {
   const { contentType, category, access } = await searchParams;
   const t = await getTranslations('skillLibrary');
-  const locale = (await getLocale()) as Locale;
   const activeContentType: ContentType = contentType === 'image_asset' ? 'image_asset' : 'template';
   const categories = CATEGORIES_BY_CONTENT_TYPE[activeContentType];
   const activeCategory = (categories as readonly string[]).includes(category ?? '')
@@ -141,11 +139,7 @@ export default async function SkillLibraryPage({
       <section>
         <SectionHeading title={t('plazaTitle')} />
         {skills.length > 0 ? (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {skills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} locale={locale} />
-            ))}
-          </ul>
+          <SkillPlazaGrid skills={skills} />
         ) : (
           <EmptyState title={t('empty')} description={t('emptyHint')} />
         )}

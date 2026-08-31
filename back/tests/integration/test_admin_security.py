@@ -173,6 +173,30 @@ def test_the_session_endpoint_reports_the_current_roles(client: TestClient, admi
     assert "admin" in response.json()["roles"]
 
 
+def test_login_and_me_never_return_an_access_token(client: TestClient, admin: User) -> None:
+    """The console session lives only in the httpOnly cookie — echoing the
+    JWT into this JSON body would let a same-origin script (or the Server
+    Component prop this response feeds `AdminSessionProvider` through) read
+    it straight out of the page, defeating httpOnly."""
+    login = client.post("/v1/admin/auth/login", json={"email": admin.email, "password": PASSWORD})
+    assert "access_token" not in login.json()
+    assert "token_type" not in login.json()
+
+    me = client.get("/v1/admin/auth/me", headers=admin_header(admin))
+    assert "access_token" not in me.json()
+
+
+def test_the_admin_cookie_alone_is_enough_after_login(client: TestClient, admin: User) -> None:
+    """No bearer header at all — the cookie `login` just set has to carry the
+    session on its own, since the console never holds the JWT in JS."""
+    login = client.post("/v1/admin/auth/login", json={"email": admin.email, "password": PASSWORD})
+    assert login.status_code == 200
+
+    response = client.get("/v1/admin/auth/me")
+    assert response.status_code == 200
+    assert response.json()["email"] == admin.email
+
+
 # --- RBAC -----------------------------------------------------------------
 
 

@@ -9,6 +9,16 @@ import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
  * It shares no token store with `lib/api/client`, and it never retries on 401.
  * A console session that has expired must land the operator back on the console
  * login page, not silently continue with a consumer credential.
+ *
+ * The session itself is entirely the httpOnly `zl_admin_session` cookie,
+ * always sent via `credentials: 'include'` below (`get_admin_user` only
+ * falls back to a bearer header for non-browser tooling). This in-memory
+ * slot exists only for the couple of SSE call sites that pass a bearer
+ * header explicitly (`use-admin-job-stream.ts`, the agent debug chat) —
+ * nothing sets it anymore (`AdminSessionResponse` has no `access_token` to
+ * feed it; see `AdminSessionProvider`'s own note), so it now always reads
+ * back `null` and those call sites fall through to the cookie alone, same
+ * as every other console request.
  */
 let adminToken: string | null = null;
 

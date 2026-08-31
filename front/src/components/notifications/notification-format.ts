@@ -337,7 +337,11 @@ export function targetHref(item: Notification): string | null {
     // without a draft (e.g. sandbox runs) fall back to the job page.
     const draftId = payload.draft_id;
     if (isImageCreationOperation(payload.operation) && typeof draftId === 'string' && draftId) {
-      return imageCreationStudioHref(draftId);
+      // `draftId` lands in the studio; `jobId` is which attempt this
+      // notification is about (a retry is a new job). Without it the
+      // studio would resume `Draft.latest_job_id`, which used to stay
+      // pointed at the first failed attempt.
+      return imageCreationStudioHref(draftId, item.target_id);
     }
     return `/jobs/${item.target_id}`;
   }

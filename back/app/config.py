@@ -9,8 +9,17 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# The literal default values below, in one place so the startup guard
+# (`Settings._reject_default_secrets_in_production`) can check every signing
+# secret against exactly what a fresh checkout ships without duplicating the
+# strings themselves.
+_DEFAULT_JWT_SECRET = "k9Yxvz5CCVmGk9OKwnnBF6VfsWs5VS8r21kmQZ9DSsc"
+_DEFAULT_ADMIN_JWT_SECRET = "dbTYs3wmf9v5Hc6ZJwLivNUAA0t1NpX4b_eLZX53G5E"
+_DEFAULT_MCP_JWT_SECRET = "m8Kq2nR4vX7pL1sD9wC6hB3tY0zF5jA2uE8iQ4oN7gM"
+_DEFAULT_PAYMENT_WEBHOOK_SECRET = "dev-only-change-me-webhook"
 
 
 class Settings(BaseSettings):
@@ -28,11 +37,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6380/0"
 
     # HS256 requires >= 32 bytes (RFC 7518 §3.2 / PyJWT). Local defaults are
-    # random placeholders only — rotate before any shared or production deploy.
-    jwt_secret: str = "k9Yxvz5CCVmGk9OKwnnBF6VfsWs5VS8r21kmQZ9DSsc"
-    admin_jwt_secret: str = "dbTYs3wmf9v5Hc6ZJwLivNUAA0t1NpX4b_eLZX53G5E"
-    mcp_jwt_secret: str = "m8Kq2nR4vX7pL1sD9wC6hB3tY0zF5jA2uE8iQ4oN7gM"
-    payment_webhook_secret: str = "dev-only-change-me-webhook"
+    # random placeholders only — rotate before any shared or production
+    # deploy. `_reject_default_secrets_in_production` below refuses to even
+    # start the process if `app_env == "production"` and any of these four
+    # still match what a fresh checkout ships — `is_production` elsewhere
+    # only gates a handful of routes (the seed endpoint, admin data export),
+    # it does not stop the process from booting with a guessable secret.
+    jwt_secret: str = _DEFAULT_JWT_SECRET
+    admin_jwt_secret: str = _DEFAULT_ADMIN_JWT_SECRET
+    mcp_jwt_secret: str = _DEFAULT_MCP_JWT_SECRET
+    payment_webhook_secret: str = _DEFAULT_PAYMENT_WEBHOOK_SECRET
     access_token_ttl_seconds: int = 60 * 30
     refresh_token_ttl_seconds: int = 60 * 60 * 24 * 14
     admin_token_ttl_seconds: int = 60 * 60 * 8
@@ -138,6 +152,34 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _reject_default_secrets_in_production(self) -> Settings:
+        """A default that only ever guarded a handful of routes (the seed
+        endpoint, admin data export) is not the same as a secret an attacker
+        cannot look up in this very file. `app_env == "production"` with any
+        of these four still at their shipped value must refuse to boot
+        rather than silently accept forgeable sessions and a forgeable
+        payment webhook signature.
+        """
+        if self.app_env != "production":
+            return self
+        defaults = {
+            "jwt_secret": _DEFAULT_JWT_SECRET,
+            "admin_jwt_secret": _DEFAULT_ADMIN_JWT_SECRET,
+            "mcp_jwt_secret": _DEFAULT_MCP_JWT_SECRET,
+            "payment_webhook_secret": _DEFAULT_PAYMENT_WEBHOOK_SECRET,
+        }
+        leaked = sorted(
+            name for name, default in defaults.items() if getattr(self, name) == default
+        )
+        if leaked:
+            joined = ", ".join(leaked)
+            raise ValueError(
+                f"refusing to start in production with repo-default secret(s): {joined}. "
+                "Set a real value for each via the environment before deploying."
+            )
+        return self
 
     # HTTP-only deployments (no TLS terminator in front of the API) cannot set
     # a `Secure` cookie: the browser will accept it but never send it back, so

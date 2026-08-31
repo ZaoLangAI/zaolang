@@ -15,6 +15,7 @@ from app.api.deps import (
 )
 from app.api.schemas.auth import (
     LoginRequest,
+    MeFeaturesResponse,
     MeResponse,
     PreferencesRequest,
     ProfileResponse,
@@ -123,6 +124,8 @@ def refresh(request: Request, response: Response, session: DbSession) -> TokenRe
         raise AuthRequired("登录状态已失效，请重新登录。")
 
     claims = decode_token(cookie, audience=REFRESH_AUDIENCE)
+    if _is_session_revoked(claims.session_id):
+        raise AuthRequired("登录状态已失效，请重新登录。")
     user = session.get(User, claims.subject)
     if user is None or not user.is_active:
         raise AuthRequired("登录状态已失效，请重新登录。")
@@ -130,7 +133,19 @@ def refresh(request: Request, response: Response, session: DbSession) -> TokenRe
 
 
 @router.post("/logout", response_model=OkResponse)
-def logout(response: Response) -> OkResponse:
+def logout(request: Request, response: Response) -> OkResponse:
+    """Deleting the cookie alone left a copied/leaked refresh token valid for
+    up to 14 more days — this also kills the token by its `sid`, so a logout
+    the user actually asked for takes effect immediately, not just locally.
+    """
+    cookie = request.cookies.get(REFRESH_COOKIE_NAME)
+    if cookie:
+        try:
+            claims = decode_token(cookie, audience=REFRESH_AUDIENCE)
+        except AuthRequired:
+            claims = None
+        if claims is not None:
+            _revoke_session(claims.session_id, get_settings().refresh_token_ttl_seconds)
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
     return OkResponse()
 
@@ -152,6 +167,24 @@ def me(user: CurrentUser, session: DbSession) -> MeResponse:
         profile=ProfileResponse.model_validate(profile) if profile else None,
         available_credits=account.available_balance,
         reserved_credits=account.reserved_balance,
+        features=_features_for(session, user.id),
+    )
+
+
+def _features_for(session: DbSession, user_id: str) -> MeFeaturesResponse:
+    """Consumer-facing view of `FeatureFlags`, so a Next.js page can hide or
+    disable an entry point instead of letting the user tap through to an API
+    404 (see `zaolang-platform-config`'s "off means 404/hidden" contract).
+    """
+    return MeFeaturesResponse(
+        script_studio=config_service.is_enabled(session, "script_studio_enabled", user_id=user_id),
+        video_analysis=config_service.is_enabled(
+            session, "video_analysis_enabled", user_id=user_id
+        ),
+        web_editor=config_service.is_enabled(session, "web_editor_enabled", user_id=user_id),
+        video_generation=config_service.is_enabled(session, "video_generation", user_id=user_id),
+        drama_studio=config_service.is_enabled(session, "drama_studio_enabled", user_id=user_id),
+        marketplace=config_service.is_enabled(session, "marketplace_enabled", user_id=user_id),
     )
 
 
@@ -197,6 +230,26 @@ def update_profile(
         profile.public_profile = payload.public_profile
     session.commit()
     return ProfileResponse.model_validate(profile)
+
+
+REVOKED_SESSION_KEY_PREFIX = "revoked_session:"
+
+
+def _revoke_session(session_id: str, ttl_seconds: int) -> None:
+    """A short-lived Redis marker, not a permanent blacklist — it only has to
+    outlive the refresh token it is blocking, so it self-expires on the same
+    schedule rather than growing forever."""
+    if not session_id:
+        return
+    rate_limit.get_redis().set(
+        f"{REVOKED_SESSION_KEY_PREFIX}{session_id}", "1", ex=max(ttl_seconds, 1)
+    )
+
+
+def _is_session_revoked(session_id: str) -> bool:
+    if not session_id:
+        return False
+    return bool(rate_limit.get_redis().exists(f"{REVOKED_SESSION_KEY_PREFIX}{session_id}"))
 
 
 def _issue_session(user: User, response: Response) -> TokenResponse:

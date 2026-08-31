@@ -64,6 +64,7 @@ export function StudioShell({
   syncNonce,
   draftId,
   profiles,
+  defaultProfile,
   cutId,
   leaseId,
   leaseToken,
@@ -98,6 +99,7 @@ export function StudioShell({
   syncNonce: number;
   draftId: string | null;
   profiles: ShortformProfile[];
+  defaultProfile: string | null;
   cutId: string;
   leaseId: string | null;
   leaseToken: string | null;
@@ -222,6 +224,7 @@ export function StudioShell({
                   draftId={draftId}
                   disabled={disabled}
                   profiles={profiles}
+                  defaultProfile={defaultProfile}
                   selected={selected}
                   cutId={cutId}
                   leaseId={leaseId}

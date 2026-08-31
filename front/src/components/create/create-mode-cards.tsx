@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useRouter } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
+import type { Me } from '@/lib/api/types';
 import { prefetchStudio, type StudioPrefetchMode } from '@/lib/prefetch-studio';
 
 type ModeId = 'script' | 'image_creation' | 'video_creation' | 'audio_generation';
@@ -30,6 +31,10 @@ const MODES: Array<{
   href: string;
   tone: string;
   accent: string;
+  /** `undefined` means always on — `image_creation`/`audio_generation` have
+   * no gating flag at all on the backend (see `back/app/api/v1/jobs.py`'s
+   * `VIDEO_OPERATIONS` check), so there is nothing in `me.features` to read. */
+  flag?: keyof Me['features'];
 }> = [
   {
     id: 'script',
@@ -38,6 +43,7 @@ const MODES: Array<{
     href: '/create/script',
     tone: 'bg-amber/15 text-amber',
     accent: 'text-amber',
+    flag: 'script_studio',
   },
   {
     id: 'image_creation',
@@ -54,6 +60,7 @@ const MODES: Array<{
     href: '/create/new?mode=video_creation',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
+    flag: 'video_generation',
   },
   {
     id: 'audio_generation',
@@ -78,7 +85,7 @@ const MODES: Array<{
 export function CreateModeCards({ className }: { className?: string }) {
   const t = useTranslations('createPage');
   const router = useRouter();
-  const { requireAuth } = useSession();
+  const { requireAuth, user } = useSession();
 
   const labels: Record<ModeId, { title: string; desc: string; tag: string }> = {
     script: {
@@ -107,12 +114,20 @@ export function CreateModeCards({ className }: { className?: string }) {
     <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
       {MODES.map((mode) => {
         const label = labels[mode.id];
+        // Fails open when the flag isn't known yet (session still loading,
+        // or an anonymous visitor) — same stance `job-progress.tsx` takes on
+        // `web_editor`, so a real toggle only ever narrows what an already
+        // logged-in user can reach, never flickers a card off for everyone.
+        const available = mode.flag ? (user?.features[mode.flag] ?? true) : true;
         return (
           <li
             key={mode.id}
-            className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface shadow-card transition-shadow hover:shadow-raised"
+            className={cn(
+              'flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface shadow-card transition-shadow',
+              available ? 'hover:shadow-raised' : 'opacity-60',
+            )}
             onMouseEnter={() => {
-              if (mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
+              if (available && mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
             }}
           >
             <div
@@ -138,7 +153,7 @@ export function CreateModeCards({ className }: { className?: string }) {
                     : 'text-amber',
                 )}
               >
-                {label.tag}
+                {available ? label.tag : t('modeUnavailable')}
               </p>
               <h3 className="mt-2 text-base font-semibold">{label.title}</h3>
               <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{label.desc}</p>
@@ -147,8 +162,9 @@ export function CreateModeCards({ className }: { className?: string }) {
                 variant="secondary"
                 fullWidth
                 className="mt-4"
+                disabled={!available}
                 onFocus={() => {
-                  if (mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
+                  if (available && mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
                 }}
                 onClick={() =>
                   requireAuth({ label: label.title, run: () => router.push(mode.href) })

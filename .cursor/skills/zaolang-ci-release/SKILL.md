@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Scope
 
-Guarantee "it builds, it ships, it's documented." This repo is internal-proprietary software. It does not use GitHub Actions, GHCR, release-please, or GitHub Pages.
+Guarantee "it builds, it ships, it's documented." This repo is internal-proprietary software. It does not use GitHub Actions, GHCR, release-please, or GitHub Pages. **Single-host remote deploy (rsync, `infra/docker-compose.prod.yml`, migrate, optional DB overwrite) is `zaolang-remote-deploy` — do not duplicate that runbook here.**
 
 ## Key Paths
 

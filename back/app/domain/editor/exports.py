@@ -25,13 +25,19 @@ from app.domain.errors import (
 )
 from app.domain.media import service as media_service
 from app.domain.notifications import push as notifications
+from app.domain.publishing import service as publishing
 from app.models import (
     Asset,
     CutRevision,
     DeliveryVariant,
     Draft,
+    DramaEpisode,
     EditorExport,
+    EditorOperationEvent,
+    EpisodeContentLink,
     EpisodeCut,
+    GenerationJob,
+    Notification,
     UploadSession,
     WorkVersion,
 )
@@ -41,11 +47,19 @@ from app.models.enums import (
     AssetRole,
     DeliveryVariantStatus,
     EditorExportStatus,
+    EpisodeContentType,
     ModerationStatus,
 )
 from app.storage import s3
 
 logger = logging.getLogger(__name__)
+
+_IN_FLIGHT_EXPORT_STATUSES: frozenset[EditorExportStatus] = frozenset(
+    status for status in EditorExportStatus if status not in TERMINAL_EDITOR_EXPORT_STATUSES
+)
+_STALE_LEASE_MESSAGE = "导出租约已过期，已自动结束。"
+_PUBLISHED_EXPORT_MESSAGE = "该成片已发布，不能删除。"
+_IN_FLIGHT_EXPORT_MESSAGE = "导出进行中，请先取消后再删除。"
 
 
 def queue_exports(
@@ -53,6 +67,7 @@ def queue_exports(
 ) -> list[EditorExport]:
     editor_flags.require_flag(session, editor_flags.FLAG_EXPORT, user_id=user_id)
     key = operation_key or secrets.token_urlsafe(12)
+    reclaim_stale_exports(session)
     exports: list[EditorExport] = []
     for variant_id in variant_ids:
         variant = session.get(DeliveryVariant, variant_id)
@@ -74,6 +89,7 @@ def queue_exports(
             notifications.sync_export_notification(session, existing, user_id=user_id)
             exports.append(existing)
             continue
+        _reclaim_or_conflict_inflight(session, variant.id)
         export = EditorExport(
             variant_id=variant.id,
             status=EditorExportStatus.QUEUED,
@@ -82,7 +98,9 @@ def queue_exports(
         )
         session.add(export)
         session.flush()
-        state_machine.transition_variant(session, variant.id, DeliveryVariantStatus.EXPORTING)
+        refreshed = session.get(DeliveryVariant, variant.id)
+        assert refreshed is not None
+        _ensure_variant_exporting(session, refreshed)
         editor_service.append_operation_event(
             session,
             export.id,
@@ -193,6 +211,18 @@ def request_cancel(session: Session, *, user_id: str, export_id: str) -> EditorE
         public_message="已请求取消导出。",
         progress=export.progress,
     )
+    export = state_machine.transition_export(session, export.id, EditorExportStatus.CANCELLED)
+    editor_service.append_operation_event(
+        session,
+        export.id,
+        event_type="cancelled",
+        status=export.status,
+        public_message="导出已取消。",
+        progress=export.progress,
+    )
+    _sync_variant_if_idle(
+        session, export.variant_id, DeliveryVariantStatus.CANCELLED, exclude_id=export.id
+    )
     return export
 
 
@@ -211,6 +241,9 @@ def retry_export(session: Session, *, user_id: str, export_id: str) -> EditorExp
     )
     session.add(retry)
     session.flush()
+    variant = session.get(DeliveryVariant, original.variant_id)
+    if variant is not None:
+        _ensure_variant_exporting(session, variant)
     editor_service.append_operation_event(
         session,
         retry.id,
@@ -266,6 +299,11 @@ def complete_export(
         raise ValidationFailed("上传会话未绑定到该导出。")
     if asset.role != AssetRole.EDITOR_EXPORT:
         raise ValidationFailed("导出必须使用 editor_export 用途上传。")
+    # The browser runner heartbeats `encoding` through 100%, then PUTs and
+    # calls complete without necessarily having stepped through
+    # uploading/verifying. Walk the legal edges so a finished upload is not
+    # rejected as `encoding → succeeded`.
+    export = _advance_export_to_verifying(session, export)
     export = state_machine.transition_export(
         session,
         export.id,
@@ -295,27 +333,35 @@ def fail_export(
     session: Session, *, user_id: str, export_id: str, code: str, message: str
 ) -> EditorExport:
     export = _owned_export(session, user_id=user_id, export_id=export_id)
-    export = state_machine.transition_export(
-        session,
-        export.id,
-        EditorExportStatus.FAILED,
-        failure_code=code,
-        failure_message=message,
-        finished_at=utcnow(),
+    return _fail_export_row(session, export, code=code, message=message)
+
+
+def reclaim_stale_exports(session: Session) -> int:
+    """Fails in-flight exports whose runner lease has expired.
+
+    Queued rows have no lease and stay queued until a browser claims them or
+    a later `queue_exports` replaces them. Claimed/encoding/uploading rows
+    that missed their 45s heartbeat are dead — the blob only lived in that
+    browser — so they become `failed` and the variant drops to `failed`
+    when nothing else is still running.
+    """
+    now = utcnow()
+    rows = list(
+        session.scalars(
+            select(EditorExport).where(
+                EditorExport.status.in_([status.value for status in _IN_FLIGHT_EXPORT_STATUSES]),
+                EditorExport.lease_expires_at.is_not(None),
+                EditorExport.lease_expires_at <= now,
+            )
+        )
     )
-    editor_service.append_operation_event(
-        session,
-        export.id,
-        event_type="failed",
-        status=export.status,
-        public_message=message,
-        payload={"code": code},
-    )
-    logger.warning(
-        "editor_export_failed",
-        extra={"export_id": export.id, "code": code, "message": message},
-    )
-    return export
+    reclaimed = 0
+    for export in rows:
+        before = export.status
+        _fail_export_row(session, export, code="stale_lease", message=_STALE_LEASE_MESSAGE)
+        if before != EditorExportStatus.FAILED.value:
+            reclaimed += 1
+    return reclaimed
 
 
 def bind_draft_export(
@@ -350,6 +396,105 @@ def bind_draft_export(
     draft.editor_export_id = export.id
     session.flush()
     return draft
+
+
+def ensure_export_bound_draft(
+    session: Session,
+    *,
+    user_id: str,
+    export_id: str,
+    confirmed: bool,
+    draft_id: str | None = None,
+) -> Draft:
+    """Bind a succeeded export to a draft, minting one when none is given.
+
+    Reuses the unpublished source-generation draft (job or content-link whose
+    output is this cut's source asset) so the job-page bind path stays one
+    draft. A published source draft is skipped and a new one is created —
+    `bind_draft_export` refuses an already-published row.
+    """
+    if not confirmed:
+        raise ValidationFailed("必须确认绑定该导出结果。")
+    editor_flags.require_flag(session, editor_flags.FLAG_EXPORT, user_id=user_id)
+    export = _owned_export(session, user_id=user_id, export_id=export_id)
+    if export.status != EditorExportStatus.SUCCEEDED.value or not export.output_asset_id:
+        raise ValidationFailed("只能绑定已成功的导出。")
+    existing = session.scalar(select(Draft).where(Draft.editor_export_id == export.id))
+    if existing is not None:
+        if existing.published_work_id is not None:
+            raise Conflict("草稿已经发布。")
+        return existing
+    target_id = draft_id or _source_unpublished_draft_id(session, user_id=user_id, export=export)
+    if target_id is None:
+        episode = _episode_for_export(session, export)
+        minted = publishing.create_draft(
+            session,
+            user_id=user_id,
+            source_work_id=None,
+            title=episode.title if episode else None,
+            params={"link_episode_id": episode.id} if episode else {},
+        )
+        target_id = minted.id
+    return bind_draft_export(
+        session,
+        user_id=user_id,
+        draft_id=target_id,
+        export_id=export.id,
+        confirmed=True,
+    )
+
+
+def _source_unpublished_draft_id(
+    session: Session, *, user_id: str, export: EditorExport
+) -> str | None:
+    cut = _cut_for_export(session, export)
+    if cut is None:
+        return None
+    if cut.source_job_id:
+        job = session.get(GenerationJob, cut.source_job_id)
+        if job is not None and job.user_id == user_id and job.draft_id:
+            draft = session.get(Draft, job.draft_id)
+            if (
+                draft is not None
+                and draft.user_id == user_id
+                and draft.published_work_id is None
+            ):
+                return draft.id
+    if not cut.source_asset_id:
+        return None
+    links = session.scalars(
+        select(EpisodeContentLink).where(
+            EpisodeContentLink.episode_id == cut.episode_id,
+            EpisodeContentLink.content_type == EpisodeContentType.DRAFT,
+        )
+    )
+    for link in links:
+        draft = session.get(Draft, link.content_ref_id)
+        if (
+            draft is not None
+            and draft.user_id == user_id
+            and draft.published_work_id is None
+            and draft.output_asset_id == cut.source_asset_id
+        ):
+            return draft.id
+    return None
+
+
+def _cut_for_export(session: Session, export: EditorExport) -> EpisodeCut | None:
+    variant = session.get(DeliveryVariant, export.variant_id)
+    if variant is None:
+        return None
+    revision = session.get(CutRevision, variant.cut_revision_id)
+    if revision is None:
+        return None
+    return session.get(EpisodeCut, revision.cut_id)
+
+
+def _episode_for_export(session: Session, export: EditorExport) -> DramaEpisode | None:
+    cut = _cut_for_export(session, export)
+    if cut is None:
+        return None
+    return session.get(DramaEpisode, cut.episode_id)
 
 
 def list_exports_for_episode(
@@ -401,6 +546,161 @@ def list_exports_for_episode(
         (export, variant_by_id[export.variant_id], draft_by_export_id.get(export.id))
         for export in exports
     ]
+
+
+def delete_export(session: Session, *, user_id: str, export_id: str) -> None:
+    """Remove one unpublished export from the episode's 最终成片 list.
+
+    Ownership is `_owned_export` (owner-only — collaborators cannot
+    touch timeline/export). A published bind, or a `WorkVersion` that
+    already stamped this export, is 422 — same gate as tearing down
+    the whole episode. In-flight rows must be cancelled first. The
+    bound draft is unbound, not deleted; the output asset and
+    delivery variant stay (other exports may share the variant).
+    """
+    editor_flags.require_flag(session, editor_flags.FLAG_EXPORT, user_id=user_id)
+    export = _owned_export(session, user_id=user_id, export_id=export_id)
+    if EditorExportStatus(export.status) not in TERMINAL_EDITOR_EXPORT_STATUSES:
+        raise ValidationFailed(_IN_FLIGHT_EXPORT_MESSAGE)
+    drafts = list(session.scalars(select(Draft).where(Draft.editor_export_id == export.id)))
+    if any(draft.published_work_id for draft in drafts):
+        raise ValidationFailed(_PUBLISHED_EXPORT_MESSAGE)
+    published_version = session.scalar(
+        select(WorkVersion.id).where(WorkVersion.editor_export_id == export.id).limit(1)
+    )
+    if published_version is not None:
+        raise ValidationFailed(_PUBLISHED_EXPORT_MESSAGE)
+
+    for draft in drafts:
+        draft.editor_export_id = None
+        draft.delivery_variant_id = None
+        draft.source_cut_revision_id = None
+    session.flush()
+
+    for link in session.scalars(
+        select(EpisodeContentLink).where(
+            EpisodeContentLink.content_type == EpisodeContentType.EDITOR_EXPORT,
+            EpisodeContentLink.content_ref_id == export.id,
+        )
+    ):
+        session.delete(link)
+    for upload in session.scalars(
+        select(UploadSession).where(UploadSession.bound_export_id == export.id)
+    ):
+        upload.bound_export_id = None
+    for notification in session.scalars(
+        select(Notification).where(
+            Notification.target_type == "editor_export",
+            Notification.target_id == export.id,
+        )
+    ):
+        session.delete(notification)
+    for event in session.scalars(
+        select(EditorOperationEvent).where(EditorOperationEvent.operation_id == export.id)
+    ):
+        session.delete(event)
+    session.flush()
+    session.delete(export)
+    session.flush()
+
+
+def _lease_is_live(export: EditorExport, *, now: dt.datetime | None = None) -> bool:
+    if export.lease_expires_at is None:
+        return False
+    return export.lease_expires_at > (now or utcnow())
+
+
+def _inflight_exports(
+    session: Session, variant_id: str, *, exclude_id: str | None = None
+) -> list[EditorExport]:
+    rows = list(
+        session.scalars(
+            select(EditorExport).where(
+                EditorExport.variant_id == variant_id,
+                EditorExport.status.in_([status.value for status in _IN_FLIGHT_EXPORT_STATUSES]),
+            )
+        )
+    )
+    if exclude_id is None:
+        return rows
+    return [row for row in rows if row.id != exclude_id]
+
+
+def _advance_export_to_verifying(session: Session, export: EditorExport) -> EditorExport:
+    steps = {
+        EditorExportStatus.CLAIMED: EditorExportStatus.ENCODING,
+        EditorExportStatus.ENCODING: EditorExportStatus.UPLOADING,
+        EditorExportStatus.UPLOADING: EditorExportStatus.VERIFYING,
+    }
+    status = EditorExportStatus(export.status)
+    while status in steps:
+        export = state_machine.transition_export(session, export.id, steps[status])
+        status = EditorExportStatus(export.status)
+    return export
+
+
+def _ensure_variant_exporting(session: Session, variant: DeliveryVariant) -> DeliveryVariant:
+    if variant.status == DeliveryVariantStatus.EXPORTING.value:
+        return variant
+    return state_machine.transition_variant(session, variant.id, DeliveryVariantStatus.EXPORTING)
+
+
+def _sync_variant_if_idle(
+    session: Session,
+    variant_id: str,
+    target: DeliveryVariantStatus,
+    *,
+    exclude_id: str | None = None,
+) -> None:
+    if _inflight_exports(session, variant_id, exclude_id=exclude_id):
+        return
+    variant = session.get(DeliveryVariant, variant_id)
+    if variant is None or variant.status != DeliveryVariantStatus.EXPORTING.value:
+        return
+    state_machine.transition_variant(session, variant_id, target)
+
+
+def _fail_export_row(
+    session: Session, export: EditorExport, *, code: str, message: str
+) -> EditorExport:
+    if EditorExportStatus(export.status) in TERMINAL_EDITOR_EXPORT_STATUSES:
+        return export
+    try:
+        export = state_machine.transition_export(
+            session,
+            export.id,
+            EditorExportStatus.FAILED,
+            failure_code=code,
+            failure_message=message,
+            finished_at=utcnow(),
+        )
+    except OperationTerminal:
+        refreshed = session.get(EditorExport, export.id)
+        return refreshed or export
+    editor_service.append_operation_event(
+        session,
+        export.id,
+        event_type="failed",
+        status=export.status,
+        public_message=message,
+        payload={"code": code},
+    )
+    logger.warning(
+        "editor_export_failed",
+        extra={"export_id": export.id, "code": code, "failure_message": message},
+    )
+    _sync_variant_if_idle(
+        session, export.variant_id, DeliveryVariantStatus.FAILED, exclude_id=export.id
+    )
+    return export
+
+
+def _reclaim_or_conflict_inflight(session: Session, variant_id: str) -> None:
+    inflight = _inflight_exports(session, variant_id)
+    if any(_lease_is_live(row) for row in inflight):
+        raise Conflict("该规格正在导出，请等待当前任务完成。")
+    for row in inflight:
+        _fail_export_row(session, row, code="stale_lease", message=_STALE_LEASE_MESSAGE)
 
 
 def _owned_export(session: Session, *, user_id: str, export_id: str) -> EditorExport:

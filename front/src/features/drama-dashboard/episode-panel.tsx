@@ -31,7 +31,8 @@ import { formatRelative } from '@/lib/format';
 
 import { AnalyticsPanel } from './analytics-panel';
 import { DeleteEpisodeDialog } from './delete-episode-dialog';
-import { isEpisodeDeleteBlocked, resumeEditorHref } from './episode-delete-gate';
+import { DeleteExportDialog } from './delete-export-dialog';
+import { isEpisodeDeleteBlocked, isExportRecordDeletable, resumeEditorHref } from './episode-delete-gate';
 import { pascalCase } from './format';
 import { generatedVideoDetailHref, isGeneratedVideoCard } from './generated-video-href';
 import { PublishPanel } from './publish-panel';
@@ -88,8 +89,10 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const [notFound, setNotFound] = useState(false);
   const [enteringEditorFor, setEnteringEditorFor] = useState<string | null>(null);
   const [settingCanonicalId, setSettingCanonicalId] = useState<string | null>(null);
+  const [bindingExportId, setBindingExportId] = useState<string | null>(null);
   const [clearingCanonical, setClearingCanonical] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteExportId, setDeleteExportId] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('main');
@@ -279,6 +282,19 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
       .finally(() => setEnteringEditorFor(null));
   };
 
+  const publishExport = (exportId: string) => {
+    setBindingExportId(exportId);
+    void editorApi
+      .ensureBoundDraft(exportId)
+      .then((bound) => {
+        router.push(`/publish/${bound.draft_id}`);
+      })
+      .catch((error: unknown) => {
+        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+      })
+      .finally(() => setBindingExportId(null));
+  };
+
   const setFinalCut = (workId: string) => {
     setSettingCanonicalId(workId);
     void editorApi
@@ -346,7 +362,20 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     canonicalWorkId: episode.canonical_work_id,
     exports,
   });
-  const resumeHref = resumeEditorHref(cuts);
+  const sourceAssetId = cuts[0]?.source_asset_id ?? null;
+  const bindableDraftId =
+    sourceAssetId == null
+      ? undefined
+      : links.find((link) => {
+          if (link.content_type !== 'draft') return false;
+          const draft = draftDetails[link.content_ref_id];
+          return (
+            Boolean(draft) &&
+            !draft?.published_work_id &&
+            draft?.output_asset_id === sourceAssetId
+          );
+        })?.content_ref_id;
+  const resumeHref = resumeEditorHref(cuts, bindableDraftId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -588,9 +617,27 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
                         >
                           {t('finalCutPublishFirstAction')}
                         </Link>
+                      ) : item.status === 'succeeded' ? (
+                        <Button
+                          size="sm"
+                          loading={bindingExportId === item.id}
+                          onClick={() => publishExport(item.id)}
+                        >
+                          {t('finalCutPublishFirstAction')}
+                        </Button>
                       ) : (
                         <span className="text-xs text-muted">{t('finalCutDownloadOnlyHint')}</span>
                       )}
+                      {viewerRole !== 'collaborator' && isExportRecordDeletable(item) ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<IconTrash className="size-3.5" />}
+                          onClick={() => setDeleteExportId(item.id)}
+                        >
+                          {t('finalCutDeleteAction')}
+                        </Button>
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -626,6 +673,15 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
         onDeleted={() => {
           setDeleteOpen(false);
           router.push(`/create/short/series/${episode.series_id}`);
+        }}
+      />
+      <DeleteExportDialog
+        exportId={deleteExportId}
+        open={deleteExportId != null}
+        onClose={() => setDeleteExportId(null)}
+        onDeleted={() => {
+          setDeleteExportId(null);
+          refreshExports();
         }}
       />
     </div>

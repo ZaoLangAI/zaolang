@@ -16,5 +16,5 @@ export function inputRequestRetryMs(args: {
   if (args.cancelled || !args.isNotFound) return null;
   if (args.attempt <= 0) return 0;
   const index = Math.min(args.attempt, RETRY_DELAYS_MS.length) - 1;
-  return RETRY_DELAYS_MS[index];
+  return RETRY_DELAYS_MS[index] ?? 2_000;
 }

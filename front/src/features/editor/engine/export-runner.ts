@@ -14,6 +14,29 @@ import {
 
 const AUDIO_SAMPLE_RATE = 48_000;
 const AUDIO_CHANNELS = 2;
+/** BufferTarget memory cap: 720p box, swapped for portrait so orientation is kept. */
+const EXPORT_MAX_LONG_EDGE = 1280;
+const EXPORT_MAX_SHORT_EDGE = 720;
+
+function evenPixel(value: number): number {
+  return Math.max(2, Math.floor(value / 2) * 2);
+}
+
+/** Fit a delivery spec into the 720p memory box without flipping orientation. */
+export function fitExportCanvas(width: number, height: number): { width: number; height: number } {
+  const landscape = width >= height;
+  const boxWidth = landscape ? EXPORT_MAX_LONG_EDGE : EXPORT_MAX_SHORT_EDGE;
+  const boxHeight = landscape ? EXPORT_MAX_SHORT_EDGE : EXPORT_MAX_LONG_EDGE;
+  const scale = Math.min(1, boxWidth / width, boxHeight / height);
+  let outWidth = evenPixel(Math.round(width * scale));
+  let outHeight = evenPixel(Math.round(height * scale));
+  if (landscape && outWidth < outHeight) {
+    outWidth = evenPixel(outHeight);
+  } else if (!landscape && outHeight < outWidth) {
+    outHeight = evenPixel(outWidth);
+  }
+  return { width: outWidth, height: outHeight };
+}
 
 function documentHasAudibleContent(document: CanonicalDocument): boolean {
   return document.tracks.some(
@@ -148,8 +171,9 @@ export class SequentialExportRunner implements RendererBackend {
     }
 
     const canvas = window.document.createElement('canvas');
-    canvas.width = Math.min(spec.width, 1280);
-    canvas.height = Math.min(spec.height, 720);
+    const fitted = fitExportCanvas(spec.width, spec.height);
+    canvas.width = fitted.width;
+    canvas.height = fitted.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('canvas');
 

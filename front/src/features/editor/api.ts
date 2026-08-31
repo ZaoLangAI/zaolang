@@ -1,5 +1,5 @@
 import { api } from '@/lib/api/client';
-import { ApiError, isApiError } from '@/lib/api/errors';
+import { ApiError } from '@/lib/api/errors';
 import { streamPost } from '@/lib/sse-post';
 import type { Asset, AuthorSummary, Page, ShortformProfiles } from '@/lib/api/types';
 
@@ -215,25 +215,6 @@ export function listDramaSeries(params?: DramaSeriesListParams) {
   return api.get<DramaSeries[]>('/v1/drama-series', { query: params });
 }
 
-let editorAvailableCache: Promise<boolean> | null = null;
-
-/**
- * Cheap, session-cached "is the drama editor turned on" probe, used so
- * entry points elsewhere (e.g. the job page's Enter editor button) don't
- * have to render an always-on button that 404s when the flag is off.
- * Any non-404 outcome (including a network blip) fails open so a transient
- * error never hides a feature that is actually enabled.
- */
-export function checkEditorAvailable(): Promise<boolean> {
-  editorAvailableCache ??= listDramaSeries()
-    .then(() => true)
-    .catch((error: unknown) => {
-      editorAvailableCache = null;
-      return !(isApiError(error) && error.isNotFound);
-    });
-  return editorAvailableCache;
-}
-
 export function createDramaSeries(input: DramaSeriesCreateInput) {
   return api.post<DramaSeries>('/v1/drama-series', input, {
     idempotencyKey: crypto.randomUUID(),
@@ -390,6 +371,10 @@ export function listEpisodeExports(episodeId: string) {
   return api.get<EpisodeExport[]>(`/v1/drama-episodes/${episodeId}/exports`);
 }
 
+export function deleteExport(exportId: string) {
+  return api.delete<void>(`/v1/editor-exports/${exportId}`);
+}
+
 export { createCutFromJob } from './from-job';
 
 export function acquireLease(cutId: string, browserInstanceId: string) {
@@ -542,6 +527,17 @@ export function bindEditorExport(draftId: string, exportId: string) {
       export_id: exportId,
       confirmed: true,
     },
+  );
+}
+
+export function ensureBoundDraft(exportId: string, draftId?: string | null) {
+  return api.post<{ draft_id: string; export_id: string }>(
+    `/v1/editor-exports/${exportId}/ensure-bound-draft`,
+    {
+      confirmed: true,
+      draft_id: draftId ?? undefined,
+    },
+    { idempotencyKey: crypto.randomUUID() },
   );
 }
 

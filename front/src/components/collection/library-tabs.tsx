@@ -14,7 +14,7 @@ import { SkillCard } from '@/components/skills/skill-card';
 import { DeleteWorkDialog } from '@/components/work/delete-work-dialog';
 import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
 import { WorkCard } from '@/components/work/work-card';
-import { Button, IconButton } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconPencil, IconPlus, IconRefresh, IconTrash, IconTrashX } from '@/components/ui/icons';
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
@@ -299,8 +299,21 @@ export function LibraryTabs({
                     alt={draft.title ?? t('tabDrafts')}
                     className="border border-border"
                   >
-                    <span className="absolute right-2 top-2 rounded-md border border-border bg-surface/90 px-2 py-0.5 text-[11px]">
-                      {tVisibility('draft')}
+                    <span
+                      className={cn(
+                        'absolute right-2 top-2 rounded-md border px-2 py-0.5 text-[11px]',
+                        draft.publish_status === 'pending'
+                          ? 'border-amber/40 bg-amber/15 text-amber'
+                          : draft.publish_status === 'rejected'
+                            ? 'border-danger/40 bg-danger/15 text-danger'
+                            : 'border-border bg-surface/90',
+                      )}
+                    >
+                      {draft.publish_status === 'pending'
+                        ? t('draftStatusPending')
+                        : draft.publish_status === 'rejected'
+                          ? t('draftStatusRejected')
+                          : tVisibility('draft')}
                     </span>
                     <span className="absolute left-2 top-2">
                       <IconButton

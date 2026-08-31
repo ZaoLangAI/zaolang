@@ -23,8 +23,15 @@ final class JobDetailViewModel {
 
     private(set) var liveThinking = ""
 
+    private(set) var inputRequest: JobInputRequestResponse?
+    private(set) var isLoadingInputRequest = false
+    private(set) var inputRequestError: String?
+    private(set) var isSubmittingAnswer = false
+    private(set) var answerSubmitted = false
+
     private var pollingTask: Task<Void, Never>?
     private var sseTask: Task<Void, Never>?
+    private var inputRequestTask: Task<Void, Never>?
     private var lastAppliedSequence = -1
     private var liveThinkingNodeId: String?
 
@@ -43,16 +50,95 @@ final class JobDetailViewModel {
     func stop() {
         pollingTask?.cancel()
         sseTask?.cancel()
+        inputRequestTask?.cancel()
     }
 
     private func refresh() async {
         do {
             let job = try await apiClient.fetchGenerationJob(id: jobID)
             state = .loaded(job)
+            handleStatusChange(job.status.value)
         } catch let error as ApiError {
             if state.value == nil { state = .failed(error) }
         } catch {
             if state.value == nil { state = .failed(.unexpectedResponse(status: 0)) }
+        }
+    }
+
+    /// Mirrors the web job page: a job that just arrived at `awaiting_input`
+    /// starts the question fetch; one that left it (answered elsewhere,
+    /// expired, cancelled) drops whatever question state was showing rather
+    /// than leaving a stale form on screen.
+    private func handleStatusChange(_ status: JobStatus?) {
+        if status == .awaitingInput {
+            if inputRequest == nil, inputRequestTask == nil { loadInputRequest() }
+        } else {
+            inputRequestTask?.cancel()
+            inputRequestTask = nil
+            inputRequest = nil
+            answerSubmitted = false
+        }
+    }
+
+    /// A 404 here can mean the SSE frame reporting `awaiting_input` landed
+    /// before the input-request row committed, not "there is nothing to
+    /// answer" — retried a few times before giving up, same shape as the
+    /// web `AwaitingInputPanel`.
+    private func loadInputRequest() {
+        inputRequestTask?.cancel()
+        isLoadingInputRequest = true
+        inputRequestError = nil
+        inputRequestTask = Task {
+            defer { inputRequestTask = nil }
+            let maxAttempts = 5
+            for attempt in 0..<maxAttempts {
+                guard !Task.isCancelled else { return }
+                do {
+                    let request = try await apiClient.fetchInputRequest(jobID: jobID)
+                    inputRequest = request
+                    isLoadingInputRequest = false
+                    return
+                } catch ApiError.notFound {
+                    if attempt < maxAttempts - 1 {
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        continue
+                    }
+                    // Gave up on a lagging row, not a real failure — the next
+                    // poll tick (5s) retries `handleStatusChange` from scratch.
+                    isLoadingInputRequest = false
+                    return
+                } catch let error as ApiError {
+                    inputRequestError = error.fallbackMessage
+                    isLoadingInputRequest = false
+                    return
+                } catch {
+                    inputRequestError = L10n.t("jobPage.awaitingInputLoadError")
+                    isLoadingInputRequest = false
+                    return
+                }
+            }
+            isLoadingInputRequest = false
+        }
+    }
+
+    func submitAnswer(_ answers: [String: AnswerValue]) async {
+        guard let inputRequest else { return }
+        isSubmittingAnswer = true
+        inputRequestError = nil
+        defer { isSubmittingAnswer = false }
+        do {
+            let items = inputRequest.questions.compactMap { question -> JobAnswerItem? in
+                guard let value = answers[question.id] else { return nil }
+                return JobAnswerItem(questionID: question.id, value: value)
+            }
+            let job = try await apiClient.answerJob(jobID: jobID, answers: items)
+            state = .loaded(job)
+            answerSubmitted = true
+            handleStatusChange(job.status.value)
+        } catch let error as ApiError {
+            inputRequestError = error.fallbackMessage
+        } catch {
+            inputRequestError = L10n.t("jobPage.awaitingInputSubmitError")
         }
     }
 
@@ -106,6 +192,7 @@ final class JobDetailViewModel {
             liveThinkingNodeId = nodeId
         }
         state = .loaded(job.withStreamProgress(status: event.status, progress: event.progress))
+        handleStatusChange(event.status.value)
     }
 
     func cancel() async {

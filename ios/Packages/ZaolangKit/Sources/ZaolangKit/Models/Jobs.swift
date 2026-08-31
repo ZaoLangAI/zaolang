@@ -155,6 +155,104 @@ public struct GenerationJobCreateRequest: Encodable, Sendable {
     }
 }
 
+/// One option on a `single_choice`/`multi_choice` follow-up question.
+public struct JobInputQuestionOption: Codable, Sendable, Equatable, Identifiable {
+    public var id: String { value }
+    public let value: String
+    public let label: String
+}
+
+/// A follow-up question a planning/`copy_generate` node is waiting on —
+/// mirrors `JobInputQuestionView` (`back/app/domain/jobs/input_requests.py`).
+/// Only three kinds exist; an unrecognized one decodes but the view treats
+/// it as free text rather than crashing on an unknown case.
+public struct JobInputQuestion: Codable, Sendable, Equatable, Identifiable {
+    public enum Kind: String, Codable, Sendable {
+        case singleChoice = "single_choice"
+        case multiChoice = "multi_choice"
+        case freeText = "free_text"
+    }
+
+    public let id: String
+    public let kind: Kind
+    public let prompt: String
+    public let options: [JobInputQuestionOption]
+    public let required: Bool
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decodeIfPresent(Kind.self, forKey: .kind) ?? .freeText
+        prompt = try c.decode(String.self, forKey: .prompt)
+        options = try c.decodeIfPresent([JobInputQuestionOption].self, forKey: .options) ?? []
+        required = try c.decodeIfPresent(Bool.self, forKey: .required) ?? false
+    }
+}
+
+/// What a job at `awaiting_input` is waiting on — `GET .../input-request`.
+public struct JobInputRequestResponse: Codable, Sendable, Equatable {
+    public let jobID: String
+    public let nodeID: String
+    public let questions: [JobInputQuestion]
+    public let expiresAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case jobID = "job_id"
+        case nodeID = "node_id"
+        case questions
+        case expiresAt = "expires_at"
+    }
+}
+
+/// One answer in `POST .../answer`'s body — `value` is a bare `String` for
+/// `single_choice`/`free_text`, JSON-encoded as a `[String]` for
+/// `multi_choice` (mirrors the web `QuestionAnswer` union; see
+/// `AnswerValue` below for the client-side equivalent).
+public enum AnswerValue: Sendable, Equatable {
+    case text(String)
+    case choices([String])
+
+    public var isEmpty: Bool {
+        switch self {
+        case .text(let value): return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .choices(let values): return values.isEmpty
+        }
+    }
+}
+
+extension AnswerValue: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let value): try container.encode(value)
+        case .choices(let values): try container.encode(values)
+        }
+    }
+}
+
+public struct JobAnswerItem: Encodable, Sendable {
+    public let questionID: String
+    public let value: AnswerValue
+
+    public init(questionID: String, value: AnswerValue) {
+        self.questionID = questionID
+        self.value = value
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case questionID = "question_id"
+        case value
+    }
+}
+
+public struct JobAnswerRequest: Encodable, Sendable {
+    public let answers: [JobAnswerItem]
+
+    public init(answers: [JobAnswerItem]) {
+        self.answers = answers
+    }
+}
+
 public struct RouteSummary: Codable, Sendable, Equatable {
     public let provider: String
     public let providerKind: String

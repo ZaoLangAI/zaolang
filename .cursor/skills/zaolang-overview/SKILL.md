@@ -1,6 +1,6 @@
 ---
 name: zaolang-overview
-description: The ZaoLang repository's master index and routing table — front/back/ios/infra ownership, the boundaries of the 22 module skills, and which one to load explicitly for a given change. Use when working anywhere in this repository, or when the user mentions ZaoLang, works and lineage, the credit ledger, generation jobs, the agent gateway, the admin console, admin statistics, the iOS client, the drama editor, or asks where a feature lives in this codebase.
+description: The ZaoLang repository's master index and routing table — front/back/ios/infra ownership, the boundaries of the 23 module skills, and which one to load explicitly for a given change. Use when working anywhere in this repository, or when the user mentions ZaoLang, works and lineage, the credit ledger, generation jobs, the agent gateway, the admin console, admin statistics, the iOS client, the drama editor, or asks where a feature lives in this codebase.
 ---
 
 # ZaoLang — Repository Overview
@@ -44,6 +44,7 @@ Backend layering: `api/v1` (the HTTP contract) → `domain/*` (where invariants 
 | The admin statistics center, daily-trend timeseries, empty-day zero-fill | `zaolang-admin-statistics` |
 | The iOS client (SwiftUI screens, ZaolangKit, XcodeGen, colour/string generation scripts) | `zaolang-ios-client` |
 | Local gates, Docker images, the docs site | `zaolang-ci-release` |
+| Single-host remote deploy or update (rsync, prod compose, migrate, optional local-DB overwrite) | `zaolang-remote-deploy` |
 | Writing tests, running E2E, accessibility and visual QA | `zaolang-testing-qa` |
 | The drama timeline, EditCommand, leases, browser export, editor_planner, Remote MCP, conversational script writing (文案创作) | `zaolang-editor-drama` |
 

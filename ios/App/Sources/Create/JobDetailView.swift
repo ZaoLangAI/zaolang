@@ -61,6 +61,10 @@ struct JobDetailView: View {
 
                 statusSection(job)
 
+                if job.status.value == .awaitingInput {
+                    awaitingInputSection
+                }
+
                 if let outputURL = job.outputURL, job.status.value == .succeeded {
                     WorkMediaStage(
                         mediaType: job.operation.value?.isVideo == true ? .video : .image,
@@ -108,6 +112,28 @@ struct JobDetailView: View {
                 .font(.caption.weight(.medium))
                 .accessibilityAddTraits(.updatesFrequently)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var awaitingInputSection: some View {
+        if let request = viewModel?.inputRequest {
+            AwaitingInputSection(
+                request: request,
+                isSubmitting: viewModel?.isSubmittingAnswer ?? false,
+                error: viewModel?.inputRequestError,
+                submitted: viewModel?.answerSubmitted ?? false,
+                onSubmit: { answers in
+                    Task { await viewModel?.submitAnswer(answers) }
+                }
+            )
+        } else if viewModel?.isLoadingInputRequest == true {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text(L10n.t("jobPage.awaitingInputLoading")).font(.caption).foregroundStyle(Color.zl.textMuted)
+            }
+        } else if let error = viewModel?.inputRequestError {
+            Text(error).font(.caption).foregroundStyle(Color.zl.danger)
         }
     }
 

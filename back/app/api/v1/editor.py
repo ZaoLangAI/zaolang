@@ -10,6 +10,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 
+from app.api import idempotency
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.editor import (
     ApplyCommandsRequest,
@@ -33,6 +34,7 @@ from app.api.schemas.editor import (
     EditPlanApplyRequest,
     EditPlanCreateRequest,
     EditPlanResponse,
+    EnsureBoundDraftRequest,
     EpisodeContentLinkCreateRequest,
     EpisodeContentLinkResponse,
     EpisodeCutResponse,
@@ -1184,6 +1186,71 @@ def bind_editor_export(
     )
     session.commit()
     return {"draft_id": draft.id, "export_id": payload.export_id}
+
+
+ENSURE_BOUND_DRAFT_ENDPOINT = "POST /v1/editor-exports/{export_id}/ensure-bound-draft"
+
+
+@router.post("/editor-exports/{export_id}/ensure-bound-draft", response_model=dict[str, str])
+def ensure_bound_draft(
+    export_id: str,
+    payload: EnsureBoundDraftRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_export"))],
+    idempotency_key: IdempotencyKey,
+) -> dict[str, str]:
+    request_hash = idempotency.hash_request(
+        {"export_id": export_id, **payload.model_dump(mode="json")}
+    )
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=ENSURE_BOUND_DRAFT_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            stored = replay.response_snapshot
+            return {"draft_id": str(stored["draft_id"]), "export_id": str(stored["export_id"])}
+    draft = export_service.ensure_export_bound_draft(
+        session,
+        user_id=user.id,
+        export_id=export_id,
+        confirmed=payload.confirmed,
+        draft_id=payload.draft_id,
+    )
+    session.commit()
+    response = {"draft_id": draft.id, "export_id": export_id}
+    if idempotency_key:
+        idempotency.remember(
+            session,
+            user_id=user.id,
+            endpoint=ENSURE_BOUND_DRAFT_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+            status_code=200,
+            response=response,
+        )
+        session.commit()
+    return response
+
+
+@router.delete("/editor-exports/{export_id}", status_code=204)
+def delete_export(
+    export_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_export"))],
+) -> None:
+    """Drop one unpublished row from the episode's 最终成片 list.
+
+    A published bind (or a work version already stamped with this
+    export) is 422. In-flight exports must be cancelled first. The
+    bound draft is unbound, not deleted."""
+    export_service.delete_export(session, user_id=user.id, export_id=export_id)
+    session.commit()
 
 
 @router.post(

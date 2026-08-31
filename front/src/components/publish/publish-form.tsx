@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { DevicePreview } from '@/components/media/device-preview';
@@ -11,7 +11,7 @@ import { IconSparkle } from '@/components/ui/icons';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { OptionGroup } from '@/components/studio/option-group';
-import { useRouter } from '@/i18n/navigation';
+import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
@@ -71,7 +71,6 @@ export function PublishForm({ draft }: { draft: Draft }) {
   const tVisibility = useTranslations('visibility');
   const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
-  const router = useRouter();
   const { notify } = useToast();
 
   const [title, setTitle] = useState(draft.title ?? '');
@@ -82,9 +81,23 @@ export function PublishForm({ draft }: { draft: Draft }) {
   const [disclosure, setDisclosure] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A successful submit used to navigate to `/jobs/{latest_job_id}` or
+  // `/collection` — for an image draft (which never touches `/jobs`) that
+  // dropped the user on a page they had never seen, and either way it hid
+  // the very "submitted, now pending" state this component already renders
+  // for a reload. Staying here and flipping this instead means the same UI
+  // that would show up after a refresh shows up immediately.
+  const [justSubmitted, setJustSubmitted] = useState(false);
+  /**
+   * One key for this draft's whole publish attempt, not one per click — a
+   * network failure leaves the server's outcome unknown, and a retry with a
+   * fresh key could submit (and get billed for royalty payback on) the same
+   * draft twice.
+   */
+  const pendingIdempotencyKey = useRef<string | null>(null);
 
-  const isPending = draft.publish_status === 'pending';
-  const isRejected = draft.publish_status === 'rejected';
+  const isPending = draft.publish_status === 'pending' || justSubmitted;
+  const isRejected = draft.publish_status === 'rejected' && !justSubmitted;
   const formLocked = isPending;
   const previewTitle = title || t('title');
   const isPlayable = draft.output_media_type === 'video' || draft.output_media_type === 'audio';
@@ -94,6 +107,7 @@ export function PublishForm({ draft }: { draft: Draft }) {
     setPublishing(true);
     setError(null);
     try {
+      pendingIdempotencyKey.current ??= newIdempotencyKey();
       await api.post<PublishResult>(
         `/v1/drafts/${draft.id}/publish`,
         {
@@ -104,16 +118,18 @@ export function PublishForm({ draft }: { draft: Draft }) {
           rights_confirmed: rights,
           ai_disclosure_confirmed: disclosure,
         },
-        { idempotencyKey: newIdempotencyKey() },
+        { idempotencyKey: pendingIdempotencyKey.current },
       );
       notify(t('submittedReview'), 'success');
-      if (draft.latest_job_id) {
-        router.push(`/jobs/${draft.latest_job_id}`);
-      } else {
-        router.push('/collection');
-      }
+      setJustSubmitted(true);
+      setPublishing(false);
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
+      // A changed request under the same key would 409 forever; only that
+      // case forces a fresh key on the next attempt.
+      if (caught instanceof ApiError && caught.code === 'IDEMPOTENCY_CONFLICT') {
+        pendingIdempotencyKey.current = null;
+      }
       setPublishing(false);
     }
   };
@@ -171,6 +187,9 @@ export function PublishForm({ draft }: { draft: Draft }) {
           <div className="rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 px-4 py-3">
             <p className="text-sm font-medium">{t('pendingTitle')}</p>
             <p className="mt-1 text-xs text-muted">{t('pendingHint')}</p>
+            <Link href="/collection" className="mt-2 inline-block text-xs text-primary hover:underline">
+              {t('pendingGoCollection')}
+            </Link>
           </div>
         ) : null}
 

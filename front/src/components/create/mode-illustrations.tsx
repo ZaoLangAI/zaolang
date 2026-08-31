@@ -135,6 +135,41 @@ export function VideoAnalysisIllustration(props: IllustrationProps) {
   );
 }
 
+/** A bust portrait beside two smaller ones, standing in for a saved roster
+ * rather than a single generated still (`ImageCreationIllustration` uses the
+ * same bust shape for the "character" asset kind, singular). */
+export function CharacterLibraryIllustration(props: IllustrationProps) {
+  return (
+    <Scene {...props}>
+      <rect x="16" y="10" width="64" height="80" rx="8" fillOpacity="0.06" fill="currentColor" />
+      <circle cx="48" cy="38" r="13" />
+      <path d="M27 82c2-18 10-27 21-27s19 9 21 27" />
+      <circle cx="112" cy="26" r="16" fillOpacity="0.06" fill="currentColor" />
+      <circle cx="112" cy="20" r="7" />
+      <path d="M99 40c1-9 6-13 13-13s12 4 13 13" />
+      <circle cx="140" cy="52" r="13" fillOpacity="0.06" fill="currentColor" />
+      <circle cx="140" cy="47" r="5.5" />
+      <path d="M130 62c1-6.5 4.5-10 10-10s9 3.5 10 10" />
+    </Scene>
+  );
+}
+
+/** Two landscape frames stacked behind a third, standing in for a saved
+ * library rather than a single scene reference. */
+export function SceneLibraryIllustration(props: IllustrationProps) {
+  return (
+    <Scene {...props}>
+      <rect x="26" y="8" width="98" height="24" rx="5" fillOpacity="0.05" fill="currentColor" strokeOpacity="0.3" />
+      <rect x="18" y="34" width="106" height="30" rx="5" fillOpacity="0.06" fill="currentColor" strokeOpacity="0.55" />
+      <rect x="10" y="62" width="114" height="28" rx="6" fillOpacity="0.08" fill="currentColor" />
+      <circle cx="30" cy="76" r="4" />
+      <path d="M18 88 40 70l10 8 14-12 20 16" strokeOpacity="0.7" />
+      <circle cx="140" cy="26" r="8" />
+      <path d="M132 26h-6M140 18v-6M148 26h6M140 34v6M135 21l-4-4M145 21l4-4M135 31l-4 4M145 31l4 4" strokeOpacity="0.5" />
+    </Scene>
+  );
+}
+
 export function ScriptIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>

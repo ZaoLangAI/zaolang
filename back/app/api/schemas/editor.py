@@ -374,6 +374,11 @@ class BindEditorExportRequest(ApiModel):
     confirmed: bool = False
 
 
+class EnsureBoundDraftRequest(ApiModel):
+    confirmed: bool = False
+    draft_id: str | None = None
+
+
 class McpTokenCreateRequest(ApiModel):
     series_id: str
     client_id: str = Field(min_length=1, max_length=80)

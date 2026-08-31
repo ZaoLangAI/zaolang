@@ -50,7 +50,9 @@ struct StudioView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 sourceSection(viewModel)
-                operationSection(viewModel)
+                if viewModel.sourceWorkID == nil {
+                    operationSection(viewModel)
+                }
                 if viewModel.operation.isImage {
                     assetKindSection(viewModel)
                 }

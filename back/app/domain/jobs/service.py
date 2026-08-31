@@ -32,7 +32,7 @@ from app.domain.notifications import push as notifications
 from app.domain.scenes import service as scenes_service
 from app.domain.shortform import service as shortform_service
 from app.domain.workflow_templates import service as workflow_templates_service
-from app.models import GenerationJob, JobEvent
+from app.models import Draft, GenerationJob, JobEvent
 from app.models.enums import ImageAssetKind, JobEventType, JobOrigin, JobStatus, VideoAssetKind
 from app.platform_config import service as config_service
 from app.platform_config.schemas import PricingConfig
@@ -111,6 +111,27 @@ def skips_credits(job: GenerationJob) -> bool:
     return job.origin == JobOrigin.SANDBOX
 
 
+def _point_draft_at_job(
+    session: Session,
+    *,
+    user_id: str,
+    draft_id: str | None,
+    job_id: str,
+    sandbox: bool,
+) -> None:
+    """Keeps `Draft.latest_job_id` on the job just submitted.
+
+    Image-studio resume (and any other `?draftId=` entry) only has this
+    pointer — create, retry, and promote must all advance it, or a
+    notification click reopens the previous (often failed) attempt.
+    """
+    if sandbox or not draft_id:
+        return
+    draft = session.get(Draft, draft_id)
+    if draft is not None and draft.user_id == user_id:
+        draft.latest_job_id = job_id
+
+
 def submit(
     session: Session,
     *,
@@ -134,6 +155,10 @@ def submit(
     cost) but skips the balance check and the reservation. `graph_override_json`
     is the unpublished canvas snapshot a sandbox try-it walks — it is stored
     on the job and must not pin the live template.
+
+    When `draft_id` names an owned draft, `Draft.latest_job_id` is pointed at
+    this job (including an idempotent replay) so create / retry / promote
+    share one pointer instead of each route writing it by hand.
     """
     existing = session.scalar(
         select(GenerationJob).where(
@@ -146,6 +171,13 @@ def submit(
             existing, operation=operation, quality_tier=quality_tier, params=params
         ):
             raise IdempotencyConflict()
+        _point_draft_at_job(
+            session,
+            user_id=user_id,
+            draft_id=existing.draft_id or draft_id,
+            job_id=existing.id,
+            sandbox=skips_credits(existing),
+        )
         return SubmissionResult(
             job=existing,
             quote=Quote(
@@ -261,6 +293,13 @@ def submit(
     )
     if not sandbox:
         notifications.sync_job_notification(session, job)
+    _point_draft_at_job(
+        session,
+        user_id=user_id,
+        draft_id=draft_id,
+        job_id=job.id,
+        sandbox=sandbox,
+    )
     return SubmissionResult(job=job, quote=priced)
 
 

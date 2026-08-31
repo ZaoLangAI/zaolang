@@ -85,7 +85,7 @@ def login(
     )
     session.commit()
 
-    return _session_response(user, token, expires_at)
+    return _session_response(user, expires_at)
 
 
 @router.post("/auth/logout", response_model=OkResponse)
@@ -95,18 +95,16 @@ def logout(response: Response) -> OkResponse:
 
 
 @router.get("/auth/me", response_model=AdminSessionResponse)
-def me(user: AdminUser, request: Request) -> AdminSessionResponse:
+def me(user: AdminUser) -> AdminSessionResponse:
     """Re-reads the session so the console can render RBAC-aware navigation."""
-    token = request.cookies.get(ADMIN_COOKIE_NAME, "")
     _, expires_at = issue_admin_token(user.id, list(user.roles))
-    return _session_response(user, token, expires_at)
+    return _session_response(user, expires_at)
 
 
-def _session_response(user: User, token: str, expires_at) -> AdminSessionResponse:  # type: ignore[no-untyped-def]
+def _session_response(user: User, expires_at) -> AdminSessionResponse:  # type: ignore[no-untyped-def]
     roles = [role for role in user.roles if role in ADMIN_ROLE_RANK]
     max_role = max(roles, key=lambda r: ADMIN_ROLE_RANK[r], default="viewer")
     return AdminSessionResponse(
-        access_token=token,
         expires_at=expires_at,
         user_id=user.id,
         email=user.email,

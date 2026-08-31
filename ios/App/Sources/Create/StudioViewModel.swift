@@ -108,6 +108,7 @@ final class StudioViewModel {
         do {
             let detail = try await environment.apiClient.fetchWork(id: sourceWorkID)
             sourceWork = detail
+            operation = Self.remixOperation(for: detail)
             if prompt.isEmpty { prompt = detail.reusableParams?.prompt ?? "" }
             if negativePrompt.isEmpty { negativePrompt = detail.reusableParams?.negativePrompt ?? "" }
         } catch let error as ApiError {
@@ -116,6 +117,23 @@ final class StudioViewModel {
             sourceLoadError = .unexpectedResponse(status: 0)
         }
         scheduleQuote()
+    }
+
+    /// Matches the operation to the source's own medium instead of leaving
+    /// `operation` at its `.textToVideo` default regardless of what is being
+    /// remixed — a video source silently ran the text-to-video pipeline
+    /// (wrong planning/prompt template, even though the reference asset
+    /// itself still got auto-attached server-side by
+    /// `attach_licensed_source_video`), and an image or audio source fared
+    /// no better. Mirrors the web remix page's own per-media-type studio
+    /// pick (`RemixStudio` in `remix/[workId]/page.tsx`).
+    private static func remixOperation(for work: WorkDetail) -> GenerationOperation {
+        switch work.mediaType ?? work.currentVersion?.mediaType {
+        case .video: return .videoToVideo
+        case .image: return .imageToVideo
+        case .audio: return .audioGeneration
+        case .none: return .textToVideo
+        }
     }
 
     /// Only fetched for the image-creation entry — the video/audio studio

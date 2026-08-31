@@ -3,12 +3,17 @@
 import { useTranslations } from 'next-intl';
 
 import { useSession } from '@/components/auth/session-provider';
-import { VideoAnalysisIllustration } from '@/components/create/mode-illustrations';
-import { IconArrowRight, IconSearch } from '@/components/ui/icons';
+import {
+  CharacterLibraryIllustration,
+  SceneLibraryIllustration,
+  VideoAnalysisIllustration,
+} from '@/components/create/mode-illustrations';
+import { IconArrowRight, IconLandscape, IconSearch, IconUser } from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
+import type { Me } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
-type ToolId = 'video_analysis';
+type ToolId = 'video_analysis' | 'character_library' | 'scene_library';
 
 const TOOLS: Array<{
   id: ToolId;
@@ -17,12 +22,32 @@ const TOOLS: Array<{
   href: string;
   tone: string;
   accent: string;
+  /** `undefined` means always on — the character/scene libraries have no
+   * gating flag on the backend, unlike `video_analysis`. */
+  flag?: keyof Me['features'];
 }> = [
   {
     id: 'video_analysis',
     icon: <IconSearch className="size-5" />,
     illustration: <VideoAnalysisIllustration className="size-full" />,
     href: '/create/tools/video-analysis',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
+    flag: 'video_analysis',
+  },
+  {
+    id: 'character_library',
+    icon: <IconUser className="size-5" />,
+    illustration: <CharacterLibraryIllustration className="size-full" />,
+    href: '/create/characters',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
+  },
+  {
+    id: 'scene_library',
+    icon: <IconLandscape className="size-5" />,
+    illustration: <SceneLibraryIllustration className="size-full" />,
+    href: '/create/scenes',
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
   },
@@ -38,13 +63,14 @@ const TOOLS: Array<{
  *
  * Same protected-navigation gate as `CreateModeCards` (`requireAuth`) — an
  * anonymous visitor lands back on this tool after signing in. Whether the
- * tool itself is enabled is a backend feature flag the studio page and its
- * submit call enforce, not something this entry point checks.
+ * tool itself is enabled reads `me.features` (same "fail open until known"
+ * stance as `CreateModeCards`) so a disabled tool shows as such here
+ * instead of only 404ing once the user is already inside the studio page.
  */
 export function CreateToolCards({ className }: { className?: string }) {
   const t = useTranslations('createPage');
   const router = useRouter();
-  const { requireAuth } = useSession();
+  const { requireAuth, user } = useSession();
 
   const labels: Record<ToolId, { title: string; desc: string; tag: string }> = {
     video_analysis: {
@@ -52,16 +78,30 @@ export function CreateToolCards({ className }: { className?: string }) {
       desc: t('toolVideoAnalysisDesc'),
       tag: t('toolVideoAnalysisTag'),
     },
+    character_library: {
+      title: t('toolCharacterLibraryTitle'),
+      desc: t('toolCharacterLibraryDesc'),
+      tag: t('toolCharacterLibraryTag'),
+    },
+    scene_library: {
+      title: t('toolSceneLibraryTitle'),
+      desc: t('toolSceneLibraryDesc'),
+      tag: t('toolSceneLibraryTag'),
+    },
   };
 
   return (
     <ul className={cn('grid gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
       {TOOLS.map((tool) => {
         const label = labels[tool.id];
+        const available = tool.flag ? (user?.features[tool.flag] ?? true) : true;
         return (
           <li
             key={tool.id}
-            className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow hover:shadow-raised"
+            className={cn(
+              'flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow',
+              available ? 'hover:shadow-raised' : 'opacity-60',
+            )}
           >
             <div
               className={cn('relative aspect-[16/10] overflow-hidden bg-surface-soft', tool.accent)}
@@ -78,16 +118,19 @@ export function CreateToolCards({ className }: { className?: string }) {
             </div>
 
             <div className="flex flex-1 flex-col p-4">
-              <p className="text-[11px] text-muted">{label.tag}</p>
+              <p className="text-[11px] text-muted">
+                {available ? label.tag : t('modeUnavailable')}
+              </p>
               <h3 className="mt-2 text-base font-semibold">{label.title}</h3>
               <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{label.desc}</p>
 
               <button
                 type="button"
+                disabled={!available}
                 onClick={() =>
                   requireAuth({ label: label.title, run: () => router.push(tool.href) })
                 }
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-border px-4 py-2.5 text-sm transition-colors hover:border-border-strong hover:bg-surface-soft"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[var(--radius-sm)] border border-border px-4 py-2.5 text-sm transition-colors hover:border-border-strong hover:bg-surface-soft disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:border-border disabled:hover:bg-transparent"
               >
                 {t('start')}
                 <IconArrowRight className="size-4" />

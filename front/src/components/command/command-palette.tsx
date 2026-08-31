@@ -31,9 +31,11 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const tNav = useTranslations('nav');
   const tShortform = useTranslations('shortform');
   const tScript = useTranslations('scriptStudio');
+  const tCharacters = useTranslations('characters');
+  const tScenes = useTranslations('scenes');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { requireAuth } = useSession();
+  const { requireAuth, user } = useSession();
 
   const [open, setOpen] = useState(() => openSignal > 0);
   const [seenSignal, setSeenSignal] = useState(openSignal);
@@ -127,6 +129,8 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'create', label: tNav('create'), path: '/create' },
       { id: 'create-short', label: tShortform('title'), path: '/create/short' },
       { id: 'create-script', label: tScript('title'), path: '/create/script' },
+      { id: 'create-characters', label: tCharacters('eyebrow'), path: '/create/characters' },
+      { id: 'create-scenes', label: tScenes('eyebrow'), path: '/create/scenes' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
       { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
       { id: 'skills', label: tNav('skills'), path: '/skills' },
@@ -135,7 +139,13 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       { id: 'billing', label: tNav('billing'), path: '/billing' },
       { id: 'notifications', label: tNav('notifications'), path: '/notifications' },
       { id: 'settings', label: tNav('settings'), path: '/profile/settings' },
-    ].map(({ id, label, path }) => ({
+    ]
+      // `false` (not just falsy/unknown) is the only signal worth acting
+      // on here — an anonymous visitor or a session still loading has no
+      // `user` yet, and hiding the entry for them would flicker it back in
+      // the moment login resolves.
+      .filter((entry) => entry.id !== 'create-script' || user?.features.script_studio !== false)
+      .map(({ id, label, path }) => ({
       id,
       group: t('groupNavigate'),
       label,
@@ -149,6 +159,8 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
             'notifications',
             'settings',
             'create-script',
+            'create-characters',
+            'create-scenes',
           ].includes(id)
         ) {
           close();
@@ -190,10 +202,13 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
     requireAuth,
     searchable,
     t,
+    tCharacters,
     tNav,
+    tScenes,
     tScript,
     tShortform,
     trimmed,
+    user?.features,
     works,
   ]);
 

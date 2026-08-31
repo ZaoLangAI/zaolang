@@ -55,9 +55,9 @@ CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60
 # gives this loop frequent chances to notice the clock; one that goes fully
 # silent for this long is instead caught by `endpoint.timeout_ms` first.
 # Thinking deltas do *not* reset this clock (a slow think would hang
-# forever); 300s is the room a copy-enhance / script pass needs to finish
+# forever); 600s is the room a copy-enhance / script pass needs to finish
 # JSON after a long think, not a per-delta idle.
-STREAM_WALL_CLOCK_TIMEOUT_SECONDS = 300
+STREAM_WALL_CLOCK_TIMEOUT_SECONDS = 600
 
 
 @dataclass(slots=True)

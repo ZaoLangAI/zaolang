@@ -37,6 +37,7 @@ import {
   missingReferenceViews,
 } from '@/lib/characters';
 import { formatCount, formatDuration } from '@/lib/format';
+import { draftReturnParams } from '@/lib/studio-session';
 import type { Asset } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
@@ -81,6 +82,7 @@ export function ImageGenerationStudio({
   reference,
   initialPrompt,
   initialDraft,
+  initialJobId,
   initialAssetKind,
   initialTargetCharacterId,
   initialTargetSceneId,
@@ -96,6 +98,10 @@ export function ImageGenerationStudio({
   /** Resumes a previous session — `?draftId=` on `/create/new` — so its full
    * version history and latest output reappear instead of starting blank. */
   initialDraft?: Draft;
+  /** Notification click-through (`?jobId=`). Preferred over
+   * `initialDraft.latest_job_id` so a retry's queued/succeeded toast opens
+   * that attempt, not the first failed one. */
+  initialJobId?: string;
   /**
    * The next five props are the "文案创作 → 图片创作" deep link's payload
    * (assembled by `script-document-view.tsx`'s `buildCreateHref`, read back
@@ -171,15 +177,28 @@ export function ImageGenerationStudio({
   const [activeJobSeed, setActiveJobSeed] = useState<GenerationJob | null>(null);
   const [cancelling, setCancelling] = useState(false);
 
-  // Resuming `?draftId=` only gives us the draft, whose `latest_job_id` is a
-  // bare id — fetch it once so the preview slot can seed `useJobStream`
-  // without an initial null-`initial` SSE round-trip against an almost
-  // certainly already-terminal job.
+  // Notification `?jobId=` wins over the draft's `latest_job_id` so a
+  // retry toast opens that job. A 404 on the preferred id (deleted / not
+  // owned) falls back to `latest_job_id` rather than leaving the preview
+  // empty. Fetch once so the preview slot can seed `useJobStream` without
+  // an initial null-`initial` SSE round-trip against an almost certainly
+  // already-terminal job.
+  const [resumeFallbackJobId, setResumeFallbackJobId] = useState<string | null>(null);
+  const preferredResumeJobId =
+    resumeFallbackJobId ?? initialJobId ?? initialDraft?.latest_job_id ?? null;
   const resumedJob = useResource<GenerationJob>(
-    !activeJobId && initialDraft?.latest_job_id
-      ? `/v1/generation-jobs/${initialDraft.latest_job_id}`
-      : null,
+    !activeJobId && preferredResumeJobId ? `/v1/generation-jobs/${preferredResumeJobId}` : null,
   );
+  if (
+    !activeJobId &&
+    !resumeFallbackJobId &&
+    initialJobId &&
+    initialDraft?.latest_job_id &&
+    initialJobId !== initialDraft.latest_job_id &&
+    resumedJob.status === 'failed'
+  ) {
+    setResumeFallbackJobId(initialDraft.latest_job_id);
+  }
   // Adjusted during render rather than in an effect (same pattern as
   // `command-palette.tsx`) — guarded by `!activeJobId` so it only ever fires
   // once, the moment the resumed job's data arrives. `asset_kind` rides
@@ -335,9 +354,27 @@ export function ImageGenerationStudio({
       effectiveCompletionCharacterData &&
       canCompleteViews(effectiveCompletionCharacterData),
   );
+  // Priced (and later submitted) as whichever of side/back is still missing —
+  // shared between the quote below and `completeCharacterViews`'s own submit
+  // so the estimate the user sees before clicking always matches what gets
+  // reserved. Falls back to both when there's nothing to derive it from yet
+  // (button is hidden in that case anyway via `canOfferCompleteViews`).
+  const missingCompletionViews: Array<'side' | 'back'> = effectiveCompletionCharacterData
+    ? missingReferenceViews(effectiveCompletionCharacterData)
+    : ['side', 'back'];
 
-  const { submitting: completionSubmitting, submit: submitCompletion } = useGenerationSubmit(
-    { operation: 'image_to_image', qualityTier: tier, durationSeconds: 0 },
+  const {
+    quote: completionQuote,
+    submitting: completionSubmitting,
+    submit: submitCompletion,
+  } = useGenerationSubmit(
+    {
+      operation: 'image_to_image',
+      qualityTier: tier,
+      durationSeconds: 0,
+      assetKind: 'character',
+      characterViews: missingCompletionViews,
+    },
     {
       label: t('submit'),
       onSubmitted: (job) => {
@@ -390,6 +427,26 @@ export function ImageGenerationStudio({
     },
     [notify, tStates],
   );
+
+  // `/remix/[workId]` hands this studio a licensed image source expecting
+  // `image_to_image` to actually edit *that* image — unlike a video source
+  // (auto-prepended server-side by `attach_licensed_source_video`), an image
+  // reference is the caller's job to attach (see that function's own doc
+  // comment), so without this the remix would silently submit as a bare
+  // `image_to_image` with no reference at all. Runs once per mount, guarded
+  // the same way the draft-resume effect below is.
+  const sourceMaterialSeededRef = useRef(false);
+  useEffect(() => {
+    if (sourceMaterialSeededRef.current || !source) return;
+    const assetId = source.work.current_version?.output_asset_id;
+    if (!assetId) return;
+    sourceMaterialSeededRef.current = true;
+    void api
+      .get<Asset>(`/v1/assets/${assetId}`)
+      .then((asset) => setUploads([asset]))
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Resuming a draft (`?draftId=` — the "最近草稿"/"草稿" tab's edit entry
   // points, and image job notifications) means the user wants to keep
@@ -488,6 +545,11 @@ export function ImageGenerationStudio({
       autoAttachAsset: isCharacterAssetKind ? autoAttachToRoster : undefined,
       subjectNameHint: isCharacterAssetKind || assetKind === 'scene' ? subjectNameHint : undefined,
       linkEpisodeId,
+      draftParams: draftReturnParams({
+        returnTo,
+        returnLinkKind,
+        returnLinkLabel,
+      }),
     });
   };
 
@@ -508,10 +570,7 @@ export function ImageGenerationStudio({
   // the other, already-approved view too.
   const completeCharacterViews = () => {
     if (!displayJob?.output_asset_id || !completionCharacterId) return;
-    const views: Array<'side' | 'back'> = effectiveCompletionCharacterData
-      ? missingReferenceViews(effectiveCompletionCharacterData)
-      : ['side', 'back'];
-    if (views.length === 0) return;
+    if (missingCompletionViews.length === 0) return;
     submitCompletion({
       operation: 'image_to_image',
       qualityTier: tier,
@@ -520,7 +579,7 @@ export function ImageGenerationStudio({
       aspectRatio: '3:4',
       referenceAssetIds: [displayJob.output_asset_id],
       assetKind: 'character',
-      characterViews: views,
+      characterViews: missingCompletionViews,
       targetCharacterId: completionCharacterId,
       autoAttachAsset: true,
       draftId: draftId ?? undefined,
@@ -686,6 +745,10 @@ export function ImageGenerationStudio({
           setActiveJobId(job.id);
           setActiveJobSeed(job);
         }}
+        onPromoted={(job) => {
+          setActiveJobId(job.id);
+          setActiveJobSeed(job);
+        }}
         returnTo={returnTo}
         returnLinkKind={returnLinkKind}
         returnLinkLabel={returnLinkLabel}
@@ -694,6 +757,7 @@ export function ImageGenerationStudio({
         canCompleteCharacterViews={canOfferCompleteViews}
         completingCharacterViews={completingCharacterViews}
         onCompleteCharacterViews={completeCharacterViews}
+        completionCredits={completionQuote?.credits}
       />
       <GenerationVersionHistory jobs={knownJobs} activeJob={displayJob} onSelect={selectVersion} />
     </>

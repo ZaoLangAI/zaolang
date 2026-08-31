@@ -6,7 +6,9 @@ import { HeroCarousel } from '@/components/discover/hero-carousel';
 import { InspirationMasonry } from '@/components/discover/inspiration-masonry';
 import { InspirationSkeleton } from '@/components/discover/inspiration-skeleton';
 import { DiscoverAccess, DiscoverSort, TagFilter } from '@/components/discover/tag-filter';
+import { Button } from '@/components/ui/button';
 import { EmptyState, SectionHeading } from '@/components/ui/primitives';
+import { Link } from '@/i18n/navigation';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Page, Tag, WorkDetail, WorkSummary } from '@/lib/api/types';
 
@@ -141,6 +143,13 @@ async function InspirationSection({ filters }: { filters: Filters }) {
           <EmptyState
             title={filtered ? t('noResults') : t('emptyFeed')}
             description={filtered ? t('noResultsHint') : t('emptyFeedHint')}
+            action={
+              filtered ? undefined : (
+                <Link href="/create">
+                  <Button size="sm">{t('emptyFeedCta')}</Button>
+                </Link>
+              )
+            }
           />
         ) : null}
       </div>

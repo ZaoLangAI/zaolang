@@ -187,16 +187,21 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
             ))}
           </div>
         </div>
+
+        {/* Fills the blank space next to the logo/title on wide screens
+            instead of a full-width section further down the page; wraps
+            below the title block on narrow ones via the row's flex-wrap. */}
+        <div className="w-full sm:w-72 sm:shrink-0 md:w-80">
+          <CollaboratorsPanel
+            series={series}
+            onChanged={() => {
+              void editorApi.getDramaSeries(seriesId).then(setSeries);
+            }}
+          />
+        </div>
       </div>
 
       {!isCollaborator ? <SeriesAnalyticsOverview seriesId={series.id} /> : null}
-
-      <CollaboratorsPanel
-        series={series}
-        onChanged={() => {
-          void editorApi.getDramaSeries(seriesId).then(setSeries);
-        }}
-      />
 
       <section>
         <SectionHeading

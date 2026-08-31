@@ -9,11 +9,21 @@ import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Draft, GenerationJob, Operation, QualityTier, Quote } from '@/lib/api/types';
 
-/** The three inputs the price depends on. */
+/** The inputs the price depends on.
+ *
+ * `assetKind`/`characterViews` are optional because most callers price a
+ * single, ordinary output — but a multi-view character completion (see
+ * `character-library.tsx` and `ImageGenerationStudio`'s own completion
+ * submit) costs one image per view (`character_output_count` on the
+ * backend), and omitting them here would quote 1× while `submit()` reserves
+ * N×, exactly the estimate/charge mismatch this pair of fields closes.
+ */
 export interface GenerationQuoteInput {
   operation: Operation;
   qualityTier: QualityTier;
   durationSeconds: number;
+  assetKind?: 'general' | 'character' | 'scene' | 'cover';
+  characterViews?: ('front' | 'side' | 'back')[];
 }
 
 export interface GenerationSubmitInput extends GenerationQuoteInput {
@@ -191,7 +201,10 @@ export function useGenerationSubmit(
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const { operation, qualityTier, durationSeconds } = quoteInput;
+  const { operation, qualityTier, durationSeconds, assetKind, characterViews } = quoteInput;
+  // Stable dependency key for the effect below — `characterViews` is a new
+  // array identity on every render even when its contents haven't changed.
+  const characterViewsKey = characterViews?.join(',') ?? '';
 
   // Re-quote whenever a priced input changes. Debounced because the tier and
   // duration controls are adjacent and users sweep across them.
@@ -205,6 +218,8 @@ export function useGenerationSubmit(
           operation,
           quality_tier: qualityTier,
           duration_seconds: durationSeconds,
+          asset_kind: assetKind ?? 'general',
+          character_views: characterViews ?? null,
         })
         .then((body) => {
           if (ticket !== latestQuote.current) return;
@@ -217,7 +232,8 @@ export function useGenerationSubmit(
         });
     }, QUOTE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [operation, qualityTier, durationSeconds, sessionStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operation, qualityTier, durationSeconds, assetKind, characterViewsKey, sessionStatus]);
 
   /**
    * Kept across a failed attempt so a retry reuses the same draft instead of
@@ -225,6 +241,14 @@ export function useGenerationSubmit(
    * job is attached to it.
    */
   const pendingDraft = useRef<string | null>(null);
+  /**
+   * One key per pending submission, not one per click: a network failure (or
+   * any client-side timeout) leaves the server's outcome unknown, and
+   * re-minting a key on retry would let that lost request *and* the retry
+   * both reserve credits. The key is only cleared once a job id actually
+   * comes back — see `zaolang-credits-billing` invariant 5.
+   */
+  const pendingIdempotencyKey = useRef<string | null>(null);
 
   const submit = (input: GenerationSubmitInput) =>
     requireAuth({
@@ -267,6 +291,7 @@ export function useGenerationSubmit(
             pendingDraft.current = draft.id;
           }
 
+          pendingIdempotencyKey.current ??= newIdempotencyKey();
           const job = await api.post<GenerationJob>(
             '/v1/generation-jobs',
             {
@@ -297,10 +322,10 @@ export function useGenerationSubmit(
               },
               max_credits: input.maxCredits,
             },
-            // One key per intent: a retried submit must not create a second job.
-            { idempotencyKey: newIdempotencyKey() },
+            { idempotencyKey: pendingIdempotencyKey.current },
           );
           pendingDraft.current = null;
+          pendingIdempotencyKey.current = null;
           if (onSubmitted) {
             onSubmitted(job);
             setSubmitting(false);
@@ -309,7 +334,13 @@ export function useGenerationSubmit(
           }
         } catch (caught) {
           setError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
-          if (caught instanceof ApiError) setFieldErrors(caught.fieldErrors);
+          if (caught instanceof ApiError) {
+            setFieldErrors(caught.fieldErrors);
+            // The stored key now belongs to a request body that no longer
+            // matches (the user changed an input between attempts) — keeping
+            // it would only 409 forever, so the next attempt mints a new one.
+            if (caught.code === 'IDEMPOTENCY_CONFLICT') pendingIdempotencyKey.current = null;
+          }
           setSubmitting(false);
         }
       },

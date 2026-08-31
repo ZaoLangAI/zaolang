@@ -41,8 +41,13 @@ class DangerousAction(ApiModel):
 
 
 class AdminSessionResponse(ApiModel):
-    access_token: str
-    token_type: str = "Bearer"
+    # No `access_token`/`token_type` here on purpose: the console's own
+    # session lives entirely in the httpOnly `zl_admin_session` cookie
+    # (`get_admin_user` reads a bearer header only as a fallback, for tooling
+    # that isn't a browser). Echoing the JWT back into this JSON body would
+    # let a same-origin script — or a Server Component prop, which this
+    # response feeds `AdminSessionProvider` through — read the session
+    # straight out of the page, defeating httpOnly.
     expires_at: dt.datetime
     user_id: str
     email: str

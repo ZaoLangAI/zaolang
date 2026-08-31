@@ -116,6 +116,7 @@
           "auth"
         ],
         "summary": "Logout",
+        "description": "Deleting the cookie alone left a copied/leaked refresh token valid for\nup to 14 more days — this also kills the token by its `sid`, so a logout\nthe user actually asked for takes effect immediately, not just locally.",
         "operationId": "logout_v1_auth_logout_post",
         "responses": {
           "200": {
@@ -965,7 +966,7 @@
           "works"
         ],
         "summary": "Version Diff",
-        "description": "Field-by-field comparison against the parent version.\n\nPowers the \"what changed\" panel in the lineage graph.",
+        "description": "Field-by-field comparison against the parent version.\n\nPowers the \"what changed\" panel in the lineage graph. Both versions' own\nworks must be visible to the caller (same 404-shaped `assert_viewable` as\nevery other work read), and the field-level *values* only reveal once\n`can_remix` holds for the child's work — the same gate the work detail's\nown `reusable_params` uses. Without this, an unauthenticated caller could\nread a paid or view-only work's prompt/seed straight off this endpoint\neven though the detail page itself withholds them.",
         "operationId": "version_diff_v1_work_versions__child_version_id__diff_get",
         "parameters": [
           {
@@ -975,6 +976,22 @@
             "schema": {
               "type": "string",
               "title": "Child Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -5665,6 +5682,125 @@
         }
       }
     },
+    "/v1/credits/checkout/{external_reference}": {
+      "get": {
+        "tags": [
+          "credits"
+        ],
+        "summary": "Get Checkout Intent",
+        "description": "Feeds the mock checkout page the amount to display before confirming.",
+        "operationId": "get_checkout_intent_v1_credits_checkout__external_reference__get",
+        "parameters": [
+          {
+            "name": "external_reference",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "External Reference"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutIntentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/credits/checkout/confirm": {
+      "post": {
+        "tags": [
+          "credits"
+        ],
+        "summary": "Confirm Checkout",
+        "description": "Settles a payment intent from the mock checkout page.\n\nA real provider calls the webhook on its own; the mock provider has no\nserver to do that, and the browser must never hold `payment_webhook_secret`\nto sign one itself. This is the client-confirmable equivalent, gated by\nownership of the intent and reusing the same `purchase` + `payment_reference`\nidempotency as the webhook — a replayed confirm or a race with the webhook\ncan never double-credit.",
+        "operationId": "confirm_checkout_v1_credits_checkout_confirm_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutConfirmResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/webhooks/payments/mock": {
       "post": {
         "tags": [
@@ -9996,6 +10132,146 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/editor-exports/{export_id}/ensure-bound-draft": {
+      "post": {
+        "tags": [
+          "editor"
+        ],
+        "summary": "Ensure Bound Draft",
+        "operationId": "ensure_bound_draft_v1_editor_exports__export_id__ensure_bound_draft_post",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnsureBoundDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Ensure Bound Draft V1 Editor Exports  Export Id  Ensure Bound Draft Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/editor-exports/{export_id}": {
+      "delete": {
+        "tags": [
+          "editor"
+        ],
+        "summary": "Delete Export",
+        "description": "Drop one unpublished row from the episode's 最终成片 list.\n\nA published bind (or a work version already stamped with this\nexport) is 422. In-flight exports must be cancelled first. The\nbound draft is unbound, not deleted.",
+        "operationId": "delete_export_v1_editor_exports__export_id__delete",
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -19370,15 +19646,6 @@
       },
       "AdminSessionResponse": {
         "properties": {
-          "access_token": {
-            "type": "string",
-            "title": "Access Token"
-          },
-          "token_type": {
-            "type": "string",
-            "title": "Token Type",
-            "default": "Bearer"
-          },
           "expires_at": {
             "type": "string",
             "format": "date-time",
@@ -19406,7 +19673,6 @@
         },
         "type": "object",
         "required": [
-          "access_token",
           "expires_at",
           "user_id",
           "email",
@@ -21589,6 +21855,82 @@
         ],
         "title": "CharacterViewAngle",
         "description": "Which pose/angle one of a character's reference images is for.\n\nNamed `*Angle` (not plain `CharacterView`) to avoid colliding with\n`app.domain.characters.service.CharacterView`, the unrelated\n`CreationSkill` projection type. Independent of `ImageAssetKind`: a\n`CHARACTER`-kind job names which of `FRONT`/`SIDE`/`BACK` it is producing\nvia `GenerationParams.character_views` (see\n`app.workflows.nodes.execute_asset_output_advance`), one at a time,\nlooping the shared `asset_graph` back to `asset_planning` between\neach. `GENERAL` is reserved for a plain uploaded reference with no fixed\npose (`characters.service._entries_from_flat_ids`) — a generation job\nnever targets it."
+      },
+      "CheckoutConfirmRequest": {
+        "properties": {
+          "external_reference": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "External Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external_reference"
+        ],
+        "title": "CheckoutConfirmRequest"
+      },
+      "CheckoutConfirmResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "available_balance": {
+            "type": "integer",
+            "title": "Available Balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "available_balance"
+        ],
+        "title": "CheckoutConfirmResponse"
+      },
+      "CheckoutIntentResponse": {
+        "properties": {
+          "external_reference": {
+            "type": "string",
+            "title": "External Reference"
+          },
+          "package_slug": {
+            "type": "string",
+            "title": "Package Slug"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "bonus_credits": {
+            "type": "integer",
+            "title": "Bonus Credits"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "title": "Amount Minor"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external_reference",
+          "package_slug",
+          "credits",
+          "bonus_credits",
+          "amount_minor",
+          "currency",
+          "status"
+        ],
+        "title": "CheckoutIntentResponse"
       },
       "CheckoutRequest": {
         "properties": {
@@ -24423,6 +24765,28 @@
         ],
         "title": "EditorOperationResponse"
       },
+      "EnsureBoundDraftRequest": {
+        "properties": {
+          "confirmed": {
+            "type": "boolean",
+            "title": "Confirmed",
+            "default": false
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Id"
+          }
+        },
+        "type": "object",
+        "title": "EnsureBoundDraftRequest"
+      },
       "EpisodeContentLinkCreateRequest": {
         "properties": {
           "content_type": {
@@ -25204,6 +25568,17 @@
               }
             ],
             "title": "Character Views"
+          },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
           },
           "linked_character_id": {
             "anyOf": [
@@ -27523,6 +27898,45 @@
         ],
         "title": "McpTokenResponse"
       },
+      "MeFeaturesResponse": {
+        "properties": {
+          "script_studio": {
+            "type": "boolean",
+            "title": "Script Studio"
+          },
+          "video_analysis": {
+            "type": "boolean",
+            "title": "Video Analysis"
+          },
+          "web_editor": {
+            "type": "boolean",
+            "title": "Web Editor"
+          },
+          "video_generation": {
+            "type": "boolean",
+            "title": "Video Generation"
+          },
+          "drama_studio": {
+            "type": "boolean",
+            "title": "Drama Studio"
+          },
+          "marketplace": {
+            "type": "boolean",
+            "title": "Marketplace"
+          }
+        },
+        "type": "object",
+        "required": [
+          "script_studio",
+          "video_analysis",
+          "web_editor",
+          "video_generation",
+          "drama_studio",
+          "marketplace"
+        ],
+        "title": "MeFeaturesResponse",
+        "description": "The subset of `FeatureFlags` a consumer client needs to decide what to\nshow, independent of whether the underlying API 404s once clicked.\n\nEvaluated per-user (percentage rollout included, see\n`platform_config.service.is_enabled`) so two users can legitimately see\ndifferent values for the same flag during a staged rollout."
+      },
       "MeResponse": {
         "properties": {
           "id": {
@@ -27577,6 +27991,9 @@
             "type": "integer",
             "title": "Reserved Credits",
             "default": 0
+          },
+          "features": {
+            "$ref": "#/components/schemas/MeFeaturesResponse"
           }
         },
         "type": "object",
@@ -27588,7 +28005,8 @@
           "region",
           "locale",
           "theme",
-          "age_gate_confirmed"
+          "age_gate_confirmed",
+          "features"
         ],
         "title": "MeResponse"
       },

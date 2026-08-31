@@ -1,4 +1,4 @@
-import { api, newIdempotencyKey } from '@/lib/api/client';
+import { api } from '@/lib/api/client';
 import type { GenerationJob, Page, QualityTier, Quote } from '@/lib/api/types';
 
 /** Priced the same way as every other operation's quote — flat per tier,
@@ -16,6 +16,13 @@ export interface VideoAnalysisSubmitInput {
   referenceAssetId: string;
   notes: string;
   maxCredits?: number;
+  /**
+   * One key per pending submission, supplied by the caller so it survives a
+   * retry after a network failure — minting a fresh key here on every call
+   * would let a retry double-reserve credits for the same analysis. See
+   * `useVideoAnalysisSubmit`'s own ref.
+   */
+  idempotencyKey: string;
 }
 
 /**
@@ -37,9 +44,7 @@ export function submitVideoAnalysis(input: VideoAnalysisSubmitInput): Promise<Ge
       },
       max_credits: input.maxCredits,
     },
-    // One key per submit attempt — a retry after a network hiccup must not
-    // charge (or run) the analysis twice.
-    { idempotencyKey: newIdempotencyKey() },
+    { idempotencyKey: input.idempotencyKey },
   );
 }
 

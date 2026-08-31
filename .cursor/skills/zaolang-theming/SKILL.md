@@ -16,8 +16,9 @@ Dark is the design-acceptance baseline — its values are locked in `front/src/a
 | --- | --- |
 | `front/src/app/globals.css` | both token sets + `@theme inline` mapping into Tailwind |
 | `front/src/lib/theme.ts` | `themePreferences`, `THEME_COOKIE` (`zl_theme`), `MOTION_COOKIE`, `themeColor`, `themeInitScript` |
+| `front/src/components/theme/theme-init-script.tsx` | injects `themeInitScript` into `<head>` via `useServerInsertedHTML` (not a React child) |
 | `front/src/components/theme/theme-provider.tsx` | client-side three-state switching and persistence |
-| `front/src/app/[locale]/layout.tsx` | renders `data-theme` onto `<html>` at SSR time and inlines `themeInitScript` |
+| `front/src/app/[locale]/layout.tsx` | renders `data-theme` onto `<html>` at SSR time and mounts `ThemeInitScript` |
 | `front/src/components/layout/preference-menu.tsx` | top-bar quick switcher |
 | `front/src/components/settings/settings-shell.tsx` | full three-state control + accessibility settings at `/profile/settings` |
 
@@ -34,7 +35,7 @@ Dark is the design-acceptance baseline — its values are locked in `front/src/a
 1. **Components never hardcode a colour** — only semantic classes like `bg-surface` / `text-muted`. A literal `#` or `rgb(` inside a component is where drift starts.
 2. **Dark values are locked**: existing tokens under `[data-theme='dark']` must not be casually changed. Need a new colour? Check existing semantic tokens first; add one rather than repurposing an existing value.
 3. **Light must pass WCAG AA item by item.** `--primary` in light is `#a8321a`, not dark's coral, because the coral fails contrast against both white text and light backgrounds — **compute contrast before changing the light primary** (body/controls 4.5:1, large text 3:1).
-4. **SSR is flicker-free**: the preference is stored in a cookie and the server renders `data-theme` directly onto `<html>`; `system` can't be resolved server-side, so an inline `<head>` script corrects it synchronously before first paint. Don't move this into a React lifecycle — that will flash.
+4. **SSR is flicker-free**: the preference is stored in a cookie and the server renders `data-theme` directly onto `<html>`; `system` can't be resolved server-side, so an inline `<head>` script corrects it synchronously before first paint. Inject that script with `useServerInsertedHTML` (`theme-init-script.tsx`) — never as a React `<script>` child (React 19 errors on the client) and never from a React lifecycle (that will flash).
 5. **Switching syncs side effects**: `color-scheme` (form controls, scrollbars) and `<meta name="theme-color">` (mobile notch/status-bar area).
 6. **Anonymous users get a cookie; logged-in users get it merged into `PATCH /v1/me/preferences`**, alongside `locale` / `region`. Server-side preference wins on mismatch.
 7. **Media needs independent tokens**: cinematic material skews dark, so poster overlays, gradient scrims, and card shadows need distinct light-mode values — reusing the dark ones muddies into a blur.

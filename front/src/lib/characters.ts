@@ -85,6 +85,11 @@ export function isCharacterCompletionJob(job: GenerationJob): boolean {
   );
 }
 
+/** Failed / cancelled / expired completions do not supplement a front
+ * view — they would hide the "补全侧面/背面" button and leave no in-session
+ * way to try again. Matches `findCompletionJobFor`'s docstring. */
+const TERMINAL_FAILURE_STATUSES = new Set(['failed', 'cancelled', 'expired']);
+
 /**
  * Which succeeded (or still in-flight) completion job, if any, supplements
  * `job` — the one nearest to it chronologically, for the same linked
@@ -117,6 +122,7 @@ export function findCompletionJobFor(
   const completions = jobs
     .filter((candidate) => isCharacterCompletionJob(candidate))
     .filter((candidate) => candidate.linked_character_id === targetCharacterId)
+    .filter((candidate) => !TERMINAL_FAILURE_STATUSES.has(candidate.status))
     .filter((candidate) => {
       const at = new Date(candidate.created_at).getTime();
       return at >= windowStart && at < windowEnd;

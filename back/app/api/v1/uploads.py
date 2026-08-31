@@ -18,7 +18,7 @@ from app.api.schemas.jobs import (
 from app.domain.errors import NotFound
 from app.domain.media import service as media_service
 from app.models import Asset
-from app.models.enums import ADMIN_ROLE_RANK, AssetRole, MediaType
+from app.models.enums import AssetRole, MediaType
 from app.presenters import media_urls
 
 router = APIRouter(tags=["assets"])
@@ -86,14 +86,19 @@ def get_asset(asset_id: str, session: DbSession, viewer: OptionalUser) -> AssetR
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise NotFound("素材不存在。")
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    # `viewer` only ever proves a *consumer*-audience session (`OptionalUser`
+    # decodes with `CONSUMER_AUDIENCE`) — `viewer.roles` can still list an
+    # admin role for staff who are simply browsing the consumer site as
+    # themselves, and that must not double as the separate, admin-audience
+    # "staff" grant this signer checks. A private asset's own owner is the
+    # only consumer-side caller this endpoint ever authorizes; staff access
+    # belongs behind an admin-only endpoint, not this one.
     # Raises 404 rather than 403 for private assets, so the endpoint cannot be
     # used to probe for existence.
     media_service.signed_url_for(
         session,
         asset_id=asset_id,
         viewer_user_id=viewer.id if viewer else None,
-        viewer_is_staff=is_staff,
     )
     return _asset_response(session, asset, viewer_id=viewer.id if viewer else None)
 
@@ -101,12 +106,12 @@ def get_asset(asset_id: str, session: DbSession, viewer: OptionalUser) -> AssetR
 @router.get("/assets/{asset_id}/provenance", response_model=ProvenanceResponse)
 def asset_provenance(asset_id: str, session: DbSession, viewer: OptionalUser) -> ProvenanceResponse:
     """Returns the AI disclosure claim attached to a generated asset."""
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    # See `get_asset`'s own note: a consumer-audience session's roles must
+    # never grant the staff bypass here either.
     media_service.signed_url_for(
         session,
         asset_id=asset_id,
         viewer_user_id=viewer.id if viewer else None,
-        viewer_is_staff=is_staff,
     )
     manifest = media_service.provenance_for(session, asset_id)
     if manifest is None:

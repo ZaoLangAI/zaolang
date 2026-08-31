@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SequentialExportRunner } from './export-runner';
+import { SequentialExportRunner, fitExportCanvas } from './export-runner';
 import { TICKS_PER_SECOND } from './ports';
 
 const BASE_SPEC = {
@@ -91,5 +91,27 @@ describe('SequentialExportRunner.preflight', () => {
     });
     expect(report.reasons).toContain('memory');
     expect(report.reasons).toContain('duration');
+  });
+});
+
+describe('fitExportCanvas', () => {
+  it('fits a 9:16 spec into a portrait 720p box', () => {
+    expect(fitExportCanvas(1080, 1920)).toEqual({ width: 720, height: 1280 });
+  });
+
+  it('fits a 16:9 spec into a landscape 720p box', () => {
+    expect(fitExportCanvas(1920, 1080)).toEqual({ width: 1280, height: 720 });
+  });
+
+  it('leaves a spec already inside the box unchanged', () => {
+    expect(fitExportCanvas(720, 1280)).toEqual({ width: 720, height: 1280 });
+    expect(fitExportCanvas(1280, 720)).toEqual({ width: 1280, height: 720 });
+  });
+
+  it('does not flip orientation', () => {
+    const portrait = fitExportCanvas(1080, 1920);
+    expect(portrait.height).toBeGreaterThan(portrait.width);
+    const landscape = fitExportCanvas(1920, 1080);
+    expect(landscape.width).toBeGreaterThan(landscape.height);
   });
 });

@@ -10,7 +10,7 @@ from app.domain.errors import Conflict
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage
 from app.models import User, WorkVersion
-from app.models.enums import LifecycleStatus
+from app.models.enums import LifecycleStatus, Visibility
 from tests.factories import make_work
 
 
@@ -147,6 +147,38 @@ def test_referenced_version_is_detected(db: Session, author: User, remixer: User
 
     assert lineage.is_referenced_by_descendants(db, versions[0].id) is True
     assert lineage.is_referenced_by_descendants(db, versions[1].id) is False
+
+
+def test_a_descendant_that_later_went_private_is_masked_from_strangers(
+    db: Session, author: User, remixer: User
+) -> None:
+    """A public lineage graph must not use a descendant's own later
+    visibility change to leak content its own detail page would now
+    withhold — same gate `can_view` enforces there."""
+    root_work, root_version = make_work(db, author, title="原作")
+    _child_work, child_version = make_work(db, remixer, title="私密二创")
+    snapshot = licensing.capture_license_snapshot(db, source_version=root_version, work=root_work)
+    lineage.create_edge(
+        db,
+        parent_version_id=root_version.id,
+        child_version_id=child_version.id,
+        parent_author_snapshot=licensing.author_snapshot(db, root_work),
+        license_snapshot_id=snapshot.id,
+        workflow_version_id=None,
+        reused_asset_ids=[],
+        created_by_user_id=remixer.id,
+    )
+    _child_work.visibility = Visibility.PRIVATE
+    db.flush()
+
+    stranger_tree = lineage.build_tree(db, root_version.id, viewer_user_id=author.id)
+    assert stranger_tree.children[0].is_tombstone is True
+    assert stranger_tree.children[0].title == ""
+    assert stranger_tree.children[0].cover_asset_id is None
+
+    owner_tree = lineage.build_tree(db, root_version.id, viewer_user_id=remixer.id)
+    assert owner_tree.children[0].is_tombstone is False
+    assert owner_tree.children[0].title == "私密二创"
 
 
 def test_ancestor_authors_are_deduplicated_nearest_first(

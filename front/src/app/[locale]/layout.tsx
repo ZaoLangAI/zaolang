@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import { AppProviders } from '@/components/app-providers';
+import { ThemeInitScript } from '@/components/theme/theme-init-script';
 import { routing } from '@/i18n/routing';
 import {
   MOTION_COOKIE,
@@ -12,7 +13,6 @@ import {
   defaultTheme,
   isThemePreference,
   themeColor,
-  themeInitScript,
 } from '@/lib/theme';
 
 export function generateStaticParams() {
@@ -73,10 +73,9 @@ export default async function LocaleLayout({
       data-reduced-motion={String(reduceMotion)}
       suppressHydrationWarning
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      </head>
+      <head />
       <body className="min-h-dvh antialiased">
+        <ThemeInitScript />
         <NextIntlClientProvider>
           <AppProviders initialPreference={preference} initialReduceMotion={reduceMotion}>
             {children}
