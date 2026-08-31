@@ -21,6 +21,7 @@ from PIL import Image
 from app.llm import client as llm_client
 from app.models.enums import Operation
 from app.platform_config.schemas import LlmProviderEndpoint
+from app.providers import dmxapi_media
 from app.providers.aihubmix_media import (
     build_video_payload,
     media_client_base,
@@ -166,6 +167,28 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                 Operation.TEXT_TO_IMAGE.value,
                 Operation.IMAGE_TO_IMAGE.value,
             }:
+                if endpoint.protocol == "dmxapi":
+                    dmx_body: dict[str, object] = {
+                        "model": endpoint.model,
+                        "input": "A plain blue square, connectivity test.",
+                        "size": "1K",
+                        "output_format": "png",
+                    }
+                    if probe_type == Operation.IMAGE_TO_IMAGE.value:
+                        dmx_body["input"] = "Return this simple connectivity test image."
+                        dmx_body["image"] = _probe_png_data_uri()
+                    response = client.post(
+                        media_request_path(endpoint.base_url, "/v1/responses"), json=dmx_body
+                    )
+                    return _media_response(
+                        started,
+                        endpoint.model,
+                        probe_type,
+                        response,
+                        usable=_has_dmxapi_image_result(response),
+                        api_key=endpoint.api_key,
+                    )
+
                 body: dict[str, object] = {
                     "model": endpoint.model,
                     "prompt": "A plain blue square, connectivity test.",
@@ -197,9 +220,7 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     media_request_path(endpoint.base_url, "/v1/chat/completions"),
                     json={
                         "model": endpoint.model,
-                        "messages": [
-                            {"role": "user", "content": "Connectivity check. Reply OK."}
-                        ],
+                        "messages": [{"role": "user", "content": "Connectivity check. Reply OK."}],
                         "max_tokens": 16,
                         "temperature": 0.0,
                     },
@@ -222,6 +243,24 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                         "seconds": 5,
                     },
                 )
+            elif endpoint.protocol == "dmxapi":
+                try:
+                    dmx_video_body = dmxapi_media.probe_video_body(endpoint.model)
+                except ValueError:
+                    # `MiniMax-H3-video_regeneration` always needs a real
+                    # 768P source clip meeting an exact physical spec — no
+                    # minimal body can validate it safely.
+                    return _result(
+                        started,
+                        target_model=endpoint.model,
+                        probe_type=probe_type,
+                        reachable=False,
+                        usable=False,
+                        error_code="no_capability",
+                    )
+                response = client.post(
+                    media_request_path(endpoint.base_url, "/v1/responses"), json=dmx_video_body
+                )
             else:
                 response = client.post(
                     media_request_path(endpoint.base_url, "/ai/v1/videos"),
@@ -241,7 +280,11 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     usable=False,
                     api_key=endpoint.api_key,
                 )
-            task_id = _json_dict(response).get("id")
+            task_id = (
+                dmxapi_media.extract_task_id(endpoint.model, _json_dict(response))
+                if endpoint.protocol == "dmxapi"
+                else _json_dict(response).get("id")
+            )
             if not task_id:
                 return _result(
                     started,
@@ -326,6 +369,13 @@ def _has_choice_entry(response: httpx.Response) -> bool:
         return False
     choices = _json_dict(response).get("choices")
     return isinstance(choices, list) and bool(choices)
+
+
+def _has_dmxapi_image_result(response: httpx.Response) -> bool:
+    if response.status_code >= 400:
+        return False
+    url, b64 = dmxapi_media.extract_seedream_result(_json_dict(response))
+    return bool(url or b64)
 
 
 def _json_dict(response: httpx.Response) -> dict[str, Any]:

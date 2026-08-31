@@ -596,6 +596,13 @@ class UploadCompleteRequest(ApiModel):
     upload_session_id: str
 
 
+class ExtractFrameRequest(ApiModel):
+    """Which single frame to grab from an already-owned video asset — see
+    `app.domain.media.service.extract_video_frame`."""
+
+    position: Literal["first", "last"] = "last"
+
+
 class AssetResponse(ApiModel):
     id: str
     media_type: MediaType

@@ -1,7 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 import { DraftPoster } from '@/components/media/draft-poster';
 import { IconButton } from '@/components/ui/button';
 import { IconPencil, IconUpload } from '@/components/ui/icons';
@@ -26,7 +24,6 @@ export function RecentDraftCard({
   editLabel: string;
   publishLabel: string;
 }) {
-  const t = useTranslations('createPage');
   const operation = draft.params?.operation;
   const isImageDraft = isImageCreationOperation(operation);
   // Only meaningful once there is an output to build the next edit on — a
@@ -37,13 +34,6 @@ export function RecentDraftCard({
     : isVideoDraft
       ? videoCreationStudioHref(draft.id)
       : null;
-  // A video draft's "编辑" never reopens this exact draft for iterative
-  // refinement the way an image draft's does (no per-draft version history
-  // on the video side, see `video-draft.ts`) — it seeds a brand-new
-  // `video_to_video` job from the earlier output, which reserves credits
-  // again. The generic `editLabel` would read as "continue where I left
-  // off, free", so a video draft gets its own, more honest tooltip instead.
-  const resumeLabel = isVideoDraft ? t('videoResumeLabel') : editLabel;
   const router = useRouter();
 
   return (
@@ -52,7 +42,7 @@ export function RecentDraftCard({
         {editHref ? (
           <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <IconButton
-              label={resumeLabel}
+              label={editLabel}
               variant="secondary"
               size="sm"
               className="border-border bg-surface/90"

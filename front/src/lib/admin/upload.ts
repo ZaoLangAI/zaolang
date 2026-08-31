@@ -1,5 +1,6 @@
 import { adminApi } from '@/lib/api/admin-client';
 import type { components } from '@/lib/api/schema';
+import { sha256Hex } from '@/lib/sha256';
 
 type Presign = components['schemas']['UploadPresignResponse'];
 export type AdminAsset = components['schemas']['AssetResponse'];
@@ -33,11 +34,4 @@ export async function uploadStyleGalleryCover(file: File): Promise<AdminAsset> {
   return adminApi.post<AdminAsset>('/v1/admin/style-gallery/uploads/complete', {
     upload_session_id: presigned.upload_session_id,
   });
-}
-
-async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
 }

@@ -20,8 +20,14 @@ class ProviderReference:
     """One already-authorised private asset passed to a media provider.
 
     ``media_type`` is deliberately the small platform enum value (``image`` or
-    ``video``), not a user supplied MIME string.  ``frame_type`` is populated
-    only for MiniMax-style first/last-frame requests.
+    ``video``), not a user supplied MIME string. ``frame_type`` started as
+    "populated only for MiniMax-style first/last-frame requests" and has
+    since widened into a general reference-role tag: still ``"first_frame"``/
+    ``"last_frame"`` for that case, but also ``"base_video"`` for the one
+    source clip a MiniMax-H3 video-regeneration request carries (see
+    ``app.providers.dmxapi_media``) — a reference with no ``frame_type`` at
+    all is a generic reference (image/video/audio) rather than a positional
+    frame or a regeneration source.
     """
 
     object_key: str

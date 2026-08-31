@@ -139,7 +139,10 @@ export function capabilitiesForModalities(
 
 /** HTTP contract names for `kind="media"` endpoints. Mirrors
  * `MEDIA_PROTOCOLS` in `app/platform_config/schemas.py`. Display names are
- * the standard, not the gateway vendor — AiHubMix image/audio is OpenAI. */
+ * the standard, not the gateway vendor — AiHubMix image/audio is OpenAI.
+ * `dmxapi` is the one deliberate exception: DMXAPI's `/v1/responses` task
+ * envelope is that vendor's own invented convention, not a shared industry
+ * standard, so there is no vendor-neutral name to give it. */
 export const MEDIA_PROTOCOLS = [
   'openai',
   'minimax',
@@ -148,6 +151,7 @@ export const MEDIA_PROTOCOLS = [
   'dashscope',
   'ark',
   'kling',
+  'dmxapi',
 ] as const;
 export type MediaProtocol = (typeof MEDIA_PROTOCOLS)[number];
 
@@ -155,6 +159,7 @@ export const IMPLEMENTED_MEDIA_PROTOCOLS: ReadonlySet<MediaProtocol> = new Set([
   'openai',
   'minimax',
   'dashscope',
+  'dmxapi',
 ]);
 
 export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
@@ -165,6 +170,7 @@ export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
   dashscope: 'protocolDashScope',
   ark: 'protocolArk',
   kling: 'protocolKling',
+  dmxapi: 'protocolDmxapi',
 };
 
 const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
@@ -187,6 +193,11 @@ const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
   dashscope: ['video_analysis'],
   ark: [],
   kling: [],
+  // `doubao-seedream-5-0-pro-260628` provides the image pair (synchronous
+  // call); `MiniMax-H3` / `doubao-seedance-2-5-260628` / `wan3.0-video`
+  // provide the three video tags (submit-task + poll) — see backend
+  // `_DMXAPI_CAPABILITIES`.
+  dmxapi: ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'video_to_video'],
 };
 
 /** Drop modality ticks that the newly selected protocol cannot serve. */

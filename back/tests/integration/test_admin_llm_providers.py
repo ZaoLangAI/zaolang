@@ -479,6 +479,40 @@ def test_openai_protocol_now_accepts_video_via_the_openai_videos_api(
     assert endpoint["protocol"] == "openai"
 
 
+def test_dmxapi_protocol_endpoint_saves_with_its_own_video_capabilities(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-dmxapi-video",
+        _media_payload(
+            model="MiniMax-H3",
+            input_modalities=["text", "image", "video", "audio"],
+            output_modalities=["video"],
+            protocol="dmxapi",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-dmxapi-video")
+    assert endpoint["protocol"] == "dmxapi"
+    assert set(endpoint["capabilities"]) == {"text_to_video", "image_to_video", "video_to_video"}
+
+
+def test_the_model_catalog_lists_both_vendors_read_only(client: TestClient, admin: User) -> None:
+    """`GET /llm-providers/catalog` is purely informational for the admin
+    picker — it never touches `llm_providers` config."""
+    response = client.get("/v1/admin/llm-providers/catalog", headers=admin_header(admin))
+    assert response.status_code == 200
+    body = response.json()
+    vendors = {item["vendor"]: item for item in body["vendors"]}
+    assert set(vendors) == {"aihubmix", "dmxapi"}
+    dmxapi_models = {entry["model"] for entry in vendors["dmxapi"]["models"]}
+    assert "MiniMax-H3" in dmxapi_models
+    assert "doubao-seedream-5-0-pro-260628" in dmxapi_models
+    aihubmix_models = {entry["model"] for entry in vendors["aihubmix"]["models"]}
+    assert "doubao-seedance-2-5-260628" in aihubmix_models
+
+
 def test_protocol_must_match_modalities(client: TestClient, admin: User) -> None:
     minimax_image = client.put(
         "/v1/admin/llm-providers/ep-bad",

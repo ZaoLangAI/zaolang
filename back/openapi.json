@@ -5314,6 +5314,75 @@
         }
       }
     },
+    "/v1/assets/{asset_id}/frame": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Extract Frame",
+        "description": "Grabs the first/last frame of the caller's own video asset as a new\nprivate image asset — used to auto-fill `first_frame_asset_id` when\ngenerating a video that should pick up visually where an earlier one\n(e.g. a previous script breakpoint's clip) left off.",
+        "operationId": "extract_frame_v1_assets__asset_id__frame_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractFrameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/assets/{asset_id}/provenance": {
       "get": {
         "tags": [
@@ -16076,6 +16145,56 @@
         }
       }
     },
+    "/v1/admin/llm-providers/catalog": {
+      "get": {
+        "tags": [
+          "admin:llm-providers"
+        ],
+        "summary": "Get Llm Provider Catalog",
+        "description": "Read-only curated model catalogue for the admin \"service provider ->\nknown model\" picker — see `app.providers.model_catalog`. Never mutates\nconfig; the operator still upserts through `PUT /llm-providers/{id}`\nexactly as before, whether or not they picked a catalogue entry.",
+        "operationId": "get_llm_provider_catalog_v1_admin_llm_providers_catalog_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/llm-providers/{endpoint_id}": {
       "put": {
         "tags": [
@@ -25264,6 +25383,22 @@
         ],
         "title": "ExportUploadRequest"
       },
+      "ExtractFrameRequest": {
+        "properties": {
+          "position": {
+            "type": "string",
+            "enum": [
+              "first",
+              "last"
+            ],
+            "title": "Position",
+            "default": "last"
+          }
+        },
+        "type": "object",
+        "title": "ExtractFrameRequest",
+        "description": "Which single frame to grab from an already-owned video asset — see\n`app.domain.media.service.extract_video_frame`."
+      },
       "FeatureFlagView": {
         "properties": {
           "name": {
@@ -27264,7 +27399,8 @@
                   "google",
                   "dashscope",
                   "ark",
-                  "kling"
+                  "kling",
+                  "dmxapi"
                 ]
               },
               {
@@ -27389,7 +27525,8 @@
                   "google",
                   "dashscope",
                   "ark",
-                  "kling"
+                  "kling",
+                  "dmxapi"
                 ]
               },
               {
@@ -28055,6 +28192,97 @@
           "audio"
         ],
         "title": "MediaType"
+      },
+      "ModelCatalogEntryView": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "general",
+              "media"
+            ],
+            "title": "Kind"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "minimax",
+                  "comfyui",
+                  "google",
+                  "dashscope",
+                  "ark",
+                  "kling",
+                  "dmxapi"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "input_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Modalities"
+          },
+          "output_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Output Modalities"
+          },
+          "context_length": {
+            "type": "integer",
+            "title": "Context Length",
+            "default": 0
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes",
+            "default": ""
+          },
+          "doc_url": {
+            "type": "string",
+            "title": "Doc Url",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "display_name",
+          "kind"
+        ],
+        "title": "ModelCatalogEntryView",
+        "description": "One vendor's known model, for the admin picker's cascading dropdown.\n\nPurely a suggestion: selecting one pre-fills `LlmProviderEndpointUpsert\nRequest` fields, but the operator can still edit every value (or ignore\nthe catalogue entirely and type a custom model) before saving."
+      },
+      "ModelCatalogResponse": {
+        "properties": {
+          "vendors": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCatalogView"
+            },
+            "type": "array",
+            "title": "Vendors"
+          }
+        },
+        "type": "object",
+        "title": "ModelCatalogResponse"
       },
       "ModelCostView": {
         "properties": {
@@ -34524,6 +34752,40 @@
           "profile_keys"
         ],
         "title": "VariantBatchCreateRequest"
+      },
+      "VendorCatalogView": {
+        "properties": {
+          "vendor": {
+            "type": "string",
+            "enum": [
+              "aihubmix",
+              "dmxapi"
+            ],
+            "title": "Vendor"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogEntryView"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vendor",
+          "label",
+          "base_url"
+        ],
+        "title": "VendorCatalogView"
       },
       "VersionDiffEntry": {
         "properties": {

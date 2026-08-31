@@ -1,5 +1,7 @@
 /** Canonical timeline apply. Mirrors `back/app/domain/editor/commands.py`. */
 
+import { randomUuid } from '@/lib/random-id';
+
 import {
   type CanonicalDocument,
   type EditCommand,
@@ -178,15 +180,15 @@ function findElement(
 }
 
 function newElementId(): string {
-  return `el_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  return `el_${randomUuid().replaceAll('-', '').slice(0, 16)}`;
 }
 
 function newTrackId(): string {
-  return `trk_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  return `trk_${randomUuid().replaceAll('-', '').slice(0, 16)}`;
 }
 
 function newMarkerId(): string {
-  return `mrk_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  return `mrk_${randomUuid().replaceAll('-', '').slice(0, 16)}`;
 }
 
 function applyOne(

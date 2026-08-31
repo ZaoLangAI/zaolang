@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { CollapsibleSection } from '@/components/studio/collapsible-section';
@@ -10,12 +10,15 @@ import {
   GenerationStudioShell,
   type StudioSource,
 } from '@/components/studio/generation-studio-shell';
+import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
+import { InlineVideoResult } from '@/components/studio/inline-video-result';
 import { OptionGroup } from '@/components/studio/option-group';
 import { PromptField } from '@/components/studio/prompt-field';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import {
   KNOWN_PRESET_KEYS,
+  MAX_APPLIED_SKILLS,
   useStyleAndSkillPicker,
 } from '@/components/studio/style-and-skill-picker';
 import { Select, TextInput } from '@/components/ui/field';
@@ -31,12 +34,21 @@ import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { Character, Draft, QualityTier, Scene, WorkDetail } from '@/lib/api/types';
+import type {
+  Character,
+  Draft,
+  GenerationJob,
+  Page,
+  QualityTier,
+  Scene,
+  WorkDetail,
+} from '@/lib/api/types';
 import { referenceByView } from '@/lib/characters';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDuration } from '@/lib/format';
 import type { Asset } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
+import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
 
 type Operation = 'text_to_video' | 'image_to_video' | 'video_to_video';
@@ -49,6 +61,12 @@ type Orientation = 'landscape' | 'portrait' | 'adaptive';
  * (`execute_asset_output_link`); `transition_video`/`cover_video` are
  * tagged but not attached to any library, same as image's `cover` today. */
 type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
+const VIDEO_ASSET_KINDS = [
+  'general',
+  'character_action',
+  'transition_video',
+  'cover_video',
+] as const;
 
 // No `1:1`: every framing the studio offers is either wider or taller than
 // square, so orientation is always a meaningful first choice. The legal set
@@ -76,6 +94,15 @@ const MAX_REFERENCE_SELECTION = 4;
  * otherwise `image_to_video` — remix has no image/audio path). Keeps the
  * style preset / creation skill / system style picker exactly as it was
  * before the split (`ImageGenerationStudio` is the one shell that dropped it).
+ *
+ * Generation never navigates away to `/jobs/[jobId]` any more: a submit's
+ * progress and result render inline in the preview slot
+ * (`InlineVideoResult`), and every job filed under the same `Draft` shows up
+ * in `GenerationVersionHistory` beneath it — the same architecture
+ * `ImageGenerationStudio` already uses, extended here now that video
+ * creation has its own per-draft version history too (see
+ * `use-generation-submit.ts`'s `draftId`, generic across every operation on
+ * the backend already).
  */
 export function VideoGenerationStudio({
   operation: initialOperation,
@@ -83,6 +110,7 @@ export function VideoGenerationStudio({
   reference,
   initialPrompt,
   initialDraft,
+  initialJobId,
   initialStyleParams,
   initialStyleGalleryId,
   initialVideoAssetKind,
@@ -92,6 +120,7 @@ export function VideoGenerationStudio({
   initialReferenceSceneIds,
   linkEpisodeId,
   linkBreakpointKey,
+  continuitySourceAssetId,
 }: {
   operation: 'text_to_video' | 'image_to_video' | 'video_to_video';
   /** A licensed remix source. Submitted as `source_work_id`. */
@@ -100,15 +129,17 @@ export function VideoGenerationStudio({
   reference?: WorkDetail;
   initialPrompt?: string;
   /**
-   * Resumes an earlier video draft as *material* for a new `video_to_video`
-   * session — the "最近草稿" edit shortcut's target (see `zaolang-frontend-ui`
-   * / `RecentDraftCard`). Unlike `ImageGenerationStudio`'s `initialDraft`,
-   * this never reuses the same draft id on submit: there is no per-draft
-   * version history on the video side, so continuing to build on an old clip
-   * always starts a fresh draft with the earlier output attached as a
-   * reference upload.
+   * Resumes a previous video-creation session — `?draftId=` on
+   * `/create/new`, or the "最近草稿"/"草稿" tab's edit entry — so its full
+   * version history and latest output (`GenerationVersionHistory`) reappear
+   * instead of starting blank. Every later submit in this session reuses
+   * the same draft id, exactly like `ImageGenerationStudio`.
    */
   initialDraft?: Draft;
+  /** Notification click-through (`?jobId=`). Preferred over
+   * `initialDraft.latest_job_id` so a retry's queued/succeeded toast opens
+   * that attempt, not the first failed one. */
+  initialJobId?: string;
   /** A style gallery entry's `params`, applied once on mount (from `?styleId=`). */
   initialStyleParams?: Record<string, unknown>;
   /** The catalogue id behind `initialStyleParams`; submitted as `style_gallery_id`. */
@@ -141,6 +172,18 @@ export function VideoGenerationStudio({
   /** Which script breakpoint this submit belongs to — see
    * `GenerationSubmitInput.linkBreakpointKey`. */
   linkBreakpointKey?: string;
+  /**
+   * The previous script breakpoint's already-generated video asset id —
+   * `previousBoundVideoAssetId` on the script side. On mount, this studio
+   * extracts that clip's last frame (`POST /v1/assets/{id}/frame`) and
+   * pre-fills it as this session's first frame (`frame_images` mode), so
+   * the cut between the two clips reads as continuous once assembled in the
+   * editor. The user can remove it (falls back to the plain reference-upload
+   * mode) or pick a different first frame afterward — this only seeds the
+   * initial selection. Never applied while resuming an existing draft
+   * (`initialDraft` set) — a resumed session already has its own material.
+   */
+  continuitySourceAssetId?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -156,6 +199,10 @@ export function VideoGenerationStudio({
       initialPrompt ??
       '',
   );
+  // `Draft.params.aspect_ratio`/`duration_seconds` are written once, at the
+  // draft's first submit — a session-level setting, not necessarily what
+  // the *latest* job under it actually used, same trade-off
+  // `ImageGenerationStudio` already accepts for its own `aspect` seed.
   const [aspect, setAspect] = useState<string>(() => {
     const draftAspect = initialDraft?.params?.aspect_ratio;
     return typeof draftAspect === 'string' && (ASPECTS as readonly string[]).includes(draftAspect)
@@ -193,24 +240,158 @@ export function VideoGenerationStudio({
     initialReferenceSceneIds ?? [],
   );
 
-  // Seeds the resumed draft's own output as the `video_to_video` material —
-  // once only, guarded the same way `ImageGenerationStudio`'s
-  // `draftMaterialSeededRef` is, so a later upload/removal is never
-  // clobbered by this effect firing again.
-  const draftMaterialSeededRef = useRef(false);
+  // Inline progress/result + version history state — the same shape
+  // `ImageGenerationStudio` uses. `draftId` is created on the first submit
+  // and reused by every later "continue refining" submit, so the whole
+  // session's iterations file under one draft.
+  const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobSeed, setActiveJobSeed] = useState<GenerationJob | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
+  // Notification `?jobId=` wins over the draft's `latest_job_id` so a retry
+  // toast opens that job. A 404 on the preferred id (deleted / not owned)
+  // falls back to `latest_job_id` rather than leaving the preview empty.
+  const [resumeFallbackJobId, setResumeFallbackJobId] = useState<string | null>(null);
+  const preferredResumeJobId =
+    resumeFallbackJobId ?? initialJobId ?? initialDraft?.latest_job_id ?? null;
+  const resumedJob = useResource<GenerationJob>(
+    !activeJobId && preferredResumeJobId ? `/v1/generation-jobs/${preferredResumeJobId}` : null,
+  );
+  if (
+    !activeJobId &&
+    !resumeFallbackJobId &&
+    initialJobId &&
+    initialDraft?.latest_job_id &&
+    initialJobId !== initialDraft.latest_job_id &&
+    resumedJob.status === 'failed'
+  ) {
+    setResumeFallbackJobId(initialDraft.latest_job_id);
+  }
+  // Adjusted during render rather than in an effect (same pattern as
+  // `ImageGenerationStudio`), guarded by `!activeJobId` so it only ever
+  // fires once, the moment the resumed job's data arrives. `video_asset_kind`
+  // rides along here (not on `Draft.params`, only on the job response), same
+  // as image's `asset_kind`. `prompt` is re-seeded from the resumed *job*
+  // (not `initialDraft.params.prompt`, frozen at the draft's first submit)
+  // so a several-versions-deep resume shows the actual last-edited prompt —
+  // deliberately does *not* also re-attach that job's own output as a
+  // reference upload the way `ImageGenerationStudio` does for its
+  // image-to-image chaining: silently turning a plain "tweak the prompt and
+  // regenerate" resume into a `video_to_video` job would be a surprising
+  // default. `InlineVideoResult`'s "基于此视频继续创作" does that instead,
+  // deliberately, on click.
+  if (!activeJobId && resumedJob.status === 'ready' && resumedJob.data) {
+    setActiveJobId(resumedJob.data.id);
+    setActiveJobSeed(resumedJob.data);
+    if (
+      resumedJob.data.video_asset_kind &&
+      (VIDEO_ASSET_KINDS as readonly string[]).includes(resumedJob.data.video_asset_kind)
+    ) {
+      setVideoAssetKind(resumedJob.data.video_asset_kind as VideoAssetKind);
+    }
+    if (resumedJob.data.prompt) setPrompt(resumedJob.data.prompt);
+  }
+
+  const {
+    job: liveJob,
+    events: jobEvents,
+    connected: jobConnected,
+    reconnecting: jobReconnecting,
+    liveThinking,
+    applyJob,
+  } = useJobStream(activeJobId ?? '', activeJobSeed);
+  // Guards against the one-render gap between setting `activeJobId` and
+  // `useJobStream`'s own reset effect catching up — without this, switching
+  // jobs could flash the previous job's data.
+  const displayJob = liveJob && liveJob.id === activeJobId ? liveJob : activeJobSeed;
+
+  // Every job seen under this draft so far — seeded once from the draft's
+  // job list, then additively kept up to date below as jobs are submitted,
+  // streamed, or picked from history. Fed to `GenerationVersionHistory`
+  // (instead of just `displayJob`) so a version never disappears just
+  // because it stopped being the one currently shown.
+  const [knownJobsById, setKnownJobsById] = useState<Record<string, GenerationJob>>({});
+  const knownJobs = useMemo(() => Object.values(knownJobsById), [knownJobsById]);
+
+  const draftJobsHistory = useResource<Page<GenerationJob>>(
+    draftId ? `/v1/generation-jobs?draft_id=${draftId}` : null,
+  );
+  const historySeededRef = useRef(false);
   useEffect(() => {
-    const assetId = initialDraft?.output_asset_id;
-    if (draftMaterialSeededRef.current || !assetId) return;
-    draftMaterialSeededRef.current = true;
-    void (async () => {
+    if (historySeededRef.current || !draftJobsHistory.data) return;
+    historySeededRef.current = true;
+    const seeded: Record<string, GenerationJob> = {};
+    for (const job of draftJobsHistory.data.items) seeded[job.id] = job;
+    setKnownJobsById((current) => ({ ...seeded, ...current }));
+  }, [draftJobsHistory.data]);
+  const lastRememberedDisplayJobRef = useRef<GenerationJob | null>(null);
+  useEffect(() => {
+    if (!displayJob || displayJob === lastRememberedDisplayJobRef.current) return;
+    lastRememberedDisplayJobRef.current = displayJob;
+    setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
+  }, [displayJob]);
+
+  const cancelActiveJob = async () => {
+    if (!activeJobId) return;
+    setCancelling(true);
+    try {
+      const latest = await api.post<GenerationJob>(`/v1/generation-jobs/${activeJobId}/cancel`);
+      applyJob(latest);
+    } catch (caught) {
+      notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const selectVersion = (job: GenerationJob) => {
+    setActiveJobId(job.id);
+    setActiveJobSeed(job);
+  };
+
+  /** "基于此视频继续创作" — attaches `job`'s own output video as the next
+   * submit's reference material (deliberately explicit, see the resume
+   * effect's own doc comment above for why this is never automatic). */
+  const handleUseAsReference = useCallback(
+    async (job: GenerationJob) => {
+      if (!job.output_asset_id) return;
       try {
-        const asset = await api.get<Asset>(`/v1/assets/${assetId}`);
+        const asset = await api.get<Asset>(`/v1/assets/${job.output_asset_id}`);
         setUploads((current) => [...current, asset]);
       } catch (caught) {
         notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+        return;
       }
-    })();
-  }, [initialDraft, notify, tStates]);
+      if (job.prompt) setPrompt(job.prompt);
+    },
+    [notify, tStates],
+  );
+
+  // The script studio's "衔接上一镜头" continuity feature: the previous
+  // breakpoint's video's last frame becomes this session's first frame,
+  // once, on mount — never while resuming an existing draft (that already
+  // has its own material/settings). Guarded by a ref rather than just the
+  // prop so a later manual change to `referenceMode`/`firstFrameAssetId` is
+  // never clobbered by a re-render.
+  const [continuityState, setContinuityState] = useState<'idle' | 'loading' | 'applied' | 'failed'>(
+    'idle',
+  );
+  const continuitySeededRef = useRef(false);
+  useEffect(() => {
+    if (continuitySeededRef.current || !continuitySourceAssetId || initialDraft) return;
+    continuitySeededRef.current = true;
+    setContinuityState('loading');
+    void api
+      .post<Asset>(`/v1/assets/${continuitySourceAssetId}/frame`, { position: 'last' })
+      .then((asset) => {
+        setUploads((current) => [...current, asset]);
+        setReferenceMode('frame_images');
+        setFirstFrameAssetId(asset.id);
+        setContinuityState('applied');
+      })
+      .catch(() => setContinuityState('failed'));
+  }, [continuitySourceAssetId, initialDraft]);
 
   const toggleReferenceCharacter = (id: string) =>
     setSelectedReferenceCharacterIds((current) =>
@@ -277,6 +458,8 @@ export function VideoGenerationStudio({
     appliedSkillIds,
     appliedStyleGalleryId,
     styleHint,
+    mentionableSkills,
+    applySkill,
   } = useStyleAndSkillPicker({
     operation,
     initialStyleParams,
@@ -311,7 +494,18 @@ export function VideoGenerationStudio({
 
   const { quote, quoteFailed, submitting, error, submit } = useGenerationSubmit(
     { operation, qualityTier: tier, durationSeconds: duration },
-    { label: t('submit') },
+    {
+      label: t('submit'),
+      // Stays on the studio page instead of navigating to `/jobs/[jobId]` —
+      // the preview slot below picks up the new job and streams its own
+      // progress, and every later submit under the same draft becomes a new
+      // version in `GenerationVersionHistory`.
+      onSubmitted: (job) => {
+        setDraftId(job.draft_id ?? draftId);
+        setActiveJobId(job.id);
+        setActiveJobSeed(job);
+      },
+    },
   );
 
   const frameSelectionValid = referenceMode !== 'frame_images' || Boolean(firstFrameAssetId);
@@ -327,6 +521,12 @@ export function VideoGenerationStudio({
     setUploads((current) => current.filter((asset) => asset.id !== assetId));
     if (firstFrameAssetId === assetId) setFirstFrameAssetId('');
     if (lastFrameAssetId === assetId) setLastFrameAssetId('');
+  };
+
+  const removeContinuity = () => {
+    if (firstFrameAssetId) removeUpload(firstFrameAssetId);
+    setReferenceMode('input_references');
+    setContinuityState('idle');
   };
 
   const runSubmit = () =>
@@ -358,6 +558,7 @@ export function VideoGenerationStudio({
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
+      draftId: draftId ?? undefined,
       videoAssetKind,
       targetCharacterId: isCharacterActionKind ? targetCharacterId || null : undefined,
       autoAttachAsset: isCharacterActionKind ? autoAttachToRoster : undefined,
@@ -508,6 +709,27 @@ export function VideoGenerationStudio({
         </div>
       </div>
 
+      {continuityState !== 'idle' ? (
+        <div className="flex items-start justify-between gap-3 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-xs">
+          <p className="text-muted">
+            {continuityState === 'loading'
+              ? t('continuityApplying')
+              : continuityState === 'applied'
+                ? t('continuityApplied')
+                : t('continuityFailed')}
+          </p>
+          {continuityState === 'applied' ? (
+            <button
+              type="button"
+              onClick={removeContinuity}
+              className="shrink-0 text-muted underline hover:text-text"
+            >
+              {t('continuityRemove')}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <PromptField
         prompt={prompt}
         onChange={setPrompt}
@@ -521,6 +743,12 @@ export function VideoGenerationStudio({
           videoAssetKind,
         }}
         onPolishAccept={setPrompt}
+        skillMention={{
+          skills: mentionableSkills,
+          selectedIds: appliedSkillIds,
+          maxReached: appliedSkillIds.length >= MAX_APPLIED_SKILLS,
+          onSelect: applySkill,
+        }}
       />
 
       <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
@@ -669,6 +897,35 @@ export function VideoGenerationStudio({
     </>
   );
 
+  // Undefined before the first submit (and while a resumed draft's job is
+  // still loading), so the shell falls back to its default poster/device
+  // preview — once set, it fully replaces that block with the live/finished
+  // result plus the version-history strip right beneath it.
+  const previewSlot = displayJob ? (
+    <>
+      <InlineVideoResult
+        job={displayJob}
+        events={jobEvents}
+        connected={jobConnected}
+        reconnecting={jobReconnecting}
+        liveThinking={liveThinking.text}
+        draftId={draftId}
+        cancelling={cancelling}
+        onCancel={() => void cancelActiveJob()}
+        onUseAsReference={(job) => void handleUseAsReference(job)}
+        onRetried={(job) => {
+          setActiveJobId(job.id);
+          setActiveJobSeed(job);
+        }}
+        onPromoted={(job) => {
+          setActiveJobId(job.id);
+          setActiveJobSeed(job);
+        }}
+      />
+      <GenerationVersionHistory jobs={knownJobs} activeJob={displayJob} onSelect={selectVersion} />
+    </>
+  ) : undefined;
+
   return (
     <GenerationStudioShell
       source={source}
@@ -677,6 +934,7 @@ export function VideoGenerationStudio({
       onUploaded={(asset) => setUploads((current) => [...current, asset])}
       onRemove={removeUpload}
       isPortraitPreview={orientation === 'portrait'}
+      previewSlot={previewSlot}
       canSubmit={canSubmit}
       submitting={submitting}
       onSubmit={runSubmit}

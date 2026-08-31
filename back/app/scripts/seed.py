@@ -3,14 +3,23 @@
 Creates the demo login accounts and the system-level defaults every other
 feature depends on to actually run: the agent gateway's built-in nodes and
 default agent profiles, one default workflow template per operation, an
-optional LLM gateway endpoint bootstrapped from `.env`, and the desktop
-editor's feature flags. None of these are seeded anywhere else, so an empty
-database cannot submit a generation job or resolve an agent prompt without
+optional LLM gateway endpoint bootstrapped from `.env`, the desktop editor's
+feature flags, a platform-curated short-drama `CreationSkill` catalogue
+(`skill_library_service.ensure_catalog_skills`, see
+`app/domain/skill_library/catalog.py`), and a platform-curated `LearnPost`
+tutorial catalogue (`learning_service.ensure_catalog_posts`, see
+`app/domain/learning/catalog.py`). None of these are seeded anywhere else,
+so an empty database cannot submit a generation job, resolve an agent
+prompt, or offer anything in the skill marketplace or learning page without
 this having run at least once.
 
-Deliberately does not create any business content (works, jobs, tags, credit
-packages, moderation items, style gallery entries, and so on) — an operator
-adds those by hand through the admin console as they become needed.
+Otherwise deliberately does not create business content (works, jobs, tags,
+credit packages, moderation items, style gallery entries, and so on) — an
+operator adds those by hand through the admin console as they become needed.
+The `CreationSkill` and `LearnPost` catalogues are the two exceptions: both
+are system-default data owned by a dedicated seed account (`zaolang_studio`),
+analogous to the workflow templates and agent profiles above them in this
+list, not a stand-in for real user-submitted content.
 
 Idempotent by design — running it twice does not duplicate anything, so it is
 safe to re-run against a database that already has this bootstrap data.
@@ -32,6 +41,8 @@ from app.config import get_settings
 from app.db import session_scope
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.credits import service as credits_service
+from app.domain.learning import service as learning_service
+from app.domain.skill_library import service as skill_library_service
 from app.domain.workflow_templates import service as workflow_templates_service
 from app.models import (
     AccessGrant,
@@ -168,6 +179,18 @@ SEED_USERS: tuple[SeedUser, ...] = (
         roles=(UserRole.USER, UserRole.ADMIN),
         bio="平台管理员。",
     ),
+    # The owner of `ensure_catalog_skills`'s platform-curated short-drama
+    # `CreationSkill` catalogue — a plain `UserRole.USER` account (it needs no
+    # elevated permission, only to own content), kept separate from `linhai`
+    # (a demo author with an unrelated persona) so the marketplace's author
+    # attribution reads correctly.
+    SeedUser(
+        handle="zaolang_studio",
+        email="studio@zaolang.dev",
+        display_name="造浪工作室",
+        roles=(UserRole.USER,),
+        bio="平台精选技能策展账号：短剧创作配方合集。",
+    ),
     # A suspended account so the console's ban/unban path has something real to
     # act on, and so the login rejection can be checked without banning a demo
     # author everyone else's fixtures depend on.
@@ -267,8 +290,18 @@ def run(*, reset: bool = False) -> dict[str, int]:
         workflow_templates_service.ensure_default_templates(session)
         _seed_llm_providers(session)
         _seed_editor_flags(session)
+        catalog_skills = skill_library_service.ensure_catalog_skills(
+            session, owner_user_id=users["zaolang_studio"].id
+        )
+        catalog_posts = learning_service.ensure_catalog_posts(
+            session, author_user_id=users["zaolang_studio"].id
+        )
 
-        return {"users": len(users)}
+        return {
+            "users": len(users),
+            "skills": len(catalog_skills),
+            "learn_posts": len(catalog_posts),
+        }
 
 
 def _reset(session: Session) -> None:

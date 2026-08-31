@@ -290,7 +290,15 @@ def capabilities_for_modalities(
 
 # HTTP contract names shown in the admin dropdown — not vendor names.
 # AiHubMix's image/audio paths are OpenAI-compatible, so they display as OpenAI.
-MediaProtocol = Literal["openai", "minimax", "comfyui", "google", "dashscope", "ark", "kling"]
+# `dmxapi` is the one deliberate exception to "never name a protocol after a
+# vendor": DMXAPI's `/v1/responses` task envelope (synchronous for image
+# capabilities, submit-task + poll for video ones, with a per-model `"{family}
+# -get"` polling model id) is not a shared industry standard the way
+# openai/minimax/dashscope are — it is DMXAPI's own invented convention, so
+# there is no vendor-neutral name to give it.
+MediaProtocol = Literal[
+    "openai", "minimax", "comfyui", "google", "dashscope", "ark", "kling", "dmxapi"
+]
 MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
     "openai",
     "minimax",
@@ -299,8 +307,11 @@ MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
     "dashscope",
     "ark",
     "kling",
+    "dmxapi",
 )
-IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset({"openai", "minimax", "dashscope"})
+IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset(
+    {"openai", "minimax", "dashscope", "dmxapi"}
+)
 # Video joined this set once the OpenAI Videos API track (`/v1/videos`
 # create/retrieve/download_content`) landed in `AiHubMixMediaProvider` — not
 # every model exposed on this protocol accepts a reference (`wan2.7-
@@ -334,6 +345,22 @@ _COMFYUI_CAPABILITIES = (_OPENAI_CAPABILITIES | _MINIMAX_CAPABILITIES) - {
 # `_submit_video_analysis`). Scoped to this one capability only; don't widen
 # it to image/video generation without a real endpoint that does that too.
 _DASHSCOPE_CAPABILITIES = frozenset({Operation.VIDEO_ANALYSIS.value})
+# DMXAPI's `/v1/responses` envelope carries both a synchronous image family
+# (`doubao-seedream-5-0-pro-260628`: text_to_image/image_to_image, the latter
+# covering both single-reference edit and 2-10 image "multi-image fusion")
+# and an async submit+poll video family (`MiniMax-H3`, `doubao-
+# seedance-2-5-260628`, `wan3.0-video`, and `MiniMax-H3`'s video-regeneration
+# mode). No audio-generation endpoint has been confirmed on this protocol yet
+# — don't add `audio_generation` without a real one.
+_DMXAPI_CAPABILITIES = frozenset(
+    {
+        Operation.TEXT_TO_IMAGE.value,
+        Operation.IMAGE_TO_IMAGE.value,
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }
+)
 PROTOCOL_CAPABILITIES: dict[str, frozenset[str]] = {
     "openai": _OPENAI_CAPABILITIES,
     "minimax": _MINIMAX_CAPABILITIES,
@@ -342,6 +369,7 @@ PROTOCOL_CAPABILITIES: dict[str, frozenset[str]] = {
     "dashscope": _DASHSCOPE_CAPABILITIES,
     "ark": frozenset(),
     "kling": frozenset(),
+    "dmxapi": _DMXAPI_CAPABILITIES,
 }
 
 
@@ -394,7 +422,23 @@ _MAX_UNIT_PRICE_MICRO_USD = 1_000 * MICRO_USD_PER_USD
 # Vendors quote video by output resolution. `2K` is the only resolution a job
 # can request today (`VideoGenerationOptions`); `768P` is priceable ahead of
 # the provider adapter supporting it, which is why this list is wider.
-VIDEO_RESOLUTIONS: tuple[str, ...] = ("2K", "768P")
+# `doubao-seedance-2-5-260628` (AiHubMix and DMXAPI) and `wan3.0-video`
+# (DMXAPI) widened this further. Casing is preserved exactly as each vendor's
+# own API expects it and must never be normalised to one style: DMXAPI's
+# doubao models answer `480p`/`720p`/`1080p` lowercase, its `wan3.0-video`
+# answers `480P`/`720P`/`1080P` uppercase, and MiniMax stays `768P`/`2K` —
+# three different vendors, three different casings for what a human would
+# call "the same" resolution tier.
+VIDEO_RESOLUTIONS: tuple[str, ...] = (
+    "2K",
+    "768P",
+    "480p",
+    "720p",
+    "1080p",
+    "480P",
+    "720P",
+    "1080P",
+)
 
 _MicroUsd = Field(default=0, ge=0, le=_MAX_UNIT_PRICE_MICRO_USD)
 

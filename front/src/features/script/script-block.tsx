@@ -71,8 +71,10 @@ export function ScriptBlockRow({
    * generated clip — undefined renders the badge as plain (non-clickable)
    * text rather than a disabled link. */
   breakpointVideoHref?: string;
-  /** The clip for this breakpoint already exists — badge reads "查看视频"
-   * and `breakpointVideoHref` points at `/jobs/{id}` instead of generate. */
+  /** The clip for this breakpoint already exists — badge reads "查看/调整
+   * 视频"; `breakpointVideoHref` always points into the video studio
+   * (`?draftId=`, resuming that draft's version history) rather than a
+   * plain generate link either way — see `resolveBreakpointHref`. */
   viewGenerated?: boolean;
 }) {
   const t = useTranslations('scriptStudio');
@@ -80,9 +82,10 @@ export function ScriptBlockRow({
   // A breakpoint is a cut marker, not script content — it reads as a dashed
   // divider with the reasoning as a caption, never as another colored
   // paragraph the reader might mistake for something to shoot. The badge
-  // itself doubles as the action: "查看视频" when a clip already exists,
-  // otherwise "建议切分" into the video studio when the segment resolves
-  // to at least one linked character/scene. Never a separate chip alongside.
+  // itself doubles as the action: "查看/调整视频" when a clip already
+  // exists, otherwise "建议切分" into the video studio when the segment
+  // resolves to at least one linked character/scene. Never a separate chip
+  // alongside.
   if (block.type === 'breakpoint') {
     const badgeClassName =
       'flex shrink-0 items-center gap-1.5 rounded-full border border-script-breakpoint/30 bg-script-breakpoint/10 px-2.5 py-1 text-[11px] font-medium';

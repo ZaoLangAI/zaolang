@@ -10,6 +10,7 @@ from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
     AssetResponse,
+    ExtractFrameRequest,
     ProvenanceResponse,
     UploadCompleteRequest,
     UploadPresignRequest,
@@ -101,6 +102,21 @@ def get_asset(asset_id: str, session: DbSession, viewer: OptionalUser) -> AssetR
         viewer_user_id=viewer.id if viewer else None,
     )
     return _asset_response(session, asset, viewer_id=viewer.id if viewer else None)
+
+
+@router.post("/assets/{asset_id}/frame", response_model=AssetResponse, status_code=201)
+def extract_frame(
+    asset_id: str, payload: ExtractFrameRequest, user: CurrentUser, session: DbSession
+) -> AssetResponse:
+    """Grabs the first/last frame of the caller's own video asset as a new
+    private image asset — used to auto-fill `first_frame_asset_id` when
+    generating a video that should pick up visually where an earlier one
+    (e.g. a previous script breakpoint's clip) left off."""
+    frame_asset = media_service.extract_video_frame(
+        session, user_id=user.id, asset_id=asset_id, position=payload.position
+    )
+    session.commit()
+    return _asset_response(session, frame_asset, viewer_id=user.id)
 
 
 @router.get("/assets/{asset_id}/provenance", response_model=ProvenanceResponse)

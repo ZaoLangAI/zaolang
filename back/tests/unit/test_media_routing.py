@@ -9,6 +9,7 @@ from app.models.enums import Operation, QualityTier
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 from app.providers.aihubmix_media import AiHubMixMediaProvider
+from app.providers.dmxapi_media import DmxApiMediaProvider
 from tests.llm_catalog import bind_default_agents_to_catalog
 
 
@@ -442,3 +443,82 @@ def test_cost_informs_the_llm_without_deciding_for_it(db: Session) -> None:
     assert cheap.eligible is True
     assert pricey.eligible is True
     assert cheap.effective_cost_micro_usd < pricey.effective_cost_micro_usd
+
+
+def test_a_dmxapi_video_endpoint_carries_its_own_profile_and_dispatches_to_dmxapi(
+    db: Session,
+) -> None:
+    """`protocol="dmxapi"` gets its own profile lookup (`dmxapi_media
+    .video_model_profile`), independent of the `minimax` protocol's
+    `NativeVideoModelProfile` table, and its own provider class."""
+    _seed_media_endpoint(
+        db,
+        model="MiniMax-H3",
+        input_modalities=["text", "image", "video", "audio"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:text_to_video"]
+    assert entry.min_duration_seconds == 4
+    assert entry.max_duration_seconds == 15
+    assert entry.resolutions == frozenset({"768P", "2K"})
+    assert entry.reference_modes == frozenset({"input_references", "frame_images"})
+
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "2K", "reference_mode": "input_references"},
+        },
+    )
+    assert decision.selected is not None
+    assert decision.selected.provider == "media-ep:text_to_video"
+    assert isinstance(decision.provider, DmxApiMediaProvider)
+
+
+def test_dmxapi_video_regeneration_is_video_to_video_only_and_unrestricted_by_reference_mode(
+    db: Session,
+) -> None:
+    """`MiniMax-H3-video_regeneration` requires a `base_video` reference the
+    existing `input_references`/`frame_images` vocabulary cannot express —
+    it is left `reference_modes=None` (unrestricted by this particular hard
+    filter) rather than mis-modelled as one of those two tags; its own
+    `base_video` requirement is enforced by the provider, not the router."""
+    _seed_media_endpoint(
+        db,
+        model="MiniMax-H3-video_regeneration",
+        input_modalities=["video"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+    )
+    catalog = router.build_catalog(db)
+    assert "media-ep:text_to_video" not in catalog
+    assert "media-ep:image_to_video" not in catalog
+    entry = catalog["media-ep:video_to_video"]
+    assert entry.reference_modes is None
+    assert entry.resolutions == frozenset({"2K"})
+
+
+def test_a_dmxapi_image_endpoint_carries_no_video_profile_fields(db: Session) -> None:
+    """`doubao-seedream-5-0-pro-260628` is an image model — it must not pick
+    up any of the video-only profile fields just because it shares the
+    `dmxapi` protocol with three video models."""
+    _seed_media_endpoint(
+        db,
+        model="doubao-seedream-5-0-pro-260628",
+        input_modalities=["text", "image"],
+        output_modalities=["image"],
+        protocol="dmxapi",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:text_to_image"]
+    assert entry.min_duration_seconds is None
+    assert entry.max_duration_seconds is None
+    assert entry.aspect_ratios is None
+    assert entry.resolutions is None
+    assert entry.reference_modes is None

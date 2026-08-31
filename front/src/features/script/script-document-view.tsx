@@ -9,6 +9,7 @@ import {
   breakpointKey,
   breakpointOrdinalInScene,
   breakpointSegmentBlocks,
+  previousBoundVideoAssetId,
   resolveBreakpointHref,
   trailingBreakpoint,
   type BreakpointVideoBinding,
@@ -174,6 +175,7 @@ function sceneCloserChip({
     ...resolveBreakpointRefs(document, scene, closer.blockIndex),
     prompt: breakpointSegmentPrompt(scene, closer.blockIndex),
     binding: videoBindings?.[closer.key],
+    continuityAssetId: previousBoundVideoAssetId(document, closer.key, videoBindings ?? {}),
   });
 }
 
@@ -347,6 +349,11 @@ export function ScriptDocumentView({
                           ...resolveBreakpointRefs(document, scene, blockIndex),
                           prompt: breakpointSegmentPrompt(scene, blockIndex),
                           binding: videoBindings?.[key],
+                          continuityAssetId: previousBoundVideoAssetId(
+                            document,
+                            key,
+                            videoBindings ?? {},
+                          ),
                         })
                       : undefined;
                   return (

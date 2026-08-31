@@ -1,4 +1,5 @@
-import { api } from '@/lib/api/client';
+import { api, newIdempotencyKey } from '@/lib/api/client';
+import { randomUuid } from '@/lib/random-id';
 import { ApiError } from '@/lib/api/errors';
 import { streamPost } from '@/lib/sse-post';
 import type { Asset, AuthorSummary, Page, ShortformProfiles } from '@/lib/api/types';
@@ -217,7 +218,7 @@ export function listDramaSeries(params?: DramaSeriesListParams) {
 
 export function createDramaSeries(input: DramaSeriesCreateInput) {
   return api.post<DramaSeries>('/v1/drama-series', input, {
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: newIdempotencyKey(),
   });
 }
 
@@ -280,7 +281,7 @@ export function createEpisode(
   },
 ) {
   return api.post<DramaEpisode>(`/v1/drama-series/${seriesId}/episodes`, input, {
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: newIdempotencyKey(),
   });
 }
 
@@ -311,7 +312,7 @@ export function createContentLink(
   input: { content_type: string; content_ref_id: string; role?: string },
 ) {
   return api.post<EpisodeContentLink>(`/v1/drama-episodes/${episodeId}/content-links`, input, {
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: newIdempotencyKey(),
   });
 }
 
@@ -338,7 +339,7 @@ export function createCutFromAsset(
   input: { asset_id: string; name?: string; kind?: string; job_id?: string },
 ) {
   return api.post<EpisodeCut>(`/v1/drama-episodes/${episodeId}/cuts`, input, {
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: newIdempotencyKey(),
   });
 }
 
@@ -489,7 +490,7 @@ export function batchCreateVariants(revisionId: string, profileKeys: string[]) {
 export function queueExports(variantIds: string[]) {
   return api.post<EditorExport[]>('/v1/editor-exports', {
     variant_ids: variantIds,
-    operation_key: crypto.randomUUID(),
+    operation_key: randomUuid(),
   });
 }
 
@@ -537,7 +538,7 @@ export function ensureBoundDraft(exportId: string, draftId?: string | null) {
       confirmed: true,
       draft_id: draftId ?? undefined,
     },
-    { idempotencyKey: crypto.randomUUID() },
+    { idempotencyKey: newIdempotencyKey() },
   );
 }
 

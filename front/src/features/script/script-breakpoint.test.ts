@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import type { Draft } from '@/lib/api/types';
 
-import type { ScriptScene } from './api';
+import type { ScriptDocument, ScriptScene } from './api';
 import {
+  type BreakpointVideoBinding,
   breakpointKey,
   breakpointOrdinalInScene,
   breakpointSegmentBlocks,
   buildBreakpointVideoHref,
   indexBreakpointVideos,
+  orderedBreakpointKeys,
+  previousBoundVideoAssetId,
   resolveBreakpointHref,
   trailingBreakpoint,
 } from './script-breakpoint';
@@ -31,6 +34,13 @@ const draft = (overrides: Partial<Draft> & { params?: Draft['params'] }): Draft 
     output_asset_id: overrides.output_asset_id ?? 'ast_1',
     params: overrides.params ?? {},
   }) as Draft;
+
+const document = (scenes: ScriptScene[]): ScriptDocument => ({
+  title: '',
+  logline: '',
+  characters: [],
+  scenes,
+});
 
 describe('breakpointKey / ordinal', () => {
   it('joins heading and 0-based ordinal', () => {
@@ -83,10 +93,93 @@ describe('buildBreakpointVideoHref', () => {
       }),
     ).toBeUndefined();
   });
+
+  it('carries continuityAssetId through to the query string when given', () => {
+    const href = buildBreakpointVideoHref({
+      episodeId: 'dep_1',
+      key: '场#1',
+      characterIds: ['sk_char'],
+      sceneId: null,
+      prompt: 'x',
+      continuityAssetId: 'ast_prev',
+    });
+    const query = new URLSearchParams(href!.split('?')[1]);
+    expect(query.get('continuityAssetId')).toBe('ast_prev');
+  });
+
+  it('omits continuityAssetId when not given', () => {
+    const href = buildBreakpointVideoHref({
+      episodeId: 'dep_1',
+      key: '场#0',
+      characterIds: ['sk_char'],
+      sceneId: null,
+      prompt: 'x',
+    });
+    const query = new URLSearchParams(href!.split('?')[1]);
+    expect(query.has('continuityAssetId')).toBe(false);
+  });
+});
+
+describe('orderedBreakpointKeys', () => {
+  it("flattens every scene's breakpoints, then its trailing closer, in document order", () => {
+    const doc = document([scene('场A', 2), scene('场B', 1)]);
+    expect(orderedBreakpointKeys(doc)).toEqual(['场A#0', '场A#1', '场B#0']);
+  });
+
+  it("includes a trailing unclosed segment as the scene's last key", () => {
+    const open: ScriptScene = {
+      heading: '监听室',
+      ref_id: null,
+      blocks: [
+        { type: 'breakpoint', character: null, text: 'cut' },
+        { type: 'action', character: null, text: '开门' },
+      ],
+    };
+    expect(orderedBreakpointKeys(document([open]))).toEqual(['监听室#0', '监听室#1']);
+  });
+
+  it('omits a scene with neither a real breakpoint nor shootable tail copy', () => {
+    const empty: ScriptScene = { heading: '空场', ref_id: null, blocks: [] };
+    expect(orderedBreakpointKeys(document([empty]))).toEqual([]);
+  });
+});
+
+describe('previousBoundVideoAssetId', () => {
+  const bound = (assetId: string): BreakpointVideoBinding => ({
+    draftId: 'drf_x',
+    latestJobId: 'job_x',
+    outputAssetId: assetId,
+  });
+
+  it('returns null for the very first breakpoint in the whole document', () => {
+    const doc = document([scene('场A', 1)]);
+    expect(previousBoundVideoAssetId(doc, '场A#0', {})).toBeNull();
+  });
+
+  it('finds the nearest earlier bound video across scene boundaries, skipping unbound ones', () => {
+    const doc = document([scene('场A', 2), scene('场B', 1)]);
+    const bindings: Record<string, BreakpointVideoBinding> = { '场A#0': bound('ast_first') };
+    expect(previousBoundVideoAssetId(doc, '场A#1', bindings)).toBe('ast_first');
+    expect(previousBoundVideoAssetId(doc, '场B#0', bindings)).toBe('ast_first');
+  });
+
+  it('prefers the closest earlier bound video over an older one further back', () => {
+    const doc = document([scene('场A', 1), scene('场B', 1), scene('场C', 1)]);
+    const bindings: Record<string, BreakpointVideoBinding> = {
+      '场A#0': bound('ast_old'),
+      '场B#0': bound('ast_recent'),
+    };
+    expect(previousBoundVideoAssetId(doc, '场C#0', bindings)).toBe('ast_recent');
+  });
+
+  it('returns null when no earlier segment has a bound video yet', () => {
+    const doc = document([scene('场A', 2)]);
+    expect(previousBoundVideoAssetId(doc, '场A#1', {})).toBeNull();
+  });
 });
 
 describe('resolveBreakpointHref', () => {
-  it('routes a bound clip to the job page', () => {
+  it('routes a bound, already-generated clip into the studio to resume its draft', () => {
     expect(
       resolveBreakpointHref({
         episodeId: 'dep_1',
@@ -94,12 +187,15 @@ describe('resolveBreakpointHref', () => {
         characterIds: ['sk_char'],
         sceneId: null,
         prompt: 'x',
-        binding: { latestJobId: 'job_abc', outputAssetId: 'ast_1' },
+        binding: { draftId: 'drf_abc', latestJobId: 'job_abc', outputAssetId: 'ast_1' },
       }),
-    ).toEqual({ href: '/jobs/job_abc', viewGenerated: true });
+    ).toEqual({
+      href: '/create/new?mode=video_creation&draftId=drf_abc',
+      viewGenerated: true,
+    });
   });
 
-  it('does not offer a second generate when a draft is bound without a job', () => {
+  it('still resumes the draft (viewGenerated=false) when it has no output yet', () => {
     expect(
       resolveBreakpointHref({
         episodeId: 'dep_1',
@@ -107,9 +203,12 @@ describe('resolveBreakpointHref', () => {
         characterIds: ['sk_char'],
         sceneId: null,
         prompt: 'x',
-        binding: { latestJobId: null, outputAssetId: null },
+        binding: { draftId: 'drf_abc', latestJobId: null, outputAssetId: null },
       }),
-    ).toEqual({ viewGenerated: false });
+    ).toEqual({
+      href: '/create/new?mode=video_creation&draftId=drf_abc',
+      viewGenerated: false,
+    });
   });
 
   it('falls through to generate when nothing is bound', () => {

@@ -1,20 +1,22 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 import { Poster } from '@/components/media/poster';
 import { IconCheck } from '@/components/ui/icons';
 import type { CreationSkillSummary } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
 /**
- * The floating list an `@` trigger opens inside the composer's textarea.
+ * The floating list an `@` trigger opens inside a textarea.
  *
  * Purely presentational: it never takes DOM focus away from the textarea,
  * so all keyboard navigation (arrow keys, Enter/Tab, Escape) is driven by
- * `ScriptChatPanel`'s own `onKeyDown` against an `activeIndex` it owns —
- * this component only renders whichever index is currently active and
- * reports pointer interactions back up.
+ * the caller's own `onKeyDown` against an `activeIndex` it owns — this
+ * component only renders whichever index is currently active and reports
+ * pointer interactions back up.
+ *
+ * Shared by script writing (reference) and the image/video prompt field
+ * (apply). Callers pass their own heading / empty / price copy so the two
+ * surfaces can keep distinct wording.
  */
 export function SkillMentionMenu({
   skills,
@@ -22,6 +24,9 @@ export function SkillMentionMenu({
   activeIndex,
   maxReached,
   style,
+  label,
+  emptyLabel,
+  priceLabel,
   onHoverIndex,
   onSelect,
 }: {
@@ -30,23 +35,24 @@ export function SkillMentionMenu({
   activeIndex: number;
   maxReached: boolean;
   style: React.CSSProperties;
+  label: string;
+  emptyLabel: string;
+  priceLabel?: (credits: number) => string;
   onHoverIndex: (index: number) => void;
   onSelect: (skill: CreationSkillSummary) => void;
 }) {
-  const t = useTranslations('scriptStudio');
-
   return (
     <div
       role="listbox"
-      aria-label={t('referenceSkill')}
+      aria-label={label}
       style={style}
       className="absolute z-30 max-h-64 w-64 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-surface-raised p-1.5 shadow-raised"
     >
       <p className="px-2 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        {t('referenceSkill')}
+        {label}
       </p>
       {skills.length === 0 ? (
-        <p className="px-2 py-2 text-xs text-muted">{t('mentionEmpty')}</p>
+        <p className="px-2 py-2 text-xs text-muted">{emptyLabel}</p>
       ) : (
         skills.map((skill, index) => {
           const selected = selectedIds.includes(skill.id);
@@ -76,9 +82,9 @@ export function SkillMentionMenu({
                 className="size-8 shrink-0"
               />
               <span className="min-w-0 flex-1 truncate">{skill.title}</span>
-              {locked ? (
+              {locked && priceLabel ? (
                 <span className="shrink-0 text-[11px] text-muted">
-                  {t('referenceSkillPrice', { credits: skill.access_credits })}
+                  {priceLabel(skill.access_credits)}
                 </span>
               ) : null}
               {selected ? <IconCheck className="size-3.5 shrink-0 text-primary" /> : null}

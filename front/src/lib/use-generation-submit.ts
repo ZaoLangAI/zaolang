@@ -109,10 +109,10 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   maxCredits?: number;
   draftTitle?: string | null;
   /**
-   * Reuses an existing draft instead of creating a new one — the image
-   * studio's inline "continue refining" flow passes the draft id from its
-   * previous submission so every iteration of the same creative idea stays
-   * on one draft (and therefore shows up together in
+   * Reuses an existing draft instead of creating a new one — the image and
+   * video studios' inline "continue refining" flow both pass the draft id
+   * from their previous submission so every iteration of the same creative
+   * idea stays on one draft (and therefore shows up together in
    * `GenerationVersionHistory`), rather than each generate click spawning
    * its own unpublishable draft.
    */
@@ -183,9 +183,9 @@ export function useGenerationSubmit(
     label: string;
     /**
      * When provided, a successful submission calls this instead of
-     * navigating to `/jobs/[jobId]` — the image studio's inline flow uses
-     * this to stay on the studio page and stream progress into its own
-     * preview slot. Video/audio studios don't pass it, so their
+     * navigating to `/jobs/[jobId]` — the image and video studios' inline
+     * flow both use this to stay on the studio page and stream progress
+     * into their own preview slot. The audio studio doesn't pass it, so its
      * navigate-away behaviour is unchanged.
      */
     onSubmitted?: (job: GenerationJob) => void;

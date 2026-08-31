@@ -14,6 +14,7 @@ import hashlib
 import io
 import logging
 import shutil
+import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -429,9 +430,7 @@ def provider_references_for(
     by_id = {
         asset.id: asset
         for asset in rows
-        if _asset_is_usable_reference(
-            asset, user_id=user_id, licensed_source_id=licensed_source_id
-        )
+        if _asset_is_usable_reference(asset, user_id=user_id, licensed_source_id=licensed_source_id)
     }
     return [
         ProviderReference(
@@ -442,6 +441,83 @@ def provider_references_for(
         for asset_id, frame_type in ordered
         if asset_id in by_id
     ]
+
+
+def _extract_frame_bytes(payload: bytes, *, position: str) -> bytes:
+    """Shells out to `ffmpeg` for exactly one decoded frame.
+
+    Reads/writes through stdin/stdout (same shape as `analysis.probe_bytes`'s
+    `ffprobe` call) so there is no temp file to clean up. `last` runs the
+    decoded stream through the `reverse` filter (buffers every frame, then
+    emits them back-to-front) and takes *that* stream's first frame, rather
+    than seeking to `duration_ms - epsilon` — seeking landed exactly on (or
+    past) the container's real last decodable timestamp often enough to come
+    back empty, since a stored `Asset.duration_ms` is not guaranteed to be
+    frame-exact. `reverse` is exact regardless, and fine memory-wise for the
+    single-digit-second clips this is ever called against. Both paths force
+    `yuvj420p` — an mjpeg encode of a non-full-range source (fine for
+    picture, common for a generated clip) otherwise refuses to open the
+    encoder at all.
+    """
+    if shutil.which("ffmpeg") is None:
+        raise ValidationFailed("服务器未安装 ffmpeg，无法截取视频画面。")
+    args = ["ffmpeg", "-v", "error", "-y", "-i", "pipe:0"]
+    if position == "last":
+        args += ["-vf", "reverse"]
+    args += ["-frames:v", "1", "-f", "image2", "-c:v", "mjpeg", "-pix_fmt", "yuvj420p", "pipe:1"]
+    proc = subprocess.run(args, input=payload, capture_output=True, check=False, timeout=30)
+    if proc.returncode != 0 or not proc.stdout:
+        raise ValidationFailed("无法截取该视频的画面帧。")
+    return proc.stdout
+
+
+def extract_video_frame(session: Session, *, user_id: str, asset_id: str, position: str) -> Asset:
+    """Grabs a single frame from an already-generated video and registers it
+    as a new, private image `Asset` (`role=GENERATION_REFERENCE`) — lets a
+    caller feed it straight back in as `first_frame_asset_id`/
+    `last_frame_asset_id` on the next `image_to_video` submission. This is
+    what powers the script studio's "衔接上一镜头" continuity feature: the
+    previous script breakpoint's video's last frame becomes the next one's
+    first frame, without the user having to download/re-upload anything.
+
+    Not routed through the upload handshake (`presign`/`complete_upload`) —
+    the platform derived these bytes from the caller's own asset, so there is
+    no client-declared checksum/size to verify against. Moderation still
+    defaults to `PENDING`, same as any other reference asset; this is a
+    private, generation-input asset, never shown publicly on its own.
+    """
+    if position not in ("first", "last"):
+        raise ValidationFailed("不支持的截帧位置。", fields={"position": "只能是 first 或 last"})
+    source = session.get(Asset, asset_id)
+    if source is None or source.owner_user_id != user_id:
+        # 404, not 403 — same anti-probing stance as `get_asset`.
+        raise NotFound("素材不存在。")
+    if source.media_type != MediaType.VIDEO:
+        raise ValidationFailed("只能对视频素材截取画面帧。")
+
+    payload = s3.get_object(source.object_key)
+    frame_bytes = _extract_frame_bytes(payload, position=position)
+    width, height, _ = _probe(frame_bytes, "image/jpeg")
+
+    object_key = f"derived/frames/{user_id}/{new_id('obj')}.jpg"
+    s3.put_object(object_key, frame_bytes, content_type="image/jpeg")
+
+    frame_asset = Asset(
+        owner_user_id=user_id,
+        object_key=object_key,
+        media_type=MediaType.IMAGE,
+        mime_type="image/jpeg",
+        size_bytes=len(frame_bytes),
+        checksum_sha256=hashlib.sha256(frame_bytes).hexdigest(),
+        role=AssetRole.GENERATION_REFERENCE,
+        width=width,
+        height=height,
+        moderation_status=ModerationStatus.PENDING,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(frame_asset)
+    session.flush()
+    return frame_asset
 
 
 def register_generated_asset(

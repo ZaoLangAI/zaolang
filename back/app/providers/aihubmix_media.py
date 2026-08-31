@@ -19,7 +19,7 @@ import logging
 import mimetypes
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from PIL import Image, UnidentifiedImageError
@@ -43,6 +43,11 @@ _VIDEO_OPERATIONS = frozenset(
 
 MINIMAX_H3_MODEL = "minimax-h3"
 WAN_VIDEOEDIT_MODEL = "wan2.7-videoedit"
+# AiHubMix's own catalogue lowercases this id (unlike DMXAPI's `MiniMax-H3` /
+# `doubao-seedance-2-5-260628` casing, which is preserved verbatim by
+# `dmxapi_media.py` — the two providers are looked up independently and never
+# share a profile table, so the casing difference cannot collide).
+DOUBAO_SEEDANCE_25_MODEL = "doubao-seedance-2-5-260628"
 H3_ASPECT_RATIOS = frozenset(
     {"16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "3:2", "2:3", "9:21", "adaptive"}
 )
@@ -67,6 +72,22 @@ class NativeVideoModelProfile:
     # entirely and let the provider apply its own default" — not every
     # model's schema even has a `resolution` field.
     default_resolution: str | None
+    # Whether this model's schema accepts `duration=-1` as "let the model
+    # pick a sensible length" instead of a caller-supplied integer.
+    supports_auto_duration: bool = False
+    # Whether this model's schema accepts a `generate_audio` toggle for a
+    # native soundtrack (dialogue/SFX/BGM baked into the output clip).
+    supports_generate_audio: bool = False
+    # Where the async task lands after `POST /ai/v1/videos`. MiniMax H3 and
+    # `wan2.7-videoedit` poll a legacy `/ai/v1/tasks/{id}` (+ `/content`) pair
+    # confirmed live (see reference.md invariant #14). `doubao-
+    # seedance-2-5-260628`'s own AiHubMix schema
+    # (`https://aihubmix.com/call/schema/models/doubao-seedance-2-5-260628/
+    # endpoints`, checked 2026-08) instead documents `/ai/v1/videos/{id}` with
+    # the output URL inlined in the poll response body — no separate
+    # `/content` call. **Unverified against a live credential** — fix
+    # `_poll_native_videos_inline` and this comment if a real call disagrees.
+    poll_style: Literal["tasks", "videos_inline"] = "tasks"
 
 
 # Every value here has been confirmed against AiHubMix's schema endpoint —
@@ -86,6 +107,16 @@ _NATIVE_VIDEO_PROFILES: dict[str, NativeVideoModelProfile] = {
         aspect_ratios=frozenset({"16:9", "9:16", "1:1", "4:3", "3:4"}),
         resolutions=frozenset({"720p", "1080p"}),
         default_resolution=None,
+    ),
+    DOUBAO_SEEDANCE_25_MODEL: NativeVideoModelProfile(
+        min_duration_seconds=4,
+        max_duration_seconds=30,
+        aspect_ratios=frozenset({"16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"}),
+        resolutions=frozenset({"480p", "720p"}),
+        default_resolution="720p",
+        supports_auto_duration=True,
+        supports_generate_audio=True,
+        poll_style="videos_inline",
     ),
 }
 
@@ -414,7 +445,9 @@ class AiHubMixMediaProvider(GenerationProvider):
 
     # -- video understanding: video_analysis ---------------------------------
 
-    def _submit_video_analysis(self, request: GenerationRequest, started: float) -> GenerationResult:
+    def _submit_video_analysis(
+        self, request: GenerationRequest, started: float
+    ) -> GenerationResult:
         """Native video-understanding call, synchronous like image/audio.
 
         **Unverified against a live credential** — modelled on DashScope's
@@ -493,6 +526,7 @@ class AiHubMixMediaProvider(GenerationProvider):
             resolution=request.resolution,
             seed=request.seed,
             references=references,
+            generate_audio=request.extra.get("generate_audio"),
         )
 
         with self._client() as client:
@@ -657,6 +691,9 @@ class AiHubMixMediaProvider(GenerationProvider):
         started = time.perf_counter()
         if self._protocol == "openai" or _uses_wan_openai_edit(self._model, request):
             return self._poll_openai_video(external_task_id, request, started)
+        profile = native_video_profile(self._model)
+        if profile is not None and profile.poll_style == "videos_inline":
+            return self._poll_native_videos_inline(external_task_id, request, started)
         try:
             with self._client() as client:
                 status_response = client.get(
@@ -726,6 +763,89 @@ class AiHubMixMediaProvider(GenerationProvider):
             },
         )
 
+    def _poll_native_videos_inline(
+        self, external_task_id: str, request: GenerationRequest, started: float
+    ) -> GenerationResult:
+        """`GET /ai/v1/videos/{id}` for a model whose schema inlines the
+        output URL in the poll response instead of a separate `/content`
+        call (see `NativeVideoModelProfile.poll_style`).
+
+        Status vocabulary per AiHubMix's schema for this track is `pending` /
+        `in_progress` / `completed` / `failed` / `cancelled` — folds into the
+        same `_TASK_FAILED_STATUSES` set the legacy `/ai/v1/tasks` track uses
+        (`cancelled` is already a member; `pending`/`in_progress` both read
+        as "still working", same as `queued`/`running` elsewhere).
+        **Unverified against a live credential** — the exact field holding
+        the output URL is inferred from this provider's other response
+        shapes (`_qwen_edit_output_url`'s `output[].url`, DMXAPI's
+        `output[].content[].text`) rather than a confirmed sample; fix
+        `_extract_inline_video_url` and this comment if a real call
+        disagrees.
+        """
+        try:
+            with self._client() as client:
+                status_response = client.get(
+                    media_request_path(self._creds.base_url, f"/ai/v1/videos/{external_task_id}")
+                )
+                status_response.raise_for_status()
+                payload = status_response.json()
+                status = str(payload.get("status") or "").lower()
+
+                if status != "completed" and status not in _TASK_FAILED_STATUSES:
+                    return GenerationResult(
+                        succeeded=False,
+                        pending=True,
+                        external_task_id=external_task_id,
+                        latency_ms=self._elapsed_ms(started),
+                        metadata={"provider": self.name, "status": status},
+                    )
+
+                if status in _TASK_FAILED_STATUSES:
+                    error = payload.get("error")
+                    message = error.get("message") if isinstance(error, dict) else error
+                    return self._failure(started, "PROVIDER_TASK_FAILED", str(message or status))
+
+                video_url = _extract_inline_video_url(payload)
+                if not video_url:
+                    return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_video_url")
+
+            # A bare, header-less client rather than `self._client()` reused:
+            # this track's output URL is a pre-signed cloud-storage link, same
+            # reasoning as `_submit_qwen_image_edit`'s BCE download — a stray
+            # `Authorization` header can make some signed-URL edges reject an
+            # otherwise-valid request.
+            with httpx.Client(timeout=self._creds.timeout_s) as download_client:
+                download = download_client.get(video_url)
+                download.raise_for_status()
+                video_bytes = download.content or None
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "aihubmix inline-video poll failed for task %s: %s", external_task_id, exc
+            )
+            return GenerationResult(
+                succeeded=False,
+                pending=True,
+                external_task_id=external_task_id,
+                latency_ms=self._elapsed_ms(started),
+                metadata={"provider": self.name, "detail": type(exc).__name__},
+            )
+
+        if not video_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "empty_video_content")
+
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp4"
+        s3.put_object(object_key, video_bytes, content_type="video/mp4")
+
+        return GenerationResult(
+            succeeded=True,
+            object_key=object_key,
+            mime_type="video/mp4",
+            duration_ms=request.duration_seconds * 1000,
+            latency_ms=self._elapsed_ms(started),
+            external_task_id=external_task_id,
+            metadata={"provider": self.name, "model": self._model, "upstream_status": status},
+        )
+
     def cancel(self, external_task_id: str) -> bool:
         # Every documented contract this provider speaks — native H3/
         # wan2.7-videoedit and the OpenAI Videos API alike — only covers
@@ -782,6 +902,37 @@ def _content_path(task_id: str, payload: dict[str, object]) -> str:
     return f"/ai/v1/tasks/{task_id}/content"
 
 
+def _extract_inline_video_url(payload: dict[str, object]) -> str | None:
+    """Tries every URL-shaped field a `poll_style="videos_inline"` response
+    might use, since the exact schema has not been confirmed against a live
+    credential (see `NativeVideoModelProfile.poll_style`)."""
+    output = payload.get("output")
+    if isinstance(output, str) and output:
+        return output
+    if isinstance(output, dict):
+        url = output.get("url")
+        if isinstance(url, str) and url:
+            return url
+    if isinstance(output, list) and output:
+        first = output[0]
+        if isinstance(first, dict):
+            url = first.get("url")
+            if isinstance(url, str) and url:
+                return url
+            content = first.get("content")
+            if isinstance(content, list) and content:
+                part = content[0]
+                if isinstance(part, dict):
+                    text = part.get("text") or part.get("output_text")
+                    if isinstance(text, str) and text.startswith("http"):
+                        return text
+    for key in ("video_url", "url"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 def build_video_payload(
     *,
     model: str,
@@ -791,6 +942,7 @@ def build_video_payload(
     resolution: str | None = None,
     seed: int | None = None,
     references: list[ProviderReference] | None = None,
+    generate_audio: bool | None = None,
 ) -> dict[str, object]:
     """Build the one native-video request shape shared by validation and
     production, for whichever model this is.
@@ -806,7 +958,13 @@ def build_video_payload(
     """
 
     profile = native_video_profile(model)
-    if profile is not None:
+    # `-1` is the model's own "pick a sensible length" sentinel on a model
+    # whose schema documents it (`doubao-seedance-2-5-260628`) — never a
+    # value this platform invents on a model that never advertised it.
+    is_auto_duration = (
+        duration_seconds == -1 and profile is not None and profile.supports_auto_duration
+    )
+    if profile is not None and not is_auto_duration:
         if not profile.min_duration_seconds <= duration_seconds <= profile.max_duration_seconds:
             raise ValueError(
                 f"{model} duration must be between {profile.min_duration_seconds} and "
@@ -827,6 +985,8 @@ def build_video_payload(
             if effective_resolution not in profile.resolutions:
                 raise ValueError(f"{model} resolution is unsupported: {effective_resolution}")
             body["resolution"] = effective_resolution
+        if profile.supports_generate_audio and generate_audio is not None:
+            body["generate_audio"] = generate_audio
     if seed is not None:
         body["seed"] = seed
 

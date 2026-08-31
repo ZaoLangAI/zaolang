@@ -14,6 +14,7 @@ import { OptionGroup } from '@/components/studio/option-group';
 import { PromptField } from '@/components/studio/prompt-field';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
+import { MAX_APPLIED_SKILLS, useAppliedSkills } from '@/components/studio/use-applied-skills';
 import { Select } from '@/components/ui/field';
 import { IconLandscape, IconPortrait } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
@@ -66,10 +67,10 @@ const PORTRAIT_ASPECT = '9:16';
  * into an edit (same derivation shape `VideoGenerationStudio` uses for
  * `text_to_video → image_to_video`).
  *
- * Deliberately has no style preset / creation skill / system style picker —
- * those live only in `VideoGenerationStudio`/`AudioGenerationStudio` via
- * `useStyleAndSkillPicker`. This shell never fetches `/v1/style-presets`,
- * `/v1/skills*` or `/v1/style-gallery/*` at all.
+ * Deliberately has no style preset / system style ("画风库") picker — those
+ * live only in `VideoGenerationStudio`/`AudioGenerationStudio` via
+ * `useStyleAndSkillPicker`. Template skills are applied from the prompt
+ * field's `@` menu (`useAppliedSkills`), not a second dropdown.
  *
  * Generation never navigates away to `/jobs/[jobId]`: a submit's progress and
  * result render inline in the preview slot (`InlineImageResult`), and every
@@ -491,6 +492,30 @@ export function ImageGenerationStudio({
   const operation: Operation = source || hasImageReference ? 'image_to_image' : 'text_to_image';
   const isImageEdit = operation === 'image_to_image';
 
+  const applyParams = (params: Record<string, unknown>) => {
+    const aspectRatio = params.aspect_ratio;
+    if (
+      typeof aspectRatio === 'string' &&
+      ([...LANDSCAPE_ASPECTS, ...PORTRAIT_ASPECTS] as string[]).includes(aspectRatio)
+    ) {
+      setAspect(aspectRatio);
+    }
+    const promptSuffix = params.prompt_suffix;
+    if (typeof params.prompt === 'string' && params.prompt.trim()) {
+      setPrompt(params.prompt);
+    } else if (typeof promptSuffix === 'string' && promptSuffix.trim()) {
+      setPrompt((current) => (current.trim() ? `${current}, ${promptSuffix}` : promptSuffix));
+    }
+  };
+
+  const {
+    mentionableSkills,
+    appliedSkillIds,
+    applySkill,
+    chips: appliedSkillChips,
+    unlockDialog,
+  } = useAppliedSkills({ operation, onApplyParams: applyParams });
+
   // Derived, not its own state: an independent `orientation` could disagree
   // with `aspect` the moment a preset/skill/style applies one directly, and
   // then the "adjust while rendering" fix for that disagreement would have to
@@ -535,6 +560,7 @@ export function ImageGenerationStudio({
       aspectRatio: aspect,
       referenceAssetIds: uploads.map((asset) => asset.id),
       extra: {},
+      skillIds: appliedSkillIds,
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
@@ -675,7 +701,15 @@ export function ImageGenerationStudio({
         }}
         onPolishAccept={setPrompt}
         closePolishSignal={polishCloseSignal}
+        skillMention={{
+          skills: mentionableSkills,
+          selectedIds: appliedSkillIds,
+          maxReached: appliedSkillIds.length >= MAX_APPLIED_SKILLS,
+          onSelect: applySkill,
+        }}
       />
+      {appliedSkillChips}
+      {unlockDialog}
 
       {isImageEdit ? <p className="text-xs text-muted">{t('referenceRequiredHint')}</p> : null}
 

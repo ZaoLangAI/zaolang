@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/icons';
 import type { Notification } from '@/lib/api/types';
 import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 
 /**
  * Shared rendering logic for a `Notification`: which group label it belongs
@@ -330,18 +331,24 @@ function creationIcon(item: Notification, payload: Record<string, unknown>): Ico
 export function targetHref(item: Notification): string | null {
   const payload = item.payload ?? {};
   if (item.target_type === 'generation_job' && item.target_id) {
-    // Image-creation jobs never had a standalone progress page to begin
-    // with (see `ImageGenerationStudio`); route back into the studio's
-    // inline flow instead of `/jobs/[jobId]` when we know which draft it
-    // belongs to. Other operations (video/audio/shortform) and image jobs
-    // without a draft (e.g. sandbox runs) fall back to the job page.
+    // Image- and video-creation jobs no longer have a standalone progress
+    // page to land on (see `ImageGenerationStudio`/`VideoGenerationStudio`);
+    // route back into the studio's inline flow instead of `/jobs/[jobId]`
+    // when we know which draft it belongs to. Audio/shortform and either
+    // media type's jobs without a draft (e.g. sandbox runs) fall back to
+    // the job page.
     const draftId = payload.draft_id;
-    if (isImageCreationOperation(payload.operation) && typeof draftId === 'string' && draftId) {
+    if (typeof draftId === 'string' && draftId) {
       // `draftId` lands in the studio; `jobId` is which attempt this
       // notification is about (a retry is a new job). Without it the
       // studio would resume `Draft.latest_job_id`, which used to stay
       // pointed at the first failed attempt.
-      return imageCreationStudioHref(draftId, item.target_id);
+      if (isImageCreationOperation(payload.operation)) {
+        return imageCreationStudioHref(draftId, item.target_id);
+      }
+      if (isVideoCreationOperation(payload.operation)) {
+        return videoCreationStudioHref(draftId, item.target_id);
+      }
     }
     return `/jobs/${item.target_id}`;
   }

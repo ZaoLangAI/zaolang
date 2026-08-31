@@ -4,18 +4,15 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
-import { UnlockDialog } from '@/components/marketplace/unlock-dialog';
 import { StyleGalleryDialog } from '@/components/studio/style-gallery-dialog';
+import { useAppliedSkills } from '@/components/studio/use-applied-skills';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
 import { IconClose, IconSparkle } from '@/components/ui/icons';
-import { useToast } from '@/components/ui/toast';
 import { Poster } from '@/components/media/poster';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
-import { ApiError } from '@/lib/api/errors';
 import type {
-  CreationSkillDetail,
   CreationSkillSummary,
   Operation,
   Page,
@@ -25,12 +22,7 @@ import type {
 import { styleGalleryLabel } from '@/lib/style-gallery';
 import { useResource } from '@/lib/use-resource';
 
-/** Params a caller's own form already has a control for; anything else rides along as `extra`. */
-export const KNOWN_PRESET_KEYS = new Set(['prompt', 'prompt_suffix', 'aspect_ratio']);
-
-// Distinct from the ordered set below (which is what actually travels to the
-// job): the picker itself resets after each pick so it's ready for the next one.
-const MAX_APPLIED_SKILLS = 5;
+export { KNOWN_PRESET_KEYS, MAX_APPLIED_SKILLS } from '@/components/studio/use-applied-skills';
 
 export interface StyleAndSkillPicker {
   /** The whole block — system style trigger/chip, style preset select, creation skill select+chips. Render it once, wherever the caller's params panel wants it. */
@@ -40,14 +32,15 @@ export interface StyleAndSkillPicker {
   appliedStyleGalleryId: string | null;
   /** The look the author already committed to, so `PromptPolish` adds detail inside that style instead of proposing a different one. */
   styleHint: string;
+  mentionableSkills: CreationSkillSummary[];
+  applySkill: (skill: CreationSkillSummary) => void;
 }
 
 /**
  * Style preset + creation skill + system style ("画风库") picking, factored
  * out of the old monolithic `GenerationStudio` so `ImageGenerationStudio` can
- * simply not use this hook at all (see `zaolang-frontend-ui` invariants) while
- * `VideoGenerationStudio` and `AudioGenerationStudio` keep the exact same
- * three controls and requests they had before the split.
+ * skip the style gallery / preset half (see `zaolang-frontend-ui` invariants)
+ * while still sharing `useAppliedSkills` for prompt `@` apply.
  *
  * Owns its own fetches and dropdown/dialog state; the caller only has to
  * merge whatever a pick applies (`onApplyParams`) into its own `prompt` /
@@ -70,7 +63,6 @@ export function useStyleAndSkillPicker({
   const t = useTranslations('remixPage');
   const tGallery = useTranslations('styleGallery');
   const tSkill = useTranslations('skillLibrary');
-  const { notify } = useToast();
   const locale = useLocale() as Locale;
   const { status: sessionStatus } = useSession();
 
@@ -85,16 +77,14 @@ export function useStyleAndSkillPicker({
     return [...byId.values()];
   }, [publicPresets.data, minePresets.data]);
 
-  const publicSkills = useResource<Page<CreationSkillSummary>>('/v1/skills/public');
-  const mineSkills = useResource<Page<CreationSkillSummary>>(
-    sessionStatus === 'authenticated' ? '/v1/skills' : null,
-  );
-  const skills = useMemo(() => {
-    const byId = new Map<string, CreationSkillSummary>();
-    for (const skill of publicSkills.data?.items ?? []) byId.set(skill.id, skill);
-    for (const skill of mineSkills.data?.items ?? []) byId.set(skill.id, skill);
-    return [...byId.values()];
-  }, [publicSkills.data, mineSkills.data]);
+  const {
+    skills,
+    mentionableSkills,
+    appliedSkillIds,
+    applySkill,
+    chips,
+    unlockDialog,
+  } = useAppliedSkills({ operation, onApplyParams });
 
   const [presetId, setPresetId] = useState('');
   const [skillPickerValue, setSkillPickerValue] = useState('');
@@ -102,8 +92,6 @@ export function useStyleAndSkillPicker({
   const [appliedStyleGalleryId, setAppliedStyleGalleryId] = useState<string | null>(
     initialStyleGalleryId ?? null,
   );
-  const [appliedSkillIds, setAppliedSkillIds] = useState<string[]>([]);
-  const [pendingUnlockSkill, setPendingUnlockSkill] = useState<CreationSkillSummary | null>(null);
 
   const applyPreset = (preset: StylePreset) => {
     onApplyParams(preset.params);
@@ -142,29 +130,6 @@ export function useStyleAndSkillPicker({
   const appliedStyle = useResource<StyleGalleryEntry>(
     appliedStyleGalleryId ? `/v1/style-gallery/${appliedStyleGalleryId}` : null,
   );
-
-  const applySkill = (skill: CreationSkillSummary) => {
-    if (appliedSkillIds.includes(skill.id) || appliedSkillIds.length >= MAX_APPLIED_SKILLS) return;
-    if (skill.access_credits > 0 && !skill.viewer_unlocked) {
-      setPendingUnlockSkill(skill);
-      return;
-    }
-    void applyUnlockedSkill(skill);
-  };
-
-  const applyUnlockedSkill = async (skill: CreationSkillSummary) => {
-    try {
-      const detail = await api.post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`);
-      onApplyParams(detail.params ?? {});
-      setAppliedSkillIds((current) => [...current, skill.id]);
-    } catch (caught) {
-      notify(caught instanceof ApiError ? caught.message : tSkill('applyLocked'), 'error');
-    }
-  };
-
-  const removeSkill = (skillId: string) => {
-    setAppliedSkillIds((current) => current.filter((id) => id !== skillId));
-  };
 
   const styleHint = [
     appliedStyle.data ? styleGalleryLabel(appliedStyle.data, locale) : '',
@@ -262,35 +227,7 @@ export function useStyleAndSkillPicker({
                 })),
             ]}
           />
-          {appliedSkillIds.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {appliedSkillIds.flatMap((id) => {
-                const skill = skills.find((item) => item.id === id);
-                if (!skill) return [];
-                return [
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => removeSkill(id)}
-                    className="flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/12 py-0.5 pl-0.5 pr-2 text-xs font-medium text-primary"
-                  >
-                    {/* A real preview, not just a label, so picking a skill shows
-                        what it actually does before the job even runs — and a
-                        video-based skill plays instead of a broken frame. */}
-                    <Poster
-                      src={skill.cover_url}
-                      alt=""
-                      aspect="square"
-                      mediaType={skill.cover_media_type}
-                      className="h-6 w-6 shrink-0 rounded"
-                    />
-                    {skill.title}
-                    <IconClose className="h-3 w-3" />
-                  </button>,
-                ];
-              })}
-            </div>
-          ) : null}
+          {chips}
         </div>
       ) : null}
 
@@ -300,24 +237,16 @@ export function useStyleAndSkillPicker({
         onSelect={applyStyleGalleryEntry}
       />
 
-      <UnlockDialog
-        open={pendingUnlockSkill !== null}
-        onClose={() => setPendingUnlockSkill(null)}
-        path={pendingUnlockSkill ? `/v1/skills/${pendingUnlockSkill.id}/unlock` : '/v1/skills'}
-        credits={pendingUnlockSkill?.access_credits ?? 0}
-        title={tSkill('unlock')}
-        confirm={tSkill('unlockConfirm', {
-          credits: pendingUnlockSkill?.access_credits ?? 0,
-          title: pendingUnlockSkill?.title ?? '',
-        })}
-        onUnlocked={() => {
-          const skill = pendingUnlockSkill;
-          setPendingUnlockSkill(null);
-          if (skill) void applyUnlockedSkill({ ...skill, viewer_unlocked: true });
-        }}
-      />
+      {unlockDialog}
     </>
   );
 
-  return { node, appliedSkillIds, appliedStyleGalleryId, styleHint };
+  return {
+    node,
+    appliedSkillIds,
+    appliedStyleGalleryId,
+    styleHint,
+    mentionableSkills,
+    applySkill,
+  };
 }

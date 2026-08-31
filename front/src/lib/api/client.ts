@@ -1,4 +1,5 @@
 import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
+import { randomUuid } from '@/lib/random-id';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -140,5 +141,5 @@ export const api = {
 
 /** Idempotency keys must be stable per user intent, not per retry. */
 export function newIdempotencyKey(): string {
-  return globalThis.crypto.randomUUID();
+  return randomUuid();
 }

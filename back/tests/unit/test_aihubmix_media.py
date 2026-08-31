@@ -1036,3 +1036,141 @@ def test_http_status_error_includes_status_and_redacted_body(
     assert "endpoint_not_found" in detail
     assert "test-key" not in detail
     assert "[redacted]" in detail
+
+
+# -- doubao-seedance-2-5-260628: auto-duration, generate_audio, inline poll --
+
+
+def test_seedance_25_accepts_the_auto_duration_sentinel(monkeypatch: pytest.MonkeyPatch) -> None:
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    result = provider.submit(
+        _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=-1, aspect_ratio="adaptive")
+    )
+
+    assert result.pending is True
+    assert payloads[0]["duration"] == -1
+    assert payloads[0]["resolution"] == "720p"
+
+
+def test_seedance_25_rejects_an_explicit_duration_outside_its_own_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not reach the network on a validation failure")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+
+    with pytest.raises(ValueError, match="duration must be between 4 and 30"):
+        provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=45))
+
+
+def test_seedance_25_forwards_generate_audio_when_the_caller_sets_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    provider.submit(
+        _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=6, extra={"generate_audio": False})
+    )
+
+    assert payloads[0]["generate_audio"] is False
+
+
+def test_seedance_25_omits_generate_audio_when_the_caller_does_not_set_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[dict] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        payloads.append(kwargs["json"])
+        return _FakeResponse(json_body={"id": "task-1"})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=6))
+
+    assert "generate_audio" not in payloads[0]
+
+
+def test_seedance_25_polls_ai_v1_videos_not_ai_v1_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Its schema documents `poll_path: /ai/v1/videos/{id}`, not the H3/
+    wan2.7-videoedit `/ai/v1/tasks/{id}` pair — see `NativeVideoModelProfile
+    .poll_style`."""
+    requested: list[str] = []
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        requested.append(url)
+        return _FakeResponse(json_body={"status": "in_progress"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    result = provider.poll("task-seedance-1", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert requested == ["/ai/v1/videos/task-seedance-1"]
+    assert result.pending is True
+
+
+def test_seedance_25_downloads_a_completed_inline_video_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video_bytes = b"seedance-mp4-bytes"
+    video_url = "https://ark-acg-cn-beijing.tos-cn-beijing.volces.com/seedance-output.mp4"
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        if url == "/ai/v1/videos/task-seedance-2":
+            return _FakeResponse(
+                json_body={
+                    "status": "completed",
+                    "output": [
+                        {"type": "message", "content": [{"type": "output_text", "text": video_url}]}
+                    ],
+                }
+            )
+        assert url == video_url
+        return _FakeResponse(content=video_bytes)
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    result = provider.poll(
+        "task-seedance-2", _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5)
+    )
+
+    assert result.succeeded is True
+    assert result.mime_type == "video/mp4"
+    assert result.duration_ms == 5_000
+    assert s3.get_object(result.object_key) == video_bytes
+
+
+def test_seedance_25_reports_a_failed_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={"status": "failed", "error": "content_flagged"})
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    result = provider.poll("task-seedance-3", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_TASK_FAILED"
+
+
+def test_seedance_25_cancel_is_unsupported(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not call cancel")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="doubao-seedance-2-5-260628")
+    assert provider.cancel("task-1") is False

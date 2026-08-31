@@ -258,11 +258,18 @@ def run_agent(
     parseable. Callers must choose a fallback that is safe by default — for the
     safety agent that means "needs human review", never "approve".
 
-    `max_tokens`/`temperature` override the generic sampling fallback for slots
+    `max_tokens` sets a *floor* over the generic sampling fallback for slots
     whose output genuinely differs in shape — a verdict and a rewritten scene
-    description do not want the same budget or the same creativity. They are a
-    code-level property of the slot, not an operator setting: `/admin/agents`
-    deliberately stopped asking for them (see `agent_skills.service`).
+    description do not want the same minimum budget or the same creativity.
+    It is a code-level property of the slot, not an operator setting:
+    `/admin/agents` deliberately stopped asking for them (see
+    `agent_skills.service`) — but a bound endpoint's own larger declared
+    `max_output_tokens` (`binding.max_tokens`, see `_binding_max_tokens`)
+    always wins over a smaller slot constant: a slot's own number only
+    matters when the endpoint hasn't declared a ceiling of its own (or
+    declared a smaller one), never as a ceiling shrinking a well-configured
+    model's real budget. `temperature` is a plain override, not a floor —
+    creativity has no "bigger is safer" direction to prefer.
 
     `system_prompt` is each agent module's own hardcoded constant. It is used
     verbatim only until an operator publishes an `AgentSkill` for this node;
@@ -287,7 +294,9 @@ def run_agent(
             {"role": "system", "content": resolved.text},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=max_tokens if max_tokens is not None else binding.max_tokens,
+        max_tokens=(
+            max(max_tokens, binding.max_tokens) if max_tokens is not None else binding.max_tokens
+        ),
         temperature=temperature if temperature is not None else binding.temperature,
         expect_json=True,
         reasoning_model=binding.reasoning_model,
@@ -370,10 +379,12 @@ def run_agent_stream(
     served it settled. `finalize()` writes the `AgentRun` (same invariant as
     `run_agent`) and returns the accumulated text plus its bookkeeping.
 
-    `max_tokens`/`temperature` override the profile/model-declared sampling
-    the same way `run_agent` does. The serving endpoint still caps (and, for
-    a reasoning model, lifts) that request against its own
-    `max_output_tokens` / `context_length`. `finalize(persist_session)`
+    `max_tokens`/`temperature` set a floor over the profile/model-declared
+    sampling the same way `run_agent` does — a bound endpoint's own larger
+    declared `max_output_tokens` (`binding.max_tokens`) always wins over a
+    smaller slot constant, never the other way around. The serving endpoint
+    still caps (and, for a reasoning model, lifts) that request against its
+    own `max_output_tokens` / `context_length`. `finalize(persist_session)`
     writes the `AgentRun` on that session when given, so the resolve session
     can close before the LLM stream starts.
 
@@ -420,7 +431,9 @@ def run_agent_stream(
         model=binding.model or "",
         messages=messages,
         result=result,
-        max_tokens=max_tokens if max_tokens is not None else binding.max_tokens,
+        max_tokens=(
+            max(max_tokens, binding.max_tokens) if max_tokens is not None else binding.max_tokens
+        ),
         temperature=temperature if temperature is not None else binding.temperature,
         reasoning_model=binding.reasoning_model,
         preferred_endpoint_ids=binding.preferred_endpoint_ids,

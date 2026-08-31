@@ -21,6 +21,7 @@ from qcloud_cos import CosConfig, CosS3Client, CosServiceError
 from app.config import get_settings
 from app.domain.errors import NotFound
 from app.storage.base import StorageBackend
+from app.storage.cors import merge_cors_origins, origins_from_cors_config
 
 logger = logging.getLogger(__name__)
 
@@ -82,25 +83,33 @@ class TencentCosBackend(StorageBackend):
             client.head_bucket(Bucket=bucket)
         except CosServiceError:
             client.create_bucket(Bucket=bucket)
-        origins = [origin for origin in settings.cors_origins if origin]
-        if origins:
+        configured = [origin for origin in settings.cors_origins if origin]
+        if not configured:
+            return
+        try:
             try:
-                client.put_bucket_cors(
-                    Bucket=bucket,
-                    CORSConfiguration={
-                        "CORSRule": [
-                            {
-                                "AllowedOrigin": origins,
-                                "AllowedMethod": ["GET", "PUT", "HEAD"],
-                                "AllowedHeader": ["*"],
-                                "ExposeHeader": ["ETag", "Content-Length"],
-                                "MaxAgeSeconds": 3600,
-                            }
-                        ]
-                    },
-                )
+                existing = origins_from_cors_config(client.get_bucket_cors(Bucket=bucket))
             except CosServiceError:
-                logger.warning("could not apply COS CORS rules to %s", bucket)
+                existing = []
+            origins = merge_cors_origins(existing, configured)
+            if origins == existing:
+                return
+            client.put_bucket_cors(
+                Bucket=bucket,
+                CORSConfiguration={
+                    "CORSRule": [
+                        {
+                            "AllowedOrigin": origins,
+                            "AllowedMethod": ["GET", "PUT", "HEAD"],
+                            "AllowedHeader": ["*"],
+                            "ExposeHeader": ["ETag", "Content-Length"],
+                            "MaxAgeSeconds": 3600,
+                        }
+                    ]
+                },
+            )
+        except CosServiceError:
+            logger.warning("could not apply COS CORS rules to %s", bucket)
 
     def head_bucket(self) -> None:
         _get_client().head_bucket(Bucket=get_settings().cos_bucket)

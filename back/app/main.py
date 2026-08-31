@@ -7,6 +7,7 @@ mounted alongside it rather than the API being generated from them.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -44,6 +45,7 @@ from app.observability.logging import configure_logging
 from app.observability.tracing import configure_tracing
 
 API_PREFIX = "/v1"
+logger = logging.getLogger(__name__)
 
 
 def build_router() -> APIRouter:
@@ -78,6 +80,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     configure_tracing(app)
+    # Production never runs seed, and a local seed against a shared COS bucket
+    # used to replace the whole CORS list. Merge this process's origins in on
+    # every boot; a storage blip must not take the API down with it.
+    try:
+        from app.storage import s3
+
+        s3.ensure_bucket()
+    except Exception:
+        logger.warning(
+            "could not ensure object-store bucket/CORS on startup",
+            exc_info=True,
+        )
     yield
 
 

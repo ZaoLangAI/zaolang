@@ -53,6 +53,7 @@ export function CreateStudio({
   initialReferenceSceneIds,
   linkEpisodeId,
   linkBreakpointKey,
+  continuitySourceAssetId,
 }: {
   operation: 'text_to_image' | 'text_to_video' | 'audio_generation';
   initialPrompt?: string;
@@ -73,6 +74,9 @@ export function CreateStudio({
   initialReferenceSceneIds?: string[];
   linkEpisodeId?: string;
   linkBreakpointKey?: string;
+  /** The previous script breakpoint's already-generated video, if any — see
+   * `VideoGenerationStudio`'s own doc comment. */
+  continuitySourceAssetId?: string;
 }) {
   if (operation === 'audio_generation') {
     return <AudioGenerationStudio initialPrompt={initialPrompt} reference={reference} />;
@@ -101,6 +105,7 @@ export function CreateStudio({
       initialPrompt={initialPrompt}
       reference={reference}
       initialDraft={initialDraft}
+      initialJobId={initialJobId}
       initialStyleParams={style?.params}
       initialStyleGalleryId={style?.id}
       initialVideoAssetKind={initialVideoAssetKind}
@@ -110,6 +115,7 @@ export function CreateStudio({
       initialReferenceSceneIds={initialReferenceSceneIds}
       linkEpisodeId={linkEpisodeId}
       linkBreakpointKey={linkBreakpointKey}
+      continuitySourceAssetId={continuitySourceAssetId}
     />
   );
 }

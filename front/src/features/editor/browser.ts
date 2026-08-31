@@ -1,3 +1,5 @@
+import { randomUuid } from '@/lib/random-id';
+
 export function isDesktopChromeOrEdge(): boolean {
   const ua = navigator.userAgent;
   if (/Mobile|Android|iPhone|iPad/i.test(ua)) return false;
@@ -8,7 +10,7 @@ export function browserInstanceId(): string {
   const key = 'zl_editor_browser';
   const existing = sessionStorage.getItem(key);
   if (existing) return existing;
-  const created = crypto.randomUUID();
+  const created = randomUuid();
   sessionStorage.setItem(key, created);
   return created;
 }

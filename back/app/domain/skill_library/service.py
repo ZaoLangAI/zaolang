@@ -11,9 +11,12 @@ item is what calls `approve()`/`reject()` here — see
 
 from __future__ import annotations
 
+import hashlib
+import io
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,17 +24,22 @@ from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
+from app.domain.skill_library import catalog as skill_catalog
 from app.models import Asset, CreationSkill, ModerationQueueItem
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
+    AssetRole,
     CreationSkillCategory,
     CreationSkillStatus,
     CreationSkillVisibility,
+    MediaType,
     ModerationStage,
     ModerationStatus,
     Operation,
+    Visibility,
 )
+from app.storage import s3
 
 ContentType = Literal["template", "image_asset"]
 
@@ -77,6 +85,101 @@ def create(
     session.add(skill)
     session.flush()
     return skill
+
+
+def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[CreationSkill]:
+    """Plants `catalog.CATALOG`'s platform-curated short-drama templates.
+
+    This is a system-default catalogue, analogous to
+    `workflow_templates_service.ensure_default_templates` or
+    `agent_skills_service.ensure_default_profiles` — not a user submission —
+    so it skips `create()`'s owner-drafts-then-`publish()` flow entirely and
+    writes straight to `PUBLISHED`/`PUBLIC`. It never opens a
+    `moderation_queue_items` row and leaves `reviewed_by_user_id`/
+    `reviewed_at` as `None` by design: there is no human review to record for
+    a row nothing ever submitted for review.
+
+    Idempotent and additive, matched by `(owner_user_id, title)` since
+    `CreationSkill` has no dedicated catalogue-key column: a title already
+    present for this owner is left untouched, so an operator's own edit to a
+    previously-seeded row survives a later re-run. The one exception is
+    `cover_asset_id`: a row (new or pre-existing) that still has none gets one
+    backfilled from `catalog.py`'s shipped cover, but a row that already
+    carries one — whether from an earlier run of this same backfill or an
+    operator's own re-cover — is never touched (see `_ensure_seeded_cover`).
+    """
+    existing = {
+        row.title: row
+        for row in session.scalars(
+            select(CreationSkill).where(CreationSkill.owner_user_id == owner_user_id)
+        )
+    }
+    created: list[CreationSkill] = []
+    for item in skill_catalog.CATALOG:
+        skill = existing.get(item.title)
+        if skill is None:
+            skill = CreationSkill(
+                owner_user_id=owner_user_id,
+                title=item.title,
+                description=item.description,
+                category=item.category,
+                params_json=item.params_json(),
+                applicable_operations_json=_deduped_operations(list(item.applicable_operations)),
+                cover_asset_id=None,
+                visibility=CreationSkillVisibility.PUBLIC,
+                status=CreationSkillStatus.PUBLISHED,
+                access_credits=0,
+            )
+            session.add(skill)
+            session.flush()
+            created.append(skill)
+        _ensure_seeded_cover(session, skill=skill, item=item, owner_user_id=owner_user_id)
+    return created
+
+
+def _ensure_seeded_cover(
+    session: Session, *, skill: CreationSkill, item: skill_catalog.CatalogSkill, owner_user_id: str
+) -> None:
+    """Backfills a catalogue skill's cover from its shipped `seed_covers/`
+    JPEG, the same "system-default, not a stand-in for real content" content
+    class as the skill rows themselves (see `ensure_catalog_skills`'s
+    docstring).
+
+    A no-op once `cover_asset_id` is set, from any source — this never
+    replaces a cover, so an operator swapping one out in the admin console
+    survives every later `make seed`.
+    """
+    if skill.cover_asset_id is not None:
+        return
+    cover_path = item.cover_path()
+    if cover_path is None:
+        return
+
+    payload = cover_path.read_bytes()
+    with Image.open(io.BytesIO(payload)) as image:
+        width, height = image.size
+
+    object_key = f"seed/skill-library/{item.key}.jpg"
+    s3.put_object(object_key, payload, content_type="image/jpeg")
+
+    asset = Asset(
+        owner_user_id=owner_user_id,
+        object_key=object_key,
+        media_type=MediaType.IMAGE,
+        mime_type="image/jpeg",
+        size_bytes=len(payload),
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
+        role=AssetRole.COVER,
+        width=width,
+        height=height,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PUBLIC_VIEW_ONLY,
+        is_prototype=False,
+    )
+    session.add(asset)
+    session.flush()
+    skill.cover_asset_id = asset.id
+    session.flush()
 
 
 def update(

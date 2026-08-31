@@ -11,7 +11,15 @@ import { Select, TextInput } from '@/components/ui/field';
 import { IconFlask, IconPencil, IconRefresh, IconTrash } from '@/components/ui/icons';
 import { Badge, EmptyState, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
-import { dollarsToMicroUsd, microUsdToDollars } from '@/lib/admin/micro-usd';
+import {
+  DEFAULT_CNY_PER_USD,
+  type PriceInputCurrency,
+  convertDisplayPrice,
+  displayToMicroUsd,
+  dollarsToMicroUsd,
+  microUsdToDollars,
+  parseCnyPerUsd,
+} from '@/lib/admin/micro-usd';
 import { formatTokenCount, parseTokenCount } from '@/lib/admin/token-count';
 import { cn } from '@/lib/cn';
 import {
@@ -41,15 +49,25 @@ import type {
   LlmProviderPool,
   LlmProviderValidationJob,
   LlmProviderValidationResult,
+  ModelCatalogResponse,
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
 
+/** `"custom"` means "type everything by hand" — today's behaviour,
+ * unchanged. Any other value narrows the model field to that vendor's known
+ * catalogue (see `ModelCatalogResponse`), purely as a form-filling
+ * convenience: nothing here is sent to the API or enforced at save time.
+ * Mirrors backend `model_catalog.VendorId`; hand-kept in sync like every
+ * other enum this file already mirrors (e.g. `MediaProtocol`). */
+type VendorChoice = 'custom' | 'aihubmix' | 'dmxapi';
+const CUSTOM_VENDOR: VendorChoice = 'custom';
+
 /**
- * Prices are held as the dollar strings the operator typed, not as numbers.
- * Parsing on every keystroke would fight the caret: `"0."` is not yet a
- * number, and `microUsdToDollars(dollarsToMicroUsd("0."))` is `""`, which
- * would erase the decimal point as it was typed. Conversion happens once, on
- * save.
+ * Prices are held as the decimal strings the operator typed in the current
+ * display currency (USD or CNY), not as numbers. Parsing on every keystroke
+ * would fight the caret: `"0."` is not yet a number, and formatting a parsed
+ * zero yields `""`, which would erase the decimal point as it was typed.
+ * Conversion to micro-USD happens once, on save.
  */
 interface EndpointFormState {
   id: string;
@@ -57,6 +75,10 @@ interface EndpointFormState {
   base_url: string;
   api_key: string;
   kind: LlmProviderKind;
+  // Which known-model catalogue to offer for the model field below —
+  // `"custom"` means free text, exactly like every endpoint before this
+  // picker existed. Never sent to the API.
+  vendor: VendorChoice;
   // The one model id this endpoint serves, whatever its kind.
   model: string;
   input_modalities: MediaInputModality[];
@@ -83,8 +105,20 @@ interface EndpointFormState {
 }
 
 /** Mirrors `VIDEO_RESOLUTIONS` in `app/platform_config/schemas.py`; the API
- * rejects any other key, so the form offers exactly these. */
-const VIDEO_RESOLUTIONS = ['2K', '768P'] as const;
+ * rejects any other key, so the form offers exactly these. Casing is exactly
+ * what each vendor's own API expects (never normalised) — DMXAPI's doubao
+ * models answer lowercase, its `wan3.0-video` answers uppercase, MiniMax
+ * stays `768P`/`2K`. */
+const VIDEO_RESOLUTIONS = [
+  '2K',
+  '768P',
+  '480p',
+  '720p',
+  '1080p',
+  '480P',
+  '720P',
+  '1080P',
+] as const;
 
 function emptyResolutionPrices(): Record<string, string> {
   return Object.fromEntries(VIDEO_RESOLUTIONS.map((resolution) => [resolution, '']));
@@ -170,6 +204,7 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     base_url: '',
     api_key: '',
     kind,
+    vendor: CUSTOM_VENDOR,
     model: '',
     input_modalities: kind === 'general' ? ['text'] : [],
     output_modalities: [],
@@ -202,6 +237,10 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     base_url: endpoint.base_url,
     api_key: '',
     kind: endpoint.kind,
+    // Editing an existing endpoint always starts on "custom": its real,
+    // already-saved values are shown as-is. The operator can still switch
+    // to a vendor afterwards to re-apply a preset over them.
+    vendor: CUSTOM_VENDOR,
     model: endpoint.model ?? '',
     input_modalities: (endpoint.input_modalities ?? []) as MediaInputModality[],
     output_modalities: (endpoint.output_modalities ?? []) as MediaOutputModality[],
@@ -240,10 +279,14 @@ function priceFields(form: EndpointFormState): string[] {
       ];
 }
 
-function resolutionPricePayload(prices: Record<string, string>): Record<string, number> {
+function resolutionPricePayload(
+  prices: Record<string, string>,
+  currency: PriceInputCurrency,
+  rateMicro: number,
+): Record<string, number> {
   const payload: Record<string, number> = {};
   for (const resolution of VIDEO_RESOLUTIONS) {
-    const micros = dollarsToMicroUsd(prices[resolution] ?? '');
+    const micros = displayToMicroUsd(prices[resolution] ?? '', currency, rateMicro);
     // Only priced resolutions are sent; a zero would claim the vendor charges
     // nothing for a resolution the operator simply has not filled in.
     if (micros) payload[resolution] = micros;
@@ -251,11 +294,50 @@ function resolutionPricePayload(prices: Record<string, string>): Record<string, 
   return payload;
 }
 
+/** Rewrites every price field when the operator toggles USD ↔ CNY. Invalid
+ * or mid-keystroke strings stay put (`convertDisplayPrice`). */
+function convertFormPrices(
+  form: EndpointFormState,
+  from: PriceInputCurrency,
+  to: PriceInputCurrency,
+  rateMicro: number,
+): Pick<
+  EndpointFormState,
+  | 'input_per_million'
+  | 'output_per_million'
+  | 'image_input'
+  | 'image_generation'
+  | 'audio_per_10k'
+  | 'video_generation'
+  | 'video_input_material'
+  | 'video_extra_reference'
+> {
+  const convert = (value: string) => convertDisplayPrice(value, from, to, rateMicro);
+  const convertResolutions = (prices: Record<string, string>) =>
+    Object.fromEntries(
+      VIDEO_RESOLUTIONS.map((resolution) => [resolution, convert(prices[resolution] ?? '')]),
+    );
+  return {
+    input_per_million: convert(form.input_per_million),
+    output_per_million: convert(form.output_per_million),
+    image_input: convert(form.image_input),
+    image_generation: convert(form.image_generation),
+    audio_per_10k: convert(form.audio_per_10k),
+    video_generation: convertResolutions(form.video_generation),
+    video_input_material: convertResolutions(form.video_input_material),
+    video_extra_reference: convert(form.video_extra_reference),
+  };
+}
+
 /** Shared shape for `PUT /admin/llm-providers/{id}`, used both by the full
  * editor save and by the list row's quick enable/disable toggle so the two
  * never drift on what a "no-op except one field" write looks like. */
-function buildUpsertPayload(form: EndpointFormState) {
-  const micros = (value: string) => dollarsToMicroUsd(value) ?? 0;
+function buildUpsertPayload(
+  form: EndpointFormState,
+  currency: PriceInputCurrency = 'USD',
+  rateMicro = 1,
+) {
+  const micros = (value: string) => displayToMicroUsd(value, currency, rateMicro) ?? 0;
   return {
     name: form.name,
     base_url: form.base_url,
@@ -294,9 +376,15 @@ function buildUpsertPayload(form: EndpointFormState) {
             },
             audio: { per_10k_characters_micro_usd: micros(form.audio_per_10k) },
             video: {
-              generation_per_second_micro_usd: resolutionPricePayload(form.video_generation),
+              generation_per_second_micro_usd: resolutionPricePayload(
+                form.video_generation,
+                currency,
+                rateMicro,
+              ),
               input_material_per_second_micro_usd: resolutionPricePayload(
                 form.video_input_material,
+                currency,
+                rateMicro,
               ),
               reference_image_free_count: Number(form.video_reference_free_count || 0),
               extra_reference_image_micro_usd: micros(form.video_extra_reference),
@@ -317,7 +405,13 @@ function buildUpsertPayload(form: EndpointFormState) {
  * gateway's bounded retry/breaker safeguards are code defaults, not another
  * global configuration panel.
  */
-export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
+export function LlmProvidersPanel({
+  initial,
+  catalog,
+}: {
+  initial: LlmProviderPool;
+  catalog: ModelCatalogResponse;
+}) {
   const t = useTranslations('adminProviders');
   const tAdmin = useTranslations('admin');
   const tConfig = useTranslations('adminConfig');
@@ -342,6 +436,11 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
   }));
 
   const [editing, setEditing] = useState<EndpointFormState | null>(null);
+  // Display currency for the price fields only — never sent to the API.
+  // Opening the editor always starts in USD so stored micro-USD round-trips
+  // exactly; CNY is an input convenience that converts on toggle and save.
+  const [priceCurrency, setPriceCurrency] = useState<PriceInputCurrency>('USD');
+  const [cnyPerUsd, setCnyPerUsd] = useState(DEFAULT_CNY_PER_USD);
   const [removing, setRemoving] = useState<LlmProviderEndpoint | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -395,12 +494,37 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
     }
   };
 
+  const resetPriceInput = () => {
+    setPriceCurrency('USD');
+    setCnyPerUsd(DEFAULT_CNY_PER_USD);
+  };
+
+  const closeEditor = () => {
+    setEditing(null);
+    setError(null);
+    resetPriceInput();
+  };
+
   const openCreate = () => {
+    resetPriceInput();
     setEditing(emptyForm(generateModelId(knownIds), 'general', hasPrimaryOfKind('general')));
   };
 
   const openEdit = (endpoint: LlmProviderEndpoint) => {
+    resetPriceInput();
     setEditing(formFrom(endpoint));
+  };
+
+  const changePriceCurrency = (next: PriceInputCurrency) => {
+    if (!editing || next === priceCurrency) return;
+    const rateMicro = parseCnyPerUsd(cnyPerUsd);
+    if (rateMicro === null) {
+      setError(t('fxRateInvalid'));
+      return;
+    }
+    setError(null);
+    setEditing({ ...editing, ...convertFormPrices(editing, priceCurrency, next, rateMicro) });
+    setPriceCurrency(next);
   };
 
   const save = async () => {
@@ -423,8 +547,19 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
       }
       // A price that does not parse is rejected here rather than coerced to
       // zero, which would silently register the model as free and drag the
-      // router's cost context toward it.
-      if (priceFields(editing).some((value) => dollarsToMicroUsd(value) === null)) {
+      // router's cost context toward it. CNY also needs a positive rate —
+      // we never fall back to 7.2 on a typo.
+      const rateMicro = priceCurrency === 'CNY' ? parseCnyPerUsd(cnyPerUsd) : 1;
+      if (priceCurrency === 'CNY' && rateMicro === null) {
+        setError(t('fxRateInvalid'));
+        setBusy(false);
+        return;
+      }
+      if (
+        priceFields(editing).some(
+          (value) => displayToMicroUsd(value, priceCurrency, rateMicro ?? 1) === null,
+        )
+      ) {
         setError(t('pricingInvalid'));
         setBusy(false);
         return;
@@ -441,7 +576,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
       }
       const updated = await adminApi.put<LlmProviderPool>(
         `/v1/admin/llm-providers/${editing.id}`,
-        buildUpsertPayload(editing),
+        buildUpsertPayload(editing, priceCurrency, rateMicro ?? 1),
       );
       setPool(updated);
       const demoted = updated.demoted_endpoint_ids ?? [];
@@ -449,7 +584,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
         notify(t('demotedNotice', { count: demoted.length }), 'info');
       }
       notify(t('modelSaved'), 'success');
-      setEditing(null);
+      closeEditor();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : tAdmin('loadFailed'));
     } finally {
@@ -607,7 +742,7 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
 
       <Dialog
         open={editing !== null}
-        onClose={() => setEditing(null)}
+        onClose={closeEditor}
         size="lg"
         title={editing?.id && knownIds.has(editing.id) ? t('editModel') : t('addModel')}
         footer={
@@ -661,11 +796,21 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
                   return {
                     ...current,
                     kind,
+                    // The known-model catalogue is kind-scoped (a "media"
+                    // preset makes no sense once the kind flips to
+                    // "general", and vice versa) — back to free text.
+                    vendor: CUSTOM_VENDOR,
                     protocol: kind === 'media' ? current.protocol || 'openai' : current.protocol,
                     role: hasPrimaryOfKind(kind) ? current.role : 'primary',
                   };
                 })
               }
+            />
+
+            <VendorModelPicker
+              catalog={catalog}
+              editing={editing}
+              onChange={(patch) => setEditing((current) => current && { ...current, ...patch })}
             />
 
             <TextInput
@@ -782,7 +927,11 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
 
             <PricingFields
               form={editing}
+              currency={priceCurrency}
+              cnyPerUsd={cnyPerUsd}
               onChange={(patch) => setEditing((current) => current && { ...current, ...patch })}
+              onCurrencyChange={changePriceCurrency}
+              onRateChange={setCnyPerUsd}
             />
 
             {error ? <ErrorNotice title={error} /> : null}
@@ -832,23 +981,153 @@ export function LlmProvidersPanel({ initial }: { initial: LlmProviderPool }) {
  * has no per-second video rate to fill in, and offering the field invites a
  * price that the server would drop on save anyway.
  *
- * Everything is entered in dollars per the vendor's own quoted unit — per
- * million tokens, per image, per 10K characters, per second of video — and
- * converted to micro-USD on save.
+ * Everything is entered per the vendor's own quoted unit — per million
+ * tokens, per image, per 10K characters, per second of video — in the
+ * display currency the operator selected, and converted to micro-USD on
+ * save. CNY uses the form-local rate, never a stored config value.
  */
-function PricingFields({
-  form,
+/**
+ * "Service provider -> known model" picker: purely a preset-filling
+ * convenience layered on top of the always-editable free-text fields below
+ * it. Picking a vendor other than "custom" narrows the model dropdown to
+ * that vendor's catalogue (`app.providers.model_catalog`); picking a known
+ * model there copies its real base URL / protocol / modalities onto the
+ * form, which the operator can still hand-edit afterwards — nothing here
+ * is sent to the API or enforced at save time (see `ModelCatalogEntryView`
+ * on the backend).
+ */
+function VendorModelPicker({
+  catalog,
+  editing,
   onChange,
 }: {
-  form: EndpointFormState;
+  catalog: ModelCatalogResponse;
+  editing: EndpointFormState;
   onChange: (patch: Partial<EndpointFormState>) => void;
 }) {
   const t = useTranslations('adminProviders');
+  const vendors = catalog.vendors ?? [];
+  const activeVendor = vendors.find((item) => item.vendor === editing.vendor);
+  const knownModels = (activeVendor?.models ?? []).filter((entry) => entry.kind === editing.kind);
+  const selectedEntry = knownModels.find((entry) => entry.model === editing.model);
+
+  const applyVendor = (vendor: VendorChoice) => {
+    const next = vendors.find((item) => item.vendor === vendor);
+    onChange({
+      vendor,
+      base_url: !editing.base_url.trim() && next ? next.base_url : editing.base_url,
+    });
+  };
+
+  const applyModel = (modelId: string) => {
+    const entry = knownModels.find((item) => item.model === modelId);
+    if (!entry) return;
+    if (editing.kind === 'media') {
+      onChange({
+        model: entry.model,
+        base_url: activeVendor?.base_url ?? editing.base_url,
+        protocol: (entry.protocol as MediaProtocol | null) ?? editing.protocol,
+        input_modalities: entry.input_modalities as MediaInputModality[],
+        output_modalities: entry.output_modalities as MediaOutputModality[],
+      });
+      return;
+    }
+    onChange({
+      model: entry.model,
+      base_url: activeVendor?.base_url ?? editing.base_url,
+      context_length: entry.context_length ? formatTokenCount(entry.context_length) : editing.context_length,
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+      <Select
+        layout="inline"
+        label={t('serviceProvider')}
+        hint={t('serviceProviderHint')}
+        value={editing.vendor}
+        options={[
+          { value: CUSTOM_VENDOR, label: t('serviceProviderCustom') },
+          ...vendors.map((item) => ({ value: item.vendor, label: item.label })),
+        ]}
+        onChange={(event) => applyVendor(event.target.value as VendorChoice)}
+      />
+      {editing.vendor !== CUSTOM_VENDOR ? (
+        knownModels.length > 0 ? (
+          <>
+            <Select
+              layout="inline"
+              label={t('knownModel')}
+              hint={t('knownModelHint')}
+              value={selectedEntry ? selectedEntry.model : ''}
+              options={[
+                { value: '', label: t('knownModelCustomOption') },
+                ...knownModels.map((entry) => ({ value: entry.model, label: entry.display_name })),
+              ]}
+              onChange={(event) => applyModel(event.target.value)}
+            />
+            {selectedEntry?.notes ? (
+              <p className="text-xs leading-relaxed text-muted">{selectedEntry.notes}</p>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-xs text-muted">{t('knownModelEmpty')}</p>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function PricingFields({
+  form,
+  currency,
+  cnyPerUsd,
+  onChange,
+  onCurrencyChange,
+  onRateChange,
+}: {
+  form: EndpointFormState;
+  currency: PriceInputCurrency;
+  cnyPerUsd: string;
+  onChange: (patch: Partial<EndpointFormState>) => void;
+  onCurrencyChange: (currency: PriceInputCurrency) => void;
+  onRateChange: (value: string) => void;
+}) {
+  const t = useTranslations('adminProviders');
   const outputs = new Set(form.output_modalities);
+  const currencyLabel = currency === 'USD' ? t('pricingCurrencyUsd') : t('pricingCurrencyCny');
+  const rateInvalid = currency === 'CNY' && parseCnyPerUsd(cnyPerUsd) === null;
+
+  const currencyControls = (
+    <>
+      <Select
+        layout="inline"
+        label={t('pricingCurrency')}
+        value={currency}
+        options={[
+          { value: 'USD', label: t('pricingCurrencyUsd') },
+          { value: 'CNY', label: t('pricingCurrencyCny') },
+        ]}
+        onChange={(event) => onCurrencyChange(event.target.value as PriceInputCurrency)}
+      />
+      {currency === 'CNY' ? (
+        <TextInput
+          layout="inline"
+          label={t('pricingFxRate')}
+          hint={rateInvalid ? t('fxRateInvalid') : t('pricingFxRateHint')}
+          inputMode="decimal"
+          placeholder={DEFAULT_CNY_PER_USD}
+          value={cnyPerUsd}
+          onChange={(event) => onRateChange(event.target.value)}
+        />
+      ) : null}
+    </>
+  );
 
   if (form.kind === 'general') {
     return (
       <PricingSection title={t('pricingGeneralTitle')} hint={t('pricingGeneralHint')}>
+        {currencyControls}
         <TokenCountInput
           label={t('contextLength')}
           hint={t('contextLengthHint')}
@@ -863,13 +1142,13 @@ function PricingFields({
         />
         <PriceInput
           label={t('priceInputTokens')}
-          hint={t('pricePerMillionHint')}
+          hint={t('pricePerMillionHint', { currency: currencyLabel })}
           value={form.input_per_million}
           onChange={(value) => onChange({ input_per_million: value })}
         />
         <PriceInput
           label={t('priceOutputTokens')}
-          hint={t('pricePerMillionHint')}
+          hint={t('pricePerMillionHint', { currency: currencyLabel })}
           value={form.output_per_million}
           onChange={(value) => onChange({ output_per_million: value })}
         />
@@ -880,24 +1159,27 @@ function PricingFields({
   if (outputs.size === 0) {
     return (
       <PricingSection title={t('pricingMediaTitle')} hint={t('pricingNeedsModalities')}>
-        {null}
+        {currencyControls}
       </PricingSection>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+        {currencyControls}
+      </div>
       {outputs.has('image') ? (
         <PricingSection title={t('pricingImageTitle')} hint={t('pricingImageHint')}>
           <PriceInput
             label={t('priceImageInput')}
-            hint={t('pricePerImageHint')}
+            hint={t('pricePerImageHint', { currency: currencyLabel })}
             value={form.image_input}
             onChange={(value) => onChange({ image_input: value })}
           />
           <PriceInput
             label={t('priceImageGeneration')}
-            hint={t('pricePerImageHint')}
+            hint={t('pricePerImageHint', { currency: currencyLabel })}
             value={form.image_generation}
             onChange={(value) => onChange({ image_generation: value })}
           />
@@ -908,7 +1190,7 @@ function PricingFields({
         <PricingSection title={t('pricingAudioTitle')} hint={t('pricingAudioHint')}>
           <PriceInput
             label={t('priceAudio')}
-            hint={t('pricePer10kCharactersHint')}
+            hint={t('pricePer10kCharactersHint', { currency: currencyLabel })}
             value={form.audio_per_10k}
             onChange={(value) => onChange({ audio_per_10k: value })}
           />
@@ -921,7 +1203,7 @@ function PricingFields({
             <PriceInput
               key={`gen-${resolution}`}
               label={t('priceVideoGeneration', { resolution })}
-              hint={t('pricePerSecondHint')}
+              hint={t('pricePerSecondHint', { currency: currencyLabel })}
               value={form.video_generation[resolution] ?? ''}
               onChange={(value) =>
                 onChange({ video_generation: { ...form.video_generation, [resolution]: value } })
@@ -932,7 +1214,7 @@ function PricingFields({
             <PriceInput
               key={`input-${resolution}`}
               label={t('priceVideoInputMaterial', { resolution })}
-              hint={t('pricePerSecondHint')}
+              hint={t('pricePerSecondHint', { currency: currencyLabel })}
               value={form.video_input_material[resolution] ?? ''}
               onChange={(value) =>
                 onChange({
@@ -953,7 +1235,7 @@ function PricingFields({
           />
           <PriceInput
             label={t('priceVideoExtraReferenceImage')}
-            hint={t('pricePerImageHint')}
+            hint={t('pricePerImageHint', { currency: currencyLabel })}
             value={form.video_extra_reference}
             onChange={(value) => onChange({ video_extra_reference: value })}
           />
@@ -983,9 +1265,9 @@ function PricingSection({
   );
 }
 
-/** A dollar amount. Free text rather than `type="number"`, because a spinner
- * on a six-decimal price is useless and browsers localise the decimal
- * separator on numeric inputs. */
+/** A unit price in the current display currency. Free text rather than
+ * `type="number"`, because a spinner on a six-decimal price is useless and
+ * browsers localise the decimal separator on numeric inputs. */
 function PriceInput({
   label,
   hint,
@@ -998,6 +1280,9 @@ function PriceInput({
   onChange: (value: string) => void;
 }) {
   const t = useTranslations('adminProviders');
+  // Format only — a valid yuan string must not flip to "price invalid" just
+  // because the rate field above it is empty. Rate errors live on the rate
+  // control and on save.
   const invalid = value.trim() !== '' && dollarsToMicroUsd(value) === null;
   return (
     <TextInput

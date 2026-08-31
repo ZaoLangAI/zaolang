@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import io
+import shutil
+import subprocess
 
 import pytest
 from PIL import Image
@@ -527,6 +529,121 @@ def test_provider_references_keep_a_licensed_source_after_visibility_changes(
         source_work_version_id=version.id,
     )
     assert [item.object_key for item in refs] == [clip.object_key]
+
+
+def _mp4(*, duration_seconds: float = 1.0, colour: str = "red") -> bytes:
+    """A tiny synthetic clip via `ffmpeg`'s own `lavfi` colour source — no
+    fixture file to keep in the repo, and it lets a test assert on the
+    actual decoded pixel colour of an extracted frame."""
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={colour}:s=32x32:d={duration_seconds}",
+            "-frames:v",
+            str(max(1, int(duration_seconds * 24))),
+            "-f",
+            "mp4",
+            "-movflags",
+            "frag_keyframe+empty_moov",
+            "pipe:1",
+        ],
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+    return proc.stdout
+
+
+def _video_asset(session: Session, owner: User, payload: bytes, *, duration_ms: int) -> Asset:
+    key = f"test/{new_id('obj')}.mp4"
+    s3.put_object(key, payload, content_type="video/mp4")
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=key,
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=len(payload),
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
+        duration_ms=duration_ms,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_extract_video_frame_grabs_first_and_last_frames(db: Session, author: User) -> None:
+    """The script studio's "衔接上一镜头" continuity feature hinges on this:
+    the previous breakpoint's last frame becomes the next one's first-frame
+    reference. Uses two visibly different colours so a regression that
+    always returns the same frame (e.g. `position` silently ignored) fails
+    loudly rather than just "looking about right"."""
+    payload = _mp4(duration_seconds=1.0, colour="red")
+    video = _video_asset(db, author, payload, duration_ms=1000)
+
+    last_frame = media_service.extract_video_frame(
+        db, user_id=author.id, asset_id=video.id, position="last"
+    )
+    assert last_frame.media_type == MediaType.IMAGE
+    assert last_frame.mime_type == "image/jpeg"
+    assert last_frame.owner_user_id == author.id
+    assert last_frame.role == AssetRole.GENERATION_REFERENCE
+    assert last_frame.moderation_status == ModerationStatus.PENDING
+    assert last_frame.visibility == Visibility.PRIVATE
+    assert last_frame.width == 32 and last_frame.height == 32
+
+    first_frame = media_service.extract_video_frame(
+        db, user_id=author.id, asset_id=video.id, position="first"
+    )
+    assert first_frame.id != last_frame.id
+    # Both frames come from a constant-colour clip, so this only proves two
+    # independent extractions each produced a real, decodable image rather
+    # than reusing/aliasing bytes — colour-accuracy across codecs is out of
+    # scope for a unit test.
+    with Image.open(io.BytesIO(s3.get_object(first_frame.object_key))) as image:
+        assert image.size == (32, 32)
+
+
+def test_extract_video_frame_rejects_non_video_and_foreign_assets(
+    db: Session, author: User, admin: User
+) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="只能对视频素材"):
+        media_service.extract_video_frame(db, user_id=author.id, asset_id=image.id, position="last")
+
+    someone_elses_video = _reference_asset(db, admin, MediaType.VIDEO)
+    from app.domain.errors import NotFound
+
+    with pytest.raises(NotFound):
+        media_service.extract_video_frame(
+            db, user_id=author.id, asset_id=someone_elses_video.id, position="last"
+        )
+
+
+def test_extract_video_frame_rejects_an_unsupported_position(db: Session, author: User) -> None:
+    video = _reference_asset(db, author, MediaType.VIDEO)
+    with pytest.raises(ValidationFailed, match="不支持的截帧位置"):
+        media_service.extract_video_frame(
+            db, user_id=author.id, asset_id=video.id, position="middle"
+        )
+
+
+def test_extract_video_frame_degrades_clearly_without_ffmpeg(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"not a real video, but ffmpeg is mocked missing before it matters"
+    video = _video_asset(db, author, payload, duration_ms=4000)
+    monkeypatch.setattr(media_service.shutil, "which", lambda _name: None)
+    with pytest.raises(ValidationFailed, match="未安装 ffmpeg"):
+        media_service.extract_video_frame(db, user_id=author.id, asset_id=video.id, position="last")
 
 
 def test_submit_prepends_a_licensed_source_video_when_the_client_omits_it(

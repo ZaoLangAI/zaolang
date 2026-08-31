@@ -9,17 +9,29 @@ author, via `NotFound` rather than `Forbidden`.
 
 from __future__ import annotations
 
+import hashlib
+import io
 import re
 from dataclasses import dataclass
 
+from PIL import Image
 from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
+from app.domain.learning import catalog as learning_catalog
 from app.domain.moderation_policy import assert_allowed
 from app.models import Asset, LearnPost
 from app.models.base import utcnow
-from app.models.enums import AssetRole, LearnPostLevel, LearnPostStatus
+from app.models.enums import (
+    AssetRole,
+    LearnPostLevel,
+    LearnPostStatus,
+    MediaType,
+    ModerationStatus,
+    Visibility,
+)
+from app.storage import s3
 
 MAX_BODY_MARKDOWN_LENGTH = 20_000
 MAX_BODY_IMAGES = 20
@@ -69,6 +81,104 @@ def submit(
     session.add(post)
     session.flush()
     return post
+
+
+def ensure_catalog_posts(session: Session, *, author_user_id: str) -> list[LearnPost]:
+    """Plants `catalog.CATALOG`'s platform-curated "学习" tutorials.
+
+    A system-default catalogue, analogous to
+    `skill_library_service.ensure_catalog_skills` — not a real user
+    submission — so it skips `submit()`'s pending-review flow entirely and
+    writes straight to `APPROVED`/`published_at=now`. It never runs
+    `assert_allowed`/opens a moderation queue item and leaves
+    `reviewed_by_user_id`/`reviewed_at` as `None` by design: there is no
+    human review to record for a row nothing ever submitted for review.
+
+    Idempotent and additive, matched by `(author_user_id, title)` since
+    `LearnPost` has no dedicated catalogue-key column: a title already
+    present for this author is left untouched, so an operator's own edit to
+    a previously-seeded row survives a later re-run. The one exception is
+    `cover_asset_id`: a row (new or pre-existing) that still has none gets
+    one backfilled from `catalog.py`'s shipped cover, but a row that already
+    carries one — whether from an earlier run of this same backfill or an
+    operator's own re-cover — is never touched (see `_ensure_seeded_cover`).
+    """
+    existing = {
+        row.title: row
+        for row in session.scalars(
+            select(LearnPost).where(LearnPost.author_user_id == author_user_id)
+        )
+    }
+    created: list[LearnPost] = []
+    now = utcnow()
+    for item in learning_catalog.CATALOG:
+        post = existing.get(item.title)
+        if post is None:
+            post = LearnPost(
+                author_user_id=author_user_id,
+                title=item.title,
+                summary=item.summary,
+                level=item.level,
+                cover_asset_id=None,
+                body_markdown=item.body_markdown,
+                status=LearnPostStatus.APPROVED,
+                published_at=now,
+            )
+            session.add(post)
+            session.flush()
+            created.append(post)
+        _ensure_seeded_cover(session, post=post, item=item, author_user_id=author_user_id)
+    return created
+
+
+def _ensure_seeded_cover(
+    session: Session,
+    *,
+    post: LearnPost,
+    item: learning_catalog.LearnPostSeed,
+    author_user_id: str,
+) -> None:
+    """Backfills a catalogue post's cover from its shipped `seed_covers/`
+    JPEG, the same "system-default, not a stand-in for real content" content
+    class as the post rows themselves (see `ensure_catalog_posts`'s
+    docstring).
+
+    A no-op once `cover_asset_id` is set, from any source — this never
+    replaces a cover, so an operator swapping one out survives every later
+    `make seed`. Role is `LEARN_MEDIA` (not `COVER`) so a later C-end edit
+    that keeps this cover still passes `_assert_asset_owned`.
+    """
+    if post.cover_asset_id is not None:
+        return
+    cover_path = item.cover_path()
+    if cover_path is None:
+        return
+
+    payload = cover_path.read_bytes()
+    with Image.open(io.BytesIO(payload)) as image:
+        width, height = image.size
+
+    object_key = f"seed/learning/{item.key}.jpg"
+    s3.put_object(object_key, payload, content_type="image/jpeg")
+
+    asset = Asset(
+        owner_user_id=author_user_id,
+        object_key=object_key,
+        media_type=MediaType.IMAGE,
+        mime_type="image/jpeg",
+        size_bytes=len(payload),
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
+        role=AssetRole.LEARN_MEDIA,
+        width=width,
+        height=height,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PUBLIC_VIEW_ONLY,
+        is_prototype=False,
+    )
+    session.add(asset)
+    session.flush()
+    post.cover_asset_id = asset.id
+    session.flush()
 
 
 def update(

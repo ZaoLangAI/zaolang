@@ -81,6 +81,15 @@ function parseReferenceIds(raw: string | undefined): string[] | undefined {
   return ids.length > 0 ? ids : undefined;
 }
 
+// `Asset.id` is `ast_` + a Crockford token (`new_id`), stored in a
+// `String(40)` column — same reject-anything-else stance as `parseJobId`,
+// so a crafted `continuityAssetId` can't be forwarded into
+// `POST /v1/assets/{id}/frame` as anything other than a well-formed id.
+function parseAssetId(raw: string | undefined): string | undefined {
+  if (!raw || raw.length > 40 || !/^ast_[0-9A-Za-z]+$/.test(raw)) return undefined;
+  return raw;
+}
+
 export async function generateMetadata() {
   const t = await getTranslations('createPage');
   return { title: t('startCreating') };
@@ -107,6 +116,7 @@ export default async function NewCreationPage({
     referenceSceneIds?: string;
     linkEpisodeId?: string;
     linkBreakpointKey?: string;
+    continuityAssetId?: string;
     jobId?: string;
   }>;
 }) {
@@ -128,6 +138,7 @@ export default async function NewCreationPage({
     referenceSceneIds,
     linkEpisodeId,
     linkBreakpointKey,
+    continuityAssetId,
     jobId,
   } = await searchParams;
   const t = await getTranslations('createPage');
@@ -149,11 +160,12 @@ export default async function NewCreationPage({
     ? await serverFetchOrNull<StyleGalleryEntry>(`/v1/style-gallery/${styleId}`)
     : null;
 
-  // `draftId` resumes an image-creation session — its full version history
-  // and latest output (see `GenerationVersionHistory`) — only meaningful for
-  // `text_to_image`; audio still only ever lands on `/jobs/[jobId]`. Video
-  // resumes too, but only as *material* for a fresh `video_to_video` draft
-  // (`VideoGenerationStudio`'s `initialDraft` — no version history there).
+  // `draftId` resumes a creation session — its full version history and
+  // latest output (see `GenerationVersionHistory`) — for `text_to_image` and
+  // (now) `text_to_video` alike; audio still only ever lands on
+  // `/jobs/[jobId]`. `image_to_video`/`video_to_video` sessions (remix,
+  // "最近草稿" edit) never carry a `draftId` in the URL, so this only ever
+  // resolves for a plain `text_to_video` mode session.
   const initialDraft =
     draftId && (operation === 'text_to_image' || operation === 'text_to_video')
       ? ((await serverFetchOrNull<Draft>(`/v1/drafts/${draftId}`, { authenticated: true })) ??
@@ -192,6 +204,11 @@ export default async function NewCreationPage({
     returnLinkLabel?.trim().slice(0, 60) || draftReturn.returnLinkLabel;
   const resolvedReferenceCharacterIds = parseReferenceIds(referenceCharacterIds);
   const resolvedReferenceSceneIds = parseReferenceIds(referenceSceneIds);
+  // The previous script breakpoint's video, if any — see
+  // `previousBoundVideoAssetId`/`buildBreakpointVideoHref`. Only meaningful
+  // without an existing `draftId` (a resumed session already has its own
+  // material); the studio itself re-derives that condition too.
+  const resolvedContinuityAssetId = parseAssetId(continuityAssetId);
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
@@ -211,6 +228,8 @@ export default async function NewCreationPage({
           targetCharacterId,
           targetSceneId,
           subjectNameHint: subjectNameHint?.trim().slice(0, 60),
+          linkBreakpointKey,
+          continuitySourceAssetId: resolvedContinuityAssetId,
         })}
         operation={operation}
         initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
@@ -230,6 +249,7 @@ export default async function NewCreationPage({
         initialReferenceSceneIds={resolvedReferenceSceneIds}
         linkEpisodeId={linkEpisodeId}
         linkBreakpointKey={linkBreakpointKey}
+        continuitySourceAssetId={resolvedContinuityAssetId}
       />
     </div>
   );

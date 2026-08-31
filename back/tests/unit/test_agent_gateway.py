@@ -1110,6 +1110,82 @@ def test_a_profile_max_tokens_is_clamped_to_the_model_output_ceiling(db: Session
     assert binding.max_tokens == 4096
 
 
+def test_run_agent_max_tokens_is_a_floor_the_bound_endpoints_ceiling_can_beat(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller-supplied `max_tokens` (a slot's own constant, e.g.
+    `copywriter.SCRIPT_MAX_TOKENS`) never shrinks a bound endpoint's own
+    larger declared `max_output_tokens` — this is what let a real reasoning
+    model get artificially capped down to a small first-attempt budget and
+    spend the whole thing on hidden thinking with zero completion tokens.
+    See `run_agent`/`run_agent_stream`'s floor semantics in
+    `back/app/agents/base.py`."""
+    from app.llm import client as llm_client
+    from app.llm.normalize import NormalizedResponse
+    from tests.llm_catalog import seed_test_llm_catalog
+
+    _seeded(db)
+    seed_test_llm_catalog(db, max_output_tokens=16_384)
+    seen: dict[str, int] = {}
+
+    def _complete(**kwargs: object) -> llm_client.LlmCallResult:
+        seen["max_tokens"] = kwargs["max_tokens"]  # type: ignore[assignment]
+        return llm_client.LlmCallResult(
+            response=NormalizedResponse(
+                text="{}", data={}, finish_reason="stop", prompt_tokens=1, completion_tokens=1
+            ),
+            latency_ms=1,
+        )
+
+    monkeypatch.setattr(llm_client, "complete", _complete)
+    agent_base.run_agent(
+        db,
+        agent_name=AgentName.SAFETY.value,
+        system_prompt="{}",
+        user_prompt="x",
+        fallback={"decision": "needs_review"},
+        max_tokens=512,
+    )
+    assert seen["max_tokens"] == 16_384
+
+
+def test_run_agent_max_tokens_floor_still_wins_over_a_smaller_endpoint_ceiling(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other direction: an endpoint with a smaller declared ceiling than
+    the caller's own floor does not shrink the request either — the floor
+    is a minimum, and the endpoint's `output_budget()` (exercised elsewhere,
+    see `test_llm_gateway_failover.py`) is what actually clamps the wire
+    request against the real ceiling downstream."""
+    from app.llm import client as llm_client
+    from app.llm.normalize import NormalizedResponse
+    from tests.llm_catalog import seed_test_llm_catalog
+
+    _seeded(db)
+    seed_test_llm_catalog(db, max_output_tokens=4_096)
+    seen: dict[str, int] = {}
+
+    def _complete(**kwargs: object) -> llm_client.LlmCallResult:
+        seen["max_tokens"] = kwargs["max_tokens"]  # type: ignore[assignment]
+        return llm_client.LlmCallResult(
+            response=NormalizedResponse(
+                text="{}", data={}, finish_reason="stop", prompt_tokens=1, completion_tokens=1
+            ),
+            latency_ms=1,
+        )
+
+    monkeypatch.setattr(llm_client, "complete", _complete)
+    agent_base.run_agent(
+        db,
+        agent_name=AgentName.SAFETY.value,
+        system_prompt="{}",
+        user_prompt="x",
+        fallback={"decision": "needs_review"},
+        max_tokens=8_192,
+    )
+    assert seen["max_tokens"] == 8_192
+
+
 def test_debug_chat_uses_the_draft_override_and_records_a_jobless_agent_run(
     db: Session,
 ) -> None:

@@ -17,25 +17,32 @@ import { formatRelative } from '@/lib/format';
 const DEAD_JOB_STATUSES = new Set(['failed', 'cancelled', 'expired']);
 
 /**
- * The image studio's version history — every generation job filed under the
- * same `Draft`, in the order they were made. Flat and chronological, not a
- * tree: branching from an older version just means picking it back up as the
- * next iteration's reference (`InlineImageResult`'s "基于此图继续微调"), so
- * there is nothing to render as a graph — the lineage graph
- * (`zaolang-lineage-graph`) is a different, published-`Work` concept.
+ * The image and video studios' shared version history — every generation
+ * job filed under the same `Draft`, in the order they were made. Flat and
+ * chronological, not a tree: branching from an older version just means
+ * picking it back up as the next iteration's reference
+ * (`InlineImageResult`'s "基于此图继续微调" / `InlineVideoResult`'s "基于此
+ * 视频继续创作"), so there is nothing to render as a graph — the lineage
+ * graph (`zaolang-lineage-graph`) is a different, published-`Work` concept.
  *
  * Takes the draft's full job list as a prop rather than fetching it itself —
- * `ImageGenerationStudio` owns that (`knownJobsById`), seeded once from
- * `GET /v1/generation-jobs?draft_id=` and additively kept up to date with
- * every job it has seen since (submitted, streamed, or selected from this
- * very list), so a job never disappears here just because it stopped being
- * the one currently shown.
+ * `ImageGenerationStudio`/`VideoGenerationStudio` own that (`knownJobsById`),
+ * seeded once from `GET /v1/generation-jobs?draft_id=` and additively kept
+ * up to date with every job it has seen since (submitted, streamed, or
+ * selected from this very list), so a job never disappears here just
+ * because it stopped being the one currently shown.
  *
  * A "补全侧面/背面" completion job (`isCharacterCompletionJob`) is filtered
  * out entirely, never counted or rendered as a version of its own — it
  * supplements whichever front-view version it was submitted for instead
  * (merged into that version's own gallery by `InlineImageResult`, see
- * `lib/characters.ts#findCompletionJobFor`).
+ * `lib/characters.ts#findCompletionJobFor`). Never true for a video job
+ * (video has no character-completion concept), so this is a no-op there.
+ *
+ * A video version's thumbnail has no backend-generated cover frame to show —
+ * a `<video>` element with a `#t=0.1` media-fragment `src` and no controls
+ * paints that moment without ever starting playback, standing in for a
+ * still image the same way `job.output_url` alone does for an image job.
  *
  * A failed/cancelled/expired attempt leaves no trace here at all — it is
  * filtered out entirely, not just excluded from the version count. Its
@@ -110,7 +117,20 @@ export function GenerationVersionHistory({
                 )}
               >
                 <div className="relative aspect-square bg-surface-soft">
-                  {thumbnail ? (
+                  {thumbnail && job.output_media_type === 'video' ? (
+                    // No poster image on hand for a video job (there is no
+                    // backend-generated cover frame) — a `#t=0.1` media
+                    // fragment forces the browser to seek to (and paint) that
+                    // moment without ever starting playback, which is all a
+                    // static thumbnail needs.
+                    <video
+                      src={`${thumbnail}#t=0.1`}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="absolute inset-0 size-full object-cover"
+                    />
+                  ) : thumbnail ? (
                     <Image src={thumbnail} alt="" fill sizes="96px" className="object-cover" />
                   ) : (
                     <div className="absolute inset-0 grid place-items-center">

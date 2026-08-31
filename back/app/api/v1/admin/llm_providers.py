@@ -32,7 +32,10 @@ from app.api.schemas.admin import (
     LlmProviderValidationJob,
     LlmProviderValidationResult,
     MediaPricingPayload,
+    ModelCatalogEntryView,
+    ModelCatalogResponse,
     TokenPricingPayload,
+    VendorCatalogView,
 )
 from app.api.v1.admin.deps import (
     Admin,
@@ -52,7 +55,7 @@ from app.platform_config.schemas import (
     LlmProviderConfig,
     LlmProviderEndpoint,
 )
-from app.providers import connectivity, validation_jobs
+from app.providers import connectivity, model_catalog, validation_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +68,39 @@ CONFIG_KEY = "llm_providers"
 def list_llm_providers(session: DbSession, user: Viewer, _: AdminRead) -> LlmProviderPoolView:
     config = config_service.get_typed(session, CONFIG_KEY, LlmProviderConfig)
     return _pool_view(config)
+
+
+@router.get("/llm-providers/catalog", response_model=ModelCatalogResponse)
+def get_llm_provider_catalog(user: Viewer, _: AdminRead) -> ModelCatalogResponse:
+    """Read-only curated model catalogue for the admin "service provider ->
+    known model" picker — see `app.providers.model_catalog`. Never mutates
+    config; the operator still upserts through `PUT /llm-providers/{id}`
+    exactly as before, whether or not they picked a catalogue entry.
+    """
+    return ModelCatalogResponse(
+        vendors=[
+            VendorCatalogView(
+                vendor=vendor,
+                label=model_catalog.VENDOR_LABELS[vendor],
+                base_url=model_catalog.vendor_base_url(vendor),
+                models=[
+                    ModelCatalogEntryView(
+                        model=entry.model,
+                        display_name=entry.display_name,
+                        kind=entry.kind,
+                        protocol=entry.protocol,
+                        input_modalities=list(entry.input_modalities),
+                        output_modalities=list(entry.output_modalities),
+                        context_length=entry.context_length,
+                        notes=entry.notes,
+                        doc_url=entry.doc_url,
+                    )
+                    for entry in model_catalog.VENDOR_MODEL_CATALOG.get(vendor, [])
+                ],
+            )
+            for vendor in model_catalog.VENDOR_IDS
+        ]
+    )
 
 
 @router.put("/llm-providers/{endpoint_id}", response_model=LlmProviderPoolView)

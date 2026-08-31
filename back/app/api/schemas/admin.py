@@ -860,6 +860,36 @@ class LlmProviderValidationJob(ApiModel):
     result: LlmProviderValidationResult | None = None
 
 
+class ModelCatalogEntryView(ApiModel):
+    """One vendor's known model, for the admin picker's cascading dropdown.
+
+    Purely a suggestion: selecting one pre-fills `LlmProviderEndpointUpsert
+    Request` fields, but the operator can still edit every value (or ignore
+    the catalogue entirely and type a custom model) before saving.
+    """
+
+    model: str
+    display_name: str
+    kind: Literal["general", "media"]
+    protocol: MediaProtocol | None = None
+    input_modalities: list[str] = Field(default_factory=list)
+    output_modalities: list[str] = Field(default_factory=list)
+    context_length: int = 0
+    notes: str = ""
+    doc_url: str = ""
+
+
+class VendorCatalogView(ApiModel):
+    vendor: Literal["aihubmix", "dmxapi"]
+    label: str
+    base_url: str
+    models: list[ModelCatalogEntryView] = Field(default_factory=list)
+
+
+class ModelCatalogResponse(ApiModel):
+    vendors: list[VendorCatalogView] = Field(default_factory=list)
+
+
 class LlmProviderEndpointUpsertRequest(ApiModel):
     name: str = Field(min_length=1, max_length=100)
     base_url: str = Field(min_length=1, max_length=500)

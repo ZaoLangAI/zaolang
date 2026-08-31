@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { isApiError } from '@/lib/api/errors';
+import { randomUuid } from '@/lib/random-id';
 import type { ShortformProfile } from '@/lib/api/types';
 
 import * as editorApi from './api';
@@ -149,7 +150,7 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
     setSaveStatus('saving');
     try {
       const revision = await editorApi.applyCommands(cut.id, {
-        batchId: crypto.randomUUID(),
+        batchId: randomUuid(),
         expectedRevisionId: cut.head_revision_id,
         leaseId: lease.id,
         leaseToken: token,

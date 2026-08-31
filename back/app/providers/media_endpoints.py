@@ -21,9 +21,19 @@ from app.platform_config.schemas import IMPLEMENTED_MEDIA_PROTOCOLS, LlmProvider
 from app.providers.aihubmix_media import (
     MINIMAX_H3_MODEL,
     AiHubMixMediaProvider,
+    NativeVideoModelProfile,
     native_video_profile,
 )
 from app.providers.base import GenerationProvider, ProviderCapability
+from app.providers.dmxapi_media import (
+    DmxApiMediaProvider,
+)
+from app.providers.dmxapi_media import (
+    VideoModelProfile as DmxApiVideoModelProfile,
+)
+from app.providers.dmxapi_media import (
+    video_model_profile as dmxapi_video_profile,
+)
 
 # Conservative defaults for a capability with no `ProviderStat` history yet.
 # Real observed latency/cost/success rate (via `router.record_attempt_outcome`)
@@ -57,6 +67,8 @@ _FALLBACK_UNIT_COST_MICRO_USD: dict[str, int] = {
 }
 _FALLBACK_DEFAULT_MICRO_USD = 200_000
 _ALL_TIERS = frozenset({"preview", "standard", "cinematic"})
+
+
 def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
     """One `ProviderCapability` per enabled capability of every enabled
     `kind="media"` endpoint, keyed `f"{endpoint_id}:{capability_tag}"`.
@@ -94,15 +106,15 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 "image_to_video",
                 "video_to_video",
             }
-            # Scoped to the native (`minimax`) protocol only — an `openai`
-            # video endpoint (the OpenAI Videos API track) sends none of
-            # these fields at all, even for the same model name, so it must
-            # not inherit the native adapter's range constraints.
-            video_profile = (
-                native_video_profile(endpoint.model)
-                if is_native_video and endpoint.protocol == "minimax"
-                else None
-            )
+            # Scoped to protocols with a per-model physical-limits table.
+            # `openai` (either provider's OpenAI Videos API track) sends none
+            # of these fields at all, even for the same model name, so it
+            # must not inherit either native adapter's range constraints.
+            video_profile: NativeVideoModelProfile | DmxApiVideoModelProfile | None = None
+            if is_native_video and endpoint.protocol == "minimax":
+                video_profile = native_video_profile(endpoint.model)
+            elif is_native_video and endpoint.protocol == "dmxapi":
+                video_profile = dmxapi_video_profile(endpoint.model)
             configured_cost = costs_service.nominal_media_call_cost_micro_usd(
                 endpoint.media_pricing, capability=tag
             )
@@ -126,20 +138,22 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 ),
                 aspect_ratios=video_profile.aspect_ratios if video_profile is not None else None,
                 resolutions=video_profile.resolutions if video_profile is not None else None,
-                # `frame_images` (first/last-frame) is an H3-only concept —
-                # any other profiled native-video model (e.g.
-                # wan2.7-videoedit) only ever advertises `input_references`,
-                # so a `frame_images` request gets hard-filtered away from it
-                # at routing time instead of failing later as a schema
-                # violation on the provider's side. A model with no profile
-                # at all stays unrestricted, same as before this table
-                # existed.
-                reference_modes=(
-                    None
-                    if video_profile is None
-                    else frozenset({"input_references", "frame_images"})
-                    if endpoint.model.strip().lower() == MINIMAX_H3_MODEL
-                    else frozenset({"input_references"})
+                # `frame_images` (first/last-frame) is an H3-only concept on
+                # AiHubMix's native track — any other profiled native-video
+                # model there (e.g. wan2.7-videoedit) only ever advertises
+                # `input_references`, so a `frame_images` request gets
+                # hard-filtered away from it at routing time instead of
+                # failing later as a schema violation on the provider's
+                # side. DMXAPI's own per-model `reference_modes` already
+                # encodes this per model (empty for `MiniMax-H3-
+                # video_regeneration`, which takes neither shape — its one
+                # required `base_video` reference is enforced by the
+                # provider, not this hard filter, so it is left
+                # unrestricted here rather than mis-modelled as one of the
+                # two AiHubMix-shaped tags). A model with no profile at all
+                # stays unrestricted, same as before this table existed.
+                reference_modes=_reference_modes_for(
+                    endpoint.protocol, endpoint.model, video_profile
                 ),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
@@ -149,9 +163,28 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                     api_key=endpoint.api_key,
                     timeout_ms=endpoint.timeout_ms,
                     protocol=endpoint.protocol or "minimax",
-                )
+                ),
             )
     return catalog
+
+
+def _reference_modes_for(
+    protocol: str | None,
+    model: str,
+    video_profile: NativeVideoModelProfile | DmxApiVideoModelProfile | None,
+) -> frozenset[str] | None:
+    if video_profile is None:
+        return None
+    if protocol == "minimax":
+        return (
+            frozenset({"input_references", "frame_images"})
+            if model.strip().lower() == MINIMAX_H3_MODEL
+            else frozenset({"input_references"})
+        )
+    if protocol == "dmxapi":
+        modes = getattr(video_profile, "reference_modes", None)
+        return modes or None
+    return None
 
 
 def _factory(
@@ -164,6 +197,15 @@ def _factory(
     timeout_ms: int,
     protocol: str,
 ) -> Callable[[], GenerationProvider]:
+    if protocol == "dmxapi":
+        return lambda: DmxApiMediaProvider(
+            endpoint_id=endpoint_id,
+            capability_tag=capability_tag,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            timeout_ms=timeout_ms,
+        )
     return lambda: AiHubMixMediaProvider(
         endpoint_id=endpoint_id,
         capability_tag=capability_tag,

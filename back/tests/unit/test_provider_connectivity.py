@@ -266,3 +266,87 @@ def test_media_403_is_access_denied_and_provider_detail_is_redacted(
     assert result.provider_error_message is not None
     assert "secret" not in result.provider_error_message
     assert "private.invalid" not in result.provider_error_message
+
+
+def test_dmxapi_video_probe_posts_to_v1_responses_with_a_family_specific_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://www.dmxapi.cn{path}")
+        return httpx.Response(200, json={"task_id": "task-1"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model="MiniMax-H3",
+            input_modalities=["text", "image", "video", "audio"],
+            output_modalities=["video"],
+            protocol="dmxapi",
+        )
+    )
+
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in calls] == ["/v1/responses"]
+    assert calls[0][1]["json"]["model"] == "MiniMax-H3"  # type: ignore[index]
+    assert result.external_task_id == "task-1"
+
+
+def test_dmxapi_video_regeneration_has_no_safe_probe_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It always needs a real 768P source clip meeting an exact physical
+    spec — there is no minimal request that could validate it safely, so
+    the probe must not hit the network at all for this one model."""
+
+    def fail_post(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("must not reach the network for this model")
+
+    monkeypatch.setattr(httpx.Client, "post", fail_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model="MiniMax-H3-video_regeneration",
+            input_modalities=["video"],
+            output_modalities=["video"],
+            protocol="dmxapi",
+        )
+    )
+
+    assert result.reachable is False
+    assert result.usable is False
+    assert result.error_code == "no_capability"
+
+
+def test_dmxapi_image_probe_posts_a_prompt_string_not_a_content_array(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://www.dmxapi.cn{path}")
+        return httpx.Response(
+            200, json={"data": [{"url": "https://cdn.invalid/out.png"}]}, request=request
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model="doubao-seedream-5-0-pro-260628",
+            input_modalities=["text", "image"],
+            output_modalities=["image"],
+            protocol="dmxapi",
+        )
+    )
+
+    assert result.probe_type == Operation.TEXT_TO_IMAGE.value
+    assert result.usable is True
+    assert [path for path, _ in calls] == ["/v1/responses"]
+    body = calls[0][1]["json"]  # type: ignore[index]
+    assert isinstance(body["input"], str)
+    assert "image" not in body

@@ -28,6 +28,17 @@ export function studioSessionKey(input: {
   targetCharacterId?: string;
   targetSceneId?: string;
   subjectNameHint?: string;
+  /** The script studio's "建议切分" chip key — without this, clicking from
+   * one unbound breakpoint's chip straight to another (both `draftId`-less
+   * "fresh" sessions) would not remount `CreateStudio`, leaving the first
+   * breakpoint's typed-over prompt/continuity state bleeding into the
+   * second's. */
+  linkBreakpointKey?: string;
+  /** The previous breakpoint's video, if any — see
+   * `VideoGenerationStudio`'s `continuitySourceAssetId`. Included for the
+   * same reason as `linkBreakpointKey` above: two different breakpoints can
+   * otherwise share an identical "fresh" key. */
+  continuitySourceAssetId?: string;
 }): string {
   if (input.draftId) {
     return input.jobId ? `draft:${input.draftId}|job:${input.jobId}` : `draft:${input.draftId}`;
@@ -40,6 +51,8 @@ export function studioSessionKey(input: {
     input.targetCharacterId,
     input.targetSceneId,
     input.subjectNameHint,
+    input.linkBreakpointKey,
+    input.continuitySourceAssetId,
   ]
     .filter((part) => Boolean(part))
     .join('|');

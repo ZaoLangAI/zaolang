@@ -35,7 +35,7 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 
 1. **Default later updates keep the remote database.** Probe → rsync the working tree → `make prod-up` (the `migrate` service reaches Alembic head) → verify. No dump, no restore, no Redis `FLUSHDB`, no seed, no `down -v`.
 2. **`push_local` (overwrite the remote DB from the laptop) is high-risk and only runs when the operator names it.** Backup the remote DB first; stop `api` / `worker` / `poller` / `beat`; `pg_restore --clean --if-exists --no-owner --no-privileges` into the compose Postgres; Redis `FLUSHDB`; then migrate and `prod-up`. Local role `zaolang` ≠ remote password — `--no-owner` is required. Refresh tokens signed with the laptop `JWT_SECRET` will not match the server; users re-login.
-3. **Never seed in production.** `python -m app.scripts.seed` raises when `APP_ENV=production`. The admin HTTP seed is also refused. Do not `down -v`.
+3. **Never seed in production.** `python -m app.scripts.seed` raises when `APP_ENV=production`. The admin HTTP seed is also refused. Do not `down -v`. When the operator names a catalogue backfill, run `python -m app.scripts.ensure_catalog` inside the `api` container — additive `CreationSkill` / `LearnPost` rows (and shipped covers) only; an existing `zaolang_studio` password is never rotated.
 4. **`make restore` / `infra/scripts/restore.sh` must not target the remote box** — the script refuses a URL containing `prod` and defaults to laptop `:5433`. Remote restore is `docker compose exec -T postgres pg_restore …`.
 5. **Never overwrite `infra/.env.prod` with rsync.** Exclude `.git`, `node_modules`, `.next`, `__pycache__`, `back/.env`, `front/.env.local`, and `infra/.env.prod`. Append new keys; do not rotate JWT / Postgres / MinIO secrets on an update.
 6. **`object_key` rows and `STORAGE_BACKEND` must agree.** This host is meant to use `STORAGE_BACKEND=tencent_cos` against the same bucket as the laptop. MinIO can stay running unused. nginx `/${MEDIA_BUCKET}/` only proxies MinIO path-style signed URLs — COS objects are fetched from `*.myqcloud.com`.
@@ -54,6 +54,13 @@ rsync -az --delete \
   ./ ubuntu@124.223.45.115:/home/ubuntu/zaolang/
 # on the server, from /home/ubuntu/zaolang:
 make prod-up
+```
+
+## Catalogue backfill (only when named)
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod \
+  exec -T api python -m app.scripts.ensure_catalog
 ```
 
 ## `push_local` (only when named)

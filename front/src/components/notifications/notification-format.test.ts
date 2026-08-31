@@ -43,11 +43,31 @@ describe('targetHref', () => {
     ).toBe('/jobs/job_new');
   });
 
-  it('leaves video jobs on the standalone progress page', () => {
+  it('sends a video-creation job notification into the studio with that job id', () => {
     expect(
       targetHref(
         jobNotification({
           payload: { operation: 'text_to_video', draft_id: 'drf_1' },
+        }),
+      ),
+    ).toBe('/create/new?mode=video_creation&draftId=drf_1&jobId=job_new');
+  });
+
+  it('falls back to the job page when the video job has no draft', () => {
+    expect(
+      targetHref(
+        jobNotification({
+          payload: { operation: 'video_to_video', draft_id: undefined },
+        }),
+      ),
+    ).toBe('/jobs/job_new');
+  });
+
+  it('leaves audio jobs on the standalone progress page', () => {
+    expect(
+      targetHref(
+        jobNotification({
+          payload: { operation: 'audio_generation', draft_id: 'drf_1' },
         }),
       ),
     ).toBe('/jobs/job_new');

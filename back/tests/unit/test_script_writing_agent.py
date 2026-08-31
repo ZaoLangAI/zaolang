@@ -195,17 +195,47 @@ def test_carry_over_links_does_not_match_a_renamed_character() -> None:
     assert updated["characters"][0]["character_ref_id"] is None
 
 
-def test_stream_draft_requests_its_own_script_budget_not_the_full_model_ceiling(
+def test_stream_draft_scales_up_to_the_bound_models_own_ceiling(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A script draft always asks for `SCRIPT_MAX_TOKENS`, regardless of how
-    much higher the bound model's own declared ceiling is — a reasoning
-    model must not be handed its entire `max_output_tokens` on the very
-    first attempt (see `LlmProviderEndpoint.output_budget`'s docstring);
-    only a truncated/unusable first pass expands the request from there."""
+    """`SCRIPT_MAX_TOKENS` is only a *floor* — a reasoning model whose bound
+    endpoint declares a larger `max_output_tokens` gets that larger budget on
+    the very first attempt, rather than being artificially capped down to
+    the slot's own smaller constant. A fixed, undersized first attempt is
+    exactly what let a real reasoning model spend its whole (needlessly
+    small) budget thinking and come back with zero completion tokens — see
+    `back/app/agents/base.py`'s `run_agent_stream` floor semantics."""
     from tests.llm_catalog import seed_test_llm_catalog
 
     seed_test_llm_catalog(db, max_output_tokens=16_384)
+    seen: dict[str, int] = {}
+
+    def capture_stream(**kwargs):  # type: ignore[no-untyped-def]
+        seen["max_tokens"] = kwargs["max_tokens"]
+        text = (
+            "先写了开场。\n```json\n"
+            '{"title": "t", "logline": "", "characters": [], '
+            '"scenes": [{"heading": "h", "blocks": '
+            '[{"type": "scene", "character": null, "text": "开场"}]}]}\n```'
+        )
+        kwargs["result"].text = text
+        yield StreamChunk(kind="content", text=text)
+
+    monkeypatch.setattr(llm_client, "stream_complete", capture_stream)
+    chunks, finalize = copywriter.stream_draft_script(db, idea="深夜便利店的秘密")
+    _drain(chunks)
+    outcome = finalize()
+    assert seen["max_tokens"] == 16_384
+    assert outcome.parse_ok is True
+
+
+def test_stream_draft_still_floors_at_script_max_tokens_when_the_endpoint_declares_no_ceiling(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the floor semantics: an endpoint that hasn't
+    declared its own `max_output_tokens` (0 = undeclared) must not fall back
+    to the generic `DEFAULT_MAX_TOKENS` (2048) for a payload this size —
+    `SCRIPT_MAX_TOKENS` is still what gets requested."""
     seen: dict[str, int] = {}
 
     def capture_stream(**kwargs):  # type: ignore[no-untyped-def]
@@ -227,12 +257,46 @@ def test_stream_draft_requests_its_own_script_budget_not_the_full_model_ceiling(
     assert outcome.parse_ok is True
 
 
-def test_stream_revise_requests_its_own_script_budget_not_the_full_model_ceiling(
+def test_stream_revise_scales_up_to_the_bound_models_own_ceiling(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.llm_catalog import seed_test_llm_catalog
 
     seed_test_llm_catalog(db, max_output_tokens=16_384)
+    seen: dict[str, int] = {}
+
+    def capture_stream(**kwargs):  # type: ignore[no-untyped-def]
+        seen["max_tokens"] = kwargs["max_tokens"]
+        text = (
+            "改了结局。\n```json\n"
+            '{"title": "t", "logline": "", "characters": [], '
+            '"scenes": [{"heading": "h", "blocks": '
+            '[{"type": "scene", "character": null, "text": "悬疑结尾"}]}]}\n```'
+        )
+        kwargs["result"].text = text
+        yield StreamChunk(kind="content", text=text)
+
+    monkeypatch.setattr(llm_client, "stream_complete", capture_stream)
+    current = {
+        "title": "便利店",
+        "logline": "",
+        "characters": [],
+        "scenes": [
+            {"heading": "第一场", "blocks": [{"type": "scene", "character": None, "text": "开场"}]}
+        ],
+    }
+    chunks, finalize = copywriter.stream_revise_script(
+        db, message="把结局改得更悬疑一点", current_script=current
+    )
+    _drain(chunks)
+    outcome = finalize()
+    assert seen["max_tokens"] == 16_384
+    assert outcome.parse_ok is True
+
+
+def test_stream_revise_still_floors_at_script_max_tokens_when_the_endpoint_declares_no_ceiling(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
     seen: dict[str, int] = {}
 
     def capture_stream(**kwargs):  # type: ignore[no-untyped-def]

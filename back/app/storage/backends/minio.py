@@ -18,6 +18,7 @@ from botocore.exceptions import ClientError
 from app.config import get_settings
 from app.domain.errors import NotFound
 from app.storage.base import StorageBackend
+from app.storage.cors import merge_cors_origins, origins_from_cors_config
 
 logger = logging.getLogger(__name__)
 
@@ -74,25 +75,35 @@ class MinioBackend(StorageBackend):
             client.head_bucket(Bucket=settings.s3_bucket)
         except ClientError:
             client.create_bucket(Bucket=settings.s3_bucket)
-        origins = [origin for origin in settings.cors_origins if origin]
-        if origins:
+        configured = [origin for origin in settings.cors_origins if origin]
+        if not configured:
+            return
+        try:
             try:
-                client.put_bucket_cors(
-                    Bucket=settings.s3_bucket,
-                    CORSConfiguration={
-                        "CORSRules": [
-                            {
-                                "AllowedOrigins": origins,
-                                "AllowedMethods": ["GET", "PUT", "HEAD"],
-                                "AllowedHeaders": ["*"],
-                                "ExposeHeaders": ["ETag", "Content-Length"],
-                                "MaxAgeSeconds": 3600,
-                            }
-                        ]
-                    },
+                existing = origins_from_cors_config(
+                    client.get_bucket_cors(Bucket=settings.s3_bucket)
                 )
             except ClientError:
-                logger.warning("could not apply S3 CORS rules to %s", settings.s3_bucket)
+                existing = []
+            origins = merge_cors_origins(existing, configured)
+            if origins == existing:
+                return
+            client.put_bucket_cors(
+                Bucket=settings.s3_bucket,
+                CORSConfiguration={
+                    "CORSRules": [
+                        {
+                            "AllowedOrigins": origins,
+                            "AllowedMethods": ["GET", "PUT", "HEAD"],
+                            "AllowedHeaders": ["*"],
+                            "ExposeHeaders": ["ETag", "Content-Length"],
+                            "MaxAgeSeconds": 3600,
+                        }
+                    ]
+                },
+            )
+        except ClientError:
+            logger.warning("could not apply S3 CORS rules to %s", settings.s3_bucket)
 
     def head_bucket(self) -> None:
         _get_client().head_bucket(Bucket=get_settings().s3_bucket)

@@ -4,24 +4,27 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { LiveThinking, ThinkingDisclosure } from '@/components/ai/thinking-disclosure';
+import { SkillMentionMenu } from '@/components/skills/skill-mention-menu';
 import { Button } from '@/components/ui/button';
 import { IconArrowUp } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import type { CreationSkillSummary } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
+import {
+  computeMentionMenuStyle,
+  detectMentionTrigger,
+  filterMentionSkills,
+  hasMentionToken,
+  stripMentionToken,
+} from '@/lib/skill-mention';
 
 import type { ScriptTurnSummary } from './api';
-import { getCaretCoordinates } from './caret-position';
 import { ReferencedSkillChips } from './referenced-skill-chips';
-import { SkillMentionMenu } from './skill-mention-menu';
 import { streamingPreviewText } from './stream-preview';
 import { MAX_REFERENCED_SKILLS, useSkillReferences } from './use-skill-references';
 
 const MESSAGE_MAX_LENGTH = 2000;
-const MENTION_MENU_WIDTH = 256;
-const MENTION_MENU_MAX_HEIGHT = 256;
-const MENTION_MENU_GAP = 6;
 
 interface MentionState {
   /** Index of the triggering `@` inside `message`. */
@@ -29,61 +32,6 @@ interface MentionState {
   query: string;
   activeIndex: number;
   style: React.CSSProperties;
-}
-
-function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** A skill's `@Title` marker, bounded by whitespace/start and whitespace/end so it can't false-match inside an unrelated longer word. */
-function mentionTokenPattern(title: string): RegExp {
-  return new RegExp(`(?:^|\\s)@${escapeForRegExp(title)}(?=\\s|$)`);
-}
-
-function hasMentionToken(text: string, title: string): boolean {
-  return mentionTokenPattern(title).test(text);
-}
-
-/** Removes one `@Title` token (plus the single trailing space inserted with it) without disturbing the whitespace before it. */
-function stripMentionToken(text: string, title: string): string {
-  const pattern = new RegExp(`@${escapeForRegExp(title)}(?=\\s|$)`);
-  const match = pattern.exec(text);
-  if (!match) return text;
-  const end = match.index + match[0].length;
-  const hasTrailingSpace = text[end] === ' ';
-  return text.slice(0, match.index) + text.slice(hasTrailingSpace ? end + 1 : end);
-}
-
-/** Finds an in-progress `@query` right before the caret, requiring the `@` itself to sit at the start of the text or right after whitespace. */
-function detectMentionTrigger(value: string, caret: number): { start: number; query: string } | null {
-  const before = value.slice(0, caret);
-  const match = /@([^\s@]*)$/.exec(before);
-  if (!match) return null;
-  const atIndex = match.index;
-  const charBefore = atIndex === 0 ? '' : before[atIndex - 1] ?? '';
-  if (atIndex !== 0 && !/\s/.test(charBefore)) return null;
-  return { start: atIndex, query: match[1] ?? '' };
-}
-
-function computeMenuStyle(
-  textarea: HTMLTextAreaElement,
-  container: HTMLDivElement,
-  caretIndex: number,
-): React.CSSProperties {
-  const caret = getCaretCoordinates(textarea, caretIndex);
-  const anchorTop = textarea.offsetTop + caret.top;
-  const anchorLeft = textarea.offsetLeft + caret.left;
-  const containerRect = container.getBoundingClientRect();
-  const spaceBelow = window.innerHeight - (containerRect.top + anchorTop + caret.height);
-  const openUpward =
-    spaceBelow < MENTION_MENU_MAX_HEIGHT && containerRect.top + anchorTop > MENTION_MENU_MAX_HEIGHT;
-  const maxLeft = Math.max(container.clientWidth - MENTION_MENU_WIDTH - 4, 4);
-  return {
-    left: Math.min(Math.max(anchorLeft, 4), maxLeft),
-    top: openUpward
-      ? anchorTop - MENTION_MENU_MAX_HEIGHT - MENTION_MENU_GAP
-      : anchorTop + caret.height + MENTION_MENU_GAP,
-  };
 }
 
 /**
@@ -169,9 +117,7 @@ export function ScriptChatPanel({
     .map((id) => skills.find((skill) => skill.id === id))
     .filter((skill): skill is CreationSkillSummary => skill !== undefined);
 
-  const filteredSkills = mention
-    ? skills.filter((skill) => skill.title.toLowerCase().includes(mention.query.toLowerCase()))
-    : [];
+  const filteredSkills = mention ? filterMentionSkills(skills, mention.query) : [];
 
   const refreshMention = (value: string, caret: number) => {
     const trigger = detectMentionTrigger(value, caret);
@@ -191,7 +137,7 @@ export function ScriptChatPanel({
       start: trigger.start,
       query: trigger.query,
       activeIndex: 0,
-      style: computeMenuStyle(textarea, container, caret),
+      style: computeMentionMenuStyle(textarea, container, caret),
     });
   };
 
@@ -403,6 +349,9 @@ export function ScriptChatPanel({
             activeIndex={mention.activeIndex}
             maxReached={referencedSkillIds.length >= MAX_REFERENCED_SKILLS}
             style={mention.style}
+            label={t('referenceSkill')}
+            emptyLabel={t('mentionEmpty')}
+            priceLabel={(credits) => t('referenceSkillPrice', { credits })}
             onHoverIndex={(index) => setMention((current) => (current ? { ...current, activeIndex: index } : current))}
             onSelect={selectMention}
           />

@@ -100,6 +100,31 @@ def test_the_polish_slot_asks_for_its_own_budget_and_creativity(
     assert captured["temperature"] == copywriter.ENHANCE_TEMPERATURE
 
 
+def test_the_polish_slot_scales_up_to_the_bound_models_own_ceiling(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ENHANCE_MAX_TOKENS` is only a floor, same as `SCRIPT_MAX_TOKENS`
+    (see `test_script_writing_agent.py`) — a bound endpoint that declares a
+    larger `max_output_tokens` gets that larger budget, not the slot's own
+    smaller constant (`back/app/agents/base.py`'s `run_agent` floor
+    semantics apply to every slot that passes an explicit `max_tokens`,
+    not just script writing)."""
+    from tests.llm_catalog import seed_test_llm_catalog
+
+    seed_test_llm_catalog(db, max_output_tokens=16_384)
+    captured: dict[str, object] = {}
+    real_complete = llm_client.complete
+
+    def capture(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_complete(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(llm_client, "complete", capture)
+    prompts.enhance(db, user_id=author.id, prompt="女孩在海边")
+
+    assert captured["max_tokens"] == 16_384
+
+
 def test_the_stream_polish_slot_asks_for_its_own_budget_and_creativity(
     db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

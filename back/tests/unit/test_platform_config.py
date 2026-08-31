@@ -16,12 +16,14 @@ from app.platform_config.schemas import (
     DEFAULT_CONFIGS,
     MAX_GENERATION_DURATION_SECONDS,
     PROTOCOL_CAPABILITIES,
+    VIDEO_RESOLUTIONS,
     ContentModerationConfig,
     FeatureFlags,
     LlmProviderConfig,
     LlmProviderEndpoint,
     PricingConfig,
     ShortformConfig,
+    VideoPricing,
 )
 
 
@@ -535,6 +537,88 @@ def test_output_budget_adds_a_thinking_margin_for_reasoning_capped_by_the_ceilin
     # it, margin included.
     assert endpoint.output_budget(20_000, reasoning_model=True) == 16_384
     assert endpoint.output_budget(20_000) == 16_384
+
+
+def test_dmxapi_protocol_covers_image_and_video_capabilities() -> None:
+    """`doubao-seedream-5-0-pro-260628` provides the image pair;
+    `MiniMax-H3`/`doubao-seedance-2-5-260628`/`wan3.0-video` provide the
+    three video tags — all under the one `dmxapi` protocol."""
+    caps = PROTOCOL_CAPABILITIES["dmxapi"]
+    assert Operation.TEXT_TO_IMAGE.value in caps
+    assert Operation.IMAGE_TO_IMAGE.value in caps
+    assert Operation.TEXT_TO_VIDEO.value in caps
+    assert Operation.IMAGE_TO_VIDEO.value in caps
+    assert Operation.VIDEO_TO_VIDEO.value in caps
+    assert Operation.AUDIO_GENERATION.value not in caps
+
+
+def test_dmxapi_media_endpoint_for_the_image_model_validates() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "DMXAPI Seedream",
+            "base_url": "https://www.dmxapi.cn",
+            "kind": "media",
+            "model": "doubao-seedream-5-0-pro-260628",
+            "protocol": "dmxapi",
+            "input_modalities": ["text", "image"],
+            "output_modalities": ["image"],
+        }
+    )
+    assert endpoint.protocol == "dmxapi"
+    assert endpoint.capabilities == {
+        Operation.TEXT_TO_IMAGE.value,
+        Operation.IMAGE_TO_IMAGE.value,
+    }
+
+
+def test_dmxapi_media_endpoint_for_a_video_model_validates() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "DMXAPI MiniMax-H3",
+            "base_url": "https://www.dmxapi.cn",
+            "kind": "media",
+            "model": "MiniMax-H3",
+            "protocol": "dmxapi",
+            "input_modalities": ["text", "image", "video", "audio"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.protocol == "dmxapi"
+    assert endpoint.capabilities == {
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }
+
+
+def test_video_resolutions_preserve_each_vendors_own_casing() -> None:
+    """DMXAPI's doubao models answer lowercase, its `wan3.0-video` answers
+    uppercase, MiniMax stays `768P`/`2K` — the pricing vocabulary must offer
+    every casing verbatim rather than folding them into one style."""
+    assert set(VIDEO_RESOLUTIONS) == {
+        "2K",
+        "768P",
+        "480p",
+        "720p",
+        "1080p",
+        "480P",
+        "720P",
+        "1080P",
+    }
+    priced = VideoPricing(
+        generation_per_second_micro_usd={"480p": 1, "480P": 2, "1080p": 3, "1080P": 4}
+    )
+    assert priced.generation_per_second_micro_usd == {
+        "480p": 1,
+        "480P": 2,
+        "1080p": 3,
+        "1080P": 4,
+    }
+
+
+def test_an_unknown_video_resolution_is_still_rejected() -> None:
+    with pytest.raises(Exception, match="不支持的视频分辨率"):
+        VideoPricing(generation_per_second_micro_usd={"4K": 1})
 
 
 def test_output_budget_caps_to_remaining_context() -> None:

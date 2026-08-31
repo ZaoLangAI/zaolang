@@ -8,10 +8,8 @@
  * right after that text. Scroll position is subtracted at the end because
  * the mirror never scrolls the way the real textarea might.
  *
- * This is the only place in the codebase that needs a caret's pixel
- * position — every other popover (`DropdownMenu`, `MultiSelect`) anchors to
- * a whole trigger element instead — so the mirror-div technique lives here
- * rather than as a shared utility.
+ * Shared by the script composer's `@` reference menu and the image/video
+ * studio prompt field's `@` apply menu.
  */
 
 const MIRRORED_PROPERTIES: (keyof CSSStyleDeclaration)[] = [

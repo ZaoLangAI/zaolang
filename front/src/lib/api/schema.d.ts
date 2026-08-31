@@ -1271,6 +1271,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/assets/{asset_id}/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Frame
+         * @description Grabs the first/last frame of the caller's own video asset as a new
+         *     private image asset — used to auto-fill `first_frame_asset_id` when
+         *     generating a video that should pick up visually where an earlier one
+         *     (e.g. a previous script breakpoint's clip) left off.
+         */
+        post: operations["extract_frame_v1_assets__asset_id__frame_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/assets/{asset_id}/provenance": {
         parameters: {
             query?: never;
@@ -3943,6 +3966,29 @@ export interface paths {
         };
         /** List Llm Providers */
         get: operations["list_llm_providers_v1_admin_llm_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/llm-providers/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Llm Provider Catalog
+         * @description Read-only curated model catalogue for the admin "service provider ->
+         *     known model" picker — see `app.providers.model_catalog`. Never mutates
+         *     config; the operator still upserts through `PUT /llm-providers/{id}`
+         *     exactly as before, whether or not they picked a catalogue entry.
+         */
+        get: operations["get_llm_provider_catalog_v1_admin_llm_providers_catalog_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7242,6 +7288,19 @@ export interface components {
             /** Checksum Sha256 */
             checksum_sha256: string;
         };
+        /**
+         * ExtractFrameRequest
+         * @description Which single frame to grab from an already-owned video asset — see
+         *     `app.domain.media.service.extract_video_frame`.
+         */
+        ExtractFrameRequest: {
+            /**
+             * Position
+             * @default last
+             * @enum {string}
+             */
+            position: "first" | "last";
+        };
         /** FeatureFlagView */
         FeatureFlagView: {
             /** Name */
@@ -8016,7 +8075,7 @@ export interface components {
             /** Output Modalities */
             output_modalities?: string[];
             /** Protocol */
-            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling") | null;
+            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi") | null;
             /**
              * Max Concurrency
              * @default 4
@@ -8083,7 +8142,7 @@ export interface components {
             /** Output Modalities */
             output_modalities?: string[];
             /** Protocol */
-            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling") | null;
+            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi") | null;
             /** Capabilities */
             capabilities?: string[];
             /** Max Concurrency */
@@ -8347,6 +8406,51 @@ export interface components {
          * @enum {string}
          */
         MediaType: "image" | "video" | "audio";
+        /**
+         * ModelCatalogEntryView
+         * @description One vendor's known model, for the admin picker's cascading dropdown.
+         *
+         *     Purely a suggestion: selecting one pre-fills `LlmProviderEndpointUpsert
+         *     Request` fields, but the operator can still edit every value (or ignore
+         *     the catalogue entirely and type a custom model) before saving.
+         */
+        ModelCatalogEntryView: {
+            /** Model */
+            model: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "general" | "media";
+            /** Protocol */
+            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi") | null;
+            /** Input Modalities */
+            input_modalities?: string[];
+            /** Output Modalities */
+            output_modalities?: string[];
+            /**
+             * Context Length
+             * @default 0
+             */
+            context_length: number;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Doc Url
+             * @default
+             */
+            doc_url: string;
+        };
+        /** ModelCatalogResponse */
+        ModelCatalogResponse: {
+            /** Vendors */
+            vendors?: components["schemas"]["VendorCatalogView"][];
+        };
         /**
          * ModelCostView
          * @description Window total for one model. Cumulative rather than a trend: with more
@@ -10883,6 +10987,20 @@ export interface components {
              * @default mp4
              */
             format: string;
+        };
+        /** VendorCatalogView */
+        VendorCatalogView: {
+            /**
+             * Vendor
+             * @enum {string}
+             */
+            vendor: "aihubmix" | "dmxapi";
+            /** Label */
+            label: string;
+            /** Base Url */
+            base_url: string;
+            /** Models */
+            models?: components["schemas"]["ModelCatalogEntryView"][];
         };
         /** VersionDiffEntry */
         VersionDiffEntry: {
@@ -14207,6 +14325,43 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_frame_v1_assets__asset_id__frame_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractFrameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -19766,6 +19921,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LlmProviderPoolView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_llm_provider_catalog_v1_admin_llm_providers_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalogResponse"];
                 };
             };
             /** @description Validation Error */
