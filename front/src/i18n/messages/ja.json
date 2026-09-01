@@ -2311,10 +2311,9 @@
     "instructionPlaceholder": "例：最後にカメラへ振り向く",
     "refineApply": "再推敲",
     "accept": "自動入力",
-    "drawerTitle": "AI 推敲の提案",
-    "drawerPendingHint": "この説明文を診断・推敲しています…",
-    "thinkingLive": "考えています…",
-    "resizeHandle": "ドラッグして高さを調整"
+    "panelTitle": "AI 推敲の提案",
+    "panelPendingHint": "この説明文を診断・推敲しています…",
+    "thinkingLive": "考えています…"
   },
   "publishPage": {
     "eyebrow": "PUBLISH",

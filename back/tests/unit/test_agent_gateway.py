@@ -164,7 +164,11 @@ def test_a_route_that_cannot_do_the_operation_is_filtered_not_scored(db: Session
 
 
 def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> None:
-    """Without a conservative prior, one sample would dominate the score."""
+    """Without a conservative prior, one sample would dominate the score.
+
+    The blended estimate nudges up slightly from the flat prior (one real
+    success pulls a little weight), but stays nowhere near the 1.0 a raw
+    `successes/attempts` ratio would have shown."""
     db.add(
         ProviderStat(
             provider="fake_open_workflow",
@@ -183,7 +187,10 @@ def test_a_single_lucky_success_does_not_outrank_a_proven_route(db: Session) -> 
         db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
     scored = next(c for c in decision.candidates if c.provider == "fake_open_workflow")
-    assert scored.success_rate == router.CONSERVATIVE_PRIOR_SUCCESS_RATE
+    prior_successes = router.CONSERVATIVE_PRIOR_SUCCESS_RATE * router.PRIOR_PSEUDO_SAMPLES
+    expected = (1 + prior_successes) / (1 + router.PRIOR_PSEUDO_SAMPLES)
+    assert scored.success_rate == round(expected, 4)
+    assert scored.success_rate < 0.85
 
 
 def test_a_failing_route_gets_a_higher_effective_cost(db: Session) -> None:
@@ -291,6 +298,33 @@ def test_cost_bias_is_omitted_from_the_payload_when_the_caller_has_none(
     bind_default_agents_to_catalog(db)
     router.route(db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     assert "cost_bias" not in json.loads(captured[0])
+
+
+def test_select_provider_payload_carries_each_candidates_real_model_name(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The selecting agent must see which real model each candidate runs on
+    (`fake_open_workflow` -> `comfy-sdxl-base@1.4.0`, `fake_paid_api` ->
+    `paid-video-v3`), not just an opaque `provider` catalog key — quality
+    judgment now depends on the agent recognising the model by name."""
+    captured: list[str] = []
+    real_run_agent = intent_router.run_agent
+
+    def capture(session, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(kwargs["user_prompt"])
+        return real_run_agent(session, **kwargs)
+
+    monkeypatch.setattr(intent_router, "run_agent", capture)
+
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db, operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD
+    )
+    assert decision.selected is not None
+
+    by_provider = {c["provider"]: c for c in json.loads(captured[0])["candidates"]}
+    assert by_provider["fake_open_workflow"]["model"] == "comfy-sdxl-base@1.4.0"
+    assert by_provider["fake_paid_api"]["model"] == "paid-video-v3"
 
 
 def test_classify_flags_a_short_but_action_heavy_video_prompt_as_more_complex(

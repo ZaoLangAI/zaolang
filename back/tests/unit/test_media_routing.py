@@ -578,3 +578,31 @@ def test_a_dmxapi_image_endpoint_carries_no_video_profile_fields(db: Session) ->
     assert entry.aspect_ratios is None
     assert entry.resolutions is None
     assert entry.reference_modes is None
+
+
+def test_candidate_payload_carries_the_real_model_name_and_a_flat_quality_prior(
+    db: Session,
+) -> None:
+    """`select_provider` must be able to tell candidates apart by real model
+    identity — `provider` is only an opaque catalog key (`f"{endpoint_id}:
+    {tag}"`), never a model name. `quality_prior` stays the same flat system
+    default across different models: quality judgment is delegated entirely
+    to the LLM's own knowledge of `model`, not a per-model number computed in
+    code (see `SELECT_PROVIDER_SYSTEM_PROMPT`)."""
+    _seed_media_endpoint(db, endpoint_id="model-a", model="qwen-image-3.0")
+    _seed_media_endpoint(db, endpoint_id="model-b", model="doubao-seedream-5-0-pro-260628")
+
+    catalog = router.build_catalog(db)
+    capability_a = catalog["model-a:image_to_image"]
+    capability_b = catalog["model-b:image_to_image"]
+
+    payload_a = router._candidate_payload(
+        router.Candidate(provider="model-a:image_to_image"), capability_a
+    )
+    payload_b = router._candidate_payload(
+        router.Candidate(provider="model-b:image_to_image"), capability_b
+    )
+
+    assert payload_a["model"] == "qwen-image-3.0"
+    assert payload_b["model"] == "doubao-seedream-5-0-pro-260628"
+    assert payload_a["quality_prior"] == payload_b["quality_prior"]

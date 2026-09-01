@@ -2311,10 +2311,9 @@
     "instructionPlaceholder": "例如：把结尾改成回头看镜头",
     "refineApply": "再润色",
     "accept": "自动填充",
-    "drawerTitle": "AI 润色建议",
-    "drawerPendingHint": "正在为这段描述生成诊断与润色建议…",
-    "thinkingLive": "正在思考…",
-    "resizeHandle": "拖动调整高度"
+    "panelTitle": "AI 润色建议",
+    "panelPendingHint": "正在为这段描述生成诊断与润色建议…",
+    "thinkingLive": "正在思考…"
   },
   "publishPage": {
     "eyebrow": "PUBLISH",

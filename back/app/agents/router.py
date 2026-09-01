@@ -38,7 +38,9 @@ from app.providers.base import ProviderCapability
 from app.providers.media_endpoints import dynamic_capabilities
 
 CONSERVATIVE_PRIOR_SUCCESS_RATE = 0.8
-MINIMUM_SAMPLES_FOR_STATS = 20
+# How many "virtual" trials the prior above is worth when blending it with
+# real attempts — see `_success_rate`. Not a hard sample-count threshold.
+PRIOR_PSEUDO_SAMPLES = 8
 RETRY_COST_AMPLIFICATION = 1.2
 
 
@@ -266,9 +268,18 @@ def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> 
     cost figures answer different questions — `effective_cost_micro_usd`
     compares providers in general, `estimated_cost_micro_usd` prices *this*
     request — and `cost_is_estimated` says whether either can be trusted.
+
+    `model` is the real model/workflow name behind this candidate
+    (`capability.model_or_workflow`) — the only way the agent can actually
+    tell candidates apart by identity, since `provider` is an opaque catalog
+    key (`f"{endpoint_id}:{tag}"`), not a model name. `quality_prior` stays a
+    flat system default (see `media_endpoints._QUALITY_PRIOR`); it is not a
+    real per-model quality score, so quality judgment is left to the agent's
+    own knowledge of `model` — see `SELECT_PROVIDER_SYSTEM_PROMPT`.
     """
     return {
         "provider": candidate.provider,
+        "model": capability.model_or_workflow,
         "kind": capability.kind.value,
         "quality_prior": capability.quality_prior,
         "success_rate": candidate.success_rate,
@@ -289,14 +300,23 @@ def _load_stats(session: Session, operation: str, quality_tier: str) -> dict[str
 
 
 def _success_rate(stat: ProviderStat | None) -> float:
-    """Falls back to a conservative prior until there is enough evidence.
+    """Blends the observed success rate with a conservative prior via
+    additive (Beta) smoothing, rather than switching sharply at a fixed
+    sample-count threshold.
 
-    Without this, a provider with a single lucky success would look as
-    trustworthy as one with hundreds of reliable runs.
+    With `attempts=0` this returns the prior untouched. As real attempts
+    accumulate, the prior's influence fades in proportion to
+    `PRIOR_PSEUDO_SAMPLES` — a handful of live failures pulls the number down
+    well before a hard cutoff would have kicked in, instead of a provider
+    that is failing right now still reading as a reliable 0.8 until it has
+    accumulated dozens of samples. A single lucky success is, symmetrically,
+    still nowhere near 1.0.
     """
-    if stat is None or stat.attempts < MINIMUM_SAMPLES_FOR_STATS:
+    if stat is None or stat.attempts == 0:
         return CONSERVATIVE_PRIOR_SUCCESS_RATE
-    return max(0.01, min(1.0, stat.successes / stat.attempts))
+    prior_successes = CONSERVATIVE_PRIOR_SUCCESS_RATE * PRIOR_PSEUDO_SAMPLES
+    blended = (stat.successes + prior_successes) / (stat.attempts + PRIOR_PSEUDO_SAMPLES)
+    return max(0.01, min(1.0, blended))
 
 
 def _avg_latency_ms(stat: ProviderStat | None, capability: ProviderCapability) -> int:

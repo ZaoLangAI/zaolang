@@ -2311,10 +2311,9 @@
     "instructionPlaceholder": "e.g. end with her turning to the camera",
     "refineApply": "Polish again",
     "accept": "Autofill",
-    "drawerTitle": "AI polish suggestions",
-    "drawerPendingHint": "Diagnosing and polishing this description…",
-    "thinkingLive": "Thinking…",
-    "resizeHandle": "Drag to resize"
+    "panelTitle": "AI polish suggestions",
+    "panelPendingHint": "Diagnosing and polishing this description…",
+    "thinkingLive": "Thinking…"
   },
   "publishPage": {
     "eyebrow": "PUBLISH",

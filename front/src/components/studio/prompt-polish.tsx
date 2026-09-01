@@ -7,9 +7,9 @@ import { useSession } from '@/components/auth/session-provider';
 import {
   DIRECTIONS,
   type Direction,
-  PromptPolishDrawer,
+  PromptPolishPanel,
   VIDEO_ONLY_DIRECTIONS,
-} from '@/components/studio/prompt-polish-drawer';
+} from '@/components/studio/prompt-polish-panel';
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
 import { ApiError } from '@/lib/api/errors';
@@ -36,14 +36,18 @@ export interface PromptPolishContext {
 }
 
 /**
- * The "AI 润色" control shared by `PromptField` (used by
- * `ImageGenerationStudio`/`VideoGenerationStudio`) and `ShortformStudio`.
+ * The "AI 润色" control used by `PromptField`, in turn used by
+ * `ImageGenerationStudio`/`VideoGenerationStudio` through `PromptComposer`
+ * ("说说你想怎么改" card) — audio never sets `polishContext` below, so this
+ * never renders there.
  *
- * Both surfaces show the same thing: a button that asks the copy agent to
- * diagnose the description dimension by dimension, then a non-modal bottom
- * drawer (`PromptPolishDrawer`) the author can keep open while continuing to
- * edit the field, iterate on the suggestion, or autofill it — closing is
- * only ever the drawer's own close button, never a side effect of accepting
+ * A button that asks the copy agent to diagnose the description dimension
+ * by dimension, then an inline result panel (`PromptPolishPanel`) that
+ * unfolds directly inside that same card, right under the button — not a
+ * separate overlay — so the suggestion reads as part of the composer rather
+ * than a popup elsewhere on the page. The author can keep editing the field
+ * while it's open, iterate on the suggestion, or autofill it; closing is
+ * only ever the panel's own close button, never a side effect of accepting
  * a suggestion.
  */
 export function PromptPolish({
@@ -162,7 +166,7 @@ export function PromptPolish({
         {pending ? t('buttonPending') : t('button')}
       </Button>
 
-      <PromptPolishDrawer
+      <PromptPolishPanel
         open={open}
         onClose={() => setOpen(false)}
         pending={pending}
