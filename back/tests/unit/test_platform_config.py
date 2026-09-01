@@ -387,6 +387,34 @@ def test_a_mixed_media_endpoint_is_dropped_without_emptying_the_pool() -> None:
     assert parsed.endpoints["good"].protocol == "openai"
 
 
+def test_an_endpoint_saved_before_billing_profile_existed_still_parses() -> None:
+    """`extra="forbid"` would make `get_typed` raise on any endpoint saved
+    before this field existed, the same failure mode `_migrate_legacy_fields`
+    already guards every other field-addition against."""
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "旧端点",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "minimax-h3",
+            "protocol": "minimax",
+            "input_modalities": ["text", "image"],
+            "output_modalities": ["video"],
+            "media_pricing": {
+                "video": {
+                    "generation_per_second_micro_usd": {"2K": 130_000},
+                }
+            },
+        }
+    )
+    assert endpoint.billing_profile is None
+    assert endpoint.media_pricing.video is not None
+    assert endpoint.media_pricing.video.generation_per_second_micro_usd == {"2K": 130_000}
+    # New sub-fields on the pricing sections default in too, not just the
+    # top-level `billing_profile`.
+    assert endpoint.media_pricing.token_video is None
+
+
 def test_a_general_endpoint_always_has_text_input_modality() -> None:
     endpoint = LlmProviderEndpoint.model_validate(
         {

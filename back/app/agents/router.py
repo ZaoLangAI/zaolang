@@ -169,7 +169,11 @@ def route(
             capability.unit_cost_micro_usd * RETRY_COST_AMPLIFICATION / max(success_rate, 0.05)
         )
         candidate.estimated_cost_micro_usd = costs_service.estimate_media_request_cost_micro_usd(
-            capability.pricing, capability=operation, params=request_params or {}
+            capability.pricing,
+            capability=operation,
+            params=request_params or {},
+            billing_profile=capability.billing_profile,
+            default_resolution=capability.default_resolution,
         )
         candidate.cost_is_estimated = capability.cost_is_estimated
         candidate.success_rate = round(success_rate, 4)

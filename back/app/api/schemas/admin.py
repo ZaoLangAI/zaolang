@@ -738,11 +738,25 @@ class TokenPricingPayload(ApiModel):
 
     input_per_million_micro_usd: int = Field(default=0, ge=0)
     output_per_million_micro_usd: int = Field(default=0, ge=0)
+    # A prompt-cache hit, billed below the regular input rate. Declared here
+    # even though nothing in the gateway client parses a cache-hit count out
+    # of the upstream response yet — see `TokenPricing.cached_input_per_
+    # million_micro_usd` — so the rate an operator records today is already
+    # correct once that parsing lands.
+    cached_input_per_million_micro_usd: int = Field(default=0, ge=0)
 
 
 class ImagePricingPayload(ApiModel):
     input_per_image_micro_usd: int = Field(default=0, ge=0)
     generation_per_image_micro_usd: int = Field(default=0, ge=0)
+    # Doubao Seedream-style size-tiered generation price (keys like "1K"/
+    # "2K"); a tier not present here falls back to `generation_per_image_
+    # micro_usd`.
+    generation_per_image_by_tier_micro_usd: dict[str, int] = Field(default_factory=dict)
+    # The first N input reference images are free (Seedream's is 1). Zero —
+    # the default — bills every input image, unchanged from before this
+    # field existed.
+    reference_image_free_count: int = Field(default=0, ge=0, le=100)
 
 
 class AudioPricingPayload(ApiModel):
@@ -758,6 +772,15 @@ class VideoPricingPayload(ApiModel):
     extra_reference_image_micro_usd: int = Field(default=0, ge=0)
 
 
+class TokenVideoPricingPayload(ApiModel):
+    """Doubao Seedance-style per-million-video-token billing — the alternate
+    shape a `billing_profile="seedance_tokens"` endpoint uses instead of
+    `VideoPricingPayload`'s per-second rate (see `TokenVideoPricing`)."""
+
+    per_million_tokens_micro_usd: int = Field(default=0, ge=0)
+    per_million_tokens_with_video_ref_micro_usd: int = Field(default=0, ge=0)
+
+
 class MediaPricingPayload(ApiModel):
     """Sections a media endpoint's capabilities do not cover are dropped
     server-side, so a stale price cannot outlive the capability it billed."""
@@ -765,6 +788,7 @@ class MediaPricingPayload(ApiModel):
     image: ImagePricingPayload | None = None
     audio: AudioPricingPayload | None = None
     video: VideoPricingPayload | None = None
+    token_video: TokenVideoPricingPayload | None = None
 
 
 class LlmProviderEndpointView(ApiModel):
@@ -804,6 +828,10 @@ class LlmProviderEndpointView(ApiModel):
     token_pricing: TokenPricingPayload = Field(default_factory=TokenPricingPayload)
     # `kind="media"` only.
     media_pricing: MediaPricingPayload = Field(default_factory=MediaPricingPayload)
+    # Which `app.providers.model_catalog` billing shape this endpoint's
+    # prices follow — `None` for a hand-typed custom model or one saved
+    # before this field existed.
+    billing_profile: str | None = None
     concurrency_in_use: int = 0
     circuit_breaker_open: bool = False
     recent_attempts: int = 0
@@ -860,6 +888,24 @@ class LlmProviderValidationJob(ApiModel):
     result: LlmProviderValidationResult | None = None
 
 
+class PriceItemView(ApiModel):
+    """One billable line item from a vendor's own pricing page, as recorded
+    in `app.providers.model_catalog.PriceItem` — see that class for the
+    full explanation of each field."""
+
+    key: str
+    unit: Literal["per_second", "per_million_tokens", "per_image", "per_request"]
+    label: str
+    default_micro_usd: int
+    source_currency: Literal["USD", "CNY"]
+    source_amount: str
+    quoted_on: str
+    dimension: str = ""
+    free_count: int | None = None
+    volatile: bool = False
+    markup_note: str = ""
+
+
 class ModelCatalogEntryView(ApiModel):
     """One vendor's known model, for the admin picker's cascading dropdown.
 
@@ -877,6 +923,9 @@ class ModelCatalogEntryView(ApiModel):
     context_length: int = 0
     notes: str = ""
     doc_url: str = ""
+    pricing_doc_url: str = ""
+    billing_profile: str | None = None
+    price_items: list[PriceItemView] = Field(default_factory=list)
 
 
 class VendorCatalogView(ApiModel):
@@ -913,6 +962,11 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     max_output_tokens: int = Field(default=0, ge=0, le=10_000_000)
     token_pricing: TokenPricingPayload = Field(default_factory=TokenPricingPayload)
     media_pricing: MediaPricingPayload = Field(default_factory=MediaPricingPayload)
+    # Copied from the catalog entry the operator picked (see `ModelCatalog
+    # EntryView.billing_profile`), or left `None` for a hand-typed custom
+    # model. Free-form and unvalidated against a fixed vocabulary here —
+    # only `app.domain.costs.service` treats one specific value specially.
+    billing_profile: str | None = Field(default=None, max_length=64)
 
 
 class PromptSlotView(ApiModel):

@@ -513,6 +513,79 @@ def test_the_model_catalog_lists_both_vendors_read_only(client: TestClient, admi
     assert "doubao-seedance-2-5-260628" in aihubmix_models
 
 
+def test_the_model_catalog_exposes_price_items_and_a_billing_profile(
+    client: TestClient, admin: User
+) -> None:
+    """The admin picker needs each known model's own declared price items
+    (with a default in micro-USD and the vendor page they were read from) to
+    pre-fill pricing, not just protocol/modality metadata."""
+    response = client.get("/v1/admin/llm-providers/catalog", headers=admin_header(admin))
+    assert response.status_code == 200
+    vendors = {item["vendor"]: item for item in response.json()["vendors"]}
+    dmxapi_h3 = next(
+        entry for entry in vendors["dmxapi"]["models"] if entry["model"] == "MiniMax-H3"
+    )
+    assert dmxapi_h3["billing_profile"] == "minimax_h3_payg"
+    assert dmxapi_h3["pricing_doc_url"]
+    assert dmxapi_h3["price_items"]
+    two_k = next(
+        item
+        for item in dmxapi_h3["price_items"]
+        if item["key"] == "video_generation" and item["dimension"] == "2K"
+    )
+    assert two_k["default_micro_usd"] > 0
+    assert two_k["source_currency"] == "CNY"
+    assert two_k["markup_note"]
+
+    aihubmix_h3 = next(
+        entry for entry in vendors["aihubmix"]["models"] if entry["model"] == "minimax-h3"
+    )
+    aihubmix_two_k = next(
+        item
+        for item in aihubmix_h3["price_items"]
+        if item["key"] == "video_generation" and item["dimension"] == "2K"
+    )
+    # The regression the catalogue itself already guards in
+    # `test_model_catalog.py`, re-asserted through the actual HTTP contract:
+    # AiHubMix (USD) and DMXAPI (CNY) never share one default for the same
+    # nominal upstream model.
+    assert aihubmix_two_k["default_micro_usd"] != two_k["default_micro_usd"]
+
+
+def test_billing_profile_round_trips_through_upsert(client: TestClient, admin: User) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-seedance",
+        _media_payload(
+            model="doubao-seedance-2-5-260628",
+            input_modalities=["text", "image"],
+            output_modalities=["video"],
+            protocol="minimax",
+            billing_profile="seedance_tokens",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-seedance")
+    assert endpoint["billing_profile"] == "seedance_tokens"
+
+    # Omitting it on a later save clears it back to unset rather than
+    # silently keeping the old value — the payload is a full replace, same
+    # as every other field on this endpoint.
+    body = _upsert(
+        client,
+        admin,
+        "ep-seedance",
+        _media_payload(
+            model="doubao-seedance-2-5-260628",
+            input_modalities=["text", "image"],
+            output_modalities=["video"],
+            protocol="minimax",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-seedance")
+    assert endpoint["billing_profile"] is None
+
+
 def test_protocol_must_match_modalities(client: TestClient, admin: User) -> None:
     minimax_image = client.put(
         "/v1/admin/llm-providers/ep-bad",

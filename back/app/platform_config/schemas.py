@@ -458,10 +458,20 @@ class TokenPricing(ConfigSection):
 
     input_per_million_micro_usd: int = _MicroUsd
     output_per_million_micro_usd: int = _MicroUsd
+    # A prompt-cache hit on the input side, billed well below the regular
+    # input rate (e.g. GLM-5.3-Flash's DMXAPI-facing rate). Zero means the
+    # operator has not declared one — `llm_call_cost_micro_usd` then bills
+    # every prompt token at the regular rate exactly as before this field
+    # existed, since no caller passes a cached count without a reason to.
+    cached_input_per_million_micro_usd: int = _MicroUsd
 
     @property
     def is_declared(self) -> bool:
-        return bool(self.input_per_million_micro_usd or self.output_per_million_micro_usd)
+        return bool(
+            self.input_per_million_micro_usd
+            or self.output_per_million_micro_usd
+            or self.cached_input_per_million_micro_usd
+        )
 
 
 class ImagePricing(ConfigSection):
@@ -469,10 +479,32 @@ class ImagePricing(ConfigSection):
 
     input_per_image_micro_usd: int = _MicroUsd
     generation_per_image_micro_usd: int = _MicroUsd
+    # Some vendors (Doubao Seedream) price output by size tier instead of one
+    # flat per-image rate. Keys are the vendor's own tier labels (e.g. "1K"/
+    # "2K"); a tier not present here falls back to `generation_per_image_
+    # micro_usd`, so a model that only ever quotes one flat rate needs no
+    # entry here at all.
+    generation_per_image_by_tier_micro_usd: dict[str, int] = Field(default_factory=dict)
+    # The first N input reference images are free before `input_per_image_
+    # micro_usd` starts billing (Seedream's is 1). Zero — the default —
+    # reproduces the pre-existing behaviour of billing every input image.
+    reference_image_free_count: int = Field(default=0, ge=0, le=100)
+
+    @field_validator("generation_per_image_by_tier_micro_usd")
+    @classmethod
+    def _tier_prices_in_range(cls, value: dict[str, int]) -> dict[str, int]:
+        for tier, price in value.items():
+            if price < 0 or price > _MAX_UNIT_PRICE_MICRO_USD:
+                raise ValueError(f"档位 {tier} 的单价超出允许范围。")
+        return value
 
     @property
     def is_declared(self) -> bool:
-        return bool(self.input_per_image_micro_usd or self.generation_per_image_micro_usd)
+        return bool(
+            self.input_per_image_micro_usd
+            or self.generation_per_image_micro_usd
+            or self.generation_per_image_by_tier_micro_usd
+        )
 
 
 class AudioPricing(ConfigSection):
@@ -513,6 +545,29 @@ class VideoPricing(ConfigSection):
         )
 
 
+class TokenVideoPricing(ConfigSection):
+    """Doubao Seedance-style billing: per-million *video* tokens rather than
+    a quoted per-second rate — the vendor's own published formula turns
+    resolution/duration/fps into a token count and bills that like a text
+    model bills prompt/completion tokens (see `app.domain.costs.service
+    .seedance_video_cost_micro_usd`).
+
+    Two rates because supplying a reference video bills at a materially
+    lower per-token rate than generating from a prompt alone — the same
+    request billed under the wrong rate would look roughly 40% too
+    expensive, not just off by rounding.
+    """
+
+    per_million_tokens_micro_usd: int = _MicroUsd
+    per_million_tokens_with_video_ref_micro_usd: int = _MicroUsd
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(
+            self.per_million_tokens_micro_usd or self.per_million_tokens_with_video_ref_micro_usd
+        )
+
+
 class VideoAnalysisPricing(ConfigSection):
     """Billed per request, unlike generation pricing's per-second/per-image
     shape — a video-understanding call has one fixed cost regardless of how
@@ -538,6 +593,12 @@ class MediaPricing(ConfigSection):
     image: ImagePricing | None = None
     audio: AudioPricing | None = None
     video: VideoPricing | None = None
+    # A `video`-billed capability's *alternate* shape: set this instead of
+    # `video` for an endpoint whose `billing_profile` is token-formula-based
+    # (Seedance) rather than per-second — never both at once in practice,
+    # since one endpoint follows one vendor's one billing shape, but nothing
+    # here forbids declaring both while an operator is mid-edit.
+    token_video: TokenVideoPricing | None = None
     video_analysis: VideoAnalysisPricing | None = None
 
 
@@ -621,6 +682,15 @@ class LlmProviderEndpoint(ConfigSection):
     token_pricing: TokenPricing = Field(default_factory=TokenPricing)
     # `kind="media"` only: per-capability list prices.
     media_pricing: MediaPricing = Field(default_factory=MediaPricing)
+    # Which `app.providers.model_catalog` billing shape this endpoint's
+    # prices follow (e.g. `"minimax_h3_payg"`, `"seedance_tokens"`,
+    # `"seedream_tiered_image"`) — informational metadata copied from the
+    # catalog entry an operator picked (or left `None` for a hand-typed
+    # custom model), so `app.domain.costs.service` knows which formula to
+    # apply and the admin UI knows which price fields to show. Free-form on
+    # purpose: this schema must not fail to parse an endpoint saved before a
+    # new profile id existed, or before this field existed at all.
+    billing_profile: str | None = Field(default=None, max_length=64)
 
     @property
     def capabilities(self) -> set[str]:
@@ -736,6 +806,9 @@ class LlmProviderEndpoint(ConfigSection):
             image=self.media_pricing.image if "image" in priced else None,
             audio=self.media_pricing.audio if "audio" in priced else None,
             video=self.media_pricing.video if "video" in priced else None,
+            # `token_video` bills the same capabilities `video` does, just
+            # under a different formula — dropped by the same condition.
+            token_video=self.media_pricing.token_video if "video" in priced else None,
             video_analysis=(
                 self.media_pricing.video_analysis if "video_analysis" in priced else None
             ),

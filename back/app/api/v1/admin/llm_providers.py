@@ -34,6 +34,7 @@ from app.api.schemas.admin import (
     MediaPricingPayload,
     ModelCatalogEntryView,
     ModelCatalogResponse,
+    PriceItemView,
     TokenPricingPayload,
     VendorCatalogView,
 )
@@ -94,6 +95,24 @@ def get_llm_provider_catalog(user: Viewer, _: AdminRead) -> ModelCatalogResponse
                         context_length=entry.context_length,
                         notes=entry.notes,
                         doc_url=entry.doc_url,
+                        pricing_doc_url=entry.pricing_doc_url,
+                        billing_profile=entry.billing_profile,
+                        price_items=[
+                            PriceItemView(
+                                key=item.key,
+                                unit=item.unit,
+                                label=item.label,
+                                default_micro_usd=item.default_micro_usd,
+                                source_currency=item.source_currency,
+                                source_amount=item.source_amount,
+                                quoted_on=item.quoted_on,
+                                dimension=item.dimension,
+                                free_count=item.free_count,
+                                volatile=item.volatile,
+                                markup_note=item.markup_note,
+                            )
+                            for item in entry.price_items
+                        ],
                     )
                     for entry in model_catalog.VENDOR_MODEL_CATALOG.get(vendor, [])
                 ],
@@ -151,6 +170,7 @@ def upsert_llm_provider(
             max_output_tokens=payload.max_output_tokens,
             token_pricing=payload.token_pricing.model_dump(),
             media_pricing=payload.media_pricing.model_dump(exclude_none=True),
+            billing_profile=payload.billing_profile,
         )
         _assert_agent_bindings_compatible(session, endpoint_id, endpoint)
         config.endpoints[endpoint_id] = endpoint
@@ -174,6 +194,7 @@ def upsert_llm_provider(
             "role": payload.role,
             "model": payload.model,
             "protocol": endpoint.protocol if payload.kind == "media" else None,
+            "billing_profile": endpoint.billing_profile,
             "input_modalities": sorted(endpoint.input_modalities),
             "output_modalities": sorted(payload.output_modalities)
             if payload.kind == "media"
@@ -387,6 +408,7 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         media_pricing=MediaPricingPayload.model_validate(
             endpoint.media_pricing.model_dump(mode="json")
         ),
+        billing_profile=endpoint.billing_profile,
         concurrency_in_use=status.concurrency_in_use,
         circuit_breaker_open=status.circuit_breaker_open,
         recent_attempts=status.recent_attempts,

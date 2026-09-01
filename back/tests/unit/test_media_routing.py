@@ -362,6 +362,62 @@ def test_wan_videoedit_never_advertises_frame_images_unlike_h3(db: Session) -> N
     assert entry.reference_modes == frozenset({"input_references"})
 
 
+def test_wan3_video_carries_its_own_default_resolution_not_h3s(db: Session) -> None:
+    """`wan3.0-video` renders at `1080P` when a request leaves resolution
+    unset — `2K`/`768P` is H3's vocabulary and the C-end request schema
+    cannot even express `1080P` (see `VideoGenerationOptions.resolution`), so
+    the catalogue entry's own `default_resolution` is the only place this
+    model's real fallback resolution is recorded. (`wan2.7-videoedit`'s own
+    profile deliberately declares `default_resolution=None` — AiHubMix's
+    real behaviour when the field is omitted for that specific model was
+    never confirmed, so the code does not guess it; `wan3.0-video` is the
+    DMXAPI-profiled model this fallback is actually confirmed for.)"""
+    _seed_media_endpoint(
+        db,
+        model="wan3.0-video",
+        input_modalities=["text"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:text_to_video"]
+    assert entry.default_resolution == "1080P"
+
+
+def test_a_configured_price_at_the_models_own_default_resolution_is_actually_used(
+    db: Session,
+) -> None:
+    """Regression test: before `ProviderCapability.default_resolution`
+    existed, `estimate_media_request_cost_micro_usd` always fell back to the
+    fixed `NOMINAL_VIDEO_RESOLUTION` ("2K") for any model whose real default
+    resolution the C-end request schema cannot express — so a price
+    configured under that model's actual resolution (`1080P` for
+    `wan3.0-video`) was never looked up at all."""
+    per_second = 166_667  # 1.2 元/秒, wan3.0-video's real DMXAPI 1080P rate
+    _seed_media_endpoint(
+        db,
+        model="wan3.0-video",
+        input_modalities=["text"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+        media_pricing={"video": {"generation_per_second_micro_usd": {"1080P": per_second}}},
+    )
+    bind_default_agents_to_catalog(db)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        # No `video_options.resolution` at all — exactly the shape every real
+        # wan3.0-video request has, since the schema cannot name `1080P`.
+        request_params={"duration_seconds": 6, "aspect_ratio": "16:9"},
+    )
+    candidate = next(
+        item for item in decision.candidates if item.provider == "media-ep:text_to_video"
+    )
+    assert candidate.estimated_cost_micro_usd == 6 * per_second
+
+
 def test_an_openai_protocol_video_endpoint_carries_no_native_hard_filter(db: Session) -> None:
     """The native `NativeVideoModelProfile` table only applies to the
     `minimax` protocol's `/ai/v1/videos` contract — an `openai`-protocol

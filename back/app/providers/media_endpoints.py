@@ -115,8 +115,14 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 video_profile = native_video_profile(endpoint.model)
             elif is_native_video and endpoint.protocol == "dmxapi":
                 video_profile = dmxapi_video_profile(endpoint.model)
+            default_resolution = (
+                video_profile.default_resolution if video_profile is not None else None
+            )
             configured_cost = costs_service.nominal_media_call_cost_micro_usd(
-                endpoint.media_pricing, capability=tag
+                endpoint.media_pricing,
+                capability=tag,
+                billing_profile=endpoint.billing_profile,
+                default_resolution=default_resolution,
             )
             catalog[catalog_key] = ProviderCapability(
                 name=catalog_key,
@@ -129,6 +135,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 or _FALLBACK_UNIT_COST_MICRO_USD.get(tag, _FALLBACK_DEFAULT_MICRO_USD),
                 cost_is_estimated=not configured_cost,
                 pricing=endpoint.media_pricing,
+                billing_profile=endpoint.billing_profile,
                 model_or_workflow=endpoint.model,
                 min_duration_seconds=(
                     video_profile.min_duration_seconds if video_profile is not None else None
@@ -138,6 +145,7 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 ),
                 aspect_ratios=video_profile.aspect_ratios if video_profile is not None else None,
                 resolutions=video_profile.resolutions if video_profile is not None else None,
+                default_resolution=default_resolution,
                 # `frame_images` (first/last-frame) is an H3-only concept on
                 # AiHubMix's native track — any other profiled native-video
                 # model there (e.g. wan2.7-videoedit) only ever advertises

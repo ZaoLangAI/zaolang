@@ -71,6 +71,7 @@ export type LlmProviderValidationJob = S['LlmProviderValidationJob'];
 export type LlmProviderUpsertRequest = S['LlmProviderEndpointUpsertRequest'];
 export type LlmProviderKind = LlmProviderEndpoint['kind'];
 export type ModelCatalogEntry = S['ModelCatalogEntryView'];
+export type PriceItem = S['PriceItemView'];
 export type VendorCatalog = S['VendorCatalogView'];
 export type ModelCatalogResponse = S['ModelCatalogResponse'];
 export type AgentNode = S['AgentNodeView'];

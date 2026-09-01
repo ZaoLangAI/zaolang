@@ -1531,7 +1531,11 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
         # now. Deriving it at report time instead would let tomorrow's price
         # change rewrite what today's generation cost.
         attempt_cost_micro_usd = costs_service.generation_attempt_cost_micro_usd(
-            capability.pricing, capability=ctx.job.operation, request=request
+            capability.pricing,
+            capability=ctx.job.operation,
+            request=request,
+            billing_profile=capability.billing_profile,
+            default_resolution=capability.default_resolution,
         )
         attempt = ProviderAttempt(
             job_id=ctx.job.id,
@@ -1707,7 +1711,11 @@ def execute_video_analysis_generate(
         )
         result = decision.provider.submit(request)
         attempt_cost_micro_usd = costs_service.generation_attempt_cost_micro_usd(
-            capability.pricing, capability=ctx.job.operation, request=request
+            capability.pricing,
+            capability=ctx.job.operation,
+            request=request,
+            billing_profile=capability.billing_profile,
+            default_resolution=capability.default_resolution,
         )
         attempt = ProviderAttempt(
             job_id=ctx.job.id,

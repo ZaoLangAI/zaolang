@@ -7522,6 +7522,15 @@ export interface components {
              * @default 0
              */
             generation_per_image_micro_usd: number;
+            /** Generation Per Image By Tier Micro Usd */
+            generation_per_image_by_tier_micro_usd?: {
+                [key: string]: number;
+            };
+            /**
+             * Reference Image Free Count
+             * @default 0
+             */
+            reference_image_free_count: number;
         };
         /** JobAnswerItem */
         JobAnswerItem: {
@@ -8103,6 +8112,8 @@ export interface components {
             max_output_tokens: number;
             token_pricing?: components["schemas"]["TokenPricingPayload"];
             media_pricing?: components["schemas"]["MediaPricingPayload"];
+            /** Billing Profile */
+            billing_profile?: string | null;
         };
         /**
          * LlmProviderEndpointView
@@ -8170,6 +8181,8 @@ export interface components {
             max_output_tokens: number;
             token_pricing?: components["schemas"]["TokenPricingPayload"];
             media_pricing?: components["schemas"]["MediaPricingPayload"];
+            /** Billing Profile */
+            billing_profile?: string | null;
             /**
              * Concurrency In Use
              * @default 0
@@ -8400,6 +8413,7 @@ export interface components {
             image?: components["schemas"]["ImagePricingPayload"] | null;
             audio?: components["schemas"]["AudioPricingPayload"] | null;
             video?: components["schemas"]["VideoPricingPayload"] | null;
+            token_video?: components["schemas"]["TokenVideoPricingPayload"] | null;
         };
         /**
          * MediaType
@@ -8445,6 +8459,15 @@ export interface components {
              * @default
              */
             doc_url: string;
+            /**
+             * Pricing Doc Url
+             * @default
+             */
+            pricing_doc_url: string;
+            /** Billing Profile */
+            billing_profile?: string | null;
+            /** Price Items */
+            price_items?: components["schemas"]["PriceItemView"][];
         };
         /** ModelCatalogResponse */
         ModelCatalogResponse: {
@@ -9341,6 +9364,51 @@ export interface components {
             reduce_motion?: boolean | null;
             /** Notify On Remix */
             notify_on_remix?: boolean | null;
+        };
+        /**
+         * PriceItemView
+         * @description One billable line item from a vendor's own pricing page, as recorded
+         *     in `app.providers.model_catalog.PriceItem` — see that class for the
+         *     full explanation of each field.
+         */
+        PriceItemView: {
+            /** Key */
+            key: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "per_second" | "per_million_tokens" | "per_image" | "per_request";
+            /** Label */
+            label: string;
+            /** Default Micro Usd */
+            default_micro_usd: number;
+            /**
+             * Source Currency
+             * @enum {string}
+             */
+            source_currency: "USD" | "CNY";
+            /** Source Amount */
+            source_amount: string;
+            /** Quoted On */
+            quoted_on: string;
+            /**
+             * Dimension
+             * @default
+             */
+            dimension: string;
+            /** Free Count */
+            free_count?: number | null;
+            /**
+             * Volatile
+             * @default false
+             */
+            volatile: boolean;
+            /**
+             * Markup Note
+             * @default
+             */
+            markup_note: string;
         };
         /** ProfileResponse */
         ProfileResponse: {
@@ -10806,6 +10874,11 @@ export interface components {
              * @default 0
              */
             output_per_million_micro_usd: number;
+            /**
+             * Cached Input Per Million Micro Usd
+             * @default 0
+             */
+            cached_input_per_million_micro_usd: number;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -10821,6 +10894,24 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+        };
+        /**
+         * TokenVideoPricingPayload
+         * @description Doubao Seedance-style per-million-video-token billing — the alternate
+         *     shape a `billing_profile="seedance_tokens"` endpoint uses instead of
+         *     `VideoPricingPayload`'s per-second rate (see `TokenVideoPricing`).
+         */
+        TokenVideoPricingPayload: {
+            /**
+             * Per Million Tokens Micro Usd
+             * @default 0
+             */
+            per_million_tokens_micro_usd: number;
+            /**
+             * Per Million Tokens With Video Ref Micro Usd
+             * @default 0
+             */
+            per_million_tokens_with_video_ref_micro_usd: number;
         };
         /** TombstoneRequest */
         TombstoneRequest: {

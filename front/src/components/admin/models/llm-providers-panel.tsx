@@ -17,6 +17,7 @@ import {
   convertDisplayPrice,
   displayToMicroUsd,
   dollarsToMicroUsd,
+  microUsdToDisplay,
   microUsdToDollars,
   parseCnyPerUsd,
 } from '@/lib/admin/micro-usd';
@@ -49,7 +50,9 @@ import type {
   LlmProviderPool,
   LlmProviderValidationJob,
   LlmProviderValidationResult,
+  ModelCatalogEntry,
   ModelCatalogResponse,
+  PriceItem,
 } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
 
@@ -61,6 +64,49 @@ import { ApiError } from '@/lib/api/errors';
  * other enum this file already mirrors (e.g. `MediaProtocol`). */
 type VendorChoice = 'custom' | 'aihubmix' | 'dmxapi';
 const CUSTOM_VENDOR: VendorChoice = 'custom';
+
+/** Mirrors `app.domain.costs.service.SEEDANCE_TOKENS_BILLING_PROFILE` — the
+ * one `billing_profile` value the cost code actually branches on, to bill
+ * `token_video`'s per-million-token formula instead of the per-second
+ * `video_generation`/`video_input_material` fields. An endpoint on this
+ * profile never reads those per-second fields at settlement, so the form
+ * hides that whole block for it rather than showing price inputs that would
+ * silently do nothing. */
+const SEEDANCE_TOKENS_BILLING_PROFILE = 'seedance_tokens';
+
+/**
+ * Which `VIDEO_RESOLUTIONS`/`IMAGE_TIERS` keys the currently selected known
+ * model actually looks up at settlement — derived from its catalog
+ * `price_items`' own `dimension`s, not the full fixed list every vendor's
+ * casing convention happens to share space in. `null` means "unknown model
+ * (custom, or a known model with no declared items for this key)" — show
+ * every key rather than guessing which one a hand-typed endpoint needs.
+ */
+/** Looks up the catalog entry for whatever vendor/model the form currently
+ * has selected, so the pricing block can tell a known model's own declared
+ * price items from a hand-typed custom one. Not scoped to `kind` — the
+ * caller already narrows `model` to one vendor+kind combination via the
+ * picker, and two different kinds never share a model id in practice. */
+function findCatalogEntry(
+  catalog: ModelCatalogResponse,
+  vendor: VendorChoice,
+  model: string,
+): ModelCatalogEntry | undefined {
+  if (vendor === CUSTOM_VENDOR || !model.trim()) return undefined;
+  return catalog.vendors
+    ?.find((item) => item.vendor === vendor)
+    ?.models?.find((entry) => entry.model === model);
+}
+
+function relevantDimensions(entry: ModelCatalogEntry | undefined, keys: string[]): Set<string> | null {
+  if (!entry) return null;
+  const dims = new Set(
+    (entry.price_items ?? [])
+      .filter((item) => keys.includes(item.key) && item.dimension)
+      .map((item) => item.dimension),
+  );
+  return dims.size > 0 ? dims : null;
+}
 
 /**
  * Prices are held as the decimal strings the operator typed in the current
@@ -89,19 +135,37 @@ interface EndpointFormState {
   max_concurrency: string;
   timeout_ms: string;
   enabled: boolean;
+  // Which `app.providers.model_catalog` billing shape this endpoint's
+  // prices follow — copied from the picked catalog entry, or `null` for a
+  // hand-typed custom model. Purely metadata: nothing on this form branches
+  // on it, `app.domain.costs.service` does.
+  billing_profile: string | null;
   // `kind="general"` pricing and limits.
   context_length: string;
   max_output_tokens: string;
   input_per_million: string;
   output_per_million: string;
+  // A prompt-cache hit, billed below the regular input rate (declared here
+  // even though nothing parses a live cache-hit count yet — see
+  // `TokenPricing.cached_input_per_million_micro_usd`).
+  cached_input_per_million: string;
   // `kind="media"` pricing, by section.
   image_input: string;
   image_generation: string;
+  // Doubao Seedream-style size-tiered generation price (keyed "1K"/"2K");
+  // falls back to `image_generation` for a tier this map does not cover.
+  image_generation_by_tier: Record<string, string>;
+  image_reference_free_count: string;
   audio_per_10k: string;
   video_generation: Record<string, string>;
   video_input_material: Record<string, string>;
   video_reference_free_count: string;
   video_extra_reference: string;
+  // Doubao Seedance-style per-million-video-token billing — the alternate
+  // shape a `billing_profile="seedance_tokens"` endpoint uses instead of
+  // the per-second `video_generation` fields above.
+  token_video_no_ref: string;
+  token_video_with_ref: string;
 }
 
 /** Mirrors `VIDEO_RESOLUTIONS` in `app/platform_config/schemas.py`; the API
@@ -130,6 +194,22 @@ function resolutionPricesFrom(prices: Record<string, number> | undefined): Recor
       resolution,
       microUsdToDollars(prices?.[resolution] ?? 0),
     ]),
+  );
+}
+
+/** Mirrors `generation_per_image_by_tier_micro_usd`'s keys — Doubao
+ * Seedream's own size-tier vocabulary. Kept separate from
+ * `VIDEO_RESOLUTIONS` since a vendor's image tiers and video resolutions are
+ * unrelated dimensions that happen to share the "1K/2K/4K" shorthand. */
+const IMAGE_TIERS = ['1K', '2K', '4K'] as const;
+
+function emptyTierPrices(): Record<string, string> {
+  return Object.fromEntries(IMAGE_TIERS.map((tier) => [tier, '']));
+}
+
+function tierPricesFrom(prices: Record<string, number> | undefined): Record<string, string> {
+  return Object.fromEntries(
+    IMAGE_TIERS.map((tier) => [tier, microUsdToDollars(prices?.[tier] ?? 0)]),
   );
 }
 
@@ -214,17 +294,23 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     max_concurrency: '4',
     timeout_ms: kind === 'media' ? '90000' : '30000',
     enabled: true,
+    billing_profile: null,
     context_length: '',
     max_output_tokens: '',
     input_per_million: '',
     output_per_million: '',
+    cached_input_per_million: '',
     image_input: '',
     image_generation: '',
+    image_generation_by_tier: emptyTierPrices(),
+    image_reference_free_count: '0',
     audio_per_10k: '',
     video_generation: emptyResolutionPrices(),
     video_input_material: emptyResolutionPrices(),
     video_reference_free_count: '5',
     video_extra_reference: '',
+    token_video_no_ref: '',
+    token_video_with_ref: '',
   };
 }
 
@@ -250,17 +336,25 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     max_concurrency: String(endpoint.max_concurrency),
     timeout_ms: String(endpoint.timeout_ms),
     enabled: endpoint.enabled,
+    billing_profile: endpoint.billing_profile ?? null,
     context_length: formatTokenCount(endpoint.context_length),
     max_output_tokens: formatTokenCount(endpoint.max_output_tokens),
     input_per_million: microUsdToDollars(tokens?.input_per_million_micro_usd ?? 0),
     output_per_million: microUsdToDollars(tokens?.output_per_million_micro_usd ?? 0),
+    cached_input_per_million: microUsdToDollars(tokens?.cached_input_per_million_micro_usd ?? 0),
     image_input: microUsdToDollars(media?.image?.input_per_image_micro_usd ?? 0),
     image_generation: microUsdToDollars(media?.image?.generation_per_image_micro_usd ?? 0),
+    image_generation_by_tier: tierPricesFrom(media?.image?.generation_per_image_by_tier_micro_usd),
+    image_reference_free_count: String(media?.image?.reference_image_free_count ?? 0),
     audio_per_10k: microUsdToDollars(media?.audio?.per_10k_characters_micro_usd ?? 0),
     video_generation: resolutionPricesFrom(media?.video?.generation_per_second_micro_usd),
     video_input_material: resolutionPricesFrom(media?.video?.input_material_per_second_micro_usd),
     video_reference_free_count: String(media?.video?.reference_image_free_count ?? 5),
     video_extra_reference: microUsdToDollars(media?.video?.extra_reference_image_micro_usd ?? 0),
+    token_video_no_ref: microUsdToDollars(media?.token_video?.per_million_tokens_micro_usd ?? 0),
+    token_video_with_ref: microUsdToDollars(
+      media?.token_video?.per_million_tokens_with_video_ref_micro_usd ?? 0,
+    ),
   };
 }
 
@@ -268,15 +362,35 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
  * what has to parse. */
 function priceFields(form: EndpointFormState): string[] {
   return form.kind === 'general'
-    ? [form.input_per_million, form.output_per_million]
+    ? [form.input_per_million, form.output_per_million, form.cached_input_per_million]
     : [
         form.image_input,
         form.image_generation,
         form.audio_per_10k,
         form.video_extra_reference,
+        form.token_video_no_ref,
+        form.token_video_with_ref,
         ...Object.values(form.video_generation),
         ...Object.values(form.video_input_material),
+        ...Object.values(form.image_generation_by_tier),
       ];
+}
+
+/** Shared by the per-resolution video fields and the per-tier image fields:
+ * only a key the operator actually priced is sent, so a zero never claims
+ * the vendor charges nothing for a dimension nobody has filled in yet. */
+function keyedPricePayload(
+  prices: Record<string, string>,
+  keys: readonly string[],
+  currency: PriceInputCurrency,
+  rateMicro: number,
+): Record<string, number> {
+  const payload: Record<string, number> = {};
+  for (const key of keys) {
+    const micros = displayToMicroUsd(prices[key] ?? '', currency, rateMicro);
+    if (micros) payload[key] = micros;
+  }
+  return payload;
 }
 
 function resolutionPricePayload(
@@ -284,14 +398,15 @@ function resolutionPricePayload(
   currency: PriceInputCurrency,
   rateMicro: number,
 ): Record<string, number> {
-  const payload: Record<string, number> = {};
-  for (const resolution of VIDEO_RESOLUTIONS) {
-    const micros = displayToMicroUsd(prices[resolution] ?? '', currency, rateMicro);
-    // Only priced resolutions are sent; a zero would claim the vendor charges
-    // nothing for a resolution the operator simply has not filled in.
-    if (micros) payload[resolution] = micros;
-  }
-  return payload;
+  return keyedPricePayload(prices, VIDEO_RESOLUTIONS, currency, rateMicro);
+}
+
+function tierPricePayload(
+  prices: Record<string, string>,
+  currency: PriceInputCurrency,
+  rateMicro: number,
+): Record<string, number> {
+  return keyedPricePayload(prices, IMAGE_TIERS, currency, rateMicro);
 }
 
 /** Rewrites every price field when the operator toggles USD ↔ CNY. Invalid
@@ -305,27 +420,33 @@ function convertFormPrices(
   EndpointFormState,
   | 'input_per_million'
   | 'output_per_million'
+  | 'cached_input_per_million'
   | 'image_input'
   | 'image_generation'
+  | 'image_generation_by_tier'
   | 'audio_per_10k'
   | 'video_generation'
   | 'video_input_material'
   | 'video_extra_reference'
+  | 'token_video_no_ref'
+  | 'token_video_with_ref'
 > {
   const convert = (value: string) => convertDisplayPrice(value, from, to, rateMicro);
-  const convertResolutions = (prices: Record<string, string>) =>
-    Object.fromEntries(
-      VIDEO_RESOLUTIONS.map((resolution) => [resolution, convert(prices[resolution] ?? '')]),
-    );
+  const convertKeyed = (prices: Record<string, string>, keys: readonly string[]) =>
+    Object.fromEntries(keys.map((key) => [key, convert(prices[key] ?? '')]));
   return {
     input_per_million: convert(form.input_per_million),
     output_per_million: convert(form.output_per_million),
+    cached_input_per_million: convert(form.cached_input_per_million),
     image_input: convert(form.image_input),
     image_generation: convert(form.image_generation),
+    image_generation_by_tier: convertKeyed(form.image_generation_by_tier, IMAGE_TIERS),
     audio_per_10k: convert(form.audio_per_10k),
-    video_generation: convertResolutions(form.video_generation),
-    video_input_material: convertResolutions(form.video_input_material),
+    video_generation: convertKeyed(form.video_generation, VIDEO_RESOLUTIONS),
+    video_input_material: convertKeyed(form.video_input_material, VIDEO_RESOLUTIONS),
     video_extra_reference: convert(form.video_extra_reference),
+    token_video_no_ref: convert(form.token_video_no_ref),
+    token_video_with_ref: convert(form.token_video_with_ref),
   };
 }
 
@@ -357,15 +478,21 @@ function buildUpsertPayload(
     enabled: form.enabled,
     context_length: form.kind === 'general' ? (parseTokenCount(form.context_length) ?? 0) : 0,
     max_output_tokens: form.kind === 'general' ? (parseTokenCount(form.max_output_tokens) ?? 0) : 0,
+    billing_profile: form.billing_profile,
     token_pricing:
       form.kind === 'general'
         ? {
             input_per_million_micro_usd: micros(form.input_per_million),
             output_per_million_micro_usd: micros(form.output_per_million),
+            cached_input_per_million_micro_usd: micros(form.cached_input_per_million),
           }
-        : { input_per_million_micro_usd: 0, output_per_million_micro_usd: 0 },
+        : {
+            input_per_million_micro_usd: 0,
+            output_per_million_micro_usd: 0,
+            cached_input_per_million_micro_usd: 0,
+          },
     // The server drops sections the endpoint's capabilities do not cover, so
-    // the form can send all three without stale prices surviving a capability
+    // the form can send all four without stale prices surviving a capability
     // change.
     media_pricing:
       form.kind === 'media'
@@ -373,6 +500,12 @@ function buildUpsertPayload(
             image: {
               input_per_image_micro_usd: micros(form.image_input),
               generation_per_image_micro_usd: micros(form.image_generation),
+              generation_per_image_by_tier_micro_usd: tierPricePayload(
+                form.image_generation_by_tier,
+                currency,
+                rateMicro,
+              ),
+              reference_image_free_count: Number(form.image_reference_free_count || 0),
             },
             audio: { per_10k_characters_micro_usd: micros(form.audio_per_10k) },
             video: {
@@ -388,6 +521,10 @@ function buildUpsertPayload(
               ),
               reference_image_free_count: Number(form.video_reference_free_count || 0),
               extra_reference_image_micro_usd: micros(form.video_extra_reference),
+            },
+            token_video: {
+              per_million_tokens_micro_usd: micros(form.token_video_no_ref),
+              per_million_tokens_with_video_ref_micro_usd: micros(form.token_video_with_ref),
             },
           }
         : {},
@@ -800,6 +937,7 @@ export function LlmProvidersPanel({
                     // preset makes no sense once the kind flips to
                     // "general", and vice versa) — back to free text.
                     vendor: CUSTOM_VENDOR,
+                    billing_profile: null,
                     protocol: kind === 'media' ? current.protocol || 'openai' : current.protocol,
                     role: hasPrimaryOfKind(kind) ? current.role : 'primary',
                   };
@@ -810,6 +948,8 @@ export function LlmProvidersPanel({
             <VendorModelPicker
               catalog={catalog}
               editing={editing}
+              priceCurrency={priceCurrency}
+              cnyPerUsd={cnyPerUsd}
               onChange={(patch) => setEditing((current) => current && { ...current, ...patch })}
             />
 
@@ -929,6 +1069,7 @@ export function LlmProvidersPanel({
               form={editing}
               currency={priceCurrency}
               cnyPerUsd={cnyPerUsd}
+              selectedCatalogEntry={findCatalogEntry(catalog, editing.vendor, editing.model)}
               onChange={(patch) => setEditing((current) => current && { ...current, ...patch })}
               onCurrencyChange={changePriceCurrency}
               onRateChange={setCnyPerUsd}
@@ -996,13 +1137,87 @@ export function LlmProvidersPanel({
  * is sent to the API or enforced at save time (see `ModelCatalogEntryView`
  * on the backend).
  */
+/**
+ * Turns one known model's `price_items` into the same structured pricing
+ * fields `PricingFields` renders — the mapping is the vocabulary shared
+ * between `app.providers.model_catalog.PriceItem.key` and this form.
+ * Written in the operator's current display currency/rate so applying a
+ * preset never needs to silently flip the currency selector back to USD
+ * underneath them.
+ */
+function priceItemsToFormPatch(
+  items: PriceItem[],
+  currency: PriceInputCurrency,
+  rateMicro: number,
+): Partial<EndpointFormState> {
+  const toDisplay = (micro: number) => microUsdToDisplay(micro, currency, rateMicro);
+  const patch: Partial<EndpointFormState> = {};
+  const videoGeneration: Record<string, string> = {};
+  const videoInputMaterial: Record<string, string> = {};
+  const imageGenerationByTier: Record<string, string> = {};
+  for (const item of items) {
+    const display = toDisplay(item.default_micro_usd);
+    switch (item.key) {
+      case 'video_generation':
+        if (item.dimension) videoGeneration[item.dimension] = display;
+        break;
+      case 'video_input_material':
+        if (item.dimension) videoInputMaterial[item.dimension] = display;
+        break;
+      case 'video_extra_reference_image':
+        patch.video_extra_reference = display;
+        if (item.free_count != null) patch.video_reference_free_count = String(item.free_count);
+        break;
+      case 'image_generation':
+        if (item.dimension) imageGenerationByTier[item.dimension] = display;
+        else patch.image_generation = display;
+        break;
+      case 'image_input_reference':
+        patch.image_input = display;
+        if (item.free_count != null) patch.image_reference_free_count = String(item.free_count);
+        break;
+      case 'token_video_no_ref':
+        patch.token_video_no_ref = display;
+        break;
+      case 'token_video_with_ref':
+        patch.token_video_with_ref = display;
+        break;
+      case 'llm_input_tokens':
+        patch.input_per_million = display;
+        break;
+      case 'llm_output_tokens':
+        patch.output_per_million = display;
+        break;
+      case 'llm_cached_input_tokens':
+        patch.cached_input_per_million = display;
+        break;
+      default:
+        break;
+    }
+  }
+  if (Object.keys(videoGeneration).length > 0) {
+    patch.video_generation = { ...emptyResolutionPrices(), ...videoGeneration };
+  }
+  if (Object.keys(videoInputMaterial).length > 0) {
+    patch.video_input_material = { ...emptyResolutionPrices(), ...videoInputMaterial };
+  }
+  if (Object.keys(imageGenerationByTier).length > 0) {
+    patch.image_generation_by_tier = { ...emptyTierPrices(), ...imageGenerationByTier };
+  }
+  return patch;
+}
+
 function VendorModelPicker({
   catalog,
   editing,
+  priceCurrency,
+  cnyPerUsd,
   onChange,
 }: {
   catalog: ModelCatalogResponse;
   editing: EndpointFormState;
+  priceCurrency: PriceInputCurrency;
+  cnyPerUsd: string;
   onChange: (patch: Partial<EndpointFormState>) => void;
 }) {
   const t = useTranslations('adminProviders');
@@ -1022,6 +1237,8 @@ function VendorModelPicker({
   const applyModel = (modelId: string) => {
     const entry = knownModels.find((item) => item.model === modelId);
     if (!entry) return;
+    const rateMicro = priceCurrency === 'CNY' ? parseCnyPerUsd(cnyPerUsd) ?? 1 : 1;
+    const pricingPatch = priceItemsToFormPatch(entry.price_items ?? [], priceCurrency, rateMicro);
     if (editing.kind === 'media') {
       onChange({
         model: entry.model,
@@ -1029,6 +1246,8 @@ function VendorModelPicker({
         protocol: (entry.protocol as MediaProtocol | null) ?? editing.protocol,
         input_modalities: entry.input_modalities as MediaInputModality[],
         output_modalities: entry.output_modalities as MediaOutputModality[],
+        billing_profile: entry.billing_profile ?? null,
+        ...pricingPatch,
       });
       return;
     }
@@ -1036,6 +1255,8 @@ function VendorModelPicker({
       model: entry.model,
       base_url: activeVendor?.base_url ?? editing.base_url,
       context_length: entry.context_length ? formatTokenCount(entry.context_length) : editing.context_length,
+      billing_profile: entry.billing_profile ?? null,
+      ...pricingPatch,
     });
   };
 
@@ -1082,6 +1303,7 @@ function PricingFields({
   form,
   currency,
   cnyPerUsd,
+  selectedCatalogEntry,
   onChange,
   onCurrencyChange,
   onRateChange,
@@ -1089,6 +1311,11 @@ function PricingFields({
   form: EndpointFormState;
   currency: PriceInputCurrency;
   cnyPerUsd: string;
+  // The catalog entry for the currently selected known model, or `undefined`
+  // for a custom/hand-typed one (or none selected yet). Narrows which
+  // resolution/tier keys and which of the per-second vs. per-token video
+  // sections actually apply — see `relevantDimensions`.
+  selectedCatalogEntry?: ModelCatalogEntry;
   onChange: (patch: Partial<EndpointFormState>) => void;
   onCurrencyChange: (currency: PriceInputCurrency) => void;
   onRateChange: (value: string) => void;
@@ -1097,6 +1324,32 @@ function PricingFields({
   const outputs = new Set(form.output_modalities);
   const currencyLabel = currency === 'USD' ? t('pricingCurrencyUsd') : t('pricingCurrencyCny');
   const rateInvalid = currency === 'CNY' && parseCnyPerUsd(cnyPerUsd) === null;
+
+  const isSeedanceTokenBilled =
+    selectedCatalogEntry?.billing_profile === SEEDANCE_TOKENS_BILLING_PROFILE;
+  // `undefined` (custom/unknown model) shows both video sections and every
+  // resolution/tier key, same as before this filtering existed — only a
+  // known catalog entry narrows anything.
+  const showPerSecondVideo = selectedCatalogEntry ? !isSeedanceTokenBilled : true;
+  const showTokenVideo = selectedCatalogEntry ? isSeedanceTokenBilled : true;
+  const relevantResolutions = relevantDimensions(selectedCatalogEntry, [
+    'video_generation',
+    'video_input_material',
+  ]);
+  const relevantImageTiers = relevantDimensions(selectedCatalogEntry, ['image_generation']);
+  // A resolution/tier the catalog does not name for this model is still
+  // shown once it already carries a value — reopening the form (or the
+  // operator having picked a different model earlier) must never make an
+  // already-typed price disappear.
+  const showResolution = (resolution: string) =>
+    !relevantResolutions ||
+    relevantResolutions.has(resolution) ||
+    Boolean(form.video_generation[resolution]) ||
+    Boolean(form.video_input_material[resolution]);
+  const showImageTier = (tier: string) =>
+    !relevantImageTiers ||
+    relevantImageTiers.has(tier) ||
+    Boolean(form.image_generation_by_tier[tier]);
 
   const currencyControls = (
     <>
@@ -1152,6 +1405,12 @@ function PricingFields({
           value={form.output_per_million}
           onChange={(value) => onChange({ output_per_million: value })}
         />
+        <PriceInput
+          label={t('priceCachedInputTokens')}
+          hint={t('priceCachedInputTokensHint', { currency: currencyLabel })}
+          value={form.cached_input_per_million}
+          onChange={(value) => onChange({ cached_input_per_million: value })}
+        />
       </PricingSection>
     );
   }
@@ -1171,6 +1430,16 @@ function PricingFields({
       </div>
       {outputs.has('image') ? (
         <PricingSection title={t('pricingImageTitle')} hint={t('pricingImageHint')}>
+          <TextInput
+            layout="inline"
+            label={t('imageFreeReferenceCount')}
+            hint={t('imageFreeReferenceCountHint')}
+            type="number"
+            min="0"
+            max="100"
+            value={form.image_reference_free_count}
+            onChange={(event) => onChange({ image_reference_free_count: event.target.value })}
+          />
           <PriceInput
             label={t('priceImageInput')}
             hint={t('pricePerImageHint', { currency: currencyLabel })}
@@ -1179,10 +1448,23 @@ function PricingFields({
           />
           <PriceInput
             label={t('priceImageGeneration')}
-            hint={t('pricePerImageHint', { currency: currencyLabel })}
+            hint={t('priceImageGenerationFlatHint', { currency: currencyLabel })}
             value={form.image_generation}
             onChange={(value) => onChange({ image_generation: value })}
           />
+          {IMAGE_TIERS.filter(showImageTier).map((tier) => (
+            <PriceInput
+              key={`image-tier-${tier}`}
+              label={t('priceImageGenerationTier', { tier })}
+              hint={t('pricePerImageHint', { currency: currencyLabel })}
+              value={form.image_generation_by_tier[tier] ?? ''}
+              onChange={(value) =>
+                onChange({
+                  image_generation_by_tier: { ...form.image_generation_by_tier, [tier]: value },
+                })
+              }
+            />
+          ))}
         </PricingSection>
       ) : null}
 
@@ -1197,9 +1479,9 @@ function PricingFields({
         </PricingSection>
       ) : null}
 
-      {outputs.has('video') ? (
+      {outputs.has('video') && showPerSecondVideo ? (
         <PricingSection title={t('pricingVideoTitle')} hint={t('pricingVideoHint')}>
-          {VIDEO_RESOLUTIONS.map((resolution) => (
+          {VIDEO_RESOLUTIONS.filter(showResolution).map((resolution) => (
             <PriceInput
               key={`gen-${resolution}`}
               label={t('priceVideoGeneration', { resolution })}
@@ -1210,7 +1492,7 @@ function PricingFields({
               }
             />
           ))}
-          {VIDEO_RESOLUTIONS.map((resolution) => (
+          {VIDEO_RESOLUTIONS.filter(showResolution).map((resolution) => (
             <PriceInput
               key={`input-${resolution}`}
               label={t('priceVideoInputMaterial', { resolution })}
@@ -1238,6 +1520,23 @@ function PricingFields({
             hint={t('pricePerImageHint', { currency: currencyLabel })}
             value={form.video_extra_reference}
             onChange={(value) => onChange({ video_extra_reference: value })}
+          />
+        </PricingSection>
+      ) : null}
+
+      {outputs.has('video') && showTokenVideo ? (
+        <PricingSection title={t('pricingVideoTokenTitle')} hint={t('pricingVideoTokenHint')}>
+          <PriceInput
+            label={t('priceVideoTokenNoRef')}
+            hint={t('pricePerMillionHint', { currency: currencyLabel })}
+            value={form.token_video_no_ref}
+            onChange={(value) => onChange({ token_video_no_ref: value })}
+          />
+          <PriceInput
+            label={t('priceVideoTokenWithRef')}
+            hint={t('pricePerMillionHint', { currency: currencyLabel })}
+            value={form.token_video_with_ref}
+            onChange={(value) => onChange({ token_video_with_ref: value })}
           />
         </PricingSection>
       ) : null}
@@ -1552,6 +1851,11 @@ function PricingSummary({ endpoint }: { endpoint: LlmProviderEndpoint }) {
         `${t('priceOutputTokens')} $${microUsdToDollars(tokens.output_per_million_micro_usd)}/M`,
       );
     }
+    if (tokens?.cached_input_per_million_micro_usd) {
+      parts.push(
+        `${t('priceCachedInputTokens')} $${microUsdToDollars(tokens.cached_input_per_million_micro_usd)}/M`,
+      );
+    }
     if (endpoint.context_length) {
       parts.push(`${t('contextLength')} ${endpoint.context_length.toLocaleString()}`);
     }
@@ -1570,6 +1874,11 @@ function PricingSummary({ endpoint }: { endpoint: LlmProviderEndpoint }) {
         `${t('priceImageInput')} $${microUsdToDollars(media.image.input_per_image_micro_usd)}`,
       );
     }
+    for (const [tier, price] of Object.entries(
+      media?.image?.generation_per_image_by_tier_micro_usd ?? {},
+    )) {
+      parts.push(`${t('priceImageGenerationTier', { tier })} $${microUsdToDollars(price)}`);
+    }
     if (media?.audio?.per_10k_characters_micro_usd) {
       parts.push(
         `${t('priceAudio')} $${microUsdToDollars(media.audio.per_10k_characters_micro_usd)}`,
@@ -1579,6 +1888,16 @@ function PricingSummary({ endpoint }: { endpoint: LlmProviderEndpoint }) {
       media?.video?.generation_per_second_micro_usd ?? {},
     )) {
       parts.push(`${t('priceVideoGeneration', { resolution })} $${microUsdToDollars(price)}/s`);
+    }
+    if (media?.token_video?.per_million_tokens_micro_usd) {
+      parts.push(
+        `${t('priceVideoTokenNoRef')} $${microUsdToDollars(media.token_video.per_million_tokens_micro_usd)}/M`,
+      );
+    }
+    if (media?.token_video?.per_million_tokens_with_video_ref_micro_usd) {
+      parts.push(
+        `${t('priceVideoTokenWithRef')} $${microUsdToDollars(media.token_video.per_million_tokens_with_video_ref_micro_usd)}/M`,
+      );
     }
   }
 

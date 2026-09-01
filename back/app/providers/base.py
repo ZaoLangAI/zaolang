@@ -173,8 +173,21 @@ class ProviderCapability:
     # The endpoint's configured list prices, for costing a concrete request.
     # `None` when the route has no pricing block at all.
     pricing: MediaPricing | None = None
+    # Which `app.domain.costs.service` billing shape `pricing` follows (see
+    # `LlmProviderEndpoint.billing_profile`) — `None` for an endpoint priced
+    # the default per-second/per-image/per-request way.
+    billing_profile: str | None = None
     min_duration_seconds: int | None = None
     max_duration_seconds: int | None = None
     aspect_ratios: frozenset[str] | None = None
     resolutions: frozenset[str] | None = None
+    # What this model actually renders at when a request leaves `resolution`
+    # unset — the same value the provider adapter itself falls back to when
+    # building the upstream call (`NativeVideoModelProfile`/`VideoModelProfile
+    # .default_resolution`). Costing must use this, not a fixed nominal
+    # resolution, or a model whose real default the C-end request schema
+    # can't even express (every non-MiniMax native video model — see
+    # `VideoGenerationOptions.resolution`'s `Literal["2K", "768P"]`) prices
+    # every call at a resolution it never actually rendered at.
+    default_resolution: str | None = None
     reference_modes: frozenset[str] | None = None

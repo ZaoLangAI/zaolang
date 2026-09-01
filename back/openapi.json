@@ -26077,6 +26077,20 @@
             "minimum": 0.0,
             "title": "Generation Per Image Micro Usd",
             "default": 0
+          },
+          "generation_per_image_by_tier_micro_usd": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Generation Per Image By Tier Micro Usd"
+          },
+          "reference_image_free_count": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Reference Image Free Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -27447,6 +27461,18 @@
           },
           "media_pricing": {
             "$ref": "#/components/schemas/MediaPricingPayload"
+          },
+          "billing_profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Profile"
           }
         },
         "type": "object",
@@ -27581,6 +27607,17 @@
           },
           "media_pricing": {
             "$ref": "#/components/schemas/MediaPricingPayload"
+          },
+          "billing_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Profile"
           },
           "concurrency_in_use": {
             "type": "integer",
@@ -28178,6 +28215,16 @@
                 "type": "null"
               }
             ]
+          },
+          "token_video": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenVideoPricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -28260,6 +28307,29 @@
             "type": "string",
             "title": "Doc Url",
             "default": ""
+          },
+          "pricing_doc_url": {
+            "type": "string",
+            "title": "Pricing Doc Url",
+            "default": ""
+          },
+          "billing_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billing Profile"
+          },
+          "price_items": {
+            "items": {
+              "$ref": "#/components/schemas/PriceItemView"
+            },
+            "type": "array",
+            "title": "Price Items"
           }
         },
         "type": "object",
@@ -30727,6 +30797,86 @@
         "type": "object",
         "title": "PreferencesRequest",
         "description": "Partial update; every field is optional."
+      },
+      "PriceItemView": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "per_second",
+              "per_million_tokens",
+              "per_image",
+              "per_request"
+            ],
+            "title": "Unit"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "default_micro_usd": {
+            "type": "integer",
+            "title": "Default Micro Usd"
+          },
+          "source_currency": {
+            "type": "string",
+            "enum": [
+              "USD",
+              "CNY"
+            ],
+            "title": "Source Currency"
+          },
+          "source_amount": {
+            "type": "string",
+            "title": "Source Amount"
+          },
+          "quoted_on": {
+            "type": "string",
+            "title": "Quoted On"
+          },
+          "dimension": {
+            "type": "string",
+            "title": "Dimension",
+            "default": ""
+          },
+          "free_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Count"
+          },
+          "volatile": {
+            "type": "boolean",
+            "title": "Volatile",
+            "default": false
+          },
+          "markup_note": {
+            "type": "string",
+            "title": "Markup Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "unit",
+          "label",
+          "default_micro_usd",
+          "source_currency",
+          "source_amount",
+          "quoted_on"
+        ],
+        "title": "PriceItemView",
+        "description": "One billable line item from a vendor's own pricing page, as recorded\nin `app.providers.model_catalog.PriceItem` — see that class for the\nfull explanation of each field."
       },
       "ProfileResponse": {
         "properties": {
@@ -34350,6 +34500,12 @@
             "minimum": 0.0,
             "title": "Output Per Million Micro Usd",
             "default": 0
+          },
+          "cached_input_per_million_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cached Input Per Million Micro Usd",
+            "default": 0
           }
         },
         "type": "object",
@@ -34379,6 +34535,25 @@
           "expires_at"
         ],
         "title": "TokenResponse"
+      },
+      "TokenVideoPricingPayload": {
+        "properties": {
+          "per_million_tokens_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Per Million Tokens Micro Usd",
+            "default": 0
+          },
+          "per_million_tokens_with_video_ref_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Per Million Tokens With Video Ref Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "TokenVideoPricingPayload",
+        "description": "Doubao Seedance-style per-million-video-token billing — the alternate\nshape a `billing_profile=\"seedance_tokens\"` endpoint uses instead of\n`VideoPricingPayload`'s per-second rate (see `TokenVideoPricing`)."
       },
       "TombstoneRequest": {
         "properties": {

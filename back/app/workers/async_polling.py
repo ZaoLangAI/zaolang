@@ -436,7 +436,11 @@ def _attempt_cost_micro_usd(
         if attempt is not None:
             return attempt.cost_micro_usd
     return costs_service.generation_attempt_cost_micro_usd(
-        capability.pricing, capability=operation, request=request
+        capability.pricing,
+        capability=operation,
+        request=request,
+        billing_profile=capability.billing_profile,
+        default_resolution=capability.default_resolution,
     )
 
 
