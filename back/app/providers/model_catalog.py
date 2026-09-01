@@ -444,10 +444,10 @@ VENDOR_MODEL_CATALOG: dict[VendorId, list[ModelCatalogEntry]] = {
             output_modalities=("video",),
             notes=(
                 "4-30秒或 -1 智能时长，480p/720p/1080p，六种宽高比+adaptive，"
-                "原生配音默认开启；首尾帧/参考图字段未经真实凭证验证（推断自"
-                "AiHubMix 对同一模型已确认的 schema）。按 Token 计费——两档单价对应是否"
-                "附带参考视频，见价格项；价格对齐火山方舟国内价目，与 AiHubMix 版本"
-                "（对齐 BytePlus 国际价目）数字不同。"
+                "原生配音默认开启；参考素材写入 input 数组（image_url/video_url + "
+                "role=first_frame/last_frame/reference_*），没有顶层 input_references。"
+                "按 Token 计费——两档单价对应是否附带参考视频，见价格项；价格对齐火山"
+                "方舟国内价目，与 AiHubMix 版本（对齐 BytePlus 国际价目）数字不同。"
             ),
             doc_url="https://doc.dmxapi.cn/doubao-seedance-2-5-260628-text-to-video.html",
             pricing_doc_url="https://docs.volcengine.com/docs/82379/1544106",

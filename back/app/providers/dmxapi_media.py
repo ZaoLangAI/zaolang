@@ -321,51 +321,30 @@ def _build_minimax_h3_regeneration_body(request: GenerationRequest) -> dict[str,
     }
 
 
-def _frame_image_items(request: GenerationRequest) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for ref in request.references:
-        if ref.media_type == "image" and ref.frame_type in _FRAME_ROLES:
-            items.append(
-                {
-                    "image_url": {
-                        "url": s3.presign_get(ref.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS)
-                    },
-                    "frame_type": ref.frame_type,
-                }
-            )
-    return items
-
-
-def _input_reference_items(request: GenerationRequest) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for ref in request.references:
-        if ref.frame_type in _FRAME_ROLES or ref.frame_type == "base_video":
-            continue
-        items.append(
-            {
-                "type": f"{ref.media_type}_url",
-                "url": s3.presign_get(ref.object_key, expires_in=_REFERENCE_URL_TTL_SECONDS),
-            }
-        )
-    return items
-
-
 def _build_seedance_25_video_body(request: GenerationRequest) -> dict[str, Any]:
-    """DMXAPI's own doc page for this model only demonstrated the pure-text
-    case (`input` holding one `{"type": "text", ...}` item). ByteDance's
-    underlying Seedance contract — mirrored by AiHubMix's confirmed schema
-    for the same model id, see `aihubmix_media.py`'s
-    `DOUBAO_SEEDANCE_25_MODEL` profile — additionally exposes first/last-
-    frame and multi-modal-reference fields alongside `input`, so this
-    attaches them the same way AiHubMix's `build_video_payload` does.
-    **Unverified against a live DMXAPI credential.**
+    """DMXAPI `/v1/responses` body for `doubao-seedance-2-5-260628`.
+
+    Official docs put every modality into `input` — text plus
+    `image_url` / `video_url` / `audio_url` items with a `role`
+    (`first_frame` / `last_frame` / `reference_image` /
+    `reference_video` / `reference_audio`). There is no top-level
+    `input_references` or `frame_images`; sending either is a live 400
+    (`unsupported parameter: input_references`). First-frame and
+    first/last-frame tasks only accept `ratio=adaptive`. First/last
+    frame and multimodal `reference_*` roles are mutually exclusive.
     """
     profile = _validate_video_request(DOUBAO_SEEDANCE_25_MODEL, request)
+    media_items = _content_items_from_references(request)
+    roles = {item.get("role") for item in media_items}
+    frame_roles = roles & _FRAME_ROLES
+    reference_roles = roles - _FRAME_ROLES - {None}
+    if frame_roles and reference_roles:
+        raise ValueError("frame_images and input_references are mutually exclusive")
     body: dict[str, Any] = {
         "model": DOUBAO_SEEDANCE_25_MODEL,
-        "input": [{"type": "text", "text": request.prompt}],
+        "input": [{"type": "text", "text": request.prompt}, *media_items],
         "duration": request.duration_seconds,
-        "ratio": request.aspect_ratio,
+        "ratio": "adaptive" if frame_roles else request.aspect_ratio,
     }
     resolution = request.resolution or (profile.default_resolution if profile else None)
     if resolution:
@@ -373,14 +352,6 @@ def _build_seedance_25_video_body(request: GenerationRequest) -> dict[str, Any]:
     generate_audio = request.extra.get("generate_audio")
     if generate_audio is not None:
         body["generate_audio"] = generate_audio
-    frame_images = _frame_image_items(request)
-    input_references = _input_reference_items(request)
-    if frame_images and input_references:
-        raise ValueError("frame_images and input_references are mutually exclusive")
-    if frame_images:
-        body["frame_images"] = frame_images
-    elif input_references:
-        body["input_references"] = input_references
     return body
 
 

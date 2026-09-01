@@ -170,6 +170,62 @@ def test_seedance_25_video_defaults_resolution_and_supports_auto_duration() -> N
     assert body["model"] == DOUBAO_SEEDANCE_25_MODEL
     assert body["duration"] == -1
     assert body["resolution"] == "720p"
+    assert body["input"] == [{"type": "text", "text": "一只在雨夜霓虹街道上奔跑的机械狐狸"}]
+    assert "input_references" not in body
+    assert "frame_images" not in body
+
+
+def test_seedance_25_multimodal_references_go_into_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
+    body = _build_seedance_25_video_body(
+        _request(
+            Operation.IMAGE_TO_VIDEO.value,
+            aspect_ratio="16:9",
+            references=[
+                ProviderReference(object_key="ref.png", media_type="image"),
+                ProviderReference(object_key="ref.mp4", media_type="video"),
+            ],
+        )
+    )
+    assert body["ratio"] == "16:9"
+    assert "input_references" not in body
+    assert body["input"][0] == {"type": "text", "text": "一只在雨夜霓虹街道上奔跑的机械狐狸"}
+    assert body["input"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "https://signed.invalid/ref.png"},
+        "role": "reference_image",
+    }
+    assert body["input"][2] == {
+        "type": "video_url",
+        "video_url": {"url": "https://signed.invalid/ref.mp4"},
+        "role": "reference_video",
+    }
+
+
+def test_seedance_25_first_last_frame_go_into_input_with_adaptive_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
+    body = _build_seedance_25_video_body(
+        _request(
+            Operation.IMAGE_TO_VIDEO.value,
+            aspect_ratio="16:9",
+            references=[
+                ProviderReference(object_key="first.png", media_type="image", frame_type="first_frame"),
+                ProviderReference(object_key="last.png", media_type="image", frame_type="last_frame"),
+            ],
+        )
+    )
+    assert body["ratio"] == "adaptive"
+    assert "frame_images" not in body
+    assert body["input"][1] == {
+        "type": "image_url",
+        "image_url": {"url": "https://signed.invalid/first.png"},
+        "role": "first_frame",
+    }
+    assert body["input"][2]["role"] == "last_frame"
 
 
 def test_seedance_25_video_frame_images_and_input_references_are_exclusive(
