@@ -12,12 +12,16 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, defer
 
+from app.agents import router as routing
 from app.api import sse_quota
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
+    IMAGE_OPERATIONS,
     GenerationJobCreateRequest,
     GenerationJobResponse,
+    GenerationModelListResponse,
+    GenerationModelOption,
     JobAnswerRequest,
     JobEventResponse,
     JobInputQuestionView,
@@ -52,6 +56,7 @@ from app.models.enums import (
     VideoAssetKind,
 )
 from app.presenters import media_urls
+from app.providers import model_catalog
 from app.realtime import publisher
 
 router = APIRouter(tags=["generation"])
@@ -60,6 +65,10 @@ SSE_HEARTBEAT_SECONDS = 15
 SSE_MAX_DURATION_SECONDS = 600
 
 VIDEO_OPERATIONS = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
+# The one operation set `GenerationParams.forced_model` accepts (see
+# `validate_generation_params`) — the C-end model picker must offer exactly
+# the same scope, or a client could pick a model this operation would reject.
+_FORCED_MODEL_OPERATIONS = IMAGE_OPERATIONS | frozenset(VIDEO_OPERATIONS)
 
 
 @router.post("/generation-jobs/quote", response_model=QuoteResponse)
@@ -83,6 +92,45 @@ def quote(payload: QuoteRequest, user: CurrentUser, session: DbSession) -> Quote
         available_credits=account.available_balance,
         sufficient=account.available_balance >= priced.credits,
     )
+
+
+@router.get("/generation-jobs/models", response_model=GenerationModelListResponse)
+def list_generation_models(
+    operation: Operation, user: CurrentUser, session: DbSession
+) -> GenerationModelListResponse:
+    """Read-only model list for `GenerationParams.forced_model`'s studio
+    picker — one entry per distinct `ProviderCapability.model_or_workflow`
+    enabled for this operation, sourced live from the exact same
+    `router.build_catalog` snapshot `route_score` filters against, so an
+    operator adding/disabling an endpoint at `/admin/models` is reflected
+    here on the very next request rather than a stale/hardcoded list. Never
+    exposes `base_url`/`api_key`/`endpoint_id` — only the model name and a
+    best-effort display label.
+
+    Calls `routing.build_catalog` through the module (never a directly
+    imported name) so this always resolves whatever `app.agents.router
+    .build_catalog` currently is — late-bound, the same way `app.workflows
+    .nodes` calls `router.route`. A `from ... import build_catalog` alias
+    would freeze onto whichever function object existed the moment this
+    module was first imported, silently ignoring any later rebinding of the
+    module attribute (harmless in production, which never rebinds it, but a
+    real bug against `tests.conftest.fake_media_catalog`'s monkeypatch).
+    """
+    if operation not in _FORCED_MODEL_OPERATIONS:
+        raise ValidationFailed("仅支持图片创作/视频创作的模型列表。")
+    catalog = routing.build_catalog(session)
+    models: dict[str, str] = {}
+    for capability in catalog.values():
+        if operation.value not in capability.operations:
+            continue
+        models.setdefault(
+            capability.model_or_workflow,
+            model_catalog.display_name_for_model(capability.model_or_workflow)
+            or capability.model_or_workflow,
+        )
+    options = [GenerationModelOption(model=model, label=label) for model, label in models.items()]
+    options.sort(key=lambda option: option.label)
+    return GenerationModelListResponse(models=options)
 
 
 @router.post("/generation-jobs", response_model=GenerationJobResponse, status_code=202)
@@ -555,6 +603,7 @@ def _job_response(
         reference_url=_reference_url_of(session, job),
         asset_kind=_asset_kind_of(job),
         video_asset_kind=_video_asset_kind_of(job),
+        forced_model=_forced_model_of(job),
         character_views=_character_views_of(job),
         duration_seconds=_duration_seconds_of(job),
         linked_character_id=job.linked_character_id,
@@ -631,6 +680,12 @@ def _video_asset_kind_of(job: GenerationJob) -> VideoAssetKind | None:
         return VideoAssetKind(raw) if raw else None
     except ValueError:
         return None
+
+
+def _forced_model_of(job: GenerationJob) -> str | None:
+    params = job.request_json if isinstance(job.request_json, dict) else {}
+    raw = params.get("forced_model")
+    return raw if isinstance(raw, str) and raw else None
 
 
 def _character_views_of(job: GenerationJob) -> list[CharacterViewAngle] | None:

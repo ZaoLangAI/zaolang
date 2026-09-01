@@ -345,7 +345,7 @@
     "saveReason": "变更理由",
     "secretMasked": "密钥类字段不回显，留空即保持不变。",
     "invalidJson": "不是合法的 JSON",
-    "flags": "Feature Flag",
+    "flags": "功能开关",
     "flagEnabled": "已开启",
     "flagRollout": "灰度比例 {percent}%",
     "flagAllowlist": "白名单 {count} 人",
@@ -360,7 +360,7 @@
     "rollbackHint": "回滚会把 v{version} 作为新版本重新应用，历史不会被抹掉。",
     "saved": "配置已更新",
     "rolledBack": "已回滚",
-    "featureFlags": "Feature Flag",
+    "featureFlags": "功能开关",
     "flagOn": "开启",
     "flagOff": "关闭",
     "rollout": "灰度",
@@ -383,7 +383,95 @@
     "addProfile": "添加规格",
     "configure": "配置",
     "businessDialogHint": "在当前业务域中修改配置；保存前可查看差异，且必须填写变更理由。",
-    "creditsConfiguration": "积分与分成配置"
+    "creditsConfiguration": "积分、分成与市场配置",
+    "advanced": "高级",
+    "schemaKey": "{key} · v{version}",
+    "unsavedHint": "有未保存的变更，可在「高级」中查看差异。",
+    "editorDependsHint": "需先开启浏览器剪辑。",
+    "marketplaceRules": "市场规则",
+    "platformFee": "平台手续费 (%)",
+    "platformFeeHint": "从成交价中扣除；卖方实收为定价减去手续费。",
+    "maxAccessCredits": "单次解锁积分上限",
+    "royaltyEnabled": "启用回流分成",
+    "firstLevelRate": "一层分成比例 (%)",
+    "decayRate": "每层衰减 (%)",
+    "totalCap": "总上限 (%)",
+    "maxLevels": "分成层数",
+    "minPayout": "最低发放（积分）",
+    "tierPreview": "快速预览",
+    "tierStandard": "标准",
+    "tierCinematic": "电影级",
+    "videoBaseSeconds": "视频基础秒数（超出后按每秒加价）",
+    "defaultProfile": "当前默认投放规格",
+    "defaultProfileHint": "新发布的短视频默认套用此规格。",
+    "groupFrame": "画幅",
+    "groupDuration": "时长",
+    "groupCopy": "标题与话题",
+    "groupSafeArea": "安全区",
+    "aspectRatio": "宽高比",
+    "width": "宽度（像素）",
+    "height": "高度（像素）",
+    "minDuration": "最短时长（秒）",
+    "maxDuration": "最长时长（秒）",
+    "maxTitleLength": "标题字数上限",
+    "maxHashtags": "话题数量上限",
+    "safeAreaTop": "顶部预留 (%)",
+    "safeAreaBottom": "底部预留 (%)",
+    "safeAreaRight": "右侧预留 (%)",
+    "requireAiDisclosure": "要求标注为 AI 生成",
+    "newProfileKeyHint": "只给系统用的标识；界面会显示中文名。",
+    "flagGroups": {
+      "creation": "创作",
+      "drama": "短剧与剪辑",
+      "platform": "平台",
+      "other": "其他"
+    },
+    "flagItems": {
+      "video_generation": {
+        "title": "视频生成",
+        "description": "控制创作台的视频生成入口与对应提交。"
+      },
+      "script_studio_enabled": {
+        "title": "文案创作工作室",
+        "description": "独立于短剧工作室，可单独开放文案创作。"
+      },
+      "video_analysis_enabled": {
+        "title": "视频解析",
+        "description": "控制创作页的视频解析工具与对应提交。"
+      },
+      "drama_studio_enabled": {
+        "title": "短剧工作室",
+        "description": "短剧系列与分集管理。"
+      },
+      "web_editor_enabled": {
+        "title": "浏览器剪辑",
+        "description": "桌面 Chrome / Edge 时间线剪辑器。"
+      },
+      "variant_export_enabled": {
+        "title": "交付变体导出",
+        "description": "按目标平台导出交付变体；依赖浏览器剪辑。"
+      },
+      "editor_ai_enabled": {
+        "title": "AI 剪辑方案",
+        "description": "剪辑器内的 AI 规划；依赖浏览器剪辑。"
+      },
+      "editor_mcp_enabled": {
+        "title": "剪辑 Remote MCP",
+        "description": "外部工具通过 MCP 操作时间线；依赖浏览器剪辑。"
+      },
+      "public_registration": {
+        "title": "开放注册",
+        "description": "关闭后仅已有账号可以登录。"
+      },
+      "marketplace_enabled": {
+        "title": "积分解锁市场",
+        "description": "作品与技能的付费解锁。"
+      }
+    },
+    "profiles": {
+      "douyin_vertical": "抖音竖屏",
+      "douyin_landscape": "抖音横屏"
+    }
   },
   "adminCredits": {
     "title": "积分运维",
@@ -2450,9 +2538,16 @@
     "moreSettings": "更多设置",
     "resolution": "分辨率",
     "resolutionHint": "更高分辨率画质更好，生成耗时也更长。",
+    "resolutionSd": "标清",
+    "resolutionHd": "高清",
+    "resolutionFhd": "超清",
+    "resolution2k": "2K超清",
     "seed": "随机种子",
     "seedHint": "可选；填写相同整数便于复现相近结果。",
     "seedInvalid": "请输入 0 到 2147483647 之间的整数。",
+    "modelSelectLabel": "指定模型",
+    "modelSelectHint": "指定后将跳过智能路由直接使用该模型；若该模型暂时不可用，任务会直接失败，不会自动切换到其它模型。",
+    "modelAuto": "自动选择（推荐）",
     "referenceMode": "参考方式",
     "referenceModeInputs": "图片/视频参考",
     "referenceModeFrames": "首尾帧",

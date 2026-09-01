@@ -1,0 +1,287 @@
+{
+  "zh-CN": {
+    "adminConfig": {
+      "featureFlags": "功能开关",
+      "flags": "功能开关",
+      "advanced": "高级",
+      "schemaKey": "{key} · v{version}",
+      "unsavedHint": "有未保存的变更，可在「高级」中查看差异。",
+      "editorDependsHint": "需先开启浏览器剪辑。",
+      "creditsConfiguration": "积分、分成与市场配置",
+      "marketplaceRules": "市场规则",
+      "platformFee": "平台手续费 (%)",
+      "platformFeeHint": "从成交价中扣除；卖方实收为定价减去手续费。",
+      "maxAccessCredits": "单次解锁积分上限",
+      "royaltyEnabled": "启用回流分成",
+      "firstLevelRate": "一层分成比例 (%)",
+      "decayRate": "每层衰减 (%)",
+      "totalCap": "总上限 (%)",
+      "maxLevels": "分成层数",
+      "minPayout": "最低发放（积分）",
+      "tierPreview": "快速预览",
+      "tierStandard": "标准",
+      "tierCinematic": "电影级",
+      "videoBaseSeconds": "视频基础秒数（超出后按每秒加价）",
+      "defaultProfile": "当前默认投放规格",
+      "defaultProfileHint": "新发布的短视频默认套用此规格。",
+      "groupFrame": "画幅",
+      "groupDuration": "时长",
+      "groupCopy": "标题与话题",
+      "groupSafeArea": "安全区",
+      "aspectRatio": "宽高比",
+      "width": "宽度（像素）",
+      "height": "高度（像素）",
+      "minDuration": "最短时长（秒）",
+      "maxDuration": "最长时长（秒）",
+      "maxTitleLength": "标题字数上限",
+      "maxHashtags": "话题数量上限",
+      "safeAreaTop": "顶部预留 (%)",
+      "safeAreaBottom": "底部预留 (%)",
+      "safeAreaRight": "右侧预留 (%)",
+      "requireAiDisclosure": "要求标注为 AI 生成",
+      "newProfileKeyHint": "只给系统用的标识；界面会显示中文名。",
+      "flagGroups": {
+        "creation": "创作",
+        "drama": "短剧与剪辑",
+        "platform": "平台",
+        "other": "其他"
+      },
+      "flagItems": {
+        "video_generation": {
+          "title": "视频生成",
+          "description": "控制创作台的视频生成入口与对应提交。"
+        },
+        "script_studio_enabled": {
+          "title": "文案创作工作室",
+          "description": "独立于短剧工作室，可单独开放文案创作。"
+        },
+        "video_analysis_enabled": {
+          "title": "视频解析",
+          "description": "控制创作页的视频解析工具与对应提交。"
+        },
+        "drama_studio_enabled": {
+          "title": "短剧工作室",
+          "description": "短剧系列与分集管理。"
+        },
+        "web_editor_enabled": {
+          "title": "浏览器剪辑",
+          "description": "桌面 Chrome / Edge 时间线剪辑器。"
+        },
+        "variant_export_enabled": {
+          "title": "交付变体导出",
+          "description": "按目标平台导出交付变体；依赖浏览器剪辑。"
+        },
+        "editor_ai_enabled": {
+          "title": "AI 剪辑方案",
+          "description": "剪辑器内的 AI 规划；依赖浏览器剪辑。"
+        },
+        "editor_mcp_enabled": {
+          "title": "剪辑 Remote MCP",
+          "description": "外部工具通过 MCP 操作时间线；依赖浏览器剪辑。"
+        },
+        "public_registration": {
+          "title": "开放注册",
+          "description": "关闭后仅已有账号可以登录。"
+        },
+        "marketplace_enabled": {
+          "title": "积分解锁市场",
+          "description": "作品与技能的付费解锁。"
+        }
+      },
+      "profiles": {
+        "douyin_vertical": "抖音竖屏",
+        "douyin_landscape": "抖音横屏"
+      }
+    }
+  },
+  "en": {
+    "adminConfig": {
+      "featureFlags": "Feature flags",
+      "flags": "Feature flags",
+      "advanced": "Advanced",
+      "schemaKey": "{key} · v{version}",
+      "unsavedHint": "You have unsaved changes. Open Advanced to review the diff.",
+      "editorDependsHint": "Turn on the browser editor first.",
+      "creditsConfiguration": "Credits, royalties, and marketplace",
+      "marketplaceRules": "Marketplace rules",
+      "platformFee": "Platform fee (%)",
+      "platformFeeHint": "Taken from the sale price. The seller receives the price minus this fee.",
+      "maxAccessCredits": "Max credits per unlock",
+      "royaltyEnabled": "Enable royalty payback",
+      "firstLevelRate": "First-level share (%)",
+      "decayRate": "Decay per level (%)",
+      "totalCap": "Total cap (%)",
+      "maxLevels": "Levels",
+      "minPayout": "Minimum payout (credits)",
+      "tierPreview": "Preview",
+      "tierStandard": "Standard",
+      "tierCinematic": "Cinematic",
+      "videoBaseSeconds": "Included video seconds (surcharge applies after this)",
+      "defaultProfile": "Default delivery spec",
+      "defaultProfileHint": "New short videos use this spec unless the creator picks another.",
+      "groupFrame": "Frame",
+      "groupDuration": "Duration",
+      "groupCopy": "Title and hashtags",
+      "groupSafeArea": "Safe area",
+      "aspectRatio": "Aspect ratio",
+      "width": "Width (px)",
+      "height": "Height (px)",
+      "minDuration": "Minimum duration (s)",
+      "maxDuration": "Maximum duration (s)",
+      "maxTitleLength": "Title character limit",
+      "maxHashtags": "Hashtag limit",
+      "safeAreaTop": "Top reserve (%)",
+      "safeAreaBottom": "Bottom reserve (%)",
+      "safeAreaRight": "Right reserve (%)",
+      "requireAiDisclosure": "Require an AI-generated label",
+      "newProfileKeyHint": "Machine identifier only. The console shows a human name when one is known.",
+      "flagGroups": {
+        "creation": "Creation",
+        "drama": "Drama and editor",
+        "platform": "Platform",
+        "other": "Other"
+      },
+      "flagItems": {
+        "video_generation": {
+          "title": "Video generation",
+          "description": "Controls the video creation entry and matching submissions."
+        },
+        "script_studio_enabled": {
+          "title": "Script studio",
+          "description": "Independent of the drama studio; can ship on its own."
+        },
+        "video_analysis_enabled": {
+          "title": "Video analysis",
+          "description": "Controls the video-analysis tool on the create page and matching submissions."
+        },
+        "drama_studio_enabled": {
+          "title": "Drama studio",
+          "description": "Series and episode management for short dramas."
+        },
+        "web_editor_enabled": {
+          "title": "Browser editor",
+          "description": "Desktop Chrome / Edge timeline editor."
+        },
+        "variant_export_enabled": {
+          "title": "Delivery-variant export",
+          "description": "Export delivery variants for target platforms. Requires the browser editor."
+        },
+        "editor_ai_enabled": {
+          "title": "AI edit plans",
+          "description": "In-editor AI planning. Requires the browser editor."
+        },
+        "editor_mcp_enabled": {
+          "title": "Editor Remote MCP",
+          "description": "Let external tools drive the timeline over MCP. Requires the browser editor."
+        },
+        "public_registration": {
+          "title": "Open registration",
+          "description": "When off, only existing accounts can sign in."
+        },
+        "marketplace_enabled": {
+          "title": "Credit unlock marketplace",
+          "description": "Paid unlocks for works and skills."
+        }
+      },
+      "profiles": {
+        "douyin_vertical": "Douyin vertical",
+        "douyin_landscape": "Douyin landscape"
+      }
+    }
+  },
+  "ja": {
+    "adminConfig": {
+      "featureFlags": "機能フラグ",
+      "flags": "機能フラグ",
+      "advanced": "詳細",
+      "schemaKey": "{key} · v{version}",
+      "unsavedHint": "未保存の変更があります。差分は「詳細」で確認できます。",
+      "editorDependsHint": "先にブラウザ編集を有効にしてください。",
+      "creditsConfiguration": "クレジット・還元・マーケット設定",
+      "marketplaceRules": "マーケット規則",
+      "platformFee": "プラットフォーム手数料 (%)",
+      "platformFeeHint": "成約額から差し引きます。出品者の受取は価格から手数料を引いた額です。",
+      "maxAccessCredits": "1回の解除クレジット上限",
+      "royaltyEnabled": "還元ロイヤリティを有効化",
+      "firstLevelRate": "1層の配分比率 (%)",
+      "decayRate": "層ごとの減衰 (%)",
+      "totalCap": "合計上限 (%)",
+      "maxLevels": "配分層数",
+      "minPayout": "最低支給（クレジット）",
+      "tierPreview": "クイックプレビュー",
+      "tierStandard": "標準",
+      "tierCinematic": "シネマ",
+      "videoBaseSeconds": "動画の基礎秒数（超過分は秒単価）",
+      "defaultProfile": "既定の配信仕様",
+      "defaultProfileHint": "新規ショート動画は、作成者が別指定しない限りこの仕様を使います。",
+      "groupFrame": "画角",
+      "groupDuration": "尺",
+      "groupCopy": "タイトルとハッシュタグ",
+      "groupSafeArea": "セーフエリア",
+      "aspectRatio": "アスペクト比",
+      "width": "幅（ピクセル）",
+      "height": "高さ（ピクセル）",
+      "minDuration": "最短尺（秒）",
+      "maxDuration": "最長尺（秒）",
+      "maxTitleLength": "タイトル文字数上限",
+      "maxHashtags": "ハッシュタグ数上限",
+      "safeAreaTop": "上部余白 (%)",
+      "safeAreaBottom": "下部余白 (%)",
+      "safeAreaRight": "右側余白 (%)",
+      "requireAiDisclosure": "AI生成である旨の表示を必須にする",
+      "newProfileKeyHint": "システム用の識別子です。画面には日本語名が出ます。",
+      "flagGroups": {
+        "creation": "制作",
+        "drama": "短編と編集",
+        "platform": "プラットフォーム",
+        "other": "その他"
+      },
+      "flagItems": {
+        "video_generation": {
+          "title": "動画生成",
+          "description": "制作台の動画生成入口と対応する送信を制御します。"
+        },
+        "script_studio_enabled": {
+          "title": "脚本スタジオ",
+          "description": "短編スタジオとは独立して、脚本制作だけを開放できます。"
+        },
+        "video_analysis_enabled": {
+          "title": "動画解析",
+          "description": "制作ページの動画解析ツールと対応する送信を制御します。"
+        },
+        "drama_studio_enabled": {
+          "title": "短編スタジオ",
+          "description": "短編シリーズと各話の管理。"
+        },
+        "web_editor_enabled": {
+          "title": "ブラウザ編集",
+          "description": "デスクトップ Chrome / Edge のタイムライン編集。"
+        },
+        "variant_export_enabled": {
+          "title": "納品バリエーション書き出し",
+          "description": "配信先向けの納品バリエーションを書き出します。ブラウザ編集が必要です。"
+        },
+        "editor_ai_enabled": {
+          "title": "AI編集プラン",
+          "description": "編集器内の AI 計画。ブラウザ編集が必要です。"
+        },
+        "editor_mcp_enabled": {
+          "title": "編集 Remote MCP",
+          "description": "外部ツールが MCP 経由でタイムラインを操作します。ブラウザ編集が必要です。"
+        },
+        "public_registration": {
+          "title": "公開登録",
+          "description": "オフにすると既存アカウントだけがログインできます。"
+        },
+        "marketplace_enabled": {
+          "title": "クレジット解除マーケット",
+          "description": "作品とスキルの有料解除。"
+        }
+      },
+      "profiles": {
+        "douyin_vertical": "Douyin 縦向き",
+        "douyin_landscape": "Douyin 横向き"
+      }
+    }
+  }
+}

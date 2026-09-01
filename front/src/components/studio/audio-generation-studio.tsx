@@ -7,7 +7,7 @@ import {
   GenerationStudioShell,
   type StudioSource,
 } from '@/components/studio/generation-studio-shell';
-import { PromptField } from '@/components/studio/prompt-field';
+import { PromptComposer } from '@/components/studio/prompt-composer';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import { KNOWN_PRESET_KEYS, useStyleAndSkillPicker } from '@/components/studio/style-and-skill-picker';
@@ -111,8 +111,6 @@ export function AudioGenerationStudio({
     <>
       {styleAndSkillPicker}
 
-      <PromptField prompt={prompt} onChange={setPrompt} />
-
       <Select
         label={t('voice')}
         hint={t('voiceHint')}
@@ -138,6 +136,18 @@ export function AudioGenerationStudio({
     </>
   );
 
+  // Same `promptSlot` placement as image/video — the field stays next to
+  // the preview on every breakpoint. No polish / `@` mention: audio still
+  // applies skills from the params-panel Select. `tip` folds the shell's
+  // former standalone `directHint` box into this card (video's pattern).
+  const promptComposer = (
+    <PromptComposer
+      prompt={prompt}
+      onChange={setPrompt}
+      tip={{ title: t('directHint'), body: t('directHintBody') }}
+    />
+  );
+
   return (
     <GenerationStudioShell
       source={source}
@@ -146,6 +156,7 @@ export function AudioGenerationStudio({
       onUploaded={(asset) => setUploads((current) => [...current, asset])}
       onRemove={removeUpload}
       isAudio
+      promptSlot={promptComposer}
       canSubmit={canSubmit}
       submitting={submitting}
       onSubmit={runSubmit}

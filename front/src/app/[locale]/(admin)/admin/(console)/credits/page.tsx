@@ -20,10 +20,11 @@ export default async function AdminCreditsPage() {
   const tConfig = await getTranslations('adminConfig');
   const locale = (await getLocale()) as Locale;
 
-  const [report, pricing, royalty] = await Promise.all([
+  const [report, pricing, royalty, marketplace] = await Promise.all([
     adminFetch<Reconciliation>('/v1/admin/credits/reconciliation'),
     adminFetch<ConfigValue>('/v1/admin/config/pricing'),
     adminFetch<ConfigValue>('/v1/admin/config/royalty'),
+    adminFetch<ConfigValue>('/v1/admin/config/marketplace'),
   ]);
 
   return (
@@ -69,6 +70,7 @@ export default async function AdminCreditsPage() {
             items={[
               { initial: pricing, kind: 'pricing', title: tConfig('pricingMatrix') },
               { initial: royalty, kind: 'royalty', title: tConfig('royaltyRules') },
+              { initial: marketplace, kind: 'marketplace', title: tConfig('marketplaceRules') },
             ]}
           />
         }

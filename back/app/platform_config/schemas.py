@@ -179,16 +179,11 @@ class FeatureFlags(ConfigSection):
 
     @model_validator(mode="after")
     def _percentages_in_range(self) -> FeatureFlags:
-        allowed = {
-            "video_generation",
-            "drama_studio_enabled",
-            "web_editor_enabled",
-            "variant_export_enabled",
-            "editor_ai_enabled",
-            "editor_mcp_enabled",
-            "marketplace_enabled",
-            "script_studio_enabled",
-            "video_analysis_enabled",
+        # `public_registration` is all-or-nothing; every other boolean flag
+        # may be hashed by user id. Derived from the model so a new flag
+        # cannot be forgotten here the way the console form once forgot two.
+        allowed = {name for name in type(self).model_fields if name != "rollout_percentages"} - {
+            "public_registration"
         }
         for name, pct in self.rollout_percentages.items():
             if name not in allowed:
@@ -196,6 +191,11 @@ class FeatureFlags(ConfigSection):
             if not 0 <= pct <= 100:
                 raise ValueError(f"灰度比例 {name}={pct} 必须在 0-100 之间。")
         return self
+
+
+FEATURE_FLAG_NAMES: tuple[str, ...] = tuple(
+    name for name in FeatureFlags.model_fields if name != "rollout_percentages"
+)
 
 
 class KeywordModerationConfig(ConfigSection):

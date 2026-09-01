@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from app.agents import intent_router
 from app.domain.costs import service as costs_service
 from app.models import ProviderStat
-from app.providers.base import ProviderCapability
+from app.providers.base import ProviderCapability, resolve_resolution_tier
 from app.providers.media_endpoints import dynamic_capabilities
 
 CONSERVATIVE_PRIOR_SUCCESS_RATE = 0.8
@@ -117,6 +117,7 @@ def route(
     selector_agent_id: str | None = None,
     request_params: Mapping[str, Any] | None = None,
     cost_bias: float | None = None,
+    forced_model: str | None = None,
 ) -> RoutingDecision:
     """Filters the catalogue down to what can actually serve this job, then
     lets the routing agent pick.
@@ -124,6 +125,17 @@ def route(
     `cost_bias` is `intent_router.classify()`'s request-level cost signal
     (`None` when no `classify()` ran ahead of this call, e.g. a direct test).
     Forwarded to `select_provider` as context only.
+
+    `forced_model` is a deliberate, narrow exception to this module's own
+    "choice is the LLM's" rule (see `zaolang-agent-gateway` invariant #1):
+    when a caller (`GenerationParams.forced_model`) names a model by its
+    exact `ProviderCapability.model_or_workflow`, the hard filter still runs
+    unchanged, but the winner among what survives is picked deterministically
+    (lowest `provider` name) instead of asking `intent_router
+    .select_provider()` — the user, not the LLM, already made the choice for
+    this one request. No survivor matching `forced_model` is a hard failure
+    (`reason="forced_model_unavailable"`); there is no silent fallback to the
+    normal LLM-driven pick.
     """
     catalog = build_catalog(session)
     stats = _load_stats(session, operation, quality_tier)
@@ -173,7 +185,7 @@ def route(
         candidate.estimated_cost_micro_usd = costs_service.estimate_media_request_cost_micro_usd(
             capability.pricing,
             capability=operation,
-            params=request_params or {},
+            params=_resolved_request_params(capability, request_params or {}),
             billing_profile=capability.billing_profile,
             default_resolution=capability.default_resolution,
         )
@@ -195,6 +207,25 @@ def route(
     # Deterministic ordering for the trace and for what the LLM is shown —
     # independent of which one it ends up picking.
     eligible.sort(key=lambda c: c.provider)
+
+    if forced_model:
+        matched = [c for c in eligible if catalog[c.provider].model_or_workflow == forced_model]
+        if not matched:
+            return RoutingDecision(
+                selected=None,
+                candidates=candidates,
+                reason="forced_model_unavailable",
+                catalog=catalog,
+            )
+        # `eligible` is already sorted by `provider` above — no separate
+        # scoring/tie-break, just the first survivor by that same order.
+        winner = matched[0]
+        return RoutingDecision(
+            selected=winner,
+            candidates=candidates,
+            reason=f"user_forced_model:{forced_model}",
+            catalog=catalog,
+        )
 
     outcome = intent_router.select_provider(
         session,
@@ -247,10 +278,19 @@ def _request_constraint_failure(
     if isinstance(video_options, Mapping):
         raw_resolution = video_options.get("resolution")
         reference_mode = str(video_options.get("reference_mode") or "input_references")
+        # `raw_resolution` is a client-facing tier token (see
+        # `VideoGenerationOptions.resolution`), not necessarily this
+        # candidate's own spelling — `resolve_resolution_tier` expands it to
+        # every vendor synonym in that tier before checking for overlap, so
+        # e.g. a `"720p"` request still matches a candidate whose real
+        # resolution string is `"768P"` (MiniMax H3's own token, a `"720p"`
+        # synonym). No match in this candidate's own `resolutions` means it
+        # genuinely cannot serve this tier, same hard-filter guarantee as
+        # before — never a reason to fall through to a provider error.
         if (
             raw_resolution
             and capability.resolutions is not None
-            and str(raw_resolution) not in capability.resolutions
+            and resolve_resolution_tier(str(raw_resolution), capability.resolutions) is None
         ):
             return "resolution_not_supported"
         if (
@@ -259,6 +299,33 @@ def _request_constraint_failure(
         ):
             return "reference_mode_not_supported"
     return None
+
+
+def _resolved_request_params(
+    capability: ProviderCapability, params: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    """Substitutes a client-requested resolution *tier* with this specific
+    candidate's own literal spelling before costing looks it up.
+
+    `costs_service.estimate_media_request_cost_micro_usd` prices a video
+    request by reading `params["video_options"]["resolution"]` as an exact
+    pricing-table key. Left as the raw tier token (e.g. `"720p"`), a
+    candidate priced under its own vendor spelling (`minimax-h3`'s
+    `"768P"`) would look up nothing and silently read as free — this is
+    called only after `_request_constraint_failure` has already proved this
+    candidate has a real resolution in the requested tier, so the resolve
+    below cannot fail.
+    """
+    video_options = params.get("video_options")
+    if not isinstance(video_options, Mapping):
+        return params
+    raw_resolution = video_options.get("resolution")
+    if not raw_resolution:
+        return params
+    resolved = resolve_resolution_tier(str(raw_resolution), capability.resolutions)
+    if resolved is None or resolved == raw_resolution:
+        return params
+    return {**params, "video_options": {**video_options, "resolution": resolved}}
 
 
 def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> dict[str, Any]:

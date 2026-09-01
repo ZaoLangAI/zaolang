@@ -487,13 +487,19 @@ def test_cancel_during_sync_submit_is_honoured_before_quality(
 
     job = _submit(db, funded)
     for provider in REGISTRY.values():
-        original = provider.submit
+        provider_cls = type(provider)
+        original = provider_cls.submit
 
-        def _submit_and_cancel(request: object, *, _original=original) -> object:
+        def _submit_and_cancel(self: object, request: object, *, _original=original) -> object:
             sm.request_cancel(db, job.id)
-            return _original(request)
+            return _original(self, request)
 
-        monkeypatch.setattr(provider, "submit", _submit_and_cancel)
+        # Patched on the class, not the instance: `REGISTRY`'s providers are
+        # process-wide singletons shared by every test in this session (see
+        # `tests.fake_providers.get_provider`'s own doc comment for why
+        # patching an instance instead would permanently corrupt this
+        # singleton for every later test).
+        monkeypatch.setattr(provider_cls, "submit", _submit_and_cancel)
 
     outcome = pipeline.run_generation_pipeline(db, job.id)
 

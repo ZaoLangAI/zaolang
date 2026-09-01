@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import ValidationFailed
 
-# 与前端 `PROMPT_MAX_LENGTH`（shortform-studio.tsx / generation-studio.tsx）对齐。
-PROMPT_ENHANCE_MAX_LENGTH = 600
+# 与前端图片/视频创作 `IMAGE_VIDEO_PROMPT_MAX_LENGTH` 对齐。音频没有润色按钮。
+PROMPT_ENHANCE_MAX_LENGTH = 4096
 
 # Raised by the callers below when the copy agent degraded. Deliberately not a
 # silent fallback: the degraded path echoes the author's own text back, and

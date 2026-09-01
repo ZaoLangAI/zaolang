@@ -32,7 +32,7 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   seed?: number;
   referenceAssetIds: string[];
   videoOptions?: {
-    resolution?: '2K' | '768P';
+    resolution?: '480p' | '720p' | '1080p' | '2K';
     reference_mode: 'input_references' | 'frame_images';
     first_frame_asset_id?: string | null;
     last_frame_asset_id?: string | null;
@@ -144,6 +144,19 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
    * studio can flip that chip from "建议切分" to "查看视频".
    */
   linkBreakpointKey?: string;
+  /**
+   * Opts this job out of the LLM-driven routing pick (`intent_router
+   * .select_provider`) entirely — the exact `model_or_workflow` string from
+   * `GET /v1/generation-jobs/models`. `route_score` still hard-filters the
+   * catalogue exactly as usual, but the winner is whichever surviving
+   * candidate carries this model, chosen deterministically rather than by
+   * the routing agent. No matching candidate is a hard failure — there is
+   * no silent fallback to the normal auto-routed pick. Only meaningful for
+   * image/video creation (see `back/app/api/schemas/jobs.py`
+   * `validate_generation_params`); omitted (the default) is today's
+   * unchanged auto-routed behaviour.
+   */
+  forcedModel?: string;
 }
 
 
@@ -318,6 +331,7 @@ export function useGenerationSubmit(
                 target_scene_id: input.targetSceneId ?? null,
                 subject_name_hint: input.subjectNameHint,
                 auto_attach_asset: input.autoAttachAsset ?? true,
+                forced_model: input.forcedModel ?? null,
                 extra: input.extra ?? {},
               },
               max_credits: input.maxCredits,

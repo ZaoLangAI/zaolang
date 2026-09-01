@@ -3175,6 +3175,64 @@
         }
       }
     },
+    "/v1/generation-jobs/models": {
+      "get": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "List Generation Models",
+        "description": "Read-only model list for `GenerationParams.forced_model`'s studio\npicker — one entry per distinct `ProviderCapability.model_or_workflow`\nenabled for this operation, sourced live from the exact same\n`router.build_catalog` snapshot `route_score` filters against, so an\noperator adding/disabling an endpoint at `/admin/models` is reflected\nhere on the very next request rather than a stale/hardcoded list. Never\nexposes `base_url`/`api_key`/`endpoint_id` — only the model name and a\nbest-effort display label.\n\nCalls `routing.build_catalog` through the module (never a directly\nimported name) so this always resolves whatever `app.agents.router\n.build_catalog` currently is — late-bound, the same way `app.workflows\n.nodes` calls `router.route`. A `from ... import build_catalog` alias\nwould freeze onto whichever function object existed the moment this\nmodule was first imported, silently ignoring any later rebinding of the\nmodule attribute (harmless in production, which never rebinds it, but a\nreal bug against `tests.conftest.fake_media_catalog`'s monkeypatch).",
+        "operationId": "list_generation_models_v1_generation_jobs_models_get",
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationModelListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/generation-jobs": {
       "post": {
         "tags": [
@@ -25690,6 +25748,17 @@
               }
             ]
           },
+          "forced_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forced Model"
+          },
           "character_views": {
             "anyOf": [
               {
@@ -25844,11 +25913,43 @@
         ],
         "title": "GenerationJobResponse"
       },
+      "GenerationModelListResponse": {
+        "properties": {
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/GenerationModelOption"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "title": "GenerationModelListResponse"
+      },
+      "GenerationModelOption": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "label"
+        ],
+        "title": "GenerationModelOption",
+        "description": "One directly-selectable model for `GenerationParams.forced_model`.\n\n`model` is the exact string to send back as `forced_model` — it must\nequal some enabled candidate's `ProviderCapability.model_or_workflow`\nverbatim, or `route_score` will find nothing to match and the job fails\nwith `forced_model_unavailable`. `label` is display-only, best-effort\nfrom `app.providers.model_catalog`'s curated catalogue; falls back to\n`model` itself when no catalogue entry matches."
+      },
       "GenerationParams": {
         "properties": {
           "prompt": {
             "type": "string",
-            "maxLength": 2000,
+            "maxLength": 4096,
             "title": "Prompt",
             "default": ""
           },
@@ -26030,6 +26131,18 @@
           "video_asset_kind": {
             "$ref": "#/components/schemas/VideoAssetKind",
             "default": "general"
+          },
+          "forced_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forced Model"
           },
           "extra": {
             "additionalProperties": true,
@@ -35104,8 +35217,10 @@
               {
                 "type": "string",
                 "enum": [
-                  "2K",
-                  "768P"
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "2K"
                 ]
               },
               {
@@ -35150,7 +35265,7 @@
         },
         "type": "object",
         "title": "VideoGenerationOptions",
-        "description": "Typed native-video options; arbitrary provider JSON and webhooks are\nforbidden. `resolution` is MiniMax H3's vocabulary (`2K`/`768P`) — a\ndifferently-profiled native model with its own resolution spelling (e.g.\nwan2.7-videoedit's `720p`/`1080p`) is simply hard-filtered out of routing\nby `router._request_constraint_failure` when this field doesn't match its\n`ProviderCapability.resolutions`, rather than this schema trying to union\nevery model's spelling into one enum."
+        "description": "Typed native-video options; arbitrary provider JSON and webhooks are\nforbidden. `resolution` is a clarity *tier* the client picks — not any\none vendor's own spelling. `app.providers.base.RESOLUTION_TIER_MEMBERS`\nis the single source of truth mapping each tier to the vendor literals\nit covers (e.g. `\"720p\"` covers MiniMax H3's own `\"768P\"` token too, so\npicking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5\n-260628`, `wan2.7-videoedit` — actually compete for the same request\ninstead of being mutually invisible over a spelling difference).\n`app.providers.base.resolve_resolution_tier` is where a tier gets turned\ninto the specific literal a chosen candidate's own vocabulary needs,\nboth at `router.route()`'s hard-filter/costing stage and again in\n`app.workflows.nodes.execute_provider_generate` right before the actual\nprovider call — this schema never sees or validates a vendor's raw\nspelling directly. A tier with no member in the eventually-picked\ncandidate's `ProviderCapability.resolutions` narrows which providers are\neligible (`router._request_constraint_failure`); it never reaches a\nprovider that can't honour it."
       },
       "VideoPricingPayload": {
         "properties": {
@@ -35734,7 +35849,7 @@
         "properties": {
           "prompt": {
             "type": "string",
-            "maxLength": 2000,
+            "maxLength": 4096,
             "minLength": 1,
             "title": "Prompt"
           },

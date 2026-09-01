@@ -6,6 +6,7 @@ import { GoBackLink } from '@/components/ui/go-back-link';
 import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
+import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import {
   readDraftReturnContext,
   sanitizeReturnTo,
@@ -40,8 +41,6 @@ const DESCRIPTION_KEYS: Record<Mode, string> = {
   video_creation: 'modeVideoCreationDesc',
   audio_generation: 'modeAudioGenerationDesc',
 };
-
-const PROMPT_MAX_LENGTH = 600;
 
 // `ImageGenerationStudio`'s own asset-kind union — validated here rather
 // than trusted blindly from the query string.
@@ -232,7 +231,7 @@ export default async function NewCreationPage({
           continuitySourceAssetId: resolvedContinuityAssetId,
         })}
         operation={operation}
-        initialPrompt={prompt?.trim().slice(0, PROMPT_MAX_LENGTH)}
+        initialPrompt={prompt?.trim().slice(0, STUDIO_PROMPT_MAX_LENGTH)}
         reference={reference ?? undefined}
         initialDraft={initialDraft}
         initialJobId={resolvedJobId}

@@ -132,7 +132,7 @@ const _SEGMENT_PROMPT_SECTIONS: { type: ScriptBlockType; label: string }[] = [
  * 场景 (scene heading + any `scene` blocks) sets the subject before 动作,
  * 镜头 gives the camera instruction, 台词 comes last, matching how a video
  * prompt is usually read. Capped by `create/new/page.tsx`'s own
- * `PROMPT_MAX_LENGTH` slice, so no length handling is needed here.
+ * `STUDIO_PROMPT_MAX_LENGTH` slice, so no length handling is needed here.
  */
 function breakpointSegmentPrompt(scene: ScriptScene, breakpointBlockIndex: number): string {
   const blocks = breakpointSegmentBlocks(scene, breakpointBlockIndex).filter((block) =>

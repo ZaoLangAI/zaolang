@@ -37,9 +37,11 @@ class _ScriptedProvider(GenerationProvider):
         self._results = list(results)
         self.submit_calls = 0
         self.poll_calls = 0
+        self.submitted_requests: list[GenerationRequest] = []
 
     def submit(self, request: GenerationRequest) -> GenerationResult:
         self.submit_calls += 1
+        self.submitted_requests.append(request)
         return self._results.pop(0)
 
     def poll(self, external_task_id: str, request: GenerationRequest) -> GenerationResult:
@@ -82,6 +84,7 @@ def _decision_for(
     *,
     operation: Operation,
     typical_latency_ms: int = 1_000,
+    resolutions: frozenset[str] | None = None,
 ) -> RoutingDecision:
     capability = ProviderCapability(
         name="live_mock",
@@ -93,6 +96,7 @@ def _decision_for(
         unit_cost_micro_usd=10000,
         model_or_workflow="mock",
         provider_factory=lambda: provider,
+        resolutions=resolutions,
     )
     return RoutingDecision(
         selected=Candidate(provider="live_mock"),
@@ -304,3 +308,61 @@ def test_live_sandbox_reference_ops_fail_without_a_reference(
     assert ctx.state["failure_code"] == "MISSING_REFERENCE"
     assert "reference_asset_ids" in ctx.state["error_detail"]
     assert provider.submit_calls == 0
+
+
+def test_live_sandbox_video_resolves_a_client_tier_to_the_models_own_spelling(
+    db: Session, author: User
+) -> None:
+    """`video_options.resolution` is a client-facing tier token (`"720p"`),
+    never a vendor's own literal. This mock's `resolutions` mimics MiniMax
+    H3's real profile (`768P`/`2K`, no true `720p`) — the provider must
+    receive `"768P"`, or a real adapter's own `resolution not in profile
+    .resolutions` check would reject it outright."""
+    provider = _ScriptedProvider(
+        [GenerationResult(succeeded=True, object_key="sandbox/out.mp4", mime_type="video/mp4")]
+    )
+    ctx = _sandbox_ctx(
+        db,
+        author,
+        operation=Operation.TEXT_TO_VIDEO,
+        params={
+            "duration_seconds": 4,
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    ctx.state["decision"] = _decision_for(
+        provider,
+        operation=Operation.TEXT_TO_VIDEO,
+        resolutions=frozenset({"768P", "2K"}),
+    )
+    result = execute_provider_generate(ctx, ProviderGenerateConfig())
+    assert result.port == "succeeded"
+    assert provider.submit_calls == 1
+    assert provider.submitted_requests[0].resolution == "768P"
+
+
+def test_live_sandbox_video_remix_omits_resolution_end_to_end(db: Session, author: User) -> None:
+    """A video remix never sends `video_options.resolution` at all (see
+    `VideoGenerationOptions`'s own docstring) — `resolve_resolution_tier`
+    must pass that straight through as `None`, letting the provider adapter
+    apply its own default rather than raising on a missing tier."""
+    provider = _ScriptedProvider(
+        [GenerationResult(succeeded=True, object_key="sandbox/out.mp4", mime_type="video/mp4")]
+    )
+    ctx = _sandbox_ctx(
+        db,
+        author,
+        operation=Operation.TEXT_TO_VIDEO,
+        params={
+            "duration_seconds": 4,
+            "video_options": {"reference_mode": "input_references"},
+        },
+    )
+    ctx.state["decision"] = _decision_for(
+        provider,
+        operation=Operation.TEXT_TO_VIDEO,
+        resolutions=frozenset({"768P", "2K"}),
+    )
+    result = execute_provider_generate(ctx, ProviderGenerateConfig())
+    assert result.port == "succeeded"
+    assert provider.submitted_requests[0].resolution is None

@@ -17,6 +17,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.domain.jobs import fast_retry
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.system_log import service as system_log
@@ -72,7 +73,8 @@ def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
         ctx = WorkflowContext(
             session=session, job=job, prompt=str(params.get("prompt", "")), params=params
         )
-        return WorkflowRunner(graph).run(ctx)
+        start_node_id = _apply_fast_retry_seed(session, ctx, graph)
+        return WorkflowRunner(graph).run(ctx, start_node_id=start_node_id)
     except Exception as exc:
         logger.exception("pipeline crashed for job %s", job.id)
         # The only durable record of what actually crashed: `JobEvent`
@@ -92,6 +94,41 @@ def run_generation_pipeline(session: Session, job_id: str) -> PipelineOutcome:
         )
         _fail(session, job, code="INTERNAL_ERROR", message="生成过程出现异常，积分已退回。")
         raise exc from None
+
+
+def _apply_fast_retry_seed(
+    session: Session, ctx: WorkflowContext, graph: WorkflowGraph
+) -> str | None:
+    """Seeds `ctx` and returns the `route_score` node id when this run
+    qualifies for a fast retry (`app.domain.jobs.fast_retry`), else `None`.
+
+    Never raises and never blocks the normal path: a graph that doesn't have
+    exactly one `route_score` node (a custom template with a different shape)
+    just falls back to walking from the entry node like any other job.
+    """
+    if ctx.dry_run:
+        return None
+    seed = fast_retry.build_seed(session, ctx.job)
+    if seed is None:
+        return None
+    route_score_ids = [node.id for node in graph.nodes if node.type == "route_score"]
+    if len(route_score_ids) != 1:
+        return None
+
+    ctx.prompt = seed.prompt
+    if seed.negative_prompt is not None:
+        ctx.params["negative_prompt"] = seed.negative_prompt
+    ctx.state["tried_providers"] = set(seed.tried_providers)
+    system_log.emit(
+        source=SystemLogSource.PIPELINE,
+        event="fast_retry_used",
+        message=f"job={ctx.job.id} skips pre-checks, excludes {sorted(seed.tried_providers)}",
+        dedup_key=f"job:{ctx.job.id}:fast_retry",
+        level=SystemLogLevel.INFO,
+        job_id=ctx.job.id,
+        details={"excluded_providers": sorted(seed.tried_providers)},
+    )
+    return route_score_ids[0]
 
 
 def resume_after_input(

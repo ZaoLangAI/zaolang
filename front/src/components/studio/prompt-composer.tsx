@@ -3,16 +3,17 @@
 import { PromptField, type PromptSkillMention } from '@/components/studio/prompt-field';
 import type { PromptPolishContext } from '@/components/studio/prompt-polish';
 import { IconSparkle } from '@/components/ui/icons';
+import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 
 /**
  * The richer "说说你想怎么改" composer card that sits directly beneath the
- * image/video preview area (`GenerationStudioShell`'s `promptSlot`) instead
- * of inside the params aside/`Sheet` — `ImageGenerationStudio` and
- * `VideoGenerationStudio` both moved their `PromptField` here so the author
- * writes right next to what they're looking at, and it stays visible on
- * every breakpoint rather than only after opening "调整参数".
- * `AudioGenerationStudio` is untouched — its `PromptField` stays in the
- * params panel, so this component is never used there.
+ * preview area (`GenerationStudioShell`'s `promptSlot`) instead of inside
+ * the params aside/`Sheet` — all three studios (`ImageGenerationStudio`,
+ * `VideoGenerationStudio`, `AudioGenerationStudio`) put their `PromptField`
+ * here so the author writes right next to what they're looking at, and it
+ * stays visible on every breakpoint rather than only after opening "调整参数".
+ * Audio omits polish and `@` mention; it still applies skills from the
+ * params-panel Select.
  *
  * Wraps `PromptField` rather than reimplementing it: the textarea's own
  * accessible label/counter/AI-润色 button/`@` mention menu are unchanged,
@@ -46,11 +47,11 @@ export function PromptComposer({
   /** A short, condition-specific line under the field — image's `referenceRequiredHint`. */
   hint?: string;
   /**
-   * The "写得更像导演" writing-tip copy — video only. Folds what used to be
-   * `GenerationStudioShell`'s standalone `directHint` box into this card's
-   * own header instead of stacking two boxes. Image intentionally passes
-   * nothing here (that copy never applied well to a still image) — see
-   * `hideDirectHint` at the call site.
+   * The "写得更像导演" writing-tip copy — video and audio. Folds what used
+   * to be `GenerationStudioShell`'s standalone `directHint` box into this
+   * card's own header instead of stacking two boxes. Image intentionally
+   * passes nothing here (that copy never applied well to a still image) —
+   * see `hideDirectHint` at the call site.
    */
   tip?: { title: string; body: string };
 }) {
@@ -81,6 +82,7 @@ export function PromptComposer({
           onPolishAccept={onPolishAccept}
           closePolishSignal={closePolishSignal}
           skillMention={skillMention}
+          maxLength={STUDIO_PROMPT_MAX_LENGTH}
         />
         {skillChips}
         {unlockDialog}

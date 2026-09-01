@@ -47,6 +47,7 @@ import { referenceByView } from '@/lib/characters';
 import { cn } from '@/lib/cn';
 import { formatCount, formatDuration } from '@/lib/format';
 import type { Asset } from '@/lib/upload';
+import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
@@ -217,8 +218,12 @@ export function VideoGenerationStudio({
       ? draftDuration
       : 8;
   });
-  const [resolution, setResolution] = useState<'2K' | '768P'>('2K');
+  const [resolution, setResolution] = useState<'480p' | '720p' | '1080p' | '2K'>('1080p');
   const [seed, setSeed] = useState('');
+  // "指定模型" — opts this job out of the LLM-driven routing pick, see
+  // `GenerationSubmitInput.forcedModel`. Empty means "自动选择", today's
+  // unchanged behaviour.
+  const [forcedModel, setForcedModel] = useState('');
   const [referenceMode, setReferenceMode] = useState<ReferenceMode>('input_references');
   const [firstFrameAssetId, setFirstFrameAssetId] = useState('');
   const [lastFrameAssetId, setLastFrameAssetId] = useState('');
@@ -445,6 +450,8 @@ export function VideoGenerationStudio({
     operation = 'video_to_video';
   }
 
+  const modelOptions = useGenerationModels(operation);
+
   const charactersResource = useResource<Character[]>(
     sessionStatus === 'authenticated' ? '/v1/characters' : null,
   );
@@ -570,6 +577,7 @@ export function VideoGenerationStudio({
       subjectNameHint: isCharacterActionKind ? subjectNameHint : undefined,
       linkEpisodeId,
       linkBreakpointKey,
+      forcedModel: forcedModel || undefined,
     });
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
@@ -736,6 +744,20 @@ export function VideoGenerationStudio({
       ) : null}
 
       <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
+        <Select
+          label={t('resolution')}
+          hint={t('resolutionHint')}
+          value={resolution}
+          onChange={(event) =>
+            setResolution(event.target.value as '480p' | '720p' | '1080p' | '2K')
+          }
+          options={[
+            { value: '2K', label: t('resolution2k') },
+            { value: '1080p', label: t('resolutionFhd') },
+            { value: '720p', label: t('resolutionHd') },
+            { value: '480p', label: t('resolutionSd') },
+          ]}
+        />
         <OptionGroup
           label={t('orientation')}
           value={orientation}
@@ -787,16 +809,6 @@ export function VideoGenerationStudio({
       </div>
 
       <CollapsibleSection label={t('moreSettings')} icon={<IconGear className="size-4 text-muted" />}>
-        <Select
-          label={t('resolution')}
-          hint={t('resolutionHint')}
-          value={resolution}
-          onChange={(event) => setResolution(event.target.value as '2K' | '768P')}
-          options={[
-            { value: '2K', label: '2K' },
-            { value: '768P', label: '768P' },
-          ]}
-        />
         <TextInput
           label={t('seed')}
           hint={t('seedHint')}
@@ -806,6 +818,16 @@ export function VideoGenerationStudio({
           max={String(2 ** 31 - 1)}
           value={seed}
           onChange={(event) => setSeed(event.target.value)}
+        />
+        <Select
+          label={t('modelSelectLabel')}
+          hint={t('modelSelectHint')}
+          value={forcedModel}
+          onChange={(event) => setForcedModel(event.target.value)}
+          options={[
+            { value: '', label: t('modelAuto') },
+            ...modelOptions.map((option) => ({ value: option.model, label: option.label })),
+          ]}
         />
       </CollapsibleSection>
 

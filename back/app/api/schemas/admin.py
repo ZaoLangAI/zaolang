@@ -1393,7 +1393,7 @@ class WorkflowTemplateValidateResponse(ApiModel):
 
 
 class WorkflowSandboxRunRequest(ApiModel):
-    prompt: str = Field(min_length=1, max_length=2000)
+    prompt: str = Field(min_length=1, max_length=4096)
     quality_tier: str = "standard"
     params: dict[str, Any] = Field(default_factory=dict)
     # The unpublished graph on the editor's canvas. Omitted means "run what

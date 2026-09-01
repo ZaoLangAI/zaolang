@@ -67,13 +67,23 @@ class WorkflowRunner:
         needs to know how the node was configured."""
         return self._node_map.get(node_id)
 
-    def run(self, ctx: WorkflowContext) -> PipelineOutcome:
+    def run(self, ctx: WorkflowContext, *, start_node_id: str | None = None) -> PipelineOutcome:
+        """Walks the graph from its entry node, or from `start_node_id` when given.
+
+        `start_node_id` is how a fast retry (`app.domain.jobs.fast_retry`) skips
+        straight to `route_score` on a brand-new job: the caller is responsible
+        for seeding `ctx` (prompt/params/`tried_providers`) with whatever the
+        skipped nodes would otherwise have produced. Must name a node that
+        actually exists in this graph — the caller falls back to `None`
+        (the normal entry) when a custom graph doesn't have one.
+        """
         cancelled = self._cancel_if_requested(ctx)
         if cancelled is not None and cancelled.terminal is not None:
             return cancelled.terminal
         if not ctx.dry_run and ctx.job.status == JobStatus.CREATED:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.QUEUED)
-        return self._walk(ctx, self._entry_id, {})
+        start = start_node_id if start_node_id is not None else self._entry_id
+        return self._walk(ctx, start, {})
 
     def resume(self, ctx: WorkflowContext, *, node_id: str, port: str) -> PipelineOutcome:
         """Continues a suspended walk from the node that handed work outside.

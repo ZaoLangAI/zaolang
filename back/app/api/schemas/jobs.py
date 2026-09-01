@@ -59,17 +59,27 @@ DEFAULT_SANDBOX_VIDEO_DURATION_SECONDS = 8
 
 class VideoGenerationOptions(ApiModel):
     """Typed native-video options; arbitrary provider JSON and webhooks are
-    forbidden. `resolution` is MiniMax H3's vocabulary (`2K`/`768P`) — a
-    differently-profiled native model with its own resolution spelling (e.g.
-    wan2.7-videoedit's `720p`/`1080p`) is simply hard-filtered out of routing
-    by `router._request_constraint_failure` when this field doesn't match its
-    `ProviderCapability.resolutions`, rather than this schema trying to union
-    every model's spelling into one enum."""
+    forbidden. `resolution` is a clarity *tier* the client picks — not any
+    one vendor's own spelling. `app.providers.base.RESOLUTION_TIER_MEMBERS`
+    is the single source of truth mapping each tier to the vendor literals
+    it covers (e.g. `"720p"` covers MiniMax H3's own `"768P"` token too, so
+    picking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5
+    -260628`, `wan2.7-videoedit` — actually compete for the same request
+    instead of being mutually invisible over a spelling difference).
+    `app.providers.base.resolve_resolution_tier` is where a tier gets turned
+    into the specific literal a chosen candidate's own vocabulary needs,
+    both at `router.route()`'s hard-filter/costing stage and again in
+    `app.workflows.nodes.execute_provider_generate` right before the actual
+    provider call — this schema never sees or validates a vendor's raw
+    spelling directly. A tier with no member in the eventually-picked
+    candidate's `ProviderCapability.resolutions` narrows which providers are
+    eligible (`router._request_constraint_failure`); it never reaches a
+    provider that can't honour it."""
 
     # Omitted on a video remix so the router does not default-filter
-    # cheaper video-edit models that only speak `720p`/`1080p`. Create/new
-    # still sends `2K` or `768P` explicitly.
-    resolution: Literal["2K", "768P"] | None = None
+    # cheaper video-edit models whose vendor spelling isn't in this tier.
+    # Create/new still sends one of the four tiers below explicitly.
+    resolution: Literal["480p", "720p", "1080p", "2K"] | None = None
     reference_mode: Literal["input_references", "frame_images"] = "input_references"
     first_frame_asset_id: str | None = Field(default=None, max_length=40)
     last_frame_asset_id: str | None = Field(default=None, max_length=40)
@@ -106,6 +116,7 @@ def validate_generation_params(
     video_options: VideoGenerationOptions | None = None,
     asset_kind: ImageAssetKind | None = None,
     video_asset_kind: VideoAssetKind | None = None,
+    forced_model: str | None = None,
     extra: Mapping[str, Any] | None = None,
     licensed_source: bool = False,
 ) -> None:
@@ -132,6 +143,8 @@ def validate_generation_params(
         and operation not in VIDEO_OPERATIONS
     ):
         raise ValueError("video_asset_kind 仅适用于视频生成。")
+    if forced_model and operation not in IMAGE_OPERATIONS | VIDEO_OPERATIONS:
+        raise ValueError("forced_model 仅适用于图片创作/视频创作。")
     if operation in VIDEO_OPERATIONS and duration_seconds <= 0:
         raise ValueError("视频生成必须指定时长。")
     if operation not in VIDEO_OPERATIONS and video_options is not None:
@@ -205,6 +218,7 @@ def prepare_sandbox_generation_params(
         video_options=options,
         asset_kind=_parsed_asset_kind(prepared.get("asset_kind")),
         video_asset_kind=_parsed_video_asset_kind(prepared.get("video_asset_kind")),
+        forced_model=_parsed_forced_model(prepared.get("forced_model")),
         extra=prepared.get("extra") if isinstance(prepared.get("extra"), dict) else {},
     )
     return prepared
@@ -226,11 +240,15 @@ def _parsed_video_asset_kind(raw: Any) -> VideoAssetKind | None:
     return None
 
 
+def _parsed_forced_model(raw: Any) -> str | None:
+    return raw if isinstance(raw, str) and raw else None
+
+
 class GenerationParams(ApiModel):
     # No `min_length` here: enforced instead by `validate_generation_params`,
     # which exempts `video_analysis` (this field means "optional extra notes
     # on the uploaded clip" there, not a required creative instruction).
-    prompt: str = Field(default="", max_length=2000)
+    prompt: str = Field(default="", max_length=4096)
     negative_prompt: str | None = Field(default=None, max_length=1000)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     # `adaptive` is the one non-`W:H` literal — H3's own "let the render
@@ -311,6 +329,19 @@ class GenerationParams(ApiModel):
     # Meaningless (and rejected — see `validate_generation_params`) for any
     # non-video operation.
     video_asset_kind: VideoAssetKind = VideoAssetKind.GENERAL
+    # Opts out of `intent_router.select_provider()`'s LLM-driven pick
+    # entirely (`app.agents.router.route()`'s `forced_model` branch): the
+    # candidate catalogue is still hard-filtered exactly as usual (capability/
+    # tier/duration/aspect-ratio/resolution-tier/latency/already-tried), but
+    # the winner is whichever surviving candidate's `ProviderCapability
+    # .model_or_workflow` matches this string, chosen deterministically
+    # (sorted by provider name) rather than by the routing agent. No
+    # candidate matching this exact model name is a hard failure
+    # (`reason="forced_model_unavailable"`) — there is no silent fallback to
+    # the normal LLM-driven route. Only meaningful for image/video creation
+    # (see `validate_generation_params`); `None` (the default) is today's
+    # unchanged intent-router-driven behavior.
+    forced_model: str | None = Field(default=None, max_length=200)
     extra: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -352,6 +383,25 @@ class QuoteResponse(ApiModel):
     sufficient: bool
 
 
+class GenerationModelOption(ApiModel):
+    """One directly-selectable model for `GenerationParams.forced_model`.
+
+    `model` is the exact string to send back as `forced_model` — it must
+    equal some enabled candidate's `ProviderCapability.model_or_workflow`
+    verbatim, or `route_score` will find nothing to match and the job fails
+    with `forced_model_unavailable`. `label` is display-only, best-effort
+    from `app.providers.model_catalog`'s curated catalogue; falls back to
+    `model` itself when no catalogue entry matches.
+    """
+
+    model: str
+    label: str
+
+
+class GenerationModelListResponse(ApiModel):
+    models: list[GenerationModelOption] = Field(default_factory=list)
+
+
 class GenerationJobCreateRequest(ApiModel):
     operation: Operation
     quality_tier: QualityTier
@@ -381,6 +431,7 @@ class GenerationJobCreateRequest(ApiModel):
             video_options=self.params.video_options,
             asset_kind=self.params.asset_kind,
             video_asset_kind=self.params.video_asset_kind,
+            forced_model=self.params.forced_model,
             extra=self.params.extra,
             licensed_source=bool(self.source_work_id),
         )
@@ -534,6 +585,9 @@ class GenerationJobResponse(ApiModel):
     # Echoes `GenerationParams.video_asset_kind` back — the video-side
     # equivalent of `asset_kind` above, `None` for every non-video operation.
     video_asset_kind: VideoAssetKind | None = None
+    # Echoes `GenerationParams.forced_model` back — `None` means this job let
+    # `intent_router.select_provider()` pick, same as today.
+    forced_model: str | None = None
     # Echoes `GenerationParams.character_views` back — only meaningful with
     # `asset_kind=character`. Lets a client show upfront how many views this
     # job produces (e.g. "第 2/3 张") without re-deriving it from the event

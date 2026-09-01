@@ -14,6 +14,7 @@ from app.models.enums import Operation
 from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     DEFAULT_CONFIGS,
+    FEATURE_FLAG_NAMES,
     MAX_GENERATION_DURATION_SECONDS,
     PROTOCOL_CAPABILITIES,
     VIDEO_RESOLUTIONS,
@@ -270,6 +271,15 @@ def test_defaults_satisfy_their_own_schemas() -> None:
     for key in config_service.all_keys():
         config_service.validate(key, DEFAULT_CONFIGS[key])
     FeatureFlags.model_validate(DEFAULT_CONFIGS["feature_flags"])
+
+
+def test_feature_flag_names_cover_every_boolean_on_the_schema() -> None:
+    """The console and `/feature-flags` iterate this tuple; missing a name
+    is how script studio and video analysis vanished from the form."""
+    expected = {name for name in FeatureFlags.model_fields if name != "rollout_percentages"}
+    assert set(FEATURE_FLAG_NAMES) == expected
+    assert "script_studio_enabled" in expected
+    assert "video_analysis_enabled" in expected
 
 
 def test_a_media_endpoint_without_protocol_infers_openai_for_images() -> None:

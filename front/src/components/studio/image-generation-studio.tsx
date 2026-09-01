@@ -4,11 +4,12 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
-import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
+import { CollapsibleSection } from '@/components/studio/collapsible-section';
 import {
   GenerationStudioShell,
   type StudioSource,
 } from '@/components/studio/generation-studio-shell';
+import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
 import { InlineImageResult } from '@/components/studio/inline-image-result';
 import { OptionGroup } from '@/components/studio/option-group';
 import { PromptComposer } from '@/components/studio/prompt-composer';
@@ -16,7 +17,7 @@ import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import { MAX_APPLIED_SKILLS, useAppliedSkills } from '@/components/studio/use-applied-skills';
 import { Select } from '@/components/ui/field';
-import { IconLandscape, IconPortrait } from '@/components/ui/icons';
+import { IconGear, IconLandscape, IconPortrait } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -40,6 +41,7 @@ import {
 import { formatCount, formatDuration } from '@/lib/format';
 import { draftReturnParams } from '@/lib/studio-session';
 import type { Asset } from '@/lib/upload';
+import { useGenerationModels } from '@/lib/use-generation-models';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
@@ -147,6 +149,10 @@ export function ImageGenerationStudio({
       : '16:9';
   });
   const [tier, setTier] = useState<QualityTier>('standard');
+  // "指定模型" — opts this job out of the LLM-driven routing pick, see
+  // `GenerationSubmitInput.forcedModel`. Empty means "自动选择", today's
+  // unchanged behaviour.
+  const [forcedModel, setForcedModel] = useState('');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
   const [uploads, setUploads] = useState<Asset[]>([]);
   // Which uploaded reference the user clicked in `SourceMaterialRail` — shown
@@ -492,6 +498,7 @@ export function ImageGenerationStudio({
   const hasImageReference = uploads.some((asset) => asset.media_type === 'image');
   const operation: Operation = source || hasImageReference ? 'image_to_image' : 'text_to_image';
   const isImageEdit = operation === 'image_to_image';
+  const modelOptions = useGenerationModels(operation);
 
   const applyParams = (params: Record<string, unknown>) => {
     const aspectRatio = params.aspect_ratio;
@@ -577,6 +584,7 @@ export function ImageGenerationStudio({
         returnLinkKind,
         returnLinkLabel,
       }),
+      forcedModel: forcedModel || undefined,
     });
   };
 
@@ -716,6 +724,19 @@ export function ImageGenerationStudio({
         onChange={setAspect}
         options={aspectOptions.map((value) => ({ value, label: value }))}
       />
+
+      <CollapsibleSection label={t('moreSettings')} icon={<IconGear className="size-4 text-muted" />}>
+        <Select
+          label={t('modelSelectLabel')}
+          hint={t('modelSelectHint')}
+          value={forcedModel}
+          onChange={(event) => setForcedModel(event.target.value)}
+          options={[
+            { value: '', label: t('modelAuto') },
+            ...modelOptions.map((option) => ({ value: option.model, label: option.label })),
+          ]}
+        />
+      </CollapsibleSection>
 
       <QualityTierField tier={tier} onChange={setTier} quote={quote} />
 

@@ -305,6 +305,62 @@ def test_route_score_forwards_the_intent_hints_cost_bias_to_the_router(
     assert captured["cost_bias"] == 0.7
 
 
+def test_route_score_honors_forced_model_and_skips_the_selecting_agent(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch, fake_media_catalog: None
+) -> None:
+    """`GenerationParams.forced_model` must reach `router.route()` and win
+    without `intent_router.select_provider` ever running — a real call
+    would show up as an `AgentRun`."""
+    from app.agents import intent_router as intent_router_agent
+
+    called = False
+
+    def _fail_if_called(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        raise AssertionError("intent_router.select_provider must not be called")
+
+    monkeypatch.setattr(intent_router_agent, "select_provider", _fail_if_called)
+
+    ctx = _running_job(db, author, prompt="指定模型跳过路由")
+    ctx.params["forced_model"] = "paid-video-v3"
+    outcome = execute_route_score(ctx, RouteScoreConfig())
+
+    assert called is False
+    assert outcome.port == "ok"
+    assert ctx.job.selected_route_summary_json is not None
+    assert ctx.job.selected_route_summary_json["model_or_workflow"] == "paid-video-v3"
+    assert ctx.job.selected_route_summary_json["reason"] == "user_forced_model:paid-video-v3"
+
+
+def test_route_score_forced_model_unavailable_fails_with_a_clear_message(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch, fake_media_catalog: None
+) -> None:
+    """No survivor matching `forced_model` must fail the node outright —
+    never fall back to letting the agent pick among whatever else is
+    eligible — and the failure message must name the model, not the generic
+    "暂时没有可用的生成路线" copy."""
+    from app.agents import intent_router as intent_router_agent
+
+    called = False
+
+    def _fail_if_called(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        raise AssertionError("intent_router.select_provider must not be called")
+
+    monkeypatch.setattr(intent_router_agent, "select_provider", _fail_if_called)
+
+    ctx = _running_job(db, author, prompt="指定模型跳过路由")
+    ctx.params["forced_model"] = "not-a-configured-model"
+    outcome = execute_route_score(ctx, RouteScoreConfig())
+
+    assert called is False
+    assert outcome.port == "no_candidate"
+    assert ctx.state["failure_code"] == "PROVIDER_TEMPORARY_FAILURE"
+    assert "not-a-configured-model" in ctx.state["failure_message"]
+
+
 def _join_ctx(branch_ports: list[str]) -> WorkflowContext:
     ctx = WorkflowContext(session=None, job=None, prompt="", params={})  # type: ignore[arg-type]
     ctx.state["_branch_results"] = [NodeResult(port=p) for p in branch_ports]
@@ -805,13 +861,20 @@ def test_provider_generate_folds_the_plan_into_the_effective_prompt(
     assert decision.provider is not None
 
     captured: dict[str, object] = {}
-    real_submit = decision.provider.submit
+    # Patched on the class, not `decision.provider` itself: the fakes are
+    # process-wide singletons (`tests.fake_providers.get_provider`), and
+    # `submit` only exists on the class — monkeypatching an instance would
+    # leave a stale instance-level shadow behind after teardown, silently
+    # defeating every later test's own class-level `submit` patch for the
+    # same singleton (see that module's own doc comment).
+    provider_cls = type(decision.provider)
+    real_submit = provider_cls.submit
 
-    def capture_submit(request):  # type: ignore[no-untyped-def]
+    def capture_submit(self, request):  # type: ignore[no-untyped-def]
         captured["request"] = request
-        return real_submit(request)
+        return real_submit(self, request)
 
-    monkeypatch.setattr(decision.provider, "submit", capture_submit)
+    monkeypatch.setattr(provider_cls, "submit", capture_submit)
 
     execute_provider_generate(ctx, ProviderGenerateConfig())
 
@@ -858,13 +921,16 @@ def test_provider_generate_ignores_the_generic_plan_for_an_asset_kind_job(
     assert decision.provider is not None
 
     captured: dict[str, object] = {}
-    real_submit = decision.provider.submit
+    # Same reasoning as the sibling test above: patch the class, never the
+    # singleton instance.
+    provider_cls = type(decision.provider)
+    real_submit = provider_cls.submit
 
-    def capture_submit(request):  # type: ignore[no-untyped-def]
+    def capture_submit(self, request):  # type: ignore[no-untyped-def]
         captured["request"] = request
-        return real_submit(request)
+        return real_submit(self, request)
 
-    monkeypatch.setattr(decision.provider, "submit", capture_submit)
+    monkeypatch.setattr(provider_cls, "submit", capture_submit)
 
     execute_provider_generate(ctx, ProviderGenerateConfig())
 

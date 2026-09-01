@@ -15,14 +15,13 @@ import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
 import type { WorkDetail, WorkSummary } from '@/lib/api/types';
 import { formatCount, formatDate } from '@/lib/format';
+import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import { refreshWorkMediaUrl } from '@/lib/refresh-media-src';
 import { useResource } from '@/lib/use-resource';
 
 const LineageExplorer = dynamic(() =>
   import('@/components/lineage/lineage-explorer').then((module) => module.LineageExplorer),
 );
-
-const PROMPT_MAX_LENGTH = 600;
 
 /**
  * Preview of one inspiration tile without leaving the feed.
@@ -73,7 +72,7 @@ export function InspirationDialog({
       pathname: '/create/new',
       query: {
         mode: 'text_to_video',
-        prompt: value.slice(0, PROMPT_MAX_LENGTH),
+        prompt: value.slice(0, STUDIO_PROMPT_MAX_LENGTH),
         ref: work.id,
       },
     });

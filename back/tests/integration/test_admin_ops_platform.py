@@ -8,9 +8,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.v1.admin.config import FLAG_DESCRIPTIONS
 from app.models import Announcement, AuditLog, Notification, User
 from app.platform_config import service as config_service
-from app.platform_config.schemas import DEFAULT_CONFIGS, FeatureFlags, PricingConfig
+from app.platform_config.schemas import (
+    DEFAULT_CONFIGS,
+    FEATURE_FLAG_NAMES,
+    FeatureFlags,
+    PricingConfig,
+)
 from tests.conftest import admin_header
 
 # `pricing` stands in for "some editable config key" across these CRUD/
@@ -350,8 +356,11 @@ def test_feature_flags_are_listed_with_state_and_description(
     client: TestClient, admin: User
 ) -> None:
     items = client.get("/v1/admin/feature-flags", headers=admin_header(admin)).json()["items"]
-    assert items
+    names = {flag["name"] for flag in items}
+    assert names == set(FEATURE_FLAG_NAMES)
+    assert {"script_studio_enabled", "video_analysis_enabled"} <= names
     assert all(isinstance(flag["enabled"], bool) and flag["description"] for flag in items)
+    assert set(FLAG_DESCRIPTIONS) == set(FEATURE_FLAG_NAMES)
 
 
 def test_a_flag_can_be_turned_off(client: TestClient, db: Session, admin: User) -> None:

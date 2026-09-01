@@ -722,3 +722,27 @@ def catalog_entry(vendor: VendorId, model: str) -> ModelCatalogEntry | None:
         if entry.model == model:
             return entry
     return None
+
+
+def display_name_for_model(model: str) -> str | None:
+    """A friendly label for a raw, admin-configured `endpoint.model` string,
+    for the C-end model picker (`GET /v1/generation-jobs/models`) — never
+    validated against or enforced, purely cosmetic.
+
+    Unlike `catalog_entry`, this searches every vendor's list and matches
+    case-insensitively: the same nominal model is sometimes typed with
+    different casing per vendor (e.g. AiHubMix's `minimax-h3` vs. DMXAPI's
+    `MiniMax-H3` — see `zaolang-platform-config` invariant #9), and the C-end
+    picker has no vendor context at all, only the bare model string a
+    `ProviderCapability.model_or_workflow` carries. Returns `None` when no
+    catalog entry matches, so the caller can fall back to the raw string
+    instead of showing a blank label.
+    """
+    lowered = model.strip().lower()
+    if not lowered:
+        return None
+    for entries in VENDOR_MODEL_CATALOG.values():
+        for entry in entries:
+            if entry.model.strip().lower() == lowered:
+                return entry.display_name
+    return None

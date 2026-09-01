@@ -228,15 +228,18 @@ test.describe('operations screens', () => {
     const actions = await ledger.getByRole('button').allTextContents();
     expect(actions.indexOf('配置')).toBe(actions.indexOf('刷新') + 1);
     await ledger.getByRole('button', { name: '配置' }).click();
-    await expect(page.getByRole('heading', { name: '积分与分成配置' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '积分、分成与市场配置' })).toBeVisible();
     await expect(page.getByText('定价矩阵', { exact: true })).toBeVisible();
+    await expect(page.getByText('市场规则', { exact: true })).toBeVisible();
   });
 
   test('the config console contains only global flags and shortform specs', async ({ page }) => {
     await page.goto('/zh-CN/admin/config', { waitUntil: 'networkidle' });
     await expect(page.getByRole('heading', { name: '配置中心', level: 1 })).toBeVisible();
-    await expect(page.getByText('Feature Flag', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '功能开关' })).toBeVisible();
     await expect(page.getByText('短视频规格目录', { exact: true })).toBeVisible();
+    await expect(page.getByText('文案创作工作室', { exact: true })).toBeVisible();
+    await expect(page.getByText('视频解析', { exact: true })).toBeVisible();
     await expect(page.getByText('定价矩阵', { exact: true })).toHaveCount(0);
   });
 

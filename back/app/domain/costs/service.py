@@ -338,20 +338,22 @@ def _requested_resolution(request: GenerationRequest, default_resolution: str | 
     silently pricing every video at `NOMINAL_VIDEO_RESOLUTION` regardless of
     what was actually requested.
 
-    But most native video models cannot even *have* `request.resolution` set
-    in the first place: the C-end request schema's `resolution` field only
-    speaks MiniMax H3's own vocabulary (`2K`/`768P` — see `VideoGenerationOptions`),
-    so a `doubao-seedance`/`wan3.0-video`/`wan2.7-videoedit` call always
-    leaves it `None` and instead renders at that model's own hardcoded
-    default (`NativeVideoModelProfile`/`VideoModelProfile.default_resolution`
-    inside the provider adapter). Falling back straight to the fixed
-    `NOMINAL_VIDEO_RESOLUTION` here — rather than to that model's real
-    default — priced every one of those calls at a resolution the model
-    never actually rendered at, so whatever the operator configured for the
-    model's *real* default resolution was never looked up. `default_
-    resolution` closes that gap; it is `None` for a model with no declared
-    profile (e.g. a hand-typed custom endpoint), which still falls through to
-    the fixed nominal exactly as before.
+    By the time a settled `request` reaches this function, `nodes.py` has
+    already turned the client's tier token (`VideoGenerationOptions
+    .resolution` — see `app.providers.base.resolve_resolution_tier`) into
+    the specific vendor spelling the routed model's own profile declares, so
+    `request.resolution` is populated for every native video model, not just
+    MiniMax H3. It is still `None` on a video remix (the client omits
+    `resolution` entirely so the router does not default-filter a cheaper
+    edit model) — that's when `default_resolution` (the model's own declared
+    default, `NativeVideoModelProfile`/`VideoModelProfile.default_resolution`)
+    matters: falling back straight to the fixed `NOMINAL_VIDEO_RESOLUTION`
+    instead prices the call at a resolution the model never actually
+    rendered at, so whatever the operator configured for the model's *real*
+    default resolution is never looked up. `default_resolution` is `None`
+    for a model with no declared profile (e.g. a hand-typed custom
+    endpoint), which still falls through to the fixed nominal exactly as
+    before.
     """
     return request.resolution or default_resolution or NOMINAL_VIDEO_RESOLUTION
 
@@ -378,6 +380,12 @@ def estimate_media_request_cost_micro_usd(
     the two rates, which is the safer direction for a pre-call estimate to
     be wrong in. `default_resolution` is the same per-model fallback
     `generation_attempt_cost_micro_usd` uses — see `_requested_resolution`.
+
+    `params["video_options"]["resolution"]`, when present, is used as a
+    literal pricing-table key — its only caller (`router.route()`) has
+    already resolved the client's tier token into this specific candidate's
+    own vendor spelling (`app.providers.base.resolve_resolution_tier`)
+    before calling this, so a raw tier token never reaches this lookup.
     """
     video_options = params.get("video_options")
     resolution = default_resolution or NOMINAL_VIDEO_RESOLUTION

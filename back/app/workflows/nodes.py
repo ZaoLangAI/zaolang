@@ -49,7 +49,12 @@ from app.models.enums import (
     QualityTier,
     VideoAssetKind,
 )
-from app.providers.base import GenerationProvider, GenerationRequest, GenerationResult
+from app.providers.base import (
+    GenerationProvider,
+    GenerationRequest,
+    GenerationResult,
+    resolve_resolution_tier,
+)
 from app.realtime import publisher
 from app.storage import s3
 from app.workflows.configs import (
@@ -1141,6 +1146,13 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
     tier = _effective_tier(ctx.job.quality_tier, hint)
     raw_cost_bias = hint.get("cost_bias")
     cost_bias = raw_cost_bias if isinstance(raw_cost_bias, (int, float)) else None
+    # `forced_model` (`GenerationParams.forced_model`) opts this job out of
+    # `intent_router.select_provider()` entirely — see `router.route()`'s own
+    # doc comment. It rides along in `ctx.params` unchanged whether this node
+    # was reached by walking the graph from its entry node or jumped to
+    # directly by a fast retry (`app.domain.jobs.fast_retry`), so no extra
+    # wiring is needed for that path to honor it too.
+    forced_model = ctx.params.get("forced_model")
     with _live_thinking(ctx):
         decision = router.route(
             ctx.session,
@@ -1153,13 +1165,19 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
             selector_agent_id=config.selector_agent_id,
             request_params=ctx.params,
             cost_bias=cost_bias,
+            forced_model=forced_model if isinstance(forced_model, str) else None,
         )
     ctx.job.routing_trace_json = decision.trace()
     ctx.session.flush()
 
     if decision.selected is None or decision.capability is None:
         ctx.state["failure_code"] = "PROVIDER_TEMPORARY_FAILURE"
-        ctx.state["failure_message"] = "暂时没有可用的生成路线，积分已退回。"
+        if decision.reason == "forced_model_unavailable":
+            ctx.state["failure_message"] = (
+                f"所选模型「{forced_model}」当前不可用，请更换模型或稍后重试。"
+            )
+        else:
+            ctx.state["failure_message"] = "暂时没有可用的生成路线，积分已退回。"
         return NodeResult(port="no_candidate", summary=f"无可用候选：{decision.reason}")
 
     ctx.state["decision"] = decision
@@ -1405,7 +1423,13 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         seed=ctx.params.get("seed"),
         aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
         duration_seconds=duration,
-        resolution=(ctx.params.get("video_options") or {}).get("resolution"),
+        # `video_options.resolution` is a client-facing tier token (see
+        # `VideoGenerationOptions.resolution`) — resolve it to this specific
+        # candidate's own spelling before it ever reaches a provider adapter.
+        resolution=resolve_resolution_tier(
+            (ctx.params.get("video_options") or {}).get("resolution"),
+            decision.capability.resolutions if decision.capability else None,
+        ),
         references=references,
         extra=dict(ctx.params.get("extra") or {}),
     )
@@ -1515,7 +1539,15 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             seed=ctx.params.get("seed"),
             aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
             duration_seconds=int(ctx.params.get("duration_seconds") or 0),
-            resolution=(ctx.params.get("video_options") or {}).get("resolution"),
+            # `video_options.resolution` is a client-facing tier token (see
+            # `VideoGenerationOptions.resolution`) — resolve it to this
+            # specific candidate's own spelling before it ever reaches a
+            # provider adapter (`aihubmix_media.py`/`dmxapi_media.py` still
+            # expect exactly the literal their own profile table declares).
+            resolution=resolve_resolution_tier(
+                (ctx.params.get("video_options") or {}).get("resolution"),
+                capability.resolutions,
+            ),
             references=media_service.provider_references_for(
                 ctx.session,
                 user_id=ctx.job.user_id,

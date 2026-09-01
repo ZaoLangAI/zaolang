@@ -7,13 +7,12 @@ import { SkillMentionMenu } from '@/components/skills/skill-mention-menu';
 import { PromptPolish, type PromptPolishContext } from '@/components/studio/prompt-polish';
 import { TextArea } from '@/components/ui/field';
 import type { CreationSkillSummary } from '@/lib/api/types';
+import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import {
   computeMentionMenuStyle,
   detectMentionTrigger,
   filterMentionSkills,
 } from '@/lib/skill-mention';
-
-export const PROMPT_MAX_LENGTH = 600;
 
 export interface PromptSkillMention {
   skills: CreationSkillSummary[];
@@ -47,6 +46,7 @@ export function PromptField({
   onPolishAccept,
   closePolishSignal,
   skillMention,
+  maxLength = STUDIO_PROMPT_MAX_LENGTH,
 }: {
   prompt: string;
   onChange: (value: string) => void;
@@ -55,6 +55,8 @@ export function PromptField({
   /** Forwarded to `PromptPolish` — see its own doc comment. */
   closePolishSignal?: number;
   skillMention?: PromptSkillMention;
+  /** Defaults to `STUDIO_PROMPT_MAX_LENGTH`. */
+  maxLength?: number;
 }) {
   const t = useTranslations('remixPage');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -167,7 +169,7 @@ export function PromptField({
         placeholder={skillMention ? t('mentionPromptPlaceholder') : t('promptPlaceholder')}
         hint={skillMention ? t('mentionHint') : undefined}
         value={prompt}
-        maxLength={PROMPT_MAX_LENGTH}
+        maxLength={maxLength}
         onChange={(event) => {
           onChange(event.target.value);
           refreshMention(event.target.value, event.target.selectionStart ?? event.target.value.length);
@@ -175,7 +177,7 @@ export function PromptField({
         onKeyDown={handleKeyDown}
       />
       <p className="tabular mt-1 text-right text-[11px] text-muted">
-        {prompt.length}/{PROMPT_MAX_LENGTH}
+        {prompt.length}/{maxLength}
       </p>
       {polishContext && onPolishAccept ? (
         <PromptPolish

@@ -81,17 +81,39 @@ def test_h3_video_options_accept_the_documented_range_and_aspects() -> None:
 
 
 def test_video_options_accept_the_widened_aspect_ratio_and_resolution_set() -> None:
-    """`adaptive` and `768P` both joined the legal set alongside H3's
-    original six aspect ratios and the sole `2K` resolution."""
+    """`adaptive` joined the legal aspect-ratio set alongside H3's original
+    six, and `resolution` accepts any of the four clarity tiers — not just
+    H3's own `2K` — since it now names a tier, not a vendor's literal
+    spelling (see `VideoGenerationOptions.resolution`)."""
     adaptive = _request(
         Operation.TEXT_TO_VIDEO,
         duration_seconds=5,
         aspect_ratio="adaptive",
-        video_options={"resolution": "768P", "reference_mode": "input_references"},
+        video_options={"resolution": "720p", "reference_mode": "input_references"},
     )
     assert adaptive.params.aspect_ratio == "adaptive"
     assert adaptive.params.video_options is not None
-    assert adaptive.params.video_options.resolution == "768P"
+    assert adaptive.params.video_options.resolution == "720p"
+
+
+def test_video_options_reject_a_raw_vendor_resolution_spelling() -> None:
+    """`resolution` is a client-facing tier token, not a vendor's own
+    literal — `"768P"` (MiniMax H3's spelling, now a `"720p"`-tier synonym
+    resolved server-side by `app.providers.base.resolve_resolution_tier`)
+    and `"480P"` (a hypothetical future capital-P model) must both be
+    rejected here, the same as any other value outside the four tiers."""
+    with pytest.raises(ValidationError):
+        _request(
+            Operation.TEXT_TO_VIDEO,
+            duration_seconds=5,
+            video_options={"resolution": "768P"},
+        )
+    with pytest.raises(ValidationError):
+        _request(
+            Operation.TEXT_TO_VIDEO,
+            duration_seconds=5,
+            video_options={"resolution": "480P"},
+        )
 
 
 def test_video_options_reject_an_aspect_ratio_outside_the_documented_set() -> None:
@@ -294,3 +316,40 @@ def test_sandbox_prepare_rejects_an_illegal_h3_duration() -> None:
                 "video_options": {"resolution": "2K"},
             },
         )
+
+
+def test_forced_model_is_accepted_for_image_and_video_creation() -> None:
+    image_request = _request(Operation.TEXT_TO_IMAGE, forced_model="doubao-seedream-5-0-pro")
+    assert image_request.params.forced_model == "doubao-seedream-5-0-pro"
+
+    video_request = _request(
+        Operation.TEXT_TO_VIDEO, duration_seconds=5, forced_model="minimax-h3"
+    )
+    assert video_request.params.forced_model == "minimax-h3"
+
+
+def test_forced_model_is_rejected_outside_image_and_video_creation() -> None:
+    with pytest.raises(ValidationError, match="forced_model 仅适用于图片创作/视频创作"):
+        _request(Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-model")
+
+    with pytest.raises(ValidationError, match="forced_model 仅适用于图片创作/视频创作"):
+        GenerationJobCreateRequest(
+            operation=Operation.VIDEO_ANALYSIS,
+            quality_tier=QualityTier.STANDARD,
+            params=GenerationParams(
+                reference_asset_ids=["asset-video"], forced_model="some-model"
+            ),
+        )
+
+
+def test_forced_model_defaults_to_unset() -> None:
+    request = _request(Operation.TEXT_TO_IMAGE)
+    assert request.params.forced_model is None
+
+
+def test_generation_prompt_accepts_4096_and_rejects_4097() -> None:
+    accepted = GenerationParams(prompt="测" * 4096)
+    assert len(accepted.prompt) == 4096
+
+    with pytest.raises(ValidationError):
+        GenerationParams(prompt="测" * 4097)

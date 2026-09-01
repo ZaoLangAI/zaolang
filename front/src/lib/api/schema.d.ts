@@ -759,6 +759,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/generation-jobs/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Generation Models
+         * @description Read-only model list for `GenerationParams.forced_model`'s studio
+         *     picker — one entry per distinct `ProviderCapability.model_or_workflow`
+         *     enabled for this operation, sourced live from the exact same
+         *     `router.build_catalog` snapshot `route_score` filters against, so an
+         *     operator adding/disabling an endpoint at `/admin/models` is reflected
+         *     here on the very next request rather than a stale/hardcoded list. Never
+         *     exposes `base_url`/`api_key`/`endpoint_id` — only the model name and a
+         *     best-effort display label.
+         *
+         *     Calls `routing.build_catalog` through the module (never a directly
+         *     imported name) so this always resolves whatever `app.agents.router
+         *     .build_catalog` currently is — late-bound, the same way `app.workflows
+         *     .nodes` calls `router.route`. A `from ... import build_catalog` alias
+         *     would freeze onto whichever function object existed the moment this
+         *     module was first imported, silently ignoring any later rebinding of the
+         *     module attribute (harmless in production, which never rebinds it, but a
+         *     real bug against `tests.conftest.fake_media_catalog`'s monkeypatch).
+         */
+        get: operations["list_generation_models_v1_generation_jobs_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/generation-jobs": {
         parameters: {
             query?: never;
@@ -7395,6 +7431,8 @@ export interface components {
             reference_url?: string | null;
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
             video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
+            /** Forced Model */
+            forced_model?: string | null;
             /** Character Views */
             character_views?: components["schemas"]["CharacterViewAngle"][] | null;
             /** Duration Seconds */
@@ -7428,6 +7466,28 @@ export interface components {
             finished_at?: string | null;
             /** Events */
             events?: components["schemas"]["JobEventResponse"][];
+        };
+        /** GenerationModelListResponse */
+        GenerationModelListResponse: {
+            /** Models */
+            models?: components["schemas"]["GenerationModelOption"][];
+        };
+        /**
+         * GenerationModelOption
+         * @description One directly-selectable model for `GenerationParams.forced_model`.
+         *
+         *     `model` is the exact string to send back as `forced_model` — it must
+         *     equal some enabled candidate's `ProviderCapability.model_or_workflow`
+         *     verbatim, or `route_score` will find nothing to match and the job fails
+         *     with `forced_model_unavailable`. `label` is display-only, best-effort
+         *     from `app.providers.model_catalog`'s curated catalogue; falls back to
+         *     `model` itself when no catalogue entry matches.
+         */
+        GenerationModelOption: {
+            /** Model */
+            model: string;
+            /** Label */
+            label: string;
         };
         /** GenerationParams */
         GenerationParams: {
@@ -7482,6 +7542,8 @@ export interface components {
             auto_attach_asset: boolean;
             /** @default general */
             video_asset_kind: components["schemas"]["VideoAssetKind"];
+            /** Forced Model */
+            forced_model?: string | null;
             /** Extra */
             extra?: {
                 [key: string]: unknown;
@@ -11206,16 +11268,26 @@ export interface components {
         /**
          * VideoGenerationOptions
          * @description Typed native-video options; arbitrary provider JSON and webhooks are
-         *     forbidden. `resolution` is MiniMax H3's vocabulary (`2K`/`768P`) — a
-         *     differently-profiled native model with its own resolution spelling (e.g.
-         *     wan2.7-videoedit's `720p`/`1080p`) is simply hard-filtered out of routing
-         *     by `router._request_constraint_failure` when this field doesn't match its
-         *     `ProviderCapability.resolutions`, rather than this schema trying to union
-         *     every model's spelling into one enum.
+         *     forbidden. `resolution` is a clarity *tier* the client picks — not any
+         *     one vendor's own spelling. `app.providers.base.RESOLUTION_TIER_MEMBERS`
+         *     is the single source of truth mapping each tier to the vendor literals
+         *     it covers (e.g. `"720p"` covers MiniMax H3's own `"768P"` token too, so
+         *     picking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5
+         *     -260628`, `wan2.7-videoedit` — actually compete for the same request
+         *     instead of being mutually invisible over a spelling difference).
+         *     `app.providers.base.resolve_resolution_tier` is where a tier gets turned
+         *     into the specific literal a chosen candidate's own vocabulary needs,
+         *     both at `router.route()`'s hard-filter/costing stage and again in
+         *     `app.workflows.nodes.execute_provider_generate` right before the actual
+         *     provider call — this schema never sees or validates a vendor's raw
+         *     spelling directly. A tier with no member in the eventually-picked
+         *     candidate's `ProviderCapability.resolutions` narrows which providers are
+         *     eligible (`router._request_constraint_failure`); it never reaches a
+         *     provider that can't honour it.
          */
         VideoGenerationOptions: {
             /** Resolution */
-            resolution?: ("2K" | "768P") | null;
+            resolution?: ("480p" | "720p" | "1080p" | "2K") | null;
             /**
              * Reference Mode
              * @default input_references
@@ -13270,6 +13342,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_generation_models_v1_generation_jobs_models_get: {
+        parameters: {
+            query: {
+                operation: components["schemas"]["Operation"];
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationModelListResponse"];
                 };
             };
             /** @description Validation Error */

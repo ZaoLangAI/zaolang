@@ -38,7 +38,12 @@ from app.models import Announcement, Notification, PlatformConfig, User
 from app.models.base import utcnow
 from app.models.enums import NotificationType, UserStatus
 from app.platform_config import service as config_service
-from app.platform_config.schemas import CONFIG_SCHEMAS, DEFAULT_CONFIGS, FeatureFlags
+from app.platform_config.schemas import (
+    CONFIG_SCHEMAS,
+    DEFAULT_CONFIGS,
+    FEATURE_FLAG_NAMES,
+    FeatureFlags,
+)
 
 router = APIRouter(tags=["admin:config"])
 
@@ -52,6 +57,7 @@ FLAG_DESCRIPTIONS = {
     "editor_mcp_enabled": "剪辑 Remote MCP",
     "marketplace_enabled": "作品与技能积分解锁市场",
     "script_studio_enabled": "文案创作工作室",
+    "video_analysis_enabled": "视频解析",
 }
 
 # The landing page deliberately owns only truly global settings. Domain
@@ -188,9 +194,9 @@ def feature_flags(session: DbSession, user: Viewer, _: AdminRead) -> Page[Featur
             name=name,
             enabled=bool(getattr(flags, name)),
             rollout_percent=flags.rollout_percentages.get(name, 100),
-            description=FLAG_DESCRIPTIONS.get(name, ""),
+            description=FLAG_DESCRIPTIONS.get(name, name),
         )
-        for name in FLAG_DESCRIPTIONS
+        for name in FEATURE_FLAG_NAMES
     ]
     return Page(items=items)
 

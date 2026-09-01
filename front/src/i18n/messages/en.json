@@ -383,7 +383,95 @@
     "addProfile": "Add profile",
     "configure": "Configure",
     "businessDialogHint": "Edit this business domain's settings, review the diff, and provide a change reason before saving.",
-    "creditsConfiguration": "Credits and royalty configuration"
+    "creditsConfiguration": "Credits, royalties, and marketplace",
+    "advanced": "Advanced",
+    "schemaKey": "{key} · v{version}",
+    "unsavedHint": "You have unsaved changes. Open Advanced to review the diff.",
+    "editorDependsHint": "Turn on the browser editor first.",
+    "marketplaceRules": "Marketplace rules",
+    "platformFee": "Platform fee (%)",
+    "platformFeeHint": "Taken from the sale price. The seller receives the price minus this fee.",
+    "maxAccessCredits": "Max credits per unlock",
+    "royaltyEnabled": "Enable royalty payback",
+    "firstLevelRate": "First-level share (%)",
+    "decayRate": "Decay per level (%)",
+    "totalCap": "Total cap (%)",
+    "maxLevels": "Levels",
+    "minPayout": "Minimum payout (credits)",
+    "tierPreview": "Preview",
+    "tierStandard": "Standard",
+    "tierCinematic": "Cinematic",
+    "videoBaseSeconds": "Included video seconds (surcharge applies after this)",
+    "defaultProfile": "Default delivery spec",
+    "defaultProfileHint": "New short videos use this spec unless the creator picks another.",
+    "groupFrame": "Frame",
+    "groupDuration": "Duration",
+    "groupCopy": "Title and hashtags",
+    "groupSafeArea": "Safe area",
+    "aspectRatio": "Aspect ratio",
+    "width": "Width (px)",
+    "height": "Height (px)",
+    "minDuration": "Minimum duration (s)",
+    "maxDuration": "Maximum duration (s)",
+    "maxTitleLength": "Title character limit",
+    "maxHashtags": "Hashtag limit",
+    "safeAreaTop": "Top reserve (%)",
+    "safeAreaBottom": "Bottom reserve (%)",
+    "safeAreaRight": "Right reserve (%)",
+    "requireAiDisclosure": "Require an AI-generated label",
+    "newProfileKeyHint": "Machine identifier only. The console shows a human name when one is known.",
+    "flagGroups": {
+      "creation": "Creation",
+      "drama": "Drama and editor",
+      "platform": "Platform",
+      "other": "Other"
+    },
+    "flagItems": {
+      "video_generation": {
+        "title": "Video generation",
+        "description": "Controls the video creation entry and matching submissions."
+      },
+      "script_studio_enabled": {
+        "title": "Script studio",
+        "description": "Independent of the drama studio; can ship on its own."
+      },
+      "video_analysis_enabled": {
+        "title": "Video analysis",
+        "description": "Controls the video-analysis tool on the create page and matching submissions."
+      },
+      "drama_studio_enabled": {
+        "title": "Drama studio",
+        "description": "Series and episode management for short dramas."
+      },
+      "web_editor_enabled": {
+        "title": "Browser editor",
+        "description": "Desktop Chrome / Edge timeline editor."
+      },
+      "variant_export_enabled": {
+        "title": "Delivery-variant export",
+        "description": "Export delivery variants for target platforms. Requires the browser editor."
+      },
+      "editor_ai_enabled": {
+        "title": "AI edit plans",
+        "description": "In-editor AI planning. Requires the browser editor."
+      },
+      "editor_mcp_enabled": {
+        "title": "Editor Remote MCP",
+        "description": "Let external tools drive the timeline over MCP. Requires the browser editor."
+      },
+      "public_registration": {
+        "title": "Open registration",
+        "description": "When off, only existing accounts can sign in."
+      },
+      "marketplace_enabled": {
+        "title": "Credit unlock marketplace",
+        "description": "Paid unlocks for works and skills."
+      }
+    },
+    "profiles": {
+      "douyin_vertical": "Douyin vertical",
+      "douyin_landscape": "Douyin landscape"
+    }
   },
   "adminCredits": {
     "title": "Credits",
@@ -2450,9 +2538,16 @@
     "moreSettings": "More settings",
     "resolution": "Resolution",
     "resolutionHint": "Higher resolution looks better but takes longer to generate.",
+    "resolutionSd": "SD",
+    "resolutionHd": "HD",
+    "resolutionFhd": "Full HD",
+    "resolution2k": "2K",
     "seed": "Seed",
     "seedHint": "Optional; reuse an integer for similar results.",
     "seedInvalid": "Enter an integer from 0 to 2147483647.",
+    "modelSelectLabel": "Model",
+    "modelSelectHint": "Picking a model skips smart routing and uses it directly; if it's unavailable the job fails outright instead of switching to another model.",
+    "modelAuto": "Auto-select (recommended)",
     "referenceMode": "Reference mode",
     "referenceModeInputs": "Image/video references",
     "referenceModeFrames": "First/last frames",

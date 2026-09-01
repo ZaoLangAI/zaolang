@@ -9,6 +9,7 @@ from app.models.enums import Operation, QualityTier
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 from app.providers.aihubmix_media import AiHubMixMediaProvider
+from app.providers.base import resolve_resolution_tier
 from app.providers.dmxapi_media import DmxApiMediaProvider
 from tests.llm_catalog import bind_default_agents_to_catalog
 
@@ -606,3 +607,207 @@ def test_candidate_payload_carries_the_real_model_name_and_a_flat_quality_prior(
     assert payload_a["model"] == "qwen-image-3.0"
     assert payload_b["model"] == "doubao-seedream-5-0-pro-260628"
     assert payload_a["quality_prior"] == payload_b["quality_prior"]
+
+
+def test_resolve_resolution_tier_expands_vendor_synonyms() -> None:
+    """The shared resolver — not a hardcoded literal-equality check — is what
+    lets a client-facing tier reach every vendor spelling that belongs to
+    it, and it must never invent a match outside a candidate's own
+    `resolutions`."""
+    h3_resolutions = frozenset({"768P", "2K"})
+    seedance_resolutions = frozenset({"480p", "720p", "1080p"})
+
+    # "720p" is the tier both H3 (via its own "768P" token) and Seedance
+    # (which spells it "720p" verbatim) can serve — each gets its own
+    # spelling back, not the other's.
+    assert resolve_resolution_tier("720p", h3_resolutions) == "768P"
+    assert resolve_resolution_tier("720p", seedance_resolutions) == "720p"
+
+    # "2K" is H3-exclusive; Seedance has nothing in that tier.
+    assert resolve_resolution_tier("2K", h3_resolutions) == "2K"
+    assert resolve_resolution_tier("2K", seedance_resolutions) is None
+
+    # "1080p" is Seedance-only; H3 has nothing in that tier (768P/2K, no
+    # true 1080p equivalent).
+    assert resolve_resolution_tier("1080p", h3_resolutions) is None
+    assert resolve_resolution_tier("1080p", seedance_resolutions) == "1080p"
+
+    # Omitted tier (a video remix) or an unknown `available` set both mean
+    # "nothing to resolve", never a guess.
+    assert resolve_resolution_tier(None, h3_resolutions) is None
+    assert resolve_resolution_tier("720p", None) is None
+
+
+def test_a_resolution_tier_lets_minimax_and_lowercase_p_models_compete(db: Session) -> None:
+    """The whole point of the tier system: a `"720p"` request must make both
+    `minimax-h3` (whose own token for that tier is `"768P"`) and
+    `doubao-seedance-2-5-260628` (which spells it `"720p"` verbatim)
+    eligible for the same job — before this, the two could never appear as
+    candidates for the same explicit resolution request."""
+    _seed_media_endpoint(
+        db,
+        endpoint_id="h3-ep",
+        model="minimax-h3",
+        input_modalities=["text", "image"],
+        output_modalities=["video"],
+        protocol="minimax",
+    )
+    _seed_media_endpoint(
+        db,
+        endpoint_id="seedance-ep",
+        model="doubao-seedance-2-5-260628",
+        input_modalities=["text", "image"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+    )
+    bind_default_agents_to_catalog(db)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+
+    by_provider = {c.provider: c for c in decision.candidates}
+    assert by_provider["h3-ep:text_to_video"].eligible is True
+    assert by_provider["seedance-ep:text_to_video"].eligible is True
+
+    # "2K" is H3-exclusive: Seedance drops out, H3 stays.
+    two_k_decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "2K", "reference_mode": "input_references"},
+        },
+    )
+    by_provider_2k = {c.provider: c for c in two_k_decision.candidates}
+    assert by_provider_2k["h3-ep:text_to_video"].eligible is True
+    assert by_provider_2k["seedance-ep:text_to_video"].eligible is False
+    assert by_provider_2k["seedance-ep:text_to_video"].filter_reason == "resolution_not_supported"
+
+
+def test_estimated_cost_prices_the_resolved_literal_not_the_raw_tier(db: Session) -> None:
+    """`minimax-h3` is priced under its own `"768P"` token. A client request
+    for the `"720p"` tier must still price it at that real rate — reading
+    the unresolved tier token as a literal pricing-table key would silently
+    look up nothing and read the candidate as free."""
+    per_second = 80_000
+    _seed_media_endpoint(
+        db,
+        endpoint_id="h3-ep",
+        model="minimax-h3",
+        input_modalities=["text", "image"],
+        output_modalities=["video"],
+        protocol="minimax",
+        media_pricing={"video": {"generation_per_second_micro_usd": {"768P": per_second}}},
+    )
+    bind_default_agents_to_catalog(db)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    candidate = next(
+        item for item in decision.candidates if item.provider == "h3-ep:text_to_video"
+    )
+    assert candidate.eligible is True
+    assert candidate.estimated_cost_micro_usd == 5 * per_second
+
+
+def test_forced_model_picks_deterministically_without_calling_the_selecting_agent(
+    db: Session, monkeypatch
+) -> None:
+    """`GenerationParams.forced_model`'s whole point: two endpoints that both
+    serve the exact same model must still resolve to one deterministic
+    winner (sorted by `provider`) without ever asking `intent_router
+    .select_provider` — a real call would show up as an `AgentRun`; skipping
+    it is the "跳过工作流节点" behaviour this feature promises."""
+    _seed_media_endpoint(
+        db,
+        endpoint_id="z-vendor",
+        model="doubao-seedream-5-0-pro-260628",
+        input_modalities=["text"],
+        output_modalities=["image"],
+    )
+    _seed_media_endpoint(
+        db,
+        endpoint_id="a-vendor",
+        model="doubao-seedream-5-0-pro-260628",
+        input_modalities=["text"],
+        output_modalities=["image"],
+    )
+
+    called = False
+
+    def _fail_if_called(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        raise AssertionError("intent_router.select_provider must not be called")
+
+    monkeypatch.setattr(router.intent_router, "select_provider", _fail_if_called)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        forced_model="doubao-seedream-5-0-pro-260628",
+    )
+
+    assert called is False
+    assert decision.selected is not None
+    # "a-vendor" sorts before "a-vendor:text_to_image" vs "z-vendor:...";
+    # the deterministic tie-break is by `provider` name, not insertion order.
+    assert decision.selected.provider == "a-vendor:text_to_image"
+    assert decision.capability is not None
+    assert decision.capability.model_or_workflow == "doubao-seedream-5-0-pro-260628"
+    assert decision.reason == "user_forced_model:doubao-seedream-5-0-pro-260628"
+    assert decision.agent_run_id is None
+
+
+def test_forced_model_unavailable_fails_without_calling_the_selecting_agent(
+    db: Session, monkeypatch
+) -> None:
+    """No survivor matching `forced_model` is a hard failure — never a
+    silent fallback to the normal LLM-driven pick among whatever else is
+    eligible."""
+    _seed_media_endpoint(
+        db,
+        endpoint_id="only-ep",
+        model="doubao-seedream-5-0-pro-260628",
+        input_modalities=["text"],
+        output_modalities=["image"],
+    )
+
+    called = False
+
+    def _fail_if_called(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        raise AssertionError("intent_router.select_provider must not be called")
+
+    monkeypatch.setattr(router.intent_router, "select_provider", _fail_if_called)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        forced_model="some-other-model-not-configured",
+    )
+
+    assert called is False
+    assert decision.selected is None
+    assert decision.reason == "forced_model_unavailable"

@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { useAdminSession } from '@/components/admin/admin-session-provider';
 import { DangerConfirm } from '@/components/admin/danger-confirm';
@@ -12,20 +12,50 @@ import { Badge } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
 import { atLeast } from '@/lib/admin/rbac';
-import { OPERATIONS } from '@/lib/admin/operations';
+import { OPERATIONS, operationLabelKey } from '@/lib/admin/operations';
 import { adminApi } from '@/lib/api/admin-client';
 import type { ConfigValue, ConfigVersion, Page } from '@/lib/api/admin-types';
 import { ApiError } from '@/lib/api/errors';
 import { formatDateTime } from '@/lib/format';
 
 export type RuntimeConfigKind =
-  'feature_flags' | 'shortform' | 'pricing' | 'royalty' | 'moderation';
+  'feature_flags' | 'shortform' | 'pricing' | 'royalty' | 'marketplace' | 'moderation';
 
 // Runtime sections have different strongly validated server schemas; this
 // shared editor keeps the JSON-shaped draft while each form below owns its
 // field coercion.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Draft = Record<string, any>;
+
+const FLAG_GROUPS = [
+  {
+    id: 'creation',
+    flags: ['video_generation', 'script_studio_enabled', 'video_analysis_enabled'],
+  },
+  {
+    id: 'drama',
+    flags: [
+      'drama_studio_enabled',
+      'web_editor_enabled',
+      'variant_export_enabled',
+      'editor_ai_enabled',
+      'editor_mcp_enabled',
+    ],
+  },
+  {
+    id: 'platform',
+    flags: ['public_registration', 'marketplace_enabled'],
+  },
+] as const;
+
+const GROUPED_FLAGS: ReadonlySet<string> = new Set(
+  FLAG_GROUPS.flatMap((group) => [...group.flags]),
+);
+const EDITOR_DEPENDENTS = new Set([
+  'variant_export_enabled',
+  'editor_ai_enabled',
+  'editor_mcp_enabled',
+]);
 
 export function RuntimeConfigPanel({
   initial,
@@ -46,7 +76,7 @@ export function RuntimeConfigPanel({
   const [config, setConfig] = useState(initial);
   const [draft, setDraft] = useState<Draft>(initial.value as Draft);
   const [json, setJson] = useState(JSON.stringify(initial.value, null, 2));
-  const [mode, setMode] = useState<'form' | 'json'>('form');
+  const [jsonValid, setJsonValid] = useState(true);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -76,39 +106,33 @@ export function RuntimeConfigPanel({
   const updateDraft = (next: Draft) => {
     setDraft(next);
     setJson(JSON.stringify(next, null, 2));
+    setJsonValid(true);
     setError(null);
   };
 
-  const switchMode = (next: 'form' | 'json') => {
-    if (next === mode) return;
-    if (next === 'form') {
-      try {
-        const parsed = JSON.parse(json);
-        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error();
-        setDraft(parsed as Draft);
-      } catch {
+  const applyJson = (text: string) => {
+    setJson(text);
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+        setJsonValid(false);
         setError(t('invalidJson'));
         return;
       }
-    } else {
-      setJson(JSON.stringify(draft, null, 2));
+      setDraft(parsed as Draft);
+      setJsonValid(true);
+      setError(null);
+    } catch {
+      setJsonValid(false);
+      setError(t('invalidJson'));
     }
-    setError(null);
-    setMode(next);
   };
 
-  const parsedDraft = (): Draft | null => {
-    if (mode === 'form') return draft;
-    try {
-      const parsed = JSON.parse(json);
-      return parsed && !Array.isArray(parsed) && typeof parsed === 'object'
-        ? (parsed as Draft)
-        : null;
-    } catch {
-      return null;
-    }
-  };
-  const pending = parsedDraft();
+  const pending = jsonValid ? draft : null;
+  const dirty = useMemo(
+    () => jsonValid && JSON.stringify(config.value) !== JSON.stringify(draft),
+    [config.value, draft, jsonValid],
+  );
 
   const save = async () => {
     if (!pending) {
@@ -129,6 +153,7 @@ export function RuntimeConfigPanel({
       setConfig(updated);
       setDraft(updated.value as Draft);
       setJson(JSON.stringify(updated.value, null, 2));
+      setJsonValid(true);
       setNote('');
       await loadHistory();
       notify(t('saved'), 'success');
@@ -149,6 +174,7 @@ export function RuntimeConfigPanel({
     setConfig(updated);
     setDraft(updated.value as Draft);
     setJson(JSON.stringify(updated.value, null, 2));
+    setJsonValid(true);
     setRollbackTo(null);
     await loadHistory();
     notify(t('rolledBack'), 'success');
@@ -156,52 +182,13 @@ export function RuntimeConfigPanel({
 
   return (
     <section className="rounded-[var(--radius-md)] border border-border bg-surface p-4 sm:p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <p className="mt-0.5 font-mono text-[11px] text-muted">
-            {config.key} · v{config.version}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={mode === 'form' ? 'secondary' : 'ghost'}
-            onClick={() => switchMode('form')}
-          >
-            {t('formMode')}
-          </Button>
-          <Button
-            size="sm"
-            variant={mode === 'json' ? 'secondary' : 'ghost'}
-            onClick={() => switchMode('json')}
-          >
-            JSON
-          </Button>
-        </div>
-      </div>
+      <h2 className="text-sm font-semibold">{title}</h2>
 
-      {mode === 'json' ? (
-        <TextArea
-          label={t('value')}
-          rows={14}
-          value={json}
-          disabled={!canEdit}
-          className="font-mono text-xs"
-          error={error ?? undefined}
-          onChange={(event) => {
-            setJson(event.target.value);
-            setError(null);
-          }}
-        />
-      ) : (
+      <div className="mt-4">
         <ConfigForm kind={kind} value={draft} disabled={!canEdit} onChange={updateDraft} />
-      )}
-
-      <div className="mt-5">
-        <h3 className="mb-2 text-sm font-semibold">{t('pendingDiff')}</h3>
-        <JsonDiff before={config.value} after={pending ?? config.value} />
       </div>
+
+      {dirty ? <p className="mt-4 text-xs text-muted">{t('unsavedHint')}</p> : null}
 
       {canEdit ? (
         <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -217,9 +204,36 @@ export function RuntimeConfigPanel({
             {tAdmin('save')}
           </Button>
         </div>
+      ) : error ? (
+        <p role="alert" className="mt-3 text-xs text-danger">
+          {error}
+        </p>
       ) : null}
 
       <details className="mt-5 border-t border-border pt-4">
+        <summary className="cursor-pointer text-sm font-semibold">{t('advanced')}</summary>
+        <p className="mt-3 font-mono text-[11px] text-muted" title={config.key}>
+          {t('schemaKey', { key: config.key, version: config.version })}
+        </p>
+        <div className="mt-3">
+          <TextArea
+            label={t('value')}
+            hint={t('valueHint')}
+            rows={12}
+            value={json}
+            disabled={!canEdit}
+            className="font-mono text-xs"
+            error={jsonValid ? undefined : t('invalidJson')}
+            onChange={(event) => applyJson(event.target.value)}
+          />
+        </div>
+        <div className="mt-4">
+          <h3 className="mb-2 text-sm font-semibold">{t('pendingDiff')}</h3>
+          <JsonDiff before={config.value} after={pending ?? config.value} />
+        </div>
+      </details>
+
+      <details className="mt-4 border-t border-border pt-4">
         <summary className="cursor-pointer text-sm font-semibold">{t('history')}</summary>
         <ul className="mt-3 flex flex-col gap-2">
           {history.map((version) => (
@@ -291,100 +305,199 @@ function ConfigForm({
   }
 
   if (kind === 'feature_flags') {
-    const rollout = (value.rollout_percentages ?? {}) as Record<string, number>;
-    return (
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          'video_generation',
-          'public_registration',
-          'drama_studio_enabled',
-          'web_editor_enabled',
-          'variant_export_enabled',
-          'editor_ai_enabled',
-          'editor_mcp_enabled',
-          'marketplace_enabled',
-        ].map((flag) => (
-          <div key={flag} className="rounded-[var(--radius-sm)] border border-border p-3">
-            <Switch
-              label={flag}
-              checked={Boolean(value[flag])}
-              disabled={disabled}
-              onChange={(checked) => onChange({ ...value, [flag]: checked })}
-            />
-            {flag !== 'public_registration' ? (
-              <TextInput
-                label={t('rolloutPercent')}
-                type="number"
-                min={0}
-                max={100}
-                disabled={disabled || !value[flag]}
-                value={rollout[flag] ?? 100}
-                onChange={(event) =>
-                  onChange({
-                    ...value,
-                    rollout_percentages: { ...rollout, [flag]: Number(event.target.value) },
-                  })
-                }
-              />
-            ) : null}
-          </div>
-        ))}
-      </div>
-    );
+    return <FeatureFlagsForm value={value} disabled={disabled} onChange={onChange} />;
   }
-
   if (kind === 'royalty') {
-    return (
-      <div className="flex flex-col gap-3">
-        <Switch
-          label="enabled"
-          checked={Boolean(value.enabled)}
-          disabled={disabled}
-          onChange={(enabled) => onChange({ ...value, enabled })}
-        />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {(['first_level_rate_bps', 'decay_bps', 'total_cap_bps'] as const).map((field) => (
-            <TextInput
-              key={field}
-              label={`${field.replace('_bps', '')} (%)`}
-              type="number"
-              min={0}
-              max={field === 'first_level_rate_bps' ? 50 : 100}
-              step={0.01}
-              disabled={disabled}
-              value={Number(value[field] ?? 0) / 100}
-              onChange={(event) =>
-                onChange({ ...value, [field]: Math.round(Number(event.target.value) * 100) })
-              }
-            />
-          ))}
-          {(['max_levels', 'min_payout'] as const).map((field) => (
-            <TextInput
-              key={field}
-              label={field}
-              type="number"
-              min={1}
-              disabled={disabled}
-              value={value[field] ?? 1}
-              onChange={(event) => onChange({ ...value, [field]: Number(event.target.value) })}
-            />
-          ))}
-        </div>
-      </div>
-    );
+    return <RoyaltyForm value={value} disabled={disabled} onChange={onChange} />;
   }
-
-  if (kind === 'pricing')
+  if (kind === 'marketplace') {
+    return <MarketplaceForm value={value} disabled={disabled} onChange={onChange} />;
+  }
+  if (kind === 'pricing') {
     return <PricingForm value={value} disabled={disabled} onChange={onChange} />;
+  }
   return <ShortformForm value={value} disabled={disabled} onChange={onChange} />;
+}
+
+function FeatureFlagsForm({ value, disabled, onChange }: FormProps) {
+  const t = useTranslations('adminConfig');
+  const extras = Object.keys(value).filter(
+    (key) =>
+      key !== 'rollout_percentages' && typeof value[key] === 'boolean' && !GROUPED_FLAGS.has(key),
+  );
+  const groups = [
+    ...FLAG_GROUPS.map((group) => ({
+      id: group.id,
+      title: t(`flagGroups.${group.id}`),
+      flags: [...group.flags],
+    })),
+    ...(extras.length ? [{ id: 'other', title: t('flagGroups.other'), flags: extras }] : []),
+  ];
+
+  return (
+    <div className="flex flex-col gap-5">
+      {groups.map((group) => (
+        <div key={group.id}>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            {group.title}
+          </h3>
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {group.flags.map((flag) => {
+              const editorLocked = EDITOR_DEPENDENTS.has(flag) && !value.web_editor_enabled;
+              const flagDisabled = disabled || editorLocked;
+              const title = GROUPED_FLAGS.has(flag) ? t(`flagItems.${flag}.title`) : flag;
+              const description = editorLocked
+                ? t('editorDependsHint')
+                : GROUPED_FLAGS.has(flag)
+                  ? t(`flagItems.${flag}.description`)
+                  : flag;
+              return (
+                <li
+                  key={flag}
+                  title={flag}
+                  className="rounded-[var(--radius-sm)] border border-border p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <Switch
+                        label={title}
+                        description={description}
+                        checked={Boolean(value[flag])}
+                        disabled={flagDisabled}
+                        onChange={(checked) => onChange({ ...value, [flag]: checked })}
+                      />
+                    </div>
+                    <Badge tone={value[flag] ? 'success' : 'neutral'}>
+                      {value[flag] ? t('flagOn') : t('flagOff')}
+                    </Badge>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RoyaltyForm({ value, disabled, onChange }: FormProps) {
+  const t = useTranslations('adminConfig');
+  return (
+    <div className="flex flex-col gap-3">
+      <Switch
+        label={t('royaltyEnabled')}
+        checked={Boolean(value.enabled)}
+        disabled={disabled}
+        onChange={(enabled) => onChange({ ...value, enabled })}
+      />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <TextInput
+          label={t('firstLevelRate')}
+          type="number"
+          min={0}
+          max={50}
+          step={0.01}
+          disabled={disabled}
+          value={Number(value.first_level_rate_bps ?? 0) / 100}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              first_level_rate_bps: Math.round(Number(event.target.value) * 100),
+            })
+          }
+        />
+        <TextInput
+          label={t('decayRate')}
+          type="number"
+          min={0}
+          max={100}
+          step={0.01}
+          disabled={disabled}
+          value={Number(value.decay_bps ?? 0) / 100}
+          onChange={(event) =>
+            onChange({ ...value, decay_bps: Math.round(Number(event.target.value) * 100) })
+          }
+        />
+        <TextInput
+          label={t('totalCap')}
+          type="number"
+          min={0}
+          max={100}
+          step={0.01}
+          disabled={disabled}
+          value={Number(value.total_cap_bps ?? 0) / 100}
+          onChange={(event) =>
+            onChange({ ...value, total_cap_bps: Math.round(Number(event.target.value) * 100) })
+          }
+        />
+        <TextInput
+          label={t('maxLevels')}
+          type="number"
+          min={1}
+          disabled={disabled}
+          value={value.max_levels ?? 1}
+          onChange={(event) => onChange({ ...value, max_levels: Number(event.target.value) })}
+        />
+        <TextInput
+          label={t('minPayout')}
+          type="number"
+          min={1}
+          disabled={disabled}
+          value={value.min_payout ?? 1}
+          onChange={(event) => onChange({ ...value, min_payout: Number(event.target.value) })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MarketplaceForm({ value, disabled, onChange }: FormProps) {
+  const t = useTranslations('adminConfig');
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <TextInput
+        label={t('platformFee')}
+        hint={t('platformFeeHint')}
+        type="number"
+        min={0}
+        max={100}
+        step={0.01}
+        disabled={disabled}
+        value={Number(value.platform_fee_bps ?? 0) / 100}
+        onChange={(event) =>
+          onChange({
+            ...value,
+            platform_fee_bps: Math.round(Number(event.target.value) * 100),
+          })
+        }
+      />
+      <TextInput
+        label={t('maxAccessCredits')}
+        type="number"
+        min={1}
+        disabled={disabled}
+        value={value.max_access_credits ?? 1}
+        onChange={(event) => onChange({ ...value, max_access_credits: Number(event.target.value) })}
+      />
+    </div>
+  );
 }
 
 const TIERS = ['preview', 'standard', 'cinematic'] as const;
 
 function PricingForm({ value, disabled, onChange }: FormProps) {
   const t = useTranslations('adminConfig');
+  const tProviders = useTranslations('adminProviders');
   const pricing = (value.tier_pricing ?? {}) as Record<string, Record<string, number>>;
   const surcharge = (value.video_per_second_surcharge ?? {}) as Record<string, number>;
+  const tierLabel = (tier: (typeof TIERS)[number]) =>
+    tier === 'preview'
+      ? t('tierPreview')
+      : tier === 'standard'
+        ? t('tierStandard')
+        : t('tierCinematic');
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-sm">
@@ -393,40 +506,46 @@ function PricingForm({ value, disabled, onChange }: FormProps) {
             <th className="p-2 text-left">{t('operation')}</th>
             {TIERS.map((tier) => (
               <th key={tier} className="p-2 text-left">
-                {tier}
+                {tierLabel(tier)}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {OPERATIONS.map((operation) => (
-            <tr key={operation} className="border-t border-border">
-              <th className="p-2 text-left font-mono text-xs">{operation}</th>
-              {TIERS.map((tier) => (
-                <td key={tier} className="p-2">
-                  <input
-                    className="h-9 w-24 rounded border border-border bg-surface-soft px-2"
-                    type="number"
-                    min={1}
-                    disabled={disabled}
-                    value={pricing[operation]?.[tier] ?? 1}
-                    onChange={(event) =>
-                      onChange({
-                        ...value,
-                        tier_pricing: {
-                          ...pricing,
-                          [operation]: {
-                            ...(pricing[operation] ?? {}),
-                            [tier]: Number(event.target.value),
+          {OPERATIONS.map((operation) => {
+            const labelKey = operationLabelKey(operation);
+            return (
+              <tr key={operation} className="border-t border-border">
+                <th className="p-2 text-left text-xs font-medium" title={operation}>
+                  {labelKey ? tProviders(labelKey) : operation}
+                </th>
+                {TIERS.map((tier) => (
+                  <td key={tier} className="p-2">
+                    <input
+                      className="h-9 w-24 rounded border border-border bg-surface-soft px-2"
+                      type="number"
+                      min={1}
+                      disabled={disabled}
+                      aria-label={`${labelKey ? tProviders(labelKey) : operation} ${tierLabel(tier)}`}
+                      value={pricing[operation]?.[tier] ?? 1}
+                      onChange={(event) =>
+                        onChange({
+                          ...value,
+                          tier_pricing: {
+                            ...pricing,
+                            [operation]: {
+                              ...(pricing[operation] ?? {}),
+                              [tier]: Number(event.target.value),
+                            },
                           },
-                        },
-                      })
-                    }
-                  />
-                </td>
-              ))}
-            </tr>
-          ))}
+                        })
+                      }
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
           <tr className="border-t border-border">
             <th className="p-2 text-left">{t('videoSurcharge')}</th>
             {TIERS.map((tier) => (
@@ -436,6 +555,7 @@ function PricingForm({ value, disabled, onChange }: FormProps) {
                   type="number"
                   min={0}
                   disabled={disabled}
+                  aria-label={`${t('videoSurcharge')} ${tierLabel(tier)}`}
                   value={surcharge[tier] ?? 0}
                   onChange={(event) =>
                     onChange({
@@ -454,7 +574,7 @@ function PricingForm({ value, disabled, onChange }: FormProps) {
       </table>
       <div className="mt-3 max-w-xs">
         <TextInput
-          label="video_base_seconds"
+          label={t('videoBaseSeconds')}
           type="number"
           min={0}
           max={60}
@@ -475,17 +595,11 @@ interface FormProps {
   onChange: (next: Draft) => void;
 }
 
-const SHORTFORM_FIELDS: Array<[string, number, number]> = [
-  ['width', 240, 7680],
-  ['height', 240, 7680],
-  ['min_duration_seconds', 1, 30],
-  ['max_duration_seconds', 1, 30],
-  ['max_title_length', 1, 200],
-  ['max_hashtags', 0, 30],
-  ['safe_area_top_pct', 0, 100],
-  ['safe_area_bottom_pct', 0, 100],
-  ['safe_area_right_pct', 0, 100],
-];
+const KNOWN_PROFILES = ['douyin_vertical', 'douyin_landscape'] as const;
+
+function profileLabel(t: ReturnType<typeof useTranslations>, key: string): string {
+  return (KNOWN_PROFILES as readonly string[]).includes(key) ? t(`profiles.${key}`) : key;
+}
 
 function ShortformForm({ value, disabled, onChange }: FormProps) {
   const t = useTranslations('adminConfig');
@@ -517,40 +631,138 @@ function ShortformForm({ value, disabled, onChange }: FormProps) {
     });
     setNewKey('');
   };
+
   return (
     <div className="flex flex-col gap-4">
       <Select
-        label="default_profile"
+        label={t('defaultProfile')}
+        hint={t('defaultProfileHint')}
         disabled={disabled}
         value={value.default_profile ?? ''}
         onChange={(event) => onChange({ ...value, default_profile: event.target.value })}
-        options={Object.keys(profiles).map((key) => ({ value: key, label: key }))}
+        options={Object.keys(profiles).map((key) => ({
+          value: key,
+          label: profileLabel(t, key),
+        }))}
       />
       {Object.entries(profiles).map(([key, profile]) => (
         <fieldset key={key} className="rounded border border-border p-3">
-          <legend className="px-1 font-mono text-xs">{key}</legend>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <TextInput
-              label="aspect_ratio"
-              disabled={disabled}
-              value={profile.aspect_ratio ?? '9:16'}
-              onChange={(event) => updateProfile(key, { aspect_ratio: event.target.value })}
-            />
-            {SHORTFORM_FIELDS.map(([field, min, max]) => (
+          <legend className="px-1 text-xs font-medium" title={key}>
+            {profileLabel(t, key)}
+          </legend>
+          <div className="flex flex-col gap-4">
+            <FieldGroup title={t('groupFrame')}>
               <TextInput
-                key={field}
-                label={field}
-                type="number"
-                min={min}
-                max={max}
+                label={t('aspectRatio')}
                 disabled={disabled}
-                value={profile[field] ?? min}
-                onChange={(event) => updateProfile(key, { [field]: Number(event.target.value) })}
+                value={profile.aspect_ratio ?? '9:16'}
+                onChange={(event) => updateProfile(key, { aspect_ratio: event.target.value })}
               />
-            ))}
+              <TextInput
+                label={t('width')}
+                type="number"
+                min={240}
+                max={7680}
+                disabled={disabled}
+                value={profile.width ?? 240}
+                onChange={(event) => updateProfile(key, { width: Number(event.target.value) })}
+              />
+              <TextInput
+                label={t('height')}
+                type="number"
+                min={240}
+                max={7680}
+                disabled={disabled}
+                value={profile.height ?? 240}
+                onChange={(event) => updateProfile(key, { height: Number(event.target.value) })}
+              />
+            </FieldGroup>
+            <FieldGroup title={t('groupDuration')}>
+              <TextInput
+                label={t('minDuration')}
+                type="number"
+                min={1}
+                max={30}
+                disabled={disabled}
+                value={profile.min_duration_seconds ?? 1}
+                onChange={(event) =>
+                  updateProfile(key, { min_duration_seconds: Number(event.target.value) })
+                }
+              />
+              <TextInput
+                label={t('maxDuration')}
+                type="number"
+                min={1}
+                max={30}
+                disabled={disabled}
+                value={profile.max_duration_seconds ?? 1}
+                onChange={(event) =>
+                  updateProfile(key, { max_duration_seconds: Number(event.target.value) })
+                }
+              />
+            </FieldGroup>
+            <FieldGroup title={t('groupCopy')}>
+              <TextInput
+                label={t('maxTitleLength')}
+                type="number"
+                min={1}
+                max={200}
+                disabled={disabled}
+                value={profile.max_title_length ?? 1}
+                onChange={(event) =>
+                  updateProfile(key, { max_title_length: Number(event.target.value) })
+                }
+              />
+              <TextInput
+                label={t('maxHashtags')}
+                type="number"
+                min={0}
+                max={30}
+                disabled={disabled}
+                value={profile.max_hashtags ?? 0}
+                onChange={(event) =>
+                  updateProfile(key, { max_hashtags: Number(event.target.value) })
+                }
+              />
+            </FieldGroup>
+            <FieldGroup title={t('groupSafeArea')}>
+              <TextInput
+                label={t('safeAreaTop')}
+                type="number"
+                min={0}
+                max={100}
+                disabled={disabled}
+                value={profile.safe_area_top_pct ?? 0}
+                onChange={(event) =>
+                  updateProfile(key, { safe_area_top_pct: Number(event.target.value) })
+                }
+              />
+              <TextInput
+                label={t('safeAreaBottom')}
+                type="number"
+                min={0}
+                max={100}
+                disabled={disabled}
+                value={profile.safe_area_bottom_pct ?? 0}
+                onChange={(event) =>
+                  updateProfile(key, { safe_area_bottom_pct: Number(event.target.value) })
+                }
+              />
+              <TextInput
+                label={t('safeAreaRight')}
+                type="number"
+                min={0}
+                max={100}
+                disabled={disabled}
+                value={profile.safe_area_right_pct ?? 0}
+                onChange={(event) =>
+                  updateProfile(key, { safe_area_right_pct: Number(event.target.value) })
+                }
+              />
+            </FieldGroup>
           </div>
           <Switch
-            label="require_ai_disclosure"
+            label={t('requireAiDisclosure')}
             checked={Boolean(profile.require_ai_disclosure)}
             disabled={disabled}
             onChange={(checked) => updateProfile(key, { require_ai_disclosure: checked })}
@@ -575,6 +787,7 @@ function ShortformForm({ value, disabled, onChange }: FormProps) {
         <div className="flex items-end gap-2">
           <TextInput
             label={t('newProfileKey')}
+            hint={t('newProfileKeyHint')}
             value={newKey}
             onChange={(event) => setNewKey(event.target.value)}
           />
@@ -583,6 +796,15 @@ function ShortformForm({ value, disabled, onChange }: FormProps) {
           </Button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function FieldGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-semibold text-muted">{title}</p>
+      <div className="grid gap-3 sm:grid-cols-3">{children}</div>
     </div>
   );
 }

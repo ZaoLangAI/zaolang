@@ -345,7 +345,7 @@
     "saveReason": "Change reason",
     "secretMasked": "Secrets are never echoed back. Leave blank to keep the current value.",
     "invalidJson": "Not valid JSON",
-    "flags": "Feature flags",
+    "flags": "機能フラグ",
     "flagEnabled": "Enabled",
     "flagRollout": "{percent}% rollout",
     "flagAllowlist": "{count} allowlisted",
@@ -360,7 +360,7 @@
     "rollbackHint": "A rollback re-applies v{version} as a new version, so nothing is erased from the history.",
     "saved": "Configuration updated",
     "rolledBack": "Rolled back",
-    "featureFlags": "Feature flags",
+    "featureFlags": "機能フラグ",
     "flagOn": "On",
     "flagOff": "Off",
     "rollout": "Rollout",
@@ -383,7 +383,95 @@
     "addProfile": "仕様を追加",
     "configure": "設定",
     "businessDialogHint": "この業務領域の設定を編集し、差分を確認して変更理由を入力してから保存します。",
-    "creditsConfiguration": "クレジットと還元設定"
+    "creditsConfiguration": "クレジット・還元・マーケット設定",
+    "advanced": "詳細",
+    "schemaKey": "{key} · v{version}",
+    "unsavedHint": "未保存の変更があります。差分は「詳細」で確認できます。",
+    "editorDependsHint": "先にブラウザ編集を有効にしてください。",
+    "marketplaceRules": "マーケット規則",
+    "platformFee": "プラットフォーム手数料 (%)",
+    "platformFeeHint": "成約額から差し引きます。出品者の受取は価格から手数料を引いた額です。",
+    "maxAccessCredits": "1回の解除クレジット上限",
+    "royaltyEnabled": "還元ロイヤリティを有効化",
+    "firstLevelRate": "1層の配分比率 (%)",
+    "decayRate": "層ごとの減衰 (%)",
+    "totalCap": "合計上限 (%)",
+    "maxLevels": "配分層数",
+    "minPayout": "最低支給（クレジット）",
+    "tierPreview": "クイックプレビュー",
+    "tierStandard": "標準",
+    "tierCinematic": "シネマ",
+    "videoBaseSeconds": "動画の基礎秒数（超過分は秒単価）",
+    "defaultProfile": "既定の配信仕様",
+    "defaultProfileHint": "新規ショート動画は、作成者が別指定しない限りこの仕様を使います。",
+    "groupFrame": "画角",
+    "groupDuration": "尺",
+    "groupCopy": "タイトルとハッシュタグ",
+    "groupSafeArea": "セーフエリア",
+    "aspectRatio": "アスペクト比",
+    "width": "幅（ピクセル）",
+    "height": "高さ（ピクセル）",
+    "minDuration": "最短尺（秒）",
+    "maxDuration": "最長尺（秒）",
+    "maxTitleLength": "タイトル文字数上限",
+    "maxHashtags": "ハッシュタグ数上限",
+    "safeAreaTop": "上部余白 (%)",
+    "safeAreaBottom": "下部余白 (%)",
+    "safeAreaRight": "右側余白 (%)",
+    "requireAiDisclosure": "AI生成である旨の表示を必須にする",
+    "newProfileKeyHint": "システム用の識別子です。画面には日本語名が出ます。",
+    "flagGroups": {
+      "creation": "制作",
+      "drama": "短編と編集",
+      "platform": "プラットフォーム",
+      "other": "その他"
+    },
+    "flagItems": {
+      "video_generation": {
+        "title": "動画生成",
+        "description": "制作台の動画生成入口と対応する送信を制御します。"
+      },
+      "script_studio_enabled": {
+        "title": "脚本スタジオ",
+        "description": "短編スタジオとは独立して、脚本制作だけを開放できます。"
+      },
+      "video_analysis_enabled": {
+        "title": "動画解析",
+        "description": "制作ページの動画解析ツールと対応する送信を制御します。"
+      },
+      "drama_studio_enabled": {
+        "title": "短編スタジオ",
+        "description": "短編シリーズと各話の管理。"
+      },
+      "web_editor_enabled": {
+        "title": "ブラウザ編集",
+        "description": "デスクトップ Chrome / Edge のタイムライン編集。"
+      },
+      "variant_export_enabled": {
+        "title": "納品バリエーション書き出し",
+        "description": "配信先向けの納品バリエーションを書き出します。ブラウザ編集が必要です。"
+      },
+      "editor_ai_enabled": {
+        "title": "AI編集プラン",
+        "description": "編集器内の AI 計画。ブラウザ編集が必要です。"
+      },
+      "editor_mcp_enabled": {
+        "title": "編集 Remote MCP",
+        "description": "外部ツールが MCP 経由でタイムラインを操作します。ブラウザ編集が必要です。"
+      },
+      "public_registration": {
+        "title": "公開登録",
+        "description": "オフにすると既存アカウントだけがログインできます。"
+      },
+      "marketplace_enabled": {
+        "title": "クレジット解除マーケット",
+        "description": "作品とスキルの有料解除。"
+      }
+    },
+    "profiles": {
+      "douyin_vertical": "Douyin 縦向き",
+      "douyin_landscape": "Douyin 横向き"
+    }
   },
   "adminCredits": {
     "title": "Credits",
@@ -2450,9 +2538,16 @@
     "moreSettings": "その他の設定",
     "resolution": "解像度",
     "resolutionHint": "解像度が高いほど画質は良くなりますが、生成に時間がかかります。",
+    "resolutionSd": "SD",
+    "resolutionHd": "HD",
+    "resolutionFhd": "フルHD",
+    "resolution2k": "2K",
     "seed": "シード",
     "seedHint": "任意。同じ整数で近い結果を再現できます。",
     "seedInvalid": "0から2147483647までの整数を入力してください。",
+    "modelSelectLabel": "モデルを指定",
+    "modelSelectHint": "指定するとスマートルーティングをスキップしてそのモデルを直接使用します。利用できない場合はほかのモデルに切り替わらず、そのまま失敗します。",
+    "modelAuto": "自動選択（推奨）",
     "referenceMode": "参照方式",
     "referenceModeInputs": "画像・動画参照",
     "referenceModeFrames": "開始・終了フレーム",

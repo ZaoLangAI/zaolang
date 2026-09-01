@@ -94,14 +94,12 @@ export function GenerationStudioShell({
   hideDirectHint?: boolean;
   /**
    * Renders directly beneath the preview/attribution block, in the main
-   * column rather than the params aside/`Sheet` — `ImageGenerationStudio`
-   * and `VideoGenerationStudio` both pass their `PromptComposer` here so the
-   * prompt field stays visible next to the preview on every breakpoint
-   * instead of only inside "调整参数". Replaces the standalone `directHint`
-   * box entirely when set (a video composer folds that same copy into its
-   * own header instead of stacking two boxes) — `hideDirectHint` above is
-   * then moot. `undefined` (audio) keeps today's `directHint` box, gated
-   * only by `hideDirectHint`.
+   * column rather than the params aside/`Sheet` — all three studios pass
+   * their `PromptComposer` here so the prompt field stays visible next to
+   * the preview on every breakpoint instead of only inside "调整参数".
+   * Replaces the standalone `directHint` box entirely when set (video and
+   * audio fold that same copy into the composer's own header instead of
+   * stacking two boxes) — `hideDirectHint` above is then moot.
    */
   promptSlot?: React.ReactNode;
   canSubmit: boolean;

@@ -191,6 +191,24 @@ REGISTRY: dict[str, GenerationProvider] = {
 
 
 def get_provider(name: str) -> GenerationProvider:
+    """A process-wide singleton per name — `ProviderCapability
+    .provider_factory` is called fresh on every access of `RoutingDecision
+    .provider` (see `app.agents.router`), so a test that reads `.provider`
+    more than once within the same test (grab the original `submit`, patch
+    it, then let the pipeline call it) needs every access to resolve to the
+    *same* object.
+
+    Because of that, **a test must always monkeypatch `submit` on the
+    class** (e.g. `type(get_provider("fake_open_workflow"))`), never on a
+    `get_provider(...)` return value directly: `submit` only exists on the
+    class, so patching an instance makes `monkeypatch`'s own teardown
+    snapshot the class-inherited bound method and re-`setattr` it back as a
+    *new instance attribute* — permanently shadowing the class for this
+    singleton, for the rest of the test session. Every later test's own
+    class-level `submit` patch then silently has no effect on it (a
+    "failed" provider call quietly runs the real, un-monkeypatched
+    implementation instead and succeeds).
+    """
     provider = REGISTRY.get(name)
     if provider is None:
         raise KeyError(f"未注册的测试供应商: {name}")

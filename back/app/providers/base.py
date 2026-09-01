@@ -14,6 +14,45 @@ from typing import Any
 from app.models.enums import ProviderKind
 from app.platform_config.schemas import MediaPricing
 
+# Canonical resolution tiers a client can request (`VideoGenerationOptions
+# .resolution`), independent of any one vendor's spelling. Add a synonym
+# here — never a new hard-filter code path — when a differently-cased model
+# gets deployed (e.g. a future `wan3.0-video` endpoint's capital-P
+# `480P`/`720P`/`1080P`, already listed below even though nothing using that
+# spelling is deployed yet); this table is the only place that needs to
+# change. `768P` (MiniMax H3's own token) is deliberately a `720p` synonym,
+# not its own tier, so H3 and the lowercase-`p` models (`doubao-seedance-2-5
+# -260628`, `wan2.7-videoedit`) can actually compete for the same client
+# request instead of being invisible to each other over a spelling
+# difference — see `resolve_resolution_tier`.
+RESOLUTION_TIER_MEMBERS: dict[str, frozenset[str]] = {
+    "480p": frozenset({"480p", "480P"}),
+    "720p": frozenset({"720p", "720P", "768P"}),
+    "1080p": frozenset({"1080p", "1080P"}),
+    "2K": frozenset({"2K"}),
+}
+
+
+def resolve_resolution_tier(tier: str | None, available: frozenset[str] | None) -> str | None:
+    """The one literal resolution string a specific model should actually
+    receive for a client-requested tier token.
+
+    Returns `None` when `tier` is unset (a video remix omits `resolution`
+    entirely so the router does not default-filter a cheaper edit model —
+    the provider's own default applies downstream) or when `available` (a
+    candidate's `ProviderCapability.resolutions`) has nothing belonging to
+    that tier — the caller must treat that as ineligible, never silently
+    substitute a different tier. An unrecognised tier falls back to treating
+    itself as its own one-member synonym set, so a raw vendor literal passed
+    straight through (e.g. by a test or an old checkpoint) still resolves
+    exactly like today's plain equality check used to.
+    """
+    if not tier or available is None:
+        return None
+    members = RESOLUTION_TIER_MEMBERS.get(tier, frozenset({tier}))
+    matches = sorted(available & members)
+    return matches[0] if matches else None
+
 
 @dataclass(slots=True)
 class ProviderReference:
@@ -185,9 +224,9 @@ class ProviderCapability:
     # unset — the same value the provider adapter itself falls back to when
     # building the upstream call (`NativeVideoModelProfile`/`VideoModelProfile
     # .default_resolution`). Costing must use this, not a fixed nominal
-    # resolution, or a model whose real default the C-end request schema
-    # can't even express (every non-MiniMax native video model — see
-    # `VideoGenerationOptions.resolution`'s `Literal["2K", "768P"]`) prices
-    # every call at a resolution it never actually rendered at.
+    # resolution, or a model whose real default nothing in the request names
+    # (a `resolve_resolution_tier` call with `tier=None` always resolves to
+    # `None`, whatever this model's own vocabulary is) prices every call at a
+    # resolution it never actually rendered at.
     default_resolution: str | None = None
     reference_modes: frozenset[str] | None = None
