@@ -46,6 +46,7 @@ export function GenerationStudioShell({
   previewOverrideUrl,
   previewPlaceholder,
   hideDirectHint = false,
+  promptSlot,
   canSubmit,
   submitting,
   onSubmit,
@@ -87,8 +88,22 @@ export function GenerationStudioShell({
    * string here instead of reusing the prompt field's own label. */
   previewPlaceholder?: string;
   /** Hides the "写得更像导演" writing-tip box below the preview — the image
-   * studio alone opts into this. */
+   * studio alone opts into this. Has no effect once `promptSlot` is set (see
+   * below), since that box would just duplicate what the slot already
+   * shows. */
   hideDirectHint?: boolean;
+  /**
+   * Renders directly beneath the preview/attribution block, in the main
+   * column rather than the params aside/`Sheet` — `ImageGenerationStudio`
+   * and `VideoGenerationStudio` both pass their `PromptComposer` here so the
+   * prompt field stays visible next to the preview on every breakpoint
+   * instead of only inside "调整参数". Replaces the standalone `directHint`
+   * box entirely when set (a video composer folds that same copy into its
+   * own header instead of stacking two boxes) — `hideDirectHint` above is
+   * then moot. `undefined` (audio) keeps today's `directHint` box, gated
+   * only by `hideDirectHint`.
+   */
+  promptSlot?: React.ReactNode;
   canSubmit: boolean;
   submitting: boolean;
   onSubmit: () => void;
@@ -176,7 +191,9 @@ export function GenerationStudioShell({
           </div>
         ) : null}
 
-        {!hideDirectHint ? (
+        {promptSlot ? (
+          promptSlot
+        ) : !hideDirectHint ? (
           <div className="flex gap-3 rounded-[var(--radius-md)] border border-border bg-surface-soft p-4">
             <IconSparkle className="size-5 shrink-0 text-amber" />
             <div>

@@ -35,7 +35,7 @@ export interface AppliedSkills {
 }
 
 /**
- * Fetch + apply/remove for template `CreationSkill`s. Shared by the video
+ * Fetch + apply/remove for template `CreationSkill`s. Shared by the audio
  * style/skill picker (which still offers unlock from its Select) and the
  * image/video prompt `@` menu (which only lists free or already-purchased
  * skills that apply to the current operation).

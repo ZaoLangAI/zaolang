@@ -2870,7 +2870,6 @@
     "coreContentEmpty": "这个技能暂无可展示的创作参数。",
     "howToUseTitle": "如何使用",
     "howToUseMentionHint": "在「文案创作」对话框里粘贴以上内容，即可引用这个技能的风格；在图片或视频创作的提示词框输入 @，即可搜索并应用。",
-    "howToUsePickerHint": "也可以在视频创作页的「风格与技能」选择器中直接选用《{title}》。",
     "goCreate": "去创作",
     "goCharacterLibrary": "前往角色库",
     "goSceneLibrary": "前往场景库",

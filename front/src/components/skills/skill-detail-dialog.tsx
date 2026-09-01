@@ -162,7 +162,7 @@ export function SkillDetailDialog({
               />
             ) : null}
 
-            <HowToUseSection title={skill.title} showPickerHint={TEMPLATE_CATEGORIES.has(skill.category)} />
+            <HowToUseSection title={skill.title} />
 
             <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
               <DetailActions
@@ -281,7 +281,7 @@ function CoreContentRows({ params }: { params: Record<string, unknown> }) {
   );
 }
 
-function HowToUseSection({ title, showPickerHint }: { title: string; showPickerHint: boolean }) {
+function HowToUseSection({ title }: { title: string }) {
   const t = useTranslations('skillLibrary');
   const mention = `@${title} `;
 
@@ -293,11 +293,6 @@ function HowToUseSection({ title, showPickerHint }: { title: string; showPickerH
         <CopyIconButton value={mention} />
       </div>
       <p className="mt-2 text-xs leading-relaxed text-muted">{t('howToUseMentionHint')}</p>
-      {showPickerHint ? (
-        <p className="mt-1 text-xs leading-relaxed text-muted">
-          {t('howToUsePickerHint', { title })}
-        </p>
-      ) : null}
     </section>
   );
 }

@@ -11,7 +11,7 @@ import {
 } from '@/components/studio/generation-studio-shell';
 import { InlineImageResult } from '@/components/studio/inline-image-result';
 import { OptionGroup } from '@/components/studio/option-group';
-import { PromptField } from '@/components/studio/prompt-field';
+import { PromptComposer } from '@/components/studio/prompt-composer';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import { MAX_APPLIED_SKILLS, useAppliedSkills } from '@/components/studio/use-applied-skills';
@@ -68,9 +68,10 @@ const PORTRAIT_ASPECT = '9:16';
  * `text_to_video → image_to_video`).
  *
  * Deliberately has no style preset / system style ("画风库") picker — those
- * live only in `VideoGenerationStudio`/`AudioGenerationStudio` via
+ * live in `VideoGenerationStudio`/`AudioGenerationStudio` via
  * `useStyleAndSkillPicker`. Template skills are applied from the prompt
- * field's `@` menu (`useAppliedSkills`), not a second dropdown.
+ * field's `@` menu (`useAppliedSkills`), not a second dropdown — video
+ * uses the same `@` path (`showCreationSkillSelect: false`).
  *
  * Generation never navigates away to `/jobs/[jobId]`: a submit's progress and
  * result render inline in the preview slot (`InlineImageResult`), and every
@@ -689,30 +690,6 @@ export function ImageGenerationStudio({
         ) : null}
       </div>
 
-      <PromptField
-        prompt={prompt}
-        onChange={setPrompt}
-        polishContext={{
-          operation,
-          aspectRatio: aspect,
-          qualityTier: tier,
-          hasReference: uploads.length > 0 || Boolean(source),
-          assetKind,
-        }}
-        onPolishAccept={setPrompt}
-        closePolishSignal={polishCloseSignal}
-        skillMention={{
-          skills: mentionableSkills,
-          selectedIds: appliedSkillIds,
-          maxReached: appliedSkillIds.length >= MAX_APPLIED_SKILLS,
-          onSelect: applySkill,
-        }}
-      />
-      {appliedSkillChips}
-      {unlockDialog}
-
-      {isImageEdit ? <p className="text-xs text-muted">{t('referenceRequiredHint')}</p> : null}
-
       <OptionGroup
         label={t('orientation')}
         value={orientation}
@@ -758,6 +735,35 @@ export function ImageGenerationStudio({
   // the first submit) — once a job exists, the result takes over the
   // preview area regardless of what was last clicked in the source rail.
   const selectedUpload = uploads.find((asset) => asset.id === selectedUploadId) ?? null;
+
+  // Renders below the preview area (`GenerationStudioShell`'s `promptSlot`)
+  // rather than inside `paramsPanel` — see `PromptComposer`'s own doc
+  // comment. No `tip` here: the "写得更像导演" copy never applied well to a
+  // still image, same reasoning the old `hideDirectHint` flag captured.
+  const promptComposer = (
+    <PromptComposer
+      prompt={prompt}
+      onChange={setPrompt}
+      polishContext={{
+        operation,
+        aspectRatio: aspect,
+        qualityTier: tier,
+        hasReference: uploads.length > 0 || Boolean(source),
+        assetKind,
+      }}
+      onPolishAccept={setPrompt}
+      closePolishSignal={polishCloseSignal}
+      skillMention={{
+        skills: mentionableSkills,
+        selectedIds: appliedSkillIds,
+        maxReached: appliedSkillIds.length >= MAX_APPLIED_SKILLS,
+        onSelect: applySkill,
+      }}
+      skillChips={appliedSkillChips}
+      unlockDialog={unlockDialog}
+      hint={isImageEdit ? t('referenceRequiredHint') : undefined}
+    />
+  );
 
   // Undefined before the first submit (and while a resumed draft's job is
   // still loading), so the shell falls back to its default cover/poster —
@@ -807,6 +813,7 @@ export function ImageGenerationStudio({
       onSelectUpload={(asset) => setSelectedUploadId(asset.id)}
       isPortraitPreview={aspect === PORTRAIT_ASPECT}
       previewSlot={previewSlot}
+      promptSlot={promptComposer}
       previewOverrideUrl={selectedUpload?.url ?? null}
       previewPlaceholder={t('previewAreaLabel')}
       hideDirectHint

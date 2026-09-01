@@ -2870,7 +2870,6 @@
     "coreContentEmpty": "This skill has no creation parameters to show.",
     "howToUseTitle": "How to use",
     "howToUseMentionHint": "Paste this into the script-writing chat to reference this skill's style, or type @ in an image or video prompt to apply it.",
-    "howToUsePickerHint": "You can also pick “{title}” from the video creation page's style-and-skill picker.",
     "goCreate": "Start creating",
     "goCharacterLibrary": "Go to character library",
     "goSceneLibrary": "Go to scene library",

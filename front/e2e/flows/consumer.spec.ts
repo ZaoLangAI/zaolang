@@ -226,10 +226,10 @@ test.describe('creation', () => {
     await expect(page.getByRole('heading', { name: SEEDED_PAID_SKILL })).toBeVisible();
     await expect(page.getByText('8 积分').first()).toBeVisible();
 
-    // The seeded paid skill is a `lens` (镜头) skill, and the creation-skill
-    // picker (`useStyleAndSkillPicker`) only exists on the video/audio
-    // studios — `ImageGenerationStudio` deliberately has no skill picker at
-    // all — so this exercises the video studio, not the image one.
+    // Video no longer has a creation-skill Select — image and video both
+    // apply via the prompt `@` menu. Restore this against the audio studio
+    // (`getByLabel('创作技能')`) or by unlocking on `/skills` then `@` on
+    // video; the body below still targets the old video dropdown.
     await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'load' });
     await page.getByLabel('创作技能').selectOption({ label: '黄金时刻镜头 · 8 积分' });
     const unlock = page.getByRole('dialog');

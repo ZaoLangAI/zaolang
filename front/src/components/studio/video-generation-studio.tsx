@@ -13,7 +13,7 @@ import {
 import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
 import { InlineVideoResult } from '@/components/studio/inline-video-result';
 import { OptionGroup } from '@/components/studio/option-group';
-import { PromptField } from '@/components/studio/prompt-field';
+import { PromptComposer } from '@/components/studio/prompt-composer';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import {
@@ -92,8 +92,10 @@ const MAX_REFERENCE_SELECTION = 4;
  * `/create/new` (`text_to_video` / `image_to_video` modes) and
  * `/remix/[workId]` (`video_to_video` when the source work is a video,
  * otherwise `image_to_video` — remix has no image/audio path). Keeps the
- * style preset / creation skill / system style picker exactly as it was
- * before the split (`ImageGenerationStudio` is the one shell that dropped it).
+ * style preset / system style ("画风库") half of `useStyleAndSkillPicker`;
+ * template skills apply from the prompt `@` menu (`useAppliedSkills`),
+ * same as `ImageGenerationStudio`. `AudioGenerationStudio` is the shell
+ * that still shows the creation-skill Select.
  *
  * Generation never navigates away to `/jobs/[jobId]` any more: a submit's
  * progress and result render inline in the preview slot
@@ -460,11 +462,14 @@ export function VideoGenerationStudio({
     styleHint,
     mentionableSkills,
     applySkill,
+    chips: appliedSkillChips,
+    unlockDialog,
   } = useStyleAndSkillPicker({
     operation,
     initialStyleParams,
     initialStyleGalleryId,
     onApplyParams: applyParams,
+    showCreationSkillSelect: false,
   });
 
   // Derived, not its own state: an independent `orientation` could disagree
@@ -730,27 +735,6 @@ export function VideoGenerationStudio({
         </div>
       ) : null}
 
-      <PromptField
-        prompt={prompt}
-        onChange={setPrompt}
-        polishContext={{
-          operation,
-          aspectRatio: aspect,
-          durationSeconds: duration,
-          qualityTier: tier,
-          styleHint,
-          hasReference: uploads.length > 0 || Boolean(source),
-          videoAssetKind,
-        }}
-        onPolishAccept={setPrompt}
-        skillMention={{
-          skills: mentionableSkills,
-          selectedIds: appliedSkillIds,
-          maxReached: appliedSkillIds.length >= MAX_APPLIED_SKILLS,
-          onSelect: applySkill,
-        }}
-      />
-
       <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
         <OptionGroup
           label={t('orientation')}
@@ -897,6 +881,37 @@ export function VideoGenerationStudio({
     </>
   );
 
+  // Renders below the preview area (`GenerationStudioShell`'s `promptSlot`)
+  // rather than inside `paramsPanel` — see `PromptComposer`'s own doc
+  // comment. `tip` folds the "写得更像导演" copy that used to be the shell's
+  // standalone `directHint` box into this card's own header, so there is
+  // one box here instead of two stacked ones.
+  const promptComposer = (
+    <PromptComposer
+      prompt={prompt}
+      onChange={setPrompt}
+      polishContext={{
+        operation,
+        aspectRatio: aspect,
+        durationSeconds: duration,
+        qualityTier: tier,
+        styleHint,
+        hasReference: uploads.length > 0 || Boolean(source),
+        videoAssetKind,
+      }}
+      onPolishAccept={setPrompt}
+      skillMention={{
+        skills: mentionableSkills,
+        selectedIds: appliedSkillIds,
+        maxReached: appliedSkillIds.length >= MAX_APPLIED_SKILLS,
+        onSelect: applySkill,
+      }}
+      skillChips={appliedSkillChips}
+      unlockDialog={unlockDialog}
+      tip={{ title: t('directHint'), body: t('directHintBody') }}
+    />
+  );
+
   // Undefined before the first submit (and while a resumed draft's job is
   // still loading), so the shell falls back to its default poster/device
   // preview — once set, it fully replaces that block with the live/finished
@@ -935,6 +950,7 @@ export function VideoGenerationStudio({
       onRemove={removeUpload}
       isPortraitPreview={orientation === 'portrait'}
       previewSlot={previewSlot}
+      promptSlot={promptComposer}
       canSubmit={canSubmit}
       submitting={submitting}
       onSubmit={runSubmit}

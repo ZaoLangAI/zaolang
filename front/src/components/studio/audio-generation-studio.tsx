@@ -26,9 +26,9 @@ const AUDIO_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'] as co
 // this rides along as the same default the field would otherwise show.
 const AUDIO_ASPECT_RATIO = '16:9';
 
-/** `/create/new`'s `audio_generation` mode. Keeps the style preset / creation
- * skill / system style picker exactly as it was before the split
- * (`ImageGenerationStudio` is the one shell that dropped it). Unlike
+/** `/create/new`'s `audio_generation` mode. The remaining studio that still
+ * shows the creation-skill Select on `useStyleAndSkillPicker` (image and
+ * video apply template skills from the prompt `@` menu). Unlike
  * `VideoGenerationStudio`, there is no `?styleId=` deep link into this shell
  * — the style gallery's inspiration surfaces only ever link into video mode
  * — so it has no `initialStyleParams`/`initialStyleGalleryId` props; the

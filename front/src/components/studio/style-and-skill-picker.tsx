@@ -25,7 +25,9 @@ import { useResource } from '@/lib/use-resource';
 export { KNOWN_PRESET_KEYS, MAX_APPLIED_SKILLS } from '@/components/studio/use-applied-skills';
 
 export interface StyleAndSkillPicker {
-  /** The whole block — system style trigger/chip, style preset select, creation skill select+chips. Render it once, wherever the caller's params panel wants it. */
+  /** System style trigger/chip + style preset select, and (when
+   * `showCreationSkillSelect`) the creation-skill Select+chips. Render it
+   * once, wherever the caller's params panel wants it. */
   node: React.ReactNode;
   /** Up to 5 skills can be combined (mirrors `GenerationParams.skill_ids` server-side cap). */
   appliedSkillIds: string[];
@@ -34,13 +36,20 @@ export interface StyleAndSkillPicker {
   styleHint: string;
   mentionableSkills: CreationSkillSummary[];
   applySkill: (skill: CreationSkillSummary) => void;
+  /** Applied-skill chips / unlock dialog from `useAppliedSkills`. Video
+   * (`showCreationSkillSelect: false`) renders these under `PromptField`
+   * itself; audio keeps them inside `node`. */
+  chips: React.ReactNode;
+  unlockDialog: React.ReactNode;
 }
 
 /**
- * Style preset + creation skill + system style ("画风库") picking, factored
- * out of the old monolithic `GenerationStudio` so `ImageGenerationStudio` can
- * skip the style gallery / preset half (see `zaolang-frontend-ui` invariants)
- * while still sharing `useAppliedSkills` for prompt `@` apply.
+ * Style preset + system style ("画风库") picking, plus an optional creation
+ * skill Select. Factored out of the old monolithic `GenerationStudio` so
+ * `ImageGenerationStudio` can skip this hook entirely (template skills apply
+ * from the prompt `@` menu via `useAppliedSkills`) and `VideoGenerationStudio`
+ * can keep the gallery/preset half while dropping the skill Select — audio
+ * is the remaining caller that still shows the full picker.
  *
  * Owns its own fetches and dropdown/dialog state; the caller only has to
  * merge whatever a pick applies (`onApplyParams`) into its own `prompt` /
@@ -52,6 +61,7 @@ export function useStyleAndSkillPicker({
   initialStyleParams,
   initialStyleGalleryId,
   onApplyParams,
+  showCreationSkillSelect = true,
 }: {
   operation: Operation;
   /** A style gallery entry's `params`, applied once on mount (from `?styleId=`). */
@@ -59,6 +69,9 @@ export function useStyleAndSkillPicker({
   /** The catalogue id behind `initialStyleParams`; submitted as `style_gallery_id`. */
   initialStyleGalleryId?: string;
   onApplyParams: (params: Record<string, unknown>) => void;
+  /** Audio still offers unlock-from-Select. Video applies skills only via
+   * the prompt `@` menu, so it passes `false` and places chips itself. */
+  showCreationSkillSelect?: boolean;
 }): StyleAndSkillPicker {
   const t = useTranslations('remixPage');
   const tGallery = useTranslations('styleGallery');
@@ -192,7 +205,7 @@ export function useStyleAndSkillPicker({
         />
       ) : null}
 
-      {skills.length > 0 ? (
+      {showCreationSkillSelect && skills.length > 0 ? (
         <div>
           <Select
             label={t('skillPreset')}
@@ -237,7 +250,7 @@ export function useStyleAndSkillPicker({
         onSelect={applyStyleGalleryEntry}
       />
 
-      {unlockDialog}
+      {showCreationSkillSelect ? unlockDialog : null}
     </>
   );
 
@@ -248,5 +261,7 @@ export function useStyleAndSkillPicker({
     styleHint,
     mentionableSkills,
     applySkill,
+    chips,
+    unlockDialog,
   };
 }

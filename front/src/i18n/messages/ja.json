@@ -2870,7 +2870,6 @@
     "coreContentEmpty": "このスキルには表示できる制作パラメータがありません。",
     "howToUseTitle": "使い方",
     "howToUseMentionHint": "「文案創作」のチャットに貼るとスタイルを引用できます。画像・動画制作のプロンプトで @ を入力するとこのスキルを適用できます。",
-    "howToUsePickerHint": "動画制作ページの「スタイルとスキル」セレクターから《{title}》を選ぶこともできます。",
     "goCreate": "制作を始める",
     "goCharacterLibrary": "キャラクターライブラリへ",
     "goSceneLibrary": "シーンライブラリへ",
