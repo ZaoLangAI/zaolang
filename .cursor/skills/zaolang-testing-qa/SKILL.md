@@ -1,6 +1,6 @@
 ---
 name: zaolang-testing-qa
-description: The testing and QA system — four pytest layers (unit / hypothesis property / integration / real concurrency), fixtures and committed_db, three Playwright projects (e2e / a11y / visual-qa), session reuse and rate limiting, dual-theme three-viewport and reduced-motion checks. Use when writing or fixing tests, adding a property or concurrency test, debugging a flaky or hanging test, or running the E2E, accessibility and visual QA suites.
+description: The testing and QA system — four pytest layers (unit / hypothesis property / integration / real concurrency), fixtures and committed_db, the Playwright projects (setup / e2e / a11y / a11y-mobile / visual-qa), vitest unit tests, session reuse and rate limiting, dual-theme three-viewport and reduced-motion checks. Use when writing or fixing tests, adding a property or concurrency test, debugging a flaky or hanging test, or running the E2E, accessibility and visual QA suites.
 disable-model-invocation: true
 ---
 
@@ -15,7 +15,7 @@ disable-model-invocation: true
 | `back/tests/integration/` | `TestClient` against `/v1`, admin unauthorized-access and audit checks | any endpoint change |
 | `back/tests/concurrency/` | real threads with independent connections, racing | any concurrency-sensitive path (ledger, idempotency, callbacks, credit unlocks) |
 
-Key fixtures live in `back/tests/conftest.py`: `db` (rollback-style, used by most tests), `committed_db` (real commit + `truncate_all` afterward), `client`, `author` / `admin` / `reviewer` / `operator`, `make_user`; `viewer` is defined locally, only in `tests/integration/test_admin_security.py`. Data builders live in `back/tests/factories.py` (`make_job`, etc.).
+Key fixtures live in `back/tests/conftest.py`: `db` (rollback-style, used by most tests), `committed_db` (real commit + `truncate_all` afterward), `client`, `author` / `admin` / `reviewer` / `operator`, `make_user`; `viewer` is not a shared fixture — the integration tests that need it define it locally (`tests/integration/test_admin_security.py`, `tests/integration/test_system_log.py`). Data builders live in `back/tests/factories.py` (`make_job`, etc.). Other root-level helpers: `fake_llm_gateway.py` (the autouse fake), `fake_providers.py` + `fake_provider_catalog.py` (deterministic media providers and the test-only capability catalogue that injects them), `llm_catalog.py` (`seed_test_llm_catalog` — writes an `llm_providers` endpoint and binds the default agents, since product code no longer invents model names), and `test_llm_live.py` (the `@pytest.mark.live` smoke, run via `make test-llm`).
 
 ## Invariants
 
@@ -29,9 +29,9 @@ Key fixtures live in `back/tests/conftest.py`: `db` (rollback-style, used by mos
    `run_in_parallel()` uses a barrier to align workers, daemon threads with a bounded join, and **returns exceptions rather than raising them** — "losing" a race is the correct outcome; judging it is the test's job.
 6. **Race-condition assertions take the shape "exactly one winner"**, and must confirm the loser failed for a concurrency reason (`Conflict` / `InsufficientCredits` / `SQLAlchemyError`) rather than coincidentally failing for something else.
 
-## Frontend: Three Playwright Projects
+## Frontend: Playwright Projects + vitest
 
-`front/playwright.config.ts`: `setup` (log in and store sessions) → `e2e` (`e2e/flows/*.spec.ts`, incl. the desktop-only `editor.spec.ts`), `a11y` (`e2e/a11y.spec.ts`), `visual-qa` (`e2e/visual.spec.ts`). All run with `workers: 1` — the three suites share one seeded database, and parallel publishing would cross-contaminate assertions. `/create/short/{cutId}` (the cut editor, formerly at `/create/drama/{cutId}`) is deliberately excluded from both `a11y-mobile` and `PUBLIC_PAGES` — it's a dynamic route anyway, but the desktop-only gate is the reason even if it weren't. `/create/short` itself (the drama-series dashboard) is a plain sign-in-gated page and is already in both lists.
+`front/playwright.config.ts` defines five projects for three suites: `setup` (log in and store sessions) → `e2e` (`e2e/flows/*.spec.ts`, incl. the desktop-only `editor.spec.ts`; `npm run test:e2e`), `a11y` + `a11y-mobile` (both run `e2e/a11y.spec.ts`, desktop 1440 vs phone 390 viewport; `npm run test:a11y` runs both), `visual-qa` (`e2e/visual.spec.ts`, depends on `setup`; `npm run qa:visual`). All run with `workers: 1` — the suites share one seeded database, and parallel publishing would cross-contaminate assertions. Frontend unit tests are separate: `front/vitest.config.ts` + `src/**/*.test.ts(x)`, run with `npm test` in `front/` only (not in `make test-front` or `make check`). `/studio-editor/{cutId}` (the cut editor; the legacy `/create/short/{cutId}` only redirects there) is deliberately excluded from both `a11y-mobile` and `PUBLIC_PAGES` — it's a dynamic route anyway, but the desktop-only `EditorGate` is the reason even if it weren't. `/create/short` itself (the drama-series dashboard) is a plain sign-in-gated page and is already in both lists.
 
 Support files: `e2e/support/session.ts` (`ACCOUNTS` / `STATE_FILES` / `signIn` / `watchForPageErrors`), `support/axe.ts`, `support/theme.ts`, `setup/auth.setup.ts`.
 
@@ -48,16 +48,17 @@ Support files: `e2e/support/session.ts` (`ACCOUNTS` / `STATE_FILES` / `signIn` /
 ```bash
 make up && make migrate && make seed          # a real database and seed data
 make dev-api                                   # backend must be on 3001
-cd front && npm run build && npx next start --port 3100
 make test-e2e && make test-a11y && make qa-visual
 ```
 
-`front/.env.local` needs `ALLOW_LOCAL_IMAGE_HOSTS=1` only when `STORAGE_BACKEND=minio`: Next 16 rejects image optimization against private-address hosts by default (SSRF protection), and the local MinIO instance is exactly that — skip this and every cover image 400s. Not needed with the default `tencent_cos` backend, since COS serves from a public domain. Never set this in production.
+The `webServer` block in `playwright.config.ts` builds and starts the front on `3100` itself (`npm run build && npm run start -- --port 3100`, 180s timeout, reuses an existing listener) — you don't start it by hand. Set `PLAYWRIGHT_BASE_URL` to point at an already-running server instead, which disables `webServer` entirely.
+
+`front/.env.local` needs `ALLOW_LOCAL_IMAGE_HOSTS=1` when `STORAGE_BACKEND=minio` (still the `Settings` default; `front/.env.example` already ships it as `1`): Next 16 rejects image optimization against private-address hosts by default (SSRF protection), and the local MinIO instance is exactly that — skip this and every cover image 400s. With `tencent_cos` it's unnecessary (COS serves from `*.myqcloud.com`, already in `remotePatterns`). Never set this in production.
 
 ## Verify
 
 ```bash
-make test-back      # 480+ cases, coverage printed to the terminal
+make test-back      # 1700+ cases (-m "not live"), coverage printed to the terminal
 make check          # the full local gate
 ```
 

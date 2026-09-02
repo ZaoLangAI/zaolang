@@ -1,6 +1,6 @@
 ---
 name: zaolang-i18n-region
-description: Trilingual copy and region settings — next-intl routing and the [locale] structure, zh-CN/en/ja message files with key-consistency checks, region as the sole determinant of locale (regionLocale mapping), currency/date formatting, admin ja falling back to en. Use when adding UI copy, changing translations, adding a locale or region, formatting currency or dates, or when `make messages` fails.
+description: Trilingual copy and region settings — next-intl routing and the [locale] structure, zh-CN/en/ja message files with key-consistency checks, region as the sole determinant of locale (regionLocale mapping), currency/date formatting, admin copy in ja.json deliberately left in English (keys still required, no runtime fallback). Use when adding UI copy, changing translations, adding a locale or region, formatting currency or dates, or when `make messages` fails.
 disable-model-invocation: true
 ---
 
@@ -30,7 +30,7 @@ Interface language (`locale`) is **determined solely** by the user's region (`re
 4. **Changing region must change locale with it**: the sole mapping is `regionLocale` (`front/src/i18n/routing.ts`). Anywhere region is written (`RegionMenu`, the settings-page region option) must also `router.replace(pathname, { locale: regionLocale[region] })` and write `locale` together with region into `/v1/auth/me/preferences` — never update region without locale. There is no standalone language control (`LocaleMenu` has been removed).
 5. **Currency follows region, not locale**: `regionCurrency` is the sole mapping (CN→CNY, GLOBAL→USD, JP→JPY). Price display always goes through `lib/format.ts` — never concatenate `¥` in a component.
 6. **Dates and quantities use `Intl`** with an explicit locale argument; relying on the runtime's default locale makes SSR and client renders diverge (hydration errors).
-7. **Admin `ja` falls back to `en`** — this is a deliberate scope decision, not a gap.
+7. **Admin copy in `ja.json` is often English text under the `ja` key — there is no runtime ja→en fallback.** `front/src/i18n/request.ts` always loads exactly `messages/${locale}.json` (no `getMessageFallback`, no merged bundle), so an admin key missing from `ja.json` is the same runtime error as any other missing key (invariant #1), not a graceful degrade. Leaving the admin console's *values* in English inside `ja.json` is a deliberate scope decision, not a gap — the keys must still exist in all three files and `make messages` still enforces parity on them.
 8. **Amounts arrive from the backend as integer minor units**; convert to display form only at format time, never divide early.
 
 ## Extension Points

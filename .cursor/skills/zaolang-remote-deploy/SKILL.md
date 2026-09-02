@@ -25,9 +25,9 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 
 | File | Contents |
 | --- | --- |
-| `infra/docker-compose.prod.yml` | postgres / redis / minio / migrate / api / worker / poller / beat / web / nginx |
-| `infra/.env.prod.example` | placeholder template; real values live only on the server |
-| `infra/nginx/prod.conf.template` | `/v1` `/mcp` health + MinIO `/${S3_BUCKET}/` + Next.js |
+| `infra/docker-compose.prod.yml` | postgres / redis / minio / minio-init / migrate / api / worker / poller / beat / web / nginx. Only nginx publishes a host port (`:80`); the API container listens on `8000` internally (`API_INTERNAL_URL=http://api:8000`, not the laptop's `3001`). Worker `-Q` mirrors `make dev-worker` (incl. `platform_distribution`, `video_analysis`), `--concurrency=${WORKER_CONCURRENCY:-4}` |
+| `infra/.env.prod.example` | placeholder template; real values live only on the server. Besides secrets: `COOKIE_SECURE=false` (HTTP-only box, flip on HTTPS), `WORKER_CONCURRENCY`, `REDIS_MAXMEMORY`, build-time-only `APT_MIRROR` / `PIP_INDEX_URL` |
+| `infra/nginx/prod.conf.template` | `/v1` `/mcp` health + MinIO `location /${MEDIA_BUCKET}/` (envsubst'd at container start; compose sets `MEDIA_BUCKET` from `S3_BUCKET`) + Next.js |
 | `Makefile` `prod-up` / `prod-down` / `prod-logs` | remote compose wrappers |
 | `infra/scripts/backup.sh` | local `pg_dump` only — not the remote restore path |
 
@@ -38,7 +38,7 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 3. **Never seed in production.** `python -m app.scripts.seed` raises when `APP_ENV=production`. The admin HTTP seed is also refused. Do not `down -v`. When the operator names a catalogue backfill, run `python -m app.scripts.ensure_catalog` inside the `api` container — additive `CreationSkill` / `LearnPost` rows (and shipped covers) only; an existing `zaolang_studio` password is never rotated.
 4. **`make restore` / `infra/scripts/restore.sh` must not target the remote box** — the script refuses a URL containing `prod` and defaults to laptop `:5433`. Remote restore is `docker compose exec -T postgres pg_restore …`.
 5. **Never overwrite `infra/.env.prod` with rsync.** Exclude `.git`, `node_modules`, `.next`, `__pycache__`, `back/.env`, `front/.env.local`, and `infra/.env.prod`. Append new keys; do not rotate JWT / Postgres / MinIO secrets on an update.
-6. **`object_key` rows and `STORAGE_BACKEND` must agree.** This host is meant to use `STORAGE_BACKEND=tencent_cos` against the same bucket as the laptop. MinIO can stay running unused. nginx `/${MEDIA_BUCKET}/` only proxies MinIO path-style signed URLs — COS objects are fetched from `*.myqcloud.com`.
+6. **`object_key` rows and `STORAGE_BACKEND` must agree.** On the host prefer `STORAGE_BACKEND=tencent_cos` against the same bucket as the laptop (append `COS_*` to the server's `.env.prod`); the committed `infra/.env.prod.example` and the compose default (`${STORAGE_BACKEND:-minio}`) still say `minio` — do not assume the template matches the box, read the server file. MinIO can stay running unused. nginx `/${MEDIA_BUCKET}/` only proxies MinIO path-style signed URLs — COS objects are fetched from `*.myqcloud.com`.
 7. **Do not put a date diary or a fixed-incident write-up in this skill.** Keep constraints that still apply.
 
 ## Default update (code + migrate)

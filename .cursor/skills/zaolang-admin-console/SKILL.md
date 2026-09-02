@@ -1,6 +1,6 @@
 ---
 name: zaolang-admin-console
-description: Admin security boundary and shell — the separate /v1/admin namespace and admin-audience token, four-tier RBAC, dangerous-action confirmation with mandatory reason, independent rate limits, the audit decorator, plus the (admin) route group's own layout, login page, RBAC nav, and data-dense component family. Use when adding a back-office endpoint or page, changing admin roles and permissions, the admin session, dangerous-action confirmation, or the console's tables/drawers/diff components.
+description: Admin security boundary and shell — the separate /v1/admin namespace and admin-audience token, four-tier RBAC, dangerous-action confirmation with mandatory reason, independent rate limits, the explicit `audit.record(...)` trail on every write, plus the (admin) route group's own layout, login page, RBAC nav, and data-dense component family. Use when adding a back-office endpoint or page, changing admin roles and permissions, the admin session, dangerous-action confirmation, or the console's tables/drawers/diff components.
 disable-model-invocation: true
 ---
 
@@ -17,10 +17,10 @@ Admin code lives inside `front/` and `back/`, but **its session, namespace, rate
 | File | Contents |
 | --- | --- |
 | `back/app/api/v1/admin/deps.py` | the four role aliases `Viewer` / `Reviewer` / `Operator` / `Admin`; the `AdminRead` / `AdminWrite` / `AdminDangerous` rate-limit tiers; `require_confirmation` |
-| `back/app/api/v1/admin/auth.py` | `/admin/login`, session lookup, logout; issues a token with audience `admin`, stored in the `zl_admin_session` cookie |
-| `back/app/api/v1/admin/*.py` | `config` / `content` / `data` / `jobs` / `ledger` / `logs` / `observability` / `statistics` / `users` / `llm_providers` / `agent_skills` / `skill_library` / `redemption` / `learning` |
-| `back/app/domain/audit/service.py` | write-operation trail |
-| `back/tests/integration/test_admin_security.py` | 37 unauthorized-access and dangerous-operation cases — read this before changing permissions |
+| `back/app/api/v1/admin/auth.py` | `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` (all under the `/admin` router prefix, so `/v1/admin/auth/*`; `/admin/login` is the frontend page, not an API route); issues a token with audience `admin`, stored in the `zl_admin_session` cookie |
+| `back/app/api/v1/admin/*.py` | `config` / `content` / `data` / `jobs` / `ledger` / `logs` / `observability` / `statistics` / `users` / `llm_providers` / `agent_skills` / `skill_library` / `redemption` / `learning` / `workflow_templates` / `style_gallery` |
+| `back/app/domain/audit/service.py` | write-operation trail — there is no decorator; each write handler calls `audit.record(...)` explicitly (see `admin/users.py`, `jobs.py`, `learning.py` for the pattern) |
+| `back/tests/integration/test_admin_security.py` | 55 unauthorized-access and dangerous-operation cases (session/cookie handling, login indistinguishability for unknown email vs. wrong password vs. no console role, RBAC ladder, confirmation + reason, workflow-template publish/rollback/sandbox-run, audit rows) — read this before changing permissions |
 
 ### Frontend
 
@@ -31,7 +31,7 @@ Admin code lives inside `front/` and `back/`, but **its session, namespace, rate
 | `front/src/components/admin/admin-session-provider.tsx` | the admin session context |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
 | `front/src/components/admin/` | `data-table` / `filter-bar` (incl. `daterange`) / `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor` (sandbox run history is a floating window over the canvas — see `zaolang-admin-ops`) / `models/llm-providers-panel` (model management: a flat primary/backup list + per-endpoint primary/backup) / `audit/log-center-console` / `statistics/*` (daily trends, see `zaolang-admin-statistics`) |
-| `front/src/lib/api/admin-client.ts`, `admin-server.ts`, `use-admin-list.ts` | admin-only client and list hook |
+| `front/src/lib/api/admin-client.ts`, `admin-server.ts`; `front/src/lib/admin/use-admin-list.ts` | admin-only client and list hook (the hook lives under `lib/admin/`, next to `rbac.ts` and `operations.ts`, not `lib/api/`) |
 
 ## Invariants
 
@@ -52,12 +52,12 @@ Admin code lives inside `front/` and `back/`, but **its session, namespace, rate
 
 1. Choose a role alias (`Viewer` / `Reviewer` / `Operator` / `Admin`) and a rate-limit alias (`AdminRead` / `AdminWrite` / `AdminDangerous`).
 2. If it's dangerous: the schema carries `confirm: bool` and `reason: str`, and the function body starts with `require_confirmation`.
-3. Attach the audit decorator to any write; `before`/`after` should hold only a summary.
+3. Call `audit.record(...)` explicitly in any write handler (there is no decorator); `before`/`after` should hold only a summary.
 4. Add "a lower-tier role gets rejected" and "the action is audited" cases to `test_admin_security.py`.
 
 **Add an admin page**
 
-1. Create a directory under `(console)/` → assemble it with `use-admin-list.ts` + `data-table.tsx`.
+1. Create a directory under `(console)/` → assemble it with `lib/admin/use-admin-list.ts` + `data-table.tsx`.
 2. Add a nav item to `rbac.ts`'s `NAV_GROUPS` with an explicit `requires`.
 3. Add trilingual copy (`ja` reuses the `en` value).
 4. Add a "the page opens and shows real data" case to `front/e2e/flows/admin.spec.ts`.
