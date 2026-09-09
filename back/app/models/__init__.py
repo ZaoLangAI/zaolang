@@ -8,6 +8,14 @@ from app.models.access import AccessGrant
 from app.models.agent_skills import AgentNode, AgentProfile, AgentSkill
 from app.models.async_tasks import AsyncProviderTask
 from app.models.base import Base, TimestampMixin, new_id, utcnow
+from app.models.canvas import (
+    CanvasAgentRun,
+    CanvasAgentTask,
+    CanvasChange,
+    CanvasEdge,
+    CanvasNode,
+    CanvasProject,
+)
 from app.models.characters import Series, SeriesCollaborator
 from app.models.credits import (
     CreditAccount,
@@ -109,6 +117,12 @@ __all__ = [
     "BackupRecord",
     "Base",
     "Bookmark",
+    "CanvasAgentRun",
+    "CanvasAgentTask",
+    "CanvasChange",
+    "CanvasEdge",
+    "CanvasNode",
+    "CanvasProject",
     "Collection",
     "CollectionItem",
     "ContentFingerprint",

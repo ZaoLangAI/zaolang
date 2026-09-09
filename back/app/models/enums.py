@@ -461,6 +461,7 @@ class AgentName(StrEnum):
     COPY = "copy"
     INTENT_ROUTER = "intent_router"
     EDITOR_PLANNER = "editor_planner"
+    CANVAS_PLANNER = "canvas_planner"
 
 
 class SeriesKind(StrEnum):
@@ -958,3 +959,174 @@ class SystemLogLevel(StrEnum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
+
+
+# --------------------------------------------------------------------------
+# Canvas
+# --------------------------------------------------------------------------
+
+
+class CanvasNodeKind(StrEnum):
+    """What a card on the canvas is.
+
+    The first five bind to a real domain object through `binding_json`; the
+    rest stand alone. Both sets share one canvas — a drama canvas may hold
+    plain notes, and a free canvas gains drama cards once its content is sent
+    to an episode.
+    """
+
+    SERIES = "series"
+    EPISODE = "episode"
+    SHOT = "shot"
+    SKILL = "skill"
+    CLIP = "clip"
+
+    IMAGE = "image"
+    VIDEO = "video"
+    PROMPT = "prompt"
+    NOTE = "note"
+    # The card an Agent run hangs off. Its live state lives on
+    # `CanvasAgentRun`, never in `data_json` — see `graph_service`'s rule 1.
+    AGENT = "agent"
+
+
+class CanvasNodeOrigin(StrEnum):
+    """Who put a card on the canvas.
+
+    Provenance only — it drives a badge and telemetry. It is deliberately not
+    an access rule: an agent-produced card must be draggable, editable and
+    deletable exactly like one a person added.
+    """
+
+    USER = "user"
+    AGENT = "agent"
+
+
+class CanvasChangeEntity(StrEnum):
+    NODE = "node"
+    EDGE = "edge"
+    AGENT_RUN = "agent_run"
+    AGENT_TASK = "agent_task"
+
+
+class CanvasChangeAction(StrEnum):
+    CREATED = "created"
+    UPDATED = "updated"
+    DELETED = "deleted"
+
+
+class CanvasAgentRunOrigin(StrEnum):
+    """What produced a run's plan.
+
+    A workflow run is a `CanvasAgentRun` whose tasks came from a skill's
+    template rather than from the planner, so that landing, cancelling, the
+    workbench and the change stream are one mechanism instead of two. This
+    column is how the two are told apart — deliberately, rather than probing
+    `planner_agent_run_id IS NULL`, which would make a nullable pointer double
+    as a type tag and break the moment a workflow run gains a planning step.
+    """
+
+    AGENT = "agent"
+    WORKFLOW = "workflow"
+
+
+class CanvasAgentRunStatus(StrEnum):
+    """One Agent invocation on a canvas.
+
+    `awaiting_confirm` is the default resting point rather than a formality:
+    the plan is priced and shown before a single credit moves, because
+    spending a user's balance without a confirming tap is what generates
+    refund tickets.
+    """
+
+    PLANNING = "planning"
+    AWAITING_CONFIRM = "awaiting_confirm"
+    SUBMITTING = "submitting"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    # Some tasks landed and some did not. Distinct from `failed` because the
+    # user has results worth keeping and should not be told the run failed.
+    PARTIAL = "partial"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in TERMINAL_CANVAS_AGENT_RUN_STATUSES
+
+
+TERMINAL_CANVAS_AGENT_RUN_STATUSES: frozenset[CanvasAgentRunStatus] = frozenset(
+    {
+        CanvasAgentRunStatus.SUCCEEDED,
+        CanvasAgentRunStatus.PARTIAL,
+        CanvasAgentRunStatus.FAILED,
+        CanvasAgentRunStatus.CANCELLED,
+    }
+)
+
+CANVAS_AGENT_RUN_TRANSITIONS: dict[CanvasAgentRunStatus, frozenset[CanvasAgentRunStatus]] = {
+    CanvasAgentRunStatus.PLANNING: frozenset(
+        {
+            CanvasAgentRunStatus.AWAITING_CONFIRM,
+            # A planner that produced nothing usable ends here rather than
+            # presenting an empty plan the user would have to reject.
+            CanvasAgentRunStatus.FAILED,
+            CanvasAgentRunStatus.CANCELLED,
+        }
+    ),
+    CanvasAgentRunStatus.AWAITING_CONFIRM: frozenset(
+        {CanvasAgentRunStatus.SUBMITTING, CanvasAgentRunStatus.CANCELLED}
+    ),
+    CanvasAgentRunStatus.SUBMITTING: frozenset(
+        {
+            CanvasAgentRunStatus.RUNNING,
+            CanvasAgentRunStatus.FAILED,
+            CanvasAgentRunStatus.CANCELLED,
+        }
+    ),
+    CanvasAgentRunStatus.RUNNING: frozenset(
+        {
+            CanvasAgentRunStatus.SUCCEEDED,
+            CanvasAgentRunStatus.PARTIAL,
+            CanvasAgentRunStatus.FAILED,
+            CanvasAgentRunStatus.CANCELLED,
+        }
+    ),
+    CanvasAgentRunStatus.SUCCEEDED: frozenset(),
+    CanvasAgentRunStatus.PARTIAL: frozenset(),
+    CanvasAgentRunStatus.FAILED: frozenset(),
+    CanvasAgentRunStatus.CANCELLED: frozenset(),
+}
+
+
+class CanvasAgentTaskStatus(StrEnum):
+    """One planned generation and the card it will become.
+
+    `landed` is deliberately not the same as the job's `succeeded`: a job can
+    finish while its card is still to be inserted, and keeping the two apart is
+    what lets the completion hook be idempotent under a redelivered terminal.
+    """
+
+    PLANNED = "planned"
+    SUBMITTED = "submitted"
+    RUNNING = "running"
+    LANDED = "landed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    # Refused before submission — a hallucinated reference, or a plan that
+    # would have pushed the canvas past its node cap.
+    SKIPPED = "skipped"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in TERMINAL_CANVAS_AGENT_TASK_STATUSES
+
+
+TERMINAL_CANVAS_AGENT_TASK_STATUSES: frozenset[CanvasAgentTaskStatus] = frozenset(
+    {
+        CanvasAgentTaskStatus.LANDED,
+        CanvasAgentTaskStatus.FAILED,
+        CanvasAgentTaskStatus.CANCELLED,
+        CanvasAgentTaskStatus.SKIPPED,
+    }
+)

@@ -19,6 +19,7 @@ from app.api.middleware import CorrelationMiddleware, SecurityHeadersMiddleware
 from app.api.v1 import (
     admin,
     auth,
+    canvas,
     characters,
     community,
     credits,
@@ -69,6 +70,7 @@ def build_router() -> APIRouter:
     router.include_router(privacy.router)
     router.include_router(devices.router)
     router.include_router(editor.router)
+    router.include_router(canvas.router)
     router.include_router(scripts.router)
     router.include_router(distribution.router)
     router.include_router(admin.router)
