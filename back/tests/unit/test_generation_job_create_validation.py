@@ -38,21 +38,92 @@ def test_image_to_image_does_not_require_a_reference_image() -> None:
     assert request.operation == Operation.IMAGE_TO_IMAGE
 
 
-def test_audio_generation_requires_a_recognised_voice() -> None:
+def test_audio_generation_requires_a_voice_or_a_clone_reference() -> None:
     with pytest.raises(ValidationError, match="音频生成必须指定音色"):
         _request(Operation.AUDIO_GENERATION)
 
     with pytest.raises(ValidationError, match="音频生成必须指定音色"):
-        _request(Operation.AUDIO_GENERATION, extra={"voice": "not-a-real-voice"})
+        _request(Operation.AUDIO_GENERATION, extra={"voice": "   "})
+
+    # The voice id is no longer a fixed enum — DMXAPI's `tts-pro` and
+    # AiHubMix's Gemini voices both bring their own vendor-specific ids, so
+    # any non-empty string is accepted at this schema layer; the provider
+    # itself rejects one it doesn't recognise.
+    request = _request(Operation.AUDIO_GENERATION, extra={"voice": "not-a-real-voice"})
+    assert request.operation == Operation.AUDIO_GENERATION
 
     request = _request(Operation.AUDIO_GENERATION, extra={"voice": "nova"})
     assert request.operation == Operation.AUDIO_GENERATION
+
+    # A voice-clone reference sample stands in for a named voice.
+    request = _request(Operation.AUDIO_GENERATION, reference_asset_ids=["ast_voice1"])
+    assert request.operation == Operation.AUDIO_GENERATION
+
+
+def test_audio_generation_clone_reference_is_capped_at_one() -> None:
+    with pytest.raises(ValidationError, match="最多只能提供 1 段声音克隆参考音频"):
+        _request(Operation.AUDIO_GENERATION, reference_asset_ids=["ast_voice1", "ast_voice2"])
 
 
 def test_audio_generation_does_not_require_a_duration() -> None:
     """Unlike the video operations, a zero duration is fine here."""
     request = _request(Operation.AUDIO_GENERATION, extra={"voice": "alloy"}, duration_seconds=0)
     assert request.params.duration_seconds == 0
+
+
+def test_music_generation_requires_an_audio_style() -> None:
+    with pytest.raises(ValidationError, match="必须指定 audio_style"):
+        _request(Operation.MUSIC_GENERATION)
+
+    with pytest.raises(ValidationError, match="必须指定 audio_style"):
+        _request(Operation.MUSIC_GENERATION, extra={"audio_style": "bgm"})
+
+    music = _request(Operation.MUSIC_GENERATION, extra={"audio_style": "music"})
+    assert music.operation == Operation.MUSIC_GENERATION
+
+    sfx = _request(Operation.MUSIC_GENERATION, extra={"audio_style": "sfx"})
+    assert sfx.operation == Operation.MUSIC_GENERATION
+
+
+def test_music_generation_rejects_any_reference_asset() -> None:
+    with pytest.raises(ValidationError, match="不支持参考素材"):
+        _request(
+            Operation.MUSIC_GENERATION,
+            extra={"audio_style": "music"},
+            reference_asset_ids=["ast_ref1"],
+        )
+
+
+def test_music_generation_does_not_require_a_duration() -> None:
+    request = _request(
+        Operation.MUSIC_GENERATION, extra={"audio_style": "music"}, duration_seconds=0
+    )
+    assert request.params.duration_seconds == 0
+
+
+def test_music_generation_sfx_duration_is_bounded_when_provided() -> None:
+    with pytest.raises(ValidationError, match="音效时长必须为"):
+        _request(
+            Operation.MUSIC_GENERATION,
+            extra={"audio_style": "sfx"},
+            duration_seconds=25,
+        )
+
+    request = _request(
+        Operation.MUSIC_GENERATION,
+        extra={"audio_style": "sfx"},
+        duration_seconds=10,
+    )
+    assert request.params.duration_seconds == 10
+
+    # Music (not SFX) never takes a duration control — an out-of-SFX-range
+    # value is simply ignored by the adapted models, not rejected here.
+    request = _request(
+        Operation.MUSIC_GENERATION,
+        extra={"audio_style": "music"},
+        duration_seconds=25,
+    )
+    assert request.params.duration_seconds == 25
 
 
 def test_image_to_image_does_not_require_a_duration() -> None:
@@ -148,11 +219,23 @@ def test_h3_frame_images_require_a_first_frame_and_exclude_other_references() ->
     assert request.params.video_options is not None
     assert request.params.video_options.last_frame_asset_id == "asset-last"
 
-    with pytest.raises(ValidationError, match="首尾帧与普通参考素材"):
+    with pytest.raises(ValidationError, match="首尾帧不能与普通参考素材同时使用"):
         _request(
             Operation.IMAGE_TO_VIDEO,
             duration_seconds=5,
             reference_asset_ids=["asset-reference"],
+            video_options={
+                "reference_mode": "frame_images",
+                "first_frame_asset_id": "asset-first",
+            },
+        )
+
+    with pytest.raises(ValidationError, match="首尾帧不能与角色参考、场景参考同时使用"):
+        _request(
+            Operation.IMAGE_TO_VIDEO,
+            duration_seconds=5,
+            character_ids=["sk-char"],
+            scene_ids=["sk-scene"],
             video_options={
                 "reference_mode": "frame_images",
                 "first_frame_asset_id": "asset-first",
@@ -328,11 +411,20 @@ def test_forced_model_is_accepted_for_image_and_video_creation() -> None:
     assert video_request.params.forced_model == "minimax-h3"
 
 
-def test_forced_model_is_rejected_outside_image_and_video_creation() -> None:
-    with pytest.raises(ValidationError, match="forced_model 仅适用于图片创作/视频创作"):
-        _request(Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-model")
+def test_forced_model_is_accepted_for_audio_generation() -> None:
+    """Unlike image/video, `audio_generation` has no per-model studio
+    `resolutions` tier — the C-end voice picker (`app.providers.
+    model_catalog.voices_for_model`) is what actually needs to know which
+    model was picked, hence this operation joining the `forced_model`
+    scope alongside image/video."""
+    request = _request(
+        Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-1"
+    )
+    assert request.params.forced_model == "tts-1"
 
-    with pytest.raises(ValidationError, match="forced_model 仅适用于图片创作/视频创作"):
+
+def test_forced_model_is_rejected_outside_image_video_or_audio_creation() -> None:
+    with pytest.raises(ValidationError, match="forced_model 仅适用于图片创作/视频创作/音频创作"):
         GenerationJobCreateRequest(
             operation=Operation.VIDEO_ANALYSIS,
             quality_tier=QualityTier.STANDARD,

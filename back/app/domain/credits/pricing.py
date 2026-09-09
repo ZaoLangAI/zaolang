@@ -53,6 +53,21 @@ DEFAULT_TIER_PRICING: dict[str, dict[str, int]] = {
         QualityTier.STANDARD: 50,
         QualityTier.CINEMATIC: 120,
     },
+    # Priced above `AUDIO_GENERATION` (a single short TTS call) but below
+    # any video operation: a music/SFX render is one synchronous call like
+    # TTS, but the upstream vendor call itself costs more (fal's MiniMax
+    # Music 2.6 is $0.15/generation vs. TTS's fractions of a cent per
+    # 10k characters — see `app.providers.model_catalog`'s fal/DMXAPI
+    # music entries) and runs longer (~30-60s per MiniMax's own docs).
+    # Same flat per-tier shape as `AUDIO_GENERATION` — no per-second
+    # surcharge, since none of the adapted models take an explicit,
+    # billable duration control (see `fal_media.py`/`dmxapi_media.py`'s
+    # music builders).
+    Operation.MUSIC_GENERATION: {
+        QualityTier.PREVIEW: 10,
+        QualityTier.STANDARD: 25,
+        QualityTier.CINEMATIC: 60,
+    },
 }
 
 DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
@@ -90,6 +105,11 @@ DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
         QualityTier.PREVIEW: 20,
         QualityTier.STANDARD: 40,
         QualityTier.CINEMATIC: 90,
+    },
+    Operation.MUSIC_GENERATION: {
+        QualityTier.PREVIEW: 20,
+        QualityTier.STANDARD: 35,
+        QualityTier.CINEMATIC: 60,
     },
 }
 

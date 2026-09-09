@@ -13,6 +13,7 @@ from pydantic import Field
 
 from app.api.schemas.common import ApiModel
 from app.models.enums import (
+    AudioGenerationKind,
     CreationSkillCategory,
     CreationSkillStatus,
     CreationSkillVisibility,
@@ -20,13 +21,18 @@ from app.models.enums import (
     JobOrigin,
     JobStatus,
     LearnPostStatus,
+    MediaGenerationKind,
     MediaType,
     ModerationStatus,
     Operation,
     RedemptionCodeKind,
     UserStatus,
 )
-from app.platform_config.schemas import MediaProtocol
+from app.platform_config.schemas import (
+    LLM_ENDPOINT_TIMEOUT_MS_DEFAULT,
+    LLM_ENDPOINT_TIMEOUT_MS_MAX,
+    MediaProtocol,
+)
 
 
 class DangerousAction(ApiModel):
@@ -763,6 +769,16 @@ class AudioPricingPayload(ApiModel):
     per_10k_characters_micro_usd: int = Field(default=0, ge=0)
 
 
+class VideoAnalysisPricingPayload(ApiModel):
+    per_request_micro_usd: int = Field(default=0, ge=0)
+
+
+class MusicPricingPayload(ApiModel):
+    """BGM/SFX billed per generated clip — see `MusicPricing`."""
+
+    per_request_micro_usd: int = Field(default=0, ge=0)
+
+
 class VideoPricingPayload(ApiModel):
     """Keyed by output resolution, because vendors price 2K and 768P apart."""
 
@@ -789,6 +805,8 @@ class MediaPricingPayload(ApiModel):
     audio: AudioPricingPayload | None = None
     video: VideoPricingPayload | None = None
     token_video: TokenVideoPricingPayload | None = None
+    video_analysis: VideoAnalysisPricingPayload | None = None
+    music: MusicPricingPayload | None = None
 
 
 class LlmProviderEndpointView(ApiModel):
@@ -832,6 +850,13 @@ class LlmProviderEndpointView(ApiModel):
     # prices follow — `None` for a hand-typed custom model or one saved
     # before this field existed.
     billing_profile: str | None = None
+    # `kind="media"` only. Default `create` for endpoints saved before the field.
+    generation_kind: MediaGenerationKind = MediaGenerationKind.CREATE
+    # `kind="media"` only. Which `text -> audio` capability this endpoint's
+    # model serves — `AUDIO_GENERATION` (voice) or `MUSIC_GENERATION`
+    # (BGM/SFX); see `AudioGenerationKind`. Ignored for non-ambiguous
+    # modalities. Default `VOICE` for endpoints saved before the field.
+    audio_generation_kind: AudioGenerationKind = AudioGenerationKind.VOICE
     concurrency_in_use: int = 0
     circuit_breaker_open: bool = False
     recent_attempts: int = 0
@@ -894,7 +919,9 @@ class PriceItemView(ApiModel):
     full explanation of each field."""
 
     key: str
-    unit: Literal["per_second", "per_million_tokens", "per_image", "per_request"]
+    unit: Literal[
+        "per_second", "per_million_tokens", "per_image", "per_request", "per_10k_characters"
+    ]
     label: str
     default_micro_usd: int
     source_currency: Literal["USD", "CNY"]
@@ -926,10 +953,13 @@ class ModelCatalogEntryView(ApiModel):
     pricing_doc_url: str = ""
     billing_profile: str | None = None
     price_items: list[PriceItemView] = Field(default_factory=list)
+    # 0 = do not pre-fill the admin timeout field (form keeps its kind default).
+    suggested_timeout_ms: int = 0
+    generation_kind: MediaGenerationKind = MediaGenerationKind.CREATE
 
 
 class VendorCatalogView(ApiModel):
-    vendor: Literal["aihubmix", "dmxapi"]
+    vendor: Literal["aihubmix", "dmxapi", "metaso", "fal"]
     label: str
     base_url: str
     models: list[ModelCatalogEntryView] = Field(default_factory=list)
@@ -956,7 +986,11 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     # `kind="media"` only. Null lets the domain schema infer from modalities.
     protocol: MediaProtocol | None = None
     max_concurrency: int = Field(default=4, ge=1, le=256)
-    timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
+    timeout_ms: int = Field(
+        default=LLM_ENDPOINT_TIMEOUT_MS_DEFAULT,
+        ge=1_000,
+        le=LLM_ENDPOINT_TIMEOUT_MS_MAX,
+    )
     enabled: bool = True
     context_length: int = Field(default=0, ge=0, le=100_000_000)
     max_output_tokens: int = Field(default=0, ge=0, le=10_000_000)
@@ -967,6 +1001,11 @@ class LlmProviderEndpointUpsertRequest(ApiModel):
     # model. Free-form and unvalidated against a fixed vocabulary here —
     # only `app.domain.costs.service` treats one specific value specially.
     billing_profile: str | None = Field(default=None, max_length=64)
+    generation_kind: MediaGenerationKind = MediaGenerationKind.CREATE
+    # `kind="media"` only: which `text -> audio` capability to derive when
+    # the modalities alone are ambiguous between voice TTS/clone and
+    # music/SFX — see `AudioGenerationKind`. Ignored otherwise.
+    audio_generation_kind: AudioGenerationKind = AudioGenerationKind.VOICE
 
 
 class PromptSlotView(ApiModel):

@@ -27,11 +27,34 @@ IMAGE_OPERATIONS: frozenset[Operation] = frozenset(
     {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
 )
 
-# Fixed voice roster for `audio_generation`, mirrored by the creative studio's
-# voice picker and passed through verbatim to the AiHubMix `/v1/audio/speech`
-# call. Not config-centre material: changing the provider's own voice ids
-# means a code change either way, so a constant is honest about that.
-AUDIO_VOICES: frozenset[str] = frozenset({"alloy", "echo", "fable", "onyx", "nova", "shimmer"})
+# `audio_generation`'s voice id is deliberately *not* a fixed enum here any
+# more — once DMXAPI's `tts-pro` (dozens of Chinese emotional voices) and
+# AiHubMix's Gemini voices are both reachable through the same operation,
+# the legal set is "whichever voice ids the chosen model/provider actually
+# has", which only the studio's per-model picker knows. This schema only
+# checks the shape (non-empty, bounded length) — see `validate_generation_
+# params`'s `AUDIO_GENERATION` branch below. A provider that gets a voice id
+# it doesn't recognize fails the call itself; that is not this schema's job
+# to pre-empt.
+AUDIO_VOICE_MAX_LENGTH = 60
+# At most one reference asset for `audio_generation`: the voice-clone sample
+# (`MediaType.AUDIO`, see `media.service.validate_generation_references`) —
+# never more than one, since a clone call takes exactly one reference voice.
+AUDIO_CLONE_MAX_REFERENCES = 1
+# `music_generation`'s `extra.audio_style` sub-mode switch — see
+# `Operation.MUSIC_GENERATION`'s own docstring in `app.models.enums` for why
+# this is a second sub-mode field rather than a third operation.
+MUSIC_STYLES = frozenset({"music", "sfx"})
+# ElevenLabs Sound Effects V2 (`fal_media.py::FAL_SFX_MODEL`) is the one
+# adapted music/SFX model that takes an explicit, billable duration
+# (0.5-22s per its own docs) — MiniMax Music 2.6 and DMXAPI's music-3.0 take
+# none. `duration_seconds` is optional for `audio_style="sfx"`: 0 (the
+# `GenerationParams` default) means "let the model decide", same convention
+# `apply_sandbox_generation_defaults` uses for a video's own duration. Only
+# enforced when a caller actually sets one, so a client that never learned
+# about this window still gets a working default-length effect.
+MUSIC_SFX_MIN_DURATION_SECONDS = 1
+MUSIC_SFX_MAX_DURATION_SECONDS = 22
 VIDEO_OPERATIONS: frozenset[Operation] = frozenset(
     {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
 )
@@ -43,9 +66,8 @@ VIDEO_OPERATIONS: frozenset[Operation] = frozenset(
 # aspect ratios and wan2.7-videoedit's narrower 2–10s/five aspect ratios),
 # wide enough that neither profile's legal values get wrongly rejected here.
 # Fine-grained per-model legality is enforced later, per routing candidate,
-# by `router._request_constraint_failure` — a value that clears this gate but
-# doesn't fit the model the router eventually picks simply narrows which
-# providers are eligible, it never reaches a provider that can't honour it.
+# by `router._request_constraint_failure` (duration/aspect/reference-mode
+# still eliminate; resolution is adapted downward on the final model).
 VIDEO_MIN_DURATION_SECONDS = 2
 VIDEO_MAX_DURATION_SECONDS = 15
 VIDEO_ASPECT_RATIOS: frozenset[str] = frozenset(
@@ -57,6 +79,23 @@ VIDEO_ASPECT_RATIOS: frozenset[str] = frozenset(
 DEFAULT_SANDBOX_VIDEO_DURATION_SECONDS = 8
 
 
+def _frame_images_conflict_message(
+    references: Sequence[str],
+    characters: Sequence[str],
+    scenes: Sequence[str],
+) -> str:
+    """Names only the reference kinds that actually collided with first/last frames."""
+    conflicts: list[str] = []
+    if references:
+        conflicts.append("普通参考素材")
+    if characters:
+        conflicts.append("角色参考")
+    if scenes:
+        conflicts.append("场景参考")
+    joined = "、".join(conflicts)
+    return f"首尾帧不能与{joined}同时使用。请取消首尾帧，或改回图片/视频参考。"
+
+
 class VideoGenerationOptions(ApiModel):
     """Typed native-video options; arbitrary provider JSON and webhooks are
     forbidden. `resolution` is a clarity *tier* the client picks — not any
@@ -66,15 +105,14 @@ class VideoGenerationOptions(ApiModel):
     picking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5
     -260628`, `wan2.7-videoedit` — actually compete for the same request
     instead of being mutually invisible over a spelling difference).
-    `app.providers.base.resolve_resolution_tier` is where a tier gets turned
-    into the specific literal a chosen candidate's own vocabulary needs,
-    both at `router.route()`'s hard-filter/costing stage and again in
-    `app.workflows.nodes.execute_provider_generate` right before the actual
-    provider call — this schema never sees or validates a vendor's raw
-    spelling directly. A tier with no member in the eventually-picked
-    candidate's `ProviderCapability.resolutions` narrows which providers are
-    eligible (`router._request_constraint_failure`); it never reaches a
-    provider that can't honour it."""
+    `app.providers.base.adapt_resolution_tier` is where a tier becomes a
+    ceiling on the *final* model: exact match if that candidate has it,
+    otherwise the highest strictly lower supported tier (never a raise to
+    2K from 1080p), and only as a last resort the model's lowest tier so
+    the job still runs. Costing and `execute_provider_generate` both send
+    the adapted vendor literal. This schema never sees a vendor's raw
+    spelling. A candidate whose `resolutions` map to no studio tier at all
+    is the only remaining `resolution_not_supported` hard filter."""
 
     # Omitted on a video remix so the router does not default-filter
     # cheaper video-edit models whose vendor spelling isn't in this tier.
@@ -143,8 +181,10 @@ def validate_generation_params(
         and operation not in VIDEO_OPERATIONS
     ):
         raise ValueError("video_asset_kind 仅适用于视频生成。")
-    if forced_model and operation not in IMAGE_OPERATIONS | VIDEO_OPERATIONS:
-        raise ValueError("forced_model 仅适用于图片创作/视频创作。")
+    if forced_model and operation not in IMAGE_OPERATIONS | VIDEO_OPERATIONS | {
+        Operation.AUDIO_GENERATION
+    }:
+        raise ValueError("forced_model 仅适用于图片创作/视频创作/音频创作。")
     if operation in VIDEO_OPERATIONS and duration_seconds <= 0:
         raise ValueError("视频生成必须指定时长。")
     if operation not in VIDEO_OPERATIONS and video_options is not None:
@@ -160,7 +200,7 @@ def validate_generation_params(
             if not video_options.first_frame_asset_id:
                 raise ValueError("首尾帧模式必须提供首帧图片。")
             if references or characters or scenes:
-                raise ValueError("首尾帧与普通参考素材、角色参考图、场景参考图互斥。")
+                raise ValueError(_frame_images_conflict_message(references, characters, scenes))
             if operation != Operation.IMAGE_TO_VIDEO:
                 raise ValueError("首尾帧模式必须使用 image_to_video 操作。")
         elif video_options.first_frame_asset_id or video_options.last_frame_asset_id:
@@ -176,9 +216,39 @@ def validate_generation_params(
     # Whether the client calls this `text_to_image` or `image_to_image` is a
     # runtime detail, not a different validation regime.
     if operation == Operation.AUDIO_GENERATION:
+        if len(references) > AUDIO_CLONE_MAX_REFERENCES:
+            raise ValueError("音频生成最多只能提供 1 段声音克隆参考音频。")
         voice = extras.get("voice")
-        if voice not in AUDIO_VOICES:
-            raise ValueError(f"音频生成必须指定音色，可选: {sorted(AUDIO_VOICES)}。")
+        has_valid_voice = isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        # A clone reference stands in for a named voice — the reference audio
+        # itself carries the identity, so `voice` becomes optional once one
+        # is attached (some clone models still take an optional style/voice
+        # hint alongside it, but never require it).
+        if not has_valid_voice and not references:
+            raise ValueError("音频生成必须指定音色，或提供声音克隆参考音频。")
+    if operation == Operation.MUSIC_GENERATION:
+        # No reference asset of any kind — v1 is a plain text-to-music/SFX
+        # call (`media.service.validate_generation_references` enforces the
+        # media-type-agnostic half of this rejection once one is attached;
+        # this is the shape check that runs before that ownership lookup).
+        if references:
+            raise ValueError("音乐/音效生成不支持参考素材。")
+        audio_style = extras.get("audio_style")
+        if audio_style not in MUSIC_STYLES:
+            raise ValueError("音乐生成必须指定 audio_style：music 或 sfx。")
+        if (
+            audio_style == "sfx"
+            and duration_seconds
+            and not (
+                MUSIC_SFX_MIN_DURATION_SECONDS
+                <= duration_seconds
+                <= MUSIC_SFX_MAX_DURATION_SECONDS
+            )
+        ):
+            raise ValueError(
+                f"音效时长必须为 {MUSIC_SFX_MIN_DURATION_SECONDS}-"
+                f"{MUSIC_SFX_MAX_DURATION_SECONDS} 秒。"
+            )
     if operation == Operation.VIDEO_ANALYSIS and len(references) != 1:
         raise ValueError("视频解析必须提供且仅提供一段待解析的参考视频。")
 
@@ -392,10 +462,25 @@ class GenerationModelOption(ApiModel):
     with `forced_model_unavailable`. `label` is display-only, best-effort
     from `app.providers.model_catalog`'s curated catalogue; falls back to
     `model` itself when no catalogue entry matches.
+
+    `resolutions` / `default_resolution` are client-facing studio tiers
+    (`480p`/`720p`/`1080p`/`2K`), never a vendor spelling such as `768P`.
+    `None` on `resolutions` means unrestricted (or a non-video operation).
+    The studio keeps the user's pick as a ceiling and only previews the
+    adapted tier locally; `request_json.resolution` is not rewritten.
+
+    `voices` (`audio_generation` only) is this model's discrete preset-voice
+    roster from `app.providers.model_catalog.voices_for_model` — `None`
+    means either a non-audio operation or a clone-only model with no fixed
+    roster (the studio's clone tab then takes over instead of a voice
+    `Select`).
     """
 
     model: str
     label: str
+    resolutions: list[Literal["480p", "720p", "1080p", "2K"]] | None = None
+    default_resolution: Literal["480p", "720p", "1080p", "2K"] | None = None
+    voices: list[str] | None = None
 
 
 class GenerationModelListResponse(ApiModel):
@@ -632,8 +717,8 @@ class UploadPresignRequest(ApiModel):
     purpose: str = Field(
         pattern=(
             r"^(generation_reference|avatar|profile_cover|consent_evidence|learn_media"
-            r"|style_gallery_cover|series_logo|video_analysis_source|editor_source"
-            r"|editor_export|caption|font)$"
+            r"|style_gallery_cover|series_logo|episode_preview|video_analysis_source|editor_source"
+            r"|editor_export|caption|font|voice_sample)$"
         )
     )
 

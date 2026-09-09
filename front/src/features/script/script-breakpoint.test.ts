@@ -9,8 +9,13 @@ import {
   breakpointOrdinalInScene,
   breakpointSegmentBlocks,
   buildBreakpointVideoHref,
+  dubbedDialogueKeys,
   indexBreakpointVideos,
+  locateBreakpoint,
   orderedBreakpointKeys,
+  parseBreakpointQueryKey,
+  parseScriptDraftId,
+  parseScriptEpisodeId,
   previousBoundVideoAssetId,
   resolveBreakpointHref,
   trailingBreakpoint,
@@ -42,6 +47,22 @@ const document = (scenes: ScriptScene[]): ScriptDocument => ({
   scenes,
 });
 
+describe('clip-route id parsers', () => {
+  it('accepts a well-formed episode / draft id and rejects junk', () => {
+    expect(parseScriptEpisodeId('dep_01ABCDEFGH')).toBe('dep_01ABCDEFGH');
+    expect(parseScriptEpisodeId('dep_' + 'A'.repeat(50))).toBeUndefined();
+    expect(parseScriptEpisodeId('usr_1')).toBeUndefined();
+    expect(parseScriptDraftId('drf_abc')).toBe('drf_abc');
+    expect(parseScriptDraftId('job_abc')).toBeUndefined();
+  });
+
+  it('requires a heading#ordinal key', () => {
+    expect(parseBreakpointQueryKey('雨巷#0')).toBe('雨巷#0');
+    expect(parseBreakpointQueryKey('雨巷')).toBeUndefined();
+    expect(parseBreakpointQueryKey('')).toBeUndefined();
+  });
+});
+
 describe('breakpointKey / ordinal', () => {
   it('joins heading and 0-based ordinal', () => {
     expect(breakpointKey('内景 值班室', 0)).toBe('内景 值班室#0');
@@ -64,56 +85,37 @@ describe('breakpointKey / ordinal', () => {
 });
 
 describe('buildBreakpointVideoHref', () => {
-  it('includes linkEpisodeId and linkBreakpointKey', () => {
+  it('points at the clip studio with only episode id and key', () => {
     const href = buildBreakpointVideoHref({
       episodeId: 'dep_1',
       key: '内景 值班室#0',
       characterIds: ['sk_char'],
       sceneId: 'sk_scene',
-      prompt: '值班室',
     });
     expect(href).toBeDefined();
+    expect(href!.startsWith('/create/script/dep_1/clip?')).toBe(true);
     const query = new URLSearchParams(href!.split('?')[1]);
-    expect(query.get('mode')).toBe('video_creation');
-    expect(query.get('linkEpisodeId')).toBe('dep_1');
-    expect(query.get('linkBreakpointKey')).toBe('内景 值班室#0');
-    expect(query.get('referenceCharacterIds')).toBe('sk_char');
-    expect(query.get('referenceSceneIds')).toBe('sk_scene');
-    expect(query.get('prompt')).toBe('值班室');
+    expect(query.get('key')).toBe('内景 值班室#0');
+    expect(query.has('prompt')).toBe(false);
+    expect(query.has('mode')).toBe(false);
   });
 
-  it('returns undefined when the segment has no character or scene refs', () => {
-    expect(
-      buildBreakpointVideoHref({
-        episodeId: 'dep_1',
-        key: '场#0',
-        characterIds: [],
-        sceneId: null,
-        prompt: 'x',
-      }),
-    ).toBeUndefined();
+  it('stays clickable when the segment has no character or scene refs', () => {
+    const href = buildBreakpointVideoHref({
+      episodeId: 'dep_1',
+      key: '场#0',
+      characterIds: [],
+      sceneId: null,
+    });
+    expect(href).toBe('/create/script/dep_1/clip?key=%E5%9C%BA%230');
   });
 
-  it('carries continuityAssetId through to the query string when given', () => {
+  it('never auto-attaches a previous clip as a first frame', () => {
     const href = buildBreakpointVideoHref({
       episodeId: 'dep_1',
       key: '场#1',
       characterIds: ['sk_char'],
       sceneId: null,
-      prompt: 'x',
-      continuityAssetId: 'ast_prev',
-    });
-    const query = new URLSearchParams(href!.split('?')[1]);
-    expect(query.get('continuityAssetId')).toBe('ast_prev');
-  });
-
-  it('omits continuityAssetId when not given', () => {
-    const href = buildBreakpointVideoHref({
-      episodeId: 'dep_1',
-      key: '场#0',
-      characterIds: ['sk_char'],
-      sceneId: null,
-      prompt: 'x',
     });
     const query = new URLSearchParams(href!.split('?')[1]);
     expect(query.has('continuityAssetId')).toBe(false);
@@ -141,6 +143,23 @@ describe('orderedBreakpointKeys', () => {
   it('omits a scene with neither a real breakpoint nor shootable tail copy', () => {
     const empty: ScriptScene = { heading: '空场', ref_id: null, blocks: [] };
     expect(orderedBreakpointKeys(document([empty]))).toEqual([]);
+  });
+});
+
+describe('locateBreakpoint', () => {
+  it('finds a real breakpoint and a trailing closer', () => {
+    const open: ScriptScene = {
+      heading: '监听室',
+      ref_id: null,
+      blocks: [
+        { type: 'breakpoint', character: null, text: 'cut' },
+        { type: 'action', character: null, text: '开门' },
+      ],
+    };
+    const doc = document([open]);
+    expect(locateBreakpoint(doc, '监听室#0')?.blockIndex).toBe(0);
+    expect(locateBreakpoint(doc, '监听室#1')?.blockIndex).toBe(2);
+    expect(locateBreakpoint(doc, '不存在#0')).toBeNull();
   });
 });
 
@@ -190,7 +209,7 @@ describe('resolveBreakpointHref', () => {
         binding: { draftId: 'drf_abc', latestJobId: 'job_abc', outputAssetId: 'ast_1' },
       }),
     ).toEqual({
-      href: '/create/new?mode=video_creation&draftId=drf_abc',
+      href: '/create/script/dep_1/clip?key=%E5%9C%BA%230&draftId=drf_abc',
       viewGenerated: true,
     });
   });
@@ -206,7 +225,7 @@ describe('resolveBreakpointHref', () => {
         binding: { draftId: 'drf_abc', latestJobId: null, outputAssetId: null },
       }),
     ).toEqual({
-      href: '/create/new?mode=video_creation&draftId=drf_abc',
+      href: '/create/script/dep_1/clip?key=%E5%9C%BA%230&draftId=drf_abc',
       viewGenerated: false,
     });
   });
@@ -220,8 +239,19 @@ describe('resolveBreakpointHref', () => {
       prompt: 'x',
     });
     expect(resolved.viewGenerated).toBe(false);
-    expect(resolved.href).toContain('/create/new?');
-    expect(resolved.href).toContain('linkEpisodeId=dep_1');
+    expect(resolved.href).toContain('/create/script/dep_1/clip?');
+    expect(resolved.href).toContain('key=');
+  });
+
+  it('still offers the clip studio when the cut has no linked scene or cast', () => {
+    const resolved = resolveBreakpointHref({
+      episodeId: 'dep_1',
+      key: '场#4',
+      characterIds: [],
+      sceneId: null,
+    });
+    expect(resolved.viewGenerated).toBe(false);
+    expect(resolved.href).toBe('/create/script/dep_1/clip?key=%E5%9C%BA%234');
   });
 });
 
@@ -281,6 +311,55 @@ describe('indexBreakpointVideos', () => {
       [open],
     );
     expect(indexed['雷达峰顶#0']?.latestJobId).toBe('job_1');
+  });
+
+  it('never binds an audio_generation draft onto a breakpoint, even with a matching key', () => {
+    // A dubbing draft's `link_breakpoint_key` is `{heading}#L{blockIndex}`
+    // (see `dialogueLineKey`), which cannot collide with `{heading}#
+    // {ordinal}` — but this also guards the (impossible today, cheap to
+    // keep guarding) case of an operation writing an ordinal-shaped key.
+    const indexed = indexBreakpointVideos(
+      [
+        draft({
+          id: 'drf_audio',
+          params: {
+            operation: 'audio_generation',
+            link_breakpoint_key: '值班室#0',
+            prompt: '值班室，海拔两千米',
+          },
+        }),
+      ],
+      [scene('值班室', 1)],
+    );
+    expect(indexed['值班室#0']).toBeUndefined();
+  });
+
+  it('still binds a text_to_video draft whose params say so explicitly', () => {
+    const indexed = indexBreakpointVideos(
+      [draft({ params: { operation: 'text_to_video', link_breakpoint_key: '值班室#0' } })],
+      [scene('值班室', 1)],
+    );
+    expect(indexed['值班室#0']?.latestJobId).toBe('job_1');
+  });
+});
+
+describe('dubbedDialogueKeys', () => {
+  it('collects link_breakpoint_key from audio_generation drafts only', () => {
+    const keys = dubbedDialogueKeys([
+      draft({
+        params: { operation: 'audio_generation', link_breakpoint_key: '公寓客厅#L1' },
+      }),
+      draft({
+        id: 'drf_video',
+        params: { operation: 'text_to_video', link_breakpoint_key: '公寓客厅#0' },
+      }),
+      draft({ id: 'drf_no_key', params: { operation: 'audio_generation' } }),
+    ]);
+    expect(keys).toEqual(new Set(['公寓客厅#L1']));
+  });
+
+  it('returns an empty set for no drafts', () => {
+    expect(dubbedDialogueKeys([])).toEqual(new Set());
   });
 });
 

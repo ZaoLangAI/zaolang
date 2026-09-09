@@ -11,20 +11,26 @@ import pytest
 from app.models.enums import Operation
 from app.providers.base import GenerationRequest, ProviderReference
 from app.providers.dmxapi_media import (
+    AUDIO_MODEL_GPT4O_MINI_TTS,
+    AUDIO_MODEL_TTS_PRO,
     DOUBAO_SEEDANCE_25_MODEL,
     MINIMAX_H3_MODEL,
     MINIMAX_H3_REGENERATION_MODEL,
+    MUSIC_MODEL_DMX,
     SEEDREAM_5_PRO_MODEL,
     WAN3_VIDEO_MODEL,
     DmxApiMediaProvider,
     _build_minimax_h3_body,
     _build_minimax_h3_regeneration_body,
+    _build_music_body,
     _build_seedance_25_video_body,
     _build_seedream_body,
     _build_wan3_body,
+    extract_music_result,
     extract_seedream_result,
     extract_task_id,
     image_model_profile,
+    probe_music_body,
     video_model_profile,
 )
 from app.storage import s3
@@ -423,6 +429,66 @@ def test_poll_minimax_h3_stays_pending_while_running(monkeypatch: pytest.MonkeyP
     assert result.succeeded is False
 
 
+def _poll_error_response(status_code: int, *, json_body: dict | None = None, text: str = "") -> httpx.Response:
+    request = httpx.Request("POST", "https://www.dmxapi.cn/v1/responses")
+    if json_body is not None:
+        return httpx.Response(status_code, json=json_body, request=request)
+    return httpx.Response(status_code, text=text, request=request)
+
+
+def test_poll_minimax_h3_upstream_error_502_is_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _poll_error_response(
+            502,
+            json_body={
+                "error": {
+                    "message": "MiniMax-H3 video generation task failed",
+                    "type": "dmxapi_api_error",
+                    "param": "input",
+                    "code": "dmxapi_upstream_error",
+                }
+            },
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, MINIMAX_H3_MODEL)
+    result = provider.poll("437661478302096", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.pending is False
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_TASK_FAILED"
+    assert result.metadata["detail"] == "MiniMax-H3 video generation task failed"
+
+
+def test_poll_minimax_h3_empty_502_stays_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _poll_error_response(502, text="")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, MINIMAX_H3_MODEL)
+    result = provider.poll("task-empty-502", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.pending is True
+    assert result.succeeded is False
+    assert result.failure_code is None
+
+
+def test_poll_minimax_h3_read_timeout_stays_pending(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        raise httpx.ReadTimeout(
+            "The read operation timed out",
+            request=httpx.Request("POST", "https://www.dmxapi.cn/v1/responses"),
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, MINIMAX_H3_MODEL)
+    result = provider.poll("task-timeout", _request(Operation.TEXT_TO_VIDEO.value))
+
+    assert result.pending is True
+    assert result.succeeded is False
+    assert result.failure_code is None
+
+
 def test_poll_seedance_downloads_the_finished_video(monkeypatch: pytest.MonkeyPatch) -> None:
     video_bytes = b"seedance-mp4-bytes"
     video_url = "https://ark-acg-cn-bejing.tos-cn-beijing.volces.com/out.mp4"
@@ -558,3 +624,198 @@ def test_submit_seedream_image_missing_result_is_a_provider_failure(
 
 def test_cancel_is_always_unsupported() -> None:
     assert _provider(Operation.TEXT_TO_VIDEO.value, MINIMAX_H3_MODEL).cancel("task-1") is False
+
+
+# -- provider submit(): audio (synchronous) ----------------------------------
+
+
+def test_submit_gpt4o_mini_tts_stores_the_raw_response_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    audio_bytes = b"\xff\xfbfake-mp3-payload"
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/audio/speech"
+        assert kwargs["json"] == {
+            "model": AUDIO_MODEL_GPT4O_MINI_TTS,
+            "input": "一只在雨夜霓虹街道上奔跑的机械狐狸",
+            "voice": "nova",
+            "response_format": "mp3",
+        }
+        return _FakeResponse(content=audio_bytes)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.AUDIO_GENERATION.value, AUDIO_MODEL_GPT4O_MINI_TTS)
+    result = provider.submit(
+        _request(Operation.AUDIO_GENERATION.value, extra={"voice": "nova"})
+    )
+
+    assert result.succeeded is True
+    assert result.mime_type == "audio/mpeg"
+    assert s3.get_object(result.object_key) == audio_bytes
+
+
+def test_submit_tts_pro_forwards_the_emotion_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    audio_bytes = b"tts-pro-mp3-bytes"
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/audio/speech"
+        assert kwargs["json"] == {
+            "model": AUDIO_MODEL_TTS_PRO,
+            "input": "一只在雨夜霓虹街道上奔跑的机械狐狸",
+            "voice": "京腔小爷",
+            "response_format": "mp3",
+            "emotion": "happy",
+        }
+        return _FakeResponse(content=audio_bytes)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.AUDIO_GENERATION.value, AUDIO_MODEL_TTS_PRO)
+    result = provider.submit(
+        _request(
+            Operation.AUDIO_GENERATION.value,
+            extra={"voice": "京腔小爷", "emotion": "happy"},
+        )
+    )
+
+    assert result.succeeded is True
+    assert s3.get_object(result.object_key) == audio_bytes
+
+
+def test_submit_tts_pro_without_emotion_omits_the_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert "emotion" not in kwargs["json"]
+        return _FakeResponse(content=b"bytes")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.AUDIO_GENERATION.value, AUDIO_MODEL_TTS_PRO)
+    result = provider.submit(
+        _request(Operation.AUDIO_GENERATION.value, extra={"voice": "柔美女友"})
+    )
+
+    assert result.succeeded is True
+
+
+def test_submit_audio_falls_back_to_a_default_voice_when_the_caller_omits_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["json"]["voice"] == "alloy"
+        return _FakeResponse(content=b"bytes")
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.AUDIO_GENERATION.value, AUDIO_MODEL_GPT4O_MINI_TTS)
+    result = provider.submit(_request(Operation.AUDIO_GENERATION.value, extra={}))
+
+    assert result.succeeded is True
+
+
+# -- request builder / response parsing: music-3.0 ---------------------------
+
+
+def test_build_music_body_omits_lyrics_by_default() -> None:
+    body = _build_music_body(
+        _request(Operation.MUSIC_GENERATION.value, prompt="轻快的夏日民谣")
+    )
+    assert body == {
+        "model": MUSIC_MODEL_DMX,
+        "input": "轻快的夏日民谣",
+        "is_instrumental": False,
+    }
+
+
+def test_build_music_body_carries_lyrics_when_not_instrumental() -> None:
+    body = _build_music_body(
+        _request(
+            Operation.MUSIC_GENERATION.value,
+            prompt="轻快的夏日民谣",
+            extra={"lyrics": "[Verse]\n夏天的风吹过海岸"},
+        )
+    )
+    assert body["lyrics"] == "[Verse]\n夏天的风吹过海岸"
+
+
+def test_build_music_body_instrumental_omits_lyrics_even_if_provided() -> None:
+    body = _build_music_body(
+        _request(
+            Operation.MUSIC_GENERATION.value,
+            extra={"is_instrumental": True, "lyrics": "should be dropped"},
+        )
+    )
+    assert body["is_instrumental"] is True
+    assert "lyrics" not in body
+
+
+def test_probe_music_body_is_a_plain_instrumental_request() -> None:
+    body = probe_music_body()
+    assert body["model"] == MUSIC_MODEL_DMX
+    assert body["is_instrumental"] is True
+
+
+def test_extract_music_result_reads_output_text_and_extra_info_duration() -> None:
+    url, duration_ms = extract_music_result(
+        {
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "https://cdn.invalid/song.mp3"}]}
+            ],
+            "extra_info": {"music_duration": 32000},
+        }
+    )
+    assert url == "https://cdn.invalid/song.mp3"
+    assert duration_ms == 32000
+
+
+def test_extract_music_result_falls_back_to_seedream_shape() -> None:
+    url, duration_ms = extract_music_result({"data": [{"url": "https://cdn.invalid/song.mp3"}]})
+    assert url == "https://cdn.invalid/song.mp3"
+    assert duration_ms is None
+
+
+def test_submit_music_downloads_and_stores_the_finished_clip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    music_bytes = b"fake-mp3-song-bytes"
+    music_url = "https://cdn.invalid/song.mp3"
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == "/v1/responses"
+        assert kwargs["json"] == {
+            "model": MUSIC_MODEL_DMX,
+            "input": "一只在雨夜霓虹街道上奔跑的机械狐狸",
+            "is_instrumental": True,
+        }
+        return _FakeResponse(
+            json_body={
+                "output": [
+                    {"type": "message", "content": [{"type": "output_text", "text": music_url}]}
+                ],
+                "extra_info": {"music_duration": 45000},
+            }
+        )
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert url == music_url
+        return _FakeResponse(content=music_bytes)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.MUSIC_GENERATION.value, MUSIC_MODEL_DMX)
+    result = provider.submit(
+        _request(Operation.MUSIC_GENERATION.value, extra={"is_instrumental": True})
+    )
+
+    assert result.succeeded is True
+    assert result.pending is False
+    assert result.mime_type == "audio/mpeg"
+    assert result.duration_ms == 45000
+    assert s3.get_object(result.object_key) == music_bytes
+
+
+def test_submit_music_missing_url_is_a_provider_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        return _FakeResponse(json_body={})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.MUSIC_GENERATION.value, MUSIC_MODEL_DMX)
+    result = provider.submit(_request(Operation.MUSIC_GENERATION.value))
+
+    assert result.succeeded is False
+    assert result.failure_code == "PROVIDER_INVALID_RESPONSE"

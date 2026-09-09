@@ -23,6 +23,12 @@ const AudioGenerationStudio = dynamic(
   { loading: () => <StudioSkeleton /> },
 );
 
+const MusicGenerationStudio = dynamic(
+  () =>
+    import('@/components/studio/music-generation-studio').then((mod) => mod.MusicGenerationStudio),
+  { loading: () => <StudioSkeleton /> },
+);
+
 type ImageAssetKind = 'general' | 'character' | 'scene' | 'cover';
 type VideoAssetKind = 'general' | 'character_action' | 'transition_video' | 'cover_video';
 type LinkKind = 'character' | 'scene';
@@ -54,8 +60,10 @@ export function CreateStudio({
   linkEpisodeId,
   linkBreakpointKey,
   continuitySourceAssetId,
+  initialSkillId,
+  initialReferenceAssetIds,
 }: {
-  operation: 'text_to_image' | 'text_to_video' | 'audio_generation';
+  operation: 'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation';
   initialPrompt?: string;
   reference?: WorkDetail;
   initialDraft?: Draft;
@@ -77,9 +85,16 @@ export function CreateStudio({
   /** The previous script breakpoint's already-generated video, if any — see
    * `VideoGenerationStudio`'s own doc comment. */
   continuitySourceAssetId?: string;
+  initialSkillId?: string;
+  /** Reference images handed over by a deep link — the canvas turns an edge
+   * from a picture card into this. */
+  initialReferenceAssetIds?: string[];
 }) {
   if (operation === 'audio_generation') {
     return <AudioGenerationStudio initialPrompt={initialPrompt} reference={reference} />;
+  }
+  if (operation === 'music_generation') {
+    return <MusicGenerationStudio initialPrompt={initialPrompt} />;
   }
   if (operation === 'text_to_image') {
     return (
@@ -96,6 +111,8 @@ export function CreateStudio({
         returnLinkKind={returnLinkKind}
         returnLinkLabel={returnLinkLabel}
         linkEpisodeId={linkEpisodeId}
+        initialSkillId={initialSkillId}
+        initialReferenceAssetIds={initialReferenceAssetIds}
       />
     );
   }
@@ -116,6 +133,7 @@ export function CreateStudio({
       linkEpisodeId={linkEpisodeId}
       linkBreakpointKey={linkBreakpointKey}
       continuitySourceAssetId={continuitySourceAssetId}
+      initialSkillId={initialSkillId}
     />
   );
 }

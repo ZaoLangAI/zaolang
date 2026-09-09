@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.enums import Operation, QualityTier
+from app.models.enums import AudioGenerationKind, MediaGenerationKind, Operation, QualityTier
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,15 @@ MAX_GENERATION_DURATION_SECONDS = 30
 # with a doubled budget (see `LlmProviderEndpoint.expand_output_budget`)
 # rather than being left to think for however long the full ceiling allows.
 REASONING_THINKING_MARGIN_TOKENS = 4096
+
+# Sync image generation regularly exceeds the old 30s HTTP default (a live
+# Seedream call finished in 34s after we had already hung up). Video stays
+# create-then-poll, so its endpoints keep the 1s floor. gpt-image-2 can take
+# more than 5 minutes; the 600s ceiling matches AiHubMix's recommended
+# client timeout and still sits under Celery's image hard limit (720s).
+LLM_ENDPOINT_TIMEOUT_MS_DEFAULT = 90_000
+LLM_ENDPOINT_TIMEOUT_MS_MAX = 600_000
+MEDIA_IMAGE_TIMEOUT_MS_MIN = 90_000
 
 
 class ConfigSection(BaseModel):
@@ -174,6 +183,12 @@ class FeatureFlags(ConfigSection):
     # tool card, and `POST /v1/generation-jobs` for `operation=video_analysis`
     # (same "off means 404/hidden" staged-rollout shape as `script_studio_enabled`).
     video_analysis_enabled: bool = False
+    # Gates the infinite canvas end to end: the `/create` tool card, the
+    # `/v1/canvas-projects` routes, and the series-detail "画布视图" entry.
+    # Its own flag rather than a sub-flag of the editor — the canvas is a
+    # parallel creation surface, not part of the timeline editor, and a free
+    # sandbox canvas touches no drama series at all.
+    canvas_studio_enabled: bool = False
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
@@ -267,6 +282,7 @@ _CAPABILITY_MODALITY_MAP: dict[Operation, tuple[str, str]] = {
     Operation.VIDEO_TO_VIDEO: ("video", "video"),
     Operation.AUDIO_GENERATION: ("text", "audio"),
     Operation.VIDEO_ANALYSIS: ("video", "text"),
+    Operation.MUSIC_GENERATION: ("text", "audio"),
 }
 
 
@@ -290,27 +306,42 @@ def capabilities_for_modalities(
 
 # HTTP contract names shown in the admin dropdown — not vendor names.
 # AiHubMix's image/audio paths are OpenAI-compatible, so they display as OpenAI.
-# `dmxapi` is the one deliberate exception to "never name a protocol after a
-# vendor": DMXAPI's `/v1/responses` task envelope (synchronous for image
-# capabilities, submit-task + poll for video ones, with a per-model `"{family}
-# -get"` polling model id) is not a shared industry standard the way
-# openai/minimax/dashscope are — it is DMXAPI's own invented convention, so
-# there is no vendor-neutral name to give it.
+# `minimax` is AiHubMix's `/ai/v1/videos` facade; `minimax_v2` is official
+# MiniMax Video V2 (`/v2/video_generation`), which Metaso proxies.
+# `fal` is fal.ai's queue contract (`queue.fal.run/{app}` +
+# `Authorization: Key`). `dmxapi` is the one deliberate exception to
+# "never name a protocol after a vendor": DMXAPI's `/v1/responses` task
+# envelope (synchronous for image capabilities, submit-task + poll for
+# video ones, with a per-model `"{family}-get"` polling model id) is not a
+# shared industry standard the way openai/minimax/dashscope/fal are — it is
+# DMXAPI's own invented convention, so there is no vendor-neutral name to
+# give it.
 MediaProtocol = Literal[
-    "openai", "minimax", "comfyui", "google", "dashscope", "ark", "kling", "dmxapi"
-]
-MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
     "openai",
     "minimax",
+    "minimax_v2",
     "comfyui",
     "google",
     "dashscope",
     "ark",
     "kling",
     "dmxapi",
+    "fal",
+]
+MEDIA_PROTOCOLS: tuple[MediaProtocol, ...] = (
+    "openai",
+    "minimax",
+    "minimax_v2",
+    "comfyui",
+    "google",
+    "dashscope",
+    "ark",
+    "kling",
+    "dmxapi",
+    "fal",
 )
 IMPLEMENTED_MEDIA_PROTOCOLS: frozenset[str] = frozenset(
-    {"openai", "minimax", "dashscope", "dmxapi"}
+    {"openai", "minimax", "minimax_v2", "dashscope", "dmxapi", "fal"}
 )
 # Video joined this set once the OpenAI Videos API track (`/v1/videos`
 # create/retrieve/download_content`) landed in `AiHubMixMediaProvider` — not
@@ -336,6 +367,20 @@ _MINIMAX_CAPABILITIES = frozenset(
         Operation.VIDEO_TO_VIDEO.value,
     }
 )
+# fal.ai used to just borrow `_MINIMAX_CAPABILITIES` (video-only) because the
+# only fal endpoint on file was `minimax/h3-max`. It now also fronts
+# `FAL_VOICE_CLONE_MODEL` (see `app/providers/fal_media.py`), a one-shot
+# reference-audio + text voice clone confirmed against fal's own API docs
+# (queue.fal.run submit/status/result contract, same shape as the video
+# routes) — hence its own capability set, independent of MiniMax's.
+# `music_generation` (`fal_media.py::_MUSIC_MODELS`/`_SFX_MODELS` —
+# `fal-ai/minimax-music/v2.6` for BGM, `fal-ai/elevenlabs/sound-effects/v2`
+# for SFX) joined the same way — confirmed against each model's own fal.ai
+# docs page (2026-09), not yet exercised against a live credential.
+_FAL_CAPABILITIES = _MINIMAX_CAPABILITIES | {
+    Operation.AUDIO_GENERATION.value,
+    Operation.MUSIC_GENERATION.value,
+}
 _COMFYUI_CAPABILITIES = (_OPENAI_CAPABILITIES | _MINIMAX_CAPABILITIES) - {
     Operation.AUDIO_GENERATION.value
 }
@@ -350,8 +395,20 @@ _DASHSCOPE_CAPABILITIES = frozenset({Operation.VIDEO_ANALYSIS.value})
 # covering both single-reference edit and 2-10 image "multi-image fusion")
 # and an async submit+poll video family (`MiniMax-H3`, `doubao-
 # seedance-2-5-260628`, `wan3.0-video`, and `MiniMax-H3`'s video-regeneration
-# mode). No audio-generation endpoint has been confirmed on this protocol yet
-# — don't add `audio_generation` without a real one.
+# mode). `audio_generation` (`dmxapi_media.py::_AUDIO_MODELS` —
+# `gpt-4o-mini-tts`/`tts-1`/`tts-1-hd`/`tts-pro`) is a fourth family, a plain
+# OpenAI-shaped `POST /v1/audio/speech` call outside the `/v1/responses`
+# envelope entirely, sourced from `doc.dmxapi.cn`'s TTS pages — same
+# epistemic status as this protocol's video poll paths (`_POLL_MODEL_BY_
+# VIDEO_MODEL`'s own docstring): written to the published contract, not yet
+# exercised against a live credential. Spot-check against one before
+# depending on it for a real launch. `music_generation`
+# (`dmxapi_media.py::_MUSIC_MODELS` — `music-3.0`) is a fifth family, back
+# on the shared `/v1/responses` envelope (unlike `audio_generation`) but
+# with its own `input`/`lyrics`/`audio_setting` body and a synchronous
+# `state: "completed"` response instead of a submit+poll task — sourced
+# from `doc.dmxapi.cn/music-3.0-text-to-music.html`, same not-yet-live-
+# verified status as everything else in this set.
 _DMXAPI_CAPABILITIES = frozenset(
     {
         Operation.TEXT_TO_IMAGE.value,
@@ -359,30 +416,35 @@ _DMXAPI_CAPABILITIES = frozenset(
         Operation.TEXT_TO_VIDEO.value,
         Operation.IMAGE_TO_VIDEO.value,
         Operation.VIDEO_TO_VIDEO.value,
+        Operation.AUDIO_GENERATION.value,
+        Operation.MUSIC_GENERATION.value,
     }
 )
 PROTOCOL_CAPABILITIES: dict[str, frozenset[str]] = {
     "openai": _OPENAI_CAPABILITIES,
     "minimax": _MINIMAX_CAPABILITIES,
+    "minimax_v2": _MINIMAX_CAPABILITIES,
     "comfyui": _COMFYUI_CAPABILITIES,
     "google": frozenset(),
     "dashscope": _DASHSCOPE_CAPABILITIES,
     "ark": frozenset(),
     "kling": frozenset(),
     "dmxapi": _DMXAPI_CAPABILITIES,
+    "fal": _FAL_CAPABILITIES,
 }
 
 
 def infer_media_protocol(capabilities: Iterable[str]) -> MediaProtocol:
     """Guess the contract for a pre-protocol media endpoint.
 
-    Video-only → MiniMax (the only implemented video-generation path).
-    `video_analysis`-only → DashScope (the only implemented video-in/text-out
-    path — an endpoint predating this capability could never have declared
-    it, so this branch only ever fires for a freshly-created endpoint).
-    Anything else, including mixed image+video leftovers, → OpenAI so the
-    after-validator can reject the mismatch instead of silently picking a
-    vendor.
+    Video-only → MiniMax (the pre-protocol video contract). Do not infer
+    `fal` or `minimax_v2` from capabilities alone — an operator must pick
+    those protocols explicitly. `video_analysis`-only → DashScope (the only
+    implemented video-in/text-out path — an endpoint predating this
+    capability could never have declared it, so this branch only ever fires
+    for a freshly-created endpoint). Anything else, including mixed
+    image+video leftovers, → OpenAI so the after-validator can reject the
+    mismatch instead of silently picking a vendor.
     """
     caps = set(capabilities)
     if caps and caps <= _MINIMAX_CAPABILITIES:
@@ -582,6 +644,21 @@ class VideoAnalysisPricing(ConfigSection):
         return bool(self.per_request_micro_usd)
 
 
+class MusicPricing(ConfigSection):
+    """Billed per generated clip, unlike `AudioPricing`'s per-input-
+    character TTS shape — a music/SFX call has one fixed cost per
+    successful clip regardless of the prompt's length or the clip's
+    rendered duration (see `app.providers.model_catalog`'s fal
+    `minimax-music-2.6`/`elevenlabs/sound-effects` entries, both quoted
+    "$ per generation", not "$ per character")."""
+
+    per_request_micro_usd: int = _MicroUsd
+
+    @property
+    def is_declared(self) -> bool:
+        return bool(self.per_request_micro_usd)
+
+
 class MediaPricing(ConfigSection):
     """The price sections a media endpoint declares.
 
@@ -600,6 +677,7 @@ class MediaPricing(ConfigSection):
     # here forbids declaring both while an operator is mid-edit.
     token_video: TokenVideoPricing | None = None
     video_analysis: VideoAnalysisPricing | None = None
+    music: MusicPricing | None = None
 
 
 # Which pricing section each capability tag bills against.
@@ -611,6 +689,7 @@ _CAPABILITY_PRICING_SECTION: dict[str, str] = {
     Operation.IMAGE_TO_VIDEO.value: "video",
     Operation.VIDEO_TO_VIDEO.value: "video",
     Operation.VIDEO_ANALYSIS.value: "video_analysis",
+    Operation.MUSIC_GENERATION.value: "music",
 }
 
 
@@ -668,7 +747,11 @@ class LlmProviderEndpoint(ConfigSection):
     # values are inferred from modalities so pre-protocol JSON still parses.
     protocol: MediaProtocol | None = None
     max_concurrency: int = Field(default=4, ge=1, le=256)
-    timeout_ms: int = Field(default=30_000, ge=1_000, le=120_000)
+    timeout_ms: int = Field(
+        default=LLM_ENDPOINT_TIMEOUT_MS_DEFAULT,
+        ge=1_000,
+        le=LLM_ENDPOINT_TIMEOUT_MS_MAX,
+    )
     enabled: bool = True
     # `kind="general"` only: what the model can hold and emit. Zero means the
     # operator has not declared it — shown as unknown in admin and treated as
@@ -691,6 +774,19 @@ class LlmProviderEndpoint(ConfigSection):
     # purpose: this schema must not fail to parse an endpoint saved before a
     # new profile id existed, or before this field existed at all.
     billing_profile: str | None = Field(default=None, max_length=64)
+    # `kind="media"` only: whether this model may start a video from text /
+    # a still (`create`) or must already have a video source (`edit`).
+    # Default `create` so endpoints saved before this field keep working.
+    # `kind="general"` ignores it.
+    generation_kind: MediaGenerationKind = MediaGenerationKind.CREATE
+    # `kind="media"` only: which `text -> audio` capability this endpoint's
+    # one `model` actually serves — see `AudioGenerationKind`'s docstring
+    # for why modality alone cannot decide this. Ignored for every endpoint
+    # whose modalities are not ambiguous (e.g. an image or video model), so
+    # leaving it at the default costs nothing there. Default `VOICE` so
+    # every endpoint saved before this field existed keeps deriving
+    # `AUDIO_GENERATION`, unchanged.
+    audio_generation_kind: AudioGenerationKind = AudioGenerationKind.VOICE
 
     @property
     def capabilities(self) -> set[str]:
@@ -707,7 +803,20 @@ class LlmProviderEndpoint(ConfigSection):
         — and only when it declares `"video"` on the input side.
         """
         if self.kind == "media":
-            return capabilities_for_modalities(self.input_modalities, self.output_modalities)
+            derived = capabilities_for_modalities(self.input_modalities, self.output_modalities)
+            audio_pair = {Operation.AUDIO_GENERATION.value, Operation.MUSIC_GENERATION.value}
+            if audio_pair <= derived:
+                # Both derive from the identical `text -> audio` modality
+                # pair (see `AudioGenerationKind`) — one endpoint's one
+                # model can only ever be one of the two, so
+                # `audio_generation_kind` picks which survives.
+                keep = (
+                    Operation.MUSIC_GENERATION.value
+                    if self.audio_generation_kind == AudioGenerationKind.MUSIC
+                    else Operation.AUDIO_GENERATION.value
+                )
+                derived = (derived - audio_pair) | {keep}
+            return derived
         if self.kind == "general" and "video" in self.input_modalities:
             return {Operation.VIDEO_ANALYSIS.value}
         return set()
@@ -774,6 +883,7 @@ class LlmProviderEndpoint(ConfigSection):
                     self.media_pricing.video_analysis if "video" in self.input_modalities else None
                 )
             )
+            self.generation_kind = MediaGenerationKind.CREATE
             return self
         if not self.model:
             raise ValueError("媒体模型必须填写模型名称。")
@@ -812,7 +922,12 @@ class LlmProviderEndpoint(ConfigSection):
             video_analysis=(
                 self.media_pricing.video_analysis if "video_analysis" in priced else None
             ),
+            music=self.media_pricing.music if "music" in priced else None,
         )
+        if "image" in self.output_modalities and self.timeout_ms < MEDIA_IMAGE_TIMEOUT_MS_MIN:
+            raise ValueError(
+                f"生图媒体端点超时不能低于 {MEDIA_IMAGE_TIMEOUT_MS_MIN // 1000} 秒。"
+            )
         return self
 
     @model_validator(mode="before")
@@ -891,6 +1006,8 @@ class LlmProviderConfig(ConfigSection):
             return data
         kept: dict[str, Any] = {}
         for endpoint_id, raw in raw_endpoints.items():
+            if isinstance(raw, dict):
+                raw = _healed_media_timeout(raw)
             try:
                 LlmProviderEndpoint.model_validate(raw)
             except Exception:
@@ -900,6 +1017,25 @@ class LlmProviderConfig(ConfigSection):
                 continue
             kept[endpoint_id] = raw
         return {**data, "endpoints": kept}
+
+
+def _healed_media_timeout(raw: dict[str, Any]) -> dict[str, Any]:
+    """Bumps a stored endpoint's `timeout_ms` up to the image floor if it
+    predates that floor, instead of letting `_drop_invalid_endpoints` drop
+    the whole endpoint. Only applies to endpoints already on disk — an
+    admin submitting a new endpoint below the floor still gets the `after`
+    validator's rejection on `LlmProviderEndpoint` directly."""
+    if raw.get("kind") != "media":
+        return raw
+    output_modalities = raw.get("output_modalities") or []
+    timeout_ms = raw.get("timeout_ms")
+    if (
+        "image" in output_modalities
+        and isinstance(timeout_ms, int)
+        and timeout_ms < MEDIA_IMAGE_TIMEOUT_MS_MIN
+    ):
+        return {**raw, "timeout_ms": MEDIA_IMAGE_TIMEOUT_MS_MIN}
+    return raw
 
 
 CONFIG_SCHEMAS: dict[str, type[ConfigSection]] = {
@@ -928,6 +1064,10 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
             # overall summary, standard = a per-scene breakdown, cinematic =
             # a full shot-by-shot breakdown with transitions.
             Operation.VIDEO_ANALYSIS.value: {"preview": 20, "standard": 50, "cinematic": 120},
+            # Mirrors `app.domain.credits.pricing.DEFAULT_TIER_PRICING` —
+            # see that dict's own comment for why this sits above
+            # `AUDIO_GENERATION` but below every video operation.
+            Operation.MUSIC_GENERATION.value: {"preview": 10, "standard": 25, "cinematic": 60},
         },
         "video_base_seconds": 4,
         "video_per_second_surcharge": {"preview": 4, "standard": 12, "cinematic": 30},

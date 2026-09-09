@@ -32,7 +32,31 @@ from app.providers.dmxapi_media import (
     VideoModelProfile as DmxApiVideoModelProfile,
 )
 from app.providers.dmxapi_media import (
+    music_style_for_model as dmxapi_music_style_for_model,
+)
+from app.providers.dmxapi_media import (
     video_model_profile as dmxapi_video_profile,
+)
+from app.providers.fal_media import (
+    FalMediaProvider,
+)
+from app.providers.fal_media import (
+    VideoModelProfile as FalVideoModelProfile,
+)
+from app.providers.fal_media import (
+    music_style_for_model as fal_music_style_for_model,
+)
+from app.providers.fal_media import (
+    video_model_profile as fal_video_profile,
+)
+from app.providers.minimax_v2_media import (
+    MinimaxV2MediaProvider,
+)
+from app.providers.minimax_v2_media import (
+    VideoModelProfile as MinimaxV2VideoModelProfile,
+)
+from app.providers.minimax_v2_media import (
+    video_model_profile as minimax_v2_video_profile,
 )
 
 # Conservative defaults for a capability with no `ProviderStat` history yet.
@@ -110,11 +134,21 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
             # `openai` (either provider's OpenAI Videos API track) sends none
             # of these fields at all, even for the same model name, so it
             # must not inherit either native adapter's range constraints.
-            video_profile: NativeVideoModelProfile | DmxApiVideoModelProfile | None = None
+            video_profile: (
+                NativeVideoModelProfile
+                | DmxApiVideoModelProfile
+                | MinimaxV2VideoModelProfile
+                | FalVideoModelProfile
+                | None
+            ) = None
             if is_native_video and endpoint.protocol == "minimax":
                 video_profile = native_video_profile(endpoint.model)
             elif is_native_video and endpoint.protocol == "dmxapi":
                 video_profile = dmxapi_video_profile(endpoint.model)
+            elif is_native_video and endpoint.protocol == "minimax_v2":
+                video_profile = minimax_v2_video_profile(endpoint.model)
+            elif is_native_video and endpoint.protocol == "fal":
+                video_profile = fal_video_profile(endpoint.model)
             default_resolution = (
                 video_profile.default_resolution if video_profile is not None else None
             )
@@ -163,6 +197,8 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 reference_modes=_reference_modes_for(
                     endpoint.protocol, endpoint.model, video_profile
                 ),
+                generation_kind=endpoint.generation_kind,
+                music_styles=_music_styles_for(endpoint.protocol, endpoint.model, tag),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
@@ -179,7 +215,11 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
 def _reference_modes_for(
     protocol: str | None,
     model: str,
-    video_profile: NativeVideoModelProfile | DmxApiVideoModelProfile | None,
+    video_profile: NativeVideoModelProfile
+    | DmxApiVideoModelProfile
+    | MinimaxV2VideoModelProfile
+    | FalVideoModelProfile
+    | None,
 ) -> frozenset[str] | None:
     if video_profile is None:
         return None
@@ -189,9 +229,22 @@ def _reference_modes_for(
             if model.strip().lower() == MINIMAX_H3_MODEL
             else frozenset({"input_references"})
         )
-    if protocol == "dmxapi":
+    if protocol in {"dmxapi", "minimax_v2", "fal"}:
         modes = getattr(video_profile, "reference_modes", None)
         return modes or None
+    return None
+
+
+def _music_styles_for(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:
+    """Scoped to `music_generation` only — see `ProviderCapability.
+    music_styles`'s own docstring for why every other capability leaves
+    this `None` (unrestricted)."""
+    if tag != "music_generation":
+        return None
+    if protocol == "dmxapi":
+        return dmxapi_music_style_for_model(model)
+    if protocol == "fal":
+        return fal_music_style_for_model(model)
     return None
 
 
@@ -207,6 +260,24 @@ def _factory(
 ) -> Callable[[], GenerationProvider]:
     if protocol == "dmxapi":
         return lambda: DmxApiMediaProvider(
+            endpoint_id=endpoint_id,
+            capability_tag=capability_tag,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            timeout_ms=timeout_ms,
+        )
+    if protocol == "minimax_v2":
+        return lambda: MinimaxV2MediaProvider(
+            endpoint_id=endpoint_id,
+            capability_tag=capability_tag,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            timeout_ms=timeout_ms,
+        )
+    if protocol == "fal":
+        return lambda: FalMediaProvider(
             endpoint_id=endpoint_id,
             capability_tag=capability_tag,
             model=model,

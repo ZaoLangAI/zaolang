@@ -137,6 +137,16 @@ class Operation(StrEnum):
     IMAGE_TO_VIDEO = "image_to_video"
     VIDEO_TO_VIDEO = "video_to_video"
     AUDIO_GENERATION = "audio_generation"
+    # Background music / sound-effect generation. Deliberately a separate
+    # operation from `AUDIO_GENERATION` rather than a third `voice`-shaped
+    # mode of it: the input shape has no fixed voice at all (`prompt` +
+    # optional `lyrics`/`is_instrumental` in `GenerationParams.extra`, see
+    # `api.schemas.jobs.validate_generation_params`), and the billing shape
+    # is per-clip/per-request (`MusicPricing`), not `AudioPricing`'s
+    # per-input-character TTS rate. `extra.audio_style` (`"music"`/`"sfx"`)
+    # picks which of the two sub-modes a given job renders — see
+    # `zaolang-generation-jobs`.
+    MUSIC_GENERATION = "music_generation"
     # Reads an existing video (via `reference_asset_ids[0]`), writes a
     # structured text breakdown (camera movement / scene / style prompts),
     # not a media asset — the first `Operation` whose output modality is
@@ -277,6 +287,37 @@ class ProviderAttemptStatus(StrEnum):
 class ProviderKind(StrEnum):
     OPEN_WORKFLOW = "open_workflow"
     COMMERCIAL_API = "commercial_api"
+
+
+class MediaGenerationKind(StrEnum):
+    """How a `kind="media"` endpoint is allowed to enter video routing.
+
+    `CREATE` can start from text or a still. `EDIT` needs an existing video
+    source and is hard-filtered out of text-to-video / image-to-video when
+    none is attached — see `app.agents.router._request_constraint_failure`.
+    Stored on `LlmProviderEndpoint`, not a SQLAlchemy column.
+    """
+
+    CREATE = "create"
+    EDIT = "edit"
+
+
+class AudioGenerationKind(StrEnum):
+    """Disambiguates a `kind="media"` endpoint's `text -> audio` shape.
+
+    `AUDIO_GENERATION` (spoken-voice TTS/clone) and `MUSIC_GENERATION`
+    (BGM/SFX) are both, at the raw modality level, `text -> audio` — the
+    same collision `MediaGenerationKind` above resolves for video's
+    create-vs-edit shape. `LlmProviderEndpoint.capabilities` cannot tell
+    them apart from `input_modalities`/`output_modalities` alone (that is
+    exactly the ambiguity this field exists to break), so an operator
+    declares which one this endpoint's one `model` string actually is.
+    `VOICE` is the default so every endpoint saved before this field
+    existed keeps deriving `AUDIO_GENERATION`, unchanged.
+    """
+
+    VOICE = "voice"
+    MUSIC = "music"
 
 
 class LedgerEntryType(StrEnum):

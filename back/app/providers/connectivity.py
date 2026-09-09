@@ -21,15 +21,17 @@ from PIL import Image
 from app.llm import client as llm_client
 from app.models.enums import Operation
 from app.platform_config.schemas import LlmProviderEndpoint
-from app.providers import dmxapi_media
+from app.providers import dmxapi_media, fal_media, minimax_v2_media
 from app.providers.aihubmix_media import (
     build_video_payload,
+    is_gpt_image_2,
     media_client_base,
     media_request_path,
 )
 
 _MEDIA_PROBE_PRIORITY = (
     Operation.AUDIO_GENERATION.value,
+    Operation.MUSIC_GENERATION.value,
     Operation.TEXT_TO_IMAGE.value,
     Operation.IMAGE_TO_IMAGE.value,
     Operation.TEXT_TO_VIDEO.value,
@@ -139,12 +141,23 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
         )
 
     try:
+        auth_header = (
+            f"Key {endpoint.api_key}"
+            if endpoint.protocol == "fal"
+            else f"Bearer {endpoint.api_key}"
+        )
         with httpx.Client(
             base_url=media_client_base(endpoint.base_url),
-            headers={"Authorization": f"Bearer {endpoint.api_key}"},
+            headers={"Authorization": auth_header},
             timeout=endpoint.timeout_ms / 1000,
         ) as client:
             if probe_type == Operation.AUDIO_GENERATION.value:
+                if endpoint.protocol == "fal":
+                    # fal's `minimax/voice-clone` has no OpenAI-shaped
+                    # `/v1/audio/speech` endpoint at all — it is a queue
+                    # submit, same skeleton as the video routes below, just
+                    # against the audio app path.
+                    return _probe_fal_audio(client, endpoint, started, probe_type)
                 response = client.post(
                     media_request_path(endpoint.base_url, "/v1/audio/speech"),
                     json={
@@ -161,6 +174,41 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     response,
                     usable=bool(response.content),
                     api_key=endpoint.api_key,
+                )
+
+            if probe_type == Operation.MUSIC_GENERATION.value:
+                if endpoint.protocol == "fal":
+                    return _probe_fal_audio(client, endpoint, started, probe_type)
+                if endpoint.protocol == "dmxapi":
+                    response = client.post(
+                        media_request_path(endpoint.base_url, "/v1/responses"),
+                        json=dmxapi_media.probe_music_body(),
+                    )
+                    if response.status_code >= 400:
+                        return _media_response(
+                            started,
+                            endpoint.model,
+                            probe_type,
+                            response,
+                            usable=False,
+                            api_key=endpoint.api_key,
+                        )
+                    url, _ = dmxapi_media.extract_music_result(_json_dict(response))
+                    return _media_response(
+                        started,
+                        endpoint.model,
+                        probe_type,
+                        response,
+                        usable=bool(url),
+                        api_key=endpoint.api_key,
+                    )
+                return _result(
+                    started,
+                    target_model=endpoint.model,
+                    probe_type=probe_type,
+                    reachable=False,
+                    usable=False,
+                    error_code="no_capability",
                 )
 
             if probe_type in {
@@ -195,6 +243,9 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     "size": "1024x1024",
                     "n": 1,
                 }
+                if is_gpt_image_2(endpoint.model):
+                    body["quality"] = "low"
+                    body["output_format"] = "png"
                 if probe_type == Operation.IMAGE_TO_IMAGE.value:
                     body["prompt"] = "Return this simple connectivity test image."
                     body["image"] = _probe_png_data_uri()
@@ -261,6 +312,18 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                 response = client.post(
                     media_request_path(endpoint.base_url, "/v1/responses"), json=dmx_video_body
                 )
+            elif endpoint.protocol == "minimax_v2":
+                response = client.post(
+                    media_request_path(endpoint.base_url, "/v2/video_generation"),
+                    json=minimax_v2_media.probe_video_body(endpoint.model),
+                )
+            elif endpoint.protocol == "fal":
+                response = client.post(
+                    media_request_path(
+                        endpoint.base_url, fal_media.probe_submit_path(endpoint.model)
+                    ),
+                    json=fal_media.probe_video_body(endpoint.model),
+                )
             else:
                 response = client.post(
                     media_request_path(endpoint.base_url, "/ai/v1/videos"),
@@ -280,11 +343,22 @@ def _validate_media(endpoint: LlmProviderEndpoint) -> ConnectivityResult:
                     usable=False,
                     api_key=endpoint.api_key,
                 )
-            task_id = (
-                dmxapi_media.extract_task_id(endpoint.model, _json_dict(response))
-                if endpoint.protocol == "dmxapi"
-                else _json_dict(response).get("id")
-            )
+            payload = _json_dict(response)
+            if endpoint.protocol == "dmxapi":
+                task_id = dmxapi_media.extract_task_id(endpoint.model, payload)
+            elif endpoint.protocol == "minimax_v2":
+                task_id = minimax_v2_media.extract_task_id(payload)
+            elif endpoint.protocol == "fal":
+                request_id = fal_media.extract_request_id(payload)
+                task_id = (
+                    fal_media.encode_task_id(fal_media.ROUTE_TEXT_TO_VIDEO, request_id)
+                    if request_id
+                    else None
+                )
+                if request_id:
+                    _cancel_fal_probe(client, endpoint, request_id)
+            else:
+                task_id = payload.get("id")
             if not task_id:
                 return _result(
                     started,
@@ -376,6 +450,78 @@ def _has_dmxapi_image_result(response: httpx.Response) -> bool:
         return False
     url, b64 = dmxapi_media.extract_seedream_result(_json_dict(response))
     return bool(url or b64)
+
+
+def _cancel_fal_probe(client: httpx.Client, endpoint: LlmProviderEndpoint, request_id: str) -> None:
+    """Best-effort cancel so an admin connectivity ping does not leave a
+    billable H3 Max render sitting in fal's queue."""
+    try:
+        client.put(
+            media_request_path(
+                endpoint.base_url,
+                fal_media.probe_cancel_path(endpoint.model, request_id),
+            )
+        )
+    except httpx.HTTPError:
+        return
+
+
+def _cancel_fal_audio_probe(
+    client: httpx.Client, endpoint: LlmProviderEndpoint, request_id: str
+) -> None:
+    """Best-effort cancel for a voice-clone/music/SFX connectivity probe —
+    same reasoning as `_cancel_fal_probe`'s video counterpart."""
+    try:
+        client.put(
+            media_request_path(
+                endpoint.base_url,
+                fal_media.probe_audio_cancel_path(endpoint.model, request_id),
+            )
+        )
+    except httpx.HTTPError:
+        return
+
+
+def _probe_fal_audio(
+    client: httpx.Client, endpoint: LlmProviderEndpoint, started: float, probe_type: str
+) -> ConnectivityResult:
+    """Shared fal queue probe for every audio-shaped capability this
+    protocol serves (`AUDIO_GENERATION`'s voice-clone, `MUSIC_GENERATION`'s
+    music/SFX): one submit against `fal_media.probe_audio_path`, then a
+    best-effort cancel — this only needs proof the queue accepted the call,
+    not the finished clip, so it never waits for `COMPLETED` the way the
+    video branch below does.
+    """
+    response = client.post(
+        media_request_path(endpoint.base_url, fal_media.probe_audio_path(endpoint.model)),
+        json=fal_media.probe_audio_body(endpoint.model),
+    )
+    if response.status_code >= 400:
+        return _media_response(
+            started, endpoint.model, probe_type, response, usable=False, api_key=endpoint.api_key
+        )
+    payload = _json_dict(response)
+    request_id = fal_media.extract_request_id(payload)
+    if not request_id:
+        return _result(
+            started,
+            target_model=endpoint.model,
+            probe_type=probe_type,
+            reachable=True,
+            usable=False,
+            provider_status_code=response.status_code,
+            error_code="invalid_response",
+        )
+    _cancel_fal_audio_probe(client, endpoint, request_id)
+    return _result(
+        started,
+        target_model=endpoint.model,
+        probe_type=probe_type,
+        reachable=True,
+        usable=True,
+        provider_status_code=response.status_code,
+        external_task_id=str(request_id),
+    )
 
 
 def _json_dict(response: httpx.Response) -> dict[str, Any]:

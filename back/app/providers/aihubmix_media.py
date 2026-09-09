@@ -32,6 +32,7 @@ from app.providers.base import (
     GenerationRequest,
     GenerationResult,
     ProviderReference,
+    probe_audio_duration_ms,
 )
 from app.storage import s3
 
@@ -151,6 +152,26 @@ _IMAGE_SIZE_BY_ASPECT = {
     "4:3": "1024x768",
     "3:4": "768x1024",
     "21:9": "1024x576",
+}
+
+GPT_IMAGE_2_MODEL = "gpt-image-2"
+# Documented-safe OpenAI GPT Image sizes. Do not reuse `_IMAGE_SIZE_BY_ASPECT`
+# here — values like `1024x576` have been rejected as `size_not_supported`.
+# Quality (preview/standard/cinematic) only drives `quality`, not pixels.
+_GPT_IMAGE_2_SIZE_BY_ASPECT = {
+    "1:1": "1024x1024",
+    "16:9": "1536x1024",
+    "4:3": "1536x1024",
+    "21:9": "1536x1024",
+    "3:2": "1536x1024",
+    "9:16": "1024x1536",
+    "3:4": "1024x1536",
+    "2:3": "1024x1536",
+}
+_GPT_IMAGE_2_QUALITY_BY_TIER = {
+    "preview": "low",
+    "standard": "medium",
+    "cinematic": "high",
 }
 
 # `video_analysis`'s prompt to a native video-understanding model. Requests a
@@ -310,14 +331,22 @@ class AiHubMixMediaProvider(GenerationProvider):
         image_refs = _image_reference_urls(request)
         if image_refs and _is_qwen_model(self._model):
             return self._submit_qwen_image_edit(request, started, image_refs)
+        if _image_reference_keys(request) and is_gpt_image_2(self._model):
+            return self._submit_gpt_image_2_edit(request, started)
 
-        size = _size_for(request.aspect_ratio, request.quality_tier)
+        if is_gpt_image_2(self._model):
+            size = _gpt_image_2_size(request.aspect_ratio)
+        else:
+            size = _size_for(request.aspect_ratio, request.quality_tier)
         body: dict[str, object] = {
             "model": self._model,
             "prompt": request.prompt,
             "size": size,
             "n": 1,
         }
+        if is_gpt_image_2(self._model):
+            body["quality"] = _gpt_image_2_quality(request.quality_tier)
+            body["output_format"] = "png"
         if image_refs:
             body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
 
@@ -329,6 +358,60 @@ class AiHubMixMediaProvider(GenerationProvider):
             payload = response.json()
             image_bytes = _image_bytes_from_payload(payload, client)
 
+        return self._store_image_result(request, started, image_bytes)
+
+    def _submit_gpt_image_2_edit(
+        self, request: GenerationRequest, started: float
+    ) -> GenerationResult:
+        """gpt-image-2's documented image-to-image contract.
+
+        `/v1/images/generations` + an ad-hoc `image` field is the same
+        unverified path that failed to preserve identity for Qwen. AiHubMix
+        documents `POST /v1/images/edits` (multipart) for this model —
+        one source image, no `input_fidelity` or other GPT Image 1 fields.
+        """
+        keys = _image_reference_keys(request)
+        if not keys:
+            return self._failure(started, "MISSING_REFERENCE", "missing_image")
+        source_key = keys[0]
+        source_bytes = s3.get_object(source_key)
+        if not source_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
+        mime = mimetypes.guess_type(source_key)[0] or "image/png"
+        filename = source_key.rsplit("/", 1)[-1] or "reference.png"
+
+        with self._client() as client:
+            response = client.post(
+                media_request_path(self._creds.base_url, "/v1/images/edits"),
+                data={
+                    "model": self._model,
+                    "prompt": request.prompt,
+                    "n": "1",
+                    "size": _gpt_image_2_size(request.aspect_ratio),
+                    "quality": _gpt_image_2_quality(request.quality_tier),
+                    "output_format": "png",
+                },
+                files={"image": (filename, source_bytes, mime)},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            image_bytes = _image_bytes_from_payload(payload, client)
+
+        return self._store_image_result(
+            request,
+            started,
+            image_bytes,
+            extra_metadata={"endpoint": "gpt-image-2-edits"},
+        )
+
+    def _store_image_result(
+        self,
+        request: GenerationRequest,
+        started: float,
+        image_bytes: bytes | None,
+        *,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> GenerationResult:
         if not image_bytes:
             return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
 
@@ -340,6 +423,9 @@ class AiHubMixMediaProvider(GenerationProvider):
         object_key = f"generated/{request.job_id}/output_{request.attempt_number}.png"
         s3.put_object(object_key, image_bytes, content_type="image/png")
 
+        metadata: dict[str, Any] = {"provider": self.name, "model": self._model}
+        if extra_metadata:
+            metadata.update(extra_metadata)
         return GenerationResult(
             succeeded=True,
             object_key=object_key,
@@ -347,7 +433,7 @@ class AiHubMixMediaProvider(GenerationProvider):
             width=width,
             height=height,
             latency_ms=self._elapsed_ms(started),
-            metadata={"provider": self.name, "model": self._model},
+            metadata=metadata,
         )
 
     def _submit_qwen_image_edit(
@@ -439,6 +525,7 @@ class AiHubMixMediaProvider(GenerationProvider):
             succeeded=True,
             object_key=object_key,
             mime_type="audio/mpeg",
+            duration_ms=probe_audio_duration_ms(audio_bytes, "audio/mpeg"),
             latency_ms=self._elapsed_ms(started),
             metadata={"provider": self.name, "model": self._model, "voice": voice},
         )
@@ -1141,12 +1228,24 @@ def _flatten_content_parts(content: object) -> str:
     return "\n".join(parts)
 
 
+def _image_reference_keys(request: GenerationRequest) -> list[str]:
+    keys: list[str] = []
+    for ref in request.references:
+        if ref.media_type == "image" and ref.object_key:
+            keys.append(ref.object_key)
+    for key in request.reference_object_keys:
+        if key not in keys:
+            keys.append(key)
+    return keys[:_MAX_INPUT_REFERENCES]
+
+
 def _image_reference_urls(request: GenerationRequest) -> list[str]:
     """Signed URLs (or inline base64 data URIs) for image-to-image references.
 
-    Text-to-image leaves this empty. Image-to-image sends the same OpenAI
-    `/v1/images/generations` JSON with an extra `image` field rather than
-    switching to the multipart `/v1/images/edits` path.
+    Text-to-image leaves this empty. Image-to-image for non-gpt-image-2
+    models sends the same OpenAI `/v1/images/generations` JSON with an extra
+    `image` field rather than switching to the multipart `/v1/images/edits`
+    path. `gpt-image-2` uses `_submit_gpt_image_2_edit` instead.
 
     `Settings.embed_reference_images_as_base64` (on for `local`/`test`)
     switches this from a presigned GET URL to an inline `data:` URI —
@@ -1160,14 +1259,7 @@ def _image_reference_urls(request: GenerationRequest) -> list[str]:
     `frame_images`/`input_references` (`build_video_payload`) stay URL-only,
     since a video reference routinely exceeds any sane inline-body size.
     """
-    keys: list[str] = []
-    for ref in request.references:
-        if ref.media_type == "image" and ref.object_key:
-            keys.append(ref.object_key)
-    for key in request.reference_object_keys:
-        if key not in keys:
-            keys.append(key)
-    keys = keys[:_MAX_INPUT_REFERENCES]
+    keys = _image_reference_keys(request)
     if get_settings().embed_reference_images_as_base64:
         return [_data_uri_for(key) for key in keys]
     return [s3.presign_get(key, expires_in=_REFERENCE_URL_TTL_SECONDS) for key in keys]
@@ -1195,6 +1287,18 @@ def _data_uri_for(object_key: str) -> str:
 
 def _is_qwen_model(model: str) -> bool:
     return "qwen" in model.strip().lower()
+
+
+def is_gpt_image_2(model: str) -> bool:
+    return model.strip().lower() == GPT_IMAGE_2_MODEL
+
+
+def _gpt_image_2_quality(quality_tier: str) -> str:
+    return _GPT_IMAGE_2_QUALITY_BY_TIER.get(quality_tier, "medium")
+
+
+def _gpt_image_2_size(aspect_ratio: str) -> str:
+    return _GPT_IMAGE_2_SIZE_BY_ASPECT.get(aspect_ratio, "1024x1024")
 
 
 def _qwen_edit_output_url(payload: object) -> str | None:

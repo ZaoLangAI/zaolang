@@ -1,16 +1,25 @@
 """DMXAPI media provider.
 
 DMXAPI aggregates many upstream vendors (MiniMax, ByteDance Doubao, Alibaba
-Wan/DashScope, ...) behind one unified HTTP contract: every model this
-provider speaks — synchronous image generation
-(`doubao-seedream-5-0-pro-260628`) and submit-task-then-poll video generation
-(`MiniMax-H3`, its video-regeneration mode, `doubao-seedance-2-5-260628`,
-`wan3.0-video`) — goes through a single `POST /v1/responses` endpoint. That
-is DMXAPI's own repurposing of the OpenAI "Responses API" shape as a generic
-task envelope, not the real OpenAI Responses API; the request/response
-*body* shape is different for every model family, so this provider
-dispatches internally by `model`, the same way `AiHubMixMediaProvider`
-dispatches by `capability_tag`/`protocol`.
+Wan/DashScope, ...) behind one unified HTTP contract for most of what it
+sells: synchronous image generation (`doubao-seedream-5-0-pro-260628`) and
+submit-task-then-poll video generation (`MiniMax-H3`, its video-regeneration
+mode, `doubao-seedance-2-5-260628`, `wan3.0-video`) all go through a single
+`POST /v1/responses` endpoint. That is DMXAPI's own repurposing of the
+OpenAI "Responses API" shape as a generic task envelope, not the real
+OpenAI Responses API; the request/response *body* shape is different for
+every model family, so this provider dispatches internally by `model`, the
+same way `AiHubMixMediaProvider` dispatches by `capability_tag`/`protocol`.
+`audio_generation` (`_AUDIO_MODELS`) is the one capability that does *not*
+share that envelope: it's a synchronous, OpenAI-shaped `POST /v1/audio/
+speech` call instead, identical in contract (if not upstream account) to
+`aihubmix_media.py`'s own `_submit_audio`.
+
+`music_generation` (`_MUSIC_MODELS` — `music-3.0`) is a third shape: back on
+the shared `/v1/responses` envelope (unlike `audio_generation`), but
+synchronous like it — a completed clip comes back in the same call, no
+task id to poll — with its own `input`/`lyrics`/`is_instrumental` body
+instead of any video family's.
 
 Sourced from DMXAPI's own published docs (`doc.dmxapi.cn`, checked 2026-08).
 None of this has been exercised against a live credential yet — every
@@ -37,6 +46,7 @@ from app.providers.base import (
     GenerationRequest,
     GenerationResult,
     ProviderReference,
+    probe_audio_duration_ms,
 )
 from app.storage import s3
 
@@ -57,6 +67,58 @@ _VIDEO_MODELS = frozenset(
     {MINIMAX_H3_MODEL, MINIMAX_H3_REGENERATION_MODEL, DOUBAO_SEEDANCE_25_MODEL, WAN3_VIDEO_MODEL}
 )
 _IMAGE_MODELS = frozenset({SEEDREAM_5_PRO_MODEL})
+
+# -- audio_generation models --------------------------------------------------
+# All four hit the same `/v1/audio/speech` endpoint (`doc.dmxapi.cn/openai-
+# tts.html` / `tts-pro.html`) — an OpenAI-shaped request/response, identical
+# in *contract* to `aihubmix_media.py`'s own `_submit_audio`, just a
+# different upstream account. `gpt-4o-mini-tts`/`tts-1`/`tts-1-hd` accept the
+# OpenAI voice roster (`alloy`/`ash`/`ballad`/`coral`/`echo`/`fable`/`onyx`/
+# `nova`/`sage`/`shimmer`/`verse`); `tts-pro` is a distinct upstream (ByteDance
+# Volcano) resold through the identical endpoint shape, with its own several-
+# dozen Chinese voice roster and an extra `emotion` field
+# (`happy`/`angry`/`fear`/`surprise`) — neither roster is enumerated here,
+# same reasoning as `api.schemas.jobs.AUDIO_VOICE_MAX_LENGTH` dropping the
+# fixed set: the studio's per-model picker is the source of truth for which
+# ids are legal, not this provider.
+AUDIO_MODEL_GPT4O_MINI_TTS = "gpt-4o-mini-tts"
+AUDIO_MODEL_TTS_1 = "tts-1"
+AUDIO_MODEL_TTS_1_HD = "tts-1-hd"
+AUDIO_MODEL_TTS_PRO = "tts-pro"
+_OPENAI_TTS_MODELS = frozenset(
+    {AUDIO_MODEL_GPT4O_MINI_TTS, AUDIO_MODEL_TTS_1, AUDIO_MODEL_TTS_1_HD}
+)
+_AUDIO_MODELS = _OPENAI_TTS_MODELS | {AUDIO_MODEL_TTS_PRO}
+# `voice` is required on this endpoint; a request without one (e.g. a stale
+# client) still gets *a* voice rather than a 4xx neither roster can recover
+# from client-side. Not a recommendation — the studio always sends a real
+# choice.
+_DEFAULT_VOICE_BY_MODEL: dict[str, str] = {
+    AUDIO_MODEL_GPT4O_MINI_TTS: "alloy",
+    AUDIO_MODEL_TTS_1: "alloy",
+    AUDIO_MODEL_TTS_1_HD: "alloy",
+    AUDIO_MODEL_TTS_PRO: "柔美女友",
+}
+
+# -- music_generation models --------------------------------------------------
+# MiniMax Music 3.0 resold through DMXAPI's own `/v1/responses` envelope
+# (`doc.dmxapi.cn/music-3.0-text-to-music.html`), but — unlike every video
+# family on that same endpoint — synchronous: the finished clip's URL comes
+# back in the create response itself, no `task_id` to poll. Music-only, no
+# separate sound-effects mode; SFX goes through fal's ElevenLabs model
+# instead (`fal_media.py::FAL_SFX_MODEL`).
+MUSIC_MODEL_DMX = "music-3.0"
+_MUSIC_MODELS = frozenset({MUSIC_MODEL_DMX})
+
+
+def music_style_for_model(model: str) -> frozenset[str] | None:
+    """Which `extra.audio_style` value(s) `model` actually produces, for
+    `app.agents.router._request_constraint_failure`'s `music_generation`
+    hard filter — `None` for a non-music model. `music-3.0` is BGM-only;
+    DMXAPI has no separate SFX endpoint, so this side of `music_generation`
+    never returns `{"sfx"}` (see `app.providers.fal_media.
+    music_style_for_model` for the fal SFX half)."""
+    return frozenset({"music"}) if model in _MUSIC_MODELS else None
 
 # The polling `model` id each video family answers to — DMXAPI's own
 # `"{family}-get"` convention, confirmed on doc.dmxapi.cn's text-to-video page
@@ -453,6 +515,67 @@ def _build_video_body(model: str, request: GenerationRequest) -> dict[str, Any]:
     raise ValueError(f"unknown dmxapi video model: {model}")
 
 
+# -- music request builder ----------------------------------------------------
+
+
+def _build_music_body(request: GenerationRequest) -> dict[str, Any]:
+    """DMXAPI `/v1/responses` body for `music-3.0` — its own `input`/
+    `lyrics`/`is_instrumental` shape, not any video family's `input`-array
+    envelope. `is_instrumental` omits `lyrics` entirely rather than sending
+    an empty string, matching MiniMax's own upstream "no lyrics field at
+    all" instrumental convention; a lyrics-carrying call is expected to
+    write structure tags (`[Verse]`/`[Chorus]`) straight into the text, same
+    as fal's `minimax-music` builder (`fal_media.py::build_music_body`).
+    """
+    body: dict[str, Any] = {
+        "model": MUSIC_MODEL_DMX,
+        "input": request.prompt,
+    }
+    is_instrumental = bool(request.extra.get("is_instrumental"))
+    body["is_instrumental"] = is_instrumental
+    lyrics = request.extra.get("lyrics")
+    if not is_instrumental and isinstance(lyrics, str) and lyrics.strip():
+        body["lyrics"] = lyrics.strip()
+    return body
+
+
+def probe_music_body() -> dict[str, Any]:
+    """Minimal connectivity body for `music-3.0` — a plain instrumental
+    request avoids any lyrics-shape ambiguity. Used only by
+    `app.providers.connectivity`."""
+    return {
+        "model": MUSIC_MODEL_DMX,
+        "input": "A short cheerful ukulele melody, connectivity test.",
+        "is_instrumental": True,
+    }
+
+
+def extract_music_result(payload: dict[str, Any]) -> tuple[str | None, int | None]:
+    """Returns `(audio_url, duration_ms)` from a `music-3.0` completed
+    response — `None`s if the shape could not be parsed.
+
+    Sourced from `doc.dmxapi.cn/music-3.0-text-to-music.html`'s sample: the
+    finished clip's URL sits in the same `output[].content[].text` slot
+    every other `/v1/responses` family uses for its "here is the result"
+    payload (see `_first_output_text`), with the vendor's own
+    `extra_info.music_duration` (already milliseconds per that page's
+    sample) alongside it when present. Falls back to
+    `extract_seedream_result`'s `data[]`/nested-`output[]` shapes for a
+    response that instead wraps the URL image-style — same defensive
+    tolerance as everywhere else in this not-yet-live-verified module.
+    """
+    url = _first_output_text(payload)
+    if not (isinstance(url, str) and url.startswith("http")):
+        url, _ = extract_seedream_result(payload)
+    duration_ms: int | None = None
+    extra_info = payload.get("extra_info")
+    if isinstance(extra_info, dict):
+        raw_duration = extra_info.get("music_duration")
+        if isinstance(raw_duration, int | float) and raw_duration > 0:
+            duration_ms = int(raw_duration)
+    return url, duration_ms
+
+
 # -- image request builder ---------------------------------------------------
 
 
@@ -644,6 +767,52 @@ def _http_error_detail(exc: httpx.HTTPStatusError, api_key: str) -> str:
     return f"HTTP {status}: {text}" if text else f"HTTP {status}"
 
 
+# DMXAPI wraps a dead MiniMax/Seedance/Wan task as HTTP 502 with this code
+# (live 2026-09-03: `job_01m1jjvczkcaxdgjgaetm9t9xw`, body
+# `error.code=dmxapi_upstream_error` / `error.message="MiniMax-H3 video
+# generation task failed"`). That is a terminal upstream verdict, not a
+# one-tick gateway blip — `poll` must fail the attempt so `route_score` can
+# exclude the provider. A timeout or an empty 502 still stays pending.
+_DMXAPI_UPSTREAM_ERROR_CODE = "dmxapi_upstream_error"
+_TERMINAL_POLL_ERROR_MARKERS = ("video generation task failed", "task failed")
+
+
+def _response_json_object(response: httpx.Response) -> dict[str, Any] | None:
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _terminal_poll_error_message(payload: dict[str, Any]) -> str | None:
+    """The user-facing upstream sentence when a poll HTTP error is terminal.
+
+    `None` means "treat this body as a transient gateway blip" — empty,
+    unparseable, or a 502 without DMXAPI's own upstream-failure shape.
+    """
+    error = payload.get("error")
+    code: object | None
+    message: str | None
+    if isinstance(error, dict):
+        code = error.get("code")
+        raw = error.get("message")
+        message = raw if isinstance(raw, str) and raw else None
+    elif isinstance(error, str) and error:
+        code = payload.get("code")
+        message = error
+    else:
+        code = payload.get("code")
+        raw = payload.get("message")
+        message = raw if isinstance(raw, str) and raw else None
+    lowered = message.lower() if message else ""
+    code_hit = code == _DMXAPI_UPSTREAM_ERROR_CODE
+    message_hit = any(marker in lowered for marker in _TERMINAL_POLL_ERROR_MARKERS)
+    if code_hit or message_hit:
+        return message or str(code)
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class _EndpointCredentials:
     base_url: str
@@ -682,6 +851,10 @@ class DmxApiMediaProvider(GenerationProvider):
         try:
             if self._model in _IMAGE_MODELS:
                 return self._submit_image(request, started)
+            if self._model in _AUDIO_MODELS:
+                return self._submit_audio(request, started)
+            if self._model in _MUSIC_MODELS:
+                return self._submit_music(request, started)
             return self._submit_video(request, started)
         except httpx.TimeoutException as exc:
             logger.warning(
@@ -781,11 +954,87 @@ class DmxApiMediaProvider(GenerationProvider):
             metadata={"provider": self.name, "model": self._model},
         )
 
+    def _submit_audio(self, request: GenerationRequest, started: float) -> GenerationResult:
+        """Synchronous TTS, same `/v1/audio/speech` contract as
+        `aihubmix_media.AiHubMixMediaProvider._submit_audio` — see the
+        `_AUDIO_MODELS` docstring above for why this provider doesn't
+        distinguish the OpenAI-shaped group from `tts-pro` beyond the one
+        extra `emotion` field.
+        """
+        voice = request.extra.get("voice") or _DEFAULT_VOICE_BY_MODEL[self._model]
+        body: dict[str, Any] = {
+            "model": self._model,
+            "input": request.prompt,
+            "voice": voice,
+            "response_format": "mp3",
+        }
+        if self._model == AUDIO_MODEL_TTS_PRO:
+            emotion = request.extra.get("emotion")
+            if emotion:
+                body["emotion"] = emotion
+        with self._client() as client:
+            response = client.post(
+                media_request_path(self._creds.base_url, "/v1/audio/speech"), json=body
+            )
+            response.raise_for_status()
+            audio_bytes = response.content
+
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp3"
+        s3.put_object(object_key, audio_bytes, content_type="audio/mpeg")
+
+        return GenerationResult(
+            succeeded=True,
+            object_key=object_key,
+            mime_type="audio/mpeg",
+            duration_ms=probe_audio_duration_ms(audio_bytes, "audio/mpeg"),
+            latency_ms=self._elapsed_ms(started),
+            metadata={"provider": self.name, "model": self._model, "voice": voice},
+        )
+
+    def _submit_music(self, request: GenerationRequest, started: float) -> GenerationResult:
+        """Synchronous music generation on the shared `/v1/responses`
+        envelope — same transport as `_submit_video`, but `music-3.0`
+        answers with the finished clip directly instead of a task id to
+        poll, the same "synchronous family riding the async envelope" shape
+        `_submit_image`'s Seedream already uses on this protocol.
+        """
+        body = _build_music_body(request)
+        with self._client() as client:
+            response = client.post(
+                media_request_path(self._creds.base_url, "/v1/responses"), json=body
+            )
+            response.raise_for_status()
+            payload = response.json()
+
+        url, duration_ms = extract_music_result(payload)
+        if not url:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_audio_url")
+
+        with httpx.Client(timeout=self._creds.timeout_s) as download_client:
+            download = download_client.get(url)
+            download.raise_for_status()
+            audio_bytes = download.content or None
+        if not audio_bytes:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "empty_audio_content")
+
+        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.mp3"
+        s3.put_object(object_key, audio_bytes, content_type="audio/mpeg")
+
+        return GenerationResult(
+            succeeded=True,
+            object_key=object_key,
+            mime_type="audio/mpeg",
+            duration_ms=duration_ms or probe_audio_duration_ms(audio_bytes, "audio/mpeg"),
+            latency_ms=self._elapsed_ms(started),
+            metadata={"provider": self.name, "model": self._model},
+        )
+
     def poll(self, external_task_id: str, request: GenerationRequest) -> GenerationResult:
         """One status check for a video task, plus the download when it is
         done — same single-round-trip-no-sleeping contract as
-        `AiHubMixMediaProvider.poll`. Never called for `_IMAGE_MODELS`: a
-        synchronous `submit()` never returns `pending=True` for those.
+        `AiHubMixMediaProvider.poll`. Never called for `_IMAGE_MODELS`/
+        `_AUDIO_MODELS`/`_MUSIC_MODELS`: a synchronous `submit()` never
+        returns `pending=True` for those.
         """
         started = time.perf_counter()
         poll_model = _POLL_MODEL_BY_VIDEO_MODEL.get(self._model)
@@ -801,6 +1050,20 @@ class DmxApiMediaProvider(GenerationProvider):
                 )
                 response.raise_for_status()
                 payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            detail = _http_error_detail(exc, self._creds.api_key)
+            logger.warning("dmxapi poll failed for task %s: %s", external_task_id, detail)
+            payload = _response_json_object(exc.response)
+            terminal = _terminal_poll_error_message(payload) if payload else None
+            if terminal:
+                return self._failure(started, "PROVIDER_TASK_FAILED", terminal)
+            return GenerationResult(
+                succeeded=False,
+                pending=True,
+                external_task_id=external_task_id,
+                latency_ms=self._elapsed_ms(started),
+                metadata={"provider": self.name, "detail": type(exc).__name__},
+            )
         except httpx.HTTPError as exc:
             logger.warning("dmxapi poll failed for task %s: %s", external_task_id, exc)
             # A transient network error must not end the render: report it as

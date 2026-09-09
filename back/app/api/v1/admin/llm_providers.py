@@ -97,6 +97,8 @@ def get_llm_provider_catalog(user: Viewer, _: AdminRead) -> ModelCatalogResponse
                         doc_url=entry.doc_url,
                         pricing_doc_url=entry.pricing_doc_url,
                         billing_profile=entry.billing_profile,
+                        suggested_timeout_ms=entry.suggested_timeout_ms,
+                        generation_kind=entry.generation_kind,
                         price_items=[
                             PriceItemView(
                                 key=item.key,
@@ -171,6 +173,8 @@ def upsert_llm_provider(
             token_pricing=payload.token_pricing.model_dump(),
             media_pricing=payload.media_pricing.model_dump(exclude_none=True),
             billing_profile=payload.billing_profile,
+            generation_kind=payload.generation_kind,
+            audio_generation_kind=payload.audio_generation_kind,
         )
         _assert_agent_bindings_compatible(session, endpoint_id, endpoint)
         config.endpoints[endpoint_id] = endpoint
@@ -195,6 +199,8 @@ def upsert_llm_provider(
             "model": payload.model,
             "protocol": endpoint.protocol if payload.kind == "media" else None,
             "billing_profile": endpoint.billing_profile,
+            "generation_kind": endpoint.generation_kind,
+            "audio_generation_kind": endpoint.audio_generation_kind,
             "input_modalities": sorted(endpoint.input_modalities),
             "output_modalities": sorted(payload.output_modalities)
             if payload.kind == "media"
@@ -409,6 +415,8 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
             endpoint.media_pricing.model_dump(mode="json")
         ),
         billing_profile=endpoint.billing_profile,
+        generation_kind=endpoint.generation_kind,
+        audio_generation_kind=endpoint.audio_generation_kind,
         concurrency_in_use=status.concurrency_in_use,
         circuit_breaker_open=status.circuit_breaker_open,
         recent_attempts=status.recent_attempts,

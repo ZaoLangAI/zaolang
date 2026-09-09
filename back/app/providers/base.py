@@ -9,9 +9,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
-from app.models.enums import ProviderKind
+from app.models.enums import MediaGenerationKind, ProviderKind
 from app.platform_config.schemas import MediaPricing
 
 # Canonical resolution tiers a client can request (`VideoGenerationOptions
@@ -31,6 +31,29 @@ RESOLUTION_TIER_MEMBERS: dict[str, frozenset[str]] = {
     "1080p": frozenset({"1080p", "1080P"}),
     "2K": frozenset({"2K"}),
 }
+
+# Lowest → highest. `adapt_resolution_tier` only walks *down* this list
+# (then, as a last resort so a job does not die, the lowest supported
+# tier). Never treat 1080p and 2K as synonyms.
+STUDIO_RESOLUTION_TIERS: tuple[str, ...] = ("480p", "720p", "1080p", "2K")
+
+ResolutionAdaptKind = Literal["exact", "downgrade", "upgrade"]
+
+
+@dataclass(frozen=True, slots=True)
+class AdaptedResolution:
+    """What a specific candidate should actually render after adaptation.
+
+    `studio_tier` is the client-facing token (`480p`/`720p`/`1080p`/`2K`);
+    `vendor_literal` is that candidate's own spelling (`768P`, `1080p`, …).
+    `kind` is `exact` when the requested tier is honoured, `downgrade` when
+    a strictly lower supported tier was picked, and `upgrade` only when
+    nothing at or below the request exists (the model's lowest tier).
+    """
+
+    studio_tier: str
+    vendor_literal: str
+    kind: ResolutionAdaptKind
 
 
 def resolve_resolution_tier(tier: str | None, available: frozenset[str] | None) -> str | None:
@@ -52,6 +75,76 @@ def resolve_resolution_tier(tier: str | None, available: frozenset[str] | None) 
     members = RESOLUTION_TIER_MEMBERS.get(tier, frozenset({tier}))
     matches = sorted(available & members)
     return matches[0] if matches else None
+
+
+def studio_tier_for_literal(literal: str | None) -> str | None:
+    """The client-facing tier a vendor spelling belongs to, or `None`."""
+
+    if not literal:
+        return None
+    for tier, members in RESOLUTION_TIER_MEMBERS.items():
+        if literal == tier or literal in members:
+            return tier
+    return None
+
+
+def studio_resolution_tiers(available: frozenset[str] | None) -> list[str] | None:
+    """Client-facing tiers this candidate can honour. `None` = unrestricted."""
+
+    if available is None:
+        return None
+    return [
+        tier
+        for tier in STUDIO_RESOLUTION_TIERS
+        if resolve_resolution_tier(tier, available) is not None
+    ]
+
+
+def adapt_resolution_tier(
+    requested: str | None, available: frozenset[str] | None
+) -> AdaptedResolution | None:
+    """Map a client's resolution *ceiling* onto one candidate's vocabulary.
+
+    The requested value stays a user intent (highest acceptable tier), not
+    a must-match. An omitted `requested` (video remix) returns `None` so
+    the provider's own default applies — never invent a tier. An
+    unrestricted candidate (`available is None`) passes the request
+    through unchanged. Otherwise: exact tier if the candidate has it;
+    else the highest *strictly lower* supported tier; else the candidate's
+    lowest supported tier (`kind="upgrade"`) so the job still runs. A
+    candidate whose `resolutions` map to no studio tier at all returns
+    `None` — that is the only remaining hard-filter case.
+    """
+
+    if not requested:
+        return None
+    if available is None:
+        return AdaptedResolution(
+            studio_tier=requested, vendor_literal=requested, kind="exact"
+        )
+    exact = resolve_resolution_tier(requested, available)
+    if exact is not None:
+        return AdaptedResolution(
+            studio_tier=requested, vendor_literal=exact, kind="exact"
+        )
+    try:
+        req_idx = STUDIO_RESOLUTION_TIERS.index(requested)
+    except ValueError:
+        req_idx = None
+    if req_idx is not None:
+        for tier in reversed(STUDIO_RESOLUTION_TIERS[:req_idx]):
+            literal = resolve_resolution_tier(tier, available)
+            if literal is not None:
+                return AdaptedResolution(
+                    studio_tier=tier, vendor_literal=literal, kind="downgrade"
+                )
+    for tier in STUDIO_RESOLUTION_TIERS:
+        literal = resolve_resolution_tier(tier, available)
+        if literal is not None:
+            return AdaptedResolution(
+                studio_tier=tier, vendor_literal=literal, kind="upgrade"
+            )
+    return None
 
 
 @dataclass(slots=True)
@@ -230,3 +323,45 @@ class ProviderCapability:
     # resolution it never actually rendered at.
     default_resolution: str | None = None
     reference_modes: frozenset[str] | None = None
+    # Copied from `LlmProviderEndpoint.generation_kind`. Edit-class video
+    # models are hard-filtered when the request has no video source.
+    generation_kind: MediaGenerationKind = MediaGenerationKind.CREATE
+    # `music_generation` only: which `extra.audio_style` value(s)
+    # (`"music"`/`"sfx"`) this specific model actually produces — see
+    # `app.providers.dmxapi_media.music_style_for_model`/`app.providers.
+    # fal_media.music_style_for_model`. `None` for every other operation
+    # (no hard filter) and for a `music_generation` model this table does
+    # not yet recognise (same "unrestricted rather than mis-modelled"
+    # stance `reference_modes`/`aspect_ratios` take elsewhere in this
+    # class) — `_request_constraint_failure` only filters when this is set.
+    music_styles: frozenset[str] | None = None
+
+
+def probe_audio_duration_ms(payload: bytes, mime_type: str) -> int | None:
+    """`ffprobe`'s real duration for a just-generated audio/music payload.
+
+    Every audio/music provider (`_submit_audio`/`_submit_music` across
+    `aihubmix_media.py`/`dmxapi_media.py`/`fal_media.py`) calls this right
+    before returning its `GenerationResult`, so a TTS/BGM/SFX output's
+    timeline length is known immediately instead of the editor guessing —
+    unlike the dry-run stub (`workflows/nodes.py`'s hardcoded
+    `duration_ms=1000`), a real provider call must report the real number.
+
+    Imported lazily to avoid a cycle: `app.domain.editor.analysis` itself
+    imports `app.providers.aihubmix_media` (for `media_client_base`/
+    `media_request_path`), so this module cannot import it back at load
+    time. Missing `ffprobe` degrades to `None`, same as `probe_bytes`
+    itself for an upload — but unlike an upload, a probe failure here must
+    never fail an otherwise-successful generation (same "swallow, don't
+    fail the finished job" rule as an episode preview's frame extraction),
+    so `probe_bytes`'s own `ValidationFailed` on a bad/undecodable payload
+    is caught and downgraded to `None` too.
+    """
+    from app.domain.editor.analysis import probe_bytes
+    from app.domain.errors import ValidationFailed
+
+    try:
+        _, _, duration_ms = probe_bytes(payload, mime_type)
+    except ValidationFailed:
+        return None
+    return duration_ms

@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from app.models.enums import Operation
+from app.models.enums import AudioGenerationKind, Operation
 from app.platform_config.schemas import LlmProviderEndpoint
-from app.providers import connectivity
+from app.providers import connectivity, dmxapi_media, fal_media
 
 
 def _general(**overrides: object) -> LlmProviderEndpoint:
@@ -158,6 +158,33 @@ def test_media_text_to_image_probe_uses_generations_json(
     assert calls[0][1]["json"]["size"] == "1024x1024"  # type: ignore[index]
 
 
+def test_gpt_image_2_probe_sends_low_quality(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://media.invalid{path}")
+        return httpx.Response(200, json={"data": [{"b64_json": "abc"}]}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            model="gpt-image-2",
+            protocol="openai",
+            input_modalities=["text", "image"],
+            output_modalities=["image"],
+        )
+    )
+
+    assert result.probe_type == Operation.TEXT_TO_IMAGE.value
+    assert result.usable is True
+    body = calls[0][1]["json"]
+    assert body["model"] == "gpt-image-2"
+    assert body["quality"] == "low"
+    assert body["output_format"] == "png"
+    assert body["size"] == "1024x1024"
+
+
 def test_media_image_probe_does_not_double_v1_when_base_includes_v1(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -268,6 +295,83 @@ def test_media_403_is_access_denied_and_provider_detail_is_redacted(
     assert "private.invalid" not in result.provider_error_message
 
 
+def test_minimax_v2_video_probe_posts_to_v2_video_generation_and_reads_task_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Metaso / official MiniMax V2 is not the AiHubMix `/ai/v1/videos`
+    facade — the probe must hit `/v2/video_generation` and take the task
+    number from `task_id`, not from `id`."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://metaso.cn{path}")
+        return httpx.Response(200, json={"task_id": "424010985738629"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://metaso.cn/api/minimax",
+            model="MiniMax-H3",
+            input_modalities=["text", "image", "video", "audio"],
+            output_modalities=["video"],
+            protocol="minimax_v2",
+        )
+    )
+
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in calls] == ["/api/minimax/v2/video_generation"]
+    body = calls[0][1]["json"]  # type: ignore[index]
+    assert body["model"] == "MiniMax-H3"
+    assert body["content"][0]["type"] == "text"
+    assert body["resolution"] == "768P"
+    assert body["duration"] == 4
+    assert body["ratio"] == "16:9"
+    assert result.external_task_id == "424010985738629"
+
+
+def test_fal_video_probe_posts_to_h3_max_text_to_video_and_cancels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posts: list[tuple[str, dict[str, object]]] = []
+    puts: list[str] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append((path, kwargs))
+        request = httpx.Request("POST", f"https://queue.fal.run{path}")
+        return httpx.Response(
+            200, json={"request_id": "764cabcf-b745-4b3e-ae38-1200304cf45b"}, request=request
+        )
+
+    def fake_put(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        puts.append(path)
+        request = httpx.Request("PUT", f"https://queue.fal.run{path}")
+        return httpx.Response(202, json={"status": "CANCELLATION_REQUESTED"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://queue.fal.run",
+            model="minimax/h3-max",
+            input_modalities=["text", "image", "video", "audio"],
+            output_modalities=["video"],
+            protocol="fal",
+        )
+    )
+
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in posts] == ["/minimax/h3-max/text-to-video"]
+    body = posts[0][1]["json"]  # type: ignore[index]
+    assert body["prompt_expansion_mode"] == "balanced"
+    assert body["resolution"] == "480P"
+    assert body["duration"] == 5
+    assert result.external_task_id == "text-to-video#764cabcf-b745-4b3e-ae38-1200304cf45b"
+    assert puts == [
+        "/minimax/h3-max/text-to-video/requests/764cabcf-b745-4b3e-ae38-1200304cf45b/cancel"
+    ]
+
+
 def test_dmxapi_video_probe_posts_to_v1_responses_with_a_family_specific_body(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,3 +454,232 @@ def test_dmxapi_image_probe_posts_a_prompt_string_not_a_content_array(
     body = calls[0][1]["json"]  # type: ignore[index]
     assert isinstance(body["input"], str)
     assert "image" not in body
+
+
+def test_dmxapi_audio_probe_posts_to_v1_audio_speech_and_checks_for_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://www.dmxapi.cn{path}")
+        return httpx.Response(200, content=b"fake-mp3-bytes", request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model="tts-1",
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="dmxapi",
+        )
+    )
+
+    assert result.probe_type == Operation.AUDIO_GENERATION.value
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in calls] == ["/v1/audio/speech"]
+    body = calls[0][1]["json"]  # type: ignore[index]
+    assert body["model"] == "tts-1"
+    assert body["voice"] == "alloy"
+    assert body["response_format"] == "mp3"
+
+
+def test_dmxapi_audio_probe_is_unusable_on_an_empty_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("POST", f"https://www.dmxapi.cn{path}")
+        return httpx.Response(200, content=b"", request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model="tts-1",
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="dmxapi",
+        )
+    )
+
+    assert result.reachable is True
+    assert result.usable is False
+    assert result.error_code == "invalid_response"
+
+
+def test_fal_audio_probe_posts_to_the_single_voice_clone_app_and_cancels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fal's voice-clone route has no sub-route segment (unlike the video
+    routes below) and — unlike the DMXAPI TTS probe above — is a queue
+    submit, so this exercises `_probe_fal_audio`'s submit+best-effort-cancel
+    skeleton rather than the synchronous audio-bytes path."""
+    posts: list[tuple[str, dict[str, object]]] = []
+    puts: list[str] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append((path, kwargs))
+        request = httpx.Request("POST", f"https://queue.fal.run{path}")
+        return httpx.Response(200, json={"request_id": "clone-req-1"}, request=request)
+
+    def fake_put(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        puts.append(path)
+        request = httpx.Request("PUT", f"https://queue.fal.run{path}")
+        return httpx.Response(202, json={"status": "CANCELLATION_REQUESTED"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://queue.fal.run",
+            model=fal_media.FAL_VOICE_CLONE_MODEL,
+            input_modalities=["text", "audio"],
+            output_modalities=["audio"],
+            protocol="fal",
+        )
+    )
+
+    assert result.probe_type == Operation.AUDIO_GENERATION.value
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in posts] == [f"/{fal_media.FAL_VOICE_CLONE_MODEL}"]
+    body = posts[0][1]["json"]  # type: ignore[index]
+    assert body["audio_url"].startswith("https://")
+    assert result.external_task_id == "clone-req-1"
+    assert puts == [f"/{fal_media.FAL_VOICE_CLONE_MODEL}/requests/clone-req-1/cancel"]
+
+
+def test_dmxapi_music_probe_posts_an_instrumental_body_to_v1_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`audio_generation_kind="music"` is what makes an otherwise-identical
+    `text -> audio` endpoint derive `MUSIC_GENERATION` instead of
+    `AUDIO_GENERATION` — see `LlmProviderEndpoint.capabilities`."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((path, kwargs))
+        request = httpx.Request("POST", f"https://www.dmxapi.cn{path}")
+        return httpx.Response(
+            200,
+            json={"output": [{"content": [{"text": "https://cdn.invalid/clip.mp3"}]}]},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model=dmxapi_media.MUSIC_MODEL_DMX,
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="dmxapi",
+            audio_generation_kind=AudioGenerationKind.MUSIC,
+        )
+    )
+
+    assert result.probe_type == Operation.MUSIC_GENERATION.value
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in calls] == ["/v1/responses"]
+    body = calls[0][1]["json"]  # type: ignore[index]
+    assert body["is_instrumental"] is True
+    assert "lyrics" not in body
+
+
+def test_dmxapi_music_probe_is_unusable_when_no_clip_url_comes_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("POST", f"https://www.dmxapi.cn{path}")
+        return httpx.Response(200, json={"output": []}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://www.dmxapi.cn",
+            model=dmxapi_media.MUSIC_MODEL_DMX,
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="dmxapi",
+            audio_generation_kind=AudioGenerationKind.MUSIC,
+        )
+    )
+
+    assert result.reachable is True
+    assert result.usable is False
+
+
+def test_fal_music_probe_posts_to_the_music_app_and_cancels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posts: list[tuple[str, dict[str, object]]] = []
+    puts: list[str] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append((path, kwargs))
+        request = httpx.Request("POST", f"https://queue.fal.run{path}")
+        return httpx.Response(200, json={"request_id": "music-req-1"}, request=request)
+
+    def fake_put(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        puts.append(path)
+        request = httpx.Request("PUT", f"https://queue.fal.run{path}")
+        return httpx.Response(202, json={"status": "CANCELLATION_REQUESTED"}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://queue.fal.run",
+            model=fal_media.FAL_MUSIC_MODEL,
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="fal",
+            audio_generation_kind=AudioGenerationKind.MUSIC,
+        )
+    )
+
+    assert result.probe_type == Operation.MUSIC_GENERATION.value
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in posts] == [f"/{fal_media.FAL_MUSIC_MODEL}"]
+    body = posts[0][1]["json"]  # type: ignore[index]
+    assert "prompt" in body
+    assert result.external_task_id == "music-req-1"
+    assert puts == [f"/{fal_media.FAL_MUSIC_MODEL}/requests/music-req-1/cancel"]
+
+
+def test_fal_sfx_probe_posts_to_the_sfx_app_with_a_clamped_duration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same `MUSIC_GENERATION` capability, different fal app id — the SFX
+    and BGM models share one connectivity code path (`_probe_fal_audio`),
+    dispatching on `model` via `probe_audio_body`/`probe_audio_path`."""
+    posts: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        posts.append((path, kwargs))
+        request = httpx.Request("POST", f"https://queue.fal.run{path}")
+        return httpx.Response(200, json={"request_id": "sfx-req-1"}, request=request)
+
+    def fake_put(self, path, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("PUT", f"https://queue.fal.run{path}")
+        return httpx.Response(202, json={}, request=request)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+    result = connectivity.validate_endpoint(
+        _media(
+            base_url="https://queue.fal.run",
+            model=fal_media.FAL_SFX_MODEL,
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="fal",
+            audio_generation_kind=AudioGenerationKind.MUSIC,
+        )
+    )
+
+    assert result.probe_type == Operation.MUSIC_GENERATION.value
+    assert result.reachable is True and result.usable is True
+    assert [path for path, _ in posts] == [f"/{fal_media.FAL_SFX_MODEL}"]
+    body = posts[0][1]["json"]  # type: ignore[index]
+    assert body["text"]
+    assert body["duration_seconds"] == 2
+    assert result.external_task_id == "sfx-req-1"

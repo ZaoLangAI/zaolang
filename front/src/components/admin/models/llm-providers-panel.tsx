@@ -24,6 +24,8 @@ import {
 import { formatTokenCount, parseTokenCount } from '@/lib/admin/token-count';
 import { cn } from '@/lib/cn';
 import {
+  AUDIO_GENERATION_KINDS,
+  AUDIO_GENERATION_KIND_LABEL_KEYS,
   GENERAL_INPUT_MODALITIES,
   MEDIA_INPUT_MODALITIES,
   MEDIA_OUTPUT_MODALITIES,
@@ -37,6 +39,7 @@ import {
   operationLabelKey,
 } from '@/lib/admin/operations';
 import type {
+  AudioGenerationKindValue,
   GeneralInputModality,
   MediaInputModality,
   MediaOutputModality,
@@ -62,7 +65,7 @@ import { ApiError } from '@/lib/api/errors';
  * convenience: nothing here is sent to the API or enforced at save time.
  * Mirrors backend `model_catalog.VendorId`; hand-kept in sync like every
  * other enum this file already mirrors (e.g. `MediaProtocol`). */
-type VendorChoice = 'custom' | 'aihubmix' | 'dmxapi';
+type VendorChoice = 'custom' | 'aihubmix' | 'dmxapi' | 'metaso' | 'fal';
 const CUSTOM_VENDOR: VendorChoice = 'custom';
 
 /** Mirrors `app.domain.costs.service.SEEDANCE_TOKENS_BILLING_PROFILE` — the
@@ -130,6 +133,11 @@ interface EndpointFormState {
   input_modalities: MediaInputModality[];
   output_modalities: MediaOutputModality[];
   protocol: MediaProtocol;
+  generation_kind: 'create' | 'edit';
+  // `kind="media"` only: which `text -> audio` capability this endpoint's
+  // model serves when the modality pair alone is ambiguous — see
+  // `AUDIO_GENERATION_KINDS`. Ignored (and hidden) otherwise.
+  audio_generation_kind: AudioGenerationKindValue;
   role: 'primary' | 'backup';
   backup_order: string;
   max_concurrency: string;
@@ -157,6 +165,7 @@ interface EndpointFormState {
   image_generation_by_tier: Record<string, string>;
   image_reference_free_count: string;
   audio_per_10k: string;
+  music_per_request: string;
   video_generation: Record<string, string>;
   video_input_material: Record<string, string>;
   video_reference_free_count: string;
@@ -289,6 +298,8 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     input_modalities: kind === 'general' ? ['text'] : [],
     output_modalities: [],
     protocol: 'openai',
+    generation_kind: 'create',
+    audio_generation_kind: 'voice',
     role: !hasPrimary ? 'primary' : 'backup',
     backup_order: '100',
     max_concurrency: '4',
@@ -305,6 +316,7 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     image_generation_by_tier: emptyTierPrices(),
     image_reference_free_count: '0',
     audio_per_10k: '',
+    music_per_request: '',
     video_generation: emptyResolutionPrices(),
     video_input_material: emptyResolutionPrices(),
     video_reference_free_count: '5',
@@ -331,6 +343,8 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     input_modalities: (endpoint.input_modalities ?? []) as MediaInputModality[],
     output_modalities: (endpoint.output_modalities ?? []) as MediaOutputModality[],
     protocol: endpoint.kind === 'media' && endpoint.protocol ? endpoint.protocol : 'openai',
+    generation_kind: endpoint.generation_kind === 'edit' ? 'edit' : 'create',
+    audio_generation_kind: endpoint.audio_generation_kind === 'music' ? 'music' : 'voice',
     role: endpoint.role,
     backup_order: String(endpoint.backup_order),
     max_concurrency: String(endpoint.max_concurrency),
@@ -347,6 +361,7 @@ function formFrom(endpoint: LlmProviderEndpoint): EndpointFormState {
     image_generation_by_tier: tierPricesFrom(media?.image?.generation_per_image_by_tier_micro_usd),
     image_reference_free_count: String(media?.image?.reference_image_free_count ?? 0),
     audio_per_10k: microUsdToDollars(media?.audio?.per_10k_characters_micro_usd ?? 0),
+    music_per_request: microUsdToDollars(media?.music?.per_request_micro_usd ?? 0),
     video_generation: resolutionPricesFrom(media?.video?.generation_per_second_micro_usd),
     video_input_material: resolutionPricesFrom(media?.video?.input_material_per_second_micro_usd),
     video_reference_free_count: String(media?.video?.reference_image_free_count ?? 5),
@@ -367,6 +382,7 @@ function priceFields(form: EndpointFormState): string[] {
         form.image_input,
         form.image_generation,
         form.audio_per_10k,
+        form.music_per_request,
         form.video_extra_reference,
         form.token_video_no_ref,
         form.token_video_with_ref,
@@ -425,6 +441,7 @@ function convertFormPrices(
   | 'image_generation'
   | 'image_generation_by_tier'
   | 'audio_per_10k'
+  | 'music_per_request'
   | 'video_generation'
   | 'video_input_material'
   | 'video_extra_reference'
@@ -442,6 +459,7 @@ function convertFormPrices(
     image_generation: convert(form.image_generation),
     image_generation_by_tier: convertKeyed(form.image_generation_by_tier, IMAGE_TIERS),
     audio_per_10k: convert(form.audio_per_10k),
+    music_per_request: convert(form.music_per_request),
     video_generation: convertKeyed(form.video_generation, VIDEO_RESOLUTIONS),
     video_input_material: convertKeyed(form.video_input_material, VIDEO_RESOLUTIONS),
     video_extra_reference: convert(form.video_extra_reference),
@@ -473,6 +491,8 @@ function buildUpsertPayload(
     input_modalities: form.input_modalities,
     output_modalities: form.kind === 'media' ? form.output_modalities : [],
     protocol: form.kind === 'media' ? form.protocol : null,
+    generation_kind: form.kind === 'media' ? form.generation_kind : 'create',
+    audio_generation_kind: form.kind === 'media' ? form.audio_generation_kind : 'voice',
     max_concurrency: Number(form.max_concurrency),
     timeout_ms: Number(form.timeout_ms),
     enabled: form.enabled,
@@ -508,6 +528,7 @@ function buildUpsertPayload(
               reference_image_free_count: Number(form.image_reference_free_count || 0),
             },
             audio: { per_10k_characters_micro_usd: micros(form.audio_per_10k) },
+            music: { per_request_micro_usd: micros(form.music_per_request) },
             video: {
               generation_per_second_micro_usd: resolutionPricePayload(
                 form.video_generation,
@@ -939,6 +960,9 @@ export function LlmProvidersPanel({
                     vendor: CUSTOM_VENDOR,
                     billing_profile: null,
                     protocol: kind === 'media' ? current.protocol || 'openai' : current.protocol,
+                    generation_kind: kind === 'media' ? current.generation_kind : 'create',
+                    audio_generation_kind:
+                      kind === 'media' ? current.audio_generation_kind : 'voice',
                     role: hasPrimaryOfKind(kind) ? current.role : 'primary',
                   };
                 })
@@ -991,10 +1015,33 @@ export function LlmProvidersPanel({
                     );
                   }}
                 />
+                <Select
+                  layout="inline"
+                  label={t('generationKind')}
+                  hint={t('generationKindHint')}
+                  value={editing.generation_kind}
+                  options={[
+                    { value: 'create', label: t('generationKindCreate') },
+                    { value: 'edit', label: t('generationKindEdit') },
+                  ]}
+                  onChange={(event) =>
+                    setEditing(
+                      (current) =>
+                        current && {
+                          ...current,
+                          generation_kind: event.target.value === 'edit' ? 'edit' : 'create',
+                        },
+                    )
+                  }
+                />
                 <ModalitySelector
                   inputModalities={editing.input_modalities}
                   outputModalities={editing.output_modalities}
+                  audioGenerationKind={editing.audio_generation_kind}
                   onChange={(next) => setEditing((current) => current && { ...current, ...next })}
+                  onAudioGenerationKindChange={(audio_generation_kind) =>
+                    setEditing((current) => current && { ...current, audio_generation_kind })
+                  }
                 />
               </>
             ) : null}
@@ -1057,7 +1104,7 @@ export function LlmProvidersPanel({
                 label={t('timeoutMs')}
                 type="number"
                 min="1000"
-                max="120000"
+                max="600000"
                 value={editing.timeout_ms}
                 onChange={(event) =>
                   setEditing((current) => current && { ...current, timeout_ms: event.target.value })
@@ -1191,6 +1238,14 @@ function priceItemsToFormPatch(
       case 'llm_cached_input_tokens':
         patch.cached_input_per_million = display;
         break;
+      case 'audio_generation':
+        // Only the per-character TTS shape maps onto this form's one audio
+        // field today — a per-request item (e.g. fal's voice-clone, billed
+        // per call, not per character) has no home yet, so it is left for
+        // the audio-studio pricing UI to grow a field for instead of
+        // silently mislabelling its dollar amount as "per 10k characters".
+        if (item.unit === 'per_10k_characters') patch.audio_per_10k = display;
+        break;
       default:
         break;
     }
@@ -1244,9 +1299,13 @@ function VendorModelPicker({
         model: entry.model,
         base_url: activeVendor?.base_url ?? editing.base_url,
         protocol: (entry.protocol as MediaProtocol | null) ?? editing.protocol,
+        generation_kind: entry.generation_kind === 'edit' ? 'edit' : 'create',
         input_modalities: entry.input_modalities as MediaInputModality[],
         output_modalities: entry.output_modalities as MediaOutputModality[],
         billing_profile: entry.billing_profile ?? null,
+        ...(entry.suggested_timeout_ms > 0
+          ? { timeout_ms: String(entry.suggested_timeout_ms) }
+          : {}),
         ...pricingPatch,
       });
       return;
@@ -1468,13 +1527,24 @@ function PricingFields({
         </PricingSection>
       ) : null}
 
-      {outputs.has('audio') ? (
+      {outputs.has('audio') && form.audio_generation_kind !== 'music' ? (
         <PricingSection title={t('pricingAudioTitle')} hint={t('pricingAudioHint')}>
           <PriceInput
             label={t('priceAudio')}
             hint={t('pricePer10kCharactersHint', { currency: currencyLabel })}
             value={form.audio_per_10k}
             onChange={(value) => onChange({ audio_per_10k: value })}
+          />
+        </PricingSection>
+      ) : null}
+
+      {outputs.has('audio') && form.audio_generation_kind === 'music' ? (
+        <PricingSection title={t('pricingMusicTitle')} hint={t('pricingMusicHint')}>
+          <PriceInput
+            label={t('priceMusic')}
+            hint={t('pricePerRequestHint', { currency: currencyLabel })}
+            value={form.music_per_request}
+            onChange={(value) => onChange({ music_per_request: value })}
           />
         </PricingSection>
       ) : null}
@@ -1633,17 +1703,30 @@ function TokenCountInput({
 function ModalitySelector({
   inputModalities,
   outputModalities,
+  audioGenerationKind,
   onChange,
+  onAudioGenerationKindChange,
 }: {
   inputModalities: MediaInputModality[];
   outputModalities: MediaOutputModality[];
+  audioGenerationKind: AudioGenerationKindValue;
   onChange: (next: {
     input_modalities: MediaInputModality[];
     output_modalities: MediaOutputModality[];
   }) => void;
+  onAudioGenerationKindChange: (kind: AudioGenerationKindValue) => void;
 }) {
   const t = useTranslations('adminProviders');
-  const derived = capabilitiesForModalities(inputModalities, outputModalities);
+  // Both `audio_generation` and `music_generation` derive from the same raw
+  // `text -> audio` pair (see `OPERATION_MODALITY_MAP`) — this is exactly
+  // when the tie-break toggle below actually matters to the operator.
+  const isAudioPairAmbiguous =
+    inputModalities.includes('text') && outputModalities.includes('audio');
+  const derived = capabilitiesForModalities(
+    inputModalities,
+    outputModalities,
+    audioGenerationKind,
+  );
 
   const toggleInput = (modality: MediaInputModality) => {
     const next = inputModalities.includes(modality)
@@ -1676,6 +1759,21 @@ function ModalitySelector({
           onToggle={toggleOutput}
         />
       </div>
+      {isAudioPairAmbiguous ? (
+        <Select
+          layout="inline"
+          label={t('audioGenerationKind')}
+          hint={t('audioGenerationKindHint')}
+          value={audioGenerationKind}
+          options={AUDIO_GENERATION_KINDS.map((kind) => ({
+            value: kind,
+            label: t(AUDIO_GENERATION_KIND_LABEL_KEYS[kind]),
+          }))}
+          onChange={(event) =>
+            onAudioGenerationKindChange(event.target.value as AudioGenerationKindValue)
+          }
+        />
+      ) : null}
       <div>
         <p className="text-xs font-medium text-muted">{t('derivedCapabilitiesLabel')}</p>
         {derived.length === 0 ? (
@@ -2029,6 +2127,11 @@ function NodeRow({
               {PROTOCOL_LABEL_KEYS[endpoint.protocol as MediaProtocol]
                 ? t(PROTOCOL_LABEL_KEYS[endpoint.protocol as MediaProtocol])
                 : endpoint.protocol}
+            </Badge>
+          ) : null}
+          {endpoint.kind === 'media' ? (
+            <Badge tone="neutral">
+              {endpoint.generation_kind === 'edit' ? t('generationKindEdit') : t('generationKindCreate')}
             </Badge>
           ) : null}
           <Badge tone={endpoint.enabled ? 'success' : 'neutral'}>

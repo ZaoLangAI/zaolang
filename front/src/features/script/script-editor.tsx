@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
@@ -12,15 +12,39 @@ import * as editorApi from '@/features/editor/api';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
-import type { Draft } from '@/lib/api/types';
+import type { Character, Draft } from '@/lib/api/types';
+import { invalidateResource } from '@/lib/resource-cache';
+import { useResource } from '@/lib/use-resource';
 
 import * as scriptApi from './api';
 import type { ScriptDetail, ScriptDocument } from './api';
+import {
+  boundVideoCount,
+  existingLibraryMatches,
+  hasLinkedReference,
+  libraryCharacterByName,
+  linkedCharacterCount,
+  linkedSceneCount,
+  pendingCharacters,
+  pendingDialogueLines,
+  pendingScenes,
+  pendingVideos,
+  unreferencedVideoKeys,
+} from './batch-plan';
 import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
+import { ScriptBatchDialog } from './script-batch-dialog';
+import { ScriptBatchToolbar } from './script-batch-toolbar';
 import { ScriptChatPanel } from './script-chat-panel';
-import { indexBreakpointVideos } from './script-breakpoint';
+import { dubbedDialogueKeys, indexBreakpointVideos } from './script-breakpoint';
 import { ScriptDocumentView } from './script-document-view';
 import { useScriptTurnStream } from './use-script-turn-stream';
+import {
+  inFlightIds,
+  type BatchKind,
+  type BatchParams,
+  type BatchQuote,
+  useScriptBatch,
+} from './use-script-batch';
 
 /** Right-side placeholder while a script's content is streaming in (either
  * the first draft or a revision turn) and there is nothing final to show
@@ -79,12 +103,38 @@ export function ScriptEditor({
   const [retryIdea, setRetryIdea] = useState('');
   const [retrySkillIds, setRetrySkillIds] = useState<string[]>([]);
   const [linkedDrafts, setLinkedDrafts] = useState<Draft[]>([]);
+  const [libraryRevision, setLibraryRevision] = useState(0);
+  const [batchKind, setBatchKind] = useState<BatchKind | null>(null);
   // A ref, not `useState`: this is purely a run-once guard, never read by
   // render — same pattern as `WorkflowPublishDialog`'s `wasOpen`.
   const pendingLinkApplied = useRef(false);
   const retryIdeaSeeded = useRef(false);
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
+  const characterLibrary = useResource<Character[]>('/v1/characters');
+
+  // Seeds the retry composer with the idea/skills that produced the current
+  // (possibly missing) first draft — once, the first time a real idea shows
+  // up. Lives up here (ahead of the loading/error early returns below) and
+  // as an effect (not a render-time `if` guarded by the ref) so reading/
+  // writing `retryIdeaSeeded.current` never happens during render itself.
+  useEffect(() => {
+    if (retryIdeaSeeded.current) return;
+    const idea = (createStream?.idea || detail?.source_idea || '').trim();
+    if (!idea) return;
+    retryIdeaSeeded.current = true;
+    setRetryIdea(idea);
+    setRetrySkillIds(
+      createStream?.referencedSkillIds?.length
+        ? createStream.referencedSkillIds
+        : detail?.source_referenced_skill_ids ?? [],
+    );
+  }, [
+    createStream?.idea,
+    createStream?.referencedSkillIds,
+    detail?.source_idea,
+    detail?.source_referenced_skill_ids,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,11 +154,7 @@ export function ScriptEditor({
     };
   }, [episodeId, t]);
 
-  // Same source the episode workspace uses for "生成的视频" — a draft is
-  // linked the moment it is created from a breakpoint, so this chip can
-  // flip to "查看视频" without waiting for the job to finish.
-  useEffect(() => {
-    let cancelled = false;
+  const refreshLinkedDrafts = useCallback(() => {
     void editorApi
       .listContentLinks(episodeId)
       .then((links) => {
@@ -120,17 +166,19 @@ export function ScriptEditor({
         );
       })
       .then((results) => {
-        if (!cancelled) {
-          setLinkedDrafts(results.filter((draft): draft is Draft => draft !== null));
-        }
+        setLinkedDrafts(results.filter((draft): draft is Draft => draft !== null));
       })
       .catch(() => {
-        if (!cancelled) setLinkedDrafts([]);
+        setLinkedDrafts([]);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [episodeId]);
+
+  // Same source the episode workspace uses for "生成的视频" — a draft is
+  // linked the moment it is created from a breakpoint, so this chip can
+  // flip to "查看视频" without waiting for the job to finish.
+  useEffect(() => {
+    refreshLinkedDrafts();
+  }, [refreshLinkedDrafts]);
 
   // The first draft may still be streaming in from `ScriptLanding`. Once it
   // lands, refetch the canonical script through the normal REST endpoint
@@ -187,12 +235,7 @@ export function ScriptEditor({
 
   const isViewingLatest = detail !== null && selectedTurnId === detail.turns.at(-1)?.id;
 
-  const videoBindings = useMemo(
-    () => indexBreakpointVideos(linkedDrafts, (viewedScript ?? detail?.script)?.scenes ?? []),
-    [linkedDrafts, viewedScript, detail?.script],
-  );
-
-  const updateLink = async (
+  const updateLink = useCallback(async (
     update:
       | { kind: 'character'; name: string; refId: string | null }
       | { kind: 'scene'; heading: string; refId: string | null },
@@ -210,7 +253,28 @@ export function ScriptEditor({
     } catch (error) {
       notify(isApiError(error) ? error.message : t('unavailable'), 'error');
     }
-  };
+  }, [episodeId, notify, t]);
+
+  const bumpLibrary = useCallback(() => {
+    invalidateResource('/v1/characters');
+    invalidateResource('/v1/scenes');
+    setLibraryRevision((current) => current + 1);
+    characterLibrary.refetch();
+  }, [characterLibrary.refetch]);
+
+  const videoBindings = useMemo(
+    () => indexBreakpointVideos(linkedDrafts, (viewedScript ?? detail?.script)?.scenes ?? []),
+    [linkedDrafts, viewedScript, detail?.script],
+  );
+  const dubbedKeys = useMemo(() => dubbedDialogueKeys(linkedDrafts), [linkedDrafts]);
+
+  const batch = useScriptBatch({
+    episodeId,
+    videoBindings,
+    onLink: (update) => updateLink(update),
+    onVideoDraftCreated: refreshLinkedDrafts,
+    onLibraryChanged: bumpLibrary,
+  });
 
   // Hand-edits (double-click a block/logline/trait, then blur or Ctrl+S —
   // see `EditableInlineText`) never go through the LLM turn machinery: they
@@ -333,15 +397,6 @@ export function ScriptEditor({
   const firstDraftStreaming = !hasTurns && (createStream?.streaming ?? false);
 
   const seededIdea = (createStream?.idea || detail.source_idea || '').trim();
-  const seededSkillIds =
-    createStream?.referencedSkillIds?.length
-      ? createStream.referencedSkillIds
-      : detail.source_referenced_skill_ids;
-  if (!retryIdeaSeeded.current && seededIdea) {
-    retryIdeaSeeded.current = true;
-    setRetryIdea(seededIdea);
-    setRetrySkillIds(seededSkillIds);
-  }
   const emptyShellError = firstDraftError ?? detail.last_error ?? null;
 
   // A shell with no turn at all — its first-draft stream either failed
@@ -395,6 +450,102 @@ export function ScriptEditor({
   }
 
   const documentStreaming = firstDraftStreaming || stream.streaming;
+  const currentScript = viewedScript ?? detail.script;
+  const inflightCharacters = inFlightIds(batch.items, 'character');
+  const inflightScenes = inFlightIds(batch.items, 'scene');
+  const inflightVideos = inFlightIds(batch.items, 'video');
+  const inflightAudios = inFlightIds(batch.items, 'audio');
+  const characterQueue = pendingCharacters(currentScript, inflightCharacters);
+  const libraryItems = characterLibrary.data ?? [];
+  const libraryByName = libraryCharacterByName(libraryItems);
+  const characterMatches = existingLibraryMatches(
+    currentScript,
+    libraryItems,
+    inflightCharacters,
+  );
+  const characterGenerateQueue = characterQueue.filter(
+    (character) => !libraryByName.has(character.name.trim()),
+  );
+  const existingRefByLabel = Object.fromEntries(
+    characterMatches.map((match) => [match.name, match.refId]),
+  );
+  const sceneQueue = pendingScenes(currentScript, inflightScenes);
+  const videoQueue = pendingVideos(currentScript, videoBindings, inflightVideos);
+  const videoDisabled = !hasLinkedReference(currentScript);
+  const audioQueue = pendingDialogueLines(currentScript, dubbedKeys, inflightAudios);
+  const batchProgress =
+    batch.items.length === 0
+      ? null
+      : {
+          done: batch.items.filter((item) => item.status === 'succeeded').length,
+          total: batch.items.length,
+        };
+
+  const confirmBatch = (params: BatchParams, quote: BatchQuote, skippedLabels: string[]) => {
+    const kind = batchKind;
+    setBatchKind(null);
+    if (!kind) return;
+    if (kind === 'characters') {
+      const skipSet = new Set(skippedLabels);
+      const toLink = characterMatches.filter((match) => skipSet.has(match.name));
+      const toGenerate = characterQueue.filter((character) => !skipSet.has(character.name));
+      void (async () => {
+        if (toLink.length > 0) {
+          try {
+            const script = await scriptApi.updateScriptLinks(episodeId, {
+              characters: toLink.map((match) => ({
+                name: match.name,
+                character_ref_id: match.refId,
+              })),
+            });
+            setDetail((current) => (current ? { ...current, script } : current));
+            setViewedScript(script);
+          } catch (error) {
+            notify(isApiError(error) ? error.message : t('unavailable'), 'error');
+          }
+        }
+        if (toGenerate.length === 0) return;
+        await batch.start({
+          kind,
+          params,
+          unitCredits: quote.unitCredits,
+          characters: toGenerate,
+          document: currentScript,
+        });
+      })();
+      return;
+    }
+    void batch.start({
+      kind,
+      params,
+      unitCredits: quote.unitCredits,
+      scenes: kind === 'scenes' ? sceneQueue : undefined,
+      videos: kind === 'videos' ? videoQueue : undefined,
+      audios: kind === 'audio' ? audioQueue : undefined,
+      document: currentScript,
+    });
+  };
+
+  const dialogLabels =
+    batchKind === 'characters'
+      ? characterQueue.map((item) => item.name)
+      : batchKind === 'scenes'
+        ? sceneQueue.map((item) => item.heading)
+        : batchKind === 'videos'
+          ? videoQueue.map((item) => item.heading)
+          : batchKind === 'audio'
+            ? audioQueue.map((item) => (item.character ? `${item.character}：${item.text}` : item.text))
+            : [];
+  const dialogSkipLinked =
+    batchKind === 'characters'
+      ? linkedCharacterCount(currentScript)
+      : batchKind === 'scenes'
+        ? linkedSceneCount(currentScript)
+        : batchKind === 'videos'
+          ? boundVideoCount(currentScript, videoBindings)
+          : 0;
+  const dialogSkipUnreferenced =
+    batchKind === 'videos' ? unreferencedVideoKeys(currentScript, videoBindings).length : 0;
 
   // Both columns share this exact height at the desktop breakpoint —
   // `100dvh` minus everything the page stacks above the grid (top bar,
@@ -407,6 +558,7 @@ export function ScriptEditor({
   const WORKSPACE_HEIGHT = 'xl:h-[max(26rem,calc(100dvh-16rem))]';
 
   return (
+    <>
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.3fr)]">
       <div className={`flex min-h-[50vh] flex-col ${WORKSPACE_HEIGHT}`}>
         <ScriptChatPanel
@@ -427,19 +579,53 @@ export function ScriptEditor({
           the ones that scroll internally instead. Only kicks in once the
           two-column layout itself does (`xl:`); below that both panels
           stack and the page scrolls normally like everywhere else. */}
-      <div className={`rounded-[var(--radius-md)] border border-border bg-surface p-4 ${WORKSPACE_HEIGHT} xl:overflow-y-auto`}>
+      <div className={`flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4 ${WORKSPACE_HEIGHT} xl:overflow-y-auto`}>
+        {isViewingLatest && !documentStreaming ? (
+          <ScriptBatchToolbar
+            characterCount={characterGenerateQueue.length}
+            characterPendingCount={characterQueue.length}
+            sceneCount={sceneQueue.length}
+            videoCount={videoQueue.length}
+            videoDisabled={videoDisabled}
+            audioCount={audioQueue.length}
+            disabled={documentStreaming}
+            running={batch.running}
+            paused={batch.paused}
+            progress={batchProgress}
+            onOpen={setBatchKind}
+            onResume={() => void batch.resumeQueue()}
+          />
+        ) : null}
         {documentStreaming ? (
           <ScriptDocumentLoading label={t('generating')} hint={t('scriptGeneratingBody')} />
         ) : (
           <ScriptDocumentView
-            document={viewedScript ?? detail.script}
+            document={currentScript}
             episodeId={episodeId}
             onLink={isViewingLatest ? (update) => void updateLink(update) : undefined}
             onSaveContent={isViewingLatest ? (next) => void saveContent(next) : undefined}
             videoBindings={videoBindings}
+            itemByKey={batch.itemByKey}
+            onRetryImage={
+              isViewingLatest
+                ? (kind, source) => void batch.retryImage(kind, source)
+                : undefined
+            }
+            libraryRevision={libraryRevision}
           />
         )}
       </div>
     </div>
+    <ScriptBatchDialog
+      key={batchKind ?? 'closed'}
+      kind={batchKind}
+      labels={dialogLabels}
+      skipLinked={dialogSkipLinked}
+      skipUnreferenced={dialogSkipUnreferenced}
+      existingRefByLabel={batchKind === 'characters' ? existingRefByLabel : undefined}
+      onClose={() => setBatchKind(null)}
+      onConfirm={confirmBatch}
+    />
+    </>
   );
 }

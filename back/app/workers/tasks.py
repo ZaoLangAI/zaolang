@@ -217,6 +217,22 @@ def run_audio_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-d
 
 
 @celery_app.task(
+    name="app.workers.tasks.run_music_generation",
+    bind=True,
+    base=GenerationTask,
+    max_retries=2,
+    **_GENERATION,
+)
+def run_music_generation(self, job_id: str) -> str:  # type: ignore[no-untyped-def]
+    """Same thin shell as `run_audio_generation` — music/SFX shares that
+    operation's `audio_generation` queue (see `celery_app.py`'s routing):
+    both are one short-lived synchronous-or-async media call, not a
+    multi-minute video render, so they compete for the same worker slot
+    rather than needing a third queue."""
+    return _run_generation_task(self, job_id)
+
+
+@celery_app.task(
     name="app.workers.tasks.run_video_analysis",
     bind=True,
     base=GenerationTask,
@@ -625,6 +641,9 @@ def dispatch_generation(job: GenerationJob) -> None:
     if job.operation == Operation.AUDIO_GENERATION:
         run_audio_generation.delay(job.id)
         return
+    if job.operation == Operation.MUSIC_GENERATION:
+        run_music_generation.delay(job.id)
+        return
     if job.operation == Operation.VIDEO_ANALYSIS:
         run_video_analysis.delay(job.id)
         return
@@ -642,6 +661,7 @@ __all__ = [
     "run_audio_generation",
     "run_draft_publish",
     "run_generation",
+    "run_music_generation",
     "run_quality_check",
     "run_video_analysis",
     "run_video_generation",

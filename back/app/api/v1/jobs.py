@@ -33,7 +33,8 @@ from app.api.schemas.jobs import (
     VideoAnalysisResult,
 )
 from app.domain.credits import service as credits_service
-from app.domain.errors import NotFound, ProviderTemporaryFailure, ValidationFailed
+from app.domain.errors import NotFound, ValidationFailed
+from app.domain.jobs import dispatch as job_dispatch
 from app.domain.jobs import input_requests
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
@@ -48,15 +49,21 @@ from app.models.base import new_id
 from app.models.enums import (
     CharacterViewAngle,
     ImageAssetKind,
-    JobEventType,
     JobOrigin,
     JobStatus,
+    MediaGenerationKind,
     Operation,
     QualityTier,
     VideoAssetKind,
 )
 from app.presenters import media_urls
 from app.providers import model_catalog
+from app.providers.base import (
+    STUDIO_RESOLUTION_TIERS,
+    ProviderCapability,
+    studio_resolution_tiers,
+    studio_tier_for_literal,
+)
 from app.realtime import publisher
 
 router = APIRouter(tags=["generation"])
@@ -68,7 +75,45 @@ VIDEO_OPERATIONS = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation
 # The one operation set `GenerationParams.forced_model` accepts (see
 # `validate_generation_params`) — the C-end model picker must offer exactly
 # the same scope, or a client could pick a model this operation would reject.
-_FORCED_MODEL_OPERATIONS = IMAGE_OPERATIONS | frozenset(VIDEO_OPERATIONS)
+_FORCED_MODEL_OPERATIONS = (
+    IMAGE_OPERATIONS | frozenset(VIDEO_OPERATIONS) | frozenset({Operation.AUDIO_GENERATION})
+)
+
+
+def _merged_studio_resolutions(
+    capabilities: list[ProviderCapability], *, video: bool
+) -> list[str] | None:
+    """Union of client-facing tiers this model can honour for the operation.
+
+    `None` = unrestricted (image ops, or any candidate without a profile).
+    """
+
+    if not video:
+        return None
+    unrestricted = False
+    tiers: set[str] = set()
+    for capability in capabilities:
+        if capability.resolutions is None:
+            unrestricted = True
+            continue
+        mapped = studio_resolution_tiers(capability.resolutions)
+        if mapped:
+            tiers.update(mapped)
+    if unrestricted:
+        return None
+    return [tier for tier in STUDIO_RESOLUTION_TIERS if tier in tiers]
+
+
+def _merged_default_resolution(
+    capabilities: list[ProviderCapability], *, video: bool
+) -> str | None:
+    if not video:
+        return None
+    for capability in capabilities:
+        mapped = studio_tier_for_literal(capability.default_resolution)
+        if mapped is not None:
+            return mapped
+    return None
 
 
 @router.post("/generation-jobs/quote", response_model=QuoteResponse)
@@ -104,8 +149,10 @@ def list_generation_models(
     `router.build_catalog` snapshot `route_score` filters against, so an
     operator adding/disabling an endpoint at `/admin/models` is reflected
     here on the very next request rather than a stale/hardcoded list. Never
-    exposes `base_url`/`api_key`/`endpoint_id` — only the model name and a
-    best-effort display label.
+    exposes `base_url`/`api_key`/`endpoint_id` — only the model name, a
+    best-effort display label, and (for video) the client-facing
+    `resolutions` / `default_resolution` studio tiers used to preview
+    downward adaptation. `768P` never leaves this endpoint.
 
     Calls `routing.build_catalog` through the module (never a directly
     imported name) so this always resolves whatever `app.agents.router
@@ -117,18 +164,44 @@ def list_generation_models(
     real bug against `tests.conftest.fake_media_catalog`'s monkeypatch).
     """
     if operation not in _FORCED_MODEL_OPERATIONS:
-        raise ValidationFailed("仅支持图片创作/视频创作的模型列表。")
+        raise ValidationFailed("仅支持图片创作/视频创作/音频创作的模型列表。")
     catalog = routing.build_catalog(session)
-    models: dict[str, str] = {}
+    grouped: dict[str, list[ProviderCapability]] = {}
+    labels: dict[str, str] = {}
+    hide_edit_class = operation in {
+        Operation.TEXT_TO_VIDEO,
+        Operation.IMAGE_TO_VIDEO,
+    }
     for capability in catalog.values():
         if operation.value not in capability.operations:
             continue
-        models.setdefault(
+        if hide_edit_class and capability.generation_kind == MediaGenerationKind.EDIT:
+            continue
+        grouped.setdefault(capability.model_or_workflow, []).append(capability)
+        labels.setdefault(
             capability.model_or_workflow,
             model_catalog.display_name_for_model(capability.model_or_workflow)
             or capability.model_or_workflow,
         )
-    options = [GenerationModelOption(model=model, label=label) for model, label in models.items()]
+    is_video = operation in VIDEO_OPERATIONS
+    is_audio = operation == Operation.AUDIO_GENERATION
+
+    def _voices(model: str) -> list[str] | None:
+        if not is_audio:
+            return None
+        voices = model_catalog.voices_for_model(model)
+        return list(voices) if voices else None
+
+    options = [
+        GenerationModelOption(
+            model=model,
+            label=labels[model],
+            resolutions=_merged_studio_resolutions(capabilities, video=is_video),
+            default_resolution=_merged_default_resolution(capabilities, video=is_video),
+            voices=_voices(model),
+        )
+        for model, capabilities in grouped.items()
+    ]
     options.sort(key=lambda option: option.label)
     return GenerationModelListResponse(models=options)
 
@@ -209,15 +282,21 @@ def list_jobs(
             GenerationJob.origin != JobOrigin.SANDBOX,
         )
         .order_by(GenerationJob.created_at.desc())
-        .limit(limit)
     )
     if status is not None:
         stmt = stmt.where(GenerationJob.status == status)
     if draft_id is not None:
-        stmt = stmt.where(GenerationJob.draft_id == draft_id)
+        # Version history lists every iteration under one draft — hide
+        # tombstoned versions and use the full 50-item window so a long
+        # refine chain is not truncated at the generic list default of 20.
+        stmt = stmt.where(
+            GenerationJob.draft_id == draft_id,
+            GenerationJob.draft_history_hidden_at.is_(None),
+        )
+        limit = 50
     if operation is not None:
         stmt = stmt.where(GenerationJob.operation == operation.value)
-    jobs = list(session.scalars(stmt))
+    jobs = list(session.scalars(stmt.limit(limit)))
     return Page(items=_job_responses(session, jobs))
 
 
@@ -489,42 +568,13 @@ def _resolve_source_version(
 
 
 def _enqueue(job: GenerationJob) -> None:
-    from app.workers import tasks
-
-    tasks.dispatch_generation(job)
+    """Kept as a name the tests already monkeypatch; the behaviour moved to
+    `domain.jobs.dispatch` so the canvas Agent submits through the same path."""
+    job_dispatch.enqueue(job)
 
 
 def _enqueue_or_fail(session: Session, job: GenerationJob) -> None:
-    """Enqueues the Celery task, failing the job and releasing its reservation
-    if the broker itself is unreachable.
-
-    Credits were reserved inside the transaction that just committed
-    (`jobs_service.submit`); a broker outage here must not leave that
-    reservation stuck for the ~30 minutes it would take `expire_stale_jobs`
-    to notice on its own.
-    """
-    try:
-        _enqueue(job)
-    except Exception as exc:
-        sm.transition(
-            session,
-            job.id,
-            JobStatus.FAILED,
-            failure_code="ENQUEUE_FAILED",
-            failure_message="任务入队失败，积分已退回，请重试。",
-        )
-        jobs_service.settle_release(session, job, reason="enqueue_failed")
-        sm.append_event(
-            session,
-            job.id,
-            event_type=JobEventType.FAILED,
-            status=JobStatus.FAILED,
-            public_message="任务入队失败，积分已退回，请重试。",
-            progress=100,
-            internal_code="ENQUEUE_FAILED",
-        )
-        session.commit()
-        raise ProviderTemporaryFailure("任务入队失败，请重试。") from exc
+    job_dispatch.enqueue_or_fail(session, job)
 
 
 def _job_responses(session: Session, jobs: list[GenerationJob]) -> list[GenerationJobResponse]:

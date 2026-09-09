@@ -24,6 +24,10 @@ ALLOWED_UPLOAD_MIME_TYPES: dict[str, str] = {
     "image/webp": ".webp",
     "video/mp4": ".mp4",
     "video/webm": ".webm",
+    # Voice-clone reference samples only (`voice_sample` purpose) — no other
+    # purpose accepts audio today.
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
 }
 
 MAX_UPLOAD_BYTES: dict[str, int] = {
@@ -34,6 +38,7 @@ MAX_UPLOAD_BYTES: dict[str, int] = {
     "learn_media": 12 * 1024 * 1024,
     "style_gallery_cover": 8 * 1024 * 1024,
     "series_logo": 4 * 1024 * 1024,
+    "episode_preview": 4 * 1024 * 1024,
     "editor_source": 256 * 1024 * 1024,
     "editor_export": 256 * 1024 * 1024,
     "caption": 4 * 1024 * 1024,
@@ -43,6 +48,10 @@ MAX_UPLOAD_BYTES: dict[str, int] = {
     # exceeds `generation_reference`'s 32MB, which is sized for a still
     # reference image or a very short generation-reference clip instead.
     "video_analysis_source": 150 * 1024 * 1024,
+    # A short voice-clone reference sample (a few seconds to ~1 minute of
+    # speech) — nowhere near a video's size, but its own purpose because
+    # `generation_reference`'s MIME gate is image/video only.
+    "voice_sample": 8 * 1024 * 1024,
 }
 
 # Each purpose is confined to its own prefix so a signed URL for an avatar can
@@ -55,11 +64,13 @@ PURPOSE_PREFIXES: dict[str, str] = {
     "learn_media": "staging/learn-media",
     "style_gallery_cover": "staging/style-gallery",
     "series_logo": "staging/series-logos",
+    "episode_preview": "staging/episode-previews",
     "editor_source": "staging/editor-source",
     "editor_export": "staging/editor-export",
     "caption": "staging/captions",
     "font": "staging/fonts",
     "video_analysis_source": "staging/video-analysis-sources",
+    "voice_sample": "staging/voice-samples",
 }
 
 

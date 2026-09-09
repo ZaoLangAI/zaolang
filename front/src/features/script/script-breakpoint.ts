@@ -2,6 +2,25 @@ import type { Draft } from '@/lib/api/types';
 
 import type { ScriptBlock, ScriptDocument, ScriptScene } from './api';
 
+/** `DramaEpisode.id` is `dep_` + a Crockford token, stored in `String(40)`. */
+export function parseScriptEpisodeId(raw: string | undefined): string | undefined {
+  if (!raw || raw.length > 40 || !/^dep_[0-9A-Za-z]+$/.test(raw)) return undefined;
+  return raw;
+}
+
+/** `Draft.id` is `drf_` + a Crockford token, stored in `String(40)`. */
+export function parseScriptDraftId(raw: string | undefined): string | undefined {
+  if (!raw || raw.length > 40 || !/^drf_[0-9A-Za-z]+$/.test(raw)) return undefined;
+  return raw;
+}
+
+/** `{heading}#{ordinal}` from the clip-studio query string. */
+export function parseBreakpointQueryKey(raw: string | undefined): string | undefined {
+  const key = raw?.trim() ?? '';
+  if (!key || key.length > 120 || !key.includes('#')) return undefined;
+  return key;
+}
+
 /** Stable id for one breakpoint inside one scene — `{heading}#{ordinal}`. */
 export function breakpointKey(heading: string, ordinal: number): string {
   return `${heading}#${ordinal}`;
@@ -78,6 +97,26 @@ export function orderedBreakpointKeys(document: ScriptDocument): string[] {
   return keys;
 }
 
+/** Scene + block index for a `{heading}#{ordinal}` key, including a trailing closer. */
+export function locateBreakpoint(
+  document: ScriptDocument,
+  key: string,
+): { scene: ScriptScene; blockIndex: number } | null {
+  for (const scene of document.scenes) {
+    let ordinal = 0;
+    for (let blockIndex = 0; blockIndex < scene.blocks.length; blockIndex += 1) {
+      if (scene.blocks[blockIndex]?.type !== 'breakpoint') continue;
+      if (breakpointKey(scene.heading, ordinal) === key) {
+        return { scene, blockIndex };
+      }
+      ordinal += 1;
+    }
+    const closer = trailingBreakpoint(scene);
+    if (closer?.key === key) return { scene, blockIndex: closer.blockIndex };
+  }
+  return null;
+}
+
 /**
  * The nearest *earlier* breakpoint (in the whole document's generation
  * order, not just this scene) that already has a bound video output —
@@ -103,41 +142,27 @@ export function previousBoundVideoAssetId(
 }
 
 /**
- * The video-studio jump-out for a breakpoint that has not generated yet.
- * `referenceCharacterIds`/`referenceSceneIds` are generation *input*;
- * `linkEpisodeId`/`linkBreakpointKey` are what let the draft land on the
- * episode workspace and this exact chip. No refs → no generate link.
- * `continuityAssetId` — the previous segment's already-generated video, if
- * any (`previousBoundVideoAssetId`) — lets the studio auto-extract that
- * clip's last frame as this one's first frame (see `VideoGenerationStudio`'s
- * `continuitySourceAssetId`), so cuts flow instead of jumping between shots.
+ * The clip-studio jump-out for a breakpoint that has not generated yet.
+ * Episode id and breakpoint key are the only payload — the studio loads
+ * the segment from `GET /v1/scripts/{id}`. Always clickable: the clip
+ * studio's scene dropdown can attach a plate even when this heading has
+ * no `ref_id` yet.
  */
 export function buildBreakpointVideoHref({
   episodeId,
   key,
-  characterIds,
-  sceneId,
-  prompt,
-  continuityAssetId,
 }: {
   episodeId: string;
   key: string;
-  characterIds: string[];
-  sceneId: string | null;
-  prompt: string;
-  continuityAssetId?: string | null;
-}): string | undefined {
-  if (characterIds.length === 0 && !sceneId) return undefined;
-  const params = new URLSearchParams({
-    mode: 'video_creation',
-    linkEpisodeId: episodeId,
-    linkBreakpointKey: key,
-  });
-  if (prompt) params.set('prompt', prompt);
-  if (characterIds.length) params.set('referenceCharacterIds', characterIds.join(','));
-  if (sceneId) params.set('referenceSceneIds', sceneId);
-  if (continuityAssetId) params.set('continuityAssetId', continuityAssetId);
-  return `/create/new?${params.toString()}`;
+  /** @deprecated unused; kept so existing call sites can drop it gradually. */
+  characterIds?: string[];
+  /** @deprecated unused; kept so existing call sites can drop it gradually. */
+  sceneId?: string | null;
+  /** @deprecated unused; kept so existing call sites can drop it gradually. */
+  prompt?: string;
+}): string {
+  const params = new URLSearchParams({ key });
+  return `/create/script/${episodeId}/clip?${params.toString()}`;
 }
 
 export type BreakpointVideoBinding = {
@@ -152,35 +177,33 @@ export type BreakpointVideoBinding = {
 };
 
 /**
- * Where the "建议切分"/"查看/调整视频" chip goes. Once a draft is bound —
- * whatever its state (still generating, failed, or succeeded) — the chip
- * always resumes that exact draft in the video studio (`?draftId=`), which
- * shows its live/finished result, its full version history, and lets the
- * user tweak the prompt/params and generate another version right there;
- * there is no more separate read-only `/jobs/{id}` destination for a
- * breakpoint. `viewGenerated` only distinguishes the chip's label (already
- * has an output vs. still just a suggestion) — the destination is the
- * studio either way.
+ * Where the "生成视频"/"查看/调整视频" chip goes. Both states land on the
+ * script clip studio (`/create/script/{episodeId}/clip?key=`). A bound
+ * draft adds `draftId` so that session's version history resumes.
+ * `viewGenerated` only distinguishes the chip's label.
  */
 export function resolveBreakpointHref({
   episodeId,
   key,
   characterIds,
   sceneId,
-  prompt,
   binding,
-  continuityAssetId,
 }: {
   episodeId?: string;
   key: string;
   characterIds: string[];
   sceneId: string | null;
-  prompt: string;
+  /** @deprecated unused. */
+  prompt?: string;
   binding?: BreakpointVideoBinding;
-  /** The previous segment's bound video, if any — only meaningful for a
-   * fresh (unbound) generate link; see `buildBreakpointVideoHref`. */
-  continuityAssetId?: string | null;
 }): { href?: string; viewGenerated: boolean } {
+  if (binding && episodeId) {
+    const params = new URLSearchParams({ key, draftId: binding.draftId });
+    return {
+      href: `/create/script/${episodeId}/clip?${params.toString()}`,
+      viewGenerated: Boolean(binding.outputAssetId),
+    };
+  }
   if (binding) {
     const params = new URLSearchParams({ mode: 'video_creation', draftId: binding.draftId });
     return {
@@ -195,8 +218,6 @@ export function resolveBreakpointHref({
       key,
       characterIds,
       sceneId,
-      prompt,
-      continuityAssetId,
     }),
     viewGenerated: false,
   };
@@ -227,7 +248,17 @@ export function indexBreakpointVideos(
   const byKey: Record<string, BreakpointVideoBinding> = {};
   const unmatched: Draft[] = [];
 
-  for (const draft of drafts) {
+  // Only ever consider `text_to_video` drafts — a script-linked draft can
+  // now also be `audio_generation` (dubbing, see `dubbedDialogueKeys`
+  // below) or an image batch item, none of which should ever bind onto a
+  // breakpoint's video chip. Drafts from before `operation` was stored in
+  // `params` (none left in practice, but harmless to keep) fall through.
+  const videoDrafts = drafts.filter((draft) => {
+    const operation = stringParam(draft.params, 'operation');
+    return !operation || operation === 'text_to_video';
+  });
+
+  for (const draft of videoDrafts) {
     const key = stringParam(draft.params, 'link_breakpoint_key');
     if (key) byKey[key] = draftBinding(draft);
     else unmatched.push(draft);
@@ -262,4 +293,19 @@ export function indexBreakpointVideos(
   }
 
   return byKey;
+}
+
+/** `link_breakpoint_key`s already dubbed by an episode-linked
+ * `audio_generation` draft — used by `pendingDialogueLines` to skip lines
+ * that already have a voice clip. Only the key matters (no chip/history UI
+ * hangs off a dubbed line the way `BreakpointVideoBinding` does for video),
+ * so this stays a plain `Set` rather than a binding map. */
+export function dubbedDialogueKeys(drafts: Draft[]): Set<string> {
+  const keys = new Set<string>();
+  for (const draft of drafts) {
+    if (stringParam(draft.params, 'operation') !== 'audio_generation') continue;
+    const key = stringParam(draft.params, 'link_breakpoint_key');
+    if (key) keys.add(key);
+  }
+  return keys;
 }

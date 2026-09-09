@@ -15,7 +15,10 @@ from app.platform_config import service as config_service
 from app.platform_config.schemas import (
     DEFAULT_CONFIGS,
     FEATURE_FLAG_NAMES,
+    LLM_ENDPOINT_TIMEOUT_MS_DEFAULT,
+    LLM_ENDPOINT_TIMEOUT_MS_MAX,
     MAX_GENERATION_DURATION_SECONDS,
+    MEDIA_IMAGE_TIMEOUT_MS_MIN,
     PROTOCOL_CAPABILITIES,
     VIDEO_RESOLUTIONS,
     ContentModerationConfig,
@@ -294,6 +297,55 @@ def test_a_media_endpoint_without_protocol_infers_openai_for_images() -> None:
         }
     )
     assert endpoint.protocol == "openai"
+    assert endpoint.timeout_ms == LLM_ENDPOINT_TIMEOUT_MS_DEFAULT
+
+
+def test_an_image_media_endpoint_rejects_a_sub_90s_timeout() -> None:
+    with pytest.raises(Exception, match="不能低于 90 秒"):
+        LlmProviderEndpoint.model_validate(
+            {
+                "name": "图",
+                "base_url": "https://media.invalid",
+                "kind": "media",
+                "model": "doubao-seedream-5-0-pro-260628",
+                "input_modalities": ["text"],
+                "output_modalities": ["image"],
+                "timeout_ms": 30_000,
+            }
+        )
+
+
+def test_a_video_media_endpoint_may_keep_a_30s_timeout() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "视频",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "minimax-h3",
+            "protocol": "minimax",
+            "input_modalities": ["text"],
+            "output_modalities": ["video"],
+            "timeout_ms": 30_000,
+        }
+    )
+    assert endpoint.timeout_ms == 30_000
+
+
+def test_endpoint_timeout_ceiling_is_600s() -> None:
+    assert LLM_ENDPOINT_TIMEOUT_MS_MAX == 600_000
+    assert MEDIA_IMAGE_TIMEOUT_MS_MIN == 90_000
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "图",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "qianfan/qwen-image-3.0",
+            "input_modalities": ["text"],
+            "output_modalities": ["image"],
+            "timeout_ms": 600_000,
+        }
+    )
+    assert endpoint.timeout_ms == 600_000
 
 
 def test_a_media_endpoint_without_protocol_infers_minimax_for_video_only() -> None:
@@ -331,6 +383,98 @@ def test_unimplemented_and_mismatched_protocols_are_rejected() -> None:
                 "kind": "media",
                 "model": "minimax-h3",
                 "protocol": "minimax",
+                "input_modalities": ["text"],
+                "output_modalities": ["image"],
+            }
+        )
+
+
+def test_minimax_v2_protocol_accepts_the_three_video_operations() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "秘塔 H3",
+            "base_url": "https://metaso.cn/api/minimax",
+            "kind": "media",
+            "model": "MiniMax-H3",
+            "protocol": "minimax_v2",
+            "input_modalities": ["text", "image", "video", "audio"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.protocol == "minimax_v2"
+    assert endpoint.capabilities == {"text_to_video", "image_to_video", "video_to_video"}
+
+
+def test_fal_protocol_accepts_the_three_video_operations() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "fal H3 Max",
+            "base_url": "https://queue.fal.run",
+            "kind": "media",
+            "model": "minimax/h3-max",
+            "protocol": "fal",
+            "input_modalities": ["text", "image", "video", "audio"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.protocol == "fal"
+    assert endpoint.capabilities == {"text_to_video", "image_to_video", "video_to_video"}
+
+
+def test_fal_protocol_accepts_audio_generation_for_voice_clone() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "fal Voice Clone",
+            "base_url": "https://queue.fal.run",
+            "kind": "media",
+            "model": "minimax/voice-clone",
+            "protocol": "fal",
+            "input_modalities": ["text", "audio"],
+            "output_modalities": ["audio"],
+        }
+    )
+    assert endpoint.protocol == "fal"
+    assert endpoint.capabilities == {"audio_generation"}
+
+
+def test_fal_protocol_rejects_image_output() -> None:
+    with pytest.raises(Exception, match="不匹配"):
+        LlmProviderEndpoint.model_validate(
+            {
+                "name": "fal 错配",
+                "base_url": "https://queue.fal.run",
+                "kind": "media",
+                "model": "minimax/h3-max",
+                "protocol": "fal",
+                "input_modalities": ["text"],
+                "output_modalities": ["image"],
+            }
+        )
+
+
+def test_infer_media_protocol_does_not_guess_fal_for_video_only() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "视频",
+            "base_url": "https://queue.fal.run",
+            "kind": "media",
+            "model": "minimax/h3-max",
+            "input_modalities": ["text", "image", "video"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.protocol == "minimax"
+
+
+def test_minimax_v2_protocol_rejects_image_output() -> None:
+    with pytest.raises(Exception, match="不匹配"):
+        LlmProviderEndpoint.model_validate(
+            {
+                "name": "秘塔错配",
+                "base_url": "https://metaso.cn/api/minimax",
+                "kind": "media",
+                "model": "MiniMax-H3",
+                "protocol": "minimax_v2",
                 "input_modalities": ["text"],
                 "output_modalities": ["image"],
             }
@@ -397,6 +541,30 @@ def test_a_mixed_media_endpoint_is_dropped_without_emptying_the_pool() -> None:
     assert parsed.endpoints["good"].protocol == "openai"
 
 
+def test_a_stored_image_endpoint_below_the_timeout_floor_is_healed_not_dropped() -> None:
+    """A row saved before the 90s image floor existed (e.g. the old 30s
+    default) must be bumped up on load, not silently dropped from the pool —
+    unlike a fresh admin submission below the floor, which still rejects
+    (see `test_an_image_media_endpoint_rejects_a_sub_90s_timeout`)."""
+    parsed = LlmProviderConfig.model_validate(
+        {
+            "endpoints": {
+                "legacy": {
+                    "name": "旧图",
+                    "base_url": "https://image.invalid",
+                    "kind": "media",
+                    "model": "gpt-image-1",
+                    "input_modalities": ["text"],
+                    "output_modalities": ["image"],
+                    "timeout_ms": 30_000,
+                },
+            }
+        }
+    )
+    assert set(parsed.endpoints) == {"legacy"}
+    assert parsed.endpoints["legacy"].timeout_ms == MEDIA_IMAGE_TIMEOUT_MS_MIN
+
+
 def test_an_endpoint_saved_before_billing_profile_existed_still_parses() -> None:
     """`extra="forbid"` would make `get_typed` raise on any endpoint saved
     before this field existed, the same failure mode `_migrate_legacy_fields`
@@ -423,6 +591,22 @@ def test_an_endpoint_saved_before_billing_profile_existed_still_parses() -> None
     # New sub-fields on the pricing sections default in too, not just the
     # top-level `billing_profile`.
     assert endpoint.media_pricing.token_video is None
+    assert endpoint.generation_kind == "create"
+
+
+def test_an_endpoint_saved_before_generation_kind_existed_defaults_to_create() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "旧端点",
+            "base_url": "https://media.invalid",
+            "kind": "media",
+            "model": "wan2.7-videoedit",
+            "protocol": "minimax",
+            "input_modalities": ["text", "video"],
+            "output_modalities": ["video"],
+        }
+    )
+    assert endpoint.generation_kind == "create"
 
 
 def test_a_general_endpoint_always_has_text_input_modality() -> None:
@@ -577,17 +761,19 @@ def test_output_budget_adds_a_thinking_margin_for_reasoning_capped_by_the_ceilin
     assert endpoint.output_budget(20_000) == 16_384
 
 
-def test_dmxapi_protocol_covers_image_and_video_capabilities() -> None:
+def test_dmxapi_protocol_covers_image_video_and_audio_capabilities() -> None:
     """`doubao-seedream-5-0-pro-260628` provides the image pair;
     `MiniMax-H3`/`doubao-seedance-2-5-260628`/`wan3.0-video` provide the
-    three video tags — all under the one `dmxapi` protocol."""
+    three video tags; `gpt-4o-mini-tts`/`tts-1`/`tts-1-hd`/`tts-pro` provide
+    `audio_generation` via the separate `/v1/audio/speech` contract — all
+    under the one `dmxapi` protocol."""
     caps = PROTOCOL_CAPABILITIES["dmxapi"]
     assert Operation.TEXT_TO_IMAGE.value in caps
     assert Operation.IMAGE_TO_IMAGE.value in caps
     assert Operation.TEXT_TO_VIDEO.value in caps
     assert Operation.IMAGE_TO_VIDEO.value in caps
     assert Operation.VIDEO_TO_VIDEO.value in caps
-    assert Operation.AUDIO_GENERATION.value not in caps
+    assert Operation.AUDIO_GENERATION.value in caps
 
 
 def test_dmxapi_media_endpoint_for_the_image_model_validates() -> None:
@@ -627,6 +813,22 @@ def test_dmxapi_media_endpoint_for_a_video_model_validates() -> None:
         Operation.IMAGE_TO_VIDEO.value,
         Operation.VIDEO_TO_VIDEO.value,
     }
+
+
+def test_dmxapi_media_endpoint_for_an_audio_model_validates() -> None:
+    endpoint = LlmProviderEndpoint.model_validate(
+        {
+            "name": "DMXAPI tts-pro",
+            "base_url": "https://www.dmxapi.cn",
+            "kind": "media",
+            "model": "tts-pro",
+            "protocol": "dmxapi",
+            "input_modalities": ["text"],
+            "output_modalities": ["audio"],
+        }
+    )
+    assert endpoint.protocol == "dmxapi"
+    assert endpoint.capabilities == {Operation.AUDIO_GENERATION.value}
 
 
 def test_video_resolutions_preserve_each_vendors_own_casing() -> None:

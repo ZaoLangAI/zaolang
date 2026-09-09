@@ -55,7 +55,7 @@ def _media_payload(
         "input_modalities": input_modalities,
         "output_modalities": output_modalities,
         "max_concurrency": 4,
-        "timeout_ms": 30_000,
+        "timeout_ms": 90_000 if "image" in output_modalities else 30_000,
         "enabled": True,
     }
     payload.update(overrides)
@@ -127,6 +127,22 @@ def test_media_requires_a_modality_combination_that_derives_a_capability(
     response = client.put(
         "/v1/admin/llm-providers/ep-bad",
         json=_media_payload(model="m1", input_modalities=["video"], output_modalities=["audio"]),
+        headers=admin_header(admin),
+    )
+    assert response.status_code == 422
+
+
+def test_an_image_media_endpoint_rejects_a_sub_90s_timeout(
+    client: TestClient, admin: User
+) -> None:
+    response = client.put(
+        "/v1/admin/llm-providers/ep-short",
+        json=_media_payload(
+            model="m1",
+            input_modalities=["text"],
+            output_modalities=["image"],
+            timeout_ms=30_000,
+        ),
         headers=admin_header(admin),
     )
     assert response.status_code == 422
@@ -440,6 +456,69 @@ def test_media_upsert_persists_an_explicit_protocol(client: TestClient, admin: U
     )
     endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-video")
     assert endpoint["protocol"] == "minimax"
+    assert endpoint["generation_kind"] == "create"
+
+
+def test_media_upsert_persists_generation_kind(client: TestClient, admin: User) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-edit",
+        _media_payload(
+            model="wan2.7-videoedit",
+            input_modalities=["text", "video"],
+            output_modalities=["video"],
+            protocol="minimax",
+            generation_kind="edit",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-edit")
+    assert endpoint["generation_kind"] == "edit"
+
+
+def test_media_upsert_defaults_audio_generation_kind_to_voice(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-tts",
+        _media_payload(
+            model="tts-1",
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="dmxapi",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-tts")
+    assert endpoint["audio_generation_kind"] == "voice"
+    assert endpoint["capabilities"] == ["audio_generation"]
+
+
+def test_media_upsert_persists_audio_generation_kind_music_and_its_price(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-music",
+        _media_payload(
+            model="music-3.0",
+            input_modalities=["text"],
+            output_modalities=["audio"],
+            protocol="dmxapi",
+            audio_generation_kind="music",
+            media_pricing={"music": {"per_request_micro_usd": 120_000}},
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-music")
+    assert endpoint["audio_generation_kind"] == "music"
+    assert endpoint["capabilities"] == ["music_generation"]
+    assert endpoint["media_pricing"]["music"]["per_request_micro_usd"] == 120_000
+    # The same modality pair without `audio_generation_kind="music"` derives
+    # `audio_generation`, not `music_generation` — proof the field, not the
+    # modalities, is what breaks the tie.
+    assert endpoint["media_pricing"].get("audio") is None
 
 
 def test_unimplemented_media_protocol_is_rejected(client: TestClient, admin: User) -> None:
@@ -498,6 +577,44 @@ def test_dmxapi_protocol_endpoint_saves_with_its_own_video_capabilities(
     assert set(endpoint["capabilities"]) == {"text_to_video", "image_to_video", "video_to_video"}
 
 
+def test_fal_protocol_endpoint_saves_with_its_own_video_capabilities(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-fal-video",
+        _media_payload(
+            model="minimax/h3-max",
+            input_modalities=["text", "image", "video", "audio"],
+            output_modalities=["video"],
+            protocol="fal",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-fal-video")
+    assert endpoint["protocol"] == "fal"
+    assert set(endpoint["capabilities"]) == {"text_to_video", "image_to_video", "video_to_video"}
+
+
+def test_minimax_v2_protocol_endpoint_saves_with_its_own_video_capabilities(
+    client: TestClient, admin: User
+) -> None:
+    body = _upsert(
+        client,
+        admin,
+        "ep-metaso-video",
+        _media_payload(
+            model="MiniMax-H3",
+            input_modalities=["text", "image", "video", "audio"],
+            output_modalities=["video"],
+            protocol="minimax_v2",
+        ),
+    )
+    endpoint = next(item for item in body["endpoints"] if item["id"] == "ep-metaso-video")
+    assert endpoint["protocol"] == "minimax_v2"
+    assert set(endpoint["capabilities"]) == {"text_to_video", "image_to_video", "video_to_video"}
+
+
 def test_the_model_catalog_lists_both_vendors_read_only(client: TestClient, admin: User) -> None:
     """`GET /llm-providers/catalog` is purely informational for the admin
     picker — it never touches `llm_providers` config."""
@@ -505,12 +622,37 @@ def test_the_model_catalog_lists_both_vendors_read_only(client: TestClient, admi
     assert response.status_code == 200
     body = response.json()
     vendors = {item["vendor"]: item for item in body["vendors"]}
-    assert set(vendors) == {"aihubmix", "dmxapi"}
+    assert set(vendors) == {"aihubmix", "dmxapi", "metaso", "fal"}
     dmxapi_models = {entry["model"] for entry in vendors["dmxapi"]["models"]}
     assert "MiniMax-H3" in dmxapi_models
     assert "doubao-seedream-5-0-pro-260628" in dmxapi_models
     aihubmix_models = {entry["model"] for entry in vendors["aihubmix"]["models"]}
     assert "doubao-seedance-2-5-260628" in aihubmix_models
+    assert "gpt-image-2" in aihubmix_models
+    gpt_image_2 = next(
+        entry for entry in vendors["aihubmix"]["models"] if entry["model"] == "gpt-image-2"
+    )
+    assert gpt_image_2["suggested_timeout_ms"] == 600_000
+    assert gpt_image_2["protocol"] == "openai"
+    metaso_h3 = next(
+        entry for entry in vendors["metaso"]["models"] if entry["model"] == "MiniMax-H3"
+    )
+    assert metaso_h3["protocol"] == "minimax_v2"
+    assert metaso_h3["billing_profile"] == "minimax_h3_payg"
+    fal_h3_max = next(
+        entry for entry in vendors["fal"]["models"] if entry["model"] == "minimax/h3-max"
+    )
+    assert fal_h3_max["protocol"] == "fal"
+    assert fal_h3_max["billing_profile"] == "fal_h3_max"
+    assert fal_h3_max["display_name"] == "MiniMax H3 Max"
+    wan = next(
+        entry for entry in vendors["aihubmix"]["models"] if entry["model"] == "wan2.7-videoedit"
+    )
+    assert wan["generation_kind"] == "edit"
+    aihubmix_h3 = next(
+        entry for entry in vendors["aihubmix"]["models"] if entry["model"] == "minimax-h3"
+    )
+    assert aihubmix_h3["generation_kind"] == "create"
 
 
 def test_the_model_catalog_exposes_price_items_and_a_billing_profile(
@@ -547,9 +689,20 @@ def test_the_model_catalog_exposes_price_items_and_a_billing_profile(
     )
     # The regression the catalogue itself already guards in
     # `test_model_catalog.py`, re-asserted through the actual HTTP contract:
-    # AiHubMix (USD) and DMXAPI (CNY) never share one default for the same
-    # nominal upstream model.
+    # AiHubMix (USD), DMXAPI (CNY), and Metaso (its own H3 list) never share
+    # one default for the same nominal upstream model.
     assert aihubmix_two_k["default_micro_usd"] != two_k["default_micro_usd"]
+    metaso_h3 = next(
+        entry for entry in vendors["metaso"]["models"] if entry["model"] == "MiniMax-H3"
+    )
+    metaso_two_k = next(
+        item
+        for item in metaso_h3["price_items"]
+        if item["key"] == "video_generation" and item["dimension"] == "2K"
+    )
+    assert metaso_two_k["default_micro_usd"] != two_k["default_micro_usd"]
+    assert metaso_two_k["default_micro_usd"] != aihubmix_two_k["default_micro_usd"]
+    assert not metaso_two_k.get("markup_note")
 
 
 def test_billing_profile_round_trips_through_upsert(client: TestClient, admin: User) -> None:

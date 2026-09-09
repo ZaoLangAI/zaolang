@@ -1,10 +1,10 @@
 /**
- * The six `Operation` values, and where their labels live.
+ * The eight `Operation` values, and where their labels live.
  *
  * Shared by every console surface that has to name an operation — the
  * workflow editor's tabs, the agent variant capability chips, the provider
  * capability matrix — so they cannot drift apart. The labels themselves are
- * the `adminProviders` capability strings, which already had all six.
+ * the `adminProviders` capability strings.
  */
 export const OPERATIONS = [
   'text_to_image',
@@ -13,6 +13,7 @@ export const OPERATIONS = [
   'image_to_video',
   'video_to_video',
   'audio_generation',
+  'music_generation',
   'video_analysis',
 ] as const;
 
@@ -25,7 +26,23 @@ export const OPERATION_LABEL_KEYS: Record<OperationValue, string> = {
   image_to_video: 'capabilityImageToVideo',
   video_to_video: 'capabilityVideoToVideo',
   audio_generation: 'capabilityAudioGeneration',
+  music_generation: 'capabilityMusicGeneration',
   video_analysis: 'capabilityVideoAnalysis',
+};
+
+/**
+ * Disambiguates a `kind="media"` endpoint's `text -> audio` shape between
+ * spoken-voice TTS/clone (`audio_generation`) and BGM/SFX
+ * (`music_generation`) — mirrors backend `AudioGenerationKind`. The
+ * modality pair alone cannot tell them apart (see `OPERATION_MODALITY_MAP`
+ * below, where both operations map to the identical `['text','audio']`
+ * pair), so an operator declares which one explicitly.
+ */
+export const AUDIO_GENERATION_KINDS = ['voice', 'music'] as const;
+export type AudioGenerationKindValue = (typeof AUDIO_GENERATION_KINDS)[number];
+export const AUDIO_GENERATION_KIND_LABEL_KEYS: Record<AudioGenerationKindValue, string> = {
+  voice: 'audioGenerationKindVoice',
+  music: 'audioGenerationKindMusic',
 };
 
 /** Falls back to the raw value so an operation added to the backend enum
@@ -73,6 +90,7 @@ export const WORKFLOW_EDITOR_OPERATIONS = [
   'image_to_video',
   'video_to_video',
   'audio_generation',
+  'music_generation',
 ] as const satisfies readonly OperationValue[];
 
 /**
@@ -106,7 +124,10 @@ export const MODALITY_LABEL_KEYS: Record<MediaInputModality | MediaOutputModalit
 
 /** One (input, output) pair per operation — mirrors the backend's
  * `_CAPABILITY_MODALITY_MAP`. Kept in sync by hand since this is a small,
- * stable, six-entry table. */
+ * stable table. `audio_generation` and `music_generation` deliberately
+ * share the identical `['text','audio']` pair — see
+ * `AUDIO_GENERATION_KINDS`'s docstring above and the tie-break in
+ * `capabilitiesForModalities` below. */
 const OPERATION_MODALITY_MAP: Record<
   OperationValue,
   readonly [MediaInputModality, MediaOutputModality]
@@ -117,60 +138,91 @@ const OPERATION_MODALITY_MAP: Record<
   image_to_video: ['image', 'video'],
   video_to_video: ['video', 'video'],
   audio_generation: ['text', 'audio'],
+  music_generation: ['text', 'audio'],
   video_analysis: ['video', 'text'],
 };
 
 /**
  * Which operations a modality selection covers — the client-side mirror of
- * `capabilities_for_modalities`, so the console shows the same capability set
- * the API derives on save.
+ * `LlmProviderEndpoint.capabilities`, so the console shows the same
+ * capability set the API derives on save.
+ *
+ * `audioGenerationKind` breaks the `audio_generation`/`music_generation` tie
+ * the raw modality pair alone cannot: both derive from the same
+ * `text -> audio` pair, but one endpoint's one model can only ever be one of
+ * the two — see `AUDIO_GENERATION_KINDS`. Defaults to `'voice'`, matching the
+ * backend field's own default so an endpoint saved before this field existed
+ * keeps deriving `audio_generation`.
  */
 export function capabilitiesForModalities(
   inputModalities: readonly string[],
   outputModalities: readonly string[],
+  audioGenerationKind: AudioGenerationKindValue = 'voice',
 ): OperationValue[] {
   const inputs = new Set(inputModalities);
   const outputs = new Set(outputModalities);
-  return OPERATIONS.filter((operation) => {
+  const derived = OPERATIONS.filter((operation) => {
     const [input, output] = OPERATION_MODALITY_MAP[operation];
     return inputs.has(input) && outputs.has(output);
   });
+  const hasAudioPair = derived.includes('audio_generation') && derived.includes('music_generation');
+  if (!hasAudioPair) return derived;
+  const keep: OperationValue =
+    audioGenerationKind === 'music' ? 'music_generation' : 'audio_generation';
+  // Explicitly (re-)typed as `OperationValue[]`: TS 5.5+ infers a narrowed
+  // type predicate for the `!== 'audio_generation' && !== 'music_generation'`
+  // filter below, which would otherwise make the array type exclude both
+  // literals — breaking the `.concat(keep)` right after, since `keep` can
+  // be either one.
+  const withoutAudioPair: OperationValue[] = derived.filter(
+    (operation) => operation !== 'audio_generation' && operation !== 'music_generation',
+  );
+  return withoutAudioPair.concat(keep);
 }
 
 /** HTTP contract names for `kind="media"` endpoints. Mirrors
  * `MEDIA_PROTOCOLS` in `app/platform_config/schemas.py`. Display names are
  * the standard, not the gateway vendor — AiHubMix image/audio is OpenAI.
+ * `minimax` is AiHubMix's `/ai/v1/videos` facade; `minimax_v2` is official
+ * MiniMax Video V2 (`/v2/video_generation`), which Metaso proxies.
+ * `fal` is fal.ai's queue contract (`queue.fal.run/{app}` + `Authorization: Key`).
  * `dmxapi` is the one deliberate exception: DMXAPI's `/v1/responses` task
  * envelope is that vendor's own invented convention, not a shared industry
  * standard, so there is no vendor-neutral name to give it. */
 export const MEDIA_PROTOCOLS = [
   'openai',
   'minimax',
+  'minimax_v2',
   'comfyui',
   'google',
   'dashscope',
   'ark',
   'kling',
   'dmxapi',
+  'fal',
 ] as const;
 export type MediaProtocol = (typeof MEDIA_PROTOCOLS)[number];
 
 export const IMPLEMENTED_MEDIA_PROTOCOLS: ReadonlySet<MediaProtocol> = new Set([
   'openai',
   'minimax',
+  'minimax_v2',
   'dashscope',
   'dmxapi',
+  'fal',
 ]);
 
 export const PROTOCOL_LABEL_KEYS: Record<MediaProtocol, string> = {
   openai: 'protocolOpenAI',
   minimax: 'protocolMiniMax',
+  minimax_v2: 'protocolMiniMaxV2',
   comfyui: 'protocolComfyUI',
   google: 'protocolGoogle',
   dashscope: 'protocolDashScope',
   ark: 'protocolArk',
   kling: 'protocolKling',
   dmxapi: 'protocolDmxapi',
+  fal: 'protocolFal',
 };
 
 const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
@@ -188,6 +240,7 @@ const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
     'video_to_video',
   ],
   minimax: ['text_to_video', 'image_to_video', 'video_to_video'],
+  minimax_v2: ['text_to_video', 'image_to_video', 'video_to_video'],
   comfyui: ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'video_to_video'],
   google: [],
   dashscope: ['video_analysis'],
@@ -195,9 +248,29 @@ const PROTOCOL_OPERATIONS: Record<MediaProtocol, readonly OperationValue[]> = {
   kling: [],
   // `doubao-seedream-5-0-pro-260628` provides the image pair (synchronous
   // call); `MiniMax-H3` / `doubao-seedance-2-5-260628` / `wan3.0-video`
-  // provide the three video tags (submit-task + poll) — see backend
-  // `_DMXAPI_CAPABILITIES`.
-  dmxapi: ['text_to_image', 'image_to_image', 'text_to_video', 'image_to_video', 'video_to_video'],
+  // provide the three video tags (submit-task + poll); `gpt-4o-mini-tts`/
+  // `tts-1`/`tts-1-hd`/`tts-pro` provide `audio_generation`; `music-3.0`
+  // provides `music_generation` — see backend `_DMXAPI_CAPABILITIES`.
+  dmxapi: [
+    'text_to_image',
+    'image_to_image',
+    'text_to_video',
+    'image_to_video',
+    'video_to_video',
+    'audio_generation',
+    'music_generation',
+  ],
+  // `minimax/h3-max` provides the three video tags; `minimax/voice-clone`
+  // provides `audio_generation`; `minimax-music/v2.6`/`elevenlabs/sound-
+  // effects/v2` provide `music_generation` — see backend
+  // `_FAL_CAPABILITIES`.
+  fal: [
+    'text_to_video',
+    'image_to_video',
+    'video_to_video',
+    'audio_generation',
+    'music_generation',
+  ],
 };
 
 /** Drop modality ticks that the newly selected protocol cannot serve. */

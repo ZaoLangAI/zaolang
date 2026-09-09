@@ -26,6 +26,7 @@ from app.platform_config.schemas import (
     AudioPricing,
     ImagePricing,
     MediaPricing,
+    MusicPricing,
     TokenPricing,
     TokenVideoPricing,
     VideoAnalysisPricing,
@@ -142,6 +143,16 @@ def video_call_cost_micro_usd(
 def video_analysis_call_cost_micro_usd(pricing: VideoAnalysisPricing | None) -> int:
     """Flat per-call price — a video-understanding request has no per-second
     or per-image dimension the way generation/synthesis calls do."""
+    if pricing is None or not pricing.is_declared:
+        return 0
+    return pricing.per_request_micro_usd
+
+
+def music_call_cost_micro_usd(pricing: MusicPricing | None) -> int:
+    """Flat per-clip price — see `MusicPricing`'s own docstring for why a
+    music/SFX call never bills by prompt length or rendered duration, even
+    for a vendor (ElevenLabs Sound Effects V2) that itself bills per
+    second."""
     if pricing is None or not pricing.is_declared:
         return 0
     return pricing.per_request_micro_usd
@@ -280,6 +291,8 @@ def media_call_cost_micro_usd(
         )
     if section == "video_analysis":
         return video_analysis_call_cost_micro_usd(pricing.video_analysis)
+    if section == "music":
+        return music_call_cost_micro_usd(pricing.music)
     return 0
 
 
@@ -339,8 +352,8 @@ def _requested_resolution(request: GenerationRequest, default_resolution: str | 
     what was actually requested.
 
     By the time a settled `request` reaches this function, `nodes.py` has
-    already turned the client's tier token (`VideoGenerationOptions
-    .resolution` — see `app.providers.base.resolve_resolution_tier`) into
+    already turned the client's tier *ceiling* (`VideoGenerationOptions
+    .resolution` — see `app.providers.base.adapt_resolution_tier`) into
     the specific vendor spelling the routed model's own profile declares, so
     `request.resolution` is populated for every native video model, not just
     MiniMax H3. It is still `None` on a video remix (the client omits
@@ -383,9 +396,9 @@ def estimate_media_request_cost_micro_usd(
 
     `params["video_options"]["resolution"]`, when present, is used as a
     literal pricing-table key — its only caller (`router.route()`) has
-    already resolved the client's tier token into this specific candidate's
-    own vendor spelling (`app.providers.base.resolve_resolution_tier`)
-    before calling this, so a raw tier token never reaches this lookup.
+    already adapted the client's tier ceiling into this specific candidate's
+    own vendor spelling (`app.providers.base.adapt_resolution_tier`)
+    before calling this, so a raw unmatched tier token never reaches this lookup.
     """
     video_options = params.get("video_options")
     resolution = default_resolution or NOMINAL_VIDEO_RESOLUTION
