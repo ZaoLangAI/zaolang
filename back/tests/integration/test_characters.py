@@ -117,6 +117,46 @@ def test_list_get_update_delete_character_round_trip(
     )
 
 
+def test_create_character_rejects_a_duplicate_name_for_the_same_owner(
+    client: TestClient, db: Session, author: User
+) -> None:
+    first = client.post("/v1/characters", json={"name": "林彻"}, headers=auth_header(author))
+    assert first.status_code == 201
+    duplicate = client.post(
+        "/v1/characters", json={"name": " 林彻 "}, headers=auth_header(author)
+    )
+    assert duplicate.status_code == 422
+    body = duplicate.json()["error"]
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["details"]["fields"]["name"] == "角色名称已存在"
+
+
+def test_update_character_rejects_renaming_onto_another_characters_name(
+    client: TestClient, db: Session, author: User
+) -> None:
+    client.post("/v1/characters", json={"name": "林彻"}, headers=auth_header(author))
+    other = client.post(
+        "/v1/characters", json={"name": "母亲模仿者"}, headers=auth_header(author)
+    ).json()
+    response = client.patch(
+        f"/v1/characters/{other['id']}",
+        json={"name": "林彻"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["details"]["fields"]["name"] == "角色名称已存在"
+
+
+def test_two_owners_may_share_a_character_name(
+    client: TestClient, db: Session, author: User, remixer: User
+) -> None:
+    mine = client.post("/v1/characters", json={"name": "林彻"}, headers=auth_header(author))
+    theirs = client.post("/v1/characters", json={"name": "林彻"}, headers=auth_header(remixer))
+    assert mine.status_code == 201
+    assert theirs.status_code == 201
+    assert mine.json()["id"] != theirs.json()["id"]
+
+
 def test_character_is_scoped_to_its_owner(
     client: TestClient, db: Session, author: User, remixer: User
 ) -> None:

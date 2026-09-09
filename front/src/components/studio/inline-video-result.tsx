@@ -8,12 +8,14 @@ import { useSession } from '@/components/auth/session-provider';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import {
-  STAGE_FOR_EVENT,
   STAGES,
   stageLabelKey,
   type Stage,
 } from '@/components/job/job-stages';
+import { jobStageState } from '@/components/job/job-stage-state';
 import { DevicePreview } from '@/components/media/device-preview';
+import { DownloadAssetButton } from '@/components/media/download-asset-button';
+import { LinkEpisodeDialog } from '@/components/studio/link-episode-dialog';
 import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
 import { Button } from '@/components/ui/button';
 import { IconBranch, IconCheck, IconSparkle } from '@/components/ui/icons';
@@ -58,6 +60,8 @@ export function InlineVideoResult({
   reconnecting,
   liveThinking,
   draftId,
+  linkedEpisodeId,
+  onLinkedEpisode,
   cancelling,
   onCancel,
   onUseAsReference,
@@ -70,6 +74,8 @@ export function InlineVideoResult({
   reconnecting: boolean;
   liveThinking?: string;
   draftId: string | null;
+  linkedEpisodeId?: string | null;
+  onLinkedEpisode?: (episodeId: string) => void;
   cancelling: boolean;
   onCancel: () => void;
   onUseAsReference: (job: GenerationJob) => void;
@@ -91,26 +97,13 @@ export function InlineVideoResult({
   const [retrying, setRetrying] = useState(false);
   const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [linkEpisodeOpen, setLinkEpisodeOpen] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
 
-  const reached = new Set<Stage>();
-  for (const event of events) {
-    const stage = STAGE_FOR_EVENT[event.event_type];
-    if (stage) reached.add(stage);
-  }
-  if (job.status === 'succeeded') for (const stage of STAGES) reached.add(stage);
-
-  const activeIndex = STAGES.findIndex((stage) => !reached.has(stage));
-  const finished = ['succeeded', 'failed', 'cancelled', 'expired'].includes(job.status);
+  const { reached, displayStage, finished, awaitingInput, reachedKey } =
+    jobStageState(job.status, events);
   const latestEvent = events[events.length - 1];
-  const awaitingInput = job.status === 'awaiting_input';
   const showAwaitingPanel = awaitingInput && !job.cancel_requested;
-  const displayStage: Stage = awaitingInput
-    ? 'planning'
-    : finished && job.status !== 'succeeded'
-      ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
-      : (STAGES[activeIndex] ?? 'done');
-  const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
 
   const reduced = useReducedMotion();
   const dotRefs = useRef<Partial<Record<Stage, HTMLSpanElement | null>>>({});
@@ -141,6 +134,7 @@ export function InlineVideoResult({
     job.output_asset_id ? refreshAssetUrl(job.output_asset_id) : refreshJobOutputUrl(job.id);
 
   const canUseAsReference = job.status === 'succeeded' && Boolean(job.output_asset_id);
+  const canDownload = canUseAsReference;
   const canSaveCoverSkill =
     job.status === 'succeeded' &&
     job.video_asset_kind === 'cover_video' &&
@@ -179,7 +173,12 @@ export function InlineVideoResult({
       else router.push(path);
     } catch (error) {
       tab?.close();
-      if (isApiError(error) && error.isNotFound && job.draft_id) {
+      if (
+        isApiError(error) &&
+        error.isNotFound &&
+        error.message.includes('暂未开放') &&
+        job.draft_id
+      ) {
         router.push(`/publish/${job.draft_id}`);
         return;
       }
@@ -316,6 +315,13 @@ export function InlineVideoResult({
             {tJob('enterEditor')}
           </Button>
         ) : null}
+        {canDownload && job.output_asset_id ? (
+          <DownloadAssetButton
+            assetId={job.output_asset_id}
+            label={t('download')}
+            failedMessage={t('downloadFailed')}
+          />
+        ) : null}
         {canUseAsReference ? (
           <Button
             variant="secondary"
@@ -329,6 +335,11 @@ export function InlineVideoResult({
         {job.status === 'succeeded' && draftId ? (
           <Button variant="secondary" size="sm" onClick={() => router.push(`/publish/${draftId}`)}>
             {tJob('publish')}
+          </Button>
+        ) : null}
+        {job.status === 'succeeded' && draftId ? (
+          <Button variant="secondary" size="sm" onClick={() => setLinkEpisodeOpen(true)}>
+            {linkedEpisodeId ? tStudio('linkEpisodeChange') : tStudio('linkEpisode')}
           </Button>
         ) : null}
         {canSaveCoverSkill ? (
@@ -354,6 +365,17 @@ export function InlineVideoResult({
         outputAssetId={job.output_asset_id}
       />
 
+      {draftId ? (
+        <LinkEpisodeDialog
+          open={linkEpisodeOpen}
+          onClose={() => setLinkEpisodeOpen(false)}
+          draftId={draftId}
+          onLinked={(episodeId) => {
+            onLinkedEpisode?.(episodeId);
+            notify(tStudio('linkEpisodeDone'), 'success');
+          }}
+        />
+      ) : null}
       <PromoteJobDialog
         open={promoteOpen}
         onClose={() => setPromoteOpen(false)}

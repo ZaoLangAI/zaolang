@@ -328,6 +328,21 @@ def test_stream_revise_still_floors_at_script_max_tokens_when_the_endpoint_decla
     assert outcome.parse_ok is True
 
 
+def test_script_prompts_require_a_shared_visual_medium() -> None:
+    """`traits` seed the character-sheet jump-out verbatim. Without a
+    script-wide medium the image model picks photoreal for one cast member
+    and anime for the next."""
+    draft = copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT
+    revise = copywriter.SCRIPT_REVISE_SYSTEM_PROMPT
+    appearance = copywriter._CHARACTER_APPEARANCE_RULE
+    assert "唯一视觉媒介" in appearance
+    assert "真人写实影视短剧" in appearance
+    assert "开头写同一句媒介" in appearance
+    assert appearance in draft
+    assert appearance in revise
+    assert "媒介句必须保持一致且原样保留" in revise
+
+
 def test_empty_stream_is_not_a_successful_draft(
     db: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

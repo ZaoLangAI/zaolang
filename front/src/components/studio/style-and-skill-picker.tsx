@@ -13,6 +13,7 @@ import { Poster } from '@/components/media/poster';
 import type { Locale } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import type {
+  CreationSkillDetail,
   CreationSkillSummary,
   Operation,
   Page,
@@ -62,16 +63,19 @@ export function useStyleAndSkillPicker({
   initialStyleGalleryId,
   onApplyParams,
   showCreationSkillSelect = true,
+  seedSkillId,
 }: {
   operation: Operation;
   /** A style gallery entry's `params`, applied once on mount (from `?styleId=`). */
   initialStyleParams?: Record<string, unknown>;
   /** The catalogue id behind `initialStyleParams`; submitted as `style_gallery_id`. */
   initialStyleGalleryId?: string;
-  onApplyParams: (params: Record<string, unknown>) => void;
+  onApplyParams: (params: Record<string, unknown>, detail?: CreationSkillDetail) => void;
   /** Audio still offers unlock-from-Select. Video applies skills only via
    * the prompt `@` menu, so it passes `false` and places chips itself. */
   showCreationSkillSelect?: boolean;
+  /** Plaza / deep-link `?skillId=` — see `useAppliedSkills`. */
+  seedSkillId?: string;
 }): StyleAndSkillPicker {
   const t = useTranslations('remixPage');
   const tGallery = useTranslations('styleGallery');
@@ -97,7 +101,7 @@ export function useStyleAndSkillPicker({
     applySkill,
     chips,
     unlockDialog,
-  } = useAppliedSkills({ operation, onApplyParams });
+  } = useAppliedSkills({ operation, onApplyParams, seedSkillId });
 
   const [presetId, setPresetId] = useState('');
   const [skillPickerValue, setSkillPickerValue] = useState('');

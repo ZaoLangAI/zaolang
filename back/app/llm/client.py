@@ -149,14 +149,34 @@ def reset_client_cache() -> None:
     _get_client_for_endpoint.cache_clear()
 
 
-def _prompt_tokens(messages: list[dict[str, str]]) -> int:
+# A chat message. `content` is usually a string; script-source image
+# extract sends an OpenAI-style list of text / image_url parts. Failover
+# and timing are unchanged — only the type is widened.
+LlmMessage = dict[str, Any]
+
+
+def _content_char_len(content: object) -> int:
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        total = 0
+        for part in content:
+            if isinstance(part, str):
+                total += len(part)
+            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                total += len(part["text"])
+        return total
+    return 0
+
+
+def _prompt_tokens(messages: list[LlmMessage]) -> int:
     """Rough prompt size for context-window capping.
 
     The gateway does not always return usage on a stream, so both
     `complete()` and `stream_complete()` use the same estimate to decide
     how much of `endpoint.context_length` is left for the completion.
     """
-    return sum(len(m.get("content", "")) for m in messages) // 4
+    return sum(_content_char_len(m.get("content")) for m in messages) // 4
 
 
 _chunk_sink: ContextVar[Callable[[StreamChunk], None] | None] = ContextVar(
@@ -181,7 +201,7 @@ def complete(
     session: Session,
     agent_name: str,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     max_tokens: int = 1024,
     temperature: float = 0.2,
     expect_json: bool = True,
@@ -291,7 +311,7 @@ def _attempt_endpoint(
     client: OpenAI,
     max_retries: int,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     budget: int,
     temperature: float,
     expect_json: bool,
@@ -384,7 +404,7 @@ def call_gateway_once(
     *,
     client: OpenAI,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     max_tokens: int,
     temperature: float,
     expect_json: bool,
@@ -407,7 +427,7 @@ def call_gateway_once(
 def _completion_kwargs(
     *,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     max_tokens: int,
     temperature: float,
     expect_json: bool,
@@ -437,7 +457,7 @@ def _create_completion(
     *,
     client: OpenAI,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     max_tokens: int,
     temperature: float,
     expect_json: bool,
@@ -486,7 +506,7 @@ def _call_gateway(
     *,
     client: OpenAI,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     max_tokens: int,
     temperature: float,
     expect_json: bool,
@@ -569,7 +589,7 @@ def stream_complete(
     session: Session,
     agent_name: str,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     result: StreamResult,
     max_tokens: int = 2048,
     temperature: float = 0.4,
@@ -674,7 +694,7 @@ def stream_complete(
 def _stream_complete_from_endpoints(
     *,
     endpoints: list[tuple[str, LlmProviderEndpoint]],
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     result: StreamResult,
     requested: int,
     reasoning_model: bool,
@@ -840,7 +860,7 @@ def _stream_gateway(
     *,
     client: OpenAI,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[LlmMessage],
     max_tokens: int,
     temperature: float,
     expect_json: bool = False,

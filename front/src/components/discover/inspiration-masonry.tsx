@@ -7,7 +7,6 @@ import { InspirationCard } from '@/components/discover/inspiration-card';
 import { InspirationDialog } from '@/components/discover/inspiration-dialog';
 import {
   INSPIRATION_COLUMNS,
-  INSPIRATION_TILE,
   InspirationTileSkeleton,
 } from '@/components/discover/inspiration-skeleton';
 import { Button } from '@/components/ui/button';
@@ -38,7 +37,7 @@ const MAX_AUTO_LOAD_PAGES = 12;
  * visible jump when scrolling back up past it, without needing to measure
  * every page's real height.
  */
-const OFFSCREEN_PAGE_CLASS = '[content-visibility:auto] [contain-intrinsic-height:1400px]';
+const OFFSCREEN_PAGE_CLASS = '[content-visibility:auto] [contain-intrinsic-height:960px]';
 
 type Status = 'idle' | 'loading' | 'failed';
 
@@ -50,17 +49,12 @@ interface FeedQuery {
 }
 
 /**
- * The inspiration wall: a masonry of covers, paged by scroll.
+ * The inspiration wall: a 16:9 grid of covers, paged by scroll.
  *
- * CSS multi-column rather than a measured JS layout: the column count is a
- * media query, the browser balances the tiles, and there is no resize listener
- * to keep in sync. Reading order goes down a column instead of across a row,
- * which is what a wall of unrelated works wants anyway.
- *
- * Each loaded page gets its own column block. A single shared block would flow
- * more evenly, but the browser rebalances a multi-column container on every
- * append — tiles the reader has already passed would jump to another column
- * mid-scroll. Per-page blocks keep everything above the newest page still.
+ * A CSS grid rather than a measured JS layout: the column count is a media
+ * query and reading order goes across a row. Each loaded page gets its own
+ * grid block so appending page two cannot reflow tiles the reader has already
+ * passed.
  */
 export function InspirationMasonry({
   works,
@@ -143,7 +137,7 @@ export function InspirationMasonry({
           }
         >
           {page.map((work, index) => (
-            <li key={work.id} className={INSPIRATION_TILE}>
+            <li key={work.id}>
               <InspirationCard
                 work={work}
                 onOpen={setPreview}
@@ -157,8 +151,8 @@ export function InspirationMasonry({
       {status === 'loading' ? (
         <ul aria-busy="true" className={`mt-4 ${INSPIRATION_COLUMNS}`}>
           {Array.from({ length: PENDING_TILES }, (_, index) => (
-            <li key={index} className={INSPIRATION_TILE}>
-              <InspirationTileSkeleton index={index} />
+            <li key={index}>
+              <InspirationTileSkeleton />
             </li>
           ))}
         </ul>

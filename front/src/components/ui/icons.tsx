@@ -305,6 +305,13 @@ export const IconUpload = (p: IconProps) => (
   </Icon>
 );
 
+export const IconDownload = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4.5V16M8 12l4 4 4-4" />
+    <path d="M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+  </Icon>
+);
+
 /** A photo with a retouching wand: image-to-image editing. */
 export const IconWand = (p: IconProps) => (
   <Icon {...p}>
@@ -408,6 +415,150 @@ export const IconShare = (p: IconProps) => (
     <circle cx="6" cy="12" r="2.3" />
     <circle cx="18" cy="19" r="2.3" />
     <path d="M8 10.8 16 6.3M8 13.2l8 4.5" />
+  </Icon>
+);
+
+export const IconScissors = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="6" cy="6" r="2.6" />
+    <circle cx="6" cy="18" r="2.6" />
+    <path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" />
+  </Icon>
+);
+
+export const IconSkipBack = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 5v14" />
+    <path d="M18 6 9 12l9 6z" />
+  </Icon>
+);
+
+export const IconSkipForward = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M18 5v14" />
+    <path d="M6 6l9 6-9 6z" />
+  </Icon>
+);
+
+export const IconStepBack = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15 6 9 12l6 6" />
+    <path d="M9 12h9" />
+  </Icon>
+);
+
+export const IconStepForward = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m9 6 6 6-6 6" />
+    <path d="M6 12h9" />
+  </Icon>
+);
+
+export const IconMagnet = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 4v8a6 6 0 0 0 12 0V4" />
+    <path d="M6 4h4v5H6M14 4h4v5h-4" />
+  </Icon>
+);
+
+export const IconFlag = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 21V4" />
+    <path d="M5 4h11l-1.5 3.5L16 11H5" />
+  </Icon>
+);
+
+export const IconAlignLeft = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 4v16" />
+    <rect x="7" y="7" width="13" height="4" rx="1" />
+    <rect x="7" y="13" width="8" height="4" rx="1" />
+  </Icon>
+);
+
+export const IconZoomIn = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.6-3.6M11 8v6M8 11h6" />
+  </Icon>
+);
+
+export const IconZoomOut = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.6-3.6M8 11h6" />
+  </Icon>
+);
+
+export const IconUndo = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+  </Icon>
+);
+
+export const IconRedo = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+  </Icon>
+);
+
+export const IconEyeOff = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+    <path d="M9.9 5.2A10.5 10.5 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.2 3.9M6.6 6.6C4 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.7 9.7 0 0 0 4.3-1" />
+  </Icon>
+);
+
+export const IconList = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 6h13M8 12h13M8 18h13" />
+    <path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" strokeWidth="2.4" />
+  </Icon>
+);
+
+export const IconQuestion = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7" />
+    <path d="M12 17h.01" strokeWidth="2.4" />
+  </Icon>
+);
+
+export const IconText = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 6V4h14v2M12 4v16M9 20h6" />
+  </Icon>
+);
+
+export const IconMusic = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 18V5l11-2v13" />
+    <circle cx="6.5" cy="18" r="2.5" />
+    <circle cx="17.5" cy="16" r="2.5" />
+  </Icon>
+);
+
+export const IconSticker = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7l-7 7H6a2 2 0 0 1-2-2z" />
+    <path d="M13 20v-5a2 2 0 0 1 2-2h5" />
+  </Icon>
+);
+
+export const IconRotate = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 12a8 8 0 1 1-2.3-5.7" />
+    <path d="M20 4v4h-4" />
+  </Icon>
+);
+
+export const IconResetValue = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7" />
+    <path d="M3 4v5h5" />
   </Icon>
 );
 

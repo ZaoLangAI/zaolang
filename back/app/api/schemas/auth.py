@@ -77,6 +77,7 @@ class MeFeaturesResponse(ApiModel):
     video_generation: bool
     drama_studio: bool
     marketplace: bool
+    canvas_studio: bool
 
 
 class MeResponse(ApiModel):

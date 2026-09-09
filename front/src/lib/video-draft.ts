@@ -4,9 +4,9 @@
  * now reopens the same draft's full version history/latest output, exactly
  * like an image draft (see `VideoGenerationStudio`'s `initialDraft`/
  * `draftId`) — video creation is no longer a "material only" resume. Shared
- * by `recent-draft-card.tsx` (resuming a draft, `draftId` only) and
- * `notification-format.ts` (routing a job notification, `draftId` +
- * `jobId`), same split as `image-draft.ts`.
+ * by `recent-draft-card.tsx` / `generated-video-href.ts` (resuming a
+ * draft, `draftId` only) and `notification-format.ts` (routing a job
+ * notification, `draftId` + `jobId`), same split as `image-draft.ts`.
  */
 export const VIDEO_CREATION_OPERATIONS = new Set([
   'text_to_video',

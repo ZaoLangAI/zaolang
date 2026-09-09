@@ -1,4 +1,5 @@
 import type { Character, GenerationJob } from '@/lib/api/types';
+import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 
 type CharacterReferenceAsset = NonNullable<Character['reference_assets']>[number];
 
@@ -22,12 +23,53 @@ type CharacterReferenceAsset = NonNullable<Character['reference_assets']>[number
  */
 export const CHARACTER_COMPLETION_PROMPT = '参考本图生成侧面图和背面图';
 
+/** Short layout hint written into the studio textarea so the author can
+ * see (and edit) the sheet requirement. The backend still appends its own
+ * `_CHARACTER_SHEET_LAYOUT_SUFFIX` on the front pass — this is the visible
+ * half, not the only thing keeping the model on a multi-panel sheet. */
+export const CHARACTER_SHEET_PROMPT_HINT =
+  '生成一张角色设定图：左侧全身三视图（正面、侧面、背面），右侧面部特写、服装配饰细节与色板；纯白背景，同一人物，单张输出。';
+
+const CHARACTER_LIBRARY_RETURN_TO = '/create/characters';
+
+/** Identity + sheet-layout sentence for a library or script jump-out. */
+export function characterSheetPrompt(input: { name: string; appearance?: string | null }): string {
+  const name = input.name.trim();
+  const appearance = input.appearance?.trim().replace(/[。．.]+$/, '') ?? '';
+  const identity = appearance ? `${name}。${appearance}` : name;
+  const prompt = identity
+    ? `${identity}。${CHARACTER_SHEET_PROMPT_HINT}`
+    : CHARACTER_SHEET_PROMPT_HINT;
+  return prompt.slice(0, STUDIO_PROMPT_MAX_LENGTH);
+}
+
+/** Deep link into `ImageGenerationStudio` for a character-sheet job. */
+export function characterImageStudioHref(input: {
+  characterId: string;
+  name: string;
+  appearance?: string | null;
+  returnTo?: string;
+}): string {
+  const params = new URLSearchParams({
+    mode: 'image_creation',
+    assetKind: 'character',
+    targetCharacterId: input.characterId,
+    prompt: characterSheetPrompt({ name: input.name, appearance: input.appearance }),
+    subjectNameHint: input.name.trim().slice(0, 60),
+    returnTo: input.returnTo ?? CHARACTER_LIBRARY_RETURN_TO,
+  });
+  return `/create/new?${params.toString()}`;
+}
+
+/** The one image a character card shows now that the sheet replaced the
+ * three-view grid — prefer an explicit front tag, else the first asset. */
+export function characterSheetAsset(character: Character): CharacterReferenceAsset | undefined {
+  return referenceByView(character, 'front') ?? character.reference_assets?.[0];
+}
+
 /**
- * Shared "does this character still need its side/back view?" logic —
- * used both by `CharacterLibrary`'s "补全侧面/背面" card action and by
- * `ImageGenerationStudio`'s inline result, which offers the same completion
- * step right after a character's front view finishes generating instead of
- * making the user jump to the character library page for it.
+ * Look up one tagged reference. Web no longer offers side/back completion,
+ * but historical assets and `findCompletionJobFor` still key off view tags.
  */
 export function referenceByView(
   character: Character,
@@ -38,8 +80,8 @@ export function referenceByView(
 
 /**
  * True once a front reference exists and either the side or back is still
- * missing — the same guard `CharacterLibrary`'s completion button and the
- * studio's inline result button both need before offering "补全侧面/背面".
+ * missing. Web no longer offers completion; kept for tests and any
+ * remaining API/iOS caller that still builds a side/back job.
  */
 export function canCompleteViews(character: Character): boolean {
   return (

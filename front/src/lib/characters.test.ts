@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { GenerationJob } from '@/lib/api/types';
 
-import { findCompletionJobFor, isCharacterCompletionJob } from './characters';
+import {
+  CHARACTER_SHEET_PROMPT_HINT,
+  characterImageStudioHref,
+  characterSheetAsset,
+  characterSheetPrompt,
+  findCompletionJobFor,
+  isCharacterCompletionJob,
+} from './characters';
+import type { Character } from '@/lib/api/types';
 
 function job(overrides: Partial<GenerationJob>): GenerationJob {
   return {
@@ -20,6 +28,60 @@ function job(overrides: Partial<GenerationJob>): GenerationJob {
     ...overrides,
   };
 }
+
+describe('characterSheetPrompt', () => {
+  it('joins name, appearance and the sheet-layout hint', () => {
+    expect(characterSheetPrompt({ name: '林深', appearance: '银发风衣' })).toBe(
+      `林深。银发风衣。${CHARACTER_SHEET_PROMPT_HINT}`,
+    );
+  });
+
+  it('falls back to the name alone when there is no appearance', () => {
+    expect(characterSheetPrompt({ name: '林深' })).toBe(`林深。${CHARACTER_SHEET_PROMPT_HINT}`);
+  });
+
+  it('does not stack a second period when appearance already ends with one', () => {
+    expect(characterSheetPrompt({ name: '林野', appearance: '银发风衣。' })).toBe(
+      `林野。银发风衣。${CHARACTER_SHEET_PROMPT_HINT}`,
+    );
+  });
+});
+
+describe('characterImageStudioHref', () => {
+  it('targets the image studio with the character sheet query', () => {
+    const href = characterImageStudioHref({
+      characterId: 'skl_char',
+      name: '林深',
+      appearance: '银发风衣',
+    });
+    const url = new URL(href, 'https://example.test');
+    expect(url.pathname).toBe('/create/new');
+    expect(url.searchParams.get('mode')).toBe('image_creation');
+    expect(url.searchParams.get('assetKind')).toBe('character');
+    expect(url.searchParams.get('targetCharacterId')).toBe('skl_char');
+    expect(url.searchParams.get('subjectNameHint')).toBe('林深');
+    expect(url.searchParams.get('returnTo')).toBe('/create/characters');
+    expect(url.searchParams.get('prompt')).toContain('银发风衣');
+    expect(url.searchParams.get('prompt')).toContain('设定图');
+  });
+});
+
+describe('characterSheetAsset', () => {
+  it('prefers the front-tagged asset, else the first one', () => {
+    const character = {
+      reference_assets: [
+        { asset_id: 'ast_side', view: 'side', url: 'https://cdn/side.png' },
+        { asset_id: 'ast_front', view: 'front', url: 'https://cdn/front.png' },
+      ],
+    } as Character;
+    expect(characterSheetAsset(character)?.asset_id).toBe('ast_front');
+    expect(
+      characterSheetAsset({
+        reference_assets: [{ asset_id: 'ast_any', view: 'general', url: 'https://cdn/any.png' }],
+      } as Character)?.asset_id,
+    ).toBe('ast_any');
+  });
+});
 
 describe('isCharacterCompletionJob', () => {
   it('is a character job whose views omit front', () => {

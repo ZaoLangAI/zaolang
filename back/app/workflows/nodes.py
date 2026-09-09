@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import asdict
 from typing import Any
@@ -23,7 +24,7 @@ from app.config import get_settings
 from app.domain.characters import service as characters_service
 from app.domain.costs import service as costs_service
 from app.domain.credits.pricing import settlement_credits
-from app.domain.errors import NotFound
+from app.domain.errors import NotFound, ValidationFailed
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.jobs.cancellation import honor_user_cancel
@@ -31,10 +32,15 @@ from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.scenes import service as scenes_service
 from app.domain.skill_library import service as skill_library_service
+from app.domain.skill_library.folding import (
+    flat_template_params,
+    fold_params_prompt,
+    foldable_params,
+)
 from app.domain.style_gallery import service as style_gallery_service
 from app.llm import client as llm_client
 from app.llm.client import StreamChunk
-from app.models import Draft, JobEvent, ProviderAttempt
+from app.models import Draft, GenerationJob, JobEvent, ProviderAttempt
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
@@ -50,10 +56,11 @@ from app.models.enums import (
     VideoAssetKind,
 )
 from app.providers.base import (
+    AdaptedResolution,
     GenerationProvider,
     GenerationRequest,
     GenerationResult,
-    resolve_resolution_tier,
+    adapt_resolution_tier,
 )
 from app.realtime import publisher
 from app.storage import s3
@@ -115,6 +122,45 @@ _REFERENCE_REQUIRED = frozenset(
 )
 _SANDBOX_POLL_INTERVAL_SECONDS = 2.0
 _SANDBOX_POLL_CAP_MS = 120_000
+
+
+def _requested_resolution(params: Mapping[str, Any]) -> str | None:
+    video_options = params.get("video_options") or {}
+    if not isinstance(video_options, Mapping):
+        return None
+    raw = video_options.get("resolution")
+    return str(raw) if raw else None
+
+
+def _adapted_generation_resolution(
+    capability: Any, params: Mapping[str, Any]
+) -> AdaptedResolution | None:
+    requested = _requested_resolution(params)
+    if not requested:
+        return None
+    available = capability.resolutions if capability is not None else None
+    return adapt_resolution_tier(requested, available)
+
+
+def _vendor_resolution_for(capability: Any, params: Mapping[str, Any]) -> str | None:
+    adapted = _adapted_generation_resolution(capability, params)
+    return adapted.vendor_literal if adapted is not None else None
+
+
+def _resolution_adapt_fields(capability: Any, params: Mapping[str, Any]) -> dict[str, str]:
+    """Ops-replay fields. User-facing copy must use `adapted_resolution`
+    (studio tier), never `adapted_vendor_resolution` (`768P`)."""
+
+    requested = _requested_resolution(params)
+    if not requested:
+        return {}
+    adapted = _adapted_generation_resolution(capability, params)
+    fields: dict[str, str] = {"requested_resolution": requested}
+    if adapted is not None:
+        fields["adapted_resolution"] = adapted.studio_tier
+        fields["adapted_vendor_resolution"] = adapted.vendor_literal
+        fields["resolution_adapt_kind"] = adapted.kind
+    return fields
 
 
 def _event_frame(event: JobEvent) -> dict[str, object]:
@@ -241,26 +287,6 @@ def execute_safety_check(ctx: WorkflowContext, config: SafetyCheckConfig) -> Nod
 _CONTEXT_ID_KEYS = frozenset({"skill_ids", "style_gallery_id"})
 
 
-def _fold_params_prompt(prompt: str, params_json: dict[str, Any]) -> str:
-    """Applies a template's prompt the same way the studio's local
-    `applyParams` does (`front/src/components/studio/generation-studio.tsx`):
-    `prompt` is the template's full directive text, `prompt_suffix` is a
-    fragment meant to be tacked on. Appending only when the text is not
-    already present keeps the normal path (client already merged it via
-    `/apply`, possibly user-edited) from getting it duplicated, while a bare
-    API call that never merged locally still ends up with it in the final
-    prompt sent to the provider.
-
-    Shared by creation skills and system style-gallery entries — both store
-    the same `params_json` shape.
-    """
-    for key in ("prompt", "prompt_suffix"):
-        value = params_json.get(key)
-        if isinstance(value, str) and value.strip() and value not in prompt:
-            return f"{prompt}，{value}" if prompt else value
-    return prompt
-
-
 def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> NodeResult:
     """Makes applied style-gallery and `CreationSkill` params authoritative.
 
@@ -274,7 +300,7 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
     client, a replay) still gets each template's real params rather than
     silently skipping them — including prompt text, which lives on
     `ctx.prompt` rather than `ctx.params` and so needs its own fold (see
-    `_fold_params_prompt`).
+    `fold_params_prompt`).
 
     Order: the style gallery entry first (one, mutually exclusive), then
     `skill_ids` in pick order. Later templates win on conflicting keys;
@@ -283,15 +309,16 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
     job's operation is skipped, same as an unusable/missing skill or style.
 
     A skill whose category is in `IMAGE_ASSET_SKILL_CATEGORIES` (character/
-    scene_asset/cover_asset) is always skipped here even if referenced by
-    id: its `params_json` is shaped `{"<category>": {..., "reference_assets"}}`,
-    not the flat `prompt`/`aspect_ratio`/... template shape every other
-    category uses, so folding it in here would inject a meaningless key
-    instead of anything usable. A character/scene is referenced through the
-    dedicated `character_ids`/`scene_ids`/`target_*_id` params and
-    `characters_service.apply_character_refs` / `scenes_service.apply_scene_refs`
-    (called by `jobs.service.submit` before this node ever runs) instead; a
-    cover has no such reuse path at all.
+    scene_asset/cover_asset) only folds its *flat* recipe keys (`prompt` /
+    `prompt_suffix` / `aspect_ratio` / `negative_prompt`) — the nested
+    `character`/`scene` bundles stay out of `ctx.params` so they cannot
+    leak `reference_assets` into the provider request. A user-authored
+    roster skill with no flat keys is still skipped, same as before. A
+    character/scene used as a *cast member* still goes through
+    `character_ids`/`scene_ids`/`target_*_id` and
+    `characters_service.apply_character_refs` /
+    `scenes_service.apply_scene_refs` (called by `jobs.service.submit`
+    before this node ever runs).
     """
     style_gallery_id = ctx.params.get("style_gallery_id")
     skill_ids = ctx.params.get("skill_ids") or []
@@ -309,7 +336,7 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
                 style_gallery_id,
             )
         else:
-            ctx.prompt = _fold_params_prompt(ctx.prompt, entry.params_json)
+            ctx.prompt = fold_params_prompt(ctx.prompt, entry.params_json)
             template_params.update(entry.params_json)
 
     for skill_id in skill_ids:
@@ -322,14 +349,6 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
         except NotFound:
             logger.warning("job %s referenced an unusable skill %s; ignoring", ctx.job.id, skill_id)
             continue
-        if skill.category in IMAGE_ASSET_SKILL_CATEGORIES:
-            logger.warning(
-                "job %s referenced image-asset skill %s (category=%s) via skill_ids; ignoring",
-                ctx.job.id,
-                skill_id,
-                skill.category,
-            )
-            continue
         declared = skill.applicable_operations_json
         if declared and ctx.job.operation not in declared:
             logger.warning(
@@ -339,8 +358,19 @@ def execute_skill_context(ctx: WorkflowContext, config: SkillContextConfig) -> N
                 ctx.job.operation,
             )
             continue
-        ctx.prompt = _fold_params_prompt(ctx.prompt, skill.params_json)
-        template_params.update(skill.params_json)
+        if skill.category in IMAGE_ASSET_SKILL_CATEGORIES:
+            fold = flat_template_params(skill.params_json)
+            if not fold:
+                continue
+            ctx.prompt = fold_params_prompt(ctx.prompt, fold)
+            template_params.update(fold)
+            continue
+        # `foldable_params`, not the raw bag: a workflow skill's `variables`
+        # are the questions asked *before* the run, and folding them here
+        # would hand the provider the form instead of the answers.
+        fold = foldable_params(skill.params_json)
+        ctx.prompt = fold_params_prompt(ctx.prompt, fold)
+        template_params.update(fold)
 
     if not template_params:
         return NodeResult(port="ok")
@@ -502,9 +532,64 @@ _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT = (
     "（如FRONT VIEW/SIDE VIEW/BACK VIEW）"
 )
 
+# Appended on a CHARACTER `front` pass (the library / script-studio sheet
+# job). Must not replace the caller's identity prompt — unlike the side/back
+# override above — and must not run on a completion pass, where the
+# anti-collage negative is still in force.
+_CHARACTER_SHEET_LAYOUT_SUFFIX = (
+    "输出必须是一张专业角色设定图（单张画面，不要拆成多张）："
+    "左侧从左到右全身三视图（正面、侧面、背面），纯白背景、全身站姿、不裁切头脚；"
+    "右侧为面部多角度特写、服装面料与配饰细节、标准化色板；"
+    "各分区为同一人物，严格保持五官、发型、服装与气质，禁止改设定、禁止额外角色或故事场景。"
+)
+
+# Visual-medium lock for a CHARACTER `front` pass. Script traits are supposed
+# to lead with one shared medium; older scripts and free-typed library prompts
+# often omit it, and the image model then picks photoreal for one cast member
+# and anime for the next. Completion (side/back) follows the front reference
+# and must not invent a medium of its own.
+_CHARACTER_PHOTOREAL_MEDIUM = "真人写实影视短剧造型"
+_CHARACTER_PHOTOREAL_NEGATIVE = "动漫、二次元、卡通、anime、illustration"
+_CHARACTER_ANIME_NEGATIVE = "真人照片、摄影棚写实"
+_PHOTOREAL_MEDIUM_MARKERS = ("真人", "写实", "影视", "photoreal")
+_ANIME_MEDIUM_MARKERS = ("动漫", "二次元", "anime", "插画")
+
 
 def _merge_negative(base: str | None, addition: str) -> str:
     return f"{base}，{addition}" if base else addition
+
+
+def _character_prompt_medium(text: str) -> str | None:
+    """`'anime'` / `'photoreal'` / `None` when the prompt names no medium."""
+    lowered = (text or "").lower()
+    if any(marker.lower() in lowered for marker in _ANIME_MEDIUM_MARKERS):
+        return "anime"
+    if any(marker.lower() in lowered for marker in _PHOTOREAL_MEDIUM_MARKERS):
+        return "photoreal"
+    return None
+
+
+def _apply_character_visual_medium(ctx: WorkflowContext) -> None:
+    """Locks a character front pass to one visual medium.
+
+    No named medium → default photoreal live-action and reject anime.
+    Anime already named → keep it and reject photoreal. Photoreal already
+    named → keep it and reject anime. Never rewrite an explicit medium.
+    """
+    medium = _character_prompt_medium(ctx.prompt)
+    if medium is None:
+        ctx.prompt = (
+            f"{ctx.prompt}。{_CHARACTER_PHOTOREAL_MEDIUM}"
+            if ctx.prompt
+            else _CHARACTER_PHOTOREAL_MEDIUM
+        )
+        medium = "photoreal"
+    negative = (
+        _CHARACTER_ANIME_NEGATIVE if medium == "anime" else _CHARACTER_PHOTOREAL_NEGATIVE
+    )
+    existing = ctx.params.get("negative_prompt")
+    if negative not in (existing or ""):
+        ctx.params["negative_prompt"] = _merge_negative(existing, negative)
 
 
 def _current_character_view(ctx: WorkflowContext) -> str:
@@ -591,11 +676,16 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
     must be driven by the attached front reference image, not by whatever
     free-text prompt the caller happened to send, so this is a hard
     backend-side override rather than a convention callers are trusted to
-    follow. The `front` pass (including a plain single-view job) is
-    unaffected and still uses the caller's real prompt. `ctx.params[
-    "negative_prompt"]` gets the same reset-then-override treatment (via
-    `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`) so pass 2 of a multi-view job
-    doesn't inherit pass 1's view-specific negative text either.
+    follow. The `front` pass (including a plain single-view job) keeps the
+    caller's identity prompt and appends `_CHARACTER_SHEET_LAYOUT_SUFFIX`
+    so the model is required to emit one multi-panel sheet rather than a
+    single full-body still. A front pass with no named visual medium also
+    gets `_CHARACTER_PHOTOREAL_MEDIUM` (and the opposite-medium negative);
+    an already-named anime/photoreal medium is kept.
+    `ctx.params["negative_prompt"]` gets the same
+    reset-then-override treatment (via `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`)
+    so pass 2 of a multi-view job doesn't inherit pass 1's view-specific
+    negative text either.
     """
     axis = _asset_axis(ctx)
     if axis is None:
@@ -619,6 +709,14 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
         ctx.params["negative_prompt"] = _merge_negative(
             ctx.params.get("negative_prompt"), _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT
         )
+    elif is_character and _CHARACTER_SHEET_LAYOUT_SUFFIX not in ctx.prompt:
+        ctx.prompt = (
+            f"{ctx.prompt}。{_CHARACTER_SHEET_LAYOUT_SUFFIX}"
+            if ctx.prompt
+            else _CHARACTER_SHEET_LAYOUT_SUFFIX
+        )
+    if is_character and not is_completion_pass:
+        _apply_character_visual_medium(ctx)
 
     if media_axis == "video":
         _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划视频资产生成方案", 16)
@@ -842,7 +940,9 @@ def _link_character_output(
     scratch on the first call if there was none — also the fallback when
     `target_id` no longer resolves (e.g. the script studio's cached
     `character_ref_id` outlived the character it pointed at, which a
-    delete leaves dangling rather than cleaning up).
+    delete leaves dangling rather than cleaning up). A same-name card the
+    owner already has is reused instead of creating a second one
+    (`characters.service` titles are unique per owner).
 
     Returns the id actually used (whichever was passed in, the one just
     created, or a fresh replacement for a stale target) —
@@ -871,14 +971,39 @@ def _link_character_output(
             )
     if not config.auto_create_character:
         return None
-    character = characters_service.create_character(
-        ctx.session,
-        user_id=ctx.job.user_id,
-        name=subject_name,
-        description=None,
-        reference_asset_ids=[],
-        voice_description=None,
+    # Character titles are unique per owner. Reuse a same-name card before
+    # create so a script-studio batch (or a second job with the same
+    # `subject_name_hint`) does not 422 / drop the output.
+    existing = characters_service.find_owned_character_by_name(
+        ctx.session, user_id=ctx.job.user_id, name=subject_name
     )
+    if existing is not None:
+        characters_service.append_reference_asset(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            character_id=existing.id,
+            asset_id=asset_id,
+            view=view,
+        )
+        return existing.id
+    try:
+        character = characters_service.create_character(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            name=subject_name,
+            description=None,
+            reference_asset_ids=[],
+            voice_description=None,
+        )
+    except ValidationFailed:
+        raced = characters_service.find_owned_character_by_name(
+            ctx.session, user_id=ctx.job.user_id, name=subject_name
+        )
+        if raced is None:
+            raise
+        character = raced
+    else:
+        ctx.state["created_character_id"] = character.id
     characters_service.append_reference_asset(
         ctx.session,
         user_id=ctx.job.user_id,
@@ -886,7 +1011,6 @@ def _link_character_output(
         asset_id=asset_id,
         view=view,
     )
-    ctx.state["created_character_id"] = character.id
     return character.id
 
 
@@ -1189,6 +1313,7 @@ def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeR
         "provider_kind": capability.kind.value,
         "model_or_workflow": capability.model_or_workflow,
         "reason": decision.reason,
+        **_resolution_adapt_fields(capability, ctx.params),
     }
     ctx.session.flush()
     return NodeResult(
@@ -1346,7 +1471,7 @@ def _stub_generation_result(operation: str) -> GenerationResult:
     Quality and the sandbox dialog both inspect mime type; a video dry-run
     that claims to have produced `image/png` looks like a broken provider.
     """
-    if operation == Operation.AUDIO_GENERATION.value:
+    if operation in (Operation.AUDIO_GENERATION.value, Operation.MUSIC_GENERATION.value):
         return GenerationResult(
             succeeded=True,
             object_key="dry-run/stub.mp3",
@@ -1423,13 +1548,10 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         seed=ctx.params.get("seed"),
         aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
         duration_seconds=duration,
-        # `video_options.resolution` is a client-facing tier token (see
-        # `VideoGenerationOptions.resolution`) — resolve it to this specific
-        # candidate's own spelling before it ever reaches a provider adapter.
-        resolution=resolve_resolution_tier(
-            (ctx.params.get("video_options") or {}).get("resolution"),
-            decision.capability.resolutions if decision.capability else None,
-        ),
+        # Client ceiling → this candidate's vendor literal (downgrade, or
+        # last-resort lowest). Remix omits the field so the provider default
+        # applies — never invent a tier for `wan2.7-videoedit`.
+        resolution=_vendor_resolution_for(decision.capability, ctx.params),
         references=references,
         extra=dict(ctx.params.get("extra") or {}),
     )
@@ -1518,6 +1640,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             payload={
                 "prompt": effective_prompt,
                 "negative_prompt": effective_negative_prompt,
+                **_resolution_adapt_fields(capability, ctx.params),
             },
         )
         if ctx.job.status != JobStatus.RUNNING:
@@ -1539,15 +1662,10 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             seed=ctx.params.get("seed"),
             aspect_ratio=str(ctx.params.get("aspect_ratio") or "16:9"),
             duration_seconds=int(ctx.params.get("duration_seconds") or 0),
-            # `video_options.resolution` is a client-facing tier token (see
-            # `VideoGenerationOptions.resolution`) — resolve it to this
-            # specific candidate's own spelling before it ever reaches a
-            # provider adapter (`aihubmix_media.py`/`dmxapi_media.py` still
-            # expect exactly the literal their own profile table declares).
-            resolution=resolve_resolution_tier(
-                (ctx.params.get("video_options") or {}).get("resolution"),
-                capability.resolutions,
-            ),
+            # Client ceiling → this candidate's vendor literal. The adapter
+            # still receives exactly the spelling its profile table declares
+            # (`768P`, `1080p`, …), never the leftover studio token.
+            resolution=_vendor_resolution_for(capability, ctx.params),
             references=media_service.provider_references_for(
                 ctx.session,
                 user_id=ctx.job.user_id,
@@ -1818,6 +1936,29 @@ def execute_video_analysis_generate(
     )
 
 
+def _maybe_fill_linked_episode_preview(session: Any, draft: Draft) -> None:
+    """Best-effort roster thumbnail after a linked video settles.
+
+    ffmpeg / a missing episode must never fail the job — the list page
+    can still call `POST .../preview:from-video`.
+    """
+    episode_id = (draft.params_json or {}).get("link_episode_id")
+    if not isinstance(episode_id, str) or not episode_id:
+        return
+    from app.domain.editor import service as editor_service
+    from app.models import DramaEpisode
+
+    episode = session.get(DramaEpisode, episode_id)
+    if episode is None:
+        return
+    try:
+        editor_service.maybe_fill_episode_preview(
+            session, episode=episode, actor_user_id=draft.user_id
+        )
+    except Exception:
+        logger.exception("episode preview auto-fill failed for %s", episode_id)
+
+
 def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> NodeResult:
     result = ctx.state.get("result")
     capability = ctx.state.get("capability")
@@ -1831,7 +1972,6 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
             output_summary={
                 "width": result.width if result else None,
                 "height": result.height if result else None,
-                "duration_ms": result.duration_ms if result else None,
                 "provider": capability.name if capability else None,
                 "partial_output": bool(result and result.metadata.get("partial_output")),
                 "upstream_status": result.metadata.get("upstream_status") if result else None,
@@ -1882,8 +2022,20 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
     if ctx.job.draft_id:
         draft = ctx.session.get(Draft, ctx.job.draft_id)
         if draft is not None:
-            draft.output_asset_id = asset.id
-            ctx.session.flush()
+            # Never move `applied_job_id` backward in time — a job that was
+            # already in flight when a newer job (or an explicit pin via
+            # `apply_draft_version`) took over must not clobber it just
+            # because it happens to finish later.
+            currently_applied = (
+                ctx.session.get(GenerationJob, draft.applied_job_id)
+                if draft.applied_job_id
+                else None
+            )
+            if currently_applied is None or currently_applied.created_at <= ctx.job.created_at:
+                draft.output_asset_id = asset.id
+                draft.applied_job_id = ctx.job.id
+                ctx.session.flush()
+                _maybe_fill_linked_episode_preview(ctx.session, draft)
 
     ctx.state["asset_id"] = asset.id
     ctx.state["actual_credits"] = settlement_credits(

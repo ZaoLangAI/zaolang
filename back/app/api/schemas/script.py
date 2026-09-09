@@ -42,7 +42,7 @@ class ScriptDocument(ApiModel):
 
 class ScriptCreateRequest(ApiModel):
     title: str = Field(default="", max_length=60)
-    idea: str = Field(min_length=1, max_length=2000)
+    idea: str = Field(min_length=1, max_length=20_000)
     referenced_skill_ids: list[str] = Field(default_factory=list, max_length=5)
     # When set, the new episode is attached to this existing `kind=drama`
     # series (the "新增一集" entry point from a series' own detail page)
@@ -59,7 +59,7 @@ class ScriptRetryRequest(ApiModel):
     new idea overwrites that stored prompt before the stream starts.
     """
 
-    idea: str | None = Field(default=None, max_length=2000)
+    idea: str | None = Field(default=None, max_length=20_000)
     referenced_skill_ids: list[str] = Field(default_factory=list, max_length=5)
 
 
@@ -155,3 +155,10 @@ class ScriptTurnSnapshotResponse(ApiModel):
     turn_no: int
     summary: str
     script: ScriptDocument
+
+
+class ScriptExtractResponse(ApiModel):
+    filename: str
+    text: str
+    char_count: int
+    truncated: bool

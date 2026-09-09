@@ -2,12 +2,16 @@
 
 import Image from 'next/image';
 import { useLocale, useTranslations } from 'next-intl';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconCheck } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
+import { useToast } from '@/components/ui/toast';
 import type { Locale } from '@/i18n/routing';
-import type { GenerationJob } from '@/lib/api/types';
+import { api } from '@/lib/api/client';
+import { isApiError } from '@/lib/api/errors';
+import type { Draft, GenerationJob } from '@/lib/api/types';
 import { isCharacterCompletionJob } from '@/lib/characters';
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/format';
@@ -49,19 +53,39 @@ const DEAD_JOB_STATUSES = new Set(['failed', 'cancelled', 'expired']);
  * failure is already visible where it happened (`InlineImageResult`'s error
  * notice and retry button); this strip only ever shows a *record* worth
  * picking back up, which a dead attempt never is.
+ *
+ * `appliedJobId` is the draft's currently applied version (preview /
+ * publish output) — distinct from the locally selected preview (`activeJob`).
+ * Apply / hide write through `POST /v1/drafts/{id}/applied-version` and
+ * `DELETE /v1/drafts/{id}/versions/{jobId}`; hide is a history tombstone,
+ * not a hard delete of the job or its credits.
  */
 export function GenerationVersionHistory({
   jobs,
   activeJob,
+  appliedJobId,
+  draftId,
   onSelect,
+  onAppliedChange,
+  onHidden,
 }: {
   jobs: GenerationJob[];
   activeJob: GenerationJob | null;
+  appliedJobId?: string | null;
+  draftId?: string | null;
   onSelect: (job: GenerationJob) => void;
+  onAppliedChange?: (draft: Draft) => void;
+  onHidden?: (jobId: string) => void;
 }) {
   const t = useTranslations('remixPage');
   const tJob = useTranslations('job');
+  const tActions = useTranslations('actions');
+  const tStates = useTranslations('states');
   const locale = useLocale() as Locale;
+  const { notify } = useToast();
+  const [hidingJob, setHidingJob] = useState<GenerationJob | null>(null);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [hiding, setHiding] = useState(false);
 
   const versions = useMemo(() => {
     const byId = new Map<string, GenerationJob>();
@@ -90,6 +114,37 @@ export function GenerationVersionHistory({
     }, []);
   }, [jobs]);
 
+  const applyVersion = async (job: GenerationJob) => {
+    if (!draftId) return;
+    setApplyingId(job.id);
+    try {
+      const draft = await api.post<Draft>(`/v1/drafts/${draftId}/applied-version`, {
+        job_id: job.id,
+      });
+      onAppliedChange?.(draft);
+      notify(t('applyVersionDone'), 'success');
+    } catch (caught) {
+      notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  const hideVersion = async () => {
+    if (!draftId || !hidingJob) return;
+    setHiding(true);
+    try {
+      await api.delete(`/v1/drafts/${draftId}/versions/${hidingJob.id}`);
+      onHidden?.(hidingJob.id);
+      notify(t('hideVersionDone'), 'success');
+      setHidingJob(null);
+    } catch (caught) {
+      notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+    } finally {
+      setHiding(false);
+    }
+  };
+
   if (versions.length === 0) return null;
 
   return (
@@ -100,9 +155,11 @@ export function GenerationVersionHistory({
       <ol className="flex gap-3 overflow-x-auto pb-1">
         {versions.map(({ job, versionNumber }) => {
           const selected = job.id === activeJob?.id;
+          const applied = job.id === appliedJobId;
           const thumbnail = job.output_url ?? null;
+          const canManage = Boolean(draftId) && job.status === 'succeeded';
           return (
-            <li key={job.id} className="w-24 shrink-0">
+            <li key={job.id} className="w-28 shrink-0">
               <button
                 type="button"
                 onClick={() => onSelect(job)}
@@ -131,7 +188,7 @@ export function GenerationVersionHistory({
                       className="absolute inset-0 size-full object-cover"
                     />
                   ) : thumbnail ? (
-                    <Image src={thumbnail} alt="" fill sizes="96px" className="object-cover" />
+                    <Image src={thumbnail} alt="" fill sizes="112px" className="object-cover" />
                   ) : (
                     <div className="absolute inset-0 grid place-items-center">
                       <VersionStatusIcon status={job.status} />
@@ -145,6 +202,16 @@ export function GenerationVersionHistory({
                   >
                     V{versionNumber}
                   </span>
+                  {applied ? (
+                    <span
+                      className={cn(
+                        'absolute right-1 top-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                        'bg-primary text-on-primary',
+                      )}
+                    >
+                      {t('appliedVersion')}
+                    </span>
+                  ) : null}
                 </div>
                 <p className="truncate bg-surface px-1.5 py-1 text-[10px] text-muted">
                   {job.status === 'succeeded'
@@ -152,10 +219,41 @@ export function GenerationVersionHistory({
                     : tJob(job.status)}
                 </p>
               </button>
+              {canManage ? (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {!applied ? (
+                    <button
+                      type="button"
+                      disabled={applyingId === job.id}
+                      onClick={() => void applyVersion(job)}
+                      className="text-left text-[10px] text-muted hover:text-text focus-visible:outline-2"
+                    >
+                      {applyingId === job.id ? tActions('saving') : t('applyVersion')}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setHidingJob(job)}
+                    className="text-left text-[10px] text-muted hover:text-danger focus-visible:outline-2"
+                  >
+                    {t('hideVersion')}
+                  </button>
+                </div>
+              ) : null}
             </li>
           );
         })}
       </ol>
+      <ConfirmDialog
+        open={hidingJob !== null}
+        onClose={() => !hiding && setHidingJob(null)}
+        title={t('hideVersionTitle')}
+        description={t('hideVersionBody')}
+        confirmLabel={t('hideVersionConfirm')}
+        cancelLabel={tActions('cancel')}
+        busy={hiding}
+        onConfirm={() => void hideVersion()}
+      />
     </section>
   );
 }

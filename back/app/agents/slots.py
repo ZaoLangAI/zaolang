@@ -52,6 +52,13 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
     AgentName.QUALITY.value: (
         PromptSlot(DEFAULT_SLOT, "质量评估", "判断生成结果是否达标、是否值得重试。"),
     ),
+    AgentName.CANVAS_PLANNER.value: (
+        PromptSlot(
+            "canvas_generate_plan",
+            "画布生成规划",
+            "读取画布上选中卡片与其上游卡片，规划要生成的图片/视频任务。",
+        ),
+    ),
     AgentName.COPY.value: (
         PromptSlot("suggest", "作品文案", "为即将发布的作品生成标题、简介与标签。"),
         PromptSlot("enhance", "提示词润色", "在保留作者意图的前提下把画面描述写得更具体。"),

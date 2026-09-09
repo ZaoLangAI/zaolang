@@ -1,9 +1,14 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 
 import { LiveThinking } from '@/components/ai/thinking-disclosure';
+import {
+  QuestionField,
+  hasMissingRequiredAnswer,
+  type QuestionAnswer,
+} from '@/components/studio/question-field';
 import { Button } from '@/components/ui/button';
 import { TextInput } from '@/components/ui/field';
 import { IconClose, IconSparkle } from '@/components/ui/icons';
@@ -72,6 +77,9 @@ export function PromptPolishPanel({
   onDirection,
   onRefine,
   onAutofill,
+  answers,
+  onAnswerChange,
+  onAnswerSubmit,
 }: {
   open: boolean;
   onClose: () => void;
@@ -85,6 +93,9 @@ export function PromptPolishPanel({
   onDirection: (direction: Direction) => void;
   onRefine: () => void;
   onAutofill: () => void;
+  answers: Record<string, QuestionAnswer>;
+  onAnswerChange: (id: string, value: QuestionAnswer) => void;
+  onAnswerSubmit: () => void;
 }) {
   const t = useTranslations('promptPolish');
   const tActions = useTranslations('actions');
@@ -122,6 +133,8 @@ export function PromptPolishPanel({
   }, [render, reduced]);
 
   if (!render) return null;
+
+  const questions = suggestion?.questions ?? [];
 
   return (
     <div
@@ -170,6 +183,32 @@ export function PromptPolishPanel({
           <div className="max-h-40 overflow-y-auto rounded-[var(--radius-sm)] bg-surface-raised p-3">
             <p className="text-sm leading-relaxed text-text">{suggestion.prompt}</p>
           </div>
+
+          {questions.length > 0 ? (
+            <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-amber/40 bg-amber/5 p-3">
+              <p className="text-xs leading-relaxed text-muted">{t('questionsHint')}</p>
+              {questions.map((question) => (
+                <QuestionField
+                  key={question.id}
+                  question={question}
+                  value={answers[question.id]}
+                  requiredLabel={t('questionRequired')}
+                  choosePlaceholder={t('questionChoose')}
+                  onChange={(value) => onAnswerChange(question.id, value)}
+                />
+              ))}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  disabled={pending || hasMissingRequiredAnswer(questions, answers)}
+                  loading={pending}
+                  onClick={onAnswerSubmit}
+                >
+                  {t('questionsApply')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-0 flex-1">

@@ -386,13 +386,14 @@ _ENHANCE_ASSET_AGENT_SPECS: dict[str, tuple[str, str, str, str]] = {
     "character": (
         "enhance-character",
         "文案润色 · 角色",
-        "角色立绘教练：把同一个人写到能进库、出三视图，强制全身入镜与纯色背景。",
+        "角色设定图教练：把同一个人写成一张多分区设定图（左三视图、右特写与色板），禁止改回单视角。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_CHARACTER,
     ),
     "scene": (
         "enhance-scene",
         "文案润色 · 场景",
-        "场景空镜教练：把空间本身写清楚，画面不得出现任何人物痕迹。",
+        "场景空镜教练：单一机位、遮挡成立、锁年代与媒介，"
+        "按空间类型挑技能包润色，并在信息不足时追问作者。",
         copywriter_agent.ENHANCE_SYSTEM_PROMPT_SCENE,
     ),
     "cover": (
@@ -456,10 +457,12 @@ _FACTORY_SUGGEST_OPENERS = (
     "你是造浪平台的文案助手。",
     "你是造浪平台的作品发布文案助手。",
 )
+_FACTORY_SCRIPT_OPENERS = ("你是造浪平台的短剧编剧助手",)
 _FACTORY_ENHANCE_OPENERS = {
     "character": (
         "你是造浪平台的提示词教练。",
         "你是造浪平台的角色立绘提示词教练。",
+        "你是造浪平台的角色设定图提示词教练。",
     ),
     "scene": (
         "你是造浪平台的提示词教练。",
@@ -473,6 +476,8 @@ _FACTORY_ENHANCE_OPENERS = {
 _FACTORY_ENHANCE_DESCRIPTIONS = {
     "角色资产的画面描述润色，额外关注人物一致性与表情神态，并要求全身入镜、纯色背景。",
     "场景资产的画面描述润色，额外关注环境细节与氛围。",
+    "场景空镜教练：把空间本身写清楚，画面不得出现任何人物痕迹。",
+    "场景空镜教练：把空间写成单一机位的连续空镜，遮挡成立，禁止分割构图与人物痕迹。",
     "封面资产的画面描述润色，额外关注视觉焦点与文字安全区。",
 }
 
@@ -523,10 +528,12 @@ def sync_seeded_copy_agent_prompts(session: Session) -> None:
 
     Runtime `resolve_prompt` prefers the active `AgentSkill` over the
     code-level fallback, so rewriting `copywriter.SYSTEM_PROMPT` /
-    `ENHANCE_SYSTEM_PROMPT_*` is invisible until those rows move. This
-    keeps the four product-owned agents (`文案生成 · 默认` plus the three
-    文案润色 keys) on the factory draft without touching a custom prompt
-    or a different profile an operator pointed the bucket at.
+    `ENHANCE_SYSTEM_PROMPT_*` / `SCRIPT_*_SYSTEM_PROMPT` is invisible until
+    those rows move. This keeps the four product-owned agents (`文案生成 · 默认`
+    plus the three 文案润色 keys) on the factory draft — including the
+    default copy agent's `script_draft` / `script_revise` slots — without
+    touching a custom prompt or a different profile an operator pointed
+    the bucket at.
     """
     suggest_targets: list[AgentProfile] = []
     role_default = agent_skills_service.default_profile(session, "copy")
@@ -545,6 +552,22 @@ def sync_seeded_copy_agent_prompts(session: Session) -> None:
             prompt=copywriter_agent.SYSTEM_PROMPT,
             openers=_FACTORY_SUGGEST_OPENERS,
             reason="seed: 同步文案生成工厂提示词",
+        )
+        _publish_factory_prompt(
+            session,
+            profile=profile,
+            slot=copywriter_agent.SCRIPT_DRAFT_SLOT,
+            prompt=copywriter_agent.SCRIPT_DRAFT_SYSTEM_PROMPT,
+            openers=_FACTORY_SCRIPT_OPENERS,
+            reason="seed: 同步剧本创作工厂提示词",
+        )
+        _publish_factory_prompt(
+            session,
+            profile=profile,
+            slot=copywriter_agent.SCRIPT_REVISE_SLOT,
+            prompt=copywriter_agent.SCRIPT_REVISE_SYSTEM_PROMPT,
+            openers=_FACTORY_SCRIPT_OPENERS,
+            reason="seed: 同步剧本修改工厂提示词",
         )
 
     for bucket, spec in _ENHANCE_ASSET_AGENT_SPECS.items():
@@ -620,6 +643,7 @@ def _seed_editor_flags(session: Session) -> None:
         and current.editor_mcp_enabled
         and current.script_studio_enabled
         and current.video_analysis_enabled
+        and current.canvas_studio_enabled
     ):
         return
     value = current.model_dump(mode="json")
@@ -632,6 +656,7 @@ def _seed_editor_flags(session: Session) -> None:
             "editor_mcp_enabled": True,
             "script_studio_enabled": True,
             "video_analysis_enabled": True,
+            "canvas_studio_enabled": True,
         }
     )
     config_service.set_value(
@@ -639,7 +664,7 @@ def _seed_editor_flags(session: Session) -> None:
         "feature_flags",
         value,
         actor_user_id=None,
-        note="seed: 本地打开短剧剪辑与 MCP",
+        note="seed: 本地打开短剧剪辑、MCP 与无限画布",
     )
 
 

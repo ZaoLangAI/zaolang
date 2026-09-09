@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { UnlockDialog } from '@/components/marketplace/unlock-dialog';
@@ -24,6 +24,11 @@ export const KNOWN_PRESET_KEYS = new Set(['prompt', 'prompt_suffix', 'aspect_rat
 
 export const MAX_APPLIED_SKILLS = 5;
 
+export type ApplySkillParams = (
+  params: Record<string, unknown>,
+  detail?: CreationSkillDetail,
+) => void;
+
 export interface AppliedSkills {
   skills: CreationSkillSummary[];
   mentionableSkills: CreationSkillSummary[];
@@ -35,34 +40,42 @@ export interface AppliedSkills {
 }
 
 /**
- * Fetch + apply/remove for template `CreationSkill`s. Shared by the audio
- * style/skill picker (which still offers unlock from its Select) and the
- * image/video prompt `@` menu (which only lists free or already-purchased
- * skills that apply to the current operation).
+ * Fetch + apply/remove for template and image-asset `CreationSkill`s.
+ * Shared by the audio style/skill picker (which still offers unlock from
+ * its Select) and the image/video prompt `@` menu (which only lists free
+ * or already-purchased skills that apply to the current operation).
  */
 export function useAppliedSkills({
   operation,
   onApplyParams,
+  seedSkillId,
 }: {
   operation: Operation;
-  onApplyParams: (params: Record<string, unknown>) => void;
+  onApplyParams: ApplySkillParams;
+  /** Plaza / deep-link `?skillId=` — apply once on mount so usage is
+   * counted here, not also on the plaza CTA. */
+  seedSkillId?: string;
 }): AppliedSkills {
   const tSkill = useTranslations('skillLibrary');
   const { notify } = useToast();
   const { status: sessionStatus } = useSession();
 
-  const publicSkills = useResource<Page<CreationSkillSummary>>(
+  const publicTemplates = useResource<Page<CreationSkillSummary>>(
     '/v1/skills/public?content_type=template&limit=60',
+  );
+  const publicImageAssets = useResource<Page<CreationSkillSummary>>(
+    '/v1/skills/public?content_type=image_asset&limit=60',
   );
   const mineSkills = useResource<Page<CreationSkillSummary>>(
     sessionStatus === 'authenticated' ? '/v1/skills' : null,
   );
   const skills = useMemo(() => {
     const byId = new Map<string, CreationSkillSummary>();
-    for (const skill of publicSkills.data?.items ?? []) byId.set(skill.id, skill);
+    for (const skill of publicTemplates.data?.items ?? []) byId.set(skill.id, skill);
+    for (const skill of publicImageAssets.data?.items ?? []) byId.set(skill.id, skill);
     for (const skill of mineSkills.data?.items ?? []) byId.set(skill.id, skill);
     return [...byId.values()];
-  }, [publicSkills.data, mineSkills.data]);
+  }, [publicTemplates.data, publicImageAssets.data, mineSkills.data]);
 
   const mentionableSkills = useMemo(
     () => skills.filter((skill) => isSkillMentionable(skill, operation)),
@@ -71,11 +84,14 @@ export function useAppliedSkills({
 
   const [appliedSkillIds, setAppliedSkillIds] = useState<string[]>([]);
   const [pendingUnlockSkill, setPendingUnlockSkill] = useState<CreationSkillSummary | null>(null);
+  const onApplyParamsRef = useRef(onApplyParams);
+  onApplyParamsRef.current = onApplyParams;
+  const seededSkillIdRef = useRef<string | null>(null);
 
   const applyUnlockedSkill = async (skill: CreationSkillSummary) => {
     try {
       const detail = await api.post<CreationSkillDetail>(`/v1/skills/${skill.id}/apply`);
-      onApplyParams(detail.params ?? {});
+      onApplyParamsRef.current(detail.params ?? {}, detail);
       setAppliedSkillIds((current) =>
         current.includes(skill.id) || current.length >= MAX_APPLIED_SKILLS
           ? current
@@ -85,6 +101,27 @@ export function useAppliedSkills({
       notify(caught instanceof ApiError ? caught.message : tSkill('applyLocked'), 'error');
     }
   };
+
+  useEffect(() => {
+    if (!seedSkillId || seededSkillIdRef.current === seedSkillId) return;
+    seededSkillIdRef.current = seedSkillId;
+    void applyUnlockedSkill({
+      id: seedSkillId,
+      title: '',
+      description: '',
+      category: 'style',
+      author: { user_id: '', handle: '', display_name: '' },
+      visibility: 'public',
+      status: 'published',
+      usage_count: 0,
+      access_credits: 0,
+      viewer_unlocked: true,
+      has_variables: false,
+      created_at: '',
+    });
+    // Intentionally seed once per `skillId`; `onApplyParams` is read from a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedSkillId]);
 
   const applySkill = (skill: CreationSkillSummary) => {
     if (appliedSkillIds.includes(skill.id) || appliedSkillIds.length >= MAX_APPLIED_SKILLS) return;

@@ -10,11 +10,21 @@ import {
   GenerationStudioShell,
   type StudioSource,
 } from '@/components/studio/generation-studio-shell';
+import {
+  STUDIO_RESOLUTION_LABEL_KEYS,
+  adaptStudioResolution,
+} from '@/components/studio/generation-resolution';
 import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
+import {
+  durationFromVersion,
+  promptFromVersion,
+  videoAssetKindFromVersion,
+} from '@/components/studio/generation-version-select';
 import { InlineVideoResult } from '@/components/studio/inline-video-result';
 import { OptionGroup } from '@/components/studio/option-group';
 import { PromptComposer } from '@/components/studio/prompt-composer';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
+import { studioSubmitBusy, studioSubmitLabelKey } from '@/components/studio/studio-submit-busy';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import {
   KNOWN_PRESET_KEYS,
@@ -123,7 +133,7 @@ export function VideoGenerationStudio({
   initialReferenceSceneIds,
   linkEpisodeId,
   linkBreakpointKey,
-  continuitySourceAssetId,
+  initialSkillId,
 }: {
   operation: 'text_to_video' | 'image_to_video' | 'video_to_video';
   /** A licensed remix source. Submitted as `source_work_id`. */
@@ -176,17 +186,13 @@ export function VideoGenerationStudio({
    * `GenerationSubmitInput.linkBreakpointKey`. */
   linkBreakpointKey?: string;
   /**
-   * The previous script breakpoint's already-generated video asset id —
-   * `previousBoundVideoAssetId` on the script side. On mount, this studio
-   * extracts that clip's last frame (`POST /v1/assets/{id}/frame`) and
-   * pre-fills it as this session's first frame (`frame_images` mode), so
-   * the cut between the two clips reads as continuous once assembled in the
-   * editor. The user can remove it (falls back to the plain reference-upload
-   * mode) or pick a different first frame afterward — this only seeds the
-   * initial selection. Never applied while resuming an existing draft
-   * (`initialDraft` set) — a resumed session already has its own material.
+   * Accepted for stale `?continuityAssetId=` deep links. First/last frames
+   * are no longer auto-applied — the author picks them manually in the
+   * reference-mode panel if they want shot continuity.
    */
   continuitySourceAssetId?: string;
+  /** Plaza / `@` deep-link `?skillId=` — apply the recipe once on mount. */
+  initialSkillId?: string;
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -254,14 +260,23 @@ export function VideoGenerationStudio({
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobSeed, setActiveJobSeed] = useState<GenerationJob | null>(null);
+  const [appliedJobId, setAppliedJobId] = useState<string | null>(
+    initialDraft?.applied_job_id ?? null,
+  );
+  const draftLinkedEpisode =
+    typeof initialDraft?.params?.link_episode_id === 'string'
+      ? initialDraft.params.link_episode_id
+      : '';
+  const [linkedEpisodeId, setLinkedEpisodeId] = useState(linkEpisodeId ?? draftLinkedEpisode);
   const [cancelling, setCancelling] = useState(false);
+  const [polishPending, setPolishPending] = useState(false);
 
-  // Notification `?jobId=` wins over the draft's `latest_job_id` so a retry
-  // toast opens that job. A 404 on the preferred id (deleted / not owned)
-  // falls back to `latest_job_id` rather than leaving the preview empty.
+  // Notification `?jobId=` wins over the draft's applied / latest pointers
+  // so a retry toast opens that job. A 404 on the preferred id (deleted /
+  // not owned) falls back to the applied version, then `latest_job_id`.
   const [resumeFallbackJobId, setResumeFallbackJobId] = useState<string | null>(null);
-  const preferredResumeJobId =
-    resumeFallbackJobId ?? initialJobId ?? initialDraft?.latest_job_id ?? null;
+  const resumeDefaultJobId = initialDraft?.applied_job_id ?? initialDraft?.latest_job_id ?? null;
+  const preferredResumeJobId = resumeFallbackJobId ?? initialJobId ?? resumeDefaultJobId;
   const resumedJob = useResource<GenerationJob>(
     !activeJobId && preferredResumeJobId ? `/v1/generation-jobs/${preferredResumeJobId}` : null,
   );
@@ -269,11 +284,11 @@ export function VideoGenerationStudio({
     !activeJobId &&
     !resumeFallbackJobId &&
     initialJobId &&
-    initialDraft?.latest_job_id &&
-    initialJobId !== initialDraft.latest_job_id &&
+    resumeDefaultJobId &&
+    initialJobId !== resumeDefaultJobId &&
     resumedJob.status === 'failed'
   ) {
-    setResumeFallbackJobId(initialDraft.latest_job_id);
+    setResumeFallbackJobId(resumeDefaultJobId);
   }
   // Adjusted during render rather than in an effect (same pattern as
   // `ImageGenerationStudio`), guarded by `!activeJobId` so it only ever
@@ -338,6 +353,11 @@ export function VideoGenerationStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
+  useEffect(() => {
+    if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId) {
+      setAppliedJobId(liveJob.id);
+    }
+  }, [liveJob, activeJobId]);
 
   const cancelActiveJob = async () => {
     if (!activeJobId) return;
@@ -355,6 +375,43 @@ export function VideoGenerationStudio({
   const selectVersion = (job: GenerationJob) => {
     setActiveJobId(job.id);
     setActiveJobSeed(job);
+    const prompt = promptFromVersion(job);
+    if (prompt) setPrompt(prompt);
+    const durationSeconds = durationFromVersion(job, DURATIONS);
+    if (durationSeconds !== null) setDuration(durationSeconds);
+    const kind = videoAssetKindFromVersion(job, VIDEO_ASSET_KINDS);
+    if (kind) setVideoAssetKind(kind);
+  };
+
+  const handleAppliedChange = (draft: Draft) => {
+    setAppliedJobId(draft.applied_job_id ?? null);
+  };
+
+  const handleHiddenVersion = (jobId: string) => {
+    setKnownJobsById((current) => {
+      const next = { ...current };
+      delete next[jobId];
+      return next;
+    });
+    if (!draftId) return;
+    void api
+      .get<Draft>(`/v1/drafts/${draftId}`)
+      .then((draft) => {
+        setAppliedJobId(draft.applied_job_id ?? null);
+        if (activeJobId !== jobId) return;
+        const next = draft.applied_job_id
+          ? knownJobs.find((job) => job.id === draft.applied_job_id)
+          : undefined;
+        if (next) {
+          selectVersion(next);
+          return;
+        }
+        setActiveJobId(null);
+        setActiveJobSeed(null);
+      })
+      .catch((caught) => {
+        notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+      });
   };
 
   /** "基于此视频继续创作" — attaches `job`'s own output video as the next
@@ -374,31 +431,6 @@ export function VideoGenerationStudio({
     },
     [notify, tStates],
   );
-
-  // The script studio's "衔接上一镜头" continuity feature: the previous
-  // breakpoint's video's last frame becomes this session's first frame,
-  // once, on mount — never while resuming an existing draft (that already
-  // has its own material/settings). Guarded by a ref rather than just the
-  // prop so a later manual change to `referenceMode`/`firstFrameAssetId` is
-  // never clobbered by a re-render.
-  const [continuityState, setContinuityState] = useState<'idle' | 'loading' | 'applied' | 'failed'>(
-    'idle',
-  );
-  const continuitySeededRef = useRef(false);
-  useEffect(() => {
-    if (continuitySeededRef.current || !continuitySourceAssetId || initialDraft) return;
-    continuitySeededRef.current = true;
-    setContinuityState('loading');
-    void api
-      .post<Asset>(`/v1/assets/${continuitySourceAssetId}/frame`, { position: 'last' })
-      .then((asset) => {
-        setUploads((current) => [...current, asset]);
-        setReferenceMode('frame_images');
-        setFirstFrameAssetId(asset.id);
-        setContinuityState('applied');
-      })
-      .catch(() => setContinuityState('failed'));
-  }, [continuitySourceAssetId, initialDraft]);
 
   const toggleReferenceCharacter = (id: string) =>
     setSelectedReferenceCharacterIds((current) =>
@@ -451,6 +483,20 @@ export function VideoGenerationStudio({
   }
 
   const modelOptions = useGenerationModels(operation);
+  const forcedOption = modelOptions.find((option) => option.model === forcedModel);
+  const resolutionPreview = useMemo(() => {
+    if (sourceIsVideo || !forcedModel || !forcedOption) return null;
+    return adaptStudioResolution(resolution, forcedOption.resolutions);
+  }, [forcedModel, forcedOption, resolution, sourceIsVideo]);
+  const resolutionHint = sourceIsVideo
+    ? t('resolutionHint')
+    : resolutionPreview && resolutionPreview.kind !== 'exact'
+      ? t('resolutionAdapted', {
+          actual: t(STUDIO_RESOLUTION_LABEL_KEYS[resolutionPreview.studioTier]),
+        })
+      : forcedModel
+        ? t('resolutionHint')
+        : t('resolutionHintAuto');
 
   const charactersResource = useResource<Character[]>(
     sessionStatus === 'authenticated' ? '/v1/characters' : null,
@@ -477,6 +523,7 @@ export function VideoGenerationStudio({
     initialStyleGalleryId,
     onApplyParams: applyParams,
     showCreationSkillSelect: false,
+    seedSkillId: initialSkillId,
   });
 
   // Derived, not its own state: an independent `orientation` could disagree
@@ -521,12 +568,17 @@ export function VideoGenerationStudio({
   );
 
   const frameSelectionValid = referenceMode !== 'frame_images' || Boolean(firstFrameAssetId);
+  const busy = studioSubmitBusy({
+    submitting,
+    polishPending,
+    jobs: [displayJob, ...knownJobs],
+  });
   const canSubmit =
     prompt.trim().length > 0 &&
     rightsConfirmed &&
     frameSelectionValid &&
     seedValid &&
-    !submitting &&
+    !busy &&
     (quote?.sufficient ?? true);
 
   const removeUpload = (assetId: string) => {
@@ -535,14 +587,9 @@ export function VideoGenerationStudio({
     if (lastFrameAssetId === assetId) setLastFrameAssetId('');
   };
 
-  const removeContinuity = () => {
-    if (firstFrameAssetId) removeUpload(firstFrameAssetId);
-    setReferenceMode('input_references');
-    setContinuityState('idle');
-  };
-
-  const runSubmit = () =>
-    submit({
+  const runSubmit = () => {
+    if (busy) return;
+    return submit({
       operation,
       qualityTier: tier,
       durationSeconds: duration,
@@ -579,6 +626,7 @@ export function VideoGenerationStudio({
       linkBreakpointKey,
       forcedModel: forcedModel || undefined,
     });
+  };
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
@@ -722,31 +770,10 @@ export function VideoGenerationStudio({
         </div>
       </div>
 
-      {continuityState !== 'idle' ? (
-        <div className="flex items-start justify-between gap-3 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-xs">
-          <p className="text-muted">
-            {continuityState === 'loading'
-              ? t('continuityApplying')
-              : continuityState === 'applied'
-                ? t('continuityApplied')
-                : t('continuityFailed')}
-          </p>
-          {continuityState === 'applied' ? (
-            <button
-              type="button"
-              onClick={removeContinuity}
-              className="shrink-0 text-muted underline hover:text-text"
-            >
-              {t('continuityRemove')}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="flex flex-col gap-3 rounded-[var(--radius-sm)] border border-border p-3">
         <Select
           label={t('resolution')}
-          hint={t('resolutionHint')}
+          hint={resolutionHint}
           value={resolution}
           onChange={(event) =>
             setResolution(event.target.value as '480p' | '720p' | '1080p' | '2K')
@@ -922,6 +949,7 @@ export function VideoGenerationStudio({
         videoAssetKind,
       }}
       onPolishAccept={setPrompt}
+      onPolishPendingChange={setPolishPending}
       skillMention={{
         skills: mentionableSkills,
         selectedIds: appliedSkillIds,
@@ -947,6 +975,8 @@ export function VideoGenerationStudio({
         reconnecting={jobReconnecting}
         liveThinking={liveThinking.text}
         draftId={draftId}
+        linkedEpisodeId={linkedEpisodeId || null}
+        onLinkedEpisode={setLinkedEpisodeId}
         cancelling={cancelling}
         onCancel={() => void cancelActiveJob()}
         onUseAsReference={(job) => void handleUseAsReference(job)}
@@ -959,7 +989,15 @@ export function VideoGenerationStudio({
           setActiveJobSeed(job);
         }}
       />
-      <GenerationVersionHistory jobs={knownJobs} activeJob={displayJob} onSelect={selectVersion} />
+      <GenerationVersionHistory
+        jobs={knownJobs}
+        activeJob={displayJob}
+        appliedJobId={appliedJobId}
+        draftId={draftId}
+        onSelect={selectVersion}
+        onAppliedChange={handleAppliedChange}
+        onHidden={handleHiddenVersion}
+      />
     </>
   ) : undefined;
 
@@ -974,7 +1012,8 @@ export function VideoGenerationStudio({
       previewSlot={previewSlot}
       promptSlot={promptComposer}
       canSubmit={canSubmit}
-      submitting={submitting}
+      submitting={Boolean(busy)}
+      submitLabel={t(studioSubmitLabelKey(busy))}
       onSubmit={runSubmit}
       price={price}
       estimate={estimate}

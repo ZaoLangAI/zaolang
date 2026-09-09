@@ -9,6 +9,7 @@ docstring)."""
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ from app.models import (
     EpisodeScriptTurn,
     GenerationJob,
     Series,
+    SeriesCollaborator,
     User,
     Work,
 )
@@ -41,6 +43,7 @@ from app.models.enums import (
     MediaType,
     ModerationStatus,
     Operation,
+    SeriesCollaboratorStatus,
     Visibility,
 )
 from app.platform_config import service as config_service
@@ -101,6 +104,79 @@ def _video_asset(session: Session, owner: User) -> Asset:
     return asset
 
 
+def _image_asset(session: Session, owner: User) -> Asset:
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.jpg",
+        media_type=MediaType.IMAGE,
+        mime_type="image/jpeg",
+        size_bytes=64,
+        checksum_sha256="e" * 64,
+        role=AssetRole.COVER,
+        width=1080,
+        height=1920,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+def _stub_extract_video_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Register a still without ffmpeg so preview tests stay deterministic."""
+    from app.domain.media import service as media_service
+
+    def fake_extract(session: Session, *, user_id: str, asset_id: str, position: str) -> Asset:
+        source = session.get(Asset, asset_id)
+        assert source is not None
+        assert source.owner_user_id == user_id
+        assert position == "first"
+        frame = Asset(
+            owner_user_id=user_id,
+            object_key=f"derived/frames/{user_id}/{new_id('obj')}.jpg",
+            media_type=MediaType.IMAGE,
+            mime_type="image/jpeg",
+            size_bytes=64,
+            checksum_sha256="f" * 64,
+            role=AssetRole.GENERATION_REFERENCE,
+            width=1080,
+            height=1920,
+            moderation_status=ModerationStatus.PENDING,
+            visibility=Visibility.PRIVATE,
+        )
+        session.add(frame)
+        session.flush()
+        return frame
+
+    monkeypatch.setattr(media_service, "extract_video_frame", fake_extract)
+
+
+def _link_draft_with_video(client: TestClient, db: Session, owner: User, episode_id: str) -> Asset:
+    created = client.post(
+        "/v1/drafts",
+        headers=auth_header(owner),
+        json={"params": {"prompt": "成片", "operation": "text_to_video"}},
+    )
+    assert created.status_code == 201, created.text
+    video = _video_asset(db, owner)
+    draft = db.get(Draft, created.json()["id"])
+    assert draft is not None
+    draft.output_asset_id = video.id
+    db.flush()
+    linked = client.post(
+        f"/v1/drama-episodes/{episode_id}/content-links",
+        headers=auth_header(owner),
+        json={
+            "content_type": "draft",
+            "content_ref_id": draft.id,
+            "role": "candidate",
+        },
+    )
+    assert linked.status_code == 201, linked.text
+    return video
+
+
 def _create_series(client: TestClient, user: User) -> str:
     response = client.post(
         "/v1/drama-series",
@@ -127,6 +203,9 @@ def test_episode_crud_works_for_any_authenticated_user(
     assert body["season_number"] == 1
     assert body["episode_number"] == 1
     assert body["episode_kind"] == "main"
+    assert body["preview_asset_id"] is None
+    assert body["preview_url"] is None
+    assert body["has_preview_source"] is False
     episode_id = body["id"]
 
     trailer = client.post(
@@ -544,6 +623,70 @@ def test_create_draft_with_foreign_link_episode_id_still_creates_draft(
     assert links.json() == []
 
 
+def test_content_link_seeds_link_episode_id_when_draft_has_none(
+    client: TestClient, db: Session, author: User
+) -> None:
+    series_id = _create_series(client, author)
+    episode_id = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()["id"]
+    created = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "独立视频", "operation": "text_to_video"}},
+    )
+    assert created.status_code == 201, created.text
+    draft_id = created.json()["id"]
+    assert "link_episode_id" not in (created.json()["params"] or {})
+
+    linked = client.post(
+        f"/v1/drama-episodes/{episode_id}/content-links",
+        headers=auth_header(author),
+        json={"content_type": "draft", "content_ref_id": draft_id, "role": "candidate"},
+    )
+    assert linked.status_code == 201, linked.text
+
+    draft = client.get(f"/v1/drafts/{draft_id}", headers=auth_header(author))
+    assert draft.status_code == 200
+    assert draft.json()["params"]["link_episode_id"] == episode_id
+
+
+def test_content_link_does_not_overwrite_existing_link_episode_id(
+    client: TestClient, db: Session, author: User
+) -> None:
+    series_id = _create_series(client, author)
+    first_episode = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()["id"]
+    second_episode = client.post(
+        f"/v1/drama-series/{series_id}/episodes",
+        headers=auth_header(author),
+        json={"title": "第二集", "episode_number": 2},
+    ).json()["id"]
+    created = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "文案跳转", "link_episode_id": first_episode}},
+    )
+    assert created.status_code == 201, created.text
+    draft_id = created.json()["id"]
+
+    linked = client.post(
+        f"/v1/drama-episodes/{second_episode}/content-links",
+        headers=auth_header(author),
+        json={"content_type": "draft", "content_ref_id": draft_id, "role": "candidate"},
+    )
+    assert linked.status_code == 201, linked.text
+
+    draft = client.get(f"/v1/drafts/{draft_id}", headers=auth_header(author))
+    assert draft.status_code == 200
+    assert draft.json()["params"]["link_episode_id"] == first_episode
+
+
 def test_list_content_links_heals_draft_with_link_episode_id(
     client: TestClient, db: Session, author: User
 ) -> None:
@@ -827,3 +970,182 @@ def test_delete_episode_removes_both_cuts_on_the_same_episode(
     assert db.get(EpisodeCut, second.json()["id"]) is None
     assert db.get(CutRevision, first["head_revision_id"]) is None
     assert db.get(CutRevision, second.json()["head_revision_id"]) is None
+
+
+def test_patch_episode_binds_and_clears_preview(
+    client: TestClient, db: Session, author: User, remixer: User
+) -> None:
+    series_id = _create_series(client, author)
+    episode_id = _post_episode(client, author, series_id)
+    own = _image_asset(db, author)
+    foreign = _image_asset(db, remixer)
+    video = _video_asset(db, author)
+
+    bound = client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"preview_asset_id": own.id},
+    )
+    assert bound.status_code == 200, bound.text
+    assert bound.json()["preview_asset_id"] == own.id
+    assert bound.json()["preview_url"]
+
+    stolen = client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"preview_asset_id": foreign.id},
+    )
+    assert stolen.status_code == 404
+
+    not_image = client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"preview_asset_id": video.id},
+    )
+    assert not_image.status_code == 422
+
+    still = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert still.json()["preview_asset_id"] == own.id
+
+    title_only = client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"title": "改过的标题"},
+    )
+    assert title_only.status_code == 200
+    assert title_only.json()["preview_asset_id"] == own.id
+    assert title_only.json()["title"] == "改过的标题"
+
+    cleared = client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"preview_asset_id": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["preview_asset_id"] is None
+    assert cleared.json()["preview_url"] is None
+
+
+def test_episode_preview_from_video_extracts_and_overwrites(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_extract_video_frame(monkeypatch)
+    series_id = _create_series(client, author)
+    episode_id = _post_episode(client, author, series_id)
+
+    missing = client.post(
+        f"/v1/drama-episodes/{episode_id}/preview:from-video",
+        headers=auth_header(author),
+    )
+    assert missing.status_code == 422
+
+    uploaded = _image_asset(db, author)
+    client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"preview_asset_id": uploaded.id},
+    )
+    _link_draft_with_video(client, db, author, episode_id)
+
+    listed = client.get(f"/v1/drama-series/{series_id}/episodes", headers=auth_header(author))
+    body = listed.json()[0]
+    assert body["has_preview_source"] is True
+    assert body["preview_asset_id"] == uploaded.id
+
+    extracted = client.post(
+        f"/v1/drama-episodes/{episode_id}/preview:from-video",
+        headers=auth_header(author),
+    )
+    assert extracted.status_code == 200, extracted.text
+    assert extracted.json()["preview_asset_id"] not in {None, uploaded.id}
+    assert extracted.json()["preview_url"]
+    assert extracted.json()["has_preview_source"] is True
+
+
+def test_content_link_auto_fill_does_not_overwrite_preview(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_extract_video_frame(monkeypatch)
+    series_id = _create_series(client, author)
+    episode_id = _post_episode(client, author, series_id)
+    uploaded = _image_asset(db, author)
+    client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(author),
+        json={"preview_asset_id": uploaded.id},
+    )
+
+    _link_draft_with_video(client, db, author, episode_id)
+    detail = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert detail.json()["preview_asset_id"] == uploaded.id
+    assert detail.json()["has_preview_source"] is True
+
+
+def test_content_link_auto_fills_empty_preview(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_extract_video_frame(monkeypatch)
+    series_id = _create_series(client, author)
+    episode_id = _post_episode(client, author, series_id)
+    _link_draft_with_video(client, db, author, episode_id)
+
+    detail = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert detail.json()["preview_asset_id"]
+    assert detail.json()["preview_url"]
+    assert detail.json()["has_preview_source"] is True
+
+
+def test_fake_video_leaves_preview_empty_but_flags_source(
+    client: TestClient, db: Session, author: User
+) -> None:
+    """A content-link with a non-decodable clip must not fail the write;
+    `has_preview_source` still tells the roster it can retry extract."""
+    series_id = _create_series(client, author)
+    episode_id = _post_episode(client, author, series_id)
+    _link_draft_with_video(client, db, author, episode_id)
+
+    detail = client.get(f"/v1/drama-episodes/{episode_id}", headers=auth_header(author))
+    assert detail.status_code == 200
+    assert detail.json()["preview_asset_id"] is None
+    assert detail.json()["has_preview_source"] is True
+
+
+def test_collaborator_can_set_and_extract_episode_preview(
+    client: TestClient,
+    db: Session,
+    author: User,
+    remixer: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_extract_video_frame(monkeypatch)
+    series_id = _create_series(client, author)
+    episode_id = _post_episode(client, author, series_id)
+    _link_draft_with_video(client, db, author, episode_id)
+    db.add(
+        SeriesCollaborator(
+            series_id=series_id,
+            user_id=remixer.id,
+            invited_by_user_id=author.id,
+            status=SeriesCollaboratorStatus.ACTIVE,
+        )
+    )
+    db.flush()
+
+    own = _image_asset(db, remixer)
+    bound = client.patch(
+        f"/v1/drama-episodes/{episode_id}",
+        headers=auth_header(remixer),
+        json={"preview_asset_id": own.id},
+    )
+    assert bound.status_code == 200, bound.text
+    assert bound.json()["preview_asset_id"] == own.id
+
+    extracted = client.post(
+        f"/v1/drama-episodes/{episode_id}/preview:from-video",
+        headers=auth_header(remixer),
+    )
+    assert extracted.status_code == 200, extracted.text
+    assert extracted.json()["preview_asset_id"] != own.id
+    frame = db.get(Asset, extracted.json()["preview_asset_id"])
+    assert frame is not None
+    assert frame.owner_user_id == author.id

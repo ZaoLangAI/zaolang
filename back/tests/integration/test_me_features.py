@@ -34,6 +34,7 @@ def test_me_reports_every_consumer_facing_flag(client: TestClient, author: User)
         "video_generation",
         "drama_studio",
         "marketplace",
+        "canvas_studio",
     }
 
 

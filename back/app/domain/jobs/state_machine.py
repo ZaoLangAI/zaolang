@@ -92,6 +92,16 @@ def transition(
         from app.domain.notifications import push as notifications
 
         notifications.sync_job_notification(session, job)
+        if JobStatus(target).is_terminal:
+            # The single choke point every terminal write reaches — the
+            # pipeline, the async-polling worker, and `pipeline._fail`'s crash
+            # path all come through here, and the conditional UPDATE above has
+            # already guaranteed only the first one wins. Anything that has to
+            # react to a job finishing hangs off this rather than patching each
+            # caller. See `app/domain/jobs/completion.py`.
+            from app.domain.jobs.completion import on_job_terminal
+
+            on_job_terminal(session, job)
     return job
 
 

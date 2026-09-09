@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import Session
 
+from app.agents import planner
 from app.domain.characters import service as characters_service
 from app.domain.errors import NotFound
 from app.domain.jobs import state_machine as sm
@@ -22,8 +23,12 @@ from app.workflows.configs import (
     AssetPlanningConfig,
 )
 from app.workflows.nodes import (
+    _CHARACTER_ANIME_NEGATIVE,
     _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT,
     _CHARACTER_COMPLETION_FIXED_PROMPTS,
+    _CHARACTER_PHOTOREAL_MEDIUM,
+    _CHARACTER_PHOTOREAL_NEGATIVE,
+    _CHARACTER_SHEET_LAYOUT_SUFFIX,
     execute_asset_output_advance,
     execute_asset_output_link,
     execute_asset_planning,
@@ -86,7 +91,8 @@ def test_asset_planning_folds_enhancements_into_the_prompt(db: Session, author: 
     assert result.port == "ok"
     plan = ctx.state["asset_plan"]
     assert plan["subject_name"]
-    assert ctx.prompt.startswith("一位神秘的女侦探，")
+    assert ctx.prompt.startswith("一位神秘的女侦探")
+    assert _CHARACTER_SHEET_LAYOUT_SUFFIX in ctx.prompt
     assert ctx.state["_last_agent_run_id"]
 
 
@@ -246,10 +252,13 @@ def test_asset_planning_resets_prompt_and_negative_prompt_between_loop_passes(
     assert "露出正面五官" in back_negative
 
 
-def test_asset_planning_leaves_the_front_view_prompt_untouched(db: Session, author: User) -> None:
+def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(
+    db: Session, author: User
+) -> None:
     """The `front` pass — including a plain single-view job with no
-    `character_views` at all — must keep using the caller's real prompt;
-    only a side/back completion pass gets the fixed override above."""
+    `character_views` at all — keeps the caller's identity prompt and
+    appends the sheet-layout suffix. Only a side/back completion pass
+    replaces the prompt entirely."""
     ctx = _ctx(
         db,
         author,
@@ -261,6 +270,89 @@ def test_asset_planning_leaves_the_front_view_prompt_untouched(db: Session, auth
     )
     execute_asset_planning(ctx, AssetPlanningConfig())
     assert ctx.prompt.startswith("一位神秘的女侦探")
+    assert _CHARACTER_SHEET_LAYOUT_SUFFIX in ctx.prompt
+    assert _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT not in (ctx.params.get("negative_prompt") or "")
+
+
+def test_asset_plan_prompt_locks_character_visual_medium() -> None:
+    prompt = planner.ASSET_PLAN_SYSTEM_PROMPT
+    assert "真人写实影视短剧造型" in prompt
+    assert "禁止改成另一种" in prompt
+    assert "动漫/二次元/卡通" in prompt
+
+
+def test_asset_plan_prompt_locks_scene_single_camera() -> None:
+    prompt = planner.ASSET_PLAN_SYSTEM_PROMPT
+    assert "单一机位" in prompt
+    assert "单一连续空间" in prompt
+    assert "分割构图" in prompt
+    assert "关闭的遮挡保持关闭" in prompt
+    assert "门大开的全屋透视" in prompt
+    assert "禁止分割构图" in prompt
+
+
+def test_asset_planning_locks_a_front_pass_without_a_medium_to_photoreal(
+    db: Session, author: User
+) -> None:
+    ctx = _ctx(
+        db,
+        author,
+        prompt="一位神秘的女侦探",
+        params={"asset_kind": ImageAssetKind.CHARACTER.value},
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert _CHARACTER_PHOTOREAL_MEDIUM in ctx.prompt
+    assert _CHARACTER_PHOTOREAL_NEGATIVE in (ctx.params.get("negative_prompt") or "")
+
+
+def test_asset_planning_keeps_an_explicit_anime_medium_on_a_front_pass(
+    db: Session, author: User
+) -> None:
+    ctx = _ctx(
+        db,
+        author,
+        prompt="二维日系动漫造型，银发高中生",
+        params={"asset_kind": ImageAssetKind.CHARACTER.value},
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert _CHARACTER_PHOTOREAL_MEDIUM not in ctx.prompt
+    assert "二维日系动漫造型" in ctx.prompt
+    assert _CHARACTER_ANIME_NEGATIVE in (ctx.params.get("negative_prompt") or "")
+    assert _CHARACTER_PHOTOREAL_NEGATIVE not in (ctx.params.get("negative_prompt") or "")
+
+
+def test_asset_planning_does_not_lock_medium_on_a_completion_pass(
+    db: Session, author: User
+) -> None:
+    ctx = _ctx(
+        db,
+        author,
+        prompt="一位神秘的女侦探",
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.SIDE.value],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert _CHARACTER_PHOTOREAL_MEDIUM not in ctx.prompt
+    assert _CHARACTER_PHOTOREAL_NEGATIVE not in (ctx.params.get("negative_prompt") or "")
+
+
+def test_asset_planning_does_not_append_the_sheet_suffix_on_a_completion_pass(
+    db: Session, author: User
+) -> None:
+    ctx = _ctx(
+        db,
+        author,
+        prompt="一位神秘的女侦探",
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.SIDE.value],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert _CHARACTER_SHEET_LAYOUT_SUFFIX not in ctx.prompt
+    assert ctx.prompt.startswith(_CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value])
 
 
 # ---- execute_asset_output_link --------------------------------------------
@@ -330,6 +422,36 @@ def test_asset_output_link_auto_creates_a_character_when_no_target_is_given(
     character = characters_service.get_character(db, user_id=author.id, character_id=created_id)
     assert character.name == "神秘女侦探"
     assert character.reference_asset_ids == [asset.id]
+
+
+def test_asset_output_link_reuses_an_existing_character_with_the_same_name(
+    db: Session, author: User
+) -> None:
+    """A script-studio batch (or a second job with the same subject_name_hint)
+    must attach to the owner's existing same-name card — titles are unique
+    per owner, so auto-creating a twin would 422 and drop the output."""
+    existing = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林彻",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    asset = _asset(db, author)
+    ctx = _ctx(
+        db,
+        author,
+        params={"asset_kind": ImageAssetKind.CHARACTER.value, "subject_name_hint": "林彻"},
+    )
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    assert "created_character_id" not in ctx.state
+    assert ctx.job.linked_character_id == existing.id
+    refreshed = characters_service.get_character(db, user_id=author.id, character_id=existing.id)
+    assert refreshed.reference_asset_ids == [asset.id]
+    assert len(characters_service.list_characters(db, user_id=author.id)) == 1
 
 
 def test_asset_output_link_records_linked_character_id_across_a_refresh(

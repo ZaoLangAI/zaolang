@@ -71,6 +71,98 @@ def test_create_get_update_delete_round_trip(db: Session, author: User) -> None:
         characters_service.get_character(db, user_id=author.id, character_id=character.id)
 
 
+def test_create_rejects_a_duplicate_name_for_the_same_owner(db: Session, author: User) -> None:
+    characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林彻",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    with pytest.raises(ValidationFailed, match="角色名称已存在") as caught:
+        characters_service.create_character(
+            db,
+            user_id=author.id,
+            name=" 林彻 ",
+            description=None,
+            reference_asset_ids=[],
+            voice_description=None,
+        )
+    assert caught.value.details["fields"]["name"] == "角色名称已存在"
+
+
+def test_update_rejects_renaming_onto_another_characters_name(
+    db: Session, author: User
+) -> None:
+    characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林彻",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    other = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="母亲模仿者",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    with pytest.raises(ValidationFailed, match="角色名称已存在"):
+        characters_service.update_character(
+            db, user_id=author.id, character_id=other.id, name="林彻"
+        )
+
+
+def test_update_may_keep_its_own_name(db: Session, author: User) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林彻",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    updated = characters_service.update_character(
+        db, user_id=author.id, character_id=character.id, name="林彻", description="新设定"
+    )
+    assert updated.name == "林彻"
+    assert updated.description == "新设定"
+
+
+def test_two_owners_may_share_a_character_name(db: Session, author: User) -> None:
+    other = make_user(db, email="other-twin@example.com", handle="othertwin", display_name="别人")
+    mine = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林彻",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    theirs = characters_service.create_character(
+        db,
+        user_id=other.id,
+        name="林彻",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    assert mine.id != theirs.id
+    found = characters_service.find_owned_character_by_name(
+        db, user_id=author.id, name=" 林彻 "
+    )
+    assert found is not None
+    assert found.id == mine.id
+    assert (
+        characters_service.find_owned_character_by_name(db, user_id=author.id, name="母亲模仿者")
+        is None
+    )
+
+
 def test_a_character_is_scoped_to_its_owner(db: Session, author: User) -> None:
     other = make_user(db, email="other@example.com", handle="other", display_name="别人")
     character = characters_service.create_character(

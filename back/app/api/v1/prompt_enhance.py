@@ -13,6 +13,7 @@ from app.api.schemas.shortform import (
     PromptDimensionView,
     PromptEnhanceRequest,
     PromptEnhanceResponse,
+    PromptQuestionView,
 )
 from app.domain import prompts
 from app.domain.errors import ProviderTemporaryFailure
@@ -23,6 +24,7 @@ def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
     # value — `video_asset_kind` wins when present, since a video job's
     # `asset_kind` is never meaningfully set (see the field's own docstring).
     resolved_asset_kind = payload.video_asset_kind or payload.asset_kind or ""
+    segment = payload.script_segment.model_dump(mode="json") if payload.script_segment else None
     return prompts.PromptContext(
         operation=payload.operation or "",
         aspect_ratio=payload.aspect_ratio or "",
@@ -33,6 +35,8 @@ def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
         direction=payload.direction or "",
         instruction=payload.instruction,
         asset_kind=resolved_asset_kind,
+        script_segment=segment,
+        question_answers=dict(payload.question_answers) or None,
     )
 
 
@@ -57,4 +61,20 @@ def enhanced_response(session: Session, result: prompts.PromptEnhancement) -> Pr
             PromptDimensionView(key=d.key, status=d.status, hint=d.hint) for d in result.dimensions
         ],
         additions=result.additions,
+        questions=question_views(result.questions),
+        script_segment=result.script_segment,
     )
+
+
+def question_views(questions: list[prompts.PromptQuestion]) -> list[PromptQuestionView]:
+    """One conversion for both routes and for the SSE `complete` frame."""
+    return [
+        PromptQuestionView(
+            id=question.id,
+            kind=question.kind,
+            prompt=question.prompt,
+            options=[{"value": o["value"], "label": o["label"]} for o in question.options],
+            required=question.required,
+        )
+        for question in questions
+    ]

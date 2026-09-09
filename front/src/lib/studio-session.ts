@@ -6,17 +6,20 @@
  *
  * A notification href is `?mode=image_creation&draftId=&jobId=` (see
  * `imageCreationStudioHref`). Draft cards omit `jobId` and resume
- * `latest_job_id`. The script jump-out's `returnTo` trio is written onto
+ * `latest_job_id`. The jump-out `returnTo` trio is written onto
  * `Draft.params` at first submit and restored here when the URL does not
- * carry it.
+ * carry it (`sanitizeReturnTo`: exact `/create/characters` or
+ * `/create/scenes`, or a `/create/script/` prefix).
  */
 
 const LINK_KINDS = ['character', 'scene'] as const;
 type LinkKind = (typeof LINK_KINDS)[number];
 
 export function sanitizeReturnTo(raw: string | undefined): string | undefined {
-  if (!raw || !raw.startsWith('/create/script/')) return undefined;
-  return raw;
+  if (!raw) return undefined;
+  if (raw === '/create/characters' || raw === '/create/scenes') return raw;
+  if (raw.startsWith('/create/script/')) return raw;
+  return undefined;
 }
 
 export function studioSessionKey(input: {
@@ -39,6 +42,9 @@ export function studioSessionKey(input: {
    * same reason as `linkBreakpointKey` above: two different breakpoints can
    * otherwise share an identical "fresh" key. */
   continuitySourceAssetId?: string;
+  /** Plaza "用此设定创作" `?skillId=` — two different recipes must not
+   * share a fresh session key. */
+  skillId?: string;
 }): string {
   if (input.draftId) {
     return input.jobId ? `draft:${input.draftId}|job:${input.jobId}` : `draft:${input.draftId}`;
@@ -53,6 +59,7 @@ export function studioSessionKey(input: {
     input.subjectNameHint,
     input.linkBreakpointKey,
     input.continuitySourceAssetId,
+    input.skillId,
   ]
     .filter((part) => Boolean(part))
     .join('|');

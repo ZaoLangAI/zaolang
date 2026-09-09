@@ -124,12 +124,29 @@ def _point_draft_at_job(
     Image-studio resume (and any other `?draftId=` entry) only has this
     pointer — create, retry, and promote must all advance it, or a
     notification click reopens the previous (often failed) attempt.
+
+    A character/scene job also copies `asset_kind` onto `Draft.params_json`
+    so resume surfaces can tell a roster generation from a general image
+    without waiting for the client to persist that key (iOS create-then-
+    submit; the window after `POST /drafts` and before this pointer lands).
     """
     if sandbox or not draft_id:
         return
     draft = session.get(Draft, draft_id)
-    if draft is not None and draft.user_id == user_id:
-        draft.latest_job_id = job_id
+    if draft is None or draft.user_id != user_id:
+        return
+    draft.latest_job_id = job_id
+    job = session.get(GenerationJob, job_id)
+    if job is None:
+        return
+    kind = (job.request_json or {}).get("asset_kind")
+    if kind not in {ImageAssetKind.CHARACTER.value, ImageAssetKind.SCENE.value}:
+        return
+    params = dict(draft.params_json or {})
+    if params.get("asset_kind") == kind:
+        return
+    params["asset_kind"] = kind
+    draft.params_json = params
 
 
 def submit(

@@ -14,7 +14,7 @@ export function tagLabel(tag: Tag, locale: Locale): string {
   return tag.label_zh;
 }
 
-const SORT_MODES = ['recent', 'popular', 'remixed'] as const;
+const SORT_MODES = ['popular', 'recent', 'remixed'] as const;
 type SortMode = (typeof SORT_MODES)[number];
 
 const SORT_LABEL: Record<SortMode, 'sortRecent' | 'sortPopular' | 'sortRemixed'> = {
@@ -113,18 +113,26 @@ export function DiscoverSort({
     <nav
       aria-label={t('sort')}
       tabIndex={0}
-      className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+      className="no-scrollbar flex gap-4 overflow-x-auto"
     >
       {SORT_MODES.map((mode) => {
         const query = feedQuery({ q, tag, sort: mode, access });
+        const isActive = active === mode;
         return (
-          <Chip
+          <Link
             key={mode}
             href={query ? { pathname, query } : pathname}
-            active={active === mode}
+            aria-current={isActive ? 'true' : undefined}
+            scroll={false}
+            className={cn(
+              'shrink-0 border-b-2 pb-1 text-sm transition-colors focus-visible:outline-2',
+              isActive
+                ? 'border-primary text-text'
+                : 'border-transparent text-muted hover:text-text',
+            )}
           >
             {t(SORT_LABEL[mode])}
-          </Chip>
+          </Link>
         );
       })}
     </nav>

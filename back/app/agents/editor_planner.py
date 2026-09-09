@@ -20,9 +20,9 @@ SLOT = "timeline_edit_plan"
 SYSTEM_PROMPT = f"""你是造浪平台的短剧时间线规划器。根据当前规范化时间线摘要与用户目标，
 产出可执行的 EditCommand 列表。
 规则：
-- 只使用这些 type: insert_clip, delete_elements, move_elements, trim_element, split_element,
-  set_clip_volume, set_clip_speed, insert_caption, update_caption, set_canvas, set_brand_overlay,
-  add_track, remove_track, set_track_order, set_track_muted,
+- 只使用这些 type: insert_clip, delete_elements, move_elements, duplicate_elements, trim_element,
+  split_element, set_clip_volume, set_clip_speed, insert_caption, update_caption, set_canvas,
+  set_brand_overlay, add_track, remove_track, set_track_order, set_track_muted,
   add_effect, remove_effect, update_effect_params, set_clip_mask,
   set_keyframe, delete_keyframe, clear_keyframes, set_transition,
   add_marker, remove_marker, update_marker
@@ -51,6 +51,9 @@ SYSTEM_PROMPT = f"""你是造浪平台的短剧时间线规划器。根据当前
   与 set_clip_volume 同一量纲，用于做随时间变化的音量包络）。delete_keyframe 按
   element_id/property/at_ticks 精确删除一个关键帧；clear_keyframes 按 element_id/property
   清空整条动画通道，恢复为静态值
+- duplicate_elements 在各元素自己的轨道上复制一份（新 id，特效/蒙版/关键帧/转场原样带走）：
+  不传 delta_ticks 时副本紧接在源元素结尾之后；传 delta_ticks（可为负）时副本相对源元素起点
+  偏移该值。不要用 insert_clip 重建一份来模拟复制
 - 标记点（markers）是不挂在任何轨道上的时间线书签，仅供人工导航/标注用，不影响渲染。
   add_marker 需要 at_ticks，可选 label（≤120 字）；remove_marker 需要 marker_id；update_marker
   需要 marker_id，可选更新 at_ticks/label

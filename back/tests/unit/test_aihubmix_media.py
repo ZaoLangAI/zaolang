@@ -151,6 +151,101 @@ def test_image_to_image_embeds_the_reference_as_base64_in_local_and_test_envs(
     assert base64.b64decode(encoded) == reference_bytes
 
 
+def test_gpt_image_2_text_to_image_sends_quality_and_documented_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    b64 = _png_b64()
+    captured: dict[str, object] = {}
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        captured["url"] = url
+        captured["body"] = kwargs["json"]
+        return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.TEXT_TO_IMAGE.value, model="gpt-image-2", protocol="openai")
+    result = provider.submit(
+        _request(
+            Operation.TEXT_TO_IMAGE.value,
+            quality_tier="cinematic",
+            aspect_ratio="9:16",
+        )
+    )
+
+    assert result.succeeded is True
+    assert captured["url"] == "/v1/images/generations"
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["model"] == "gpt-image-2"
+    assert body["quality"] == "high"
+    assert body["size"] == "1024x1536"
+    assert body["output_format"] == "png"
+    assert "image" not in body
+
+
+def test_gpt_image_2_image_to_image_uses_multipart_edits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference_key = "test/reference-for-gpt-image-2.png"
+    reference_bytes = base64.b64decode(_png_b64((12, 34, 56)))
+    s3.put_object(reference_key, reference_bytes, content_type="image/png")
+    b64 = _png_b64()
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((url, kwargs))
+        return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value, model="gpt-image-2", protocol="openai")
+    result = provider.submit(
+        _request(
+            Operation.IMAGE_TO_IMAGE.value,
+            reference_object_keys=[reference_key],
+            quality_tier="preview",
+            aspect_ratio="16:9",
+        )
+    )
+
+    assert result.succeeded is True
+    assert result.metadata["endpoint"] == "gpt-image-2-edits"
+    assert [url for url, _ in calls] == ["/v1/images/edits"]
+    kwargs = calls[0][1]
+    assert "json" not in kwargs
+    assert kwargs["data"]["model"] == "gpt-image-2"
+    assert kwargs["data"]["quality"] == "low"
+    assert kwargs["data"]["size"] == "1536x1024"
+    assert kwargs["data"]["output_format"] == "png"
+    filename, content, mime = kwargs["files"]["image"]
+    assert filename == "reference-for-gpt-image-2.png"
+    assert content == reference_bytes
+    assert mime == "image/png"
+
+
+def test_non_gpt_image_2_image_to_image_still_uses_generations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference_key = "test/reference-for-generic-edit.png"
+    s3.put_object(reference_key, base64.b64decode(_png_b64((1, 2, 3))), content_type="image/png")
+    b64 = _png_b64()
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append((url, kwargs))
+        return _FakeResponse(json_body={"data": [{"b64_json": b64}]})
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    provider = _provider(Operation.IMAGE_TO_IMAGE.value, model="some-other-image")
+    result = provider.submit(
+        _request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=[reference_key])
+    )
+
+    assert result.succeeded is True
+    assert [url for url, _ in calls] == ["/v1/images/generations"]
+    assert "quality" not in calls[0][1]["json"]
+    assert "files" not in calls[0][1]
+
+
 def test_image_to_image_routes_a_qwen_model_through_the_edit_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

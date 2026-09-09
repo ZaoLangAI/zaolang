@@ -207,15 +207,15 @@ def _limits_job(**request: object) -> GenerationJob:
 def test_image_generation_time_limits_single_pass() -> None:
     """A free-form or single-view image job stays on the raised one-pass floor."""
     assert tasks.image_generation_time_limits(_limits_job()) == {
-        "soft_time_limit": 420,
-        "time_limit": 480,
+        "soft_time_limit": 660,
+        "time_limit": 720,
     }
     assert tasks.image_generation_time_limits(
         _limits_job(asset_kind=ImageAssetKind.CHARACTER.value, character_views=["front"])
-    ) == {"soft_time_limit": 420, "time_limit": 480}
+    ) == {"soft_time_limit": 660, "time_limit": 720}
     assert tasks.image_generation_time_limits(
         GenerationJob(id="job_bare", operation=Operation.TEXT_TO_IMAGE.value)
-    ) == {"soft_time_limit": 420, "time_limit": 480}
+    ) == {"soft_time_limit": 660, "time_limit": 720}
 
 
 def test_image_generation_time_limits_scale_with_character_views() -> None:
@@ -227,8 +227,8 @@ def test_image_generation_time_limits_scale_with_character_views() -> None:
         character_views=["front", "side", "back"],
     )
     assert tasks.image_generation_time_limits(two) == {
-        "soft_time_limit": 600,
-        "time_limit": 720,
+        "soft_time_limit": 780,
+        "time_limit": 960,
     }
     assert tasks.image_generation_time_limits(three) == {
         "soft_time_limit": 780,
@@ -239,4 +239,4 @@ def test_image_generation_time_limits_scale_with_character_views() -> None:
 def test_image_generation_time_limits_ignore_views_on_non_character_kind() -> None:
     assert tasks.image_generation_time_limits(
         _limits_job(asset_kind=ImageAssetKind.SCENE.value, character_views=["front", "side"])
-    ) == {"soft_time_limit": 420, "time_limit": 480}
+    ) == {"soft_time_limit": 660, "time_limit": 720}

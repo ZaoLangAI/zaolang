@@ -253,6 +253,43 @@ def _entries_from_flat_ids(asset_ids: list[str]) -> list[dict[str, Any]]:
 # ---- Character CRUD (adapter over the skill library) --------------------
 
 
+def find_owned_character_by_name(
+    session: Session, *, user_id: str, name: str
+) -> CharacterView | None:
+    """The owner's character whose title equals `name.strip()`, if any.
+
+    Historical rows could share a title before the partial unique index
+    landed — the newest `created_at` wins so auto-attach and the script
+    studio's same-name skip both land on one card instead of flipping
+    between twins.
+    """
+    title = name.strip()
+    if not title:
+        return None
+    stmt = (
+        select(CreationSkill)
+        .where(
+            CreationSkill.owner_user_id == user_id,
+            CreationSkill.category == CreationSkillCategory.CHARACTER,
+            CreationSkill.title == title,
+        )
+        .order_by(CreationSkill.created_at.desc())
+        .limit(1)
+    )
+    skill = session.scalars(stmt).first()
+    return CharacterView(skill) if skill else None
+
+
+def _require_unique_character_name(
+    session: Session, *, user_id: str, name: str, exclude_id: str | None = None
+) -> str:
+    title = name.strip()
+    existing = find_owned_character_by_name(session, user_id=user_id, name=title)
+    if existing is not None and existing.id != exclude_id:
+        raise ValidationFailed("角色名称已存在。", fields={"name": "角色名称已存在"})
+    return title
+
+
 def create_character(
     session: Session,
     *,
@@ -262,12 +299,13 @@ def create_character(
     reference_asset_ids: list[str],
     voice_description: str | None,
 ) -> CharacterView:
+    title = _require_unique_character_name(session, user_id=user_id, name=name)
     refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
     clean_description = (description or "").strip() or None
     skill = skill_library_service.create(
         session,
         owner_user_id=user_id,
-        title=name.strip(),
+        title=title,
         description=_short_description(clean_description),
         category=CreationSkillCategory.CHARACTER,
         params_json={
@@ -313,7 +351,9 @@ def update_character(
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
     payload = _payload(skill)
     if name is not None:
-        skill.title = name.strip()
+        skill.title = _require_unique_character_name(
+            session, user_id=user_id, name=name, exclude_id=skill.id
+        )
     if description is not None:
         clean = description.strip() or None
         payload["description"] = clean

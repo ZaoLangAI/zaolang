@@ -761,6 +761,24 @@ def test_expire_stale_input_requests_releases_credits_for_an_unanswered_question
     assert input_requests.find_for_job(db, request.job_id) is None
 
 
+def test_consumer_ledger_folds_a_settled_job_into_one_capture(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """The stored pair is still reserve+capture; the billing page shows one row."""
+    job = _submit(db, funded)
+    quoted = job.quoted_credits
+    jobs_service.settle_success(db, job, actual_credits=quoted)
+
+    response = client.get("/v1/credits/ledger", headers=auth_header(funded))
+    assert response.status_code == 200
+    job_items = [item for item in response.json()["items"] if item["job_id"] == job.id]
+    assert len(job_items) == 1
+    assert job_items[0]["type"] == LedgerEntryType.CAPTURE.value
+    assert job_items[0]["amount"] == -quoted
+    assert _ledger(db, funded, LedgerEntryType.RESERVE)
+    assert _ledger(db, funded, LedgerEntryType.CAPTURE)
+
+
 def test_releasing_twice_does_not_return_the_credits_twice(db: Session, funded: User) -> None:
     """The retry paths cannot always know whether an earlier attempt settled."""
     job = _submit(db, funded)
@@ -900,8 +918,8 @@ def test_video_work_is_dispatched_to_the_long_queue(monkeypatch) -> None:
         {
             "method": "apply_async",
             "args": ("job_y",),
-            "soft_time_limit": 420,
-            "time_limit": 480,
+            "soft_time_limit": 660,
+            "time_limit": 720,
         }
     ]
 
@@ -934,8 +952,8 @@ def test_image_dispatch_stretches_time_limit_for_character_views(monkeypatch) ->
         {
             "method": "apply_async",
             "args": ("job_two",),
-            "soft_time_limit": 600,
-            "time_limit": 720,
+            "soft_time_limit": 780,
+            "time_limit": 960,
         },
         {
             "method": "apply_async",

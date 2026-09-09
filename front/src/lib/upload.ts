@@ -23,11 +23,13 @@ export async function uploadFile(
     | 'consent_evidence'
     | 'learn_media'
     | 'series_logo'
+    | 'episode_preview'
     | 'video_analysis_source'
     | 'editor_source'
     | 'editor_export'
     | 'caption'
-    | 'font',
+    | 'font'
+    | 'voice_sample',
 ): Promise<Asset> {
   const checksum = await sha256Hex(await file.arrayBuffer());
 

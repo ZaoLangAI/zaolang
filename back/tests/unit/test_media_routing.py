@@ -2,15 +2,37 @@
 
 from __future__ import annotations
 
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.agents import router
-from app.models.enums import Operation, QualityTier
+from app.models import Asset, User
+from app.models.base import new_id
+from app.models.enums import (
+    AssetRole,
+    MediaType,
+    ModerationStatus,
+    Operation,
+    ProviderKind,
+    QualityTier,
+    Visibility,
+)
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
 from app.providers.aihubmix_media import AiHubMixMediaProvider
-from app.providers.base import resolve_resolution_tier
+from app.providers.base import (
+    AdaptedResolution,
+    ProviderCapability,
+    adapt_resolution_tier,
+    resolve_resolution_tier,
+    studio_resolution_tiers,
+    studio_tier_for_literal,
+)
 from app.providers.dmxapi_media import DmxApiMediaProvider
+from app.providers.fal_media import FalMediaProvider
+from app.providers.minimax_v2_media import MinimaxV2MediaProvider
+from app.workflows import nodes as workflow_nodes
+from tests.conftest import auth_header
 from tests.llm_catalog import bind_default_agents_to_catalog
 
 
@@ -24,6 +46,8 @@ def _seed_media_endpoint(
     enabled: bool = True,
     media_pricing: dict | None = None,
     protocol: str | None = None,
+    generation_kind: str = "create",
+    audio_generation_kind: str = "voice",
 ) -> None:
     """Adds a media endpoint without disturbing anything already configured.
 
@@ -48,6 +72,8 @@ def _seed_media_endpoint(
         "output_modalities": output_modalities or ["image"],
         "media_pricing": media_pricing or {},
         "protocol": protocol,
+        "generation_kind": generation_kind,
+        "audio_generation_kind": audio_generation_kind,
     }
     config_service.set_value(
         db,
@@ -288,7 +314,7 @@ def test_wan_videoedit_is_hard_filtered_by_its_own_narrower_profile(db: Session)
     )
     assert candidate.eligible is False
 
-    rejected_resolution = router.route(
+    adapted_resolution = router.route(
         db,
         operation=Operation.VIDEO_TO_VIDEO,
         quality_tier=QualityTier.STANDARD,
@@ -299,10 +325,11 @@ def test_wan_videoedit_is_hard_filtered_by_its_own_narrower_profile(db: Session)
         },
     )
     candidate = next(
-        item for item in rejected_resolution.candidates if item.provider == provider_name
+        item for item in adapted_resolution.candidates if item.provider == provider_name
     )
-    assert candidate.eligible is False
-    assert candidate.filter_reason == "resolution_not_supported"
+    # wan tops out at 1080p — 2K is a ceiling, not a must-match.
+    assert candidate.eligible is True
+    assert candidate.filter_reason != "resolution_not_supported"
 
     accepted = router.route(
         db,
@@ -320,8 +347,8 @@ def test_wan_videoedit_is_hard_filtered_by_its_own_narrower_profile(db: Session)
 
 def test_omitted_resolution_does_not_hard_filter_wan_videoedit(db: Session) -> None:
     """A video remix omits `video_options.resolution` so cheaper edit models
-    stay in the candidate set. Only an explicit H3-only value (e.g. `2K`)
-    may eliminate wan here."""
+    stay in the candidate set. An explicit higher ceiling (e.g. `2K`) now
+    adapts downward rather than eliminating wan."""
     _seed_media_endpoint(
         db,
         model="wan2.7-videoedit",
@@ -538,6 +565,94 @@ def test_a_dmxapi_video_endpoint_carries_its_own_profile_and_dispatches_to_dmxap
     assert isinstance(decision.provider, DmxApiMediaProvider)
 
 
+def test_a_minimax_v2_video_endpoint_carries_its_own_profile_and_dispatches_to_minimax_v2(
+    db: Session,
+) -> None:
+    """`protocol="minimax_v2"` is official MiniMax Video V2 / Metaso — its
+    own six-ratio profile and `MinimaxV2MediaProvider`, never the AiHubMix
+    `/ai/v1/videos` facade just because the model is also called H3."""
+    _seed_media_endpoint(
+        db,
+        model="MiniMax-H3",
+        input_modalities=["text", "image", "video", "audio"],
+        output_modalities=["video"],
+        protocol="minimax_v2",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:text_to_video"]
+    assert entry.min_duration_seconds == 4
+    assert entry.max_duration_seconds == 15
+    assert entry.resolutions == frozenset({"768P", "2K"})
+    assert "3:2" not in (entry.aspect_ratios or frozenset())
+    assert "adaptive" in (entry.aspect_ratios or frozenset())
+    assert entry.reference_modes == frozenset({"input_references", "frame_images"})
+
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "2K", "reference_mode": "input_references"},
+        },
+    )
+    assert decision.selected is not None
+    assert decision.selected.provider == "media-ep:text_to_video"
+    assert isinstance(decision.provider, MinimaxV2MediaProvider)
+
+
+def test_a_fal_h3_max_endpoint_carries_its_own_profile_and_dispatches_to_fal(
+    db: Session,
+) -> None:
+    """`protocol="fal"` is fal.ai's queue contract — 5–15s / 480P+768P,
+    `FalMediaProvider`, never MiniMax V2 or the AiHubMix facade."""
+    _seed_media_endpoint(
+        db,
+        model="minimax/h3-max",
+        input_modalities=["text", "image", "video", "audio"],
+        output_modalities=["video"],
+        protocol="fal",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:text_to_video"]
+    assert entry.min_duration_seconds == 5
+    assert entry.max_duration_seconds == 15
+    assert entry.resolutions == frozenset({"480P", "768P"})
+    assert entry.default_resolution == "768P"
+    assert "adaptive" in (entry.aspect_ratios or frozenset())
+    assert entry.reference_modes == frozenset({"input_references", "frame_images"})
+
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    assert decision.selected is not None
+    assert decision.selected.provider == "media-ep:text_to_video"
+    assert isinstance(decision.provider, FalMediaProvider)
+
+    four_seconds = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 4,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    by_provider = {c.provider: c for c in four_seconds.candidates}
+    assert by_provider["media-ep:text_to_video"].eligible is False
+
+
 def test_dmxapi_video_regeneration_is_video_to_video_only_and_unrestricted_by_reference_mode(
     db: Session,
 ) -> None:
@@ -579,6 +694,71 @@ def test_a_dmxapi_image_endpoint_carries_no_video_profile_fields(db: Session) ->
     assert entry.aspect_ratios is None
     assert entry.resolutions is None
     assert entry.reference_modes is None
+
+
+def test_dmxapi_music_endpoint_carries_a_music_only_style_and_no_video_profile(
+    db: Session,
+) -> None:
+    """`music-3.0` is BGM-only — the router's `music_generation` candidate
+    for it must carry `music_styles={"music"}` (see `ProviderCapability.
+    music_styles`), and none of the video-only profile fields."""
+    _seed_media_endpoint(
+        db,
+        model="music-3.0",
+        input_modalities=["text"],
+        output_modalities=["audio"],
+        protocol="dmxapi",
+        audio_generation_kind="music",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:music_generation"]
+    assert entry.music_styles == frozenset({"music"})
+    assert entry.reference_modes is None
+    assert entry.aspect_ratios is None
+
+
+def test_fal_music_and_sfx_endpoints_carry_disjoint_music_styles(db: Session) -> None:
+    """The two fal apps sharing `music_generation` — BGM-only `minimax-
+    music/v2.6` and SFX-only `elevenlabs/sound-effects/v2` — must resolve
+    to disjoint `music_styles`, which is what lets the router's hard filter
+    (`_request_constraint_failure`) tell them apart by `extra.audio_style`."""
+    _seed_media_endpoint(
+        db,
+        endpoint_id="fal-music",
+        model="minimax-music/v2.6",
+        input_modalities=["text"],
+        output_modalities=["audio"],
+        protocol="fal",
+        audio_generation_kind="music",
+    )
+    _seed_media_endpoint(
+        db,
+        endpoint_id="fal-sfx",
+        model="elevenlabs/sound-effects/v2",
+        input_modalities=["text"],
+        output_modalities=["audio"],
+        protocol="fal",
+        audio_generation_kind="music",
+    )
+    catalog = router.build_catalog(db)
+    assert catalog["fal-music:music_generation"].music_styles == frozenset({"music"})
+    assert catalog["fal-sfx:music_generation"].music_styles == frozenset({"sfx"})
+
+
+def test_a_fal_voice_clone_endpoint_carries_no_music_style(db: Session) -> None:
+    """`music_styles` is scoped to `music_generation` only — a plain
+    `audio_generation` (voice clone) candidate must not carry one, even
+    though it shares the fal protocol with the music/SFX apps."""
+    _seed_media_endpoint(
+        db,
+        model="minimax/voice-clone",
+        input_modalities=["text"],
+        output_modalities=["audio"],
+        protocol="fal",
+    )
+    catalog = router.build_catalog(db)
+    entry = catalog["media-ep:audio_generation"]
+    assert entry.music_styles is None
 
 
 def test_candidate_payload_carries_the_real_model_name_and_a_flat_quality_prior(
@@ -638,6 +818,79 @@ def test_resolve_resolution_tier_expands_vendor_synonyms() -> None:
     assert resolve_resolution_tier("720p", None) is None
 
 
+def test_adapt_resolution_tier_only_walks_down_then_lowest() -> None:
+    """User pick is a ceiling: exact, else highest strictly lower, else the
+    model's lowest tier. 1080p must never become 2K."""
+    h3 = frozenset({"768P", "2K"})
+    seedance = frozenset({"480p", "720p", "1080p"})
+
+    assert adapt_resolution_tier("1080p", h3) == AdaptedResolution(
+        studio_tier="720p", vendor_literal="768P", kind="downgrade"
+    )
+    assert adapt_resolution_tier("2K", h3) == AdaptedResolution(
+        studio_tier="2K", vendor_literal="2K", kind="exact"
+    )
+    assert adapt_resolution_tier("2K", seedance) == AdaptedResolution(
+        studio_tier="1080p", vendor_literal="1080p", kind="downgrade"
+    )
+    assert adapt_resolution_tier("480p", h3) == AdaptedResolution(
+        studio_tier="720p", vendor_literal="768P", kind="upgrade"
+    )
+    assert adapt_resolution_tier(None, h3) is None
+    assert adapt_resolution_tier("1080p", None) == AdaptedResolution(
+        studio_tier="1080p", vendor_literal="1080p", kind="exact"
+    )
+    assert adapt_resolution_tier("1080p", frozenset({"nonsense"})) is None
+    assert studio_resolution_tiers(h3) == ["720p", "2K"]
+    assert studio_tier_for_literal("768P") == "720p"
+    assert studio_tier_for_literal("2K") == "2K"
+
+
+def test_provider_call_and_route_summary_use_adapted_vendor_literal() -> None:
+    capability = ProviderCapability(
+        name="h3:text_to_video",
+        kind=ProviderKind.COMMERCIAL_API,
+        operations=frozenset({"text_to_video"}),
+        tiers=frozenset({"standard"}),
+        quality_prior=0.75,
+        typical_latency_ms=1000,
+        unit_cost_micro_usd=1,
+        model_or_workflow="MiniMax-H3",
+        provider_factory=lambda: None,  # type: ignore[return-value]
+        resolutions=frozenset({"768P", "2K"}),
+    )
+    params = {"video_options": {"resolution": "1080p", "reference_mode": "input_references"}}
+    assert workflow_nodes._vendor_resolution_for(capability, params) == "768P"
+    fields = workflow_nodes._resolution_adapt_fields(capability, params)
+    assert fields["requested_resolution"] == "1080p"
+    assert fields["adapted_resolution"] == "720p"
+    assert fields["adapted_vendor_resolution"] == "768P"
+    assert fields["resolution_adapt_kind"] == "downgrade"
+    assert workflow_nodes._vendor_resolution_for(capability, {"video_options": {}}) is None
+
+
+def test_unadaptable_resolutions_still_hard_filter() -> None:
+    capability = ProviderCapability(
+        name="broken:text_to_video",
+        kind=ProviderKind.COMMERCIAL_API,
+        operations=frozenset({"text_to_video"}),
+        tiers=frozenset({"standard"}),
+        quality_prior=0.75,
+        typical_latency_ms=1000,
+        unit_cost_micro_usd=1,
+        model_or_workflow="broken",
+        provider_factory=lambda: None,  # type: ignore[return-value]
+        resolutions=frozenset({"nonsense"}),
+    )
+    assert (
+        router._request_constraint_failure(
+            capability,
+            {"video_options": {"resolution": "1080p", "reference_mode": "input_references"}},
+        )
+        == "resolution_not_supported"
+    )
+
+
 def test_a_resolution_tier_lets_minimax_and_lowercase_p_models_compete(db: Session) -> None:
     """The whole point of the tier system: a `"720p"` request must make both
     `minimax-h3` (whose own token for that tier is `"768P"`) and
@@ -677,7 +930,8 @@ def test_a_resolution_tier_lets_minimax_and_lowercase_p_models_compete(db: Sessi
     assert by_provider["h3-ep:text_to_video"].eligible is True
     assert by_provider["seedance-ep:text_to_video"].eligible is True
 
-    # "2K" is H3-exclusive: Seedance drops out, H3 stays.
+    # "2K" is above Seedance's ceiling (1080p) but still adaptable — both
+    # stay eligible; costing/call use the adapted vendor literal.
     two_k_decision = router.route(
         db,
         operation=Operation.TEXT_TO_VIDEO,
@@ -690,8 +944,8 @@ def test_a_resolution_tier_lets_minimax_and_lowercase_p_models_compete(db: Sessi
     )
     by_provider_2k = {c.provider: c for c in two_k_decision.candidates}
     assert by_provider_2k["h3-ep:text_to_video"].eligible is True
-    assert by_provider_2k["seedance-ep:text_to_video"].eligible is False
-    assert by_provider_2k["seedance-ep:text_to_video"].filter_reason == "resolution_not_supported"
+    assert by_provider_2k["seedance-ep:text_to_video"].eligible is True
+    assert by_provider_2k["seedance-ep:text_to_video"].filter_reason != "resolution_not_supported"
 
 
 def test_estimated_cost_prices_the_resolved_literal_not_the_raw_tier(db: Session) -> None:
@@ -726,6 +980,45 @@ def test_estimated_cost_prices_the_resolved_literal_not_the_raw_tier(db: Session
     )
     assert candidate.eligible is True
     assert candidate.estimated_cost_micro_usd == 5 * per_second
+
+
+def test_estimated_cost_prices_adapted_downgrade_not_the_raw_ceiling(db: Session) -> None:
+    """H3 has no 1080p; adapting to 720p/`768P` must price the 768P row."""
+    per_second = 80_000
+    _seed_media_endpoint(
+        db,
+        endpoint_id="h3-ep",
+        model="minimax-h3",
+        input_modalities=["text", "image"],
+        output_modalities=["video"],
+        protocol="minimax",
+        media_pricing={"video": {"generation_per_second_micro_usd": {"768P": per_second}}},
+    )
+    bind_default_agents_to_catalog(db)
+
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
+        },
+    )
+    candidate = next(
+        item for item in decision.candidates if item.provider == "h3-ep:text_to_video"
+    )
+    assert candidate.eligible is True
+    assert candidate.estimated_cost_micro_usd == 5 * per_second
+    adapted = router._resolved_request_params(
+        router.build_catalog(db)["h3-ep:text_to_video"],
+        {
+            "duration_seconds": 5,
+            "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
+        },
+    )
+    assert adapted["video_options"]["resolution"] == "768P"
 
 
 def test_forced_model_picks_deterministically_without_calling_the_selecting_agent(
@@ -811,3 +1104,191 @@ def test_forced_model_unavailable_fails_without_calling_the_selecting_agent(
     assert called is False
     assert decision.selected is None
     assert decision.reason == "forced_model_unavailable"
+
+
+def test_list_generation_models_exposes_h3_studio_tiers(
+    client: TestClient, author, db: Session
+) -> None:
+    """DMXAPI MiniMax-H3 advertises 768P/2K; the picker must see 720p+2K."""
+    _seed_media_endpoint(
+        db,
+        endpoint_id="h3-ep",
+        model="MiniMax-H3",
+        input_modalities=["text", "image"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+    )
+    response = client.get(
+        "/v1/generation-jobs/models",
+        params={"operation": "image_to_video"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    h3 = next(entry for entry in response.json()["models"] if entry["model"] == "MiniMax-H3")
+    assert h3["resolutions"] == ["720p", "2K"]
+    assert h3["default_resolution"] == "2K"
+
+
+def _reference_asset(db: Session, owner: User, media_type: MediaType) -> Asset:
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.bin",
+        media_type=media_type,
+        mime_type="video/mp4" if media_type == MediaType.VIDEO else "image/png",
+        size_bytes=128,
+        checksum_sha256="a" * 64,
+        role=AssetRole.GENERATION_REFERENCE,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    db.add(asset)
+    db.flush()
+    return asset
+
+
+def test_edit_class_video_model_is_filtered_without_a_video_source(db: Session) -> None:
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+        generation_kind="edit",
+    )
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
+        },
+    )
+    provider_name = "media-ep:text_to_video"
+    candidate = next(item for item in decision.candidates if item.provider == provider_name)
+    assert candidate.eligible is False
+    assert candidate.filter_reason == "edit_model_requires_video_source"
+
+
+def test_edit_class_video_model_stays_eligible_for_video_to_video(db: Session) -> None:
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+        generation_kind="edit",
+    )
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "video_options": {"resolution": "720p", "reference_mode": "input_references"},
+        },
+    )
+    assert decision.selected is not None
+    assert decision.selected.provider == "media-ep:video_to_video"
+
+
+def test_edit_class_video_model_is_eligible_when_a_reference_is_video(
+    db: Session, author: User
+) -> None:
+    clip = _reference_asset(db, author, MediaType.VIDEO)
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+        generation_kind="edit",
+    )
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "reference_asset_ids": [clip.id],
+            "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
+        },
+    )
+    assert decision.selected is not None
+    assert decision.selected.provider == "media-ep:text_to_video"
+
+
+def test_a_still_reference_does_not_count_as_a_video_source_for_edit_models(
+    db: Session, author: User
+) -> None:
+    still = _reference_asset(db, author, MediaType.IMAGE)
+    _seed_media_endpoint(
+        db,
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+        generation_kind="edit",
+    )
+    bind_default_agents_to_catalog(db)
+    decision = router.route(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        request_params={
+            "duration_seconds": 8,
+            "aspect_ratio": "16:9",
+            "reference_asset_ids": [still.id],
+            "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
+        },
+    )
+    provider_name = "media-ep:text_to_video"
+    candidate = next(item for item in decision.candidates if item.provider == provider_name)
+    assert candidate.eligible is False
+    assert candidate.filter_reason == "edit_model_requires_video_source"
+
+
+def test_list_generation_models_hides_edit_class_on_text_to_video(
+    client: TestClient, author: User, db: Session
+) -> None:
+    _seed_media_endpoint(
+        db,
+        endpoint_id="edit-ep",
+        model="wan2.7-videoedit",
+        input_modalities=["text", "video"],
+        output_modalities=["video"],
+        protocol="minimax",
+        generation_kind="edit",
+    )
+    _seed_media_endpoint(
+        db,
+        endpoint_id="h3-ep",
+        model="MiniMax-H3",
+        input_modalities=["text", "image"],
+        output_modalities=["video"],
+        protocol="dmxapi",
+    )
+    hidden = client.get(
+        "/v1/generation-jobs/models",
+        params={"operation": "text_to_video"},
+        headers=auth_header(author),
+    )
+    assert hidden.status_code == 200, hidden.text
+    hidden_models = {entry["model"] for entry in hidden.json()["models"]}
+    assert "wan2.7-videoedit" not in hidden_models
+    assert "MiniMax-H3" in hidden_models
+
+    shown = client.get(
+        "/v1/generation-jobs/models",
+        params={"operation": "video_to_video"},
+        headers=auth_header(author),
+    )
+    assert shown.status_code == 200, shown.text
+    shown_models = {entry["model"] for entry in shown.json()["models"]}
+    assert "wan2.7-videoedit" in shown_models

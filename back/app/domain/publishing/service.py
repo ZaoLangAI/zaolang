@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
@@ -40,10 +40,13 @@ from app.domain.search import service as search_service
 from app.models import (
     Asset,
     Draft,
+    DramaEpisode,
+    EpisodeContentLink,
     GenerationJob,
     LicenseSnapshot,
     LineageEdge,
     Profile,
+    Series,
     Tag,
     User,
     Work,
@@ -54,6 +57,8 @@ from app.models import (
 from app.models.base import utcnow
 from app.models.enums import (
     DraftPublishStatus,
+    EpisodeContentType,
+    JobStatus,
     LifecycleStatus,
     ModerationStage,
     ModerationStatus,
@@ -64,6 +69,24 @@ from app.platform_config import service as config_service
 from app.platform_config.schemas import ContentModerationConfig, RoyaltyConfig
 
 logger = logging.getLogger(__name__)
+
+# Matches `Draft.title` (`String(200)`). First line of the prompt is the
+# working title when the author never named the draft (original creates
+# used to persist `title=None` and every card fell back to the section
+# heading 「最近生成记录」).
+DRAFT_TITLE_MAX = 200
+
+LIST_UNPUBLISHED_WORK_DRAFTS_LIMIT = 50
+
+
+def title_from_prompt(prompt: object) -> str | None:
+    """First non-empty line of a generation prompt, capped to `Draft.title`."""
+    if not isinstance(prompt, str):
+        return None
+    line = prompt.strip().split("\n", 1)[0].strip()
+    if not line:
+        return None
+    return line[:DRAFT_TITLE_MAX]
 
 
 @dataclass(slots=True)
@@ -107,17 +130,100 @@ def create_draft(
         for key, value in (version.reusable_params_json or {}).items():
             seeded_params.setdefault(key, value)
 
+    resolved_title = (title or "").strip() or title_from_prompt(seeded_params.get("prompt"))
     draft = Draft(
         user_id=user_id,
         source_work_version_id=source_version_id,
         license_snapshot_id=license_snapshot_id,
-        title=title,
+        title=resolved_title,
         params_json=seeded_params,
     )
     session.add(draft)
     session.flush()
     _maybe_link_draft_to_episode(session, user_id=user_id, draft=draft)
     return draft
+
+
+def _work_library_accessible_series_ids(session: Session, *, user_id: str) -> list[str]:
+    """Series the caller still has a live claim on: owned, or an *active*
+    co-creation seat. A `removed`/`declined` row does not count — that is
+    what drops a left collaboration out of 「最近生成记录」."""
+    from app.domain.editor import collaborators
+
+    owned = list(session.scalars(select(Series.id).where(Series.owner_user_id == user_id)))
+    return list({*owned, *collaborators.collaborator_series_ids(session, user_id=user_id)})
+
+
+def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]):
+    """True when the draft is tied to an episode on a series the caller
+    neither owns nor actively collaborates on.
+
+    Bindings come from `params.link_episode_id` (script/studio jump-out)
+    or an `EpisodeContentLink` row (attach-existing / heal). Either one
+    is enough — a leftover link after the collaborator leaves must not
+    keep the owner's published clip on their work-library rail.
+    """
+    series_is_inaccessible = (
+        DramaEpisode.series_id.notin_(accessible_series_ids)
+        if accessible_series_ids
+        else true()
+    )
+    via_params = exists(
+        select(1)
+        .select_from(DramaEpisode)
+        .where(
+            DramaEpisode.id == Draft.params_json["link_episode_id"].astext,
+            series_is_inaccessible,
+        )
+    )
+    via_content_link = exists(
+        select(1)
+        .select_from(EpisodeContentLink)
+        .join(DramaEpisode, DramaEpisode.id == EpisodeContentLink.episode_id)
+        .where(
+            EpisodeContentLink.content_ref_id == Draft.id,
+            EpisodeContentLink.content_type == EpisodeContentType.DRAFT.value,
+            series_is_inaccessible,
+        )
+    )
+    return or_(via_params, via_content_link)
+
+
+def list_unpublished_work_drafts(
+    session: Session, *, user_id: str, limit: int = LIST_UNPUBLISHED_WORK_DRAFTS_LIMIT
+) -> list[Draft]:
+    """Unpublished drafts the current user created, newest first.
+
+    The work-library rails (「最近生成记录」, 作品集草稿, iOS `listDrafts`)
+    are owner-scoped: another user's draft never appears. The author's own
+    character/scene generations stay — they are still their creations. A
+    row whose thumbnail asset belongs to someone else is dropped in SQL so
+    a leaked `output_asset_id` cannot surface another account's image.
+
+    Drafts bound to a series the caller left (or never had a live seat on)
+    are also omitted — a former collaborator's jump-out still has
+    `user_id == caller`, but the clip belongs to the other person's
+    production. `GET /drafts/{id}` is unchanged.
+    """
+    drafts = session.scalars(
+        select(Draft)
+        .outerjoin(Asset, Asset.id == Draft.output_asset_id)
+        .where(
+            Draft.user_id == user_id,
+            Draft.published_work_id.is_(None),
+            or_(
+                Draft.output_asset_id.is_(None),
+                Asset.id.is_(None),
+                Asset.owner_user_id == user_id,
+            ),
+            ~_draft_bound_to_inaccessible_series(
+                _work_library_accessible_series_ids(session, user_id=user_id)
+            ),
+        )
+        .order_by(Draft.created_at.desc())
+        .limit(limit)
+    )
+    return list(drafts)
 
 
 def _maybe_link_draft_to_episode(session: Session, *, user_id: str, draft: Draft) -> None:
@@ -132,6 +238,88 @@ def _maybe_link_draft_to_episode(session: Session, *, user_id: str, draft: Draft
     editor_service.maybe_link_draft(
         session, user_id=user_id, episode_id=episode_id, draft_id=draft.id
     )
+
+
+def apply_draft_version(
+    session: Session, *, user_id: str, draft_id: str, job_id: str
+) -> Draft:
+    """Pins a succeeded, still-visible job as the draft's applied version.
+
+    Updates `applied_job_id` and `output_asset_id` together so publish and
+    the recent-generations thumbnail follow the pin. `latest_job_id` is
+    untouched — retry/notification resume still points at the last submit.
+    """
+    draft = _owned_draft(session, user_id=user_id, draft_id=draft_id)
+    job = _owned_draft_job(session, draft=draft, job_id=job_id)
+    if job.draft_history_hidden_at is not None:
+        raise ValidationFailed("该版本已从历史中移除。")
+    if job.status != JobStatus.SUCCEEDED or not job.output_asset_id:
+        raise ValidationFailed("只能将已成功生成的版本设为当前。")
+    draft.applied_job_id = job.id
+    draft.output_asset_id = job.output_asset_id
+    session.flush()
+    return draft
+
+
+def hide_draft_version(session: Session, *, user_id: str, draft_id: str, job_id: str) -> Draft:
+    """Removes a job from the draft's version-history strip.
+
+    The job row, ledger, events and assets stay. An in-flight job cannot
+    be hidden. If the hidden job was the applied version, the next still-
+    visible succeeded job takes over (or the pointers clear).
+    """
+    draft = _owned_draft(session, user_id=user_id, draft_id=draft_id)
+    job = _owned_draft_job(session, draft=draft, job_id=job_id)
+    if not JobStatus(job.status).is_terminal:
+        raise ValidationFailed("进行中的版本不能删除。")
+    if job.draft_history_hidden_at is None:
+        job.draft_history_hidden_at = utcnow()
+    if draft.applied_job_id == job.id:
+        replacement = _latest_visible_succeeded_job(
+            session, draft_id=draft.id, excluding_job_id=job.id
+        )
+        if replacement is None:
+            draft.applied_job_id = None
+            draft.output_asset_id = None
+        else:
+            draft.applied_job_id = replacement.id
+            draft.output_asset_id = replacement.output_asset_id
+    session.flush()
+    return draft
+
+
+def _owned_draft(session: Session, *, user_id: str, draft_id: str) -> Draft:
+    draft = session.get(Draft, draft_id)
+    if draft is None:
+        raise NotFound("草稿不存在。")
+    if draft.user_id != user_id:
+        raise Forbidden("不能访问他人的草稿。")
+    return draft
+
+
+def _owned_draft_job(session: Session, *, draft: Draft, job_id: str) -> GenerationJob:
+    job = session.get(GenerationJob, job_id)
+    if job is None or job.draft_id != draft.id or job.user_id != draft.user_id:
+        raise NotFound("版本不存在。")
+    return job
+
+
+def _latest_visible_succeeded_job(
+    session: Session, *, draft_id: str, excluding_job_id: str | None = None
+) -> GenerationJob | None:
+    stmt = (
+        select(GenerationJob)
+        .where(
+            GenerationJob.draft_id == draft_id,
+            GenerationJob.status == JobStatus.SUCCEEDED,
+            GenerationJob.draft_history_hidden_at.is_(None),
+            GenerationJob.output_asset_id.is_not(None),
+        )
+        .order_by(GenerationJob.created_at.desc())
+    )
+    if excluding_job_id is not None:
+        stmt = stmt.where(GenerationJob.id != excluding_job_id)
+    return session.scalars(stmt).first()
 
 
 def request_publish(

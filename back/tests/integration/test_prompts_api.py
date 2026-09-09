@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents import copywriter
 from app.api.v1 import prompts as prompts_api
 from app.domain import prompts
 from app.domain.agent_skills import service as agent_skills_service
@@ -242,6 +243,119 @@ def test_enhance_reports_an_outage_instead_of_echoing_back(
     assert response.json()["error"]["code"] == "PROVIDER_TEMPORARY_FAILURE"
 
 
+def test_enhance_returns_script_segment_in_place(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_stream_session(monkeypatch, db)
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={
+            "prompt": "雨巷\n苏晴撑伞停下",
+            "operation": "text_to_video",
+            "script_segment": {
+                "heading": "雨巷",
+                "blocks": [
+                    {"type": "action", "character": None, "text": "苏晴撑伞停下"},
+                    {"type": "dialogue", "character": "苏晴", "text": "你终于来了。"},
+                ],
+            },
+        },
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    body = _enhance_complete(response)
+    assert body["script_segment"]["heading"] == "雨巷"
+    assert [block["type"] for block in body["script_segment"]["blocks"]] == ["action", "dialogue"]
+    assert body["script_segment"]["blocks"][1]["character"] == "苏晴"
+    assert body["script_segment"]["blocks"][0]["text"] != "苏晴撑伞停下"
+
+
 def test_enhance_requires_login(client: TestClient) -> None:
     response = client.post("/v1/generation/prompts/enhance", json={"prompt": "女孩在海边"})
     assert response.status_code == 401
+
+
+def test_scene_enhance_asks_follow_ups_then_stops_once_they_are_answered(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scene plate's whole point: the studio can block submission on a
+    required answer, and answering must clear the block rather than loop."""
+    _patch_stream_session(monkeypatch, db)
+    payload = {
+        "prompt": "夜晚老旧出租屋门口，紧闭的旧式铁框防盗门，门后是走廊与厨房",
+        "operation": "text_to_image",
+        "asset_kind": "scene",
+    }
+    first = client.post(
+        "/v1/generation/prompts/enhance", json=payload, headers=auth_header(author)
+    )
+    assert first.status_code == 200, first.text
+    asked = _enhance_complete(first)["questions"]
+    assert [question["id"] for question in asked] == ["space_type", "anchor"]
+    assert all(question["required"] for question in asked)
+    space_type = next(q for q in asked if q["id"] == "space_type")
+    assert any(option["value"] == "corridor_stairwell" for option in space_type["options"])
+
+    answered = client.post(
+        "/v1/generation/prompts/enhance",
+        json={
+            **payload,
+            "question_answers": {"space_type": "corridor_stairwell", "anchor": "1990s_china_south"},
+        },
+        headers=auth_header(author),
+    )
+    assert answered.status_code == 200, answered.text
+    assert _enhance_complete(answered)["questions"] == []
+
+
+def test_scene_enhance_locks_the_medium_and_the_occlusion(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The seatbelt runs on the real response, not just in unit tests: a
+    closed door with a kitchen behind it comes back with the occlusion rule
+    pinned on, and a plate that named no medium comes back locked to one."""
+    _patch_stream_session(monkeypatch, db)
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={
+            "prompt": "夜晚老旧出租屋门口，紧闭的旧式铁框防盗门，门后走廊尽头的厨房堆着待洗的碗碟",
+            "operation": "text_to_image",
+            "asset_kind": "scene",
+        },
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    enhanced = _enhance_complete(response)["prompt"]
+    assert copywriter.SCENE_PLATE_OCCLUSION_SENTENCE in enhanced
+    assert copywriter.SCENE_PLATE_MEDIUM_SENTENCE in enhanced
+
+
+def test_a_non_scene_polish_never_asks(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the scene coach asks today — a cover polish must not start
+    blocking the studio's submit button."""
+    _patch_stream_session(monkeypatch, db)
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={"prompt": "一张短剧封面", "operation": "text_to_image", "asset_kind": "cover"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    assert _enhance_complete(response)["questions"] == []

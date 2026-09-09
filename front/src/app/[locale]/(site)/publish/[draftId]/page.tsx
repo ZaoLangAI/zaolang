@@ -7,6 +7,16 @@ import { PageHeading } from '@/components/ui/primitives';
 import { redirect } from '@/i18n/navigation';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft } from '@/lib/api/types';
+import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
+import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
+
+function publishBackHref(draft: Draft): string {
+  const operation = draft.params?.operation;
+  if (isImageCreationOperation(operation)) return imageCreationStudioHref(draft.id);
+  if (isVideoCreationOperation(operation)) return videoCreationStudioHref(draft.id);
+  if (draft.latest_job_id) return `/jobs/${draft.latest_job_id}`;
+  return '/create';
+}
 
 interface Params {
   params: Promise<{ locale: string; draftId: string }>;
@@ -30,7 +40,7 @@ export default async function PublishPage({ params }: Params) {
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-8 sm:px-6">
-      <GoBackLink fallbackHref={draft.latest_job_id ? `/jobs/${draft.latest_job_id}` : '/create'}>
+      <GoBackLink fallbackHref={publishBackHref(draft)}>
         {tCreate('backToPrevious')}
       </GoBackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} />

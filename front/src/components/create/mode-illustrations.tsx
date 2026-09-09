@@ -84,6 +84,33 @@ export function AudioGenerationIllustration(props: IllustrationProps) {
   );
 }
 
+/** A waveform beside a musical note, standing in for BGM/SFX generation —
+ * distinguished from `AudioGenerationIllustration`'s microphone (a voice)
+ * by the note instead of a mic capsule. */
+export function MusicGenerationIllustration(props: IllustrationProps) {
+  const bars = [8, 18, 30, 16, 34, 22, 12, 26];
+  return (
+    <Scene {...props}>
+      {bars.map((h, index) => (
+        <rect
+          key={index}
+          x={16 + index * 8}
+          y={54 - h / 2}
+          width="4"
+          height={h}
+          rx="2"
+          fill="currentColor"
+          stroke="none"
+          fillOpacity={index % 2 === 0 ? 0.9 : 0.55}
+        />
+      ))}
+      <circle cx="118" cy="62" r="8" fillOpacity="0.08" fill="currentColor" />
+      <circle cx="140" cy="56" r="8" fillOpacity="0.08" fill="currentColor" />
+      <path d="M126 62V26l22-6v36" />
+    </Scene>
+  );
+}
+
 /** A vertical phone with a centred play mark and two caption bars. */
 export function ShortformIllustration(props: IllustrationProps) {
   return (
@@ -201,6 +228,35 @@ export function ScriptIllustration(props: IllustrationProps) {
         fill="currentColor"
       />
       <path d="M114 32h20M114 40h14" strokeOpacity="0.6" />
+    </Scene>
+  );
+}
+
+/** Cards scattered across a board and wired together — the canvas' whole
+ * proposition: the same work seen spatially rather than as a list. */
+export function CanvasIllustration(props: IllustrationProps) {
+  return (
+    <Scene {...props}>
+      <rect
+        x="8"
+        y="8"
+        width="144"
+        height="84"
+        rx="8"
+        fillOpacity="0.04"
+        fill="currentColor"
+        strokeOpacity="0.25"
+      />
+      <path d="M56 30h18M56 30q10 0 10 22t10 22" strokeOpacity="0.45" />
+      <path d="M96 52h14" strokeOpacity="0.45" />
+      <rect x="20" y="18" width="36" height="24" rx="4" fillOpacity="0.1" fill="currentColor" />
+      <path d="M26 26h20M26 33h12" strokeOpacity="0.5" />
+      <rect x="74" y="18" width="36" height="24" rx="4" fillOpacity="0.07" fill="currentColor" />
+      <path d="M80 26h20M80 33h14" strokeOpacity="0.4" />
+      <rect x="60" y="58" width="36" height="26" rx="4" fillOpacity="0.12" fill="currentColor" />
+      <circle cx="78" cy="71" r="6" strokeOpacity="0.6" />
+      <rect x="110" y="42" width="32" height="22" rx="4" fillOpacity="0.06" fill="currentColor" />
+      <path d="M116 50h18M116 57h10" strokeOpacity="0.4" />
     </Scene>
   );
 }

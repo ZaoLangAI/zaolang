@@ -60,6 +60,24 @@ class ShortformProfilesResponse(ApiModel):
     profiles: list[ShortformProfileResponse]
 
 
+class ScriptSegmentBlock(ApiModel):
+    """One colour-coded script block inside a clip-studio polish request.
+
+    `breakpoint` is rejected — adding a cut here would shift `{heading}#{ordinal}`.
+    """
+
+    type: Literal["scene", "action", "camera", "dialogue"]
+    character: str | None = Field(default=None, max_length=60)
+    text: str = Field(default="", max_length=400)
+
+
+class ScriptSegment(ApiModel):
+    """The shootable blocks of one suggested cut, plus its scene heading."""
+
+    heading: str = Field(default="", max_length=80)
+    blocks: list[ScriptSegmentBlock] = Field(default_factory=list, max_length=60)
+
+
 class PromptEnhanceRequest(ApiModel):
     """A polish request, plus whatever the studio already knows about the job.
 
@@ -68,7 +86,7 @@ class PromptEnhanceRequest(ApiModel):
     has not picked an aspect ratio yet must still be able to ask.
     """
 
-    prompt: str = Field(min_length=1, max_length=600)
+    prompt: str = Field(min_length=1, max_length=4096)
     operation: Operation | None = None
     aspect_ratio: str | None = Field(default=None, max_length=16)
     duration_seconds: int | None = Field(default=None, ge=0, le=600)
@@ -92,6 +110,13 @@ class PromptEnhanceRequest(ApiModel):
     # both are somehow present, since `asset_kind` defaults to unset for a
     # video job the same way `GenerationParams.asset_kind` does.
     video_asset_kind: VideoAssetKind | None = None
+    # Script clip studio only: polish the user prompt *and* this segment's
+    # colour blocks in place. Omitted on the generic image/video studios.
+    script_segment: ScriptSegment | None = None
+    # Answers to the previous round's `questions`, keyed by question id. A
+    # single_choice/free_text answer is a string, multi_choice a list. Sent
+    # on the round *after* the coach asked; empty on the first pass.
+    question_answers: dict[str, str | list[str]] = Field(default_factory=dict, max_length=8)
 
 
 class PromptDimensionView(ApiModel):
@@ -102,6 +127,25 @@ class PromptDimensionView(ApiModel):
     hint: str
 
 
+class PromptQuestionOptionView(ApiModel):
+    value: str
+    label: str
+
+
+class PromptQuestionView(ApiModel):
+    """A follow-up the coach wants answered before it polishes again.
+
+    Mirrors `JobInputQuestionView` — the studio renders both through the same
+    `QuestionField` control.
+    """
+
+    id: str
+    kind: Literal["single_choice", "multi_choice", "free_text"]
+    prompt: str
+    options: list[PromptQuestionOptionView] = Field(default_factory=list)
+    required: bool = False
+
+
 class PromptEnhanceResponse(ApiModel):
     prompt: str
     detail_level: Literal["sparse", "adequate", "detailed"]
@@ -110,3 +154,8 @@ class PromptEnhanceResponse(ApiModel):
     # The phrases this round actually added, so the panel can show what
     # changed without diffing two blocks of prose.
     additions: list[str] = Field(default_factory=list)
+    # Scene plates only today: what the coach still needs from the author
+    # before the description is safe to generate from. Empty for every other
+    # asset kind, and empty once the author has answered.
+    questions: list[PromptQuestionView] = Field(default_factory=list)
+    script_segment: ScriptSegment | None = None

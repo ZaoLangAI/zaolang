@@ -1,4 +1,6 @@
-"""Conversational script writing (文案创作) — streamed turns over SSE.
+"""Conversational script writing (文案创作) — streamed turns over SSE,
+plus `POST /scripts/extract` (JSON) which turns one uploaded script file
+into the idea text those turns consume.
 
 Each turn is a `POST` that responds with a `text/event-stream` body:
 `event: start` (once, carries `episode_id` for a brand-new script),
@@ -26,7 +28,7 @@ import threading
 from collections.abc import Iterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
@@ -37,6 +39,7 @@ from app.api.schemas.script import (
     ScriptCreateRequest,
     ScriptDetailResponse,
     ScriptDocument,
+    ScriptExtractResponse,
     ScriptLinksUpdateRequest,
     ScriptRetryRequest,
     ScriptSummaryResponse,
@@ -45,7 +48,8 @@ from app.api.schemas.script import (
     ScriptTurnSummary,
 )
 from app.db import session_scope
-from app.domain.errors import DomainError
+from app.domain.errors import DomainError, ValidationFailed
+from app.domain.script_writing import extract as script_extract
 from app.domain.script_writing import service as script_writing_service
 from app.llm.client import StreamChunk
 from app.models import EpisodeScriptTurn
@@ -217,6 +221,43 @@ def _turn_summary(turn: EpisodeScriptTurn) -> ScriptTurnSummary:
         referenced_skill_ids=list(turn.referenced_skill_ids_json or []),
         created_at=turn.created_at,
         thinking=turn.thinking_text or "",
+    )
+
+
+@router.post("/scripts/extract", response_model=ScriptExtractResponse)
+def extract_script_source(
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("script_studio_write"))],
+    file: Annotated[UploadFile, File()],
+) -> ScriptExtractResponse:
+    """Reads one uploaded script file and returns the extracted text.
+
+    A JSON request/response, not an SSE turn — the bytes are not persisted.
+    The caller then submits the text as `idea` on `POST /v1/scripts`.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = file.file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > script_extract.MAX_SOURCE_BYTES:
+            raise ValidationFailed("文件超过 8MB 上限。")
+        chunks.append(chunk)
+    extracted = script_writing_service.extract_uploaded_script(
+        session,
+        user_id=user.id,
+        filename=file.filename or "script",
+        payload=b"".join(chunks),
+        mime_type=file.content_type or "",
+    )
+    return ScriptExtractResponse(
+        filename=extracted.filename,
+        text=extracted.text,
+        char_count=extracted.char_count,
+        truncated=extracted.truncated,
     )
 
 

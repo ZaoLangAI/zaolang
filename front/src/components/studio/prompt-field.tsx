@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { SkillMentionMenu } from '@/components/skills/skill-mention-menu';
 import { PromptPolish, type PromptPolishContext } from '@/components/studio/prompt-polish';
+import type { PromptEnhanceScriptSegment } from '@/lib/api/types';
 import { TextArea } from '@/components/ui/field';
 import type { CreationSkillSummary } from '@/lib/api/types';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
@@ -45,15 +46,22 @@ export function PromptField({
   polishContext,
   onPolishAccept,
   closePolishSignal,
+  onPolishBlockedChange,
+  onPolishPendingChange,
   skillMention,
   maxLength = STUDIO_PROMPT_MAX_LENGTH,
 }: {
   prompt: string;
   onChange: (value: string) => void;
   polishContext?: PromptPolishContext;
-  onPolishAccept?: (prompt: string) => void;
+  onPolishAccept?: (prompt: string, segment?: PromptEnhanceScriptSegment) => void;
   /** Forwarded to `PromptPolish` — see its own doc comment. */
   closePolishSignal?: number;
+  /** Forwarded from `PromptPolish` — true while a required follow-up is
+   * still unanswered. */
+  onPolishBlockedChange?: (blocked: boolean) => void;
+  /** Forwarded from `PromptPolish` — true while a polish stream is in flight. */
+  onPolishPendingChange?: (pending: boolean) => void;
   skillMention?: PromptSkillMention;
   /** Defaults to `STUDIO_PROMPT_MAX_LENGTH`. */
   maxLength?: number;
@@ -187,6 +195,8 @@ export function PromptField({
           context={polishContext}
           onAccept={onPolishAccept}
           closeSignal={closePolishSignal}
+          onBlockedChange={onPolishBlockedChange}
+          onPendingChange={onPolishPendingChange}
         />
       ) : null}
       {mention && skillMention ? (

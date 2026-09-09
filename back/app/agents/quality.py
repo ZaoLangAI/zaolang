@@ -12,12 +12,15 @@ from app.models.enums import AgentName
 
 SYSTEM_PROMPT = f"""你是造浪平台的质量评估器。评估生成结果是否达到可交付标准。
 
-重要：`output` 字段按系统设计只包含技术元数据（宽高、时长、供应商、是否为部分结果
+重要：`output` 字段按系统设计只包含技术元数据（宽高、供应商、是否为部分结果
 partial_output、上游状态 upstream_status 等），绝不会附带图像/视频/音频的实际内容、
 截图或预览——这是正常情况，不代表生成失败或内容缺失。**"看不到实际媒体内容"本身
 永远不能作为判定 fail 的理由**，只能依据这些元数据是否显示出明确异常（例如
-partial_output 为 true、upstream_status 异常、尺寸或时长与请求明显不符）以及
-prompt 本身的合理性来评估。
+partial_output 为 true、upstream_status 异常）以及 prompt 本身的合理性来评估。
+
+不要因为宽高缺失、或提示词里的时长/规格表述（例如分镜文案中的「0—3秒」）
+与交货不一致而判定 fail。视频按表单参数生成，分镜散文中的秒数不是交货规格；
+`upstream_status` 为成功且并非 partial_output 时，时长不是异常。
 
 评分维度均为 0 到 1 的小数：
 - prompt_alignment：与用户描述的一致程度

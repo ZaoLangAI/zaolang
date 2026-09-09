@@ -10,6 +10,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agents import questions as agent_questions
+from app.agents import scene_skills
 from app.agents.base import JSON_INSTRUCTION, AgentOutcome, run_agent, run_agent_stream
 from app.domain.agent_skills import service as agent_skills_service
 from app.llm.client import StreamChunk
@@ -100,6 +102,11 @@ MAX_ADDITIONS = 6
 MAX_ADDITION_LENGTH = 40
 MAX_FEEDBACK_LENGTH = 300
 
+# The polish's own follow-up questions, shaped like every other agent's (see
+# `app.agents.questions`) so `QuestionField` renders all of them identically.
+MAX_ENHANCE_QUESTIONS = agent_questions.MAX_QUESTIONS
+MAX_ENHANCE_OPTIONS = agent_questions.MAX_OPTIONS
+
 # One round's requested adjustment. Free-text `instruction` covers everything
 # else; these exist so the panel can offer one-tap directions and so the test
 # fake gateway (`tests/fake_llm_gateway.py`) can mirror them deterministically.
@@ -123,7 +130,7 @@ ENHANCE_JSON_KEYS = ("prompt", "detail_level")
 ENHANCE_RETRY_NUDGE = (
     "上一轮只产出了思考、没有可用的润色 JSON。"
     "现在不要继续分析，只输出一个完整 JSON 对象，"
-    "字段为 detail_level、feedback、prompt、dimensions、additions。"
+    "字段为 detail_level、feedback、prompt、dimensions、additions、questions。"
 )
 # Higher than the platform default of 0.2, which exists to keep verdicts and
 # routing decisions repeatable. This slot rewrites prose: at 0.2 every polish
@@ -144,6 +151,9 @@ text_to_image/image_to_image 是图片
 - has_reference：用户是否已经上传参考图或参考视频
 - direction、instruction：用户这一轮要求的调整方向与自由补充要求，可能为空
 - max_length：润色后文本的字数上限
+- script_segment（可选）：当前建议切分的色块。若存在，必须同时改写 prompt \
+与各色块的 text；禁止增删色块、改 type、改 character、插入 breakpoint。\
+输出必须带回同结构的 script_segment（heading 原样、blocks 等长且 type 对齐）
 
 每个维度给一个 status：
 - missing：描述里完全没有提到
@@ -175,10 +185,22 @@ instruction 不为空时优先满足 instruction，它比 direction 更具体。
 feedback 是给用户看的一两句总评，语气是教练不是评委。
 feedback、hint、prompt、additions 全部使用 prompt 本身的语言书写。
 
+questions 是回给用户的追问，默认空数组——只有下面的分类规则明确要求时才提问。\
+每题只问一件事，最多 {MAX_ENHANCE_QUESTIONS} 题、按对成图质量的影响从高到低排序；\
+single_choice / multi_choice 必须给 2 到 {MAX_ENHANCE_OPTIONS} 个具体、互斥的选项，\
+不要给「其他」这类空泛选项，free_text 的 options 留空数组。\
+required 表示不回答就会明显影响成图。已经能从描述里确定的事不要再问。\
+payload 里带 question_answers 时，这些是用户对上一轮追问的回答：\
+必须把它们落进改写文本，并且不要再问同一件事。
+
 {JSON_INSTRUCTION}
 格式：{{"detail_level": "sparse"|"adequate"|"detailed", "feedback": string, "prompt": string, \
 "dimensions": [{{"key": string, "status": "missing"|"weak"|"ok", "hint": string}}], \
-"additions": string[]}}"""
+"additions": string[], "questions": [{{"id": string, \
+"kind": "single_choice"|"multi_choice"|"free_text", "prompt": string, \
+"options": [{{"value": string, "label": string}}], "required": boolean}}], \
+"script_segment": {{"heading": string, \
+"blocks": [{{"type": string, "character": string|null, "text": string}}]}}|null}}"""
 
 
 ENHANCE_SYSTEM_PROMPT = f"""你是造浪平台的提示词教练。用户正在写一段通用的 AI 生成画面描述\
@@ -200,58 +222,138 @@ duration_seconds 很短时不要塞进多个镜头或多段情节。"""
 # `agent_skills.service.ASSET_KIND_BUCKETS`. Used as seed text for the
 # dedicated `AgentProfile`s and as the code-level fallback `enhance_prompt`
 # passes to `run_agent` when no matching skill is published.
-ENHANCE_SYSTEM_PROMPT_CHARACTER = f"""你是造浪平台的角色立绘提示词教练。\
+ENHANCE_SYSTEM_PROMPT_CHARACTER = f"""你是造浪平台的角色设定图提示词教练。\
 用户正在为角色资产（asset_kind=character）写画面描述：这张图会进入角色库，\
-作为后续正面/侧面/背面三视图和视频参考导入的同一张「人」。\
-你的任务不是写故事，而是把同一个人写到能稳定复用。
+作为后续视频参考导入的同一张「人」——产出必须是一张多分区设定图，\
+不是先出一张全身照再拆三视图。
 
 {_ENHANCE_CONTRACT}
 
-这是静帧立绘，只输出图片维度：subject、scene、composition、lighting、style、detail。\
+这是静帧设定图，只输出图片维度：subject、scene、composition、lighting、style、detail。\
 各维度在这里的含义：
 - subject：性别、年龄段、肤色、发色、瞳色、发型、体型必须具体到能认出同一个人；\
 缺任一项就是 missing
-- scene：必须是单一纯色背景。用户写了自然环境或室内场景，与立绘用途冲突，不能标 ok
-- composition：必须全身入镜、不裁切头脚、单一视角一张图。半身、近景、多角度拼图都是 missing 或 weak
+- scene：必须是整板单一纯色/纯白背景，分区之间不要换环境。用户写了自然环境或室内场景，\
+与设定图用途冲突，不能标 ok
+- composition：必须是单张、左右分栏的设定图。左：全身三视图（正面、侧面、背面），\
+站姿、不裁切头脚；右：面部多角度特写、服装面料与配饰细节、标准化色板。\
+缺任一分区是 missing；只有一个全身正面、没有侧背/特写/色板也是 missing。\
+多分区设定板本身是 ok，不要判成弱构图
 - lighting：均匀、能看清五官与服装，不要把背景打出复杂环境光或脏投影
-- style：与 style_hint 对齐；不要做成绘本分格或海报排版
+- style：与 style_hint 对齐；专业角色设定板/模型参考图。一张多分区设定板不是绘本翻页，\
+不要因为怕「分格」就收成单张立绘。媒介必须单一：用户已写真人/写实/影视或动漫/二次元时\
+原样锁定；都没写则按真人写实影视短剧补上。禁止把写实改成动漫，也禁止把明确的动漫改成写实
 - detail：标志性服饰/配饰，以及表情神态（嘴角弧度、眼神方向）；不要只写情绪词
 
-改写硬性要求，优先于「保留用户原句」：
-- 全身入镜 + 单一纯色背景。用户写了场景、地面、散落物或半身景别，改写后必须替换掉
-- 人物的外貌、服装、姿态、表情才是要保留的本身特征；背景与取景范围不是
+改写硬性要求，优先于「保留用户原句」和参考图长什么样：
+- 单张输出、左右分栏。用户已写设定图/三视图/色板时不得删掉或收成一张全身照；\
+用户只写了外貌时，改写必须补上版式句，不能只扩外貌
+- 禁止改回单视角。不得改写成「一张全身正面立绘」或「单一视角一张图」
+- 参考图经常是旧的单张立绘：has_reference 为 true 不得据此改成单视角，\
+也不得删掉三视图、特写或色板；笔墨放在分区完整与一致性
+- 改写结果禁止出现这些失败句式：「正面单一视角」「不拼接侧面背面」「不分格」\
+「不加特写与色板」「仅此一张正面全身」——出现即失败，必须改回左右分栏设定图
+- 各分区是同一个人（五官、发型、服装、气质）；不改设定、不加第二个人、\
+不加故事场景或只在这一轮出现的临时道具
+- 整板纯白/单一纯色。用户写了场景、地面、散落物，改写后必须替换掉
 - 性别、年龄段、肤色用户没写也要补合理而具体的值
-- 不要引入只在这一轮出现的临时道具或姿势，以免三视图对不上
-- 禁止同一张图拼接正面和侧面，禁止分格对比图
-- has_reference 为 true 时不要重复外貌，把笔墨放在姿态与表情
-- 不要写运镜、时间推进或多镜头
+- 视觉媒介全图一致。用户没写媒介时改写必须补上「真人写实影视短剧造型」；\
+不得把写实改成动漫/二次元/插画，也不得把明确的动漫改成真人写实
+- 不要写运镜、时间推进、多镜头叙事或绘本页翻页感（那是多张，不是一张设定板）
 
-feedback：人物一致性弱时点名「这些细节要在多张图里保持一致」；\
-替换了场景或景别时补一句「已改为全身 + 纯色背景，方便导入视频」。"""
+feedback：人物一致性弱时点名「这些细节要在各分区里保持一致」；\
+缺分区或被收成单视角时补一句「已补回左三视图 + 右特写与色板，保持单张设定图」。"""
 
 ENHANCE_SYSTEM_PROMPT_SCENE = f"""你是造浪平台的场景空镜提示词教练。\
 用户正在为场景资产（asset_kind=scene）写画面描述：这张图会进入场景库，\
-作为短剧的建立镜头或空镜，主体是空间本身，不是故事里的人。
+作为短剧的建立镜头或空镜，主体是空间本身，不是故事里的人。\
+产出必须是一台固定相机能拍到的单一连续空间，不是门内外两套场景拼在一起。
 
 {_ENHANCE_CONTRACT}
 
+payload 里通常还带一个 scene_skill：那是本次空间类型的专用清单，\
+字段为 label（空间类型）、anchor（锁年代地域还是锁世界观）、structure（必须交代的结构要素）、\
+fixtures（这个空间必然存在的器物与材质）、light（光源与光的物理约束）、\
+cues（年代线索或世界观线索）、pitfalls（这个空间最常被画错的地方）。\
+structure 每一条都要在改写里有对应的交代；器物只从 fixtures 与用户原文里取，不发明；\
+light 与 pitfalls 是硬约束，与「让画面更好看」冲突时以它们为准。
+
 这是静帧空镜，只输出图片维度：subject、scene、composition、lighting、style、detail。\
 各维度在这里的含义：
-- subject：空间主体（建筑、地貌、室内结构），不是人物
-- scene：时间、天气、空间尺度、周边环境是否具体
-- composition：静态空镜或建立镜头，空间层次清楚，没有角色站位
-- lighting：可画出来的光影、色温、光源位置
-- style：氛围落到色调、天气、材质，不写「氛围感强」
-- detail：可辨认的材质、植被、陈设、光源；不要道具堆到抢掉空间
+- subject：空间主体（建筑、地貌、室内结构），不是人物。必须是一个地点，\
+不要并列门口与室内两套同等主体
+- scene：时间、天气、以及这个机位实际看得到的空间尺度。被门窗墙挡住的房间\
+只能写成漏出的光色，写成完整可见就是 weak，不能标 ok。\
+缺年代/地域（anchor=era_region）或缺世界观制式（anchor=worldbuilding）也是 weak
+- composition：单一机位、单一连续空间。先写相机站在哪、看向哪，再按近→中→远\
+只写这个视锥里的东西。出现「或侧视」「或分割构图」、左右分屏、同时画门内外，\
+都是 missing
+- lighting：可画出来的光影、色温、光源位置，必须贴在选定空间的真实表面上，\
+并满足 scene_skill.light 里的物理约束
+- style：视觉媒介 + 氛围落到色调、天气、材质，不写「氛围感强」。\
+没写清是真人实拍还是动漫的，是 weak
+- detail：可辨认的材质、植被、陈设、光源；只写用户已经提到、且这个机位能看见的。\
+不要道具堆到抢掉空间，不要把「远处的光」加成第二块屏幕或第二套家具
+
+改写按这三步做，顺序不能换：
+- 第一步 定机位：改写后的第一句必须是「相机站在<地点>，<高度与角度>，看向<朝向>」。\
+用户同时写了跨遮挡的两侧空间时，按主语里第一个出现的地点锁定——\
+「老旧出租屋门口」= 相机站在楼道，看向那扇紧闭的防盗门，室内不是这一张要拍的东西
+- 第二步 定遮挡：列出机位与远处之间的实体遮挡（门、墙、窗、帘）。\
+遮挡之后的一切只能以「光色 + 方向」出现，禁止写出遮挡后任何可辨认名词\
+（走廊墙面、电视机、碗碟、水汽、家具、房间）。\
+「门后厨房水槽上堆着待洗的碗碟」必须降级成「门缝下漏出一线冷蓝光」
+- 第三步 近→中→远：只写这个视锥里的东西，每一层给材质与状态
+- 写完自检：逐个名词回问「站在第一步的机位、隔着第二步的遮挡，这个东西看得见吗」，\
+看不见就删掉或降级成光色
+
+锚点是硬性要求，用户没写也要补，补的值要具体：
+- anchor=era_region（真实场景）：写出可辨认的地域与年代，\
+并落到能画出来的制式——门锁与门把样式、开关插座面板、瓷砖与地面材质、\
+电表箱、栏杆焊法、灯具类型。只写该年代必然存在的器物，禁止出现晚于该年代的物件
+- anchor=worldbuilding（外太空、飞船舱内、异星、赛博、末世、奇幻、水下）：\
+年代地域在这里没有意义，改锁世界观制式——技术等级、材质语言、重力状态、\
+大气或真空线索、光源逻辑。虚构不等于可以不自洽，pitfalls 里的物理约束优先于「看起来酷」
+- 视觉媒介全图一致：用户已写真人/写实/影视 或 动漫/二次元时原样锁定；\
+都没写则补「真人写实影视短剧实拍质感」。禁止漂移成插画、3D 渲染、游戏截图、概念设定图
+- 房屋结构自洽：层高、门洞宽度、台阶走向、承重墙位置、窗户开向要能连成一个真实户型；\
+不要把中式单元楼配上西式公寓走廊这类错配
 
 改写硬性要求，优先于「保留用户原句」：
 - 画面不能出现任何人物痕迹（背影、剪影、局部肢体、人群）
 - 用户写了人物或人物动作，改写后必须去掉，只留环境、光影、氛围
+- 遮挡即法律：门写了紧闭就保持紧闭；不得改成敞开以展示室内；\
+门后走廊、厨房、碗碟不得写成完整可见
+- 禁止选择句：不得写「或侧视」「或分割构图」这类互斥方案，必须选定一个构图
+- 禁止分割构图、分屏、左右分割、拼贴：一张空镜不是左右两套空间
+- 不发明陈设：用户写「远处电视的冷蓝光」就只写光，不要加成两块屏幕；\
+用户没写的家具、灯、房间不要补出来
+- 氛围服务于结构：冷暖对比、尘埃、锈迹可以写，但必须贴在选定空间的真实表面上
 - 不要写成角色互动或剧情高潮
 - 不要写运镜、时间推进或多镜头
+- direction=stronger_camera 时只把单一机位写清楚（站在哪、看向哪、近中远），\
+禁止改成多机位或分割构图
+
+改写结果禁止出现这些失败句式：「或侧视」「或分割构图」「分割构图」\
+「分屏」「左右分割」「门开着展示全屋」「同时画门内外两套空间」\
+「插画风」「3D 渲染」「游戏截图」——出现即失败，必须收成单一机位、单一媒介
+
+questions：以下五轴按顺序检查，凡是无法从描述与 scene_skill 里确定的就提问，\
+最多 {MAX_ENHANCE_QUESTIONS} 题（question_answers 已经回答过的不再问）：
+1. 空间类型（id=space_type，single_choice，选项用 payload 里给的 space_type_options 原样照抄，\
+value 必须是选项里的 key）——scene_skill 明显不确定时 required
+2. 机位站位（id=camera_side，single_choice）——用户并列了跨遮挡的两侧空间时 required，\
+选项按已锁定的空间给（例如「站在楼道看紧闭的门」「站在屋内看向走廊尽头」）
+3. 锚点（id=anchor）——anchor=era_region 时问年代与地域，\
+anchor=worldbuilding 时问世界观与技术等级、重力与大气状态；\
+描述里没有对应线索时 required，给 single_choice 选项并允许一个「自己写」之外的具体项
+4. 视觉媒介（id=medium，single_choice：真人写实影视 / 动漫二次元）——用户完全没写时提问
+5. 光源与时间（id=light_time，single_choice）——选填
 
 feedback：环境弱时点名哪个具体元素（建筑/植被/光源）要写清；\
-去掉人物时补一句「已去除人物描写，仅保留纯场景」。"""
+去掉人物时补一句「已去除人物描写，仅保留纯场景」；\
+机位或房屋结构不成立时补一句「已收成单一机位，去掉分割构图」；\
+有 questions 时补一句「回答下面几个问题后再润一次，成图会更贴你的场景」。"""
 
 ENHANCE_SYSTEM_PROMPT_COVER = f"""你是造浪平台的封面海报提示词教练。\
 用户正在为封面资产（asset_kind=cover）写画面描述：这张图会作为作品或短剧系列封面，\
@@ -358,6 +460,8 @@ def enhance_prompt(
     direction: str = "",
     instruction: str = "",
     asset_kind: str = "",
+    script_segment: dict | None = None,
+    question_answers: dict[str, Any] | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
 ) -> AgentOutcome:
@@ -407,15 +511,24 @@ def enhance_prompt(
             direction=direction,
             instruction=instruction,
             max_length=max_length,
+            asset_kind=asset_kind,
+            script_segment=script_segment,
+            question_answers=question_answers,
         ),
-        fallback={"prompt": prompt, "detail_level": "adequate", "feedback": ""},
+        fallback=_enhance_fallback(prompt, script_segment),
         user_id=user_id,
         agent_id=resolved_agent_id,
         slot=ENHANCE_SLOT,
         max_tokens=ENHANCE_MAX_TOKENS,
         temperature=ENHANCE_TEMPERATURE,
     )
-    return _sanitize_enhance_outcome(outcome, prompt=prompt, max_length=max_length)
+    return _sanitize_enhance_outcome(
+        outcome,
+        prompt=prompt,
+        max_length=max_length,
+        asset_kind=asset_kind,
+        script_segment=script_segment,
+    )
 
 
 def stream_enhance_prompt(
@@ -432,6 +545,8 @@ def stream_enhance_prompt(
     direction: str = "",
     instruction: str = "",
     asset_kind: str = "",
+    script_segment: dict | None = None,
+    question_answers: dict[str, Any] | None = None,
     user_id: str | None = None,
     agent_id: str | None = None,
 ) -> tuple[Iterator[StreamChunk], Callable[[Session | None], AgentOutcome]]:
@@ -455,8 +570,11 @@ def stream_enhance_prompt(
         direction=direction,
         instruction=instruction,
         max_length=max_length,
+        asset_kind=asset_kind,
+        script_segment=script_segment,
+        question_answers=question_answers,
     )
-    fallback = {"prompt": prompt, "detail_level": "adequate", "feedback": ""}
+    fallback = _enhance_fallback(prompt, script_segment)
     chunks, finalize = run_agent_stream(
         session,
         agent_name=AgentName.COPY,
@@ -487,7 +605,13 @@ def stream_enhance_prompt(
             agent_run_id=stream.agent_run_id,
             thinking=stream.thinking,
         )
-        return _sanitize_enhance_outcome(outcome, prompt=prompt, max_length=max_length)
+        return _sanitize_enhance_outcome(
+            outcome,
+            prompt=prompt,
+            max_length=max_length,
+            asset_kind=asset_kind,
+            script_segment=script_segment,
+        )
 
     return chunks, finish
 
@@ -546,39 +670,283 @@ def _enhance_user_prompt(
     direction: str,
     instruction: str,
     max_length: int,
+    asset_kind: str = "",
+    script_segment: dict | None = None,
+    question_answers: dict[str, Any] | None = None,
 ) -> str:
-    return json.dumps(
-        {
-            "prompt": prompt,
-            "operation": operation,
-            "aspect_ratio": aspect_ratio,
-            "duration_seconds": duration_seconds,
-            "quality_tier": quality_tier,
-            "style_hint": style_hint,
-            "has_reference": has_reference,
-            "direction": direction,
-            "instruction": instruction,
-            "max_length": max_length,
-            "output_now": (
-                "立即输出完整 JSON（必须含 prompt 与 detail_level）。"
-                "思考不要讨论输出格式，不要写 {\"answer\": ...} 占位。"
-                "可见内容的第一个字符必须是 {。"
-            ),
-        },
-        ensure_ascii=False,
-    )
+    payload: dict[str, Any] = {
+        "prompt": prompt,
+        "operation": operation,
+        "aspect_ratio": aspect_ratio,
+        "duration_seconds": duration_seconds,
+        "quality_tier": quality_tier,
+        "style_hint": style_hint,
+        "has_reference": has_reference,
+        "direction": direction,
+        "instruction": instruction,
+        "max_length": max_length,
+        "output_now": (
+            "立即输出完整 JSON（必须含 prompt 与 detail_level）。"
+            "思考不要讨论输出格式，不要写 {\"answer\": ...} 占位。"
+            "可见内容的第一个字符必须是 {。"
+        ),
+    }
+    if script_segment is not None:
+        payload["script_segment"] = script_segment
+    if question_answers:
+        payload["question_answers"] = question_answers
+    if asset_kind == "scene":
+        # The space-type pack the scene coach polishes against, plus the
+        # option list for its own "which space is this" question — see
+        # `app.agents.scene_skills` for why this rides the user message
+        # rather than the system prompt.
+        answered_space = question_answers.get("space_type") if question_answers else None
+        skill = scene_skills.resolve_scene_skill(
+            prompt, answered_space if isinstance(answered_space, str) else None
+        )
+        payload["scene_skill"] = scene_skills.as_payload(skill)
+        payload["space_type_options"] = scene_skills.skill_options()
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _enhance_fallback(prompt: str, script_segment: dict | None) -> dict[str, Any]:
+    fallback: dict[str, Any] = {"prompt": prompt, "detail_level": "adequate", "feedback": ""}
+    if script_segment is not None:
+        fallback["script_segment"] = script_segment
+    return fallback
+
+
+# Written back when polish collapses a character sheet to a single standing
+# portrait. Shorter than `nodes._CHARACTER_SHEET_LAYOUT_SUFFIX` so it still
+# fits the studio textarea; submit still appends the planner suffix.
+CHARACTER_SHEET_LAYOUT_SENTENCE = (
+    "单张角色设定图、左右分栏：左侧全身三视图（正面、侧面、背面），"
+    "右侧面部特写、服装配饰细节与标准化色板；纯白背景，同一人物，单张输出。"
+)
+_CHARACTER_SHEET_REQUIRED = ("三视图", "色板")
+_CHARACTER_SHEET_COLLAPSE_MARKERS = (
+    "单一视角",
+    "不拼接",
+    "不分格",
+    "不加特写",
+    "仅此一张正面",
+)
+_CHARACTER_SHEET_COLLAPSE_SENTENCE = re.compile(
+    r"[^。；;.]*?(?:单一视角|不拼接|不分格|不加特写|仅此一张正面)[^。；;.]*[。；;.]?"
+)
+
+
+def restore_character_sheet_prompt(text: str) -> str:
+    """Keeps identity, strips single-view collapse clauses, restores layout.
+
+    A live model still emitted "正面单一视角 / 不加特写与色板" after the
+    sheet coach shipped — the published prompt is not enough on its own.
+    """
+    stripped = text.strip()
+    collapsed = any(marker in stripped for marker in _CHARACTER_SHEET_COLLAPSE_MARKERS)
+    if all(marker in stripped for marker in _CHARACTER_SHEET_REQUIRED) and not collapsed:
+        return stripped
+    cleaned = _CHARACTER_SHEET_COLLAPSE_SENTENCE.sub("", stripped)
+    cleaned = re.sub(r"[。；;.]{2,}", "。", cleaned).strip(" \t\n。；;.")
+    if all(marker in cleaned for marker in _CHARACTER_SHEET_REQUIRED) and not any(
+        marker in cleaned for marker in _CHARACTER_SHEET_COLLAPSE_MARKERS
+    ):
+        return f"{cleaned}。" if cleaned and not cleaned.endswith("。") else cleaned
+    if cleaned:
+        return f"{cleaned}。{CHARACTER_SHEET_LAYOUT_SENTENCE}"
+    return CHARACTER_SHEET_LAYOUT_SENTENCE
+
+
+# Written back when polish stacks mutually exclusive cameras or offers a
+# split interior/exterior. The empty-plate coach forbids those phrases;
+# a live model still emitted them on a closed-door rental landing.
+SCENE_PLATE_LOCK_SENTENCE = "单一机位、单一连续空间，遮挡后的房间不得画成完全可见。"
+_SCENE_PLATE_SPLIT_MARKERS = (
+    "分割构图",
+    "分屏",
+    "左右分割",
+    "拼贴构图",
+    "或侧视",
+    "或分割",
+)
+_SCENE_PLATE_PAREN_OR = re.compile(r"[（(]或[^）)]{0,24}[）)]")
+_SCENE_PLATE_OR_ALT = re.compile(r"或(?:侧视角度|侧视|分割构图)")
+_SCENE_PLATE_SPLIT_TOKEN = re.compile(r"分割构图|分屏|左右分割|拼贴构图")
+
+# Deleting the split clauses is not enough on its own. The live failure that
+# produced the open-door render kept describing a kitchen's dishes and steam
+# *behind a door it had just called closed* — physically impossible, so the
+# image model resolved the contradiction by removing the door. Nouns cannot
+# be cut out mid-sentence without producing broken Chinese, so the seatbelt
+# appends the rule instead and lets the prompt itself do the real work.
+SCENE_PLATE_OCCLUSION_SENTENCE = "遮挡后的空间只以门缝漏出的光色呈现，不得画出遮挡后的任何物体。"
+_SCENE_PLATE_CLOSED_MARKERS = ("紧闭", "关着的门", "闭合的门", "关闭的门", "门扇紧合")
+_SCENE_PLATE_BEHIND_MARKERS = (
+    "走廊",
+    "厨房",
+    "碗碟",
+    "水槽",
+    "电视",
+    "室内",
+    "屋内",
+    "家具",
+    "房间内",
+)
+
+# The scene coach has no medium lock of its own before this change, which is
+# how "老旧出租屋" came back as an illustration. Mirrors the character side's
+# `真人写实影视短剧造型` default rather than inventing a second wording.
+SCENE_PLATE_MEDIUM_SENTENCE = "真人写实影视短剧实拍质感。"
+_SCENE_PLATE_MEDIUM_MARKERS = (
+    "真人",
+    "写实",
+    "实拍",
+    "影视",
+    "摄影",
+    "电影感",
+    "动漫",
+    "二次元",
+    "插画",
+    "卡通",
+    "渲染",
+)
+
+
+def _append_sentence(text: str, sentence: str) -> str:
+    if sentence in text:
+        return text
+    body = text.rstrip()
+    if body and not body.endswith(("。", "！", "？", ".", "!", "?")):
+        body = f"{body}。"
+    return f"{body}{sentence}"
+
+
+def enforce_scene_plate_occlusion(text: str) -> str:
+    """Pins the rule back on when a closed occluder still has a room behind it."""
+    if not any(marker in text for marker in _SCENE_PLATE_CLOSED_MARKERS):
+        return text
+    if not any(marker in text for marker in _SCENE_PLATE_BEHIND_MARKERS):
+        return text
+    return _append_sentence(text, SCENE_PLATE_OCCLUSION_SENTENCE)
+
+
+def enforce_scene_plate_medium(text: str) -> str:
+    """Locks the visual medium when the polish never named one."""
+    if any(marker in text for marker in _SCENE_PLATE_MEDIUM_MARKERS):
+        return text
+    return _append_sentence(text, SCENE_PLATE_MEDIUM_SENTENCE)
+
+
+def restore_scene_plate_prompt(text: str) -> str:
+    """Strips split-view / alternative-camera clauses from a scene plate.
+
+    A live polish still emitted "透过门缝或侧视角度" and "门外楼道视角（或分割构图）"
+    after the empty-plate coach shipped — those phrases force the image model
+    to open a closed door or paint interior and exterior as a split screen.
+    """
+    stripped = text.strip()
+    if not any(marker in stripped for marker in _SCENE_PLATE_SPLIT_MARKERS):
+        return stripped
+    cleaned = _SCENE_PLATE_PAREN_OR.sub("", stripped)
+    cleaned = _SCENE_PLATE_OR_ALT.sub("", cleaned)
+    cleaned = _SCENE_PLATE_SPLIT_TOKEN.sub("", cleaned)
+    cleaned = re.sub(r"[（(]\s*[）)]", "", cleaned)
+    cleaned = re.sub(r"[、，,]{2,}", "，", cleaned)
+    cleaned = re.sub(r"[。；;.]{2,}", "。", cleaned)
+    cleaned = re.sub(r"\s{2,}", "", cleaned)
+    cleaned = cleaned.strip(" \t\n。；;.")
+    if not cleaned:
+        return SCENE_PLATE_LOCK_SENTENCE
+    if not cleaned.endswith("。"):
+        cleaned = f"{cleaned}。"
+    if SCENE_PLATE_LOCK_SENTENCE in cleaned:
+        return cleaned
+    return f"{cleaned}{SCENE_PLATE_LOCK_SENTENCE}"
+
+
+def _sanitize_script_segment(raw: Any, original: dict | None) -> dict | None:
+    """In-place polish only: same length, same types, original characters.
+
+    A model that inserts a breakpoint, drops a block, or changes `type`
+    would shift `{heading}#{ordinal}` on the script page — fall back to the
+    request segment rather than write that back.
+    """
+    if original is None:
+        return None
+    original_blocks = original.get("blocks")
+    if not isinstance(original_blocks, list):
+        return original
+    heading = str(original.get("heading") or "")[:MAX_HEADING_LEN]
+    if not isinstance(raw, dict):
+        return {"heading": heading, "blocks": list(original_blocks)}
+    raw_blocks = raw.get("blocks")
+    if not isinstance(raw_blocks, list) or len(raw_blocks) != len(original_blocks):
+        return {"heading": heading, "blocks": list(original_blocks)}
+    blocks: list[dict[str, Any]] = []
+    for item, current in zip(raw_blocks, original_blocks, strict=True):
+        if not isinstance(current, dict):
+            return {"heading": heading, "blocks": list(original_blocks)}
+        current_type = str(current.get("type") or "")
+        if current_type not in ("scene", "action", "camera", "dialogue"):
+            return {"heading": heading, "blocks": list(original_blocks)}
+        if not isinstance(item, dict) or str(item.get("type") or "") != current_type:
+            return {"heading": heading, "blocks": list(original_blocks)}
+        text = str(item.get("text") or "").strip()[:MAX_TEXT_LEN] or str(current.get("text") or "")
+        blocks.append(
+            {
+                "type": current_type,
+                "character": current.get("character"),
+                "text": text,
+            }
+        )
+    return {"heading": heading, "blocks": blocks}
 
 
 def _sanitize_enhance_outcome(
-    outcome: AgentOutcome, *, prompt: str, max_length: int
+    outcome: AgentOutcome,
+    *,
+    prompt: str,
+    max_length: int,
+    asset_kind: str = "",
+    script_segment: dict | None = None,
 ) -> AgentOutcome:
     enhanced = str(outcome.data.get("prompt") or "").strip() or prompt
+    if asset_kind == "character":
+        restored = restore_character_sheet_prompt(enhanced)
+        if restored != enhanced:
+            note = "已补回左三视图 + 右特写与色板，保持单张设定图。"
+            existing = str(outcome.data.get("feedback") or "").rstrip()
+            if note not in existing:
+                outcome.data["feedback"] = f"{existing} {note}".strip()
+            enhanced = restored
+    elif asset_kind == "scene":
+        restored = restore_scene_plate_prompt(enhanced)
+        if restored != enhanced:
+            note = "已收成单一机位，去掉分割构图。"
+            existing = str(outcome.data.get("feedback") or "").rstrip()
+            if note not in existing:
+                outcome.data["feedback"] = f"{existing} {note}".strip()
+            enhanced = restored
+        occluded = enforce_scene_plate_occlusion(enhanced)
+        if occluded != enhanced:
+            note = "已锁死遮挡：门后只留漏光，不画门后的东西。"
+            existing = str(outcome.data.get("feedback") or "").rstrip()
+            if note not in existing:
+                outcome.data["feedback"] = f"{existing} {note}".strip()
+            enhanced = occluded
+        enhanced = enforce_scene_plate_medium(enhanced)
     outcome.data["prompt"] = enhanced[:max_length]
     detail_level = str(outcome.data.get("detail_level") or "adequate")
     outcome.data["detail_level"] = detail_level if detail_level in DETAIL_LEVELS else "adequate"
     outcome.data["feedback"] = str(outcome.data.get("feedback") or "")[:MAX_FEEDBACK_LENGTH]
     outcome.data["dimensions"] = _sanitize_dimensions(outcome.data.get("dimensions"))
     outcome.data["additions"] = _sanitize_additions(outcome.data.get("additions"))
+    outcome.data["questions"] = agent_questions.sanitize_questions(outcome.data.get("questions"))
+    sanitized_segment = _sanitize_script_segment(outcome.data.get("script_segment"), script_segment)
+    if sanitized_segment is None:
+        outcome.data.pop("script_segment", None)
+    else:
+        outcome.data["script_segment"] = sanitized_segment
     return outcome
 
 
@@ -628,9 +996,12 @@ def _sanitize_additions(raw: Any) -> list[str]:
 
 CLARIFY_SLOT = "clarify"
 
-QUESTION_KINDS = ("single_choice", "multi_choice", "free_text")
-MAX_CLARIFY_QUESTIONS = 4
-MAX_CLARIFY_OPTIONS = 6
+# Re-exported from `app.agents.questions`, which owns the shape all three
+# question-asking slots share (this one, the copy agent's own `clarify`, and
+# the scene coach's polish-time follow-ups).
+QUESTION_KINDS = agent_questions.QUESTION_KINDS
+MAX_CLARIFY_QUESTIONS = agent_questions.MAX_QUESTIONS
+MAX_CLARIFY_OPTIONS = agent_questions.MAX_OPTIONS
 
 CLARIFY_SYSTEM_PROMPT = f"""你是造浪平台的短剧创作顾问，
 在用户提交生成请求之前判断这段画面描述是否需要补充信息。
@@ -676,51 +1047,11 @@ def clarify(
         agent_id=resolved_agent_id,
         slot=CLARIFY_SLOT,
     )
-    questions = outcome.data.get("questions")
-    outcome.data["questions"] = (
-        [_sanitize_clarify_question(q) for q in questions[:MAX_CLARIFY_QUESTIONS]]
-        if isinstance(questions, list)
-        else []
-    )
-    outcome.data["questions"] = [q for q in outcome.data["questions"] if q is not None]
+    outcome.data["questions"] = agent_questions.sanitize_questions(outcome.data.get("questions"))
     outcome.data["needs_clarification"] = bool(outcome.data.get("needs_clarification")) and bool(
         outcome.data["questions"]
     )
     return outcome
-
-
-def _sanitize_clarify_question(raw: Any) -> dict[str, Any] | None:
-    if not isinstance(raw, dict):
-        return None
-    kind = str(raw.get("kind") or "")
-    if kind not in QUESTION_KINDS:
-        return None
-    question_id = str(raw.get("id") or "").strip()
-    question_prompt = str(raw.get("prompt") or "").strip()
-    if not question_id or not question_prompt:
-        return None
-
-    options: list[dict[str, str]] = []
-    if kind in ("single_choice", "multi_choice"):
-        raw_options = raw.get("options")
-        if isinstance(raw_options, list):
-            for option in raw_options[:MAX_CLARIFY_OPTIONS]:
-                if not isinstance(option, dict):
-                    continue
-                value = str(option.get("value") or "").strip()
-                label = str(option.get("label") or "").strip()
-                if value and label:
-                    options.append({"value": value[:64], "label": label[:64]})
-        if not options:
-            return None
-
-    return {
-        "id": question_id[:64],
-        "kind": kind,
-        "prompt": question_prompt[:200],
-        "options": options,
-        "required": bool(raw.get("required")),
-    }
 
 
 # --- Script writing (剧本创作) -----------------------------------------
@@ -781,13 +1112,20 @@ scene 色块之外，同一场戏还要至少覆盖 action、dialogue 两类中�
 # `characters[].traits` is what `script-document-view.tsx::characterImagePrompt`
 # seeds the "生成角色图" jump-out with verbatim (no separate appearance field —
 # this is the one and only place a character's visual gets described), so
-# it must lead with what a character portrait actually needs — appearance —
-# rather than personality, which a text-to-image model has no way to render.
-_CHARACTER_APPEARANCE_RULE = """- characters 至少列出剧本中出现的主要角色，每个角色的 traits \
-必须先写外貌特征——性别、年龄段、肤色、发型/发色、体型、面部或标志性穿着等，写到足以直接支撑\
-角色立绘/角色图生成的程度，这部分不能省略、不能含糊；外貌之后再补充性格、人物关系等信息。\
-例如「年轻女性，二十出头，肤色偏白，齐肩黑发，穿便利店店员制服；外冷内热，藏着不能说的秘密」\
-而不是只写「外冷内热的便利店店员」"""
+# it must lead with a script-wide visual medium plus what a character portrait
+# actually needs — appearance — rather than personality, which a text-to-image
+# model has no way to render. A missing medium is what lets one cast member
+# render photoreal and the next as anime.
+_CHARACTER_APPEARANCE_RULE = """- characters 至少列出剧本中出现的主要角色。先为整份剧本选定\
+唯一视觉媒介，再写每个角色：默认全剧「真人写实影视短剧造型」（摄影级皮肤与布料，不是动漫、\
+不是插画）；仅当用户创意或参考技能明确要求二次元/动漫/日系插画时，全剧统一切到那一种。\
+同一剧本里禁止部分角色写实、部分动漫，也禁止用「漫画感眼神」「二次元发型」这类词把单个角色\
+拉到另一种媒介。每个角色的 traits 必须开头写同一句媒介，再写外貌特征——性别、年龄段、肤色、\
+发型/发色、体型、面部或标志性穿着等，写到足以直接支撑角色立绘/角色图生成的程度，这部分不能省略、\
+不能含糊；外貌之后再补充性格、人物关系等信息。\
+例如「真人写实影视短剧造型，年轻女性，二十出头，肤色偏白，齐肩黑发，穿便利店店员制服；\
+外冷内热，藏着不能说的秘密」而不是只写「外冷内热的便利店店员」，\
+也不是「年轻女性，齐肩黑发」这种缺少媒介句、会让角色图在真人和动漫之间漂移的写法"""
 
 # A single generation call can never produce more than this many seconds of
 # footage (`app.platform_config.schemas.MAX_GENERATION_DURATION_SECONDS`) —
@@ -824,6 +1162,9 @@ SCRIPT_DRAFT_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，深�
 避免连续多轮台词都是长句陈述，适当加入打断、反问、沉默停顿，让对话有真实节奏
 {_BREAKPOINT_RULES}
 - 如果用户提供了参考技能的风格说明，把其中的调性、氛围、叙事手法融入剧本，但不要直接照抄技能描述原文
+- 如果用户输入已经是一份完整或接近完整的剧本（例如从上传文件提取的原文），按上述 JSON 结构整理，\
+保留原有情节、人物与台词，只补缺失的 scene/action/camera/breakpoint 色块，不要另起炉灶重写故事；\
+若输入只是一句或一小段创意，则按往常扩写成完整分场剧本
 - 输出语言与用户输入保持一致"""
 
 SCRIPT_REVISE_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，正在和用户反复打磨一份剧本，\
@@ -842,6 +1183,8 @@ SCRIPT_REVISE_SYSTEM_PROMPT = f"""你是造浪平台的短剧编剧助手，正�
 {_CHARACTER_APPEARANCE_RULE}
 - 只按用户这一轮的意见调整，其余场景、角色、台词尽量原样保留，不要做用户没有要求的改写\
 （包括已有角色的 traits——用户没有要求修改角色外貌/性格时原样保留，不要顺手补全或改写外貌描述）
+- 用户没有要求更换画风时，所有角色 traits 开头的媒介句必须保持一致且原样保留；\
+新增角色沿用当前剧本已有的那一句媒介，不要给单个角色单独换成另一种
 - 用户没有要求删除的场景或角色不要删除
 - 调整或新增内容后，重新检查一遍受影响场景的 breakpoint 是否仍然合理：\
 新增的内容让某段超过 {MAX_GENERATION_DURATION_SECONDS} 秒时补插 breakpoint，\

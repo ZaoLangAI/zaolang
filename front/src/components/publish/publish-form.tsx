@@ -34,6 +34,7 @@ const OPERATIONS = [
   'image_to_video',
   'video_to_video',
   'audio_generation',
+  'music_generation',
 ] as const;
 
 const TIERS = ['preview', 'standard', 'cinematic'] as const;

@@ -18,8 +18,9 @@ import { isApiError } from '@/lib/api/errors';
 import { formatRelative } from '@/lib/format';
 
 import * as scriptApi from './api';
-import type { ScriptSummary } from './api';
+import type { ScriptExtractResult, ScriptSummary } from './api';
 import { resetPendingCreate, startCreate, useCreateStreamSnapshot } from './create-stream-store';
+import { composeScriptIdea, ScriptSourceField } from './script-source-field';
 
 const IDEA_MAX_LENGTH = 2000;
 
@@ -44,6 +45,7 @@ export function ScriptLanding({
 
   const [title, setTitle] = useState('');
   const [idea, setIdea] = useState('');
+  const [extracted, setExtracted] = useState<ScriptExtractResult | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [scripts, setScripts] = useState<ScriptSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -79,6 +81,7 @@ export function ScriptLanding({
   if (sessionStatus === 'authenticated' && seriesId && autoOpenedForSeriesId !== seriesId) {
     setAutoOpenedForSeriesId(seriesId);
     resetPendingCreate();
+    setExtracted(null);
     setDialogOpen(true);
   } else if (
     sessionStatus === 'authenticated' &&
@@ -89,6 +92,7 @@ export function ScriptLanding({
     resetPendingCreate();
     setTitle('');
     setIdea(initialIdea);
+    setExtracted(null);
     setDialogOpen(true);
   }
 
@@ -107,6 +111,7 @@ export function ScriptLanding({
     resetPendingCreate();
     setTitle('');
     setIdea('');
+    setExtracted(null);
     setDialogOpen(true);
   };
 
@@ -138,15 +143,15 @@ export function ScriptLanding({
   };
 
   const submit = () => {
-    const trimmedIdea = idea.trim();
-    if (!trimmedIdea || pending) return;
+    const mergedIdea = composeScriptIdea(idea, extracted?.text ?? '');
+    if (!mergedIdea || pending) return;
     // Navigates the instant the backend names the new episode (the `start`
     // frame, sent before any LLM token — see `create-stream-store.ts`)
     // instead of waiting for the whole first draft to finish streaming, so
     // the user lands on the real script-writing workspace to watch it
     // generate rather than being stuck in this dialog.
     startCreate(
-      { title: title.trim(), idea: trimmedIdea, referencedSkillIds: [], seriesId },
+      { title: title.trim(), idea: mergedIdea, referencedSkillIds: [], seriesId },
       { onEpisodeReady: (episodeId) => router.push(`/create/script/${episodeId}`) },
     );
   };
@@ -233,7 +238,11 @@ export function ScriptLanding({
             <Button variant="ghost" onClick={closeDialog} disabled={pending}>
               {tActions('cancel')}
             </Button>
-            <Button loading={pending} disabled={idea.trim().length === 0} onClick={submit}>
+            <Button
+              loading={pending}
+              disabled={composeScriptIdea(idea, extracted?.text ?? '').length === 0}
+              onClick={submit}
+            >
               {t('generate')}
             </Button>
           </>
@@ -252,6 +261,7 @@ export function ScriptLanding({
           />
           <TextArea
             label={t('ideaLabel')}
+            hint={t('ideaHint')}
             placeholder={t('ideaPlaceholder')}
             value={idea}
             maxLength={IDEA_MAX_LENGTH}
@@ -259,6 +269,7 @@ export function ScriptLanding({
             className="min-h-28"
             onChange={(event) => setIdea(event.target.value)}
           />
+          <ScriptSourceField extracted={extracted} onChange={setExtracted} disabled={pending} />
         </div>
       </Dialog>
 

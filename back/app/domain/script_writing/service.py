@@ -51,6 +51,7 @@ from app.domain.editor import service as editor_service
 from app.domain.errors import DomainError, NotFound, ValidationFailed
 from app.domain.notifications import push
 from app.domain.scenes import service as scenes_service
+from app.domain.script_writing.extract import ExtractedScriptSource, extract_script_source
 from app.domain.skill_library import service as skill_library_service
 from app.llm.client import StreamChunk
 from app.models import AgentRun, DramaEpisode, EpisodeScriptTurn, Notification, Series
@@ -59,7 +60,7 @@ from app.platform_config import service as config_service
 
 SCRIPT_STUDIO_FLAG = "script_studio_enabled"
 MAX_REFERENCED_SKILLS = 5
-MAX_IDEA_LEN = 2000
+MAX_IDEA_LEN = 20_000
 MAX_MESSAGE_LEN = 2000
 MAX_TITLE_LEN = 60
 # How far after `DramaEpisode.created_at` a `script_draft` AgentRun still
@@ -75,6 +76,25 @@ _SOURCE_IDEA_RECOVER_WINDOW = timedelta(minutes=30)
 def _require_script_studio(session: Session, *, user_id: str | None) -> None:
     if not config_service.is_enabled(session, SCRIPT_STUDIO_FLAG, user_id=user_id):
         raise NotFound("该功能暂未开放。")
+
+
+def extract_uploaded_script(
+    session: Session,
+    *,
+    user_id: str,
+    filename: str,
+    payload: bytes,
+    mime_type: str = "",
+) -> ExtractedScriptSource:
+    """Flag-gated wrapper around `extract.extract_script_source`."""
+    _require_script_studio(session, user_id=user_id)
+    return extract_script_source(
+        session,
+        user_id=user_id,
+        filename=filename,
+        payload=payload,
+        mime_type=mime_type,
+    )
 
 
 def _owned_episode(session: Session, *, user_id: str, episode_id: str) -> DramaEpisode:

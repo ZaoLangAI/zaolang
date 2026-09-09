@@ -38,7 +38,7 @@ export async function RecentDrafts({ drafts }: { drafts: Draft[] }) {
             <li key={draft.id}>
               <RecentDraftCard
                 draft={draft}
-                fallbackTitle={t('recentDrafts')}
+                fallbackTitle={t('untitledDraft')}
                 editLabel={tActions('edit')}
                 publishLabel={tActions('publish')}
               />

@@ -49,7 +49,7 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-8 px-4 py-6 sm:px-6">
       <Suspense fallback={<DiscoverHeroSkeleton />}>
-        <DiscoverHero filters={filters} />
+        <DiscoverHero />
       </Suspense>
 
       <Suspense fallback={<InspirationSkeleton />}>
@@ -59,16 +59,13 @@ export default async function DiscoverPage({ searchParams }: { searchParams: Pro
   );
 }
 
-async function DiscoverHero({ filters }: { filters: Filters }) {
+async function DiscoverHero() {
   const t = await getTranslations('discover');
-  // Featured stays popularity-ranked so "本期精选" does not become "newest"
-  // when the wall below is sorted by time or remix count.
+  // Featured ignores the wall's q/tag/sort/access so "本期精选" stays a
+  // popularity-ranked cycle and never becomes a filtered or newest feed.
   const feed = (await serverFetchOrNull<Page<WorkSummary>>('/v1/works', {
     query: {
-      q: filters.q,
-      tag: filters.tag,
       sort: 'popular',
-      access: filters.access,
       limit: HERO_SLIDES,
     },
   })) ?? { items: [] };
@@ -104,17 +101,18 @@ async function InspirationSection({ filters }: { filters: Filters }) {
   ]);
   const works = feed ?? { items: [] };
   const tagPage = tags ?? { items: [] };
-
-  // Hero is pinned to `popular`. Only drop its leading tiles when this page
-  // is the same effective query — a keyword search ignores sort on both
-  // sides, and an unfiltered / tagged popular wall is the same browse.
-  const wallMatchesHero = Boolean(filters.q) || filters.sort === 'popular';
-  const tiles = wallMatchesHero ? works.items.slice(HERO_SLIDES) : works.items;
+  const tiles = works.items;
 
   return (
     <section>
-      <SectionHeading title={t('inspiration')} description={t('inspirationHint')} />
-      <div className="mt-4 flex flex-col gap-2">
+      <SectionHeading
+        title={t('inspiration')}
+        description={t('inspirationHint')}
+        action={
+          <DiscoverSort q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
+        }
+      />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <TagFilter
           tags={tagPage.items}
           active={filters.tag}
@@ -122,10 +120,7 @@ async function InspirationSection({ filters }: { filters: Filters }) {
           sort={filters.sort}
           access={filters.access}
         />
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <DiscoverSort q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
-          <DiscoverAccess q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
-        </div>
+        <DiscoverAccess q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
       </div>
       <div className="mt-5">
         {tiles.length > 0 ? (
@@ -138,8 +133,7 @@ async function InspirationSection({ filters }: { filters: Filters }) {
             query={filters}
             pageSize={PAGE_SIZE}
           />
-        ) : null}
-        {works.items.length === 0 ? (
+        ) : (
           <EmptyState
             title={filtered ? t('noResults') : t('emptyFeed')}
             description={filtered ? t('noResultsHint') : t('emptyFeedHint')}
@@ -151,7 +145,7 @@ async function InspirationSection({ filters }: { filters: Filters }) {
               )
             }
           />
-        ) : null}
+        )}
       </div>
     </section>
   );

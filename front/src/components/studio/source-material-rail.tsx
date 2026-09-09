@@ -30,6 +30,7 @@ export function SourceMaterialRail({
   onUploaded,
   onRemove,
   onSelectUpload,
+  hideUpload = false,
 }: {
   source?: StudioSource;
   /**
@@ -45,6 +46,12 @@ export function SourceMaterialRail({
    * preview area instead of doing nothing. Omitted where there's no preview
    * area to load it into (video/audio don't pass this). */
   onSelectUpload?: (asset: Asset) => void;
+  /** Hides the "add material" tile entirely — `AudioGenerationStudio` has
+   * its own dedicated voice-clone uploader (a different MIME whitelist and
+   * upload `purpose` than this rail's image/video `generation_reference`),
+   * so this rail is only ever shown here for an inherited remix source,
+   * never as a place to add more material. */
+  hideUpload?: boolean;
 }) {
   const t = useTranslations('remixPage');
   const tStates = useTranslations('states');
@@ -141,28 +148,30 @@ export function SourceMaterialRail({
           </li>
         ))}
 
-        <li className="w-28 shrink-0 lg:w-full">
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            disabled={busy || uploads.length >= 9}
-            className={cn(
-              'flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-border text-[11px] text-muted hover:border-border-strong hover:text-text disabled:opacity-60',
-              controlPress,
-            )}
-          >
-            {busy ? <Spinner className="size-4" /> : <IconUpload className="size-4" />}
-            {uploads.length >= 9 ? t('materialLimit') : t('addMaterial')}
-          </button>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
-            aria-label={t('addMaterial')}
-            className="sr-only"
-            onChange={(event) => void pick(event.target.files?.[0])}
-          />
-        </li>
+        {hideUpload ? null : (
+          <li className="w-28 shrink-0 lg:w-full">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={busy || uploads.length >= 9}
+              className={cn(
+                'flex aspect-[4/3] w-full flex-col items-center justify-center gap-1.5 rounded-[var(--radius-sm)] border border-dashed border-border text-[11px] text-muted hover:border-border-strong hover:text-text disabled:opacity-60',
+                controlPress,
+              )}
+            >
+              {busy ? <Spinner className="size-4" /> : <IconUpload className="size-4" />}
+              {uploads.length >= 9 ? t('materialLimit') : t('addMaterial')}
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+              aria-label={t('addMaterial')}
+              className="sr-only"
+              onChange={(event) => void pick(event.target.files?.[0])}
+            />
+          </li>
+        )}
       </ul>
 
       {reference ? (

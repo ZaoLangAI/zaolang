@@ -64,6 +64,21 @@ describe('studioSessionKey', () => {
     expect(characterOne).not.toBe(characterTwo);
   });
 
+  it('distinguishes two plaza skill deep-links that share the pathname', () => {
+    const turnaround = studioSessionKey({
+      mode: 'image_creation',
+      assetKind: 'character',
+      skillId: 'sk_turnaround',
+    });
+    const cover = studioSessionKey({
+      mode: 'image_creation',
+      assetKind: 'cover',
+      skillId: 'sk_cover',
+    });
+    expect(turnaround).not.toBe(cover);
+    expect(turnaround).toContain('sk_turnaround');
+  });
+
   it('differs between a fresh script jump-out and a draftId resume', () => {
     expect(
       studioSessionKey({
@@ -85,9 +100,21 @@ describe('sanitizeReturnTo', () => {
     expect(sanitizeReturnTo('/create/script/ep_1')).toBe('/create/script/ep_1');
   });
 
-  it('rejects anything outside the script-studio whitelist', () => {
+  it('keeps the character-library path by exact match', () => {
+    expect(sanitizeReturnTo('/create/characters')).toBe('/create/characters');
+  });
+
+  it('keeps the scene-library path by exact match', () => {
+    expect(sanitizeReturnTo('/create/scenes')).toBe('/create/scenes');
+  });
+
+  it('rejects anything outside the script-studio and library whitelist', () => {
     expect(sanitizeReturnTo('https://evil.example/create/script/ep_1')).toBeUndefined();
     expect(sanitizeReturnTo('/create/new')).toBeUndefined();
+    expect(sanitizeReturnTo('/create/characters/evil')).toBeUndefined();
+    expect(sanitizeReturnTo('/create/characters?x=1')).toBeUndefined();
+    expect(sanitizeReturnTo('/create/scenes/evil')).toBeUndefined();
+    expect(sanitizeReturnTo('/create/scenes?x=1')).toBeUndefined();
     expect(sanitizeReturnTo('//evil.example')).toBeUndefined();
     expect(sanitizeReturnTo(undefined)).toBeUndefined();
   });
@@ -105,6 +132,30 @@ describe('readDraftReturnContext', () => {
       returnTo: '/create/script/ep_1',
       returnLinkKind: 'character',
       returnLinkLabel: '角色1',
+    });
+  });
+
+  it('restores a character-library jump-back', () => {
+    expect(
+      readDraftReturnContext({
+        return_to: '/create/characters',
+      }),
+    ).toEqual({
+      returnTo: '/create/characters',
+      returnLinkKind: undefined,
+      returnLinkLabel: undefined,
+    });
+  });
+
+  it('restores a scene-library jump-back', () => {
+    expect(
+      readDraftReturnContext({
+        return_to: '/create/scenes',
+      }),
+    ).toEqual({
+      returnTo: '/create/scenes',
+      returnLinkKind: undefined,
+      returnLinkLabel: undefined,
     });
   });
 
@@ -145,6 +196,20 @@ describe('draftReturnParams', () => {
       return_to: '/create/script/ep_1',
       return_link_kind: 'character',
       return_link_label: '角色1',
+    });
+    expect(
+      draftReturnParams({
+        returnTo: '/create/characters',
+      }),
+    ).toEqual({
+      return_to: '/create/characters',
+    });
+    expect(
+      draftReturnParams({
+        returnTo: '/create/scenes',
+      }),
+    ).toEqual({
+      return_to: '/create/scenes',
     });
     expect(draftReturnParams({ returnTo: '/create/new' })).toBeUndefined();
     expect(draftReturnParams({})).toBeUndefined();

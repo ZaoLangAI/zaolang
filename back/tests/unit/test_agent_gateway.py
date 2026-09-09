@@ -13,13 +13,15 @@ from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ProviderTemporaryFailure, ValidationFailed
 from app.models import AgentRun, ProviderStat, User
-from app.models.enums import AgentName, Operation, QualityTier
+from app.models.enums import AgentName, MediaGenerationKind, Operation, ProviderKind, QualityTier
 from app.platform_config import service as config_service
 from app.platform_config.schemas import LlmProviderConfig
+from app.providers.base import ProviderCapability
 from app.workflows import describe_workflow, registry
 from app.workflows.defaults import default_graph
 from app.workflows.graph import WorkflowGraph
 from app.workflows.graph import validate as validate_graph
+from tests import fake_providers
 from tests.fake_provider_catalog import build_fake_catalog
 from tests.llm_catalog import bind_default_agents_to_catalog
 
@@ -325,6 +327,130 @@ def test_select_provider_payload_carries_each_candidates_real_model_name(
     by_provider = {c["provider"]: c for c in json.loads(captured[0])["candidates"]}
     assert by_provider["fake_open_workflow"]["model"] == "comfy-sdxl-base@1.4.0"
     assert by_provider["fake_paid_api"]["model"] == "paid-video-v3"
+
+
+def _edit_class_catalog() -> dict[str, ProviderCapability]:
+    catalog = build_fake_catalog()
+    catalog["fake_edit"] = ProviderCapability(
+        name="fake_edit",
+        kind=ProviderKind.COMMERCIAL_API,
+        operations=frozenset({Operation.TEXT_TO_VIDEO, Operation.VIDEO_TO_VIDEO}),
+        tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),
+        quality_prior=0.8,
+        typical_latency_ms=10_000,
+        unit_cost_micro_usd=100_000,
+        model_or_workflow="fake-edit-v1",
+        provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
+        generation_kind=MediaGenerationKind.EDIT,
+    )
+    return catalog
+
+
+def test_edit_class_video_model_is_filtered_without_a_video_source(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(router, "build_catalog", lambda session: _edit_class_catalog())
+    decision = router.route(
+        db, operation=Operation.TEXT_TO_VIDEO, quality_tier=QualityTier.STANDARD
+    )
+    candidate = next(item for item in decision.candidates if item.provider == "fake_edit")
+    assert candidate.eligible is False
+    assert candidate.filter_reason == "edit_model_requires_video_source"
+
+
+def test_edit_class_video_model_stays_eligible_for_video_to_video(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(router, "build_catalog", lambda session: _edit_class_catalog())
+    decision = router.route(
+        db, operation=Operation.VIDEO_TO_VIDEO, quality_tier=QualityTier.STANDARD
+    )
+    candidate = next(item for item in decision.candidates if item.provider == "fake_edit")
+    assert candidate.eligible is True
+
+
+def _music_style_catalog() -> dict[str, ProviderCapability]:
+    """One BGM-only and one SFX-only `music_generation` candidate — the two
+    fal apps (`minimax-music/v2.6`/`elevenlabs/sound-effects/v2`) that
+    share the one capability tag in real life, see `ProviderCapability.
+    music_styles`."""
+    catalog = build_fake_catalog()
+    catalog["fake_music_bgm"] = ProviderCapability(
+        name="fake_music_bgm",
+        kind=ProviderKind.COMMERCIAL_API,
+        operations=frozenset({Operation.MUSIC_GENERATION}),
+        tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),
+        quality_prior=0.8,
+        typical_latency_ms=10_000,
+        unit_cost_micro_usd=100_000,
+        model_or_workflow="fake-music-bgm-v1",
+        provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
+        music_styles=frozenset({"music"}),
+    )
+    catalog["fake_music_sfx"] = ProviderCapability(
+        name="fake_music_sfx",
+        kind=ProviderKind.COMMERCIAL_API,
+        operations=frozenset({Operation.MUSIC_GENERATION}),
+        tiers=frozenset({QualityTier.PREVIEW, QualityTier.STANDARD, QualityTier.CINEMATIC}),
+        quality_prior=0.8,
+        typical_latency_ms=10_000,
+        unit_cost_micro_usd=100_000,
+        model_or_workflow="fake-music-sfx-v1",
+        provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
+        music_styles=frozenset({"sfx"}),
+    )
+    return catalog
+
+
+def test_music_style_filters_out_the_bgm_model_for_an_sfx_request(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(router, "build_catalog", lambda session: _music_style_catalog())
+    decision = router.route(
+        db,
+        operation=Operation.MUSIC_GENERATION,
+        quality_tier=QualityTier.STANDARD,
+        request_params={"extra": {"audio_style": "sfx"}},
+    )
+    bgm = next(item for item in decision.candidates if item.provider == "fake_music_bgm")
+    sfx = next(item for item in decision.candidates if item.provider == "fake_music_sfx")
+    assert bgm.eligible is False
+    assert bgm.filter_reason == "music_style_not_supported"
+    assert sfx.eligible is True
+
+
+def test_music_style_filters_out_the_sfx_model_for_a_music_request(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(router, "build_catalog", lambda session: _music_style_catalog())
+    decision = router.route(
+        db,
+        operation=Operation.MUSIC_GENERATION,
+        quality_tier=QualityTier.STANDARD,
+        request_params={"extra": {"audio_style": "music"}},
+    )
+    bgm = next(item for item in decision.candidates if item.provider == "fake_music_bgm")
+    sfx = next(item for item in decision.candidates if item.provider == "fake_music_sfx")
+    assert bgm.eligible is True
+    assert sfx.eligible is False
+    assert sfx.filter_reason == "music_style_not_supported"
+
+
+def test_music_style_is_unfiltered_when_audio_style_is_absent(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sandbox try-it never calls `validate_generation_params` (see
+    `prepare_sandbox_generation_params`), so it can reach the router with no
+    `extra.audio_style` at all — this must not reject every music
+    candidate."""
+    monkeypatch.setattr(router, "build_catalog", lambda session: _music_style_catalog())
+    decision = router.route(
+        db, operation=Operation.MUSIC_GENERATION, quality_tier=QualityTier.STANDARD
+    )
+    bgm = next(item for item in decision.candidates if item.provider == "fake_music_bgm")
+    sfx = next(item for item in decision.candidates if item.provider == "fake_music_sfx")
+    assert bgm.eligible is True
+    assert sfx.eligible is True
 
 
 def test_classify_flags_a_short_but_action_heavy_video_prompt_as_more_complex(
@@ -755,6 +881,24 @@ def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> 
     )
     agent_skills_service.publish(
         db,
+        profile_id=copy_default.id,
+        slot=copywriter.SCRIPT_DRAFT_SLOT,
+        prompt_template="你是造浪平台的短剧编剧助手，旧的剧本创作稿。",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="old factory",
+    )
+    agent_skills_service.publish(
+        db,
+        profile_id=copy_default.id,
+        slot=copywriter.SCRIPT_REVISE_SLOT,
+        prompt_template="你是运营自己写的剧本修改提示词，不要覆盖。",
+        tool_grants=[],
+        actor_user_id=None,
+        reason="operator edit",
+    )
+    agent_skills_service.publish(
+        db,
         profile_id=character.id,
         slot=copywriter.ENHANCE_SLOT,
         prompt_template="你是造浪平台的提示词教练。旧的角色润色稿。",
@@ -782,6 +926,12 @@ def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> 
 
     seed_script.sync_seeded_copy_agent_prompts(db)
 
+    script_draft, _ = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=copy_default.id, slot=copywriter.SCRIPT_DRAFT_SLOT
+    )
+    script_revise, _ = agent_skills_service.get_active_prompt(
+        db, "copy", "FALLBACK", agent_id=copy_default.id, slot=copywriter.SCRIPT_REVISE_SLOT
+    )
     suggest, _ = agent_skills_service.get_active_prompt(
         db, "copy", "FALLBACK", agent_id=copy_default.id, slot=copywriter.SUGGEST_SLOT
     )
@@ -795,12 +945,14 @@ def test_seed_syncs_factory_copy_prompts_onto_the_seeded_agents(db: Session) -> 
         db, "copy", "FALLBACK", agent_id=cover.id, slot=copywriter.ENHANCE_SLOT
     )
     assert suggest == copywriter.SYSTEM_PROMPT
+    assert script_draft == copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT
+    assert script_revise == "你是运营自己写的剧本修改提示词，不要覆盖。"
     assert character_prompt == copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER
     assert scene_prompt == "你是运营自己写的场景润色提示词，不要覆盖。"
     assert cover_after == cover_before
     db.refresh(character)
     assert character.description == (
-        "角色立绘教练：把同一个人写到能进库、出三视图，强制全身入镜与纯色背景。"
+        "角色设定图教练：把同一个人写成一张多分区设定图（左三视图、右特写与色板），禁止改回单视角。"
     )
 
 

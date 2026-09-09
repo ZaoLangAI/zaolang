@@ -341,11 +341,37 @@ def test_live_sandbox_video_resolves_a_client_tier_to_the_models_own_spelling(
     assert provider.submitted_requests[0].resolution == "768P"
 
 
+def test_live_sandbox_video_adapts_1080p_ceiling_down_to_h3_768p(
+    db: Session, author: User
+) -> None:
+    """H3 has no 1080p. The user's ceiling must become 720p/`768P`, never 2K."""
+    provider = _ScriptedProvider(
+        [GenerationResult(succeeded=True, object_key="sandbox/out.mp4", mime_type="video/mp4")]
+    )
+    ctx = _sandbox_ctx(
+        db,
+        author,
+        operation=Operation.TEXT_TO_VIDEO,
+        params={
+            "duration_seconds": 4,
+            "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
+        },
+    )
+    ctx.state["decision"] = _decision_for(
+        provider,
+        operation=Operation.TEXT_TO_VIDEO,
+        resolutions=frozenset({"768P", "2K"}),
+    )
+    result = execute_provider_generate(ctx, ProviderGenerateConfig())
+    assert result.port == "succeeded"
+    assert provider.submitted_requests[0].resolution == "768P"
+
+
 def test_live_sandbox_video_remix_omits_resolution_end_to_end(db: Session, author: User) -> None:
     """A video remix never sends `video_options.resolution` at all (see
-    `VideoGenerationOptions`'s own docstring) — `resolve_resolution_tier`
-    must pass that straight through as `None`, letting the provider adapter
-    apply its own default rather than raising on a missing tier."""
+    `VideoGenerationOptions`'s own docstring) — adaptation must pass that
+    straight through as `None`, letting the provider adapter apply its own
+    default rather than inventing a tier."""
     provider = _ScriptedProvider(
         [GenerationResult(succeeded=True, object_key="sandbox/out.mp4", mime_type="video/mp4")]
     )

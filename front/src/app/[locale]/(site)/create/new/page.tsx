@@ -21,25 +21,36 @@ import {
 // (`ImageGenerationStudio`'s `text_to_image → image_to_image`,
 // `VideoGenerationStudio`'s `text_to_video → image_to_video/video_to_video`
 // — the same "derive from what's attached" pattern on both sides).
-const MODES = ['image_creation', 'video_creation', 'audio_generation'] as const;
+const MODES = [
+  'image_creation',
+  'video_creation',
+  'audio_generation',
+  'music_generation',
+] as const;
 type Mode = (typeof MODES)[number];
 
-const OPERATION_BY_MODE: Record<Mode, 'text_to_image' | 'text_to_video' | 'audio_generation'> = {
+const OPERATION_BY_MODE: Record<
+  Mode,
+  'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation'
+> = {
   image_creation: 'text_to_image',
   video_creation: 'text_to_video',
   audio_generation: 'audio_generation',
+  music_generation: 'music_generation',
 };
 
 const TITLE_KEYS: Record<Mode, string> = {
   image_creation: 'modeImageCreationTitle',
   video_creation: 'modeVideoCreationTitle',
   audio_generation: 'modeAudioGenerationTitle',
+  music_generation: 'modeMusicGenerationTitle',
 };
 
 const DESCRIPTION_KEYS: Record<Mode, string> = {
   image_creation: 'modeImageCreationDesc',
   video_creation: 'modeVideoCreationDesc',
   audio_generation: 'modeAudioGenerationDesc',
+  music_generation: 'modeMusicGenerationDesc',
 };
 
 // `ImageGenerationStudio`'s own asset-kind union — validated here rather
@@ -80,12 +91,34 @@ function parseReferenceIds(raw: string | undefined): string[] | undefined {
   return ids.length > 0 ? ids : undefined;
 }
 
+/** Same strictness as `parseAssetId`, for the comma-separated list the canvas
+ * sends: every entry must look like a real asset id before it is forwarded
+ * into `GET /v1/assets/{id}`. */
+function parseAssetIds(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const ids = raw
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id.length <= 40 && /^ast_[0-9A-Za-z]+$/.test(id))
+    .slice(0, 4);
+  return ids.length > 0 ? ids : undefined;
+}
+
 // `Asset.id` is `ast_` + a Crockford token (`new_id`), stored in a
 // `String(40)` column — same reject-anything-else stance as `parseJobId`,
 // so a crafted `continuityAssetId` can't be forwarded into
 // `POST /v1/assets/{id}/frame` as anything other than a well-formed id.
 function parseAssetId(raw: string | undefined): string | undefined {
   if (!raw || raw.length > 40 || !/^ast_[0-9A-Za-z]+$/.test(raw)) return undefined;
+  return raw;
+}
+
+// `CreationSkill.id` is `sk_` + a 26-char Crockford token (`new_id`),
+// stored in a `String(40)` column — same reject-anything-else stance as
+// `parseJobId`, so a crafted `skillId` cannot be forwarded into
+// `POST /v1/skills/{id}/apply`.
+function parseSkillId(raw: string | undefined): string | undefined {
+  if (!raw || raw.length > 40 || !/^sk_[0-9A-Za-z]+$/.test(raw)) return undefined;
   return raw;
 }
 
@@ -115,8 +148,10 @@ export default async function NewCreationPage({
     referenceSceneIds?: string;
     linkEpisodeId?: string;
     linkBreakpointKey?: string;
+    referenceAssetIds?: string;
     continuityAssetId?: string;
     jobId?: string;
+    skillId?: string;
   }>;
 }) {
   const {
@@ -137,8 +172,10 @@ export default async function NewCreationPage({
     referenceSceneIds,
     linkEpisodeId,
     linkBreakpointKey,
+    referenceAssetIds,
     continuityAssetId,
     jobId,
+    skillId,
   } = await searchParams;
   const t = await getTranslations('createPage');
 
@@ -203,11 +240,13 @@ export default async function NewCreationPage({
     returnLinkLabel?.trim().slice(0, 60) || draftReturn.returnLinkLabel;
   const resolvedReferenceCharacterIds = parseReferenceIds(referenceCharacterIds);
   const resolvedReferenceSceneIds = parseReferenceIds(referenceSceneIds);
+  const resolvedReferenceAssetIds = parseAssetIds(referenceAssetIds);
   // The previous script breakpoint's video, if any — see
   // `previousBoundVideoAssetId`/`buildBreakpointVideoHref`. Only meaningful
   // without an existing `draftId` (a resumed session already has its own
   // material); the studio itself re-derives that condition too.
   const resolvedContinuityAssetId = parseAssetId(continuityAssetId);
+  const resolvedSkillId = parseSkillId(skillId);
 
   return (
     <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 sm:px-6">
@@ -229,6 +268,7 @@ export default async function NewCreationPage({
           subjectNameHint: subjectNameHint?.trim().slice(0, 60),
           linkBreakpointKey,
           continuitySourceAssetId: resolvedContinuityAssetId,
+          skillId: resolvedSkillId,
         })}
         operation={operation}
         initialPrompt={prompt?.trim().slice(0, STUDIO_PROMPT_MAX_LENGTH)}
@@ -249,6 +289,8 @@ export default async function NewCreationPage({
         linkEpisodeId={linkEpisodeId}
         linkBreakpointKey={linkBreakpointKey}
         continuitySourceAssetId={resolvedContinuityAssetId}
+        initialSkillId={resolvedSkillId}
+        initialReferenceAssetIds={resolvedReferenceAssetIds}
       />
     </div>
   );

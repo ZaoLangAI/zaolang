@@ -19,7 +19,7 @@ from app.agents import copywriter
 from app.api.agent_sse import SSE_HEADERS, format_sse, iter_agent_sse
 from app.api.deps import CurrentUser, DbSession, rate_limited
 from app.api.schemas.shortform import PromptDimensionView, PromptEnhanceRequest
-from app.api.v1.prompt_enhance import context_from
+from app.api.v1.prompt_enhance import context_from, question_views
 from app.db import session_scope
 from app.domain import prompts
 from app.domain.errors import ValidationFailed
@@ -53,6 +53,8 @@ def enhance_generation_prompt(
         direction=ctx.direction,
         instruction=ctx.instruction,
         asset_kind=ctx.asset_kind,
+        script_segment=ctx.script_segment,
+        question_answers=ctx.question_answers,
         user_id=user.id,
     )
 
@@ -60,6 +62,7 @@ def enhance_generation_prompt(
         def _finish() -> prompts.PromptEnhancement:
             with session_scope() as persist:
                 outcome = finalize(persist)
+                segment = outcome.data.get("script_segment")
                 result = prompts.PromptEnhancement(
                     prompt=str(outcome.data["prompt"]),
                     detail_level=str(outcome.data["detail_level"]),
@@ -69,7 +72,9 @@ def enhance_generation_prompt(
                         for d in outcome.data.get("dimensions", [])
                     ],
                     additions=list(outcome.data.get("additions", [])),
+                    questions=prompts.questions_from(outcome.data.get("questions")),
                     degraded=outcome.degraded,
+                    script_segment=segment if isinstance(segment, dict) else None,
                 )
                 persist.commit()
                 return result
@@ -85,7 +90,7 @@ def enhance_generation_prompt(
 
 
 def _enhance_complete_payload(result: prompts.PromptEnhancement) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "prompt": result.prompt,
         "detail_level": result.detail_level,
         "feedback": result.feedback,
@@ -94,8 +99,14 @@ def _enhance_complete_payload(result: prompts.PromptEnhancement) -> dict[str, An
             for d in result.dimensions
         ],
         "additions": result.additions,
+        "questions": [
+            view.model_dump(mode="json") for view in question_views(result.questions)
+        ],
     }
+    if result.script_segment is not None:
+        payload["script_segment"] = result.script_segment
+    return payload
 
 
 # Re-export so a caller that imported `format_sse` from this module still works.
-__all__ = ["router", "format_sse"]
+__all__ = ["format_sse", "router"]

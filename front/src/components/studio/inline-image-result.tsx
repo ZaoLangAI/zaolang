@@ -8,11 +8,12 @@ import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import {
   CHARACTER_VIEW_LABEL_KEY,
-  STAGE_FOR_EVENT,
   STAGES,
   stageLabelKey,
   type Stage,
 } from '@/components/job/job-stages';
+import { jobStageState } from '@/components/job/job-stage-state';
+import { jobOutputs } from '@/components/job/job-outputs';
 import { DevicePreview } from '@/components/media/device-preview';
 import { OutputGallery } from '@/components/media/output-gallery';
 import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
@@ -34,7 +35,7 @@ import type { StreamedEvent } from '@/lib/use-job-stream';
  * sizing (see `useAvailableStage`), which otherwise grows a portrait
  * character/scene still to fill whatever viewport height is left below it —
  * fine for a standalone preview with nothing else to show, but here the
- * status line, the action row (including "补全侧面/背面"), and the version
+ * status line, the action row, and the version
  * history strip all sit directly below the stage in the same scroll
  * container. Without this cap, that whole action row lands just past the
  * fold on a fresh page load (e.g. resuming a draft from "最近草稿" → 编辑),
@@ -78,10 +79,6 @@ export function InlineImageResult({
   returnLinkLabel,
   fallbackLinkRefId,
   completionJob,
-  canCompleteCharacterViews,
-  completingCharacterViews,
-  onCompleteCharacterViews,
-  completionCredits,
 }: {
   job: GenerationJob;
   events: StreamedEvent[];
@@ -99,11 +96,12 @@ export function InlineImageResult({
    * same shape as `onRetried`. */
   onPromoted: (job: GenerationJob) => void;
   /**
-   * Set only when this session started from the script studio's "生成角色图
-   * /场景图" jump-out (`ImageGenerationStudio`'s own `returnTo` prop,
-   * carried from `/create/new`'s query string). When set, a terminal job —
-   * succeeded, failed, or cancelled — gets a "返回文案创作" button so the
-   * user is never stuck here even on failure (see the plan's "补充建议" #4).
+   * Set when this session started from a jump-out (`ImageGenerationStudio`'s
+   * `returnTo`, from `/create/new`'s query). A terminal job — succeeded,
+   * failed, or cancelled — gets a return button so the user is never stuck
+   * here even on failure. Copy is `returnToCharacters` /
+   * `returnToScenes` for the matching library path, otherwise
+   * `returnToScript`.
    */
   returnTo?: string;
   returnLinkKind?: 'character' | 'scene';
@@ -114,34 +112,13 @@ export function InlineImageResult({
    * it back instead of forcing a bare, unlinked return. */
   fallbackLinkRefId?: string;
   /**
-   * The "补全侧面/背面" completion job supplementing `job`, if any —
-   * resolved by `ImageGenerationStudio` from the draft's full job list
-   * (`findCompletionJobFor`), not a version of its own (see
-   * `GenerationVersionHistory`). Once it has succeeded, its outputs are
-   * merged into `job`'s own gallery below — front, then side, then back,
-   * all one `OutputGallery` carousel — so a completed version still shows
-   * as a single card in the version history while its preview lets the
-   * user flip through all three angles.
+   * A historical "补全侧面/背面" completion job supplementing `job`, if
+   * any — resolved by `ImageGenerationStudio` from the draft's full job
+   * list (`findCompletionJobFor`). The studio no longer offers a new
+   * completion; this only merges already-produced side/back outputs into
+   * the gallery so an older draft still shows every angle.
    */
   completionJob?: GenerationJob | null;
-  /**
-   * True when `job` is a succeeded, single-view `asset_kind: 'character'`
-   * job (the front view) whose target character is still missing a side or
-   * back reference — computed by `ImageGenerationStudio` (it alone knows
-   * the character's current reference-asset state), not derived from `job`
-   * alone. Shows the "补全侧面/背面" button below instead of forcing the
-   * user out to the character library page for it.
-   */
-  canCompleteCharacterViews?: boolean;
-  /** Whether `completionJob` is still in flight (submitting or not yet
-   * terminal) — independent of `job`'s own state. */
-  completingCharacterViews?: boolean;
-  onCompleteCharacterViews?: () => void;
-  /** Priced by `ImageGenerationStudio`'s own quote for exactly the views this
-   * click would request — shown so the button's cost isn't a surprise the
-   * user only discovers after the balance drops (see `zaolang-credits-billing`
-   * invariant on completion pricing). */
-  completionCredits?: number | null;
 }) {
   const t = useTranslations('jobPage');
   const tJob = useTranslations('job');
@@ -154,24 +131,10 @@ export function InlineImageResult({
   const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
 
-  const reached = new Set<Stage>();
-  for (const event of events) {
-    const stage = STAGE_FOR_EVENT[event.event_type];
-    if (stage) reached.add(stage);
-  }
-  if (job.status === 'succeeded') for (const stage of STAGES) reached.add(stage);
-
-  const activeIndex = STAGES.findIndex((stage) => !reached.has(stage));
-  const finished = ['succeeded', 'failed', 'cancelled', 'expired'].includes(job.status);
+  const { reached, displayStage, finished, awaitingInput, reachedKey } =
+    jobStageState(job.status, events);
   const latestEvent = events[events.length - 1];
-  const awaitingInput = job.status === 'awaiting_input';
   const showAwaitingPanel = awaitingInput && !job.cancel_requested;
-  const displayStage: Stage = awaitingInput
-    ? 'planning'
-    : finished && job.status !== 'succeeded'
-      ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
-      : (STAGES[activeIndex] ?? 'done');
-  const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
 
   // Ports `job-progress.tsx`'s stage-dot pop animation so image creation's
   // inline progress view isn't limited to a bare percentage + label.
@@ -221,22 +184,16 @@ export function InlineImageResult({
 
   // `job`'s own output(s) — front view only, or every view for a native
   // multi-view character job that never needed a separate completion job.
-  const jobUrls = job.output_urls?.length ? job.output_urls : job.output_url ? [job.output_url] : [];
-  const jobAssetIds = job.output_asset_ids?.length
-    ? job.output_asset_ids
-    : job.output_asset_id
-      ? [job.output_asset_id]
-      : [];
+  const { urls: jobUrls, assetIds: jobAssetIds } = jobOutputs(job);
   const jobViews = job.character_views ?? null;
   const jobLabels: (string | null)[] =
     jobViews && jobViews.length === jobUrls.length
       ? jobViews.map((view) => tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewFront'))
       : jobUrls.map(() => null);
 
-  // The completion job's side/back outputs, appended after `job`'s own —
-  // only once it has actually succeeded; still in flight, it has nothing
-  // to show yet and the button below carries the "补全侧面/背面" progress
-  // state instead.
+  // Historical side/back outputs, appended after `job`'s own — only once
+  // that completion job has succeeded. The studio no longer starts a new
+  // completion from this result.
   const completionSucceeded = completionJob?.status === 'succeeded';
   const completionUrls = completionSucceeded ? completionJob?.output_urls ?? [] : [];
   const completionAssetIds = completionSucceeded ? completionJob?.output_asset_ids ?? [] : [];
@@ -275,7 +232,6 @@ export function InlineImageResult({
   const canUseAsReference = job.status === 'succeeded' && Boolean(job.output_asset_id);
   const canSaveCoverSkill =
     job.status === 'succeeded' && job.asset_kind === 'cover' && Boolean(job.output_asset_id);
-  const showCompleteCharacterViews = Boolean(canCompleteCharacterViews && onCompleteCharacterViews);
   const canPromote = job.status === 'succeeded' && job.quality_tier === 'preview';
 
   const retry = async () => {
@@ -436,7 +392,13 @@ export function InlineImageResult({
       <div className="flex flex-wrap items-center gap-2">
         {finished && returnHref ? (
           <Button variant="primary" size="sm" onClick={() => router.push(returnHref)}>
-            {tStudio('returnToScript')}
+            {tStudio(
+              returnTo === '/create/characters'
+                ? 'returnToCharacters'
+                : returnTo === '/create/scenes'
+                  ? 'returnToScenes'
+                  : 'returnToScript',
+            )}
           </Button>
         ) : null}
         {canUseAsReference ? (
@@ -447,20 +409,6 @@ export function InlineImageResult({
             onClick={() => onUseAsReference(job)}
           >
             {tStudio('useAsReference')}
-          </Button>
-        ) : null}
-        {showCompleteCharacterViews ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={completingCharacterViews}
-            onClick={onCompleteCharacterViews}
-          >
-            {completingCharacterViews
-              ? tCharacters('completingViews')
-              : completionCredits != null
-                ? tCharacters('completeViewsCredits', { count: completionCredits })
-                : tCharacters('completeViews')}
           </Button>
         ) : null}
         {job.status === 'succeeded' && draftId ? (

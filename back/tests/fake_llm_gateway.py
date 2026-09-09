@@ -25,9 +25,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.domain.script_writing.extract import SCRIPT_EXTRACT_MARKER
 from app.llm.client import NO_ENDPOINT_ID, LlmCallResult, StreamChunk, StreamResult
 from app.llm.normalize import NormalizedResponse
 from app.models.enums import AgentName
+
+# Deterministic OCR stand-in for `script_source_extract` vision calls.
+FAKE_EXTRACTED_SCRIPT = "第一场 便利店 夜\n林夏：（自语）今天，会是最后一天吗。"
 
 # Terms that must produce a hard rejection regardless of gateway availability.
 BLOCKED_TERMS = (
@@ -58,7 +62,7 @@ def fake_complete(
     session: Session,
     agent_name: str,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     max_tokens: int = 1024,
     temperature: float = 0.2,
     expect_json: bool = True,
@@ -79,7 +83,19 @@ def fake_complete(
     `tests/integration/test_prompts_api.py`).
     """
     del session, max_tokens, temperature, reasoning_model, preferred_endpoint_ids, on_chunk
-    prompt = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
+    if _is_script_extract(messages):
+        response = NormalizedResponse(
+            text=FAKE_EXTRACTED_SCRIPT,
+            data=None,
+            finish_reason="stop",
+            prompt_tokens=len(FAKE_EXTRACTED_SCRIPT) // 4,
+            completion_tokens=len(FAKE_EXTRACTED_SCRIPT) // 4,
+            model=model or "fake-llm",
+        )
+        return LlmCallResult(response=response, latency_ms=0, endpoint_id=NO_ENDPOINT_ID)
+    prompt = "\n".join(
+        _message_text(m.get("content")) for m in messages if m.get("role") != "system"
+    )
     payload = _dispatch(agent_name, prompt)
     text = json.dumps(payload, ensure_ascii=False)
     response = NormalizedResponse(
@@ -98,7 +114,7 @@ def fake_stream_complete(
     session: Session,
     agent_name: str,
     model: str,
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     result: StreamResult,
     max_tokens: int = 2048,
     temperature: float = 0.4,
@@ -134,12 +150,35 @@ def fake_stream_complete(
     result.thinking = thinking
     result.endpoint_id = NO_ENDPOINT_ID
     result.model = model or "fake-llm"
-    result.prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
+    result.prompt_tokens = sum(len(_message_text(m.get("content"))) for m in messages) // 4
     result.completion_tokens = len(text) // 4
     result.latency_ms = 0
 
 
-def _dispatch_stream(agent_name: str, messages: list[dict[str, str]]) -> str:
+def _message_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+                parts.append(part["text"])
+        return "\n".join(parts)
+    return ""
+
+
+def _is_script_extract(messages: list[dict[str, Any]]) -> bool:
+    for message in messages:
+        if message.get("role") == "system" and SCRIPT_EXTRACT_MARKER in _message_text(
+            message.get("content")
+        ):
+            return True
+    return False
+
+
+def _dispatch_stream(agent_name: str, messages: list[dict[str, Any]]) -> str:
     """Deterministic mixed prose+JSON text for a streaming turn.
 
     Only the `copy` role's `script_draft`/`script_revise` slots stream today
@@ -147,7 +186,9 @@ def _dispatch_stream(agent_name: str, messages: list[dict[str, str]]) -> str:
     back to the plain JSON-mode payload serialised as text, so a misrouted
     call still gets something deterministic instead of silence.
     """
-    prompt = "\n".join(m.get("content", "") for m in messages if m.get("role") != "system")
+    prompt = "\n".join(
+        _message_text(m.get("content")) for m in messages if m.get("role") != "system"
+    )
     if agent_name == AgentName.COPY:
         try:
             payload = json.loads(prompt)
@@ -173,8 +214,8 @@ def _copy_stream_script_draft(payload: dict[str, Any]) -> str:
         "characters": [
             {
                 "name": "林夏",
-                "traits": "年轻女性，二十出头，肤色偏白，齐肩黑发，穿便利店店员制服；"
-                "外冷内热，藏着不能说的秘密",
+                "traits": "真人写实影视短剧造型，年轻女性，二十出头，肤色偏白，齐肩黑发，"
+                "穿便利店店员制服；外冷内热，藏着不能说的秘密",
             }
         ],
         "scenes": [
@@ -260,6 +301,8 @@ def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
         return _intent_router(prompt)
     if agent_name == AgentName.EDITOR_PLANNER:
         return _editor_planner(prompt)
+    if agent_name == AgentName.CANVAS_PLANNER:
+        return _canvas_planner(prompt)
     # An operator-created role (run by the `custom_agent` node): the fake has
     # no idea what it was told to judge, so it returns the neutral shape
     # `app.agents.custom` declares rather than a fabricated verdict.
@@ -369,7 +412,7 @@ _CHARACTER_VIEW_NEGATIVES: dict[str, list[str]] = {
     "back": ["多人入镜", "露出正面五官"],
 }
 _ASSET_KIND_NEGATIVES: dict[str, list[str]] = {
-    "scene": ["人物遮挡主体", "画面过曝"],
+    "scene": ["人物遮挡主体", "画面过曝", "分割构图", "分屏", "门大开的全屋透视"],
     "cover": ["文字遮挡关键主体", "画面杂乱"],
 }
 
@@ -566,7 +609,7 @@ def _copy_enhance(payload: dict[str, Any]) -> dict[str, Any]:
         feedback = "已按你这一轮的要求调整。"
 
     enhanced = "，".join([stripped, *additions]) if stripped and additions else stripped
-    return {
+    result: dict[str, Any] = {
         "detail_level": detail_level,
         "feedback": feedback,
         "prompt": enhanced,
@@ -575,7 +618,86 @@ def _copy_enhance(payload: dict[str, Any]) -> dict[str, Any]:
             for key, status in zip(keys, statuses, strict=True)
         ],
         "additions": additions,
+        "questions": _enhance_scene_questions(payload),
     }
+    segment = payload.get("script_segment")
+    if isinstance(segment, dict) and isinstance(segment.get("blocks"), list):
+        # In-place wording tweak only — never add/drop/retype blocks.
+        result["script_segment"] = {
+            "heading": segment.get("heading") or "",
+            "blocks": [
+                {
+                    "type": block.get("type"),
+                    "character": block.get("character"),
+                    "text": (
+                        f"{str(block.get('text') or '').strip()}，光影更清晰"
+                        if str(block.get("text") or "").strip()
+                        else str(block.get("text") or "")
+                    ),
+                }
+                if isinstance(block, dict)
+                else block
+                for block in segment["blocks"]
+            ],
+        }
+    return result
+
+
+def _enhance_scene_questions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Mirrors `ENHANCE_SYSTEM_PROMPT_SCENE`'s follow-up rules.
+
+    Only scene plates get a `scene_skill` in the payload, and the coach is
+    told to stop asking once the author has answered — so the fake asks on
+    the first round and goes quiet on the next, which is exactly the
+    behaviour the studio's submit gate is built around.
+    """
+    skill = payload.get("scene_skill")
+    if not isinstance(skill, dict):
+        return []
+    if payload.get("question_answers"):
+        return []
+    options = payload.get("space_type_options")
+    questions: list[dict[str, Any]] = []
+    if isinstance(options, list) and options:
+        questions.append(
+            {
+                "id": "space_type",
+                "kind": "single_choice",
+                "prompt": "这张图拍的是哪种空间？",
+                "options": options[:6],
+                "required": True,
+            }
+        )
+    anchor = str(skill.get("anchor") or "")
+    if anchor == "worldbuilding":
+        questions.append(
+            {
+                "id": "anchor",
+                "kind": "single_choice",
+                "prompt": "这个世界的技术等级与重力/大气状态是？",
+                "options": [
+                    {"value": "hard_scifi_微重力", "label": "硬科幻 · 微重力"},
+                    {"value": "hard_scifi_人工重力", "label": "硬科幻 · 离心人工重力"},
+                    {"value": "space_opera", "label": "太空歌剧 · 常规重力"},
+                ],
+                "required": True,
+            }
+        )
+    else:
+        questions.append(
+            {
+                "id": "anchor",
+                "kind": "single_choice",
+                "prompt": "这个空间的年代与地域是？",
+                "options": [
+                    {"value": "1990s_china_south", "label": "1990 年代 · 中国南方"},
+                    {"value": "2000s_china_north", "label": "2000 年代 · 中国北方"},
+                    {"value": "present_day", "label": "当代"},
+                ],
+                "required": True,
+            }
+        )
+    return questions
 
 
 _ENHANCE_HINTS = {
@@ -618,6 +740,44 @@ def _copy_clarify(text: str) -> dict[str, Any]:
             },
         ],
     }
+
+
+def _canvas_planner(prompt: str) -> dict[str, Any]:
+    """One task, derived from the context the way the real planner is told to.
+
+    Deliberately not an empty plan (unlike `_editor_planner`): the canvas
+    Agent's whole path — pricing, confirmation, submission, landing — only
+    exists once there is something to submit, so a fake that always planned
+    nothing would leave all of it untested.
+    """
+    try:
+        payload = json.loads(prompt)
+    except json.JSONDecodeError:
+        payload = {}
+    goal = str(payload.get("goal") or "")
+    context = payload.get("context") or {}
+    nodes = context.get("nodes") or []
+
+    # Reference the first asset the context actually offers, and only that one:
+    # the real planner is instructed never to invent an id, so the fake must
+    # not either — a test asserting hallucinated ids are refused would
+    # otherwise pass for the wrong reason.
+    reference = next(
+        (
+            node["asset_id"]
+            for node in nodes
+            if isinstance(node, dict) and isinstance(node.get("asset_id"), str)
+        ),
+        None,
+    )
+    task: dict[str, Any] = {
+        "operation": "image_to_image" if reference else "text_to_image",
+        "prompt": f"fake canvas plan: {goal}"[:400] or "fake canvas plan",
+        "aspect_ratio": "16:9",
+    }
+    if reference:
+        task["reference_asset_ids"] = [reference]
+    return {"summary": f"fake: 规划了 1 个任务（{goal[:40]}）", "tasks": [task]}
 
 
 def _editor_planner(prompt: str) -> dict[str, Any]:

@@ -65,16 +65,14 @@ export function ScriptBlockRow({
    * nowhere to persist. Omitted, the block renders as plain read-only
    * text, same as before this prop existed. */
   onSave?: (text: string) => void;
-  /** Only set on a `breakpoint` block, and only when the segment it closes
-   * resolves to at least one linked character/scene (see
-   * `script-document-view.tsx`'s `resolveBreakpointRefs`) or already has a
-   * generated clip — undefined renders the badge as plain (non-clickable)
-   * text rather than a disabled link. */
+  /** Only set on a `breakpoint` block. When omitted the badge is plain
+   * text (historical snapshot / missing episode id), not a disabled link. */
   breakpointVideoHref?: string;
   /** The clip for this breakpoint already exists — badge reads "查看/调整
-   * 视频"; `breakpointVideoHref` always points into the video studio
-   * (`?draftId=`, resuming that draft's version history) rather than a
-   * plain generate link either way — see `resolveBreakpointHref`. */
+   * 视频"; unbound reads "生成视频". `breakpointVideoHref` always points
+   * into the script clip studio (`/create/script/{episodeId}/clip?key=`,
+   * plus `draftId` when bound) rather than a plain generate link either
+   * way — see `resolveBreakpointHref`. */
   viewGenerated?: boolean;
 }) {
   const t = useTranslations('scriptStudio');
@@ -83,16 +81,15 @@ export function ScriptBlockRow({
   // divider with the reasoning as a caption, never as another colored
   // paragraph the reader might mistake for something to shoot. The badge
   // itself doubles as the action: "查看/调整视频" when a clip already
-  // exists, otherwise "建议切分" into the video studio when the segment
-  // resolves to at least one linked character/scene. Never a separate chip
-  // alongside.
+  // exists, otherwise "生成视频" into the clip studio. Scene-card pickers
+  // belong at the start of the next segment, not on this divider.
   if (block.type === 'breakpoint') {
     const badgeClassName =
       'flex shrink-0 items-center gap-1.5 rounded-full border border-script-breakpoint/30 bg-script-breakpoint/10 px-2.5 py-1 text-[11px] font-medium';
     const badgeContent = (
       <>
         <IconVideo className="size-3" />
-        {viewGenerated ? t('viewGeneratedVideo') : t('blockType.breakpoint')}
+        {viewGenerated ? t('viewGeneratedVideo') : t('generateVideo')}
       </>
     );
     return (

@@ -1,49 +1,28 @@
 'use client';
 
+import Image from 'next/image';
 import { useTranslations } from 'next-intl';
+import { Fragment, useEffect } from 'react';
 
-import type { ScriptBlockType, ScriptCharacter, ScriptDocument, ScriptScene } from './api';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import type { Character, Scene } from '@/lib/api/types';
+import { characterSheetAsset } from '@/lib/characters';
+import { useResource } from '@/lib/use-resource';
+
+import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import { EditableInlineText } from './editable-text';
 import { ScriptBlockRow, ScriptLegend } from './script-block';
 import {
   breakpointKey,
   breakpointOrdinalInScene,
-  breakpointSegmentBlocks,
-  previousBoundVideoAssetId,
   resolveBreakpointHref,
   trailingBreakpoint,
   type BreakpointVideoBinding,
 } from './script-breakpoint';
 import { ScriptLinkPicker } from './script-link-picker';
-
-/** Seed prompt for a character's auto-created/updated image: the traits the
- * writer already gave it, falling back to the bare name for a character
- * with none yet rather than submitting an empty prompt. `traits` itself is
- * appearance-first now (gender/age/skin tone/hair/build/attire, personality
- * only after — see `copywriter._CHARACTER_APPEARANCE_RULE`), so this seed
- * already reads as a character-portrait prompt rather than a personality
- * blurb without any change needed here. */
-function characterImagePrompt(character: ScriptCharacter): string {
-  return character.traits.trim() || character.name;
-}
-
-/** Seed prompt for a scene's auto-created/updated image: the heading alone
- * ("内景·咖啡馆-日") is not evocative enough on its own, so it's paired with
- * every non-empty `scene`-type block in the scene, in order — not just the
- * first one, since a scene can carry more than one pure environment
- * description (e.g. a later lighting/weather beat) and dropping the rest
- * left the seed prompt incomplete. `scene` is the block type reserved for
- * pure static environment description (see `copywriter._BLOCK_TYPE_RULES`).
- * Deliberately never an `action` block: those describe character movement,
- * which conflicts with the scene-asset pipeline's no-people requirement
- * (`planner._ASSET_KIND_BRIEF[SCENE]`) — falling back to the bare heading
- * here is still safer than seeding a prompt with a character in it. */
-function sceneImagePrompt(scene: ScriptScene): string {
-  const envTexts = scene.blocks
-    .filter((block) => block.type === 'scene' && block.text.trim())
-    .map((block) => block.text.trim());
-  return envTexts.length ? `${scene.heading}，${envTexts.join('，')}` : scene.heading;
-}
+import { characterImagePrompt, resolveBreakpointRefs, sceneImagePrompt } from './script-prompts';
+import type { BatchItemKind, BatchItemState } from './use-script-batch';
 
 /**
  * The deep link `ScriptLinkPicker`'s "生成角色图/场景图" footer entry jumps
@@ -83,79 +62,6 @@ function buildCreateHref({
   return `/create/new?${params.toString()}`;
 }
 
-/**
- * Resolves which already-linked characters/scenes a breakpoint's segment
- * actually involves, so the "生成视频片段" chip only appears — and only
- * carries refs — when there's something to hand to the video studio as a
- * reference input.
- */
-function resolveBreakpointRefs(
-  document: ScriptDocument,
-  scene: ScriptScene,
-  breakpointBlockIndex: number,
-): { characterIds: string[]; sceneId: string | null } {
-  const names = new Set(
-    breakpointSegmentBlocks(scene, breakpointBlockIndex)
-      .filter((block) => block.type === 'dialogue' && block.character)
-      .map((block) => block.character as string),
-  );
-  const characterIds = document.characters
-    .filter((character) => names.has(character.name) && character.character_ref_id)
-    .map((character) => character.character_ref_id as string);
-  return { characterIds, sceneId: scene.ref_id };
-}
-
-/** One labelled section of `breakpointSegmentPrompt`'s output, in render
- * order. `scene`'s `label` is unused — that section is always headed by the
- * scene's own heading instead (see the `type === 'scene'` branch below). */
-const _SEGMENT_PROMPT_SECTIONS: { type: ScriptBlockType; label: string }[] = [
-  { type: 'scene', label: '' },
-  { type: 'action', label: '动作：' },
-  { type: 'camera', label: '镜头：' },
-  { type: 'dialogue', label: '台词：' },
-];
-
-/**
- * Seeds the video studio's prompt field with the segment's own copy —
- * without this, "生成视频片段" opens an empty prompt and the writer has to
- * retype what the script already says.
- *
- * Grouped by block type into labelled sections (场景/动作/镜头/台词) instead
- * of flattening every block into one "；"-joined sentence: a video generator
- * benefits from camera direction, action and dialogue being distinguishable
- * from each other rather than run together, and grouping (instead of
- * dropping) every matching block per type is what keeps the seed a complete
- * prompt when a segment has more than one block of the same type. Each
- * section joins its own blocks with "；"; a dialogue line is still prefixed
- * with the speaker's name (matching how it already reads in the document).
- * Sections with no matching block are omitted entirely. Order is fixed —
- * 场景 (scene heading + any `scene` blocks) sets the subject before 动作,
- * 镜头 gives the camera instruction, 台词 comes last, matching how a video
- * prompt is usually read. Capped by `create/new/page.tsx`'s own
- * `STUDIO_PROMPT_MAX_LENGTH` slice, so no length handling is needed here.
- */
-function breakpointSegmentPrompt(scene: ScriptScene, breakpointBlockIndex: number): string {
-  const blocks = breakpointSegmentBlocks(scene, breakpointBlockIndex).filter((block) =>
-    block.text.trim(),
-  );
-  const sections = _SEGMENT_PROMPT_SECTIONS.map(({ type, label }) => {
-    const texts = blocks
-      .filter((block) => block.type === type)
-      .map((block) =>
-        type === 'dialogue' && block.character
-          ? `${block.character}：${block.text.trim()}`
-          : block.text.trim(),
-      );
-    // 场景 always renders (the heading alone is still a usable seed), every
-    // other section is dropped entirely when this segment has no such block.
-    if (type === 'scene') {
-      return texts.length ? `${scene.heading}，${texts.join('；')}` : scene.heading;
-    }
-    return texts.length ? `${label}${texts.join('；')}` : null;
-  }).filter((section): section is string => section !== null);
-  return sections.join('\n');
-}
-
 function sceneCloserChip({
   document,
   scene,
@@ -173,9 +79,7 @@ function sceneCloserChip({
     episodeId,
     key: closer.key,
     ...resolveBreakpointRefs(document, scene, closer.blockIndex),
-    prompt: breakpointSegmentPrompt(scene, closer.blockIndex),
     binding: videoBindings?.[closer.key],
-    continuityAssetId: previousBoundVideoAssetId(document, closer.key, videoBindings ?? {}),
   });
 }
 
@@ -197,12 +101,47 @@ function sceneCloserChip({
  * just the one field changed and hands it up whole, since the backend
  * re-validates/bounds the whole document on every save (see `ScriptEditor`).
  */
+function thumbUrl(kind: 'character' | 'scene', refId: string | null, characters: Character[], scenes: Scene[]): string | null {
+  if (!refId) return null;
+  if (kind === 'character') {
+    const character = characters.find((item) => item.id === refId);
+    return character ? (characterSheetAsset(character)?.url ?? null) : null;
+  }
+  const scene = scenes.find((item) => item.id === refId);
+  return scene?.reference_assets?.[0]?.url ?? null;
+}
+
+function AssetThumb({
+  url,
+  item,
+}: {
+  url: string | null;
+  item: BatchItemState | null;
+}) {
+  const generating = item?.status === 'queued' || item?.status === 'submitting' || item?.status === 'running';
+  return (
+    <div className="relative size-14 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface">
+      {url ? (
+        <Image src={url} alt="" fill sizes="56px" className="object-cover" />
+      ) : null}
+      {generating ? (
+        <div className="absolute inset-0 grid place-items-center bg-surface/70">
+          <Spinner />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ScriptDocumentView({
   document,
   episodeId,
   onLink,
   onSaveContent,
   videoBindings,
+  itemByKey,
+  onRetryImage,
+  libraryRevision = 0,
 }: {
   document: ScriptDocument;
   episodeId?: string;
@@ -214,8 +153,23 @@ export function ScriptDocumentView({
   onSaveContent?: (next: ScriptDocument) => void;
   /** Drafts already linked to this episode, keyed by `breakpointKey`. */
   videoBindings?: Record<string, BreakpointVideoBinding>;
+  itemByKey?: (kind: BatchItemKind, id: string) => BatchItemState | null;
+  onRetryImage?: (kind: 'character' | 'scene', source: ScriptCharacter | ScriptScene) => void;
+  libraryRevision?: number;
 }) {
   const t = useTranslations('scriptStudio');
+  const characters = useResource<Character[]>('/v1/characters');
+  const scenes = useResource<Scene[]>('/v1/scenes');
+
+  useEffect(() => {
+    if (!libraryRevision) return;
+    characters.refetch();
+    scenes.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libraryRevision]);
+
+  const characterItems = characters.data ?? [];
+  const sceneItems = scenes.data ?? [];
 
   const saveLogline = (next: string) => onSaveContent?.({ ...document, logline: next });
 
@@ -238,6 +192,27 @@ export function ScriptDocumentView({
     });
     onSaveContent({ ...document, scenes: nextScenes });
   };
+
+  const scenePickerFor = (scene: ScriptScene) =>
+    onLink ? (
+      <ScriptLinkPicker
+        kind="scene"
+        refId={scene.ref_id}
+        refreshKey={libraryRevision}
+        onChange={(refId) => onLink({ kind: 'scene', heading: scene.heading, refId })}
+        createHref={
+          episodeId
+            ? buildCreateHref({
+                episodeId,
+                assetKind: 'scene',
+                prompt: sceneImagePrompt(scene),
+                subjectNameHint: scene.heading,
+                targetId: scene.ref_id,
+              })
+            : undefined
+        }
+      />
+    ) : undefined;
 
   if (document.scenes.length === 0) {
     return (
@@ -269,11 +244,18 @@ export function ScriptDocumentView({
             {t('characters')}
           </h3>
           <div className="flex flex-wrap gap-2">
-            {document.characters.map((character, characterIndex) => (
+            {document.characters.map((character, characterIndex) => {
+              const batchItem = itemByKey?.('character', character.name) ?? null;
+              return (
               <div
                 key={character.name}
-                className="flex flex-col gap-1.5 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2"
+                className="flex gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2"
               >
+                <AssetThumb
+                  url={thumbUrl('character', character.character_ref_id, characterItems, sceneItems)}
+                  item={batchItem}
+                />
+                <div className="flex min-w-0 flex-col gap-1.5">
                 <p className="text-sm font-medium">{character.name}</p>
                 {character.traits || onSaveContent ? (
                   <EditableInlineText
@@ -285,10 +267,19 @@ export function ScriptDocumentView({
                     title={onSaveContent ? t('editHint') : undefined}
                   />
                 ) : null}
+                {batchItem?.status === 'running' || batchItem?.status === 'submitting' || batchItem?.status === 'queued' ? (
+                  <p className="text-[11px] text-muted">{t('batchItemGenerating')}</p>
+                ) : null}
+                {batchItem?.status === 'failed' && onRetryImage ? (
+                  <Button size="sm" variant="ghost" onClick={() => onRetryImage('character', character)}>
+                    {t('batchRetry')}
+                  </Button>
+                ) : null}
                 {onLink ? (
                   <ScriptLinkPicker
                     kind="character"
                     refId={character.character_ref_id}
+                    refreshKey={libraryRevision}
                     onChange={(refId) => onLink({ kind: 'character', name: character.name, refId })}
                     createHref={
                       episodeId
@@ -303,8 +294,10 @@ export function ScriptDocumentView({
                     }
                   />
                 ) : null}
+                </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -315,25 +308,17 @@ export function ScriptDocumentView({
           return (
             <div key={sceneIndex} className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
+                <AssetThumb
+                  url={thumbUrl('scene', scene.ref_id, characterItems, sceneItems)}
+                  item={itemByKey?.('scene', scene.heading) ?? null}
+                />
                 <h3 className="text-sm font-semibold">{scene.heading}</h3>
-                {onLink ? (
-                  <ScriptLinkPicker
-                    kind="scene"
-                    refId={scene.ref_id}
-                    onChange={(refId) => onLink({ kind: 'scene', heading: scene.heading, refId })}
-                    createHref={
-                      episodeId
-                        ? buildCreateHref({
-                            episodeId,
-                            assetKind: 'scene',
-                            prompt: sceneImagePrompt(scene),
-                            subjectNameHint: scene.heading,
-                            targetId: scene.ref_id,
-                          })
-                        : undefined
-                    }
-                  />
+                {itemByKey?.('scene', scene.heading)?.status === 'failed' && onRetryImage ? (
+                  <Button size="sm" variant="ghost" onClick={() => onRetryImage('scene', scene)}>
+                    {t('batchRetry')}
+                  </Button>
                 ) : null}
+                {scenePickerFor(scene)}
               </div>
               <div className="flex flex-col gap-1.5">
                 {scene.blocks.map((block, blockIndex) => {
@@ -347,27 +332,36 @@ export function ScriptDocumentView({
                           episodeId,
                           key,
                           ...resolveBreakpointRefs(document, scene, blockIndex),
-                          prompt: breakpointSegmentPrompt(scene, blockIndex),
                           binding: videoBindings?.[key],
-                          continuityAssetId: previousBoundVideoAssetId(
-                            document,
-                            key,
-                            videoBindings ?? {},
-                          ),
                         })
                       : undefined;
+                  const previous = scene.blocks[blockIndex - 1];
+                  const showSegmentScenePicker =
+                    Boolean(onLink) &&
+                    block.type !== 'breakpoint' &&
+                    previous?.type === 'breakpoint';
                   return (
-                    <ScriptBlockRow
-                      key={blockIndex}
-                      block={block}
-                      onSave={
-                        onSaveContent
-                          ? (next) => saveBlockText(sceneIndex, blockIndex, next)
-                          : undefined
-                      }
-                      breakpointVideoHref={chip?.href}
-                      viewGenerated={chip?.viewGenerated}
-                    />
+                    <Fragment key={blockIndex}>
+                      {showSegmentScenePicker ? (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <AssetThumb
+                            url={thumbUrl('scene', scene.ref_id, characterItems, sceneItems)}
+                            item={itemByKey?.('scene', scene.heading) ?? null}
+                          />
+                          {scenePickerFor(scene)}
+                        </div>
+                      ) : null}
+                      <ScriptBlockRow
+                        block={block}
+                        onSave={
+                          onSaveContent
+                            ? (next) => saveBlockText(sceneIndex, blockIndex, next)
+                            : undefined
+                        }
+                        breakpointVideoHref={chip?.href}
+                        viewGenerated={chip?.viewGenerated}
+                      />
+                    </Fragment>
                   );
                 })}
                 {closerChip ? (

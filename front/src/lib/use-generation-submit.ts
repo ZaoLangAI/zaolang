@@ -8,6 +8,7 @@ import { useRouter } from '@/i18n/navigation';
 import { api, newIdempotencyKey } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { Draft, GenerationJob, Operation, QualityTier, Quote } from '@/lib/api/types';
+import { titleFromPrompt } from '@/lib/draft-title';
 
 /** The inputs the price depends on.
  *
@@ -282,7 +283,7 @@ export function useGenerationSubmit(
           if (pendingDraft.current === null) {
             const draft = await api.post<Draft>('/v1/drafts', {
               source_work_id: input.sourceWorkId ?? null,
-              title: input.draftTitle ?? null,
+              title: input.draftTitle?.trim() || titleFromPrompt(input.prompt),
               params: {
                 prompt: input.prompt,
                 aspect_ratio: input.aspectRatio,
@@ -295,6 +296,7 @@ export function useGenerationSubmit(
                   ? { shortform_profile: input.shortformProfile }
                   : undefined),
                 ...input.draftParams,
+                asset_kind: input.assetKind ?? 'general',
                 ...(input.linkEpisodeId ? { link_episode_id: input.linkEpisodeId } : undefined),
                 ...(input.linkBreakpointKey
                   ? { link_breakpoint_key: input.linkBreakpointKey }

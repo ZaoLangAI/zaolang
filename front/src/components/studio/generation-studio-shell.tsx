@@ -49,6 +49,7 @@ export function GenerationStudioShell({
   promptSlot,
   canSubmit,
   submitting,
+  submitLabel,
   onSubmit,
   price,
   estimate,
@@ -104,6 +105,9 @@ export function GenerationStudioShell({
   promptSlot?: React.ReactNode;
   canSubmit: boolean;
   submitting: boolean;
+  /** Overrides the default `submitting ? t('submitting') : t('submit')`
+   * label — video / clip pass a polish- or generate-in-flight string here. */
+  submitLabel?: string;
   onSubmit: () => void;
   price: string;
   estimate: string;
@@ -140,6 +144,7 @@ export function GenerationStudioShell({
           onUploaded={onUploaded}
           onRemove={onRemove}
           onSelectUpload={onSelectUpload}
+          hideUpload={isAudio}
         />
       </div>
 
@@ -217,7 +222,7 @@ export function GenerationStudioShell({
           loading={submitting}
           icon={<IconSparkle className="size-5" />}
         >
-          {submitting ? t('submitting') : t('submit')}
+          {submitLabel ?? (submitting ? t('submitting') : t('submit'))}
         </Button>
       </aside>
 
@@ -257,7 +262,7 @@ export function GenerationStudioShell({
               icon={<IconSparkle className="size-4" />}
               className="min-w-0 flex-1"
             >
-              {submitting ? t('submitting') : t('submit')}
+              {submitLabel ?? (submitting ? t('submitting') : t('submit'))}
             </Button>
           </div>
         </div>

@@ -4,16 +4,23 @@ import { useTranslations } from 'next-intl';
 
 import { useSession } from '@/components/auth/session-provider';
 import {
+  CanvasIllustration,
   CharacterLibraryIllustration,
   SceneLibraryIllustration,
   VideoAnalysisIllustration,
 } from '@/components/create/mode-illustrations';
-import { IconArrowRight, IconLandscape, IconSearch, IconUser } from '@/components/ui/icons';
+import {
+  IconArrowRight,
+  IconBranch,
+  IconLandscape,
+  IconSearch,
+  IconUser,
+} from '@/components/ui/icons';
 import { useRouter } from '@/i18n/navigation';
 import type { Me } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 
-type ToolId = 'video_analysis' | 'character_library' | 'scene_library';
+type ToolId = 'canvas' | 'video_analysis' | 'character_library' | 'scene_library';
 
 const TOOLS: Array<{
   id: ToolId;
@@ -26,6 +33,15 @@ const TOOLS: Array<{
    * gating flag on the backend, unlike `video_analysis`. */
   flag?: keyof Me['features'];
 }> = [
+  {
+    id: 'canvas',
+    icon: <IconBranch className="size-5" />,
+    illustration: <CanvasIllustration className="size-full" />,
+    href: '/create/tools/canvas',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
+    flag: 'canvas_studio',
+  },
   {
     id: 'video_analysis',
     icon: <IconSearch className="size-5" />,
@@ -73,6 +89,11 @@ export function CreateToolCards({ className }: { className?: string }) {
   const { requireAuth, user } = useSession();
 
   const labels: Record<ToolId, { title: string; desc: string; tag: string }> = {
+    canvas: {
+      title: t('toolCanvasTitle'),
+      desc: t('toolCanvasDesc'),
+      tag: t('toolCanvasTag'),
+    },
     video_analysis: {
       title: t('toolVideoAnalysisTitle'),
       desc: t('toolVideoAnalysisDesc'),

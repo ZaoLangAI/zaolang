@@ -10,6 +10,7 @@ import {
   type StudioSource,
 } from '@/components/studio/generation-studio-shell';
 import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
+import { promptFromVersion } from '@/components/studio/generation-version-select';
 import { InlineImageResult } from '@/components/studio/inline-image-result';
 import { OptionGroup } from '@/components/studio/option-group';
 import { PromptComposer } from '@/components/studio/prompt-composer';
@@ -25,6 +26,7 @@ import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
 import type {
   Character,
+  CreationSkillDetail,
   Draft,
   GenerationJob,
   Page,
@@ -32,12 +34,9 @@ import type {
   Scene,
   WorkDetail,
 } from '@/lib/api/types';
-import {
-  CHARACTER_COMPLETION_PROMPT,
-  canCompleteViews,
-  findCompletionJobFor,
-  missingReferenceViews,
-} from '@/lib/characters';
+import { characterSheetAsset, findCompletionJobFor } from '@/lib/characters';
+import { sceneHeroAsset } from '@/lib/scenes';
+import { firstSkillReferenceAssetId } from '@/lib/skill-mention';
 import { formatCount, formatDuration } from '@/lib/format';
 import { draftReturnParams } from '@/lib/studio-session';
 import type { Asset } from '@/lib/upload';
@@ -49,10 +48,9 @@ import { useResource } from '@/lib/use-resource';
 type Operation = 'text_to_image' | 'image_to_image';
 /** What a `text_to_image`/`image_to_image` output is *for* — mirrors the
  * backend's `ImageAssetKind` (`back/app/models/enums.py`). Picking `character`
- * here always generates just the front view (`GenerationParams.character_views`
- * defaults to `['front']`); the remaining two views are a separate,
- * standalone completion action on the character library card, not a studio
- * option (see `CharacterLibrary`'s "补全侧面/背面" button). */
+ * here always generates a character sheet (`GenerationParams.character_views`
+ * defaults to `['front']`, which the planner treats as the multi-panel
+ * sheet). Side/back completion is no longer a studio or library action. */
 const ASSET_KINDS = ['general', 'character', 'scene', 'cover'] as const;
 type AssetKind = (typeof ASSET_KINDS)[number];
 type Orientation = 'landscape' | 'portrait';
@@ -95,6 +93,8 @@ export function ImageGenerationStudio({
   returnLinkKind,
   returnLinkLabel,
   linkEpisodeId,
+  initialSkillId,
+  initialReferenceAssetIds,
 }: {
   source?: StudioSource;
   reference?: WorkDetail;
@@ -128,6 +128,11 @@ export function ImageGenerationStudio({
   /** The short-drama workspace's "去图片创作" jump-out (`?linkEpisodeId=`) —
    * see `GenerationSubmitInput.linkEpisodeId`. */
   linkEpisodeId?: string;
+  /** Plaza / `@` deep-link `?skillId=` — apply the recipe once on mount. */
+  initialSkillId?: string;
+  /** Asset ids to attach as references on arrival (`?referenceAssetIds=`),
+   * used by the canvas to turn an edge into a real reference image. */
+  initialReferenceAssetIds?: string[];
 }) {
   const t = useTranslations('remixPage');
   const tCredits = useTranslations('credits');
@@ -169,6 +174,7 @@ export function ImageGenerationStudio({
   // (if any) it should read from and write back to. See section 6.3 of the
   // asset-kind plan.
   const [assetKind, setAssetKind] = useState<AssetKind>(initialAssetKind ?? 'general');
+  const [polishBlocked, setPolishBlocked] = useState(false);
   const [targetCharacterId, setTargetCharacterId] = useState(initialTargetCharacterId ?? '');
   const [targetSceneId, setTargetSceneId] = useState(initialTargetSceneId ?? '');
   const [autoAttachToRoster, setAutoAttachToRoster] = useState(true);
@@ -183,17 +189,17 @@ export function ImageGenerationStudio({
   const [draftId, setDraftId] = useState<string | null>(initialDraft?.id ?? null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobSeed, setActiveJobSeed] = useState<GenerationJob | null>(null);
+  const [appliedJobId, setAppliedJobId] = useState<string | null>(
+    initialDraft?.applied_job_id ?? null,
+  );
   const [cancelling, setCancelling] = useState(false);
 
-  // Notification `?jobId=` wins over the draft's `latest_job_id` so a
-  // retry toast opens that job. A 404 on the preferred id (deleted / not
-  // owned) falls back to `latest_job_id` rather than leaving the preview
-  // empty. Fetch once so the preview slot can seed `useJobStream` without
-  // an initial null-`initial` SSE round-trip against an almost certainly
-  // already-terminal job.
+  // Notification `?jobId=` wins over the draft's applied / latest pointers
+  // so a retry toast opens that job. A 404 on the preferred id (deleted /
+  // not owned) falls back to the applied version, then `latest_job_id`.
   const [resumeFallbackJobId, setResumeFallbackJobId] = useState<string | null>(null);
-  const preferredResumeJobId =
-    resumeFallbackJobId ?? initialJobId ?? initialDraft?.latest_job_id ?? null;
+  const resumeDefaultJobId = initialDraft?.applied_job_id ?? initialDraft?.latest_job_id ?? null;
+  const preferredResumeJobId = resumeFallbackJobId ?? initialJobId ?? resumeDefaultJobId;
   const resumedJob = useResource<GenerationJob>(
     !activeJobId && preferredResumeJobId ? `/v1/generation-jobs/${preferredResumeJobId}` : null,
   );
@@ -201,11 +207,11 @@ export function ImageGenerationStudio({
     !activeJobId &&
     !resumeFallbackJobId &&
     initialJobId &&
-    initialDraft?.latest_job_id &&
-    initialJobId !== initialDraft.latest_job_id &&
+    resumeDefaultJobId &&
+    initialJobId !== resumeDefaultJobId &&
     resumedJob.status === 'failed'
   ) {
-    setResumeFallbackJobId(initialDraft.latest_job_id);
+    setResumeFallbackJobId(resumeDefaultJobId);
   }
   // Adjusted during render rather than in an effect (same pattern as
   // `command-palette.tsx`) — guarded by `!activeJobId` so it only ever fires
@@ -218,6 +224,8 @@ export function ImageGenerationStudio({
     if (resumedJob.data.asset_kind && ASSET_KINDS.includes(resumedJob.data.asset_kind)) {
       setAssetKind(resumedJob.data.asset_kind);
     }
+    const prompt = promptFromVersion(resumedJob.data);
+    if (prompt) setPrompt(prompt);
   }
 
   const {
@@ -269,132 +277,15 @@ export function ImageGenerationStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
-
-  // Only a single-view character job (the front view, `character_views`
-  // unset or `['front']`) can still be missing side/back — a multi-view
-  // completion job already produced everything one job can, so this (and
-  // therefore the "补全侧面/背面" button below) goes back to `null` the
-  // moment such a job becomes `displayJob`, with no extra state to reset.
-  const completionCharacterId =
-    displayJob?.asset_kind === 'character' &&
-    displayJob.status === 'succeeded' &&
-    (!displayJob.character_views || displayJob.character_views.length <= 1)
-      ? displayJob.linked_character_id ?? (targetCharacterId || null)
-      : null;
-
-  // Which already-submitted completion job (in flight or long since
-  // succeeded, this session or a prior one) supplements `displayJob`,
-  // derived purely from `knownJobs` — see `findCompletionJobFor`. This is
-  // the primary signal for both the gallery merge (`InlineImageResult`)
-  // and the button's availability below, so it works correctly even before
-  // (or without ever needing) the character-record fetch beneath it.
-  const resolvedCompletionJob = displayJob ? findCompletionJobFor(knownJobs, displayJob) : null;
-
-  // The "补全侧面/背面" completion job gets its own submit/streaming state
-  // rather than reusing the main `submit()`/`activeJobId` — otherwise its
-  // `onSubmitted` would swap `activeJobId` to the completion job itself,
-  // making it look like a second version of the *same* draft (the original
-  // bug). The selected version stays whichever front-view job it already
-  // was; the completion job's outputs are merged into that version's own
-  // gallery instead (see `InlineImageResult`).
-  const [completionJobId, setCompletionJobId] = useState<string | null>(null);
-  const [completionJobSeed, setCompletionJobSeed] = useState<GenerationJob | null>(null);
-  const { job: completionLiveJob } = useJobStream(completionJobId ?? '', completionJobSeed);
-  const completionDisplayJob =
-    completionLiveJob && completionLiveJob.id === completionJobId
-      ? completionLiveJob
-      : completionJobSeed;
-  const lastRememberedCompletionJobRef = useRef<GenerationJob | null>(null);
   useEffect(() => {
-    if (!completionDisplayJob || completionDisplayJob === lastRememberedCompletionJobRef.current) {
-      return;
+    if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId) {
+      setAppliedJobId(liveJob.id);
     }
-    lastRememberedCompletionJobRef.current = completionDisplayJob;
-    setKnownJobsById((current) => ({
-      ...current,
-      [completionDisplayJob.id]: completionDisplayJob,
-    }));
-  }, [completionDisplayJob]);
+  }, [liveJob, activeJobId]);
 
-  // Fetched by id rather than trusted from `charactersResource`'s list
-  // snapshot below — a character this very job just auto-created might not
-  // be in that list yet. Kept as a plain fetch (not `useResource`) so it can
-  // be forced to refetch via `characterRefreshNonce` once a completion
-  // succeeds — a fallback safety net for "this character was already
-  // completed elsewhere, outside any job this draft knows about".
-  const [completionCharacterData, setCompletionCharacterData] = useState<Character | null>(null);
-  const [characterRefreshNonce, setCharacterRefreshNonce] = useState(0);
-  // Bumps the nonce the moment `completionDisplayJob` first reports
-  // `succeeded` — the ref guard (same shape as the effects above) makes
-  // sure this only fires on that one transition, not every render.
-  const lastCompletionStatusRef = useRef<string | null>(null);
-  useEffect(() => {
-    const status = completionDisplayJob?.status ?? null;
-    const justSucceeded = status === 'succeeded' && lastCompletionStatusRef.current !== 'succeeded';
-    lastCompletionStatusRef.current = status;
-    if (!justSucceeded) return;
-    setCharacterRefreshNonce((n) => n + 1);
-  }, [completionDisplayJob?.status]);
-  useEffect(() => {
-    if (!completionCharacterId) return;
-    let cancelled = false;
-    void api
-      .get<Character>(`/v1/characters/${completionCharacterId}`)
-      .then((data) => {
-        if (!cancelled) setCompletionCharacterData(data);
-      })
-      .catch(() => {
-        if (!cancelled) setCompletionCharacterData(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [completionCharacterId, characterRefreshNonce]);
-  // `completionCharacterData` only ever reflects whichever character the
-  // effect above most recently fetched (or is about to) — once
-  // `completionCharacterId` itself goes back to `null`, stop trusting
-  // whatever that last fetch left behind rather than clearing it with a
-  // second render.
-  const effectiveCompletionCharacterData = completionCharacterId ? completionCharacterData : null;
-  const canOfferCompleteViews = Boolean(
-    completionCharacterId &&
-      !resolvedCompletionJob &&
-      effectiveCompletionCharacterData &&
-      canCompleteViews(effectiveCompletionCharacterData),
-  );
-  // Priced (and later submitted) as whichever of side/back is still missing —
-  // shared between the quote below and `completeCharacterViews`'s own submit
-  // so the estimate the user sees before clicking always matches what gets
-  // reserved. Falls back to both when there's nothing to derive it from yet
-  // (button is hidden in that case anyway via `canOfferCompleteViews`).
-  const missingCompletionViews: Array<'side' | 'back'> = effectiveCompletionCharacterData
-    ? missingReferenceViews(effectiveCompletionCharacterData)
-    : ['side', 'back'];
-
-  const {
-    quote: completionQuote,
-    submitting: completionSubmitting,
-    submit: submitCompletion,
-  } = useGenerationSubmit(
-    {
-      operation: 'image_to_image',
-      qualityTier: tier,
-      durationSeconds: 0,
-      assetKind: 'character',
-      characterViews: missingCompletionViews,
-    },
-    {
-      label: t('submit'),
-      onSubmitted: (job) => {
-        setCompletionJobId(job.id);
-        setCompletionJobSeed(job);
-      },
-    },
-  );
-  const completingCharacterViews =
-    completionSubmitting ||
-    (completionDisplayJob != null &&
-      !['succeeded', 'failed', 'cancelled', 'expired'].includes(completionDisplayJob.status));
+  // Historical "补全侧面/背面" jobs still merge into the gallery; the
+  // studio no longer offers a new completion from here.
+  const resolvedCompletionJob = displayJob ? findCompletionJobFor(knownJobs, displayJob) : null;
 
   const cancelActiveJob = async () => {
     if (!activeJobId) return;
@@ -412,6 +303,39 @@ export function ImageGenerationStudio({
   const selectVersion = (job: GenerationJob) => {
     setActiveJobId(job.id);
     setActiveJobSeed(job);
+    const prompt = promptFromVersion(job);
+    if (prompt) setPrompt(prompt);
+  };
+
+  const handleAppliedChange = (draft: Draft) => {
+    setAppliedJobId(draft.applied_job_id ?? null);
+  };
+
+  const handleHiddenVersion = (jobId: string) => {
+    setKnownJobsById((current) => {
+      const next = { ...current };
+      delete next[jobId];
+      return next;
+    });
+    if (!draftId) return;
+    void api
+      .get<Draft>(`/v1/drafts/${draftId}`)
+      .then((draft) => {
+        setAppliedJobId(draft.applied_job_id ?? null);
+        if (activeJobId !== jobId) return;
+        const next = draft.applied_job_id
+          ? knownJobs.find((job) => job.id === draft.applied_job_id)
+          : undefined;
+        if (next) {
+          selectVersion(next);
+          return;
+        }
+        setActiveJobId(null);
+        setActiveJobSeed(null);
+      })
+      .catch((caught) => {
+        notify(isApiError(caught) ? caught.message : tStates('errorHint'), 'error');
+      });
   };
 
   const handleUseAsReference = useCallback(
@@ -485,12 +409,71 @@ export function ImageGenerationStudio({
     })();
   }, [initialDraft, activeJobSeed, handleUseAsReference]);
 
+  /**
+   * Reference images handed over by a deep link (`?referenceAssetIds=`).
+   *
+   * The canvas uses this: a picture card wired into a prompt card is that
+   * request's reference. Same shape as the character-sheet seeding below —
+   * resolve the ids to `Asset`s and seed `uploads`, so from here on they are
+   * indistinguishable from files the user attached by hand.
+   */
+  const seededReferencesRef = useRef(false);
+  useEffect(() => {
+    if (seededReferencesRef.current || initialDraft || source || uploads.length > 0) return;
+    if (!initialReferenceAssetIds?.length) return;
+    seededReferencesRef.current = true;
+    void Promise.all(
+      initialReferenceAssetIds.map((id) =>
+        api.get<Asset>(`/v1/assets/${id}`).catch(() => null),
+      ),
+    )
+      .then((resolved) => {
+        const usable = resolved.filter((asset): asset is Asset => asset !== null);
+        if (usable.length > 0) setUploads(usable);
+      })
+      .catch(() => {
+        seededReferencesRef.current = false;
+      });
+  }, [initialDraft, initialReferenceAssetIds, source, uploads.length]);
+
   const charactersResource = useResource<Character[]>(
     sessionStatus === 'authenticated' ? '/v1/characters' : null,
   );
+  const characterSheetSeededRef = useRef(false);
+  useEffect(() => {
+    if (characterSheetSeededRef.current || initialDraft || source || uploads.length > 0) return;
+    if (!initialTargetCharacterId) return;
+    const target = (charactersResource.data ?? []).find(
+      (character) => character.id === initialTargetCharacterId,
+    );
+    const sheet = target ? characterSheetAsset(target) : undefined;
+    if (!sheet?.asset_id) return;
+    characterSheetSeededRef.current = true;
+    void api
+      .get<Asset>(`/v1/assets/${sheet.asset_id}`)
+      .then((asset) => setUploads([asset]))
+      .catch(() => {
+        characterSheetSeededRef.current = false;
+      });
+  }, [initialDraft, initialTargetCharacterId, charactersResource.data, source, uploads.length]);
   const scenesResource = useResource<Scene[]>(
     sessionStatus === 'authenticated' ? '/v1/scenes' : null,
   );
+  const sceneHeroSeededRef = useRef(false);
+  useEffect(() => {
+    if (sceneHeroSeededRef.current || initialDraft || source || uploads.length > 0) return;
+    if (!initialTargetSceneId) return;
+    const target = (scenesResource.data ?? []).find((scene) => scene.id === initialTargetSceneId);
+    const hero = target ? sceneHeroAsset(target) : undefined;
+    if (!hero?.asset_id) return;
+    sceneHeroSeededRef.current = true;
+    void api
+      .get<Asset>(`/v1/assets/${hero.asset_id}`)
+      .then((asset) => setUploads([asset]))
+      .catch(() => {
+        sceneHeroSeededRef.current = false;
+      });
+  }, [initialDraft, initialTargetSceneId, scenesResource.data, source, uploads.length]);
   const characters = charactersResource.data ?? [];
   const scenes = scenesResource.data ?? [];
   const isCharacterAssetKind = assetKind === 'character';
@@ -500,7 +483,7 @@ export function ImageGenerationStudio({
   const isImageEdit = operation === 'image_to_image';
   const modelOptions = useGenerationModels(operation);
 
-  const applyParams = (params: Record<string, unknown>) => {
+  const applyParams = (params: Record<string, unknown>, detail?: CreationSkillDetail) => {
     const aspectRatio = params.aspect_ratio;
     if (
       typeof aspectRatio === 'string' &&
@@ -514,6 +497,16 @@ export function ImageGenerationStudio({
     } else if (typeof promptSuffix === 'string' && promptSuffix.trim()) {
       setPrompt((current) => (current.trim() ? `${current}, ${promptSuffix}` : promptSuffix));
     }
+    const referenceId = firstSkillReferenceAssetId(params, detail?.cover_asset_id);
+    if (!referenceId) return;
+    void api
+      .get<Asset>(`/v1/assets/${referenceId}`)
+      .then((asset) => {
+        setUploads((current) =>
+          current.some((item) => item.id === asset.id) ? current : [...current, asset],
+        );
+      })
+      .catch(() => undefined);
   };
 
   const {
@@ -522,7 +515,7 @@ export function ImageGenerationStudio({
     applySkill,
     chips: appliedSkillChips,
     unlockDialog,
-  } = useAppliedSkills({ operation, onApplyParams: applyParams });
+  } = useAppliedSkills({ operation, onApplyParams: applyParams, seedSkillId: initialSkillId });
 
   // Derived, not its own state: an independent `orientation` could disagree
   // with `aspect` the moment a preset/skill/style applies one directly, and
@@ -550,8 +543,17 @@ export function ImageGenerationStudio({
     },
   );
 
+  // A scene plate whose coach is still waiting on a required answer is
+  // exactly the description that produced an impossible room, so submission
+  // waits for the answer. Only ever true after the author has actually
+  // polished — going straight to generate is untouched.
+  const scenePolishBlocked = assetKind === 'scene' && polishBlocked;
   const canSubmit =
-    prompt.trim().length > 0 && rightsConfirmed && !submitting && (quote?.sufficient ?? true);
+    prompt.trim().length > 0 &&
+    rightsConfirmed &&
+    !submitting &&
+    !scenePolishBlocked &&
+    (quote?.sufficient ?? true);
 
   const removeUpload = (assetId: string) => {
     setUploads((current) => current.filter((asset) => asset.id !== assetId));
@@ -585,39 +587,6 @@ export function ImageGenerationStudio({
         returnLinkLabel,
       }),
       forcedModel: forcedModel || undefined,
-    });
-  };
-
-  // Mirrors `CharacterLibrary`'s own "补全侧面/背面" request (same fixed
-  // `3:4` aspect, same fixed reference-only prompt) but through this
-  // studio's own, independent completion submit/stream state
-  // (`submitCompletion`) rather than the main `submit()` — see the state
-  // above. The reference image attached (the front view) keeps side/back
-  // visually consistent; the backend (`execute_asset_planning`) hard-
-  // overrides whatever prompt is sent here for a side/back pass anyway, but
-  // sending the same fixed instruction keeps this request's own intent
-  // self-explanatory instead of silently relying on that override.
-  //
-  // Requests only whichever of side/back `completionCharacterData` still
-  // lacks (`missingReferenceViews`) rather than always both — otherwise
-  // clicking this after already regenerating just one of them (e.g. right
-  // after deleting it in the character library) would silently overwrite
-  // the other, already-approved view too.
-  const completeCharacterViews = () => {
-    if (!displayJob?.output_asset_id || !completionCharacterId) return;
-    if (missingCompletionViews.length === 0) return;
-    submitCompletion({
-      operation: 'image_to_image',
-      qualityTier: tier,
-      durationSeconds: 0,
-      prompt: CHARACTER_COMPLETION_PROMPT,
-      aspectRatio: '3:4',
-      referenceAssetIds: [displayJob.output_asset_id],
-      assetKind: 'character',
-      characterViews: missingCompletionViews,
-      targetCharacterId: completionCharacterId,
-      autoAttachAsset: true,
-      draftId: draftId ?? undefined,
     });
   };
 
@@ -774,6 +743,7 @@ export function ImageGenerationStudio({
       }}
       onPolishAccept={setPrompt}
       closePolishSignal={polishCloseSignal}
+      onPolishBlockedChange={setPolishBlocked}
       skillMention={{
         skills: mentionableSkills,
         selectedIds: appliedSkillIds,
@@ -782,7 +752,13 @@ export function ImageGenerationStudio({
       }}
       skillChips={appliedSkillChips}
       unlockDialog={unlockDialog}
-      hint={isImageEdit ? t('referenceRequiredHint') : undefined}
+      hint={
+        scenePolishBlocked
+          ? t('scenePolishBlockedHint')
+          : isImageEdit
+            ? t('referenceRequiredHint')
+            : undefined
+      }
     />
   );
 
@@ -815,12 +791,16 @@ export function ImageGenerationStudio({
         returnLinkLabel={returnLinkLabel}
         fallbackLinkRefId={targetCharacterId || targetSceneId || undefined}
         completionJob={resolvedCompletionJob}
-        canCompleteCharacterViews={canOfferCompleteViews}
-        completingCharacterViews={completingCharacterViews}
-        onCompleteCharacterViews={completeCharacterViews}
-        completionCredits={completionQuote?.credits}
       />
-      <GenerationVersionHistory jobs={knownJobs} activeJob={displayJob} onSelect={selectVersion} />
+      <GenerationVersionHistory
+        jobs={knownJobs}
+        activeJob={displayJob}
+        appliedJobId={appliedJobId}
+        draftId={draftId}
+        onSelect={selectVersion}
+        onAppliedChange={handleAppliedChange}
+        onHidden={handleHiddenVersion}
+      />
     </>
   ) : undefined;
 

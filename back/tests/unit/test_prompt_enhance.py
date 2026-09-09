@@ -3,10 +3,13 @@ the shortform studio and the generation studio's own polish button."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.agents import copywriter
+from app.agents.base import AgentOutcome
 from app.api.schemas.shortform import PromptDimensionKey, PromptEnhanceDirection
 from app.domain import prompts
 from app.domain.agent_skills import service as agent_skills_service
@@ -523,11 +526,28 @@ def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
     assert not character.startswith(generic)
     assert not scene.startswith(generic)
     assert not cover.startswith(generic)
-    assert "角色立绘" in character
+    assert "角色设定图" in character
+    assert "三视图" in character and "色板" in character
+    assert "禁止改回单视角" in character
+    assert "不加特写与色板" in character
     assert "全身" in character and "纯色" in character
     assert "性别" in character and "肤色" in character
+    assert "真人写实影视短剧" in character
+    assert "不得把写实改成动漫" in character
     assert "场景空镜" in scene
     assert "人物痕迹" in scene
+    assert "单一机位" in scene
+    assert "分割构图" in scene
+    assert "遮挡" in scene
+    assert "或侧视" in scene
+    # The three-step construction method, the two anchors, and the medium
+    # lock — the parts that stop a physically impossible plate rather than
+    # just deleting the phrases that gave it away.
+    assert "相机站在" in scene
+    assert "scene_skill" in scene
+    assert "era_region" in scene and "worldbuilding" in scene
+    assert "真人写实影视短剧实拍质感" in scene
+    assert "questions" in scene and "space_type_options" in scene
     assert "封面海报" in cover
     assert "安全区" in cover
     assert "作品发布文案" in copywriter.SYSTEM_PROMPT
@@ -550,3 +570,291 @@ def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
         copywriter.SYSTEM_PROMPT,
     ):
         assert "只输出一个 JSON 对象" in prompt
+
+
+_COLLAPSED_SHEET = (
+    "林野。二十岁出头的中国年轻男性，肤色苍白，体型精瘦。"
+    "单张角色立绘：全身入镜，正面单一视角，头顶与双脚完整不裁切，人物居中；"
+    "纯白无缝背景。仅此一张正面全身，不拼接侧面背面，不分格，不加特写与色板。"
+)
+
+
+def test_restore_character_sheet_prompt_strips_a_single_view_collapse() -> None:
+    restored = copywriter.restore_character_sheet_prompt(_COLLAPSED_SHEET)
+    assert "林野" in restored
+    assert "二十岁出头" in restored
+    assert "三视图" in restored and "色板" in restored
+    assert "单一视角" not in restored
+    assert "不拼接" not in restored
+    assert "不加特写" not in restored
+
+
+def test_restore_character_sheet_prompt_leaves_an_intact_sheet() -> None:
+    intact = (
+        "林野。银发风衣。"
+        "单张角色设定图、左右分栏：左侧全身三视图（正面、侧面、背面），"
+        "右侧面部特写、服装配饰细节与标准化色板。"
+    )
+    assert copywriter.restore_character_sheet_prompt(intact) == intact
+
+
+def test_sanitize_enhance_repairs_a_collapsed_character_prompt() -> None:
+    outcome = AgentOutcome(
+        data={
+            "prompt": _COLLAPSED_SHEET,
+            "detail_level": "adequate",
+            "feedback": "已补全身与纯色背景。",
+            "dimensions": [],
+            "additions": [],
+        },
+        raw_text="",
+        degraded=False,
+        model="test",
+        agent_run_id="run_test",
+    )
+    repaired = copywriter._sanitize_enhance_outcome(
+        outcome, prompt="林野", max_length=2000, asset_kind="character"
+    )
+    assert "三视图" in repaired.data["prompt"]
+    assert "色板" in repaired.data["prompt"]
+    assert "单一视角" not in repaired.data["prompt"]
+    assert "已补回左三视图" in repaired.data["feedback"]
+
+
+_SPLIT_SCENE_PLATE = (
+    "16:9横构图，夜晚老旧出租屋门口与内部走廊的静谧空镜。"
+    "画面前景为紧闭的旧式铁框防盗门，金属门板占据画面边缘。"
+    "透过门缝或侧视角度，可见室内走廊昏暗无光。"
+    "门外楼道视角（或分割构图），声控灯昏黄将熄。"
+    "无任何人物出现，强调空间的压抑感与静止感。"
+)
+
+
+def test_restore_scene_plate_prompt_strips_split_and_or_cameras() -> None:
+    restored = copywriter.restore_scene_plate_prompt(_SPLIT_SCENE_PLATE)
+    assert "紧闭" in restored
+    assert "无任何人物" in restored
+    assert "分割构图" not in restored
+    assert "或侧视" not in restored
+    assert "或分割" not in restored
+    assert "单一机位" in restored
+    assert "遮挡" in restored
+
+
+def test_restore_scene_plate_prompt_leaves_an_intact_plate() -> None:
+    intact = (
+        "夜晚老旧出租屋门外楼道。相机站在楼道看向一扇紧闭的铁框防盗门，"
+        "门缝只漏出远处电视的冷蓝光，声控灯昏黄将熄，无任何人物。"
+    )
+    assert copywriter.restore_scene_plate_prompt(intact) == intact
+
+
+def test_sanitize_enhance_repairs_a_split_scene_prompt() -> None:
+    outcome = AgentOutcome(
+        data={
+            "prompt": _SPLIT_SCENE_PLATE,
+            "detail_level": "adequate",
+            "feedback": "已去除人物描写，仅保留纯场景。",
+            "dimensions": [],
+            "additions": [],
+        },
+        raw_text="",
+        degraded=False,
+        model="test",
+        agent_run_id="run_test",
+    )
+    repaired = copywriter._sanitize_enhance_outcome(
+        outcome, prompt="老旧出租屋门口", max_length=2000, asset_kind="scene"
+    )
+    assert "分割构图" not in repaired.data["prompt"]
+    assert "或侧视" not in repaired.data["prompt"]
+    assert "紧闭" in repaired.data["prompt"]
+    assert "无任何人物" in repaired.data["prompt"]
+    assert "已收成单一机位" in repaired.data["feedback"]
+
+
+def test_enhance_rewrites_script_segment_blocks_in_place(db: Session, author: User) -> None:
+    segment = {
+        "heading": "雨巷",
+        "blocks": [
+            {"type": "action", "character": None, "text": "苏晴撑伞停下"},
+            {"type": "dialogue", "character": "苏晴", "text": "你终于来了。"},
+        ],
+    }
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="雨巷\n苏晴撑伞停下\n苏晴：你终于来了。",
+        context=prompts.PromptContext(operation="text_to_video", script_segment=segment),
+    )
+    assert result.script_segment is not None
+    assert result.script_segment["heading"] == "雨巷"
+    assert [block["type"] for block in result.script_segment["blocks"]] == ["action", "dialogue"]
+    assert result.script_segment["blocks"][1]["character"] == "苏晴"
+    assert result.script_segment["blocks"][0]["text"] != "苏晴撑伞停下"
+    assert "苏晴撑伞停下" in result.script_segment["blocks"][0]["text"]
+
+
+def test_sanitize_drops_a_script_segment_that_changes_shape() -> None:
+    original = {
+        "heading": "雨巷",
+        "blocks": [{"type": "dialogue", "character": "林夏", "text": "别走。"}],
+    }
+    outcome = AgentOutcome(
+        data={
+            "prompt": "别走啊。",
+            "detail_level": "adequate",
+            "feedback": "",
+            "script_segment": {
+                "heading": "雨巷",
+                "blocks": [
+                    {"type": "action", "character": None, "text": "错"},
+                    {"type": "breakpoint", "character": None, "text": "切"},
+                ],
+            },
+        },
+        raw_text="",
+        degraded=False,
+        model="test",
+        agent_run_id="run_test",
+    )
+    repaired = copywriter._sanitize_enhance_outcome(
+        outcome, prompt="别走。", max_length=2000, script_segment=original
+    )
+    assert repaired.data["script_segment"]["blocks"] == original["blocks"]
+
+
+def test_sanitize_enhance_does_not_rewrite_a_non_character_prompt() -> None:
+    outcome = AgentOutcome(
+        data={"prompt": _COLLAPSED_SHEET, "detail_level": "adequate", "feedback": ""},
+        raw_text="",
+        degraded=False,
+        model="test",
+        agent_run_id="run_test",
+    )
+    left = copywriter._sanitize_enhance_outcome(
+        outcome, prompt="林野", max_length=2000, asset_kind="scene"
+    )
+    # The scene branch appends its own medium lock (this text names no
+    # medium), but none of the character-sheet layout repair may fire.
+    assert left.data["prompt"].startswith(_COLLAPSED_SHEET)
+    assert copywriter.CHARACTER_SHEET_LAYOUT_SENTENCE not in left.data["prompt"]
+    assert "三视图" not in left.data["prompt"]
+
+
+# The live failure this whole pass exists for: a closed security door with a
+# corridor, a kitchen and its dishes described behind it. Stripping the "或"
+# branches leaves the impossible part intact, which is why the seatbelt now
+# also pins the occlusion rule back on.
+_OCCLUDED_SCENE_PLATE = (
+    "16:9横构图，夜晚老旧出租屋门口。画面前景为紧闭的旧式铁框防盗门。"
+    "透过门缝，可见室内走廊昏暗无光，背景深处厨房区域水槽上方堆叠着待洗的碗碟。"
+)
+
+
+def test_enforce_scene_plate_occlusion_pins_the_rule_back_on() -> None:
+    enforced = copywriter.enforce_scene_plate_occlusion(_OCCLUDED_SCENE_PLATE)
+    assert copywriter.SCENE_PLATE_OCCLUSION_SENTENCE in enforced
+    assert enforced.startswith(_OCCLUDED_SCENE_PLATE)
+
+
+def test_enforce_scene_plate_occlusion_leaves_a_plate_with_nothing_behind_it() -> None:
+    intact = "夜晚楼道，相机站在楼道看向一扇紧闭的铁框防盗门，门缝下漏出一线冷蓝光。"
+    assert copywriter.enforce_scene_plate_occlusion(intact) == intact
+
+
+def test_enforce_scene_plate_medium_only_fires_when_no_medium_is_named() -> None:
+    bare = "夜晚楼道，声控灯昏黄将熄。"
+    assert copywriter.SCENE_PLATE_MEDIUM_SENTENCE in copywriter.enforce_scene_plate_medium(bare)
+    named = "夜晚楼道，真人写实影视短剧实拍质感。"
+    assert copywriter.enforce_scene_plate_medium(named) == named
+    anime = "夜晚楼道，二次元动漫赛璐璐质感。"
+    assert copywriter.enforce_scene_plate_medium(anime) == anime
+
+
+def test_sanitize_enhance_repairs_an_occluded_scene_prompt() -> None:
+    outcome = AgentOutcome(
+        data={
+            "prompt": _OCCLUDED_SCENE_PLATE,
+            "detail_level": "adequate",
+            "feedback": "",
+            "dimensions": [],
+            "additions": [],
+        },
+        raw_text="",
+        degraded=False,
+        model="test",
+        agent_run_id="run_test",
+    )
+    repaired = copywriter._sanitize_enhance_outcome(
+        outcome, prompt="老旧出租屋门口", max_length=2000, asset_kind="scene"
+    )
+    assert copywriter.SCENE_PLATE_OCCLUSION_SENTENCE in repaired.data["prompt"]
+    assert copywriter.SCENE_PLATE_MEDIUM_SENTENCE in repaired.data["prompt"]
+    assert "已锁死遮挡" in repaired.data["feedback"]
+
+
+def test_scene_enhance_payload_carries_the_space_skill_pack() -> None:
+    """The pack rides the user message, so an operator's own published system
+    prompt cannot drop it (see `app.agents.scene_skills`)."""
+    payload = json.loads(
+        copywriter._enhance_user_prompt(
+            prompt="夜晚老旧出租屋门口的楼道，紧闭的防盗门",
+            operation="text_to_image",
+            aspect_ratio="16:9",
+            duration_seconds=None,
+            quality_tier="",
+            style_hint="",
+            has_reference=False,
+            direction="",
+            instruction="",
+            max_length=2000,
+            asset_kind="scene",
+        )
+    )
+    assert payload["scene_skill"]["key"] == "corridor_stairwell"
+    assert payload["scene_skill"]["anchor"] == "era_region"
+    assert payload["scene_skill"]["pitfalls"]
+    assert any(o["value"] == "corridor_stairwell" for o in payload["space_type_options"])
+
+
+def test_scene_enhance_payload_honours_an_answered_space_type() -> None:
+    """A keyword match must not silently override the author's own answer."""
+    payload = json.loads(
+        copywriter._enhance_user_prompt(
+            prompt="夜晚老旧出租屋门口的楼道，紧闭的防盗门",
+            operation="text_to_image",
+            aspect_ratio="16:9",
+            duration_seconds=None,
+            quality_tier="",
+            style_hint="",
+            has_reference=False,
+            direction="",
+            instruction="",
+            max_length=2000,
+            asset_kind="scene",
+            question_answers={"space_type": "residential_interior"},
+        )
+    )
+    assert payload["scene_skill"]["key"] == "residential_interior"
+    assert payload["question_answers"] == {"space_type": "residential_interior"}
+
+
+def test_non_scene_enhance_payload_carries_no_space_skill() -> None:
+    payload = json.loads(
+        copywriter._enhance_user_prompt(
+            prompt="林野的角色设定图",
+            operation="text_to_image",
+            aspect_ratio="16:9",
+            duration_seconds=None,
+            quality_tier="",
+            style_hint="",
+            has_reference=False,
+            direction="",
+            instruction="",
+            max_length=2000,
+            asset_kind="character",
+        )
+    )
+    assert "scene_skill" not in payload
+    assert "space_type_options" not in payload

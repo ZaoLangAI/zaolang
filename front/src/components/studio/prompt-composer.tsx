@@ -2,6 +2,7 @@
 
 import { PromptField, type PromptSkillMention } from '@/components/studio/prompt-field';
 import type { PromptPolishContext } from '@/components/studio/prompt-polish';
+import type { PromptEnhanceScriptSegment } from '@/lib/api/types';
 import { IconSparkle } from '@/components/ui/icons';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 
@@ -28,17 +29,24 @@ export function PromptComposer({
   polishContext,
   onPolishAccept,
   closePolishSignal,
+  onPolishBlockedChange,
+  onPolishPendingChange,
   skillMention,
   skillChips,
   unlockDialog,
   hint,
   tip,
+  after,
 }: {
   prompt: string;
   onChange: (value: string) => void;
   polishContext?: PromptPolishContext;
-  onPolishAccept?: (prompt: string) => void;
+  onPolishAccept?: (prompt: string, segment?: PromptEnhanceScriptSegment) => void;
   closePolishSignal?: number;
+  /** Forwarded to `PromptField` -> `PromptPolish`. */
+  onPolishBlockedChange?: (blocked: boolean) => void;
+  /** Forwarded to `PromptField` -> `PromptPolish` — video / clip lock submit on it. */
+  onPolishPendingChange?: (pending: boolean) => void;
   skillMention?: PromptSkillMention;
   /** `useAppliedSkills`'s `chips` — the removable "@技能" pill row. */
   skillChips?: React.ReactNode;
@@ -54,6 +62,8 @@ export function PromptComposer({
    * see `hideDirectHint` at the call site.
    */
   tip?: { title: string; body: string };
+  /** Clip studio: the colour-block preview of this suggested cut. */
+  after?: React.ReactNode;
 }) {
   return (
     <section
@@ -81,9 +91,12 @@ export function PromptComposer({
           polishContext={polishContext}
           onPolishAccept={onPolishAccept}
           closePolishSignal={closePolishSignal}
+          onPolishBlockedChange={onPolishBlockedChange}
+          onPolishPendingChange={onPolishPendingChange}
           skillMention={skillMention}
           maxLength={STUDIO_PROMPT_MAX_LENGTH}
         />
+        {after}
         {skillChips}
         {unlockDialog}
         {hint ? <p className="mt-2 text-xs text-muted">{hint}</p> : null}

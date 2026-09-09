@@ -5,6 +5,7 @@ import { IconButton } from '@/components/ui/button';
 import { IconPencil, IconUpload } from '@/components/ui/icons';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Draft } from '@/lib/api/types';
+import { draftDisplayTitle } from '@/lib/draft-title';
 import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 
@@ -35,10 +36,11 @@ export function RecentDraftCard({
       ? videoCreationStudioHref(draft.id)
       : null;
   const router = useRouter();
+  const label = draftDisplayTitle(draft, fallbackTitle);
 
   return (
     <Link href={`/publish/${draft.id}`} className="group block">
-      <DraftPoster draft={draft} alt={draft.title ?? fallbackTitle} className="border border-border">
+      <DraftPoster draft={draft} alt={label} className="border border-border">
         {editHref ? (
           <div className="absolute inset-0 flex items-center justify-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <IconButton
@@ -70,7 +72,7 @@ export function RecentDraftCard({
           </div>
         ) : null}
       </DraftPoster>
-      <p className="mt-2 truncate text-xs">{draft.title ?? fallbackTitle}</p>
+      <p className="mt-2 truncate text-xs">{label}</p>
     </Link>
   );
 }

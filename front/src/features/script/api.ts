@@ -163,6 +163,19 @@ async function* streamPost(
   }
 }
 
+export interface ScriptExtractResult {
+  filename: string;
+  text: string;
+  char_count: number;
+  truncated: boolean;
+}
+
+export function extractScriptSource(file: File) {
+  const body = new FormData();
+  body.append('file', file);
+  return api.post<ScriptExtractResult>('/v1/scripts/extract', body);
+}
+
 export function createScript(
   input: { title: string; idea: string; referencedSkillIds: string[]; seriesId?: string },
   signal?: AbortSignal,

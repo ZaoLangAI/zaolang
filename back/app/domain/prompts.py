@@ -51,6 +51,14 @@ class PromptContext:
     # one yet. Routes to that kind's dedicated default agent — see
     # `app.agents.copywriter.enhance_prompt`.
     asset_kind: str = ""
+    # Clip-studio polish: `{heading, blocks: [{type, character, text}]}`.
+    # Empty on the generic image/video studios.
+    script_segment: dict | None = None
+    # The author's answers to the previous round's follow-up questions,
+    # keyed by question id. Only the scene coach asks today (see
+    # `app.agents.copywriter.ENHANCE_SYSTEM_PROMPT_SCENE`), but the field is
+    # on the shared context because the wire contract is shared.
+    question_answers: dict | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,18 +69,35 @@ class PromptDimension:
 
 
 @dataclass(slots=True, frozen=True)
+class PromptQuestion:
+    """One follow-up the coach wants answered before the next round.
+
+    Same shape as a job's awaiting-input question (`app.agents.questions`), so
+    the studio renders both through `QuestionField`.
+    """
+
+    id: str
+    kind: str
+    prompt: str
+    options: list[dict[str, str]] = field(default_factory=list)
+    required: bool = False
+
+
+@dataclass(slots=True, frozen=True)
 class PromptEnhancement:
     prompt: str
     detail_level: str
     feedback: str
     dimensions: list[PromptDimension] = field(default_factory=list)
     additions: list[str] = field(default_factory=list)
+    questions: list[PromptQuestion] = field(default_factory=list)
     # Not part of the API response: callers turn this into an error rather
     # than showing the fallback text. Kept on the result instead of raised
     # here so the endpoint can commit the `AgentRun` first — `get_db` drops
     # the transaction on the way out, and a degradation nobody recorded is
     # one nobody can debug.
     degraded: bool = False
+    script_segment: dict | None = None
 
 
 def enhance(
@@ -103,8 +128,11 @@ def enhance(
         direction=ctx.direction,
         instruction=ctx.instruction,
         asset_kind=ctx.asset_kind,
+        script_segment=ctx.script_segment,
+        question_answers=ctx.question_answers,
         user_id=user_id,
     )
+    segment = outcome.data.get("script_segment")
     return PromptEnhancement(
         prompt=str(outcome.data["prompt"]),
         detail_level=str(outcome.data["detail_level"]),
@@ -114,5 +142,24 @@ def enhance(
             for d in outcome.data.get("dimensions", [])
         ],
         additions=list(outcome.data.get("additions", [])),
+        questions=questions_from(outcome.data.get("questions")),
         degraded=outcome.degraded,
+        script_segment=segment if isinstance(segment, dict) else None,
     )
+
+
+def questions_from(raw: object) -> list[PromptQuestion]:
+    """Agent output (already sanitized by `app.agents.questions`) -> domain."""
+    if not isinstance(raw, list):
+        return []
+    return [
+        PromptQuestion(
+            id=str(item["id"]),
+            kind=str(item["kind"]),
+            prompt=str(item["prompt"]),
+            options=list(item.get("options") or []),
+            required=bool(item.get("required")),
+        )
+        for item in raw
+        if isinstance(item, dict) and item.get("id") and item.get("kind")
+    ]

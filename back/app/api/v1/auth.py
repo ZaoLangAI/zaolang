@@ -185,6 +185,7 @@ def _features_for(session: DbSession, user_id: str) -> MeFeaturesResponse:
         video_generation=config_service.is_enabled(session, "video_generation", user_id=user_id),
         drama_studio=config_service.is_enabled(session, "drama_studio_enabled", user_id=user_id),
         marketplace=config_service.is_enabled(session, "marketplace_enabled", user_id=user_id),
+        canvas_studio=config_service.is_enabled(session, "canvas_studio_enabled", user_id=user_id),
     )
 
 

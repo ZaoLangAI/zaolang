@@ -6,6 +6,7 @@ import { useSession } from '@/components/auth/session-provider';
 import {
   AudioGenerationIllustration,
   ImageCreationIllustration,
+  MusicGenerationIllustration,
   ScriptIllustration,
   TextToVideoIllustration,
 } from '@/components/create/mode-illustrations';
@@ -13,6 +14,7 @@ import {
   IconArrowRight,
   IconMessage,
   IconMic,
+  IconMusic,
   IconSparkle,
   IconVideo,
 } from '@/components/ui/icons';
@@ -22,7 +24,12 @@ import { cn } from '@/lib/cn';
 import type { Me } from '@/lib/api/types';
 import { prefetchStudio, type StudioPrefetchMode } from '@/lib/prefetch-studio';
 
-type ModeId = 'script' | 'image_creation' | 'video_creation' | 'audio_generation';
+type ModeId =
+  | 'script'
+  | 'image_creation'
+  | 'video_creation'
+  | 'audio_generation'
+  | 'music_generation';
 
 const MODES: Array<{
   id: ModeId;
@@ -70,12 +77,20 @@ const MODES: Array<{
     tone: 'bg-primary/15 text-primary',
     accent: 'text-primary',
   },
+  {
+    id: 'music_generation',
+    icon: <IconMusic className="size-5" />,
+    illustration: <MusicGenerationIllustration className="size-full" />,
+    href: '/create/new?mode=music_generation',
+    tone: 'bg-primary/15 text-primary',
+    accent: 'text-primary',
+  },
 ];
 
 /**
- * Entry points from the create page: stills, video, audio. Short-drama
- * management has its own dedicated entry (`ShortformHeroBanner` + the
- * "最近短剧" section), not a card in this grid — see
+ * Entry points from the create page: stills, video, voice audio, music/SFX.
+ * Short-drama management has its own dedicated entry (`ShortformHeroBanner`
+ * + the "最近短剧" section), not a card in this grid — see
  * `.cursor/skills/zaolang-editor-drama`.
  *
  * Choosing a mode is a protected action: it goes through `requireAuth` so an
@@ -107,6 +122,11 @@ export function CreateModeCards({ className }: { className?: string }) {
       title: t('modeAudioGenerationTitle'),
       desc: t('modeAudioGenerationDesc'),
       tag: t('modeAudioGenerationTag'),
+    },
+    music_generation: {
+      title: t('modeMusicGenerationTitle'),
+      desc: t('modeMusicGenerationDesc'),
+      tag: t('modeMusicGenerationTag'),
     },
   };
 

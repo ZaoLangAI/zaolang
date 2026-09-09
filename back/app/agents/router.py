@@ -33,9 +33,18 @@ from sqlalchemy.orm import Session
 
 from app.agents import intent_router
 from app.domain.costs import service as costs_service
-from app.models import ProviderStat
-from app.providers.base import ProviderCapability, resolve_resolution_tier
+from app.models import Asset, ProviderStat
+from app.models.enums import MediaGenerationKind, MediaType, Operation
+from app.providers.base import ProviderCapability, adapt_resolution_tier
 from app.providers.media_endpoints import dynamic_capabilities
+
+_VIDEO_GENERATION_OPERATIONS = frozenset(
+    {
+        Operation.TEXT_TO_VIDEO.value,
+        Operation.IMAGE_TO_VIDEO.value,
+        Operation.VIDEO_TO_VIDEO.value,
+    }
+)
 
 CONSERVATIVE_PRIOR_SUCCESS_RATE = 0.8
 # How many "virtual" trials the prior above is worth when blending it with
@@ -140,6 +149,8 @@ def route(
     catalog = build_catalog(session)
     stats = _load_stats(session, operation, quality_tier)
     excluded = set(exclude_providers or ())
+    params = request_params or {}
+    has_video_source = _request_has_video_source(session, operation, params)
 
     candidates: list[Candidate] = []
     for name, capability in sorted(catalog.items()):
@@ -155,7 +166,9 @@ def route(
             candidate.filter_reason = "tier_not_supported"
             candidates.append(candidate)
             continue
-        constraint_failure = _request_constraint_failure(capability, request_params or {})
+        constraint_failure = _request_constraint_failure(
+            capability, params, has_video_source=has_video_source
+        )
         if constraint_failure is not None:
             candidate.eligible = False
             candidate.filter_reason = constraint_failure
@@ -261,10 +274,41 @@ def route(
     )
 
 
+def _request_has_video_source(
+    session: Session, operation: str, params: Mapping[str, Any]
+) -> bool:
+    """Whether this request already carries a video the edit-class models can use.
+
+    `video_to_video` is itself the "has a source clip" operation (submit
+    validation already requires a video reference). Stills and first/last
+    frames do not count.
+    """
+    if operation == Operation.VIDEO_TO_VIDEO.value:
+        return True
+    raw_ids = params.get("reference_asset_ids") or []
+    if not isinstance(raw_ids, list):
+        return False
+    asset_ids = [str(item) for item in raw_ids if item]
+    if not asset_ids:
+        return False
+    media_types = session.scalars(select(Asset.media_type).where(Asset.id.in_(asset_ids))).all()
+    return any(media_type == MediaType.VIDEO for media_type in media_types)
+
+
 def _request_constraint_failure(
-    capability: ProviderCapability, params: Mapping[str, Any]
+    capability: ProviderCapability,
+    params: Mapping[str, Any],
+    *,
+    has_video_source: bool = False,
 ) -> str | None:
     """Hard-filter a provider that physically cannot honour the request."""
+
+    if (
+        capability.generation_kind == MediaGenerationKind.EDIT
+        and bool(capability.operations & _VIDEO_GENERATION_OPERATIONS)
+        and not has_video_source
+    ):
+        return "edit_model_requires_video_source"
 
     duration = int(params.get("duration_seconds") or 0)
     if capability.min_duration_seconds is not None and duration < capability.min_duration_seconds:
@@ -278,19 +322,17 @@ def _request_constraint_failure(
     if isinstance(video_options, Mapping):
         raw_resolution = video_options.get("resolution")
         reference_mode = str(video_options.get("reference_mode") or "input_references")
-        # `raw_resolution` is a client-facing tier token (see
-        # `VideoGenerationOptions.resolution`), not necessarily this
-        # candidate's own spelling — `resolve_resolution_tier` expands it to
-        # every vendor synonym in that tier before checking for overlap, so
-        # e.g. a `"720p"` request still matches a candidate whose real
-        # resolution string is `"768P"` (MiniMax H3's own token, a `"720p"`
-        # synonym). No match in this candidate's own `resolutions` means it
-        # genuinely cannot serve this tier, same hard-filter guarantee as
-        # before — never a reason to fall through to a provider error.
+        # `raw_resolution` is a client-facing *ceiling* (see
+        # `VideoGenerationOptions.resolution`), not a must-match. An exact
+        # tier or a strictly lower (or last-resort lowest) supported tier
+        # keeps the candidate eligible — only a candidate whose
+        # `resolutions` map to no studio tier at all is
+        # `resolution_not_supported`. Remix omits the field entirely and
+        # skips this check so the provider's own default applies.
         if (
             raw_resolution
             and capability.resolutions is not None
-            and resolve_resolution_tier(str(raw_resolution), capability.resolutions) is None
+            and adapt_resolution_tier(str(raw_resolution), capability.resolutions) is None
         ):
             return "resolution_not_supported"
         if (
@@ -298,23 +340,41 @@ def _request_constraint_failure(
             and reference_mode not in capability.reference_modes
         ):
             return "reference_mode_not_supported"
+    if capability.music_styles is not None:
+        # `music_generation`'s BGM model (DMXAPI `music-3.0`, fal
+        # `minimax-music/v2.6`) and SFX model (fal `elevenlabs/sound-
+        # effects/v2`) share the one capability tag — this is the filter
+        # that keeps an `audio_style="sfx"` request from landing on a
+        # BGM-only model (or vice versa) purely because the selecting agent
+        # had no other way to tell them apart. A request with no
+        # `audio_style` at all (e.g. a sandbox try-it, which never calls
+        # `validate_generation_params` — see `prepare_sandbox_generation_
+        # params`) stays unfiltered rather than rejecting every music
+        # candidate.
+        extra = params.get("extra")
+        audio_style = extra.get("audio_style") if isinstance(extra, Mapping) else None
+        if (
+            isinstance(audio_style, str)
+            and audio_style
+            and audio_style not in capability.music_styles
+        ):
+            return "music_style_not_supported"
     return None
 
 
 def _resolved_request_params(
     capability: ProviderCapability, params: Mapping[str, Any]
 ) -> Mapping[str, Any]:
-    """Substitutes a client-requested resolution *tier* with this specific
-    candidate's own literal spelling before costing looks it up.
+    """Substitutes a client-requested resolution *ceiling* with this
+    candidate's adapted vendor spelling before costing looks it up.
 
     `costs_service.estimate_media_request_cost_micro_usd` prices a video
     request by reading `params["video_options"]["resolution"]` as an exact
-    pricing-table key. Left as the raw tier token (e.g. `"720p"`), a
-    candidate priced under its own vendor spelling (`minimax-h3`'s
-    `"768P"`) would look up nothing and silently read as free — this is
-    called only after `_request_constraint_failure` has already proved this
-    candidate has a real resolution in the requested tier, so the resolve
-    below cannot fail.
+    pricing-table key. Left as the raw tier token (e.g. `"1080p"`), a
+    candidate priced only under its own vendor spelling (`minimax-h3`'s
+    `"768P"`) would look up nothing and silently read as free. Called only
+    after `_request_constraint_failure` has already proved this candidate
+    can adapt, so the lookup below cannot fail.
     """
     video_options = params.get("video_options")
     if not isinstance(video_options, Mapping):
@@ -322,10 +382,10 @@ def _resolved_request_params(
     raw_resolution = video_options.get("resolution")
     if not raw_resolution:
         return params
-    resolved = resolve_resolution_tier(str(raw_resolution), capability.resolutions)
-    if resolved is None or resolved == raw_resolution:
+    adapted = adapt_resolution_tier(str(raw_resolution), capability.resolutions)
+    if adapted is None or adapted.vendor_literal == raw_resolution:
         return params
-    return {**params, "video_options": {**video_options, "resolution": resolved}}
+    return {**params, "video_options": {**video_options, "resolution": adapted.vendor_literal}}
 
 
 def _candidate_payload(candidate: Candidate, capability: ProviderCapability) -> dict[str, Any]:

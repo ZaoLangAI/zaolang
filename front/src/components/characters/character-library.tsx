@@ -2,8 +2,12 @@
 
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
+import {
+  ExistingAssetPickerDialog,
+  type ExistingAssetPick,
+} from '@/components/library/existing-asset-picker-dialog';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import { Button, IconButton } from '@/components/ui/button';
@@ -16,6 +20,7 @@ import {
   IconPencil,
   IconPlus,
   IconShare,
+  IconSparkle,
   IconTrash,
   IconUpload,
   IconVideo,
@@ -26,10 +31,10 @@ import { Sheet } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { useRouter } from '@/i18n/navigation';
-import { api, newIdempotencyKey } from '@/lib/api/client';
+import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import type { Character, GenerationJob, Page, Quote } from '@/lib/api/types';
-import { CHARACTER_COMPLETION_PROMPT, missingReferenceViews, referenceByView } from '@/lib/characters';
+import type { Character } from '@/lib/api/types';
+import { characterImageStudioHref, characterSheetAsset } from '@/lib/characters';
 import {
   CREATION_SKILL_STATUS_LABEL_KEY,
   CREATION_SKILL_STATUS_TONE,
@@ -37,172 +42,43 @@ import {
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
 
-/** Terminal `JobStatus` values — anything else means the completion job
- * (see `completeViews` below) is still in flight. */
-const TERMINAL_JOB_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
-const COMPLETION_POLL_INTERVAL_MS = 3000;
-const COMPLETION_POLL_MAX_ATTEMPTS = 40;
-
-type ReferenceView = 'front' | 'side' | 'back';
-const REFERENCE_VIEWS: ReferenceView[] = ['front', 'side', 'back'];
-
-const VIEW_LABEL_KEY: Record<ReferenceView, 'viewFront' | 'viewSide' | 'viewBack'> = {
-  front: 'viewFront',
-  side: 'viewSide',
-  back: 'viewBack',
-};
-
 // Status badges reuse `CREATION_SKILL_STATUS_*` — a character is a
 // `CreationSkillCategory.CHARACTER` skill under the hood.
-
-/** Only what the form needs to render a thumbnail and send an id back. */
-interface ReferenceImage {
-  id: string;
-  url: string;
-}
 
 interface CharacterForm {
   name: string;
   description: string;
   voiceDescription: string;
-  references: Record<ReferenceView, ReferenceImage | null>;
+  reference: ExistingAssetPick | null;
 }
 
 const EMPTY_FORM: CharacterForm = {
   name: '',
   description: '',
   voiceDescription: '',
-  references: { front: null, side: null, back: null },
+  reference: null,
 };
 
-/**
- * Slots a character's reference assets into front/side/back. Characters
- * saved before per-view tagging existed (or edited through the old flow,
- * which reset every asset's view to `general` on save) carry everything as
- * `general` — those are positioned front→side→back in list order as a
- * read-only fallback so old data stays visible instead of appearing empty.
- */
-function slotReferences(character: Character): Record<ReferenceView, ReferenceImage | null> {
-  const slots: Record<ReferenceView, ReferenceImage | null> = { front: null, side: null, back: null };
-  let anyTagged = false;
-  for (const view of REFERENCE_VIEWS) {
-    const asset = referenceByView(character, view);
-    if (asset) {
-      slots[view] = { id: asset.asset_id, url: asset.url ?? '' };
-      anyTagged = true;
-    }
-  }
-  if (anyTagged) return slots;
-  const general = (character.reference_assets ?? []).filter((asset) => asset.view === 'general');
-  REFERENCE_VIEWS.forEach((view, index) => {
-    const asset = general[index];
-    if (asset) slots[view] = { id: asset.asset_id, url: asset.url ?? '' };
+function sheetHref(character: Pick<Character, 'id' | 'name' | 'description'>): string {
+  return characterImageStudioHref({
+    characterId: character.id,
+    name: character.name,
+    appearance: character.description,
   });
-  return slots;
-}
-
-/** Lets the edit form point a reference slot at an asset the user already
- * generated, instead of uploading a new file. There is no general
- * asset-library endpoint, so this reuses the user's own succeeded
- * text-to-image/image-to-image job outputs. */
-function ExistingAssetPickerDialog({
-  open,
-  onClose,
-  onSelect,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSelect: (asset: ReferenceImage) => void;
-}) {
-  const t = useTranslations('characters');
-  // Modeled on `use-resource.ts`: "loading" is derived from the absence of a
-  // result rather than a `setLoading(true)` at the top of the effect, so the
-  // fetch only ever runs once per mount (cached across repeated slot picks)
-  // and no setState happens synchronously in the effect body.
-  const [result, setResult] = useState<
-    { status: 'ready'; assets: ReferenceImage[] } | { status: 'failed' } | null
-  >(null);
-
-  useEffect(() => {
-    if (!open || result !== null) return;
-    let cancelled = false;
-    void api
-      .get<Page<GenerationJob>>('/v1/generation-jobs?status=succeeded&limit=50')
-      .then((page) => {
-        if (cancelled) return;
-        const items: ReferenceImage[] = [];
-        for (const job of page.items) {
-          if (job.operation !== 'text_to_image' && job.operation !== 'image_to_image') continue;
-          const ids = job.output_asset_ids?.length
-            ? job.output_asset_ids
-            : job.output_asset_id
-              ? [job.output_asset_id]
-              : [];
-          const urls = job.output_urls?.length
-            ? job.output_urls
-            : job.output_url
-              ? [job.output_url]
-              : [];
-          ids.forEach((id, index) => {
-            const url = urls[index];
-            if (url) items.push({ id, url });
-          });
-        }
-        setResult({ status: 'ready', assets: items });
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ status: 'failed' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, result]);
-
-  const loading = open && result === null;
-  const error = result?.status === 'failed';
-  const assets = result?.status === 'ready' ? result.assets : [];
-
-  return (
-    <Dialog open={open} onClose={onClose} title={t('referencePickerTitle')} size="lg">
-      {loading ? (
-        <div className="flex justify-center py-10">
-          <Spinner className="size-5" />
-        </div>
-      ) : error ? (
-        <ErrorNotice title={t('referencePickerError')} />
-      ) : assets.length === 0 ? (
-        <EmptyState title={t('referencePickerEmpty')} />
-      ) : (
-        <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
-          {assets.map((asset) => (
-            <button
-              key={asset.id}
-              type="button"
-              onClick={() => onSelect(asset)}
-              className="relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft"
-            >
-              <Image src={asset.url} alt="" fill sizes="120px" className="object-cover" />
-            </button>
-          ))}
-        </div>
-      )}
-    </Dialog>
-  );
 }
 
 /**
  * Card list of the creator's reusable cast, with a drawer to create or edit one.
  *
- * A character only stores a text voice hint and up to three reference
- * images (front/side/back) — no sample audio, no face-consistency model —
- * so what is offered here is a profile a future generation call can be
- * pointed at, not a finished likeness.
+ * A character stores a text voice hint and one character-sheet image —
+ * the multi-panel design board generated from the image studio — so what
+ * is offered here is a profile a future generation call can be pointed at.
  */
 export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const t = useTranslations('characters');
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
-  const tCredits = useTranslations('credits');
+  const tMedia = useTranslations('media');
   const { notify } = useToast();
   const router = useRouter();
 
@@ -211,9 +87,11 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [editing, setEditing] = useState<Character | null>(null);
   const [form, setForm] = useState<CharacterForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [saveIntent, setSaveIntent] = useState<'save' | 'saveAndGenerate'>('save');
   const [formError, setFormError] = useState<string | null>(null);
-  const [uploadingView, setUploadingView] = useState<ReferenceView | null>(null);
-  const [pickerView, setPickerView] = useState<ReferenceView | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
@@ -230,37 +108,26 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  // Keyed by `${character.id}:${view}` rather than just the character id —
-  // once completion is per-view (see `completeViews` below), two different
-  // cells under the *same* character can each be mid-request, and a cell
-  // must only show its own spinner/disable itself for its own request, not
-  // whichever one some other cell (or character) happens to be running.
-  const [completingKey, setCompletingKey] = useState<string | null>(null);
-  const [deletingViewKey, setDeletingViewKey] = useState<string | null>(null);
-  /**
-   * One idempotency key per pending completion, not one per click — a
-   * network failure leaves the server's outcome unknown, and re-minting a
-   * key on retry could reserve credits twice for the same views. Cleared
-   * once the completion job actually comes back with an id.
-   */
-  const pendingCompletionKeys = useRef<Map<string, string>>(new Map());
 
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
     setFormError(null);
+    setNameError(null);
     setSheetOpen(true);
   };
 
   const openEdit = (character: Character) => {
+    const sheet = characterSheetAsset(character);
     setEditing(character);
     setForm({
       name: character.name,
       description: character.description ?? '',
       voiceDescription: character.voice_description ?? '',
-      references: slotReferences(character),
+      reference: sheet ? { id: sheet.asset_id, url: sheet.url ?? '' } : null,
     });
     setFormError(null);
+    setNameError(null);
     setSheetOpen(true);
   };
 
@@ -269,55 +136,65 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
     setSheetOpen(false);
   };
 
-  const setSlot = (view: ReferenceView, asset: ReferenceImage | null) => {
-    setForm((current) => ({ ...current, references: { ...current.references, [view]: asset } }));
+  const setReference = (asset: ExistingAssetPick | null) => {
+    setForm((current) => ({ ...current, reference: asset }));
   };
 
-  const uploadToSlot = async (view: ReferenceView, file: File | undefined) => {
+  const uploadReference = async (file: File | undefined) => {
     if (!file) return;
-    setUploadingView(view);
+    setUploading(true);
     try {
       const asset = await uploadFile(file, 'generation_reference');
-      setSlot(view, { id: asset.id, url: asset.url ?? '' });
+      setReference({ id: asset.id, url: asset.url ?? '' });
     } catch {
       notify(tStates('error'), 'error');
     } finally {
-      setUploadingView(null);
+      setUploading(false);
     }
   };
 
-  const submit = async (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = form.name.trim();
     if (!name) return;
+    // Read the clicked submitter — `setSaveIntent` in the button's onClick
+    // is not flushed before this handler, so `saveIntent` would still be
+    // `'save'` and "保存并生成" would only create the card.
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const intent =
+      submitter instanceof HTMLButtonElement && submitter.value === 'saveAndGenerate'
+        ? 'saveAndGenerate'
+        : 'save';
+    setSaveIntent(intent);
+    const duplicate = characters.some(
+      (item) => item.id !== editing?.id && item.name.trim() === name,
+    );
+    if (duplicate) {
+      setNameError(t('nameTaken'));
+      setFormError(t('nameTaken'));
+      return;
+    }
 
     setSaving(true);
     setFormError(null);
+    setNameError(null);
     try {
-      const referenceEntries = REFERENCE_VIEWS.map((view) => ({
-        view,
-        asset: form.references[view],
-      })).filter(
-        (entry): entry is { view: ReferenceView; asset: ReferenceImage } => entry.asset !== null,
-      );
       const payload = {
         name,
         description: form.description.trim() || null,
-        reference_asset_ids: referenceEntries.map((entry) => entry.asset.id),
+        reference_asset_ids: form.reference ? [form.reference.id] : [],
         voice_description: form.voiceDescription.trim() || null,
       };
       let saved = editing
         ? await api.patch<Character>(`/v1/characters/${editing.id}`, payload)
         : await api.post<Character>('/v1/characters', payload);
-      // The call above always resets every reference asset's view tag back
-      // to `general` server-side (`_entries_from_flat_ids`) — restore each
-      // slot's real front/side/back tag through the per-asset endpoint.
-      for (const entry of referenceEntries) {
-        await api.patch(`/v1/characters/${saved.id}/reference-assets/${entry.asset.id}`, {
-          view: entry.view,
+      // The call above resets every reference asset's view tag to `general`
+      // (`_entries_from_flat_ids`) — tag the one sheet as `front` so the
+      // card hero and a later studio seed both find it.
+      if (form.reference) {
+        await api.patch(`/v1/characters/${saved.id}/reference-assets/${form.reference.id}`, {
+          view: 'front',
         });
-      }
-      if (referenceEntries.length > 0) {
         saved = await api.get<Character>(`/v1/characters/${saved.id}`);
       }
       setCharacters((current) =>
@@ -326,10 +203,20 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
           : [saved, ...current],
       );
       setSheetOpen(false);
+      if (intent === 'saveAndGenerate' && !form.reference) {
+        router.push(sheetHref(saved));
+      }
     } catch (caught) {
-      setFormError(caught instanceof ApiError ? caught.message : tStates('errorHint'));
+      if (caught instanceof ApiError) {
+        const taken = Boolean(caught.fieldErrors.name);
+        setNameError(taken ? t('nameTaken') : (caught.fieldErrors.name ?? null));
+        setFormError(taken ? t('nameTaken') : caught.message);
+      } else {
+        setFormError(tStates('errorHint'));
+      }
     } finally {
       setSaving(false);
+      setSaveIntent('save');
     }
   };
 
@@ -408,139 +295,6 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
     }
   };
 
-  const pollCompletionJob = async (jobId: string): Promise<GenerationJob> => {
-    for (let attempt = 0; attempt < COMPLETION_POLL_MAX_ATTEMPTS; attempt += 1) {
-      const job = await api.get<GenerationJob>(`/v1/generation-jobs/${jobId}`);
-      if (TERMINAL_JOB_STATUSES.has(job.status)) return job;
-      await new Promise((resolve) => setTimeout(resolve, COMPLETION_POLL_INTERVAL_MS));
-    }
-    throw new Error('generation job polling timed out');
-  };
-
-  // Borrows the front reference and asks the shared image-asset graph for
-  // whichever of `views` is passed (usually just the one cell that was
-  // clicked, sometimes both at once — see call sites below) in one job
-  // (`character_views: views`) — `execute_asset_output_advance` loops once
-  // per entry, `execute_asset_output_link` attaches every output back to
-  // this same character (see `zaolang-generation-jobs` invariant on
-  // multi-output character jobs). The prompt is a fixed reference-only
-  // instruction, never the character's own description/name — the backend
-  // (`execute_asset_planning`) hard-overrides it for a side/back pass
-  // regardless, but sending it here too keeps the request's own intent
-  // self-explanatory rather than silently relying on that override.
-  const completeViews = async (character: Character, views: Array<'side' | 'back'>) => {
-    const front = referenceByView(character, 'front');
-    if (!front || views.length === 0) {
-      notify(t('completeViewsNeedsFront'), 'error');
-      return;
-    }
-    const key = `${character.id}:${views.join(',')}`;
-    setCompletingKey(key);
-    try {
-      // Priced before submitting, not just left to the submit's own
-      // `INSUFFICIENT_CREDITS` failure — a multi-view completion costs one
-      // image per view, and this page has no estimate box anywhere near the
-      // button to have warned the user beforehand otherwise.
-      const quote = await api.post<Quote>('/v1/generation-jobs/quote', {
-        operation: 'image_to_image',
-        quality_tier: 'standard',
-        asset_kind: 'character',
-        character_views: views,
-      });
-      if (!quote.sufficient) {
-        notify(tCredits('insufficientDetail', { count: quote.credits }), 'error');
-        router.push('/billing');
-        return;
-      }
-    } catch {
-      notify(tStates('errorHint'), 'error');
-      setCompletingKey(null);
-      return;
-    }
-    let idempotencyKey = pendingCompletionKeys.current.get(key);
-    if (!idempotencyKey) {
-      idempotencyKey = newIdempotencyKey();
-      pendingCompletionKeys.current.set(key, idempotencyKey);
-    }
-    try {
-      const job = await api.post<GenerationJob>(
-        '/v1/generation-jobs',
-        {
-          operation: 'image_to_image',
-          quality_tier: 'standard',
-          params: {
-            prompt: CHARACTER_COMPLETION_PROMPT,
-            aspect_ratio: '3:4',
-            reference_asset_ids: [front.asset_id],
-            asset_kind: 'character',
-            character_views: views,
-            target_character_id: character.id,
-            auto_attach_asset: true,
-          },
-        },
-        { idempotencyKey },
-      );
-      pendingCompletionKeys.current.delete(key);
-      const finished = await pollCompletionJob(job.id);
-      if (finished.status !== 'succeeded') {
-        notifyViewCompletion(views, false);
-        return;
-      }
-      const refreshed = await api.get<Character>(`/v1/characters/${character.id}`);
-      setCharacters((current) =>
-        current.map((item) => (item.id === refreshed.id ? refreshed : item)),
-      );
-      notifyViewCompletion(views, true);
-    } catch (caught) {
-      // A changed request under the same key would 409 forever; only that
-      // case forces a fresh key, everything else (network, timeout, a real
-      // failure) keeps it so a retry can't double-reserve.
-      if (caught instanceof ApiError && caught.code === 'IDEMPOTENCY_CONFLICT') {
-        pendingCompletionKeys.current.delete(key);
-      }
-      notifyViewCompletion(views, false);
-    } finally {
-      setCompletingKey(null);
-    }
-  };
-
-  // A single view names it specifically ("补全侧面"/"补全背面"); both at
-  // once (the studio's inline result offers this shape, not this page —
-  // see `ImageGenerationStudio`'s `completeCharacterViews`) falls back to
-  // the older, generic "补全侧面/背面" copy.
-  const notifyViewCompletion = (views: Array<'side' | 'back'>, success: boolean) => {
-    const [singleView] = views;
-    if (views.length === 1 && singleView) {
-      const view = t(VIEW_LABEL_KEY[singleView]);
-      notify(success ? t('completeViewDone', { view }) : t('completeViewFailed', { view }), success ? 'success' : 'error');
-      return;
-    }
-    notify(success ? t('completeViewsDone') : t('completeViewsFailed'), success ? 'success' : 'error');
-  };
-
-  // Deletes just one side/back reference — the view's grid cell goes back
-  // to a completable, empty slot immediately after (derived from
-  // `missingReferenceViews` once `characters` reflects the response), no
-  // separate "completed" flag to reset.
-  const deleteReferenceView = async (character: Character, view: 'side' | 'back', assetId: string) => {
-    const key = `${character.id}:${view}`;
-    setDeletingViewKey(key);
-    try {
-      const updated = await api.delete<Character>(
-        `/v1/characters/${character.id}/reference-assets/${assetId}`,
-      );
-      setCharacters((current) =>
-        current.map((item) => (item.id === updated.id ? updated : item)),
-      );
-    } catch {
-      notify(tStates('error'), 'error');
-    } finally {
-      setDeletingViewKey(null);
-    }
-  };
-
-  // Shared between the `Dialog` (desktop) and `Sheet` (mobile) containers
-  // below — the two differ only in how they present the same form.
   const characterForm = (
     <form
       id="character-form"
@@ -552,7 +306,11 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         value={form.name}
         maxLength={120}
         required
-        onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+        error={nameError ?? undefined}
+        onChange={(event) => {
+          setNameError(null);
+          setForm((current) => ({ ...current, name: event.target.value }));
+        }}
       />
       <TextArea
         label={t('descriptionLabel')}
@@ -572,74 +330,95 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         }
       />
       <div>
-        <p className="text-sm font-medium text-text">{t('referenceLabel')}</p>
-        <p className="mt-1 text-xs text-muted">{t('referenceHint')}</p>
-        <div className="mt-2 grid grid-cols-3 gap-3">
-          {REFERENCE_VIEWS.map((view) => {
-            const asset = form.references[view];
-            return (
-              <div key={view} className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">{t(VIEW_LABEL_KEY[view])}</span>
-                {asset ? (
-                  <div className="relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
-                    <button
-                      type="button"
-                      onClick={() => setLightboxUrl(asset.url)}
-                      className="absolute inset-0"
-                    >
-                      <Image src={asset.url} alt="" fill sizes="120px" className="object-cover" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={tActions('delete')}
-                      onClick={() => setSlot(view, null)}
-                      className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-surface-raised/90 text-muted hover:text-text"
-                    >
-                      <IconClose className="size-3" />
-                    </button>
-                  </div>
+        <p className="text-sm font-medium text-text">{t('sheetLabel')}</p>
+        <p className="mt-1 text-xs text-muted">{t('sheetHint')}</p>
+        <div className="mt-2 max-w-xs">
+          {form.reference ? (
+            <div className="relative aspect-video overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+              <button
+                type="button"
+                aria-label={tMedia('lightboxTitle')}
+                onClick={() => setLightboxUrl(form.reference?.url ?? null)}
+                className="absolute inset-0"
+              >
+                <Image
+                  src={form.reference.url}
+                  alt=""
+                  fill
+                  sizes="320px"
+                  className="object-contain"
+                />
+              </button>
+              <button
+                type="button"
+                aria-label={tActions('delete')}
+                onClick={() => setReference(null)}
+                className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-surface-raised/90 text-muted hover:text-text"
+              >
+                <IconClose className="size-3" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex aspect-video flex-col overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-border">
+              <label className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-1 border-b border-dashed border-border text-muted transition-colors hover:border-border-strong hover:text-text">
+                {uploading ? (
+                  <Spinner className="size-4" />
                 ) : (
-                  <div className="flex aspect-square flex-col overflow-hidden rounded-[var(--radius-sm)] border border-dashed border-border">
-                    <label className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-1 border-b border-dashed border-border text-muted transition-colors hover:border-border-strong hover:text-text">
-                      {uploadingView === view ? (
-                        <Spinner className="size-4" />
-                      ) : (
-                        <>
-                          <IconUpload className="size-4" />
-                          <span className="text-[10px]">{t('referenceUpload')}</span>
-                        </>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        onChange={(event) => void uploadToSlot(view, event.target.files?.[0])}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setPickerView(view)}
-                      className="flex flex-1 flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
-                    >
-                      <IconImage className="size-4" />
-                      <span className="text-[10px]">{t('referenceChooseExisting')}</span>
-                    </button>
-                  </div>
+                  <>
+                    <IconUpload className="size-4" />
+                    <span className="text-[10px]">{t('referenceUpload')}</span>
+                  </>
                 )}
-              </div>
-            );
-          })}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(event) => void uploadReference(event.target.files?.[0])}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                className="flex flex-1 flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
+              >
+                <IconImage className="size-4" />
+                <span className="text-[10px]">{t('referenceChooseExisting')}</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </form>
   );
 
+  const canSaveAndGenerate = !form.reference;
   const formFooter = (
-    <div className="flex w-full justify-end gap-3">
+    <div className="flex w-full flex-wrap justify-end gap-3">
       <Button variant="ghost" onClick={closeSheet} disabled={saving}>
         {tActions('cancel')}
       </Button>
-      <Button type="submit" form="character-form" loading={saving} className="w-28">
+      {canSaveAndGenerate ? (
+        <Button
+          type="submit"
+          form="character-form"
+          name="intent"
+          value="saveAndGenerate"
+          variant="secondary"
+          loading={saving && saveIntent === 'saveAndGenerate'}
+          disabled={saving}
+        >
+          {t('saveAndGenerate')}
+        </Button>
+      ) : null}
+      <Button
+        type="submit"
+        form="character-form"
+        name="intent"
+        value="save"
+        loading={saving && saveIntent === 'save'}
+        disabled={saving}
+        className="w-28"
+      >
         {tActions('save')}
       </Button>
     </div>
@@ -662,92 +441,37 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {characters.map((character) => {
-            const references = slotReferences(character);
+            const sheet = characterSheetAsset(character);
             return (
               <li key={character.id}>
                 <Card className="flex h-full flex-col gap-3 p-4">
                   <h3 className="truncate text-sm font-semibold">{character.name}</h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    {REFERENCE_VIEWS.map((view) => {
-                      const asset = references[view];
-                      const canDeleteView = Boolean(asset) && view !== 'front';
-                      const canComplete =
-                        !asset &&
-                        view !== 'front' &&
-                        missingReferenceViews(character).includes(view as 'side' | 'back');
-                      const viewKey = `${character.id}:${view}`;
-                      const isCompletingThis = completingKey === viewKey;
-                      const isDeletingThis = deletingViewKey === viewKey;
-                      const busyElsewhere =
-                        (completingKey !== null && completingKey !== viewKey) ||
-                        (deletingViewKey !== null && deletingViewKey !== viewKey);
-                      return (
-                        <div
-                          key={view}
-                          className="relative aspect-square overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft"
-                        >
-                          {asset ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setLightboxUrl(asset.url)}
-                                className="absolute inset-0"
-                              >
-                                <Image
-                                  src={asset.url}
-                                  alt=""
-                                  fill
-                                  sizes="120px"
-                                  className="object-cover"
-                                />
-                              </button>
-                              {canDeleteView ? (
-                                <button
-                                  type="button"
-                                  aria-label={t('deleteViewLabel', { view: t(VIEW_LABEL_KEY[view]) })}
-                                  disabled={busyElsewhere}
-                                  onClick={() =>
-                                    void deleteReferenceView(character, view as 'side' | 'back', asset.id)
-                                  }
-                                  className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-surface-raised/90 text-muted transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {isDeletingThis ? (
-                                    <Spinner className="size-3" />
-                                  ) : (
-                                    <IconClose className="size-3" />
-                                  )}
-                                </button>
-                              ) : null}
-                            </>
-                          ) : canComplete ? (
-                            <button
-                              type="button"
-                              disabled={busyElsewhere}
-                              onClick={() => void completeViews(character, [view as 'side' | 'back'])}
-                              className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {isCompletingThis ? (
-                                <Spinner className="size-4" />
-                              ) : (
-                                <IconPlus className="size-4" />
-                              )}
-                              <span className="text-[10px]">
-                                {isCompletingThis
-                                  ? t('completingViewButton', { view: t(VIEW_LABEL_KEY[view]) })
-                                  : t('completeViewButton', { view: t(VIEW_LABEL_KEY[view]) })}
-                              </span>
-                            </button>
-                          ) : (
-                            <div className="absolute inset-0 grid place-items-center px-1 text-center text-[10px] text-muted">
-                              {t('noReference')}
-                            </div>
-                          )}
-                          <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-overlay px-1 text-[9px] leading-tight text-text">
-                            {t(VIEW_LABEL_KEY[view])}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  <div className="relative aspect-video overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
+                    {sheet?.url ? (
+                      <button
+                        type="button"
+                        aria-label={tMedia('lightboxTitle')}
+                        onClick={() => setLightboxUrl(sheet.url ?? null)}
+                        className="absolute inset-0"
+                      >
+                        <Image
+                          src={sheet.url}
+                          alt=""
+                          fill
+                          sizes="360px"
+                          className="object-contain"
+                        />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => router.push(sheetHref(character))}
+                        className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted transition-colors hover:text-text"
+                      >
+                        <IconSparkle className="size-4" />
+                        <span className="text-[10px]">{t('generateSheet')}</span>
+                      </button>
+                    )}
                   </div>
                   {character.status !== 'draft' || character.access_credits > 0 ? (
                     <div className="flex items-center gap-1.5">
@@ -795,6 +519,13 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
                     ) : null}
                   </div>
                   <div className="mt-auto flex items-center justify-center gap-6 border-t border-border pt-3">
+                    <IconButton
+                      size="sm"
+                      label={sheet ? t('generateAgain') : t('generateSheet')}
+                      onClick={() => router.push(sheetHref(character))}
+                    >
+                      <IconSparkle className="size-4" />
+                    </IconButton>
                     <IconButton
                       size="sm"
                       label={tActions('edit')}
@@ -864,12 +595,15 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       )}
 
       <ExistingAssetPickerDialog
-        open={pickerView !== null}
-        onClose={() => setPickerView(null)}
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
         onSelect={(asset) => {
-          if (pickerView) setSlot(pickerView, asset);
-          setPickerView(null);
+          setReference(asset);
+          setPickerOpen(false);
         }}
+        title={t('referencePickerTitle')}
+        empty={t('referencePickerEmpty')}
+        error={t('referencePickerError')}
       />
 
       <MediaLightbox

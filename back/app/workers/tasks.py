@@ -59,7 +59,11 @@ _GENERATION = {"soft_time_limit": 300, "time_limit": 360}
 # `dispatch_generation` then adds `_IMAGE_EXTRA_VIEW` per extra
 # `character_views` entry (the in-task loop after `asset_output_advance`).
 # The cap is the 3-view maximum — stay well under `visibility_timeout`.
-_IMAGE_GENERATION = {"soft_time_limit": 420, "time_limit": 480}
+# Floor covers gpt-image-2's documented ≥10-minute client timeout (600s HTTP)
+# plus settle room. Extra character views still add `_IMAGE_EXTRA_VIEW`,
+# capped by `_IMAGE_GENERATION_CAP` — a 3-view loop on this model may still
+# hit the cap; that combination is called out on the catalog entry.
+_IMAGE_GENERATION = {"soft_time_limit": 660, "time_limit": 720}
 _IMAGE_EXTRA_VIEW = {"soft_time_limit": 180, "time_limit": 240}
 _IMAGE_GENERATION_CAP = {"soft_time_limit": 780, "time_limit": 960}
 _LONG_GENERATION = {"soft_time_limit": 480, "time_limit": 600}

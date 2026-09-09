@@ -173,6 +173,12 @@ AGENT_TOOL_GRANTS: dict[str, frozenset[str]] = {
     "editor_planner": frozenset(
         {"timeline_summary", "lookup_shortform_profile", "lookup_media_analysis"}
     ),
+    # Deliberately empty. The canvas planner is handed its whole context up
+    # front (`agent_service.upstream_context` builds the digest), so it has
+    # nothing to fetch — and pricing is computed server-side in `persist_run`
+    # via `quote_for`, so letting it reach `price_operation` would only give it
+    # a way to tell the user a cost the platform will not charge.
+    "canvas_planner": frozenset(),
 }
 
 

@@ -1156,3 +1156,66 @@ def test_list_scripts_shows_zero_turn_shells_too(
     populated = client.get("/v1/scripts", headers=auth_header(author))
     assert len(populated.json()) == 2
     assert sorted(row["turn_count"] for row in populated.json()) == [0, 1]
+
+
+def test_extract_script_source_returns_txt_text(
+    client: TestClient, db: Session, author: User
+) -> None:
+    _enable_script_studio(db, author)
+    response = client.post(
+        "/v1/scripts/extract",
+        files={"file": ("idea.txt", "深夜便利店的秘密".encode(), "text/plain")},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["filename"] == "idea.txt"
+    assert body["text"] == "深夜便利店的秘密"
+    assert body["char_count"] == len(body["text"])
+    assert body["truncated"] is False
+
+
+def test_extract_script_source_requires_auth(client: TestClient) -> None:
+    response = client.post(
+        "/v1/scripts/extract",
+        files={"file": ("idea.txt", b"hello", "text/plain")},
+    )
+    assert response.status_code == 401
+
+
+def test_extract_script_source_requires_flag(client: TestClient, author: User) -> None:
+    response = client.post(
+        "/v1/scripts/extract",
+        files={"file": ("idea.txt", "深夜便利店的秘密".encode(), "text/plain")},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 404
+
+
+def test_extract_script_source_rejects_unsupported_type(
+    client: TestClient, db: Session, author: User
+) -> None:
+    _enable_script_studio(db, author)
+    response = client.post(
+        "/v1/scripts/extract",
+        files={"file": ("notes.pdf", b"%PDF-1.4", "application/pdf")},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 422
+
+
+def test_create_script_accepts_a_long_extracted_idea(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+    idea = "钩子" + ("字" * 2100)
+    response = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": idea},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 202, response.text
+    complete = next(data for kind, data in _parse_sse(response.text) if kind == "complete")
+    detail = client.get(f"/v1/scripts/{complete['episode_id']}", headers=auth_header(author))
+    assert detail.json()["source_idea"] == idea
