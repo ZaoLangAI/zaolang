@@ -122,7 +122,7 @@ struct BillingView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.t(entry.type.value?.labelKey ?? "billingPage.typeAdjustment")).font(.subheadline)
-                Text(entry.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(ZLClock.dateTime(entry.createdAt))
                     .font(.caption2)
                     .foregroundStyle(Color.zl.textMuted)
             }

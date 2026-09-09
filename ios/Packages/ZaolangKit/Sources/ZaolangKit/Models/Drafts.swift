@@ -77,6 +77,22 @@ public struct DraftResponse: Codable, Sendable, Equatable, Identifiable {
 
     public var isRemix: Bool { sourceWorkVersionID != nil }
 
+    /// Stored title, else the first line of `params.prompt`. Original creates
+    /// used to persist `title == nil` and every card fell back to the section
+    /// heading 「最近生成记录」.
+    public var displayTitle: String? {
+        if let title {
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        guard let prompt = stringParam("prompt") else { return nil }
+        let line = prompt.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
+            .first
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        if line.isEmpty { return nil }
+        return String(line.prefix(200))
+    }
+
     public func stringParam(_ key: String) -> String? {
         guard case .string(let value)? = params[key] else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)

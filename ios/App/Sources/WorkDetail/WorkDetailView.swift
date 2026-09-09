@@ -132,7 +132,7 @@ struct WorkDetailView: View {
                 }
             }
             if let publishedAt = detail.publishedAt {
-                Text(L10n.t("work.publishedOn", ["date": publishedAt.formatted(date: .abbreviated, time: .omitted)]))
+                Text(L10n.t("work.publishedOn", ["date": ZLClock.date(publishedAt)]))
                     .font(.caption)
                     .foregroundStyle(Color.zl.textMuted)
             }

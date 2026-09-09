@@ -39,7 +39,7 @@ struct DraftDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 DraftMediaView(draft: draft)
 
-                Text(draft.title ?? L10n.t("createPage.recentDrafts")).font(.title3.weight(.semibold))
+                Text(draft.displayTitle ?? L10n.t("createPage.untitledDraft")).font(.title3.weight(.semibold))
 
                 DraftSpecSection(draft: draft)
 

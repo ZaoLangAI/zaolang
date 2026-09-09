@@ -172,7 +172,7 @@ struct JobDetailView: View {
                     HStack {
                         Text(event.message).font(.caption)
                         Spacer()
-                        Text(event.createdAt.formatted(date: .omitted, time: .standard))
+                        Text(ZLClock.time(event.createdAt))
                             .font(.caption2)
                             .foregroundStyle(Color.zl.textMuted)
                     }

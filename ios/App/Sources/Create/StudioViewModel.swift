@@ -304,9 +304,28 @@ final class StudioViewModel {
         submitError = nil
         defer { isSubmitting = false }
         do {
-            let draft = try await environment.apiClient.createDraft(DraftCreateRequest(sourceWorkID: sourceWorkID))
-            let idempotencyKey = await environment.idempotencyKeys.key(for: draft.id)
             let effectiveOp = effectiveOperation
+            let sourceTitle = sourceWork?.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let promptLine = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
+                .first
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+            let draftTitle: String?
+            if let sourceTitle, !sourceTitle.isEmpty {
+                draftTitle = sourceTitle
+            } else if !promptLine.isEmpty {
+                draftTitle = String(promptLine.prefix(200))
+            } else {
+                draftTitle = nil
+            }
+            let draft = try await environment.apiClient.createDraft(
+                DraftCreateRequest(
+                    sourceWorkID: sourceWorkID,
+                    title: draftTitle,
+                    params: ["prompt": .string(prompt), "operation": .string(effectiveOp.rawValue)]
+                )
+            )
+            let idempotencyKey = await environment.idempotencyKeys.key(for: draft.id)
             let referenceIDs = referenceAsset.map { [$0.id] } ?? []
             let isCharacterAssetKind = operation.isImage && assetKind == .character
             let params = GenerationParams(

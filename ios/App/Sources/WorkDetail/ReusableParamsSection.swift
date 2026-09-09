@@ -53,7 +53,7 @@ struct ReusableParamsSection: View {
             rows.append(Row(id: "style", label: L10n.t("work.modelStyle"), value: joined, copyValue: joined))
         }
         if let version {
-            let value = "v\(version.versionNumber) · \(version.createdAt.formatted(date: .abbreviated, time: .omitted))"
+            let value = "v\(version.versionNumber) · \(ZLClock.date(version.createdAt))"
             rows.append(Row(id: "workflow", label: L10n.t("work.workflowVersion"), value: value, copyValue: params.workflowVersionID ?? value))
         } else if let workflowID = params.workflowVersionID {
             rows.append(Row(id: "workflow", label: L10n.t("work.workflowVersion"), value: workflowID, copyValue: workflowID))

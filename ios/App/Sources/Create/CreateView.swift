@@ -138,7 +138,7 @@ struct CreateView: View {
                             DraftPoster(draft: draft, aspectRatio: 1)
                                 .frame(width: 48, height: 48)
                                 .zlCornerRadius(ZLRadius.sm)
-                            Text(draft.title ?? L10n.t("createPage.recentDrafts")).font(.subheadline).lineLimit(1)
+                            Text(draft.displayTitle ?? L10n.t("createPage.untitledDraft")).font(.subheadline).lineLimit(1)
                             Spacer()
                         }
                         .padding(12)

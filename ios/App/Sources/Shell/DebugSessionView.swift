@@ -74,7 +74,7 @@ struct DebugSessionView: View {
         isBusy = true
         await action()
         await refreshDisplayedState()
-        lastAction = "\(label) · \(Date().formatted(date: .omitted, time: .standard))"
+        lastAction = "\(label) · \(ZLClock.time(Date()))"
         isBusy = false
     }
 

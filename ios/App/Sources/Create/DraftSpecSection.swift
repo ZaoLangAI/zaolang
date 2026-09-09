@@ -57,7 +57,7 @@ struct DraftSpecSection: View {
         rows.append((
             "createdAt",
             L10n.t("publishPage.createdAt"),
-            draft.createdAt.formatted(date: .abbreviated, time: .shortened)
+            ZLClock.dateTime(draft.createdAt)
         ))
         return rows
     }

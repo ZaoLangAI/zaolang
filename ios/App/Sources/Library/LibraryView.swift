@@ -271,7 +271,7 @@ private struct DraftRow: View {
                         .frame(width: 56, height: 56)
                         .zlCornerRadius(ZLRadius.sm)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(draft.title ?? L10n.t("createPage.recentDrafts"))
+                        Text(draft.displayTitle ?? L10n.t("createPage.untitledDraft"))
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
                         Text(draft.isRemix ? L10n.t("createPage.modeRemixTitle") : L10n.t("createPage.modeTextToVideoTitle"))

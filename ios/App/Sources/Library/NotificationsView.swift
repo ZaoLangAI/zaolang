@@ -82,7 +82,7 @@ struct NotificationsView: View {
                     }
                 }
                 Text(item.bodyText).font(.subheadline)
-                Text((item.updatedAt ?? item.createdAt).formatted(date: .abbreviated, time: .shortened))
+                Text(ZLClock.dateTime(item.updatedAt ?? item.createdAt))
                     .font(.caption2)
                     .foregroundStyle(Color.zl.textMuted)
             }
