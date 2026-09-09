@@ -90,8 +90,11 @@ async function send(
   options: RequestOptions,
   token: string | null,
 ): Promise<Response> {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
-  if (options.body !== undefined) headers['content-type'] = 'application/json';
+  // Let the browser set the multipart boundary — a hand-written
+  // `content-type` would drop it and the server would reject the body.
+  if (options.body !== undefined && !isFormData) headers['content-type'] = 'application/json';
   if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
   if (token) headers.authorization = `Bearer ${token}`;
 
@@ -101,7 +104,12 @@ async function send(
     credentials: 'include',
     signal: options.signal,
     keepalive: options.keepalive,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body:
+      options.body === undefined
+        ? undefined
+        : isFormData
+          ? (options.body as FormData)
+          : JSON.stringify(options.body),
   });
 }
 

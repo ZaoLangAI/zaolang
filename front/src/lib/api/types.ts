@@ -47,7 +47,22 @@ export type VideoAnalysisShot = S['VideoAnalysisShot'];
 
 export type ShortformProfile = S['ShortformProfileResponse'];
 export type ShortformProfiles = S['ShortformProfilesResponse'];
-export type PromptEnhancePayload = S['PromptEnhanceRequest'];
+export interface PromptEnhanceScriptBlock {
+  type: 'scene' | 'action' | 'camera' | 'dialogue';
+  character: string | null;
+  text: string;
+}
+
+export interface PromptEnhanceScriptSegment {
+  heading: string;
+  blocks: PromptEnhanceScriptBlock[];
+}
+
+export type PromptEnhancePayload = S['PromptEnhanceRequest'] & {
+  script_segment?: PromptEnhanceScriptSegment;
+  /** Answers to the previous round's `questions`, keyed by question id. */
+  question_answers?: Record<string, string | string[]>;
+};
 // `/generation/prompts/enhance` is a `StreamingResponse` (see
 // `api/v1/prompts.py`), so its final frame — `PromptEnhanceResponse` on the
 // backend — never gets a `response_model` and so never appears in
@@ -67,12 +82,23 @@ export interface PromptEnhanceDimension {
   status: 'missing' | 'weak' | 'ok';
   hint: string;
 }
+/** Same shape as a job's awaiting-input question, so both render through
+ * `QuestionField`. Scene plates are the only kind that asks today. */
+export interface PromptEnhanceQuestion {
+  id: string;
+  kind: 'single_choice' | 'multi_choice' | 'free_text';
+  prompt: string;
+  options?: Array<{ value: string; label: string }>;
+  required?: boolean;
+}
 export interface PromptEnhanceResult {
   prompt: string;
   detail_level: 'sparse' | 'adequate' | 'detailed';
   feedback: string;
   dimensions: PromptEnhanceDimension[];
   additions: string[];
+  questions?: PromptEnhanceQuestion[];
+  script_segment?: PromptEnhanceScriptSegment;
 }
 export type JobInputQuestion = S['JobInputQuestionView'];
 export type JobInputRequest = S['JobInputRequestResponse'];

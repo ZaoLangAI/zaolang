@@ -2880,6 +2880,7 @@
           "drafts"
         ],
         "summary": "List Drafts",
+        "description": "Unpublished drafts the current user created.\n\nAnother user's drafts never appear. A former collaborator's jump-outs\nbound to a series they left are omitted from this list too.",
         "operationId": "list_drafts_v1_drafts_get",
         "parameters": [
           {
@@ -3115,6 +3116,134 @@
         }
       }
     },
+    "/v1/drafts/{draft_id}/applied-version": {
+      "post": {
+        "tags": [
+          "drafts"
+        ],
+        "summary": "Apply Draft Version",
+        "operationId": "apply_draft_version_v1_drafts__draft_id__applied_version_post",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppliedVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/drafts/{draft_id}/versions/{job_id}": {
+      "delete": {
+        "tags": [
+          "drafts"
+        ],
+        "summary": "Hide Draft Version",
+        "operationId": "hide_draft_version_v1_drafts__draft_id__versions__job_id__delete",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/generation-jobs/quote": {
       "post": {
         "tags": [
@@ -3181,7 +3310,7 @@
           "generation"
         ],
         "summary": "List Generation Models",
-        "description": "Read-only model list for `GenerationParams.forced_model`'s studio\npicker — one entry per distinct `ProviderCapability.model_or_workflow`\nenabled for this operation, sourced live from the exact same\n`router.build_catalog` snapshot `route_score` filters against, so an\noperator adding/disabling an endpoint at `/admin/models` is reflected\nhere on the very next request rather than a stale/hardcoded list. Never\nexposes `base_url`/`api_key`/`endpoint_id` — only the model name and a\nbest-effort display label.\n\nCalls `routing.build_catalog` through the module (never a directly\nimported name) so this always resolves whatever `app.agents.router\n.build_catalog` currently is — late-bound, the same way `app.workflows\n.nodes` calls `router.route`. A `from ... import build_catalog` alias\nwould freeze onto whichever function object existed the moment this\nmodule was first imported, silently ignoring any later rebinding of the\nmodule attribute (harmless in production, which never rebinds it, but a\nreal bug against `tests.conftest.fake_media_catalog`'s monkeypatch).",
+        "description": "Read-only model list for `GenerationParams.forced_model`'s studio\npicker — one entry per distinct `ProviderCapability.model_or_workflow`\nenabled for this operation, sourced live from the exact same\n`router.build_catalog` snapshot `route_score` filters against, so an\noperator adding/disabling an endpoint at `/admin/models` is reflected\nhere on the very next request rather than a stale/hardcoded list. Never\nexposes `base_url`/`api_key`/`endpoint_id` — only the model name, a\nbest-effort display label, and (for video) the client-facing\n`resolutions` / `default_resolution` studio tiers used to preview\ndownward adaptation. `768P` never leaves this endpoint.\n\nCalls `routing.build_catalog` through the module (never a directly\nimported name) so this always resolves whatever `app.agents.router\n.build_catalog` currently is — late-bound, the same way `app.workflows\n.nodes` calls `router.route`. A `from ... import build_catalog` alias\nwould freeze onto whichever function object existed the moment this\nmodule was first imported, silently ignoring any later rebinding of the\nmodule attribute (harmless in production, which never rebinds it, but a\nreal bug against `tests.conftest.fake_media_catalog`'s monkeypatch).",
         "operationId": "list_generation_models_v1_generation_jobs_models_get",
         "parameters": [
           {
@@ -5320,6 +5449,7 @@
           "assets"
         ],
         "summary": "Get Asset",
+        "description": "Returns the asset after an access check.\n\n`download=true` mints `url` with `Content-Disposition: attachment` so the\nbrowser saves the object. The default playback URL is left unsigned for\ndisposition so a `<video>` / `<img>` src is not forced to download.",
         "operationId": "get_asset_v1_assets__asset_id__get",
         "parameters": [
           {
@@ -5329,6 +5459,16 @@
             "schema": {
               "type": "string",
               "title": "Asset Id"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Download"
             }
           },
           {
@@ -8686,6 +8826,64 @@
         }
       }
     },
+    "/v1/drama-episodes/{episode_id}/preview:from-video": {
+      "post": {
+        "tags": [
+          "editor"
+        ],
+        "summary": "Fill Episode Preview From Video",
+        "operationId": "fill_episode_preview_from_video_v1_drama_episodes__episode_id__preview_from_video_post",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DramaEpisodeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/episode-cuts:from-job": {
       "post": {
         "tags": [
@@ -8970,6 +9168,72 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeCutResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "editor"
+        ],
+        "summary": "Update Cut",
+        "operationId": "update_cut_v1_episode_cuts__cut_id__patch",
+        "parameters": [
+          {
+            "name": "cut_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Cut Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CutUpdateRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -10698,6 +10962,1050 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects": {
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "List Canvas Projects",
+        "operationId": "list_canvas_projects_v1_canvas_projects_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanvasProjectSummaryResponse"
+                  },
+                  "title": "Response List Canvas Projects V1 Canvas Projects Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Create Canvas Project",
+        "operationId": "create_canvas_project_v1_canvas_projects_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasProjectCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects/{canvas_id}": {
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Get Canvas Project",
+        "operationId": "get_canvas_project_v1_canvas_projects__canvas_id__get",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Update Canvas Project",
+        "operationId": "update_canvas_project_v1_canvas_projects__canvas_id__patch",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasProjectUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasProjectWriteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Delete Canvas Project",
+        "operationId": "delete_canvas_project_v1_canvas_projects__canvas_id__delete",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects/{canvas_id}/graph-ops": {
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Apply Canvas Graph Ops",
+        "description": "Apply a batch of card/connection operations.\n\nReturns 200 even when some ops did not apply. A stale op is reported in\n`conflicts` and the rest of the batch still lands — rolling twenty accepted\ndrags back because a twenty-first card moved under one of them would lose\nreal work to protect nothing.",
+        "operationId": "apply_canvas_graph_ops_v1_canvas_projects__canvas_id__graph_ops_post",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasGraphOpsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasGraphOpsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects/{canvas_id}/changes": {
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Read Canvas Changes",
+        "description": "Non-SSE catch-up. `gap: true` means reload rather than apply.",
+        "operationId": "read_canvas_changes_v1_canvas_projects__canvas_id__changes_get",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Since"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasChangesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects/{canvas_id}/events": {
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Stream Canvas Events",
+        "description": "Live changes for one canvas, resumable by `Last-Event-ID`.\n\nOne connection per open canvas, not one per generation in flight. That is\nthe whole reason this exists rather than the client fanning out over\n`GET /generation-jobs/{id}/events`: `sse_quota.MAX_CONCURRENT_STREAMS_PER_USER`\nis 8, so a four-task Agent run opened in two tabs would consume a user's\nentire budget and starve their notification stream. It also gives multiple\ntabs and co-creators one convergence path instead of several.\n\nUnlike the job stream this has no terminal state — a canvas is never\n\"finished\" — so it runs until `SSE_MAX_DURATION_SECONDS` and the client\nreconnects with its cursor.",
+        "operationId": "stream_canvas_events_v1_canvas_projects__canvas_id__events_get",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/drama-series/{series_id}/canvas": {
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Get Series Canvas",
+        "description": "Resolve-or-create, so the series page's \"画布视图\" button is one click\nrather than a create-then-open dance.",
+        "operationId": "get_series_canvas_v1_drama_series__series_id__canvas_get",
+        "parameters": [
+          {
+            "name": "series_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Series Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasProjectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects/{canvas_id}/agent-runs": {
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Create Canvas Agent Run",
+        "description": "Plan a generation from one card and the cards feeding it.\n\n202 + `text/event-stream`, the same envelope script turns and the editor\nplanner use (`thinking` / `delta` / `complete` / `error`). The run is\nwritten only once the stream has drained — a plan that never completes\nshould leave no row behind.",
+        "operationId": "create_canvas_agent_run_v1_canvas_projects__canvas_id__agent_runs_post",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasAgentRunCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "List Canvas Agent Runs",
+        "operationId": "list_canvas_agent_runs_v1_canvas_projects__canvas_id__agent_runs_get",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CanvasAgentRunResponse"
+                  },
+                  "title": "Response List Canvas Agent Runs V1 Canvas Projects  Canvas Id  Agent Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-projects/{canvas_id}/workflow-runs": {
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Create Canvas Workflow Run",
+        "description": "Expand a workflow skill into a priced, unconfirmed run.\n\nPlain JSON rather than the planner's SSE: there is no model call here, so\nthere is nothing to stream. The run it produces is the same\n`CanvasAgentRun` the planner produces, and goes on through the same\n`/confirm` and `/cancel`.",
+        "operationId": "create_canvas_workflow_run_v1_canvas_projects__canvas_id__workflow_runs_post",
+        "parameters": [
+          {
+            "name": "canvas_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Canvas Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CanvasWorkflowRunCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAgentRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-agent-runs/{run_id}/confirm": {
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Confirm Canvas Agent Run",
+        "description": "Spend the credits and submit the planned jobs.",
+        "operationId": "confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAgentRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-agent-runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Cancel Canvas Agent Run",
+        "operationId": "cancel_canvas_agent_run_v1_canvas_agent_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAgentRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-agent-tasks/{task_id}/restore-card": {
+      "post": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Restore Canvas Task Card",
+        "description": "Put a landed result back on the canvas after its card was deleted.",
+        "operationId": "restore_canvas_task_card_v1_canvas_agent_tasks__task_id__restore_card_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasNodeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/canvas-agent-runs/{run_id}": {
+      "get": {
+        "tags": [
+          "canvas"
+        ],
+        "summary": "Get Canvas Agent Run",
+        "operationId": "get_canvas_agent_run_v1_canvas_agent_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CanvasAgentRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/extract": {
+      "post": {
+        "tags": [
+          "scripts"
+        ],
+        "summary": "Extract Script Source",
+        "description": "Reads one uploaded script file and returns the extracted text.\n\nA JSON request/response, not an SSE turn — the bytes are not persisted.\nThe caller then submits the text as `idea` on `POST /v1/scripts`.",
+        "operationId": "extract_script_source_v1_scripts_extract_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_extract_script_source_v1_scripts_extract_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScriptExtractResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -21166,6 +22474,21 @@
         ],
         "title": "AppealDecisionRequest"
       },
+      "AppliedVersionRequest": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "AppliedVersionRequest"
+      },
       "ApplyCommandsRequest": {
         "properties": {
           "schema_version": {
@@ -21374,6 +22697,15 @@
         ],
         "title": "AsyncProviderTaskView",
         "description": "One in-flight external render, surfaced so an operator can see what a\n`RUNNING` job with no Celery task in flight is actually waiting on."
+      },
+      "AudioGenerationKind": {
+        "type": "string",
+        "enum": [
+          "voice",
+          "music"
+        ],
+        "title": "AudioGenerationKind",
+        "description": "Disambiguates a `kind=\"media\"` endpoint's `text -> audio` shape.\n\n`AUDIO_GENERATION` (spoken-voice TTS/clone) and `MUSIC_GENERATION`\n(BGM/SFX) are both, at the raw modality level, `text -> audio` — the\nsame collision `MediaGenerationKind` above resolves for video's\ncreate-vs-edit shape. `LlmProviderEndpoint.capabilities` cannot tell\nthem apart from `input_modalities`/`output_modalities` alone (that is\nexactly the ambiguity this field exists to break), so an operator\ndeclares which one this endpoint's one `model` string actually is.\n`VOICE` is the default so every endpoint saved before this field\nexisted keeps deriving `AUDIO_GENERATION`, unchanged."
       },
       "AudioPricingPayload": {
         "properties": {
@@ -21658,6 +22990,999 @@
           "export_id"
         ],
         "title": "BindEditorExportRequest"
+      },
+      "Body_extract_script_source_v1_scripts_extract_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_extract_script_source_v1_scripts_extract_post"
+      },
+      "CanvasAgentRunCreateRequest": {
+        "properties": {
+          "agent_node_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Agent Node Id"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Goal"
+          },
+          "quality_tier": {
+            "type": "string",
+            "maxLength": 24,
+            "title": "Quality Tier",
+            "default": "standard"
+          },
+          "max_tasks": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "default": 2
+          },
+          "max_credits": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_node_id",
+          "goal"
+        ],
+        "title": "CanvasAgentRunCreateRequest",
+        "description": "Start a planning turn on one card.\n\n`quality_tier` is a *ceiling*, not an instruction: the planner may choose\nsomething cheaper for a draft, never something dearer.\n\nThere is no auto-submit field. Planning never spends credits; only\n`POST /canvas-agent-runs/{id}/confirm` does, and that is deliberate —\nspending a balance without a confirming tap is what generates refund\ntickets."
+      },
+      "CanvasAgentRunResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "canvas_id": {
+            "type": "string",
+            "title": "Canvas Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin",
+            "default": "agent"
+          },
+          "goal": {
+            "type": "string",
+            "title": "Goal"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary",
+            "default": ""
+          },
+          "agent_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Node Id"
+          },
+          "context_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Context Node Ids"
+          },
+          "quoted_credits": {
+            "type": "integer",
+            "title": "Quoted Credits",
+            "default": 0
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "failure_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Code"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasAgentTaskResponse"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "canvas_id",
+          "status",
+          "goal",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CanvasAgentRunResponse"
+      },
+      "CanvasAgentTaskResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "title": "Ordinal"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "quality_tier": {
+            "type": "string",
+            "title": "Quality Tier"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt",
+            "default": ""
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "generation_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Job Id"
+          },
+          "drop": {
+            "$ref": "#/components/schemas/CanvasPosition"
+          },
+          "result_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Node Id"
+          },
+          "failure_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ordinal",
+          "operation",
+          "quality_tier",
+          "status",
+          "drop"
+        ],
+        "title": "CanvasAgentTaskResponse"
+      },
+      "CanvasChangeResponse": {
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "entity_type": {
+            "type": "string",
+            "title": "Entity Type"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          }
+        },
+        "type": "object",
+        "required": [
+          "seq",
+          "entity_type",
+          "entity_id",
+          "action",
+          "actor"
+        ],
+        "title": "CanvasChangeResponse"
+      },
+      "CanvasChangesResponse": {
+        "properties": {
+          "change_seq": {
+            "type": "integer",
+            "title": "Change Seq"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasChangeResponse"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "gap": {
+            "type": "boolean",
+            "title": "Gap",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "change_seq"
+        ],
+        "title": "CanvasChangesResponse"
+      },
+      "CanvasEdgeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "source_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Handle"
+          },
+          "target_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Handle"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "default": "link"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "target"
+        ],
+        "title": "CanvasEdgeResponse"
+      },
+      "CanvasGraphOpRequest": {
+        "properties": {
+          "op_id": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Op Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "node.create",
+              "node.update",
+              "node.delete",
+              "edge.create",
+              "edge.delete"
+            ],
+            "title": "Kind"
+          },
+          "node": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasPosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasSize"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "z_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z Index"
+          },
+          "binding": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "edge": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge"
+          },
+          "edge_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op_id",
+          "kind"
+        ],
+        "title": "CanvasGraphOpRequest",
+        "description": "One operation in a batch.\n\n`op_id` is the client's own idempotency handle: it comes back in `applied`\nor in `conflicts` so a queued flush can be reconciled without matching on\nposition. The optional fields are read per `kind`; a field left out of a\n`node.update` is left alone rather than cleared, which is what lets a drag\nsend position without resending the whole card."
+      },
+      "CanvasGraphOpsRequest": {
+        "properties": {
+          "base_seq": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Seq",
+            "default": 0
+          },
+          "ops": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasGraphOpRequest"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Ops"
+          }
+        },
+        "type": "object",
+        "title": "CanvasGraphOpsRequest",
+        "description": "A batch of operations, plus where the client thinks it is.\n\n`base_seq` is not a lock — it is a read cursor. The response returns every\nchange after it, so one round trip both writes and catches the client up."
+      },
+      "CanvasGraphOpsResponse": {
+        "properties": {
+          "change_seq": {
+            "type": "integer",
+            "title": "Change Seq"
+          },
+          "applied": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Applied"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasOpConflictResponse"
+            },
+            "type": "array",
+            "title": "Conflicts"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasChangeResponse"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "gap": {
+            "type": "boolean",
+            "title": "Gap",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "change_seq"
+        ],
+        "title": "CanvasGraphOpsResponse"
+      },
+      "CanvasNodeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "position": {
+            "$ref": "#/components/schemas/CanvasPosition"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasSize"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "z_index": {
+            "type": "integer",
+            "title": "Z Index",
+            "default": 0
+          },
+          "binding": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin",
+            "default": "user"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "position"
+        ],
+        "title": "CanvasNodeResponse"
+      },
+      "CanvasOpConflictResponse": {
+        "properties": {
+          "op_id": {
+            "type": "string",
+            "title": "Op Id"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "op_id",
+          "entity_id",
+          "reason"
+        ],
+        "title": "CanvasOpConflictResponse",
+        "description": "One op that did not apply.\n\nA conflict is not an error: the rest of the batch still applied, and the\nclient resolves this one by adopting the server row carried in `changes`."
+      },
+      "CanvasPosition": {
+        "properties": {
+          "x": {
+            "type": "integer",
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "title": "Y"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "CanvasPosition"
+      },
+      "CanvasProjectCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "series_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "CanvasProjectCreateRequest"
+      },
+      "CanvasProjectResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "series_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Id"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "change_seq": {
+            "type": "integer",
+            "title": "Change Seq"
+          },
+          "viewer_role": {
+            "type": "string",
+            "title": "Viewer Role"
+          },
+          "viewport": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Viewport"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasNodeResponse"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/CanvasEdgeResponse"
+            },
+            "type": "array",
+            "title": "Edges"
+          },
+          "snapshot": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Snapshot"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "mode",
+          "change_seq",
+          "viewer_role",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CanvasProjectResponse"
+      },
+      "CanvasProjectSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "series_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Id"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "change_seq": {
+            "type": "integer",
+            "title": "Change Seq"
+          },
+          "viewer_role": {
+            "type": "string",
+            "title": "Viewer Role"
+          },
+          "node_count": {
+            "type": "integer",
+            "title": "Node Count",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "mode",
+          "change_seq",
+          "viewer_role",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CanvasProjectSummaryResponse"
+      },
+      "CanvasProjectUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport"
+          }
+        },
+        "type": "object",
+        "title": "CanvasProjectUpdateRequest",
+        "description": "Project metadata only.\n\nThe graph is written through `POST /canvas-projects/{id}/graph-ops`, which\nis also where the only compare-and-set in this feature lives. There is no\n`expected_revision` here: a title and a camera position are not worth a 409."
+      },
+      "CanvasProjectWriteResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "series_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Series Id"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "change_seq": {
+            "type": "integer",
+            "title": "Change Seq"
+          },
+          "viewer_role": {
+            "type": "string",
+            "title": "Viewer Role"
+          },
+          "viewport": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Viewport"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "mode",
+          "change_seq",
+          "viewer_role",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CanvasProjectWriteResponse",
+        "description": "What a metadata write returns.\n\nDeliberately carries neither the graph nor the `snapshot`: a title or\nviewport change touches no card and no domain object, so returning either\nwould be a copy of what the client already holds."
+      },
+      "CanvasSize": {
+        "properties": {
+          "width": {
+            "type": "integer",
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "height"
+        ],
+        "title": "CanvasSize"
+      },
+      "CanvasWorkflowRunCreateRequest": {
+        "properties": {
+          "skill_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Skill Id"
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 40,
+            "title": "Node Id"
+          },
+          "answers": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Answers"
+          },
+          "quality_tier": {
+            "type": "string",
+            "maxLength": 24,
+            "title": "Quality Tier",
+            "default": "standard"
+          },
+          "max_credits": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Credits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skill_id",
+          "node_id"
+        ],
+        "title": "CanvasWorkflowRunCreateRequest",
+        "description": "Run a creation workflow — a `CreationSkill` carrying a variable form.\n\n`answers` is keyed by the question `id` declared in the skill's\n`params_json[\"variables\"]`. There is no `operation` field: the recipe was\nwritten for one modality and reads it off the skill, because letting a\ncaller choose would submit a video job carrying a still-frame recipe.\n\nLike a planned run this stops at `awaiting_confirm` — the form is the step\nbefore confirmation, and `POST /canvas-agent-runs/{id}/confirm` is still\nthe only thing that spends credits."
       },
       "CharacterActionClip": {
         "properties": {
@@ -23007,6 +25332,11 @@
             "title": "Viewer Unlocked",
             "default": true
           },
+          "has_variables": {
+            "type": "boolean",
+            "title": "Has Variables",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -23145,6 +25475,11 @@
             "type": "boolean",
             "title": "Viewer Unlocked",
             "default": true
+          },
+          "has_variables": {
+            "type": "boolean",
+            "title": "Has Variables",
+            "default": false
           },
           "created_at": {
             "type": "string",
@@ -23506,6 +25841,13 @@
             "type": "object",
             "title": "Asset Urls"
           },
+          "asset_meta": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RevisionAssetMeta"
+            },
+            "type": "object",
+            "title": "Asset Meta"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -23574,6 +25916,21 @@
         ],
         "title": "CutRevisionSummaryResponse",
         "description": "Lightweight revision listing for the editor's history panel — no\n`document`/`asset_urls`, since browsing history shouldn't pull the full\ntimeline document for every past version."
+      },
+      "CutUpdateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CutUpdateRequest"
       },
       "DangerousAction": {
         "properties": {
@@ -23974,6 +26331,17 @@
             ],
             "title": "Latest Job Id"
           },
+          "applied_job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Job Id"
+          },
           "output_asset_id": {
             "anyOf": [
               {
@@ -24192,6 +26560,33 @@
             "type": "boolean",
             "title": "Has Script Turns",
             "default": false
+          },
+          "preview_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Asset Id"
+          },
+          "preview_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Url"
+          },
+          "has_preview_source": {
+            "type": "boolean",
+            "title": "Has Preview Source",
+            "default": false
           }
         },
         "type": "object",
@@ -24279,6 +26674,18 @@
               }
             ],
             "title": "Status"
+          },
+          "preview_asset_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Asset Id"
           }
         },
         "type": "object",
@@ -25935,6 +28342,57 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "resolutions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "480p",
+                    "720p",
+                    "1080p",
+                    "2K"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolutions"
+          },
+          "default_resolution": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "480p",
+                  "720p",
+                  "1080p",
+                  "2K"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Resolution"
+          },
+          "voices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voices"
           }
         },
         "type": "object",
@@ -25943,7 +28401,7 @@
           "label"
         ],
         "title": "GenerationModelOption",
-        "description": "One directly-selectable model for `GenerationParams.forced_model`.\n\n`model` is the exact string to send back as `forced_model` — it must\nequal some enabled candidate's `ProviderCapability.model_or_workflow`\nverbatim, or `route_score` will find nothing to match and the job fails\nwith `forced_model_unavailable`. `label` is display-only, best-effort\nfrom `app.providers.model_catalog`'s curated catalogue; falls back to\n`model` itself when no catalogue entry matches."
+        "description": "One directly-selectable model for `GenerationParams.forced_model`.\n\n`model` is the exact string to send back as `forced_model` — it must\nequal some enabled candidate's `ProviderCapability.model_or_workflow`\nverbatim, or `route_score` will find nothing to match and the job fails\nwith `forced_model_unavailable`. `label` is display-only, best-effort\nfrom `app.providers.model_catalog`'s curated catalogue; falls back to\n`model` itself when no catalogue entry matches.\n\n`resolutions` / `default_resolution` are client-facing studio tiers\n(`480p`/`720p`/`1080p`/`2K`), never a vendor spelling such as `768P`.\n`None` on `resolutions` means unrestricted (or a non-video operation).\nThe studio keeps the user's pick as a ceiling and only previews the\nadapted tier locally; `request_json.resolution` is not rewritten.\n\n`voices` (`audio_generation` only) is this model's discrete preset-voice\nroster from `app.providers.model_catalog.voices_for_model` — `None`\nmeans either a non-audio operation or a clone-only model with no fixed\nroster (the studio's clone tab then takes over instead of a voice\n`Select`)."
       },
       "GenerationParams": {
         "properties": {
@@ -27522,12 +29980,14 @@
                 "enum": [
                   "openai",
                   "minimax",
+                  "minimax_v2",
                   "comfyui",
                   "google",
                   "dashscope",
                   "ark",
                   "kling",
-                  "dmxapi"
+                  "dmxapi",
+                  "fal"
                 ]
               },
               {
@@ -27545,10 +30005,10 @@
           },
           "timeout_ms": {
             "type": "integer",
-            "maximum": 120000.0,
+            "maximum": 600000.0,
             "minimum": 1000.0,
             "title": "Timeout Ms",
-            "default": 30000
+            "default": 90000
           },
           "enabled": {
             "type": "boolean",
@@ -27586,6 +30046,14 @@
               }
             ],
             "title": "Billing Profile"
+          },
+          "generation_kind": {
+            "$ref": "#/components/schemas/MediaGenerationKind",
+            "default": "create"
+          },
+          "audio_generation_kind": {
+            "$ref": "#/components/schemas/AudioGenerationKind",
+            "default": "voice"
           }
         },
         "type": "object",
@@ -27660,12 +30128,14 @@
                 "enum": [
                   "openai",
                   "minimax",
+                  "minimax_v2",
                   "comfyui",
                   "google",
                   "dashscope",
                   "ark",
                   "kling",
-                  "dmxapi"
+                  "dmxapi",
+                  "fal"
                 ]
               },
               {
@@ -27731,6 +30201,14 @@
               }
             ],
             "title": "Billing Profile"
+          },
+          "generation_kind": {
+            "$ref": "#/components/schemas/MediaGenerationKind",
+            "default": "create"
+          },
+          "audio_generation_kind": {
+            "$ref": "#/components/schemas/AudioGenerationKind",
+            "default": "voice"
           },
           "concurrency_in_use": {
             "type": "integer",
@@ -28210,6 +30688,10 @@
           "marketplace": {
             "type": "boolean",
             "title": "Marketplace"
+          },
+          "canvas_studio": {
+            "type": "boolean",
+            "title": "Canvas Studio"
           }
         },
         "type": "object",
@@ -28219,7 +30701,8 @@
           "web_editor",
           "video_generation",
           "drama_studio",
-          "marketplace"
+          "marketplace",
+          "canvas_studio"
         ],
         "title": "MeFeaturesResponse",
         "description": "The subset of `FeatureFlags` a consumer client needs to decide what to\nshow, independent of whether the underlying API 404s once clicked.\n\nEvaluated per-user (percentage rollout included, see\n`platform_config.service.is_enabled`) so two users can legitimately see\ndifferent values for the same flag during a staged rollout."
@@ -28297,6 +30780,15 @@
         ],
         "title": "MeResponse"
       },
+      "MediaGenerationKind": {
+        "type": "string",
+        "enum": [
+          "create",
+          "edit"
+        ],
+        "title": "MediaGenerationKind",
+        "description": "How a `kind=\"media\"` endpoint is allowed to enter video routing.\n\n`CREATE` can start from text or a still. `EDIT` needs an existing video\nsource and is hard-filtered out of text-to-video / image-to-video when\nnone is attached — see `app.agents.router._request_constraint_failure`.\nStored on `LlmProviderEndpoint`, not a SQLAlchemy column."
+      },
       "MediaPricingPayload": {
         "properties": {
           "image": {
@@ -28333,6 +30825,26 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/TokenVideoPricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "video_analysis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoAnalysisPricingPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "music": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MusicPricingPayload"
               },
               {
                 "type": "null"
@@ -28378,12 +30890,14 @@
                 "enum": [
                   "openai",
                   "minimax",
+                  "minimax_v2",
                   "comfyui",
                   "google",
                   "dashscope",
                   "ark",
                   "kling",
-                  "dmxapi"
+                  "dmxapi",
+                  "fal"
                 ]
               },
               {
@@ -28443,6 +30957,15 @@
             },
             "type": "array",
             "title": "Price Items"
+          },
+          "suggested_timeout_ms": {
+            "type": "integer",
+            "title": "Suggested Timeout Ms",
+            "default": 0
+          },
+          "generation_kind": {
+            "$ref": "#/components/schemas/MediaGenerationKind",
+            "default": "create"
           }
         },
         "type": "object",
@@ -29033,6 +31556,19 @@
         ],
         "title": "ModerationWorkDetailView"
       },
+      "MusicPricingPayload": {
+        "properties": {
+          "per_request_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Per Request Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "MusicPricingPayload",
+        "description": "BGM/SFX billed per generated clip — see `MusicPricing`."
+      },
       "MyDataRequestView": {
         "properties": {
           "id": {
@@ -29288,6 +31824,7 @@
           "image_to_video",
           "video_to_video",
           "audio_generation",
+          "music_generation",
           "video_analysis"
         ],
         "title": "Operation"
@@ -30923,7 +33460,8 @@
               "per_second",
               "per_million_tokens",
               "per_image",
-              "per_request"
+              "per_request",
+              "per_10k_characters"
             ],
             "title": "Unit"
           },
@@ -31172,7 +33710,7 @@
         "properties": {
           "prompt": {
             "type": "string",
-            "maxLength": 600,
+            "maxLength": 4096,
             "minLength": 1,
             "title": "Prompt"
           },
@@ -31275,6 +33813,34 @@
                 "type": "null"
               }
             ]
+          },
+          "script_segment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScriptSegment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "question_answers": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "type": "object",
+            "maxProperties": 8,
+            "title": "Question Answers"
           }
         },
         "type": "object",
@@ -32578,6 +35144,58 @@
         "title": "ReusableParams",
         "description": "What a remixer can carry over.\n\nOnly fields the author actually made reusable appear here; a licence that\nforbids derivatives yields an empty payload."
       },
+      "RevisionAssetMeta": {
+        "properties": {
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type"
+          },
+          "duration_ticks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ticks"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "media_type",
+          "mime_type"
+        ],
+        "title": "RevisionAssetMeta",
+        "description": "Intrinsic facts about one asset a revision references — what the\ntimeline needs to clamp a trim to the source's real length, label a\nclip, and size thumbnails — separate from the short-lived signed URL in\n`asset_urls` because these never expire."
+      },
       "RevisionRestoreRequest": {
         "properties": {
           "revision_id": {
@@ -33092,7 +35710,7 @@
           },
           "idea": {
             "type": "string",
-            "maxLength": 2000,
+            "maxLength": 20000,
             "minLength": 1,
             "title": "Idea"
           },
@@ -33228,6 +35846,34 @@
         "type": "object",
         "title": "ScriptDocument"
       },
+      "ScriptExtractResponse": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "text",
+          "char_count",
+          "truncated"
+        ],
+        "title": "ScriptExtractResponse"
+      },
       "ScriptLinksUpdateRequest": {
         "properties": {
           "characters": {
@@ -33257,7 +35903,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 2000
+                "maxLength": 20000
               },
               {
                 "type": "null"
@@ -33333,6 +35979,65 @@
           "heading"
         ],
         "title": "ScriptSceneLinkUpdate"
+      },
+      "ScriptSegment": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "maxLength": 80,
+            "title": "Heading",
+            "default": ""
+          },
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptSegmentBlock"
+            },
+            "type": "array",
+            "maxItems": 60,
+            "title": "Blocks"
+          }
+        },
+        "type": "object",
+        "title": "ScriptSegment",
+        "description": "The shootable blocks of one suggested cut, plus its scene heading."
+      },
+      "ScriptSegmentBlock": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "scene",
+              "action",
+              "camera",
+              "dialogue"
+            ],
+            "title": "Type"
+          },
+          "character": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 400,
+            "title": "Text",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ScriptSegmentBlock",
+        "description": "One colour-coded script block inside a clip-studio polish request.\n\n`breakpoint` is rejected — adding a cut here would shift `{heading}#{ordinal}`."
       },
       "ScriptSummaryResponse": {
         "properties": {
@@ -34747,6 +37452,17 @@
               }
             ]
           },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
           "author": {
             "$ref": "#/components/schemas/AuthorSummary"
           },
@@ -34847,7 +37563,7 @@
           },
           "purpose": {
             "type": "string",
-            "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media|style_gallery_cover|series_logo|video_analysis_source|editor_source|editor_export|caption|font)$",
+            "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media|style_gallery_cover|series_logo|episode_preview|video_analysis_source|editor_source|editor_export|caption|font|voice_sample)$",
             "title": "Purpose"
           }
         },
@@ -35047,7 +37763,9 @@
             "type": "string",
             "enum": [
               "aihubmix",
-              "dmxapi"
+              "dmxapi",
+              "metaso",
+              "fal"
             ],
             "title": "Vendor"
           },
@@ -35124,6 +37842,18 @@
           "entries"
         ],
         "title": "VersionDiffResponse"
+      },
+      "VideoAnalysisPricingPayload": {
+        "properties": {
+          "per_request_micro_usd": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Per Request Micro Usd",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "VideoAnalysisPricingPayload"
       },
       "VideoAnalysisResult": {
         "properties": {
@@ -35265,7 +37995,7 @@
         },
         "type": "object",
         "title": "VideoGenerationOptions",
-        "description": "Typed native-video options; arbitrary provider JSON and webhooks are\nforbidden. `resolution` is a clarity *tier* the client picks — not any\none vendor's own spelling. `app.providers.base.RESOLUTION_TIER_MEMBERS`\nis the single source of truth mapping each tier to the vendor literals\nit covers (e.g. `\"720p\"` covers MiniMax H3's own `\"768P\"` token too, so\npicking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5\n-260628`, `wan2.7-videoedit` — actually compete for the same request\ninstead of being mutually invisible over a spelling difference).\n`app.providers.base.resolve_resolution_tier` is where a tier gets turned\ninto the specific literal a chosen candidate's own vocabulary needs,\nboth at `router.route()`'s hard-filter/costing stage and again in\n`app.workflows.nodes.execute_provider_generate` right before the actual\nprovider call — this schema never sees or validates a vendor's raw\nspelling directly. A tier with no member in the eventually-picked\ncandidate's `ProviderCapability.resolutions` narrows which providers are\neligible (`router._request_constraint_failure`); it never reaches a\nprovider that can't honour it."
+        "description": "Typed native-video options; arbitrary provider JSON and webhooks are\nforbidden. `resolution` is a clarity *tier* the client picks — not any\none vendor's own spelling. `app.providers.base.RESOLUTION_TIER_MEMBERS`\nis the single source of truth mapping each tier to the vendor literals\nit covers (e.g. `\"720p\"` covers MiniMax H3's own `\"768P\"` token too, so\npicking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5\n-260628`, `wan2.7-videoedit` — actually compete for the same request\ninstead of being mutually invisible over a spelling difference).\n`app.providers.base.adapt_resolution_tier` is where a tier becomes a\nceiling on the *final* model: exact match if that candidate has it,\notherwise the highest strictly lower supported tier (never a raise to\n2K from 1080p), and only as a last resort the model's lowest tier so\nthe job still runs. Costing and `execute_provider_generate` both send\nthe adapted vendor literal. This schema never sees a vendor's raw\nspelling. A candidate whose `resolutions` map to no studio tier at all\nis the only remaining `resolution_not_supported` hard filter."
       },
       "VideoPricingPayload": {
         "properties": {
@@ -35466,6 +38196,17 @@
                 "type": "null"
               }
             ]
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
           },
           "author": {
             "$ref": "#/components/schemas/AuthorSummary"
@@ -35703,6 +38444,17 @@
                 "type": "null"
               }
             ]
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
           },
           "author": {
             "$ref": "#/components/schemas/AuthorSummary"

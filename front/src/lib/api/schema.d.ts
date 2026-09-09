@@ -687,7 +687,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Drafts */
+        /**
+         * List Drafts
+         * @description Unpublished drafts the current user created.
+         *
+         *     Another user's drafts never appear. A former collaborator's jump-outs
+         *     bound to a series they left are omitted from this list too.
+         */
         get: operations["list_drafts_v1_drafts_get"];
         put?: never;
         /**
@@ -739,6 +745,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drafts/{draft_id}/applied-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Draft Version */
+        post: operations["apply_draft_version_v1_drafts__draft_id__applied_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drafts/{draft_id}/versions/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Hide Draft Version */
+        delete: operations["hide_draft_version_v1_drafts__draft_id__versions__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/generation-jobs/quote": {
         parameters: {
             query?: never;
@@ -774,8 +814,10 @@ export interface paths {
          *     `router.build_catalog` snapshot `route_score` filters against, so an
          *     operator adding/disabling an endpoint at `/admin/models` is reflected
          *     here on the very next request rather than a stale/hardcoded list. Never
-         *     exposes `base_url`/`api_key`/`endpoint_id` — only the model name and a
-         *     best-effort display label.
+         *     exposes `base_url`/`api_key`/`endpoint_id` — only the model name, a
+         *     best-effort display label, and (for video) the client-facing
+         *     `resolutions` / `default_resolution` studio tiers used to preview
+         *     downward adaptation. `768P` never leaves this endpoint.
          *
          *     Calls `routing.build_catalog` through the module (never a directly
          *     imported name) so this always resolves whatever `app.agents.router
@@ -1297,7 +1339,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Asset */
+        /**
+         * Get Asset
+         * @description Returns the asset after an access check.
+         *
+         *     `download=true` mints `url` with `Content-Disposition: attachment` so the
+         *     browser saves the object. The default playback URL is left unsigned for
+         *     disposition so a `<video>` / `<img>` src is not forced to download.
+         */
         get: operations["get_asset_v1_assets__asset_id__get"];
         put?: never;
         post?: never;
@@ -2093,6 +2142,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drama-episodes/{episode_id}/preview:from-video": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fill Episode Preview From Video */
+        post: operations["fill_episode_preview_from_video_v1_drama_episodes__episode_id__preview_from_video_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/episode-cuts:from-job": {
         parameters: {
             query?: never;
@@ -2165,7 +2231,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Cut */
+        patch: operations["update_cut_v1_episode_cuts__cut_id__patch"];
         trace?: never;
     };
     "/v1/episode-cuts/{cut_id}/leases": {
@@ -2603,6 +2670,288 @@ export interface paths {
         post?: never;
         /** Revoke Mcp Token */
         delete: operations["revoke_mcp_token_v1_mcp_tokens__grant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Canvas Projects */
+        get: operations["list_canvas_projects_v1_canvas_projects_get"];
+        put?: never;
+        /** Create Canvas Project */
+        post: operations["create_canvas_project_v1_canvas_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-projects/{canvas_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Canvas Project */
+        get: operations["get_canvas_project_v1_canvas_projects__canvas_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Canvas Project */
+        delete: operations["delete_canvas_project_v1_canvas_projects__canvas_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Canvas Project */
+        patch: operations["update_canvas_project_v1_canvas_projects__canvas_id__patch"];
+        trace?: never;
+    };
+    "/v1/canvas-projects/{canvas_id}/graph-ops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Canvas Graph Ops
+         * @description Apply a batch of card/connection operations.
+         *
+         *     Returns 200 even when some ops did not apply. A stale op is reported in
+         *     `conflicts` and the rest of the batch still lands — rolling twenty accepted
+         *     drags back because a twenty-first card moved under one of them would lose
+         *     real work to protect nothing.
+         */
+        post: operations["apply_canvas_graph_ops_v1_canvas_projects__canvas_id__graph_ops_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-projects/{canvas_id}/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Canvas Changes
+         * @description Non-SSE catch-up. `gap: true` means reload rather than apply.
+         */
+        get: operations["read_canvas_changes_v1_canvas_projects__canvas_id__changes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-projects/{canvas_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Canvas Events
+         * @description Live changes for one canvas, resumable by `Last-Event-ID`.
+         *
+         *     One connection per open canvas, not one per generation in flight. That is
+         *     the whole reason this exists rather than the client fanning out over
+         *     `GET /generation-jobs/{id}/events`: `sse_quota.MAX_CONCURRENT_STREAMS_PER_USER`
+         *     is 8, so a four-task Agent run opened in two tabs would consume a user's
+         *     entire budget and starve their notification stream. It also gives multiple
+         *     tabs and co-creators one convergence path instead of several.
+         *
+         *     Unlike the job stream this has no terminal state — a canvas is never
+         *     "finished" — so it runs until `SSE_MAX_DURATION_SECONDS` and the client
+         *     reconnects with its cursor.
+         */
+        get: operations["stream_canvas_events_v1_canvas_projects__canvas_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/drama-series/{series_id}/canvas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Series Canvas
+         * @description Resolve-or-create, so the series page's "画布视图" button is one click
+         *     rather than a create-then-open dance.
+         */
+        get: operations["get_series_canvas_v1_drama_series__series_id__canvas_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-projects/{canvas_id}/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Canvas Agent Runs */
+        get: operations["list_canvas_agent_runs_v1_canvas_projects__canvas_id__agent_runs_get"];
+        put?: never;
+        /**
+         * Create Canvas Agent Run
+         * @description Plan a generation from one card and the cards feeding it.
+         *
+         *     202 + `text/event-stream`, the same envelope script turns and the editor
+         *     planner use (`thinking` / `delta` / `complete` / `error`). The run is
+         *     written only once the stream has drained — a plan that never completes
+         *     should leave no row behind.
+         */
+        post: operations["create_canvas_agent_run_v1_canvas_projects__canvas_id__agent_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-projects/{canvas_id}/workflow-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Canvas Workflow Run
+         * @description Expand a workflow skill into a priced, unconfirmed run.
+         *
+         *     Plain JSON rather than the planner's SSE: there is no model call here, so
+         *     there is nothing to stream. The run it produces is the same
+         *     `CanvasAgentRun` the planner produces, and goes on through the same
+         *     `/confirm` and `/cancel`.
+         */
+        post: operations["create_canvas_workflow_run_v1_canvas_projects__canvas_id__workflow_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-agent-runs/{run_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Canvas Agent Run
+         * @description Spend the credits and submit the planned jobs.
+         */
+        post: operations["confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-agent-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Canvas Agent Run */
+        post: operations["cancel_canvas_agent_run_v1_canvas_agent_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-agent-tasks/{task_id}/restore-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Canvas Task Card
+         * @description Put a landed result back on the canvas after its card was deleted.
+         */
+        post: operations["restore_canvas_task_card_v1_canvas_agent_tasks__task_id__restore_card_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/canvas-agent-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Canvas Agent Run */
+        get: operations["get_canvas_agent_run_v1_canvas_agent_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Script Source
+         * @description Reads one uploaded script file and returns the extracted text.
+         *
+         *     A JSON request/response, not an SSE turn — the bytes are not persisted.
+         *     The caller then submits the text as `idea` on `POST /v1/scripts`.
+         */
+        post: operations["extract_script_source_v1_scripts_extract_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5630,6 +5979,11 @@ export interface components {
             /** Decision Note */
             decision_note: string;
         };
+        /** AppliedVersionRequest */
+        AppliedVersionRequest: {
+            /** Job Id */
+            job_id: string;
+        };
         /** ApplyCommandsRequest */
         ApplyCommandsRequest: {
             /**
@@ -5711,6 +6065,22 @@ export interface components {
             /** Provider Attempt Id */
             provider_attempt_id?: string | null;
         };
+        /**
+         * AudioGenerationKind
+         * @description Disambiguates a `kind="media"` endpoint's `text -> audio` shape.
+         *
+         *     `AUDIO_GENERATION` (spoken-voice TTS/clone) and `MUSIC_GENERATION`
+         *     (BGM/SFX) are both, at the raw modality level, `text -> audio` — the
+         *     same collision `MediaGenerationKind` above resolves for video's
+         *     create-vs-edit shape. `LlmProviderEndpoint.capabilities` cannot tell
+         *     them apart from `input_modalities`/`output_modalities` alone (that is
+         *     exactly the ambiguity this field exists to break), so an operator
+         *     declares which one this endpoint's one `model` string actually is.
+         *     `VOICE` is the default so every endpoint saved before this field
+         *     existed keeps deriving `AUDIO_GENERATION`, unchanged.
+         * @enum {string}
+         */
+        AudioGenerationKind: "voice" | "music";
         /** AudioPricingPayload */
         AudioPricingPayload: {
             /**
@@ -5816,6 +6186,455 @@ export interface components {
              * @default false
              */
             confirmed: boolean;
+        };
+        /** Body_extract_script_source_v1_scripts_extract_post */
+        Body_extract_script_source_v1_scripts_extract_post: {
+            /** File */
+            file: string;
+        };
+        /**
+         * CanvasAgentRunCreateRequest
+         * @description Start a planning turn on one card.
+         *
+         *     `quality_tier` is a *ceiling*, not an instruction: the planner may choose
+         *     something cheaper for a draft, never something dearer.
+         *
+         *     There is no auto-submit field. Planning never spends credits; only
+         *     `POST /canvas-agent-runs/{id}/confirm` does, and that is deliberate —
+         *     spending a balance without a confirming tap is what generates refund
+         *     tickets.
+         */
+        CanvasAgentRunCreateRequest: {
+            /** Agent Node Id */
+            agent_node_id: string;
+            /** Goal */
+            goal: string;
+            /**
+             * Quality Tier
+             * @default standard
+             */
+            quality_tier: string;
+            /**
+             * Max Tasks
+             * @default 2
+             */
+            max_tasks: number;
+            /** Max Credits */
+            max_credits?: number | null;
+        };
+        /** CanvasAgentRunResponse */
+        CanvasAgentRunResponse: {
+            /** Id */
+            id: string;
+            /** Canvas Id */
+            canvas_id: string;
+            /** Status */
+            status: string;
+            /**
+             * Origin
+             * @default agent
+             */
+            origin: string;
+            /** Goal */
+            goal: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /** Agent Node Id */
+            agent_node_id?: string | null;
+            /** Context Node Ids */
+            context_node_ids?: string[];
+            /**
+             * Quoted Credits
+             * @default 0
+             */
+            quoted_credits: number;
+            /** Model */
+            model?: string | null;
+            /** Failure Code */
+            failure_code?: string | null;
+            /** Failure Message */
+            failure_message?: string | null;
+            /** Tasks */
+            tasks?: components["schemas"]["CanvasAgentTaskResponse"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CanvasAgentTaskResponse */
+        CanvasAgentTaskResponse: {
+            /** Id */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Operation */
+            operation: string;
+            /** Quality Tier */
+            quality_tier: string;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
+            /** Status */
+            status: string;
+            /** Generation Job Id */
+            generation_job_id?: string | null;
+            drop: components["schemas"]["CanvasPosition"];
+            /** Result Node Id */
+            result_node_id?: string | null;
+            /** Failure Message */
+            failure_message?: string | null;
+        };
+        /** CanvasChangeResponse */
+        CanvasChangeResponse: {
+            /** Seq */
+            seq: number;
+            /** Entity Type */
+            entity_type: string;
+            /** Entity Id */
+            entity_id: string;
+            /** Action */
+            action: string;
+            /** Actor */
+            actor: string;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+        };
+        /** CanvasChangesResponse */
+        CanvasChangesResponse: {
+            /** Change Seq */
+            change_seq: number;
+            /** Changes */
+            changes?: components["schemas"]["CanvasChangeResponse"][];
+            /**
+             * Gap
+             * @default false
+             */
+            gap: boolean;
+        };
+        /** CanvasEdgeResponse */
+        CanvasEdgeResponse: {
+            /** Id */
+            id: string;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /** Source Handle */
+            source_handle?: string | null;
+            /** Target Handle */
+            target_handle?: string | null;
+            /**
+             * Kind
+             * @default link
+             */
+            kind: string;
+        };
+        /**
+         * CanvasGraphOpRequest
+         * @description One operation in a batch.
+         *
+         *     `op_id` is the client's own idempotency handle: it comes back in `applied`
+         *     or in `conflicts` so a queued flush can be reconciled without matching on
+         *     position. The optional fields are read per `kind`; a field left out of a
+         *     `node.update` is left alone rather than cleared, which is what lets a drag
+         *     send position without resending the whole card.
+         */
+        CanvasGraphOpRequest: {
+            /** Op Id */
+            op_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "node.create" | "node.update" | "node.delete" | "edge.create" | "edge.delete";
+            /** Node */
+            node?: {
+                [key: string]: unknown;
+            } | null;
+            /** Node Id */
+            node_id?: string | null;
+            /** Expected Revision */
+            expected_revision?: number | null;
+            position?: components["schemas"]["CanvasPosition"] | null;
+            size?: components["schemas"]["CanvasSize"] | null;
+            /** Z Index */
+            z_index?: number | null;
+            /** Binding */
+            binding?: {
+                [key: string]: unknown;
+            } | null;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
+            /** Edge */
+            edge?: {
+                [key: string]: unknown;
+            } | null;
+            /** Edge Id */
+            edge_id?: string | null;
+        };
+        /**
+         * CanvasGraphOpsRequest
+         * @description A batch of operations, plus where the client thinks it is.
+         *
+         *     `base_seq` is not a lock — it is a read cursor. The response returns every
+         *     change after it, so one round trip both writes and catches the client up.
+         */
+        CanvasGraphOpsRequest: {
+            /**
+             * Base Seq
+             * @default 0
+             */
+            base_seq: number;
+            /** Ops */
+            ops?: components["schemas"]["CanvasGraphOpRequest"][];
+        };
+        /** CanvasGraphOpsResponse */
+        CanvasGraphOpsResponse: {
+            /** Change Seq */
+            change_seq: number;
+            /** Applied */
+            applied?: string[];
+            /** Conflicts */
+            conflicts?: components["schemas"]["CanvasOpConflictResponse"][];
+            /** Changes */
+            changes?: components["schemas"]["CanvasChangeResponse"][];
+            /**
+             * Gap
+             * @default false
+             */
+            gap: boolean;
+        };
+        /** CanvasNodeResponse */
+        CanvasNodeResponse: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            position: components["schemas"]["CanvasPosition"];
+            size?: components["schemas"]["CanvasSize"] | null;
+            /**
+             * Z Index
+             * @default 0
+             */
+            z_index: number;
+            /** Binding */
+            binding?: {
+                [key: string]: unknown;
+            } | null;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Origin
+             * @default user
+             */
+            origin: string;
+            /**
+             * Revision
+             * @default 1
+             */
+            revision: number;
+        };
+        /**
+         * CanvasOpConflictResponse
+         * @description One op that did not apply.
+         *
+         *     A conflict is not an error: the rest of the batch still applied, and the
+         *     client resolves this one by adopting the server row carried in `changes`.
+         */
+        CanvasOpConflictResponse: {
+            /** Op Id */
+            op_id: string;
+            /** Entity Id */
+            entity_id: string;
+            /** Reason */
+            reason: string;
+        };
+        /** CanvasPosition */
+        CanvasPosition: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** CanvasProjectCreateRequest */
+        CanvasProjectCreateRequest: {
+            /** Title */
+            title: string;
+            /** Series Id */
+            series_id?: string | null;
+        };
+        /** CanvasProjectResponse */
+        CanvasProjectResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Series Id */
+            series_id?: string | null;
+            /** Mode */
+            mode: string;
+            /** Change Seq */
+            change_seq: number;
+            /** Viewer Role */
+            viewer_role: string;
+            /** Viewport */
+            viewport?: {
+                [key: string]: unknown;
+            };
+            /** Nodes */
+            nodes?: components["schemas"]["CanvasNodeResponse"][];
+            /** Edges */
+            edges?: components["schemas"]["CanvasEdgeResponse"][];
+            /** Snapshot */
+            snapshot?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CanvasProjectSummaryResponse */
+        CanvasProjectSummaryResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Series Id */
+            series_id?: string | null;
+            /** Mode */
+            mode: string;
+            /** Change Seq */
+            change_seq: number;
+            /** Viewer Role */
+            viewer_role: string;
+            /**
+             * Node Count
+             * @default 0
+             */
+            node_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * CanvasProjectUpdateRequest
+         * @description Project metadata only.
+         *
+         *     The graph is written through `POST /canvas-projects/{id}/graph-ops`, which
+         *     is also where the only compare-and-set in this feature lives. There is no
+         *     `expected_revision` here: a title and a camera position are not worth a 409.
+         */
+        CanvasProjectUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Viewport */
+            viewport?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * CanvasProjectWriteResponse
+         * @description What a metadata write returns.
+         *
+         *     Deliberately carries neither the graph nor the `snapshot`: a title or
+         *     viewport change touches no card and no domain object, so returning either
+         *     would be a copy of what the client already holds.
+         */
+        CanvasProjectWriteResponse: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Series Id */
+            series_id?: string | null;
+            /** Mode */
+            mode: string;
+            /** Change Seq */
+            change_seq: number;
+            /** Viewer Role */
+            viewer_role: string;
+            /** Viewport */
+            viewport?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** CanvasSize */
+        CanvasSize: {
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /**
+         * CanvasWorkflowRunCreateRequest
+         * @description Run a creation workflow — a `CreationSkill` carrying a variable form.
+         *
+         *     `answers` is keyed by the question `id` declared in the skill's
+         *     `params_json["variables"]`. There is no `operation` field: the recipe was
+         *     written for one modality and reads it off the skill, because letting a
+         *     caller choose would submit a video job carrying a still-frame recipe.
+         *
+         *     Like a planned run this stops at `awaiting_confirm` — the form is the step
+         *     before confirmation, and `POST /canvas-agent-runs/{id}/confirm` is still
+         *     the only thing that spends credits.
+         */
+        CanvasWorkflowRunCreateRequest: {
+            /** Skill Id */
+            skill_id: string;
+            /** Node Id */
+            node_id: string;
+            /** Answers */
+            answers?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Quality Tier
+             * @default standard
+             */
+            quality_tier: string;
+            /** Max Credits */
+            max_credits?: number | null;
         };
         /**
          * CharacterActionClip
@@ -6369,6 +7188,11 @@ export interface components {
              */
             viewer_unlocked: boolean;
             /**
+             * Has Variables
+             * @default false
+             */
+            has_variables: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -6424,6 +7248,11 @@ export interface components {
              * @default true
              */
             viewer_unlocked: boolean;
+            /**
+             * Has Variables
+             * @default false
+             */
+            has_variables: boolean;
             /**
              * Created At
              * Format: date-time
@@ -6613,6 +7442,10 @@ export interface components {
             asset_urls?: {
                 [key: string]: string;
             };
+            /** Asset Meta */
+            asset_meta?: {
+                [key: string]: components["schemas"]["RevisionAssetMeta"];
+            };
             /**
              * Created At
              * Format: date-time
@@ -6646,6 +7479,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** CutUpdateRequest */
+        CutUpdateRequest: {
+            /** Name */
+            name: string;
         };
         /**
          * DangerousAction
@@ -6819,6 +7657,8 @@ export interface components {
             license?: components["schemas"]["LicenseInfo"] | null;
             /** Latest Job Id */
             latest_job_id?: string | null;
+            /** Applied Job Id */
+            applied_job_id?: string | null;
             /** Output Asset Id */
             output_asset_id?: string | null;
             /** Output Url */
@@ -6885,6 +7725,15 @@ export interface components {
              * @default false
              */
             has_script_turns: boolean;
+            /** Preview Asset Id */
+            preview_asset_id?: string | null;
+            /** Preview Url */
+            preview_url?: string | null;
+            /**
+             * Has Preview Source
+             * @default false
+             */
+            has_preview_source: boolean;
         };
         /** DramaEpisodeUpdateRequest */
         DramaEpisodeUpdateRequest: {
@@ -6900,6 +7749,8 @@ export interface components {
             episode_number?: number | null;
             /** Status */
             status?: string | null;
+            /** Preview Asset Id */
+            preview_asset_id?: string | null;
         };
         /** DramaSeriesCreateRequest */
         DramaSeriesCreateRequest: {
@@ -7482,12 +8333,30 @@ export interface components {
          *     with `forced_model_unavailable`. `label` is display-only, best-effort
          *     from `app.providers.model_catalog`'s curated catalogue; falls back to
          *     `model` itself when no catalogue entry matches.
+         *
+         *     `resolutions` / `default_resolution` are client-facing studio tiers
+         *     (`480p`/`720p`/`1080p`/`2K`), never a vendor spelling such as `768P`.
+         *     `None` on `resolutions` means unrestricted (or a non-video operation).
+         *     The studio keeps the user's pick as a ceiling and only previews the
+         *     adapted tier locally; `request_json.resolution` is not rewritten.
+         *
+         *     `voices` (`audio_generation` only) is this model's discrete preset-voice
+         *     roster from `app.providers.model_catalog.voices_for_model` — `None`
+         *     means either a non-audio operation or a clone-only model with no fixed
+         *     roster (the studio's clone tab then takes over instead of a voice
+         *     `Select`).
          */
         GenerationModelOption: {
             /** Model */
             model: string;
             /** Label */
             label: string;
+            /** Resolutions */
+            resolutions?: ("480p" | "720p" | "1080p" | "2K")[] | null;
+            /** Default Resolution */
+            default_resolution?: ("480p" | "720p" | "1080p" | "2K") | null;
+            /** Voices */
+            voices?: string[] | null;
         };
         /** GenerationParams */
         GenerationParams: {
@@ -8146,7 +9015,7 @@ export interface components {
             /** Output Modalities */
             output_modalities?: string[];
             /** Protocol */
-            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi") | null;
+            protocol?: ("openai" | "minimax" | "minimax_v2" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi" | "fal") | null;
             /**
              * Max Concurrency
              * @default 4
@@ -8154,7 +9023,7 @@ export interface components {
             max_concurrency: number;
             /**
              * Timeout Ms
-             * @default 30000
+             * @default 90000
              */
             timeout_ms: number;
             /**
@@ -8176,6 +9045,10 @@ export interface components {
             media_pricing?: components["schemas"]["MediaPricingPayload"];
             /** Billing Profile */
             billing_profile?: string | null;
+            /** @default create */
+            generation_kind: components["schemas"]["MediaGenerationKind"];
+            /** @default voice */
+            audio_generation_kind: components["schemas"]["AudioGenerationKind"];
         };
         /**
          * LlmProviderEndpointView
@@ -8215,7 +9088,7 @@ export interface components {
             /** Output Modalities */
             output_modalities?: string[];
             /** Protocol */
-            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi") | null;
+            protocol?: ("openai" | "minimax" | "minimax_v2" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi" | "fal") | null;
             /** Capabilities */
             capabilities?: string[];
             /** Max Concurrency */
@@ -8245,6 +9118,10 @@ export interface components {
             media_pricing?: components["schemas"]["MediaPricingPayload"];
             /** Billing Profile */
             billing_profile?: string | null;
+            /** @default create */
+            generation_kind: components["schemas"]["MediaGenerationKind"];
+            /** @default voice */
+            audio_generation_kind: components["schemas"]["AudioGenerationKind"];
             /**
              * Concurrency In Use
              * @default 0
@@ -8434,6 +9311,8 @@ export interface components {
             drama_studio: boolean;
             /** Marketplace */
             marketplace: boolean;
+            /** Canvas Studio */
+            canvas_studio: boolean;
         };
         /** MeResponse */
         MeResponse: {
@@ -8467,6 +9346,17 @@ export interface components {
             features: components["schemas"]["MeFeaturesResponse"];
         };
         /**
+         * MediaGenerationKind
+         * @description How a `kind="media"` endpoint is allowed to enter video routing.
+         *
+         *     `CREATE` can start from text or a still. `EDIT` needs an existing video
+         *     source and is hard-filtered out of text-to-video / image-to-video when
+         *     none is attached — see `app.agents.router._request_constraint_failure`.
+         *     Stored on `LlmProviderEndpoint`, not a SQLAlchemy column.
+         * @enum {string}
+         */
+        MediaGenerationKind: "create" | "edit";
+        /**
          * MediaPricingPayload
          * @description Sections a media endpoint's capabilities do not cover are dropped
          *     server-side, so a stale price cannot outlive the capability it billed.
@@ -8476,6 +9366,8 @@ export interface components {
             audio?: components["schemas"]["AudioPricingPayload"] | null;
             video?: components["schemas"]["VideoPricingPayload"] | null;
             token_video?: components["schemas"]["TokenVideoPricingPayload"] | null;
+            video_analysis?: components["schemas"]["VideoAnalysisPricingPayload"] | null;
+            music?: components["schemas"]["MusicPricingPayload"] | null;
         };
         /**
          * MediaType
@@ -8501,7 +9393,7 @@ export interface components {
              */
             kind: "general" | "media";
             /** Protocol */
-            protocol?: ("openai" | "minimax" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi") | null;
+            protocol?: ("openai" | "minimax" | "minimax_v2" | "comfyui" | "google" | "dashscope" | "ark" | "kling" | "dmxapi" | "fal") | null;
             /** Input Modalities */
             input_modalities?: string[];
             /** Output Modalities */
@@ -8530,6 +9422,13 @@ export interface components {
             billing_profile?: string | null;
             /** Price Items */
             price_items?: components["schemas"]["PriceItemView"][];
+            /**
+             * Suggested Timeout Ms
+             * @default 0
+             */
+            suggested_timeout_ms: number;
+            /** @default create */
+            generation_kind: components["schemas"]["MediaGenerationKind"];
         };
         /** ModelCatalogResponse */
         ModelCatalogResponse: {
@@ -8729,6 +9628,17 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * MusicPricingPayload
+         * @description BGM/SFX billed per generated clip — see `MusicPricing`.
+         */
+        MusicPricingPayload: {
+            /**
+             * Per Request Micro Usd
+             * @default 0
+             */
+            per_request_micro_usd: number;
+        };
         /** MyDataRequestView */
         MyDataRequestView: {
             /** Id */
@@ -8830,7 +9740,7 @@ export interface components {
          * Operation
          * @enum {string}
          */
-        Operation: "text_to_image" | "image_to_image" | "text_to_video" | "image_to_video" | "video_to_video" | "audio_generation" | "video_analysis";
+        Operation: "text_to_image" | "image_to_image" | "text_to_video" | "image_to_video" | "video_to_video" | "audio_generation" | "music_generation" | "video_analysis";
         /** Page[AdminJobSummary] */
         Page_AdminJobSummary_: {
             /** Items */
@@ -9440,7 +10350,7 @@ export interface components {
              * Unit
              * @enum {string}
              */
-            unit: "per_second" | "per_million_tokens" | "per_image" | "per_request";
+            unit: "per_second" | "per_million_tokens" | "per_image" | "per_request" | "per_10k_characters";
             /** Label */
             label: string;
             /** Default Micro Usd */
@@ -9559,6 +10469,11 @@ export interface components {
             instruction: string;
             asset_kind?: components["schemas"]["ImageAssetKind"] | null;
             video_asset_kind?: components["schemas"]["VideoAssetKind"] | null;
+            script_segment?: components["schemas"]["ScriptSegment"] | null;
+            /** Question Answers */
+            question_answers?: {
+                [key: string]: string | string[];
+            };
         };
         /**
          * PromptSlotView
@@ -10090,6 +11005,25 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * RevisionAssetMeta
+         * @description Intrinsic facts about one asset a revision references — what the
+         *     timeline needs to clamp a trim to the source's real length, label a
+         *     clip, and size thumbnails — separate from the short-lived signed URL in
+         *     `asset_urls` because these never expire.
+         */
+        RevisionAssetMeta: {
+            /** Media Type */
+            media_type: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Duration Ticks */
+            duration_ticks?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+        };
         /** RevisionRestoreRequest */
         RevisionRestoreRequest: {
             /** Revision Id */
@@ -10352,6 +11286,17 @@ export interface components {
             /** Scenes */
             scenes?: components["schemas"]["ScriptScene"][];
         };
+        /** ScriptExtractResponse */
+        ScriptExtractResponse: {
+            /** Filename */
+            filename: string;
+            /** Text */
+            text: string;
+            /** Char Count */
+            char_count: number;
+            /** Truncated */
+            truncated: boolean;
+        };
         /**
          * ScriptLinksUpdateRequest
          * @description A structural edit, not a content revision — never goes through the
@@ -10395,6 +11340,39 @@ export interface components {
             heading: string;
             /** Ref Id */
             ref_id?: string | null;
+        };
+        /**
+         * ScriptSegment
+         * @description The shootable blocks of one suggested cut, plus its scene heading.
+         */
+        ScriptSegment: {
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /** Blocks */
+            blocks?: components["schemas"]["ScriptSegmentBlock"][];
+        };
+        /**
+         * ScriptSegmentBlock
+         * @description One colour-coded script block inside a clip-studio polish request.
+         *
+         *     `breakpoint` is rejected — adding a cut here would shift `{heading}#{ordinal}`.
+         */
+        ScriptSegmentBlock: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "scene" | "action" | "camera" | "dialogue";
+            /** Character */
+            character?: string | null;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
         };
         /** ScriptSummaryResponse */
         ScriptSummaryResponse: {
@@ -11003,6 +11981,8 @@ export interface components {
             /** Cover Height */
             cover_height?: number | null;
             media_type?: components["schemas"]["MediaType"] | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
             author: components["schemas"]["AuthorSummary"];
             stats: components["schemas"]["WorkStats"];
             /** Tags */
@@ -11147,7 +12127,7 @@ export interface components {
              * Vendor
              * @enum {string}
              */
-            vendor: "aihubmix" | "dmxapi";
+            vendor: "aihubmix" | "dmxapi" | "metaso" | "fal";
             /** Label */
             label: string;
             /** Base Url */
@@ -11177,6 +12157,14 @@ export interface components {
             child_work_version_id: string;
             /** Entries */
             entries: components["schemas"]["VersionDiffEntry"][];
+        };
+        /** VideoAnalysisPricingPayload */
+        VideoAnalysisPricingPayload: {
+            /**
+             * Per Request Micro Usd
+             * @default 0
+             */
+            per_request_micro_usd: number;
         };
         /**
          * VideoAnalysisResult
@@ -11275,15 +12263,14 @@ export interface components {
          *     picking it lets H3 and the lowercase-`p` models — `doubao-seedance-2-5
          *     -260628`, `wan2.7-videoedit` — actually compete for the same request
          *     instead of being mutually invisible over a spelling difference).
-         *     `app.providers.base.resolve_resolution_tier` is where a tier gets turned
-         *     into the specific literal a chosen candidate's own vocabulary needs,
-         *     both at `router.route()`'s hard-filter/costing stage and again in
-         *     `app.workflows.nodes.execute_provider_generate` right before the actual
-         *     provider call — this schema never sees or validates a vendor's raw
-         *     spelling directly. A tier with no member in the eventually-picked
-         *     candidate's `ProviderCapability.resolutions` narrows which providers are
-         *     eligible (`router._request_constraint_failure`); it never reaches a
-         *     provider that can't honour it.
+         *     `app.providers.base.adapt_resolution_tier` is where a tier becomes a
+         *     ceiling on the *final* model: exact match if that candidate has it,
+         *     otherwise the highest strictly lower supported tier (never a raise to
+         *     2K from 1080p), and only as a last resort the model's lowest tier so
+         *     the job still runs. Costing and `execute_provider_generate` both send
+         *     the adapted vendor literal. This schema never sees a vendor's raw
+         *     spelling. A candidate whose `resolutions` map to no studio tier at all
+         *     is the only remaining `resolution_not_supported` hard filter.
          */
         VideoGenerationOptions: {
             /** Resolution */
@@ -11379,6 +12366,8 @@ export interface components {
             /** Cover Height */
             cover_height?: number | null;
             media_type?: components["schemas"]["MediaType"] | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
             author: components["schemas"]["AuthorSummary"];
             stats: components["schemas"]["WorkStats"];
             /** Tags */
@@ -11474,6 +12463,8 @@ export interface components {
             /** Cover Height */
             cover_height?: number | null;
             media_type?: components["schemas"]["MediaType"] | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
             author: components["schemas"]["AuthorSummary"];
             stats: components["schemas"]["WorkStats"];
             /** Tags */
@@ -13320,6 +14311,75 @@ export interface operations {
             };
         };
     };
+    apply_draft_version_v1_drafts__draft_id__applied_version_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppliedVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_draft_version_v1_drafts__draft_id__versions__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                draft_id: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     quote_v1_generation_jobs_quote_post: {
         parameters: {
             query?: never;
@@ -14508,7 +15568,9 @@ export interface operations {
     };
     get_asset_v1_assets__asset_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                download?: boolean;
+            };
             header?: {
                 authorization?: string | null;
             };
@@ -16378,6 +17440,39 @@ export interface operations {
             };
         };
     };
+    fill_episode_preview_from_video_v1_drama_episodes__episode_id__preview_from_video_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DramaEpisodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_cut_from_job_v1_episode_cuts_from_job_post: {
         parameters: {
             query?: never;
@@ -16528,6 +17623,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EpisodeCutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_cut_v1_episode_cuts__cut_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                cut_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CutUpdateRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -17457,6 +18589,586 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_canvas_projects_v1_canvas_projects_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjectSummaryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_canvas_project_v1_canvas_projects_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasProjectCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_canvas_project_v1_canvas_projects__canvas_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_canvas_project_v1_canvas_projects__canvas_id__delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_canvas_project_v1_canvas_projects__canvas_id__patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasProjectUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjectWriteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_canvas_graph_ops_v1_canvas_projects__canvas_id__graph_ops_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasGraphOpsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasGraphOpsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_canvas_changes_v1_canvas_projects__canvas_id__changes_get: {
+        parameters: {
+            query?: {
+                since?: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasChangesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_canvas_events_v1_canvas_projects__canvas_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Last-Event-ID"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_series_canvas_v1_drama_series__series_id__canvas_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                series_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_canvas_agent_runs_v1_canvas_projects__canvas_id__agent_runs_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasAgentRunResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_canvas_agent_run_v1_canvas_projects__canvas_id__agent_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasAgentRunCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_canvas_workflow_run_v1_canvas_projects__canvas_id__workflow_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                canvas_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasWorkflowRunCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasAgentRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasAgentRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_canvas_agent_run_v1_canvas_agent_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasAgentRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_canvas_task_card_v1_canvas_agent_tasks__task_id__restore_card_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasNodeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_canvas_agent_run_v1_canvas_agent_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasAgentRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_script_source_v1_scripts_extract_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_extract_script_source_v1_scripts_extract_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScriptExtractResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
