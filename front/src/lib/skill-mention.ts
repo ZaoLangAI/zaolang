@@ -12,6 +12,9 @@ const IMAGE_ASSET_CATEGORIES = new Set<CreationSkillCategory>([
   'cover_asset',
 ]);
 
+const IMAGE_OPERATIONS = new Set<Operation>(['text_to_image', 'image_to_image']);
+const VIDEO_OPERATIONS = new Set<Operation>(['text_to_video', 'image_to_video', 'video_to_video']);
+
 export function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -87,8 +90,58 @@ export function isSkillUsableForMention(
 }
 
 export function isSkillMentionable(skill: CreationSkillSummary, operation: Operation): boolean {
-  if (IMAGE_ASSET_CATEGORIES.has(skill.category)) return false;
+  if (IMAGE_ASSET_CATEGORIES.has(skill.category)) {
+    const ops = skill.applicable_operations;
+    // User-authored roster skills usually declare no operations (empty =
+    // "any" for templates). Those must stay out of `@` / `skill_ids` and
+    // keep going through the dedicated character/scene roster instead.
+    if (!ops || ops.length === 0 || !ops.includes(operation)) return false;
+    return isSkillUsableForMention(skill);
+  }
   return isSkillApplicableToOperation(skill, operation) && isSkillUsableForMention(skill);
+}
+
+/** Plaza / `@` apply lands in the image studio when the skill is image-only. */
+export function creationStudioHref(
+  skill: Pick<CreationSkillSummary, 'id' | 'category' | 'applicable_operations'>,
+): string {
+  const ops = skill.applicable_operations ?? [];
+  const hasImage = ops.some((op) => IMAGE_OPERATIONS.has(op));
+  const hasVideo = ops.some((op) => VIDEO_OPERATIONS.has(op));
+  const mode = hasImage && !hasVideo ? 'image_creation' : 'video_creation';
+  const params = new URLSearchParams({ mode, skillId: skill.id });
+  if (skill.category === 'character') {
+    params.set('assetKind', 'character');
+    // Video has no `scene`/`cover` asset-kind equivalent, but a character
+    // recipe maps onto `character_action` so the video studio still gets
+    // the right context when `mode` resolves to `video_creation`.
+    if (mode === 'video_creation') params.set('videoAssetKind', 'character_action');
+  } else if (skill.category === 'scene_asset') {
+    params.set('assetKind', 'scene');
+  } else if (skill.category === 'cover_asset') {
+    params.set('assetKind', 'cover');
+  }
+  return `/create/new?${params.toString()}`;
+}
+
+/** The still an image-asset recipe should hang on the image studio's
+ * reference rail: first nested `reference_assets` entry, else the cover. */
+export function firstSkillReferenceAssetId(
+  params: Record<string, unknown>,
+  coverAssetId?: string | null,
+): string | undefined {
+  for (const nestKey of ['character', 'scene'] as const) {
+    const bundle = params[nestKey];
+    if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) continue;
+    const refs = (bundle as { reference_assets?: unknown }).reference_assets;
+    if (!Array.isArray(refs)) continue;
+    for (const ref of refs) {
+      if (!ref || typeof ref !== 'object' || Array.isArray(ref)) continue;
+      const assetId = (ref as { asset_id?: unknown }).asset_id;
+      if (typeof assetId === 'string' && assetId) return assetId;
+    }
+  }
+  return coverAssetId || undefined;
 }
 
 export function filterMentionSkills(

@@ -5,20 +5,18 @@ import { useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { UnlockDialog } from '@/components/marketplace/unlock-dialog';
-import { ManageSkillDialog } from '@/components/skills/manage-skill-dialog';
 import { Poster } from '@/components/media/poster';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { MediaLightbox } from '@/components/ui/media-lightbox';
 import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { IconCheck, IconCopy, IconLock } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import { api } from '@/lib/api/client';
 import type { CreationSkillCategory, CreationSkillDetail, CreationSkillSummary } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
+import { creationStudioHref } from '@/lib/skill-mention';
 import { useResource } from '@/lib/use-resource';
 
 const CATEGORY_LABEL_KEY: Record<
@@ -40,13 +38,11 @@ const CATEGORY_LABEL_KEY: Record<
   other: 'categoryOther',
 };
 
-// The flat `prompt`/`prompt_suffix`/`aspect_ratio` shape every template
-// category (`scene`/`lens`/`style`/`other`) uses — see
-// `skill_library.catalog.CatalogSkill.params_json`. `character`/`scene_asset`
-// store a nested `reference_assets` bundle instead (not meaningful to dump as
-// a flat key/value list here), and `cover_asset` has no params at all — its
-// "core content" is the cover image itself, already shown above unlocked.
-const TEMPLATE_CATEGORIES = new Set<CreationSkillCategory>(['scene', 'lens', 'style', 'other']);
+const IMAGE_ASSET_CATEGORIES = new Set<CreationSkillCategory>([
+  'character',
+  'scene_asset',
+  'cover_asset',
+]);
 
 const PARAM_LABEL_KEY: Record<string, 'paramPromptLabel' | 'paramPromptSuffixLabel' | 'paramAspectRatioLabel'> = {
   prompt: 'paramPromptLabel',
@@ -60,9 +56,9 @@ const PARAM_LABEL_KEY: Record<string, 'paramPromptLabel' | 'paramPromptSuffixLab
  * `GET /v1/skills/{id}` already returns full content for a free/unlocked
  * skill and an empty `params` for a locked paid one (`_detail()` in
  * `app/api/v1/skills.py`); this component only has to render that gate, not
- * enforce it. Every action that actually *does* something (unlock, apply,
- * navigate to a dedicated library, manage) is gated behind `requireAuth` at
- * click time instead, so an anonymous visitor can still read the whole card.
+ * enforce it. Every action that actually *does* something (unlock, enter
+ * the matching studio) is gated behind `requireAuth` at click time instead,
+ * so an anonymous visitor can still read the whole card.
  */
 export function SkillDetailDialog({
   skill,
@@ -81,11 +77,9 @@ export function SkillDetailDialog({
   const t = useTranslations('skillLibrary');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { user, requireAuth } = useSession();
+  const { requireAuth } = useSession();
 
   const [pendingUnlock, setPendingUnlock] = useState(false);
-  const [managing, setManaging] = useState(false);
-  const [viewingCoverUrl, setViewingCoverUrl] = useState<string | null>(null);
   const [forceUnlocked, setForceUnlocked] = useState(false);
 
   const detail = useResource<CreationSkillDetail>(skill ? `/v1/skills/${skill.id}` : null);
@@ -99,21 +93,12 @@ export function SkillDetailDialog({
     setForceUnlocked(false);
   };
 
-  const applyAndEnterStudio = async () => {
+  const applyAndEnterStudio = () => {
     if (!skill) return;
-    try {
-      await api.post(`/v1/skills/${skill.id}/apply`);
-    } catch {
-      // Best-effort usage ping; a miscount here must not block a user who
-      // already has access from reaching the studio.
-    }
     close();
-    router.push('/create/new?mode=video_creation');
-  };
-
-  const goLibrary = (path: '/create/characters' | '/create/scenes') => {
-    if (!skill) return;
-    requireAuth({ label: skill.title, run: () => router.push(path) });
+    // Usage is counted once by the studio's `?skillId=` seed apply — do
+    // not POST `/apply` here or a plaza click double-counts.
+    router.push(creationStudioHref(skill));
   };
 
   return (
@@ -154,13 +139,11 @@ export function SkillDetailDialog({
 
             {detail.status === 'failed' ? <ErrorNotice title={t('detailLoadFailed')} /> : null}
 
-            {TEMPLATE_CATEGORIES.has(skill.category) ? (
-              <CoreContentSection
-                loading={detail.status === 'loading' && !detail.data}
-                locked={locked}
-                params={detail.data?.params}
-              />
-            ) : null}
+            <CoreContentSection
+              loading={detail.status === 'loading' && !detail.data}
+              locked={locked}
+              params={detail.data?.params}
+            />
 
             <HowToUseSection title={skill.title} />
 
@@ -168,14 +151,8 @@ export function SkillDetailDialog({
               <DetailActions
                 skill={skill}
                 locked={locked}
-                isOwner={Boolean(user && skill.author.user_id === user.id)}
-                coverUrl={data?.cover_url ?? skill.cover_url ?? null}
                 onUnlock={() => requireAuth({ label: skill.title, run: () => setPendingUnlock(true) })}
-                onApply={() => requireAuth({ label: skill.title, run: () => void applyAndEnterStudio() })}
-                onGoCharacters={() => goLibrary('/create/characters')}
-                onGoScenes={() => goLibrary('/create/scenes')}
-                onManage={() => setManaging(true)}
-                onViewCover={(url) => setViewingCoverUrl(url)}
+                onApply={() => requireAuth({ label: skill.title, run: applyAndEnterStudio })}
               />
             </div>
           </div>
@@ -200,15 +177,6 @@ export function SkillDetailDialog({
         }}
       />
 
-      {managing && skill ? (
-        <ManageSkillDialog
-          skill={skill}
-          onClose={() => setManaging(false)}
-          onChanged={() => setManaging(false)}
-        />
-      ) : null}
-
-      <MediaLightbox open={viewingCoverUrl !== null} onClose={() => setViewingCoverUrl(null)} src={viewingCoverUrl} />
     </>
   );
 }
@@ -250,11 +218,11 @@ function CoreContentRows({ params }: { params: Record<string, unknown> }) {
 
   const rows = Object.entries(params)
     .map(([key, value]) => {
-      if (value === null || value === undefined || value === '') return null;
-      const display = typeof value === 'string' ? value : JSON.stringify(value);
-      if (!display) return null;
+      // Flat recipe keys only — never dump a nested `character`/`scene`
+      // `reference_assets` bundle as JSON.
+      if (typeof value !== 'string' || !value) return null;
       const labelKey = PARAM_LABEL_KEY[key];
-      return { key, label: labelKey ? t(labelKey) : key, display };
+      return { key, label: labelKey ? t(labelKey) : key, display: value };
     })
     .filter((row): row is { key: string; label: string; display: string } => row !== null);
 
@@ -300,45 +268,22 @@ function HowToUseSection({ title }: { title: string }) {
 function DetailActions({
   skill,
   locked,
-  isOwner,
-  coverUrl,
   onUnlock,
   onApply,
-  onGoCharacters,
-  onGoScenes,
-  onManage,
-  onViewCover,
 }: {
   skill: CreationSkillSummary;
   locked: boolean;
-  isOwner: boolean;
-  coverUrl: string | null;
   onUnlock: () => void;
   onApply: () => void;
-  onGoCharacters: () => void;
-  onGoScenes: () => void;
-  onManage: () => void;
-  onViewCover: (url: string | null) => void;
 }) {
   const t = useTranslations('skillLibrary');
 
-  if (TEMPLATE_CATEGORIES.has(skill.category)) {
-    return locked ? (
-      <Button onClick={onUnlock}>{t('unlock')}</Button>
-    ) : (
-      <Button onClick={onApply}>{t('goCreate')}</Button>
-    );
-  }
-  if (skill.category === 'character') {
-    return <Button onClick={onGoCharacters}>{t('goCharacterLibrary')}</Button>;
-  }
-  if (skill.category === 'scene_asset') {
-    return <Button onClick={onGoScenes}>{t('goSceneLibrary')}</Button>;
-  }
-  // cover_asset
-  if (isOwner) return <Button onClick={onManage}>{t('manage')}</Button>;
   if (locked) return <Button onClick={onUnlock}>{t('unlock')}</Button>;
-  return <Button onClick={() => onViewCover(coverUrl)}>{t('viewCoverImage')}</Button>;
+  return (
+    <Button onClick={onApply}>
+      {IMAGE_ASSET_CATEGORIES.has(skill.category) ? t('goCreateWithSetup') : t('goCreate')}
+    </Button>
+  );
 }
 
 function CopyIconButton({ value }: { value: string }) {

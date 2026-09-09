@@ -30,6 +30,7 @@ from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
     AssetRole,
+    CharacterViewAngle,
     CreationSkillCategory,
     CreationSkillStatus,
     CreationSkillVisibility,
@@ -88,7 +89,7 @@ def create(
 
 
 def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[CreationSkill]:
-    """Plants `catalog.CATALOG`'s platform-curated short-drama templates.
+    """Plants `catalog.CATALOG`'s platform-curated templates and image assets.
 
     This is a system-default catalogue, analogous to
     `workflow_templates_service.ensure_default_templates` or
@@ -107,6 +108,10 @@ def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[Creat
     backfilled from `catalog.py`'s shipped cover, but a row that already
     carries one — whether from an earlier run of this same backfill or an
     operator's own re-cover — is never touched (see `_ensure_seeded_cover`).
+    Character/scene image-asset rows also get that same still copied into
+    `params_json["character"|"scene"]["reference_assets"]` once the list is
+    still empty (`_ensure_seeded_reference`); a non-empty list is left
+    alone so an operator who replaced the demo still survives `make seed`.
     """
     existing = {
         row.title: row
@@ -134,6 +139,7 @@ def ensure_catalog_skills(session: Session, *, owner_user_id: str) -> list[Creat
             session.flush()
             created.append(skill)
         _ensure_seeded_cover(session, skill=skill, item=item, owner_user_id=owner_user_id)
+        _ensure_seeded_reference(skill, item=item)
     return created
 
 
@@ -180,6 +186,43 @@ def _ensure_seeded_cover(
     session.flush()
     skill.cover_asset_id = asset.id
     session.flush()
+
+
+def _ensure_seeded_reference(skill: CreationSkill, *, item: skill_catalog.CatalogSkill) -> None:
+    """Puts the seeded cover onto a character/scene skill's
+    `reference_assets` once, so the plaza card and a later `@` apply share
+    the same still. A no-op when the nested list is already non-empty —
+    an operator who replaced the demo still survives `make seed`. Cover
+    assets have no nested bundle."""
+    cover_id = skill.cover_asset_id
+    if cover_id is None:
+        return
+    if item.category == CreationSkillCategory.CHARACTER:
+        nest_key = "character"
+        view = CharacterViewAngle.FRONT.value
+    elif item.category == CreationSkillCategory.SCENE_ASSET:
+        nest_key = "scene"
+        view = "establishing"
+    else:
+        return
+
+    current = dict(skill.params_json or {})
+    nested = dict(current.get(nest_key) or {}) if isinstance(current.get(nest_key), dict) else {}
+    refs = nested.get("reference_assets")
+    if isinstance(refs, list) and refs:
+        return
+    nested = {
+        **nested,
+        "reference_assets": [
+            {
+                "asset_id": cover_id,
+                "view": view,
+                "label": None,
+                "created_at": utcnow().isoformat(),
+            }
+        ],
+    }
+    skill.params_json = {**current, nest_key: nested}
 
 
 def update(
@@ -304,6 +347,30 @@ def get_usable(session: Session, *, skill_id: str, viewer_id: str | None) -> Cre
 
 def viewer_has_access(session: Session, skill: CreationSkill, viewer_id: str | None) -> bool:
     return access_service.viewer_unlocked_skill(session, skill, viewer_id)
+
+
+def asset_is_usable_skill_reference(
+    session: Session, *, asset: Asset, viewer_id: str | None
+) -> bool:
+    """A published marketplace skill's public cover may be sent as a
+    generation reference by anyone who can use that skill — the still is
+    already `PUBLIC_VIEW_ONLY`, and attaching it is how an image-asset
+    recipe becomes an img2img reference without cloning the row into the
+    viewer's own roster."""
+    if asset.media_type != MediaType.IMAGE:
+        return False
+    if asset.visibility == Visibility.PRIVATE:
+        return False
+    skill = session.scalar(
+        select(CreationSkill).where(
+            CreationSkill.cover_asset_id == asset.id,
+            CreationSkill.status == CreationSkillStatus.PUBLISHED,
+            CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+        )
+    )
+    if skill is None:
+        return False
+    return viewer_has_access(session, skill, viewer_id)
 
 
 def assert_unlocked_for_use(session: Session, skill: CreationSkill, viewer_id: str | None) -> None:

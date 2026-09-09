@@ -16,6 +16,7 @@ function skill(overrides: Partial<CreationSkillSummary>): CreationSkillSummary {
     usage_count: 0,
     access_credits: 0,
     viewer_unlocked: false,
+    has_variables: false,
     created_at: '2026-08-31T00:00:00Z',
     ...overrides,
   };

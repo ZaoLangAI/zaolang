@@ -99,6 +99,14 @@ ROLE_PRESETS: tuple[RolePreset, ...] = (
         default_template_key="editor-planner-default",
         sort_order=5,
     ),
+    RolePreset(
+        role=AgentName.CANVAS_PLANNER.value,
+        display_name="画布生成规划",
+        category=JUDGMENT,
+        description="读取画布上选中卡片与其上游卡片，规划要生成的图片/视频任务；只提交任务，不直连供应商。",
+        default_template_key="canvas-planner-default",
+        sort_order=6,
+    ),
 )
 
 _BY_ROLE: dict[str, RolePreset] = {preset.role: preset for preset in ROLE_PRESETS}

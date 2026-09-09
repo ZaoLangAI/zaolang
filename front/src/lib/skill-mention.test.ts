@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { CreationSkillSummary } from '@/lib/api/types';
 
 import {
+  creationStudioHref,
   detectMentionTrigger,
   filterMentionSkills,
+  firstSkillReferenceAssetId,
   isSkillApplicableToOperation,
   isSkillMentionable,
   isSkillUsableForMention,
@@ -23,6 +25,7 @@ function skill(overrides: Partial<CreationSkillSummary>): CreationSkillSummary {
     usage_count: 0,
     access_credits: 0,
     viewer_unlocked: true,
+    has_variables: false,
     created_at: '2026-08-31T00:00:00Z',
     ...overrides,
   };
@@ -75,9 +78,47 @@ describe('skill mention filters', () => {
     expect(isSkillMentionable(bought, 'text_to_video')).toBe(false);
   });
 
-  it('never mentions an image-asset skill via skill_ids', () => {
+  it('excludes a user-authored character with empty operations from @', () => {
     const character = skill({ category: 'character', applicable_operations: [] });
     expect(isSkillMentionable(character, 'text_to_image')).toBe(false);
+  });
+
+  it('mentions a free image-asset recipe that declares text_to_image', () => {
+    const recipe = skill({
+      category: 'character',
+      title: '三视图设定板',
+      applicable_operations: ['text_to_image', 'image_to_image'],
+    });
+    expect(isSkillMentionable(recipe, 'text_to_image')).toBe(true);
+    expect(isSkillMentionable(recipe, 'text_to_video')).toBe(false);
+    expect(creationStudioHref(recipe)).toBe(
+      '/create/new?mode=image_creation&skillId=skl_a&assetKind=character',
+    );
+  });
+
+  it('sends an image-only template to the image studio', () => {
+    const poster = skill({
+      category: 'style',
+      applicable_operations: ['text_to_image', 'image_to_image'],
+    });
+    expect(creationStudioHref(poster)).toBe('/create/new?mode=image_creation&skillId=skl_a');
+  });
+
+  it('carries the character asset kind into the video studio for a roster skill with no declared operations', () => {
+    const character = skill({ category: 'character', applicable_operations: [] });
+    expect(creationStudioHref(character)).toBe(
+      '/create/new?mode=video_creation&skillId=skl_a&assetKind=character&videoAssetKind=character_action',
+    );
+  });
+
+  it('reads the first nested reference still, else the cover', () => {
+    expect(
+      firstSkillReferenceAssetId({
+        prompt_suffix: 'turnaround',
+        character: { reference_assets: [{ asset_id: 'ast_front', view: 'front' }] },
+      }),
+    ).toBe('ast_front');
+    expect(firstSkillReferenceAssetId({ prompt_suffix: 'cover' }, 'ast_cover')).toBe('ast_cover');
   });
 
   it('filters the open menu by title query', () => {

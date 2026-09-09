@@ -21,6 +21,7 @@ from app.api.schemas.works import AccessGrantView, AccessUnlockResponse, AuthorS
 from app.domain.access import service as access_service
 from app.domain.errors import ValidationFailed
 from app.domain.skill_library import service as skill_library
+from app.domain.skill_library import variables as skill_variables
 from app.models import CreationSkill, Profile
 from app.models.enums import (
     AccessSubjectType,
@@ -321,6 +322,7 @@ def _summary(
         usage_count=skill.usage_count,
         access_credits=skill.access_credits,
         viewer_unlocked=skill_library.viewer_has_access(session, skill, viewer_id),
+        has_variables=skill_variables.has_variables(skill),
         created_at=skill.created_at,
     )
 

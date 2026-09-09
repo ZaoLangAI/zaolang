@@ -43,11 +43,18 @@ export function SkillCard({
   locale,
   showStatus,
   onClick,
+  draggable,
+  onDragStart,
 }: {
   skill: CreationSkillSummary;
   locale: Locale;
   showStatus?: boolean;
   onClick?: () => void;
+  /** Drag-to-place, used by the canvas' prompt library. Sits on the `<li>`
+   * rather than on the inner button so the whole card is the drag handle —
+   * and so a card with no `onClick` is still draggable. */
+  draggable?: boolean;
+  onDragStart?: (event: React.DragEvent<HTMLLIElement>) => void;
 }) {
   const t = useTranslations('skillLibrary');
 
@@ -87,7 +94,11 @@ export function SkillCard({
   );
 
   return (
-    <li className="overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-colors hover:border-border-strong">
+    <li
+      draggable={draggable}
+      onDragStart={onDragStart}
+      className="overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-colors hover:border-border-strong"
+    >
       {onClick ? (
         <button type="button" onClick={onClick} className="block w-full text-left">
           {body}

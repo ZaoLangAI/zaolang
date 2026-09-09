@@ -197,6 +197,49 @@ def test_a_locked_paid_skill_is_not_folded(db: Session, author: User, remixer: U
     assert ctx.prompt == "海边的黄昏"
 
 
+def test_a_character_skill_with_prompt_suffix_folds_into_text_to_image(
+    db: Session, author: User
+) -> None:
+    skill = skill_library.create(
+        db,
+        owner_user_id=author.id,
+        title="三视图设定板",
+        description="原创人设",
+        category=CreationSkillCategory.CHARACTER,
+        params_json={
+            "prompt_suffix": "left-to-right turnaround sheet, no readable text",
+            "aspect_ratio": "3:4",
+            "character": {
+                "description": "原创人设",
+                "reference_assets": [{"asset_id": "ast_demo", "view": "front"}],
+            },
+        },
+        cover_asset_id=None,
+        applicable_operations=[Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE],
+    )
+    ctx = _ctx(db, author, params={"prompt": "海边的黄昏", "skill_ids": [skill.id]})
+    execute_skill_context(ctx, SkillContextConfig())
+    assert "left-to-right turnaround sheet" in ctx.prompt
+    assert ctx.params["aspect_ratio"] == "3:4"
+    assert "character" not in ctx.params
+
+
+def test_a_user_character_without_flat_keys_is_skipped(db: Session, author: User) -> None:
+    skill = skill_library.create(
+        db,
+        owner_user_id=author.id,
+        title="我的角色",
+        description="",
+        category=CreationSkillCategory.CHARACTER,
+        params_json={"character": {"description": "我的 OC", "reference_assets": []}},
+        cover_asset_id=None,
+    )
+    ctx = _ctx(db, author, params={"prompt": "海边的黄昏", "skill_ids": [skill.id]})
+    execute_skill_context(ctx, SkillContextConfig())
+    assert ctx.prompt == "海边的黄昏"
+    assert "character" not in ctx.params
+
+
 def test_dry_run_does_not_fold_style_or_skills(db: Session, author: User) -> None:
     entry = _style(db)
     ctx = _ctx(
@@ -207,3 +250,40 @@ def test_dry_run_does_not_fold_style_or_skills(db: Session, author: User) -> Non
     )
     execute_skill_context(ctx, SkillContextConfig())
     assert ctx.prompt == "海边的黄昏"
+
+
+def test_a_workflow_skills_variables_never_reach_the_params(db: Session, author: User) -> None:
+    """The single data-leak surface of creation workflows.
+
+    `params_json` is folded wholesale for a template skill, so a workflow's
+    `variables` — the question list its author wrote for the form — would ride
+    straight into `ctx.params` and out to the provider. The answers belong in
+    the prompt; the questions belong nowhere near the request.
+    """
+    skill = skill_library.create(
+        db,
+        owner_user_id=author.id,
+        title="打光工作流",
+        description="",
+        category=CreationSkillCategory.STYLE,
+        params_json={
+            "prompt_suffix": "single hard key light",
+            "variables": [
+                {
+                    "id": "mood",
+                    "kind": "single_choice",
+                    "prompt": "想要什么情绪",
+                    "options": [{"value": "cold", "label": "冷"}],
+                    "required": True,
+                }
+            ],
+        },
+        cover_asset_id=None,
+    )
+    ctx = _ctx(db, author, params={"prompt": "海边的黄昏", "skill_ids": [skill.id]})
+    execute_skill_context(ctx, SkillContextConfig())
+
+    assert "variables" not in ctx.params
+    # The rest of the recipe still folds — the guard is a key filter, not a
+    # reason to skip the skill.
+    assert ctx.prompt == "海边的黄昏，single hard key light"

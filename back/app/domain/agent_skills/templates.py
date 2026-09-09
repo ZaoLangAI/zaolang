@@ -18,7 +18,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.agents import copywriter, custom, editor_planner, intent_router, planner, quality, safety
+from app.agents import (
+    canvas_planner,
+    copywriter,
+    custom,
+    editor_planner,
+    intent_router,
+    planner,
+    quality,
+    safety,
+)
 from app.agents.slots import DEFAULT_SLOT
 from app.domain.agent_skills.presets import ASSIST, JUDGMENT, AgentCategory
 
@@ -96,7 +105,7 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="planner-asset-plan",
         label="任务规划 · 图片资产规划",
-        description="为角色三视图/场景图/封面规划提示词，保持同一角色跨视角的一致性。",
+        description="为角色设定图/场景图/封面规划提示词；角色 front 是一张多分区设定图，side/back 仍是单视角。",
         category=JUDGMENT,
         prompt_template=planner.ASSET_PLAN_SYSTEM_PROMPT,
         role="planner",
@@ -124,7 +133,7 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="copy-enhance",
         label="文案生成 · 提示词润色",
-        description="通用画面描述的诊断式润色，未指定角色立绘、场景空镜或封面海报时使用。",
+        description="通用画面描述的诊断式润色，未指定角色设定图、场景空镜或封面海报时使用。",
         category=ASSIST,
         prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT,
         role="copy",
@@ -133,7 +142,7 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="copy-enhance-character",
         label="文案润色 · 角色",
-        description="角色立绘教练：把同一个人写到能进库、出三视图，强制全身入镜与纯色背景。",
+        description="角色设定图教练：把同一个人写成一张多分区设定图（左三视图、右特写与色板），禁止改回单视角。",
         category=ASSIST,
         prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER,
         role="copy",
@@ -153,7 +162,10 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="copy-enhance-scene",
         label="文案润色 · 场景",
-        description="场景空镜教练：把空间本身写清楚，画面不得出现任何人物痕迹。",
+        description=(
+            "场景空镜教练：单一机位、遮挡成立、锁年代与媒介，"
+            "按空间类型挑技能包润色，并在信息不足时追问作者。"
+        ),
         category=ASSIST,
         prompt_template=copywriter.ENHANCE_SYSTEM_PROMPT_SCENE,
         role="copy",
@@ -235,6 +247,18 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
         tool_grants=("timeline_summary", "lookup_shortform_profile", "lookup_media_analysis"),
         role="editor_planner",
         slot=editor_planner.SLOT,
+    ),
+    SkillTemplate(
+        key="canvas-planner-default",
+        label="画布生成规划 · 平台默认",
+        description="读取画布上选中卡片与其上游卡片，规划要生成的图片/视频任务。",
+        category=JUDGMENT,
+        prompt_template=canvas_planner.SYSTEM_PROMPT,
+        # No tools: the planner is handed its whole context up front, and
+        # pricing is computed server-side — see `AGENT_TOOL_GRANTS`.
+        tool_grants=(),
+        role="canvas_planner",
+        slot=canvas_planner.CANVAS_PLAN_SLOT,
     ),
 )
 

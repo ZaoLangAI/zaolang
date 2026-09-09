@@ -100,8 +100,27 @@ def test_ensure_catalog_skills_backfills_a_cover_for_every_entry(db: Session, au
     assert len(rows) == len(skill_catalog.CATALOG)
     for row in rows:
         item = next(entry for entry in skill_catalog.CATALOG if entry.title == row.title)
+        if item.key in skill_catalog.COVERS_PENDING:
+            # Awaiting a generated still — see `COVERS_PENDING`. Enumerated in
+            # the catalogue rather than skipped by a rule, so the gap cannot
+            # grow silently.
+            continue
         assert item.cover_path() is not None, f"{item.key} shipped with no cover"
         assert row.cover_asset_id is not None, f"{row.title} has no cover_asset_id"
+
+
+def test_covers_pending_only_names_entries_that_really_lack_one(
+    db: Session, author: User
+) -> None:
+    """`COVERS_PENDING` is a to-do list, not a mute button: a key stays on it
+    only until its JPEG lands, and it may not name an entry that is not in the
+    catalogue at all."""
+    keys = {entry.key for entry in skill_catalog.CATALOG}
+    assert keys >= skill_catalog.COVERS_PENDING
+    for key in skill_catalog.COVERS_PENDING:
+        entry = skill_catalog.find(key)
+        assert entry is not None
+        assert entry.cover_path() is None, f"{key} has a cover now — drop it from COVERS_PENDING"
 
 
 def test_ensure_catalog_skills_does_not_overwrite_an_operators_cover(
@@ -149,16 +168,68 @@ def test_ensure_catalog_skills_does_not_overwrite_an_operators_cover(
     assert row.cover_asset_id == replacement.id
 
 
-def test_catalog_has_no_image_asset_categories(db: Session, author: User) -> None:
-    """`skill_context` never folds an image-asset-shaped skill (character/
-    scene_asset/cover_asset) — the catalogue must stay entirely in the flat
-    template categories."""
+def test_asset_catalog_entries_are_image_only_recipes() -> None:
+    """`asset-*` rows are the dual-form image-asset recipes: one of the
+    three plaza buckets, image operations only, and a shipped cover."""
+    image_ops = {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
+    video_ops = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
     image_asset_categories = {
         CreationSkillCategory.CHARACTER,
         CreationSkillCategory.SCENE_ASSET,
         CreationSkillCategory.COVER_ASSET,
     }
-    assert all(item.category not in image_asset_categories for item in skill_catalog.CATALOG)
+    items = [item for item in skill_catalog.CATALOG if item.key.startswith("asset-")]
+    assert len(items) == 24
+    for item in items:
+        assert item.category in image_asset_categories, item.key
+        assert image_ops == set(item.applicable_operations), item.key
+        assert not video_ops.intersection(item.applicable_operations), item.key
+        assert item.cover_path() is not None, item.key
+        params = item.params_json()
+        assert params["prompt_suffix"] == item.prompt_suffix
+        assert params["aspect_ratio"] == item.aspect_ratio
+        if item.category == CreationSkillCategory.CHARACTER:
+            assert params["character"]["reference_assets"] == []
+        elif item.category == CreationSkillCategory.SCENE_ASSET:
+            assert params["scene"]["reference_assets"] == []
+        else:
+            assert "character" not in params
+            assert "scene" not in params
+
+
+def test_seeded_character_and_scene_assets_get_a_reference_still(
+    db: Session, author: User
+) -> None:
+    """After `ensure_catalog_skills`, a character/scene recipe's cover is
+    also the first `reference_assets` still — the plaza card and a later
+    `@` apply share it."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    rows = db.scalars(
+        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
+    ).all()
+    asset_titles = {
+        item.title for item in skill_catalog.CATALOG if item.key.startswith("asset-")
+    }
+    seeded = [row for row in rows if row.title in asset_titles]
+    assert len(seeded) == 24
+    for row in seeded:
+        assert row.cover_asset_id is not None, row.title
+        if row.category == CreationSkillCategory.CHARACTER:
+            refs = (row.params_json.get("character") or {}).get("reference_assets") or []
+            assert refs, row.title
+            assert refs[0]["asset_id"] == row.cover_asset_id
+            assert refs[0]["view"] == "front"
+        elif row.category == CreationSkillCategory.SCENE_ASSET:
+            refs = (row.params_json.get("scene") or {}).get("reference_assets") or []
+            assert refs, row.title
+            assert refs[0]["asset_id"] == row.cover_asset_id
+            assert refs[0]["view"] == "establishing"
+        else:
+            assert row.category == CreationSkillCategory.COVER_ASSET
+            assert "character" not in (row.params_json or {})
+            assert "scene" not in (row.params_json or {})
 
 
 def test_video_only_categories_never_declare_image_operations(db: Session, author: User) -> None:
@@ -173,8 +244,34 @@ def test_video_only_categories_never_declare_image_operations(db: Session, autho
         CreationSkillCategory.OTHER,
     }
     for item in skill_catalog.CATALOG:
+        if item.key.startswith(skill_catalog.CANVAS_STILL_KEY_PREFIXES):
+            continue
         if item.category in video_only_categories:
             assert not image_ops.intersection(item.applicable_operations), item.key
+
+
+def test_canvas_still_entries_declare_only_image_operations(db: Session, author: User) -> None:
+    """The canvas still section is the second carve-out, and it is a narrow
+    one: a camera *move* still means nothing on a single frame, but framing,
+    staging and method do. Scoped by key prefix exactly like the image-style
+    section, so relaxing the rule for these cannot quietly relax it for
+    `lens-oner-continuous` too.
+
+    They must declare image operations and only image operations — an entry
+    that leaked into the video studio's `@` menu would tell a video model to
+    hold a still frame."""
+    image_ops = {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
+    video_ops = {Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO, Operation.VIDEO_TO_VIDEO}
+    items = [
+        item
+        for item in skill_catalog.CATALOG
+        if item.key.startswith(skill_catalog.CANVAS_STILL_KEY_PREFIXES)
+    ]
+
+    assert len(items) >= 20
+    for item in items:
+        assert image_ops.issubset(set(item.applicable_operations)), item.key
+        assert not video_ops.intersection(item.applicable_operations), item.key
 
 
 def test_image_style_entries_declare_only_image_operations(db: Session, author: User) -> None:

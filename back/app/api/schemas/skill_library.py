@@ -40,6 +40,12 @@ class CreationSkillSummary(ApiModel):
     usage_count: int
     access_credits: int = 0
     viewer_unlocked: bool = True
+    # This skill is a creation workflow: its `params_json` declares a variable
+    # form to fill in before it runs. Computed, not stored. On the summary
+    # rather than only on the detail because the list endpoints do not return
+    # `params` at all, so a client filtering for workflows would otherwise have
+    # to fetch every skill one at a time to find out.
+    has_variables: bool = False
     created_at: dt.datetime
 
 

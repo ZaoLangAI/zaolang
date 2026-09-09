@@ -13,7 +13,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
@@ -65,4 +65,13 @@ class CreationSkill(Base, TimestampMixin):
         CheckConstraint("access_credits >= 0", name="access_credits_non_negative"),
         Index("ix_creation_skills_owner", "owner_user_id"),
         Index("ix_creation_skills_status_created", "status", "created_at"),
+        # One character name per owner — scenes and templates may still share
+        # a title with a character, and two owners may both have "林彻".
+        Index(
+            "uq_creation_skills_owner_character_title",
+            "owner_user_id",
+            "title",
+            unique=True,
+            postgresql_where=text("category = 'character'"),
+        ),
     )

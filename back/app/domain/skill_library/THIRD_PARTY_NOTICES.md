@@ -1,11 +1,14 @@
 # Third-Party Notices — `skill_library/catalog.py`
 
-`catalog.py`'s seed catalogue of `CreationSkill` templates has two parts: a
-short-drama video-recipe majority, and a smaller "图片风格 image style"
-section for the image studio. Both were informed only by genre/shot/scene
-*naming conventions* — from open-source projects for the video section, and
-from public 2026 AI-image prompt-trend write-ups for the image-style section
-(see the second "Sources consulted" list below) — never by copying content.
+`catalog.py`'s seed catalogue of `CreationSkill` templates has three parts: a
+short-drama video-recipe majority, a smaller "图片风格 image style"
+section for the image studio, and a dual-shape 「图片资产」section
+(`character` / `scene_asset` / `cover_asset`). All three were informed only
+by genre/shot/scene or *layout naming conventions* — from open-source
+projects for the video section, from public 2026 AI-image prompt-trend
+write-ups for the image-style section, and from public character-sheet /
+empty-set / cover Agent Skills for the image-asset section (see the lists
+below) — never by copying content.
 **No text, prompt, or `SKILL.md` content from any of these sources is
 copied into this repository** — every `title`, `description`, and
 `prompt_suffix` in `catalog.py` is original text written for this product's
@@ -30,8 +33,12 @@ example prompt.
   language, was used here.**
 - **2026 camera-movement glossaries** used by Seedance / Kling / Veo
   write-ups (orbit/arc, crash zoom, rack focus, continuous oner) — informed
-  which *named moves* the 2026-08 catalogue supplement covers. No vendor
-  prompt string was copied.
+  which *named moves* the 2026-08 catalogue supplement covers. A later
+  2026-09 pass used the same glossaries plus Chinese short-drama / 即梦 /
+  可灵 community lists to name the remaining high-frequency gaps (macro
+  close-up, drone ultra-wide establish, Hitchcock dolly zoom, FPV dive,
+  Dutch angle, first-person POV, whip-pan handoff, crane-up reveal). No
+  vendor prompt string was copied.
 - **Chinese short-drama production guides** for 即梦 / 可灵 (subject +
   setting + action + camera + light + style as a six-slot writing habit;
   rebirth-open / time-cut / public-reveal locations such as wedding halls,
@@ -83,6 +90,45 @@ any one article's example prompt.
   studio's hand-painted watercolor look (soft brushwork, warm palette,
   expressive eyes), not a reproduction of any copyrighted frame or artwork.
 
+## Sources consulted — 图片资产 "image asset" section
+
+The two-dozen `asset-*` catalogue rows (`category=CHARACTER` /
+`SCENE_ASSET` / `COVER_ASSET`, `_IMAGE_OPERATIONS`) name *layout recipes*
+that are widely used as reusable reference stills — turnaround sheets,
+expression grids, empty establishing shots, title-safe covers — not
+finished characters from any show. The same "informed-naming-only, no
+copied prompt text" rule applies: every `title`, `description`, and
+`prompt_suffix` is original text written for this catalogue's hybrid
+`prompt_suffix` + nested `reference_assets` shape.
+
+- **[fal-ai-community/skills character-design prompt-patterns](https://github.com/fal-ai-community/skills/blob/main/skills/character-design/references/prompt-patterns.md)**
+  and **[prunaai/pruna-skills character-turnaround-sheet](https://github.com/prunaai/pruna-skills/blob/main/skills/guides/image-prompting/references/character-turnaround-sheet.md)**
+  — informed the *names* of `asset-char-turnaround-sheet`,
+  `asset-char-expression-grid`, and `asset-char-wardrobe-grid` (front/side/back
+  on one plate; a grid of distinct expressions; outfit-only variation). No
+  prompt sentence from either file was reused.
+- **[ShinChven/nano-banana-skills character-reference-sheet](https://github.com/ShinChven/nano-banana-skills/blob/main/skills/character-reference-sheet/SKILL.md)**
+  and **[inference-sh/skills character-design-sheet](https://github.com/inference-sh/skills)**
+  — informed the three-column portrait / front / back layout named by
+  `asset-char-three-column-ref`, and the "50+ word identity lock" habit
+  named by `asset-char-identity-anchor`. The actual suffix wording
+  (waist-up, one signature accessory, no second character) was written
+  fresh.
+- **[edhahn/agent-skills concept-art](https://github.com/edhahn/agent-skills)**
+  and public FLUX.2 prompting guides (scene → light → camera, empty-set
+  stills) — informed the "无人建立镜头" gap behind the eight
+  `asset-scene-*-empty` / `asset-scene-vertical-establish` rows. Location
+  *types* overlap this catalogue's own video `scene-*` titles on purpose
+  (alley, mansion, hospital, office, parking, balcony, wedding hall) but
+  the image-asset titles add 「空镜」and the suffixes forbid people.
+- **[black-forest-labs/skills typography-text](https://github.com/black-forest-labs/skills/blob/master/skills/flux-image-best-practices/rules/typography-text.md)**
+  and **[haoyiyin/mflux-cover](https://github.com/haoyiyin/mflux-cover)**
+  — informed the title-safe / overlay-later habit named by
+  `asset-cover-title-safe` and the other seven vertical cover rows. This
+  catalogue still forbids rendered lettering on the still itself (same
+  rule as the image-style posters), leaving a blank header band instead of
+  asking the image model to spell a title.
+
 ## What was and wasn't taken
 
 | Taken (informed the catalogue's structure) | Not taken |
@@ -91,6 +137,7 @@ any one article's example prompt.
 | The idea of splitting templates by production role (lens / scene / look / script-beat) | Any external "produce" adapter, provider binding, or agent orchestration logic |
 | The 5-stage cinematic-prompt structuring idea | Mx-Shell's original prompt text (ARR) |
 | Which 2026 image-prompt *formats* are popular enough to name (figurine, diorama, sticker sheet, magazine cover, ...) | Any blog's actual example prompt sentence, template variable syntax, or marketing copy |
+| Character-sheet / empty-set / title-safe-cover *layout names* (turnaround, expression grid, establishing still) | Any Agent Skill's `SKILL.md` body, example prompt, or generated artwork |
 
 If a maintainer of either project believes this attribution is insufficient,
 or wants any resemblance removed, open an issue against this repository.

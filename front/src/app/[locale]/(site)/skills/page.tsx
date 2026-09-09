@@ -12,9 +12,9 @@ type ContentType = 'template' | 'image_asset';
 // Two-tier filter: a "content type" (template vs. image asset) picks the
 // side of the marketplace, then `CATEGORIES_BY_CONTENT_TYPE` narrows within
 // it — see `skill_library.list_public`'s own `IMAGE_ASSET_SKILL_CATEGORIES`
-// split. `character` only ever shows up inside `image_asset`: it browses
-// through `/create/characters` (own publish/portrait-consent flow), not a
-// generic "apply" click here.
+// split. Image-asset cards (character/scene/cover recipes) CTA into
+// image creation; the author's own roster still lives on
+// `/create/characters` / `/create/scenes`.
 const CATEGORIES_BY_CONTENT_TYPE: Record<ContentType, CreationSkillCategory[]> = {
   template: ['scene', 'lens', 'style', 'other'],
   image_asset: ['character', 'scene_asset', 'cover_asset'],
