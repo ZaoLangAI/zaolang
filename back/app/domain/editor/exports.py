@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.domain.editor import flags as editor_flags
 from app.domain.editor import service as editor_service
 from app.domain.editor import state_machine
-from app.domain.editor.time import EXPORT_MAX_DURATION_TICKS, EXPORT_MAX_PIXELS, ticks_from_ms
+from app.domain.editor.time import ticks_from_ms
 from app.domain.errors import (
     BrowserRequired,
     Conflict,
@@ -77,9 +77,6 @@ def queue_exports(
         if revision is None:
             raise NotFound("修订不存在。")
         editor_service._owned_cut(session, user_id=user_id, cut_id=revision.cut_id)
-        pixels = variant.width * variant.height
-        if pixels > EXPORT_MAX_PIXELS or revision.duration_ticks > EXPORT_MAX_DURATION_TICKS:
-            raise ValidationFailed("超出浏览器内存导出上限。")
         existing = session.scalar(
             select(EditorExport).where(
                 EditorExport.variant_id == variant.id, EditorExport.operation_key == key

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
+import { useEffect } from 'react';
 
 import {
   DropdownMenu,
@@ -36,15 +37,24 @@ export function ScriptLinkPicker({
   refId,
   onChange,
   createHref,
+  refreshKey,
 }: {
   kind: LinkKind;
   refId: string | null;
   onChange: (refId: string | null) => void;
   createHref?: string;
+  /** Bumped after a batch job writes a new card so the picker reloads. */
+  refreshKey?: number;
 }) {
   const t = useTranslations('scriptStudio');
   const path = kind === 'character' ? '/v1/characters' : '/v1/scenes';
   const resource = useResource<(Character | Scene)[]>(path);
+
+  useEffect(() => {
+    if (refreshKey) resource.refetch();
+    // `refetch` is stable; keying on it would only retrigger the same bump.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
   const items = resource.data ?? [];
   const linked = items.find((item) => item.id === refId) ?? null;
   const manageHref = kind === 'character' ? '/create/characters' : '/create/scenes';

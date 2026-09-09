@@ -22,6 +22,7 @@ from app.api.schemas.editor import (
     CutFromJobRequest,
     CutRevisionResponse,
     CutRevisionSummaryResponse,
+    CutUpdateRequest,
     DeliveryVariantResponse,
     DramaEpisodeCreateRequest,
     DramaEpisodeResponse,
@@ -50,6 +51,7 @@ from app.api.schemas.editor import (
     LeaseResponse,
     McpTokenCreateRequest,
     McpTokenResponse,
+    RevisionAssetMeta,
     RevisionRestoreRequest,
     TimelineSummaryResponse,
     VariantBatchCreateRequest,
@@ -63,6 +65,7 @@ from app.domain.editor import exports as export_service
 from app.domain.editor import flags as editor_flags
 from app.domain.editor import leases as lease_service
 from app.domain.editor import service as editor_service
+from app.domain.editor.time import ticks_from_ms
 from app.domain.errors import NotFound, ValidationFailed
 from app.models import (
     Asset,
@@ -180,7 +183,13 @@ def _collaborator_response(session: DbSession, row: SeriesCollaborator) -> Colla
     )
 
 
-def episode_response(episode, *, has_script_turns: bool = False) -> DramaEpisodeResponse:  # type: ignore[no-untyped-def]
+def episode_response(  # type: ignore[no-untyped-def]
+    session: DbSession,
+    episode,
+    *,
+    has_script_turns: bool = False,
+    has_preview_source: bool = False,
+) -> DramaEpisodeResponse:
     return DramaEpisodeResponse(
         id=episode.id,
         series_id=episode.series_id,
@@ -192,7 +201,25 @@ def episode_response(episode, *, has_script_turns: bool = False) -> DramaEpisode
         status=episode.status,
         canonical_work_id=episode.canonical_work_id,
         has_script_turns=has_script_turns,
+        preview_asset_id=episode.preview_asset_id,
+        preview_url=asset_url(session, episode.preview_asset_id),
+        has_preview_source=has_preview_source,
     )
+
+
+def _episode_payloads(session: DbSession, episodes: list) -> list[DramaEpisodeResponse]:  # type: ignore[no-untyped-def]
+    ids = [item.id for item in episodes]
+    turned = editor_service.episodes_with_script_turns(session, episode_ids=ids)
+    sources = editor_service.episodes_with_preview_source(session, episode_ids=ids)
+    return [
+        episode_response(
+            session,
+            item,
+            has_script_turns=item.id in turned,
+            has_preview_source=item.id in sources,
+        )
+        for item in episodes
+    ]
 
 
 def content_link_response(link) -> EpisodeContentLinkResponse:  # type: ignore[no-untyped-def]
@@ -206,7 +233,7 @@ def content_link_response(link) -> EpisodeContentLinkResponse:  # type: ignore[n
     )
 
 
-def _revision_asset_urls(session, revision: CutRevision) -> dict[str, str]:  # type: ignore[no-untyped-def]
+def _revision_asset_ids(revision: CutRevision) -> set[str]:
     asset_ids = {
         str(binding.get("asset_id"))
         for binding in revision.asset_bindings_json or []
@@ -215,12 +242,30 @@ def _revision_asset_urls(session, revision: CutRevision) -> dict[str, str]:  # t
     overlay = (revision.document_json or {}).get("brand_overlay") or {}
     if overlay.get("asset_id"):
         asset_ids.add(str(overlay["asset_id"]))
+    return asset_ids
+
+
+def _revision_assets(  # type: ignore[no-untyped-def]
+    session, revision: CutRevision
+) -> tuple[dict[str, str], dict[str, RevisionAssetMeta]]:
     urls: dict[str, str] = {}
-    for asset_id in asset_ids:
+    meta: dict[str, RevisionAssetMeta] = {}
+    for asset_id in _revision_asset_ids(revision):
+        asset = session.get(Asset, asset_id)
+        if asset is None:
+            continue
         url = asset_url(session, asset_id)
         if url:
             urls[asset_id] = url
-    return urls
+        has_duration = bool(asset.duration_ms and asset.duration_ms > 0)
+        meta[asset_id] = RevisionAssetMeta(
+            media_type=asset.media_type,
+            mime_type=asset.mime_type,
+            duration_ticks=ticks_from_ms(asset.duration_ms) if has_duration else None,
+            width=asset.width,
+            height=asset.height,
+        )
+    return urls, meta
 
 
 def _revision_response(session, revision: CutRevision) -> CutRevisionResponse:  # type: ignore[no-untyped-def]
@@ -230,6 +275,7 @@ def _revision_response(session, revision: CutRevision) -> CutRevisionResponse:  
     # upgrade path as `_normalize_track`), rather than serving the raw,
     # possibly-missing-field dict straight from storage.
     document = docs.canonicalize(revision.document_json)
+    asset_urls, asset_meta = _revision_assets(session, revision)
     return CutRevisionResponse(
         id=revision.id,
         cut_id=revision.cut_id,
@@ -239,7 +285,8 @@ def _revision_response(session, revision: CutRevision) -> CutRevisionResponse:  
         content_hash=revision.content_hash,
         summary=TimelineSummaryResponse.model_validate(docs.timeline_summary(document)),
         document=document,
-        asset_urls=_revision_asset_urls(session, revision),
+        asset_urls=asset_urls,
+        asset_meta=asset_meta,
         created_at=revision.created_at,
     )
 
@@ -583,7 +630,7 @@ def create_episode(
         synopsis=payload.synopsis,
     )
     session.commit()
-    return episode_response(episode)
+    return _episode_payloads(session, [episode])[0]
 
 
 @router.get("/drama-series/{series_id}/episodes", response_model=list[DramaEpisodeResponse])
@@ -591,17 +638,13 @@ def list_episodes(
     series_id: str, user: CurrentUser, session: DbSession
 ) -> list[DramaEpisodeResponse]:
     rows = editor_service.list_episodes(session, user_id=user.id, series_id=series_id)
-    turned = editor_service.episodes_with_script_turns(
-        session, episode_ids=[item.id for item in rows]
-    )
-    return [episode_response(item, has_script_turns=item.id in turned) for item in rows]
+    return _episode_payloads(session, rows)
 
 
 @router.get("/drama-episodes/{episode_id}", response_model=DramaEpisodeResponse)
 def get_episode(episode_id: str, user: CurrentUser, session: DbSession) -> DramaEpisodeResponse:
     episode = editor_service.get_episode(session, user_id=user.id, episode_id=episode_id)
-    turned = editor_service.episodes_with_script_turns(session, episode_ids=[episode.id])
-    return episode_response(episode, has_script_turns=episode.id in turned)
+    return _episode_payloads(session, [episode])[0]
 
 
 @router.patch("/drama-episodes/{episode_id}", response_model=DramaEpisodeResponse)
@@ -622,10 +665,11 @@ def update_episode(
         season_number=payload.season_number,
         episode_number=payload.episode_number,
         status=payload.status,
+        preview_asset_id=payload.preview_asset_id,
+        update_preview="preview_asset_id" in payload.model_fields_set,
     )
     session.commit()
-    turned = editor_service.episodes_with_script_turns(session, episode_ids=[episode.id])
-    return episode_response(episode, has_script_turns=episode.id in turned)
+    return _episode_payloads(session, [episode])[0]
 
 
 @router.delete("/drama-episodes/{episode_id}", status_code=204)
@@ -703,8 +747,25 @@ def set_canonical_work(
         session, user_id=user.id, episode_id=episode_id, work_id=payload.work_id
     )
     session.commit()
-    turned = editor_service.episodes_with_script_turns(session, episode_ids=[episode.id])
-    return episode_response(episode, has_script_turns=episode.id in turned)
+    return _episode_payloads(session, [episode])[0]
+
+
+@router.post(
+    "/drama-episodes/{episode_id}/preview:from-video",
+    response_model=DramaEpisodeResponse,
+)
+def fill_episode_preview_from_video(
+    episode_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> DramaEpisodeResponse:
+    episode = editor_service.get_episode(session, user_id=user.id, episode_id=episode_id)
+    episode = editor_service.maybe_fill_episode_preview(
+        session, episode=episode, actor_user_id=user.id, overwrite=True
+    )
+    session.commit()
+    return _episode_payloads(session, [episode])[0]
 
 
 @router.post("/episode-cuts:from-job", response_model=EpisodeCutResponse, status_code=201)
@@ -800,6 +861,19 @@ def list_episode_exports(
 def get_cut(cut_id: str, user: CurrentUser, session: DbSession) -> EpisodeCutResponse:
     editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user.id)
     cut = editor_service._owned_cut(session, user_id=user.id, cut_id=cut_id)
+    return _cut_response(session, cut)
+
+
+@router.patch("/episode-cuts/{cut_id}", response_model=EpisodeCutResponse)
+def update_cut(
+    cut_id: str,
+    payload: CutUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
+) -> EpisodeCutResponse:
+    cut = editor_service.rename_cut(session, user_id=user.id, cut_id=cut_id, name=payload.name)
+    session.commit()
     return _cut_response(session, cut)
 
 

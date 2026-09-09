@@ -5,18 +5,18 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import logging
 from typing import Any
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domain.editor import collaborators
+from app.domain.editor import collaborators, state_machine
 from app.domain.editor import commands as command_codec
 from app.domain.editor import document as docs
 from app.domain.editor import flags as editor_flags
 from app.domain.editor import leases as lease_service
-from app.domain.editor import state_machine
 from app.domain.editor.time import ticks_from_ms
 from app.domain.errors import (
     Conflict,
@@ -42,6 +42,7 @@ from app.models import (
     GenerationJob,
     Series,
     Work,
+    WorkVersion,
 )
 from app.models.base import new_id, utcnow
 from app.models.enums import (
@@ -49,6 +50,7 @@ from app.models.enums import (
     DistributionChannel,
     DramaEpisodeStatus,
     EditorCommandEventStatus,
+    EditorExportStatus,
     EditPlanStatus,
     EpisodeContentRole,
     EpisodeContentType,
@@ -56,6 +58,7 @@ from app.models.enums import (
     EpisodeCutStatus,
     EpisodeKind,
     JobStatus,
+    MediaType,
     SeriesGenre,
     SeriesKind,
     SeriesStatus,
@@ -63,6 +66,8 @@ from app.models.enums import (
 from app.platform_config import service as config_service
 from app.platform_config.schemas import ShortformConfig
 from app.realtime import publisher
+
+logger = logging.getLogger(__name__)
 
 
 def _owned_series(session: Session, *, user_id: str, series_id: str) -> Series:
@@ -509,6 +514,8 @@ def update_episode(
     season_number: int | None = None,
     episode_number: int | None = None,
     status: str | None = None,
+    preview_asset_id: str | None = None,
+    update_preview: bool = False,
 ) -> DramaEpisode:
     episode = _accessible_episode(session, user_id=user_id, episode_id=episode_id)
     next_season = season_number if season_number is not None else episode.season_number
@@ -534,8 +541,213 @@ def update_episode(
         episode.episode_kind = episode_kind
     if status is not None:
         episode.status = status
+    if update_preview:
+        episode.preview_asset_id = _owned_preview_asset_id(
+            session, user_id=user_id, preview_asset_id=preview_asset_id
+        )
     session.flush()
     return episode
+
+
+def _owned_preview_asset_id(
+    session: Session, *, user_id: str, preview_asset_id: str | None
+) -> str | None:
+    """Bind or clear the roster thumbnail. Empty / None clears so auto-fill
+    can run again; a set id must be the caller's own still."""
+    if not preview_asset_id:
+        return None
+    preview = session.get(Asset, preview_asset_id)
+    if preview is None or preview.owner_user_id != user_id:
+        raise NotFound("预览图素材不存在。")
+    if preview.media_type != MediaType.IMAGE:
+        raise ValidationFailed("预览图必须是图片。")
+    return preview.id
+
+
+def _video_asset(session: Session, asset_id: str | None) -> Asset | None:
+    if not asset_id:
+        return None
+    asset = session.get(Asset, asset_id)
+    if asset is None or asset.media_type != MediaType.VIDEO:
+        return None
+    return asset
+
+
+def _work_video_asset(session: Session, work_id: str | None) -> Asset | None:
+    if not work_id:
+        return None
+    work = session.get(Work, work_id)
+    if work is None or not work.current_version_id:
+        return None
+    version = session.get(WorkVersion, work.current_version_id)
+    if version is None:
+        return None
+    return _video_asset(session, version.primary_output_asset_id)
+
+
+def resolve_episode_preview_source(session: Session, episode: DramaEpisode) -> Asset | None:
+    """The video whose first frame becomes the roster thumbnail.
+
+    Prefer a short generated clip (canonical work / content-link draft)
+    over a full editor export so ffmpeg does not ingest a 256MB file.
+    """
+    canonical = _work_video_asset(session, episode.canonical_work_id)
+    if canonical is not None:
+        return canonical
+
+    links = session.scalars(
+        select(EpisodeContentLink)
+        .where(EpisodeContentLink.episode_id == episode.id)
+        .order_by(EpisodeContentLink.created_at.desc())
+    )
+    for link in links:
+        if link.content_type == EpisodeContentType.DRAFT:
+            draft = session.get(Draft, link.content_ref_id)
+            asset = _video_asset(session, draft.output_asset_id if draft else None)
+            if asset is not None:
+                return asset
+        elif link.content_type == EpisodeContentType.WORK:
+            asset = _work_video_asset(session, link.content_ref_id)
+            if asset is not None:
+                return asset
+
+    export_asset_id = session.scalar(
+        select(EditorExport.output_asset_id)
+        .join(DeliveryVariant, DeliveryVariant.id == EditorExport.variant_id)
+        .join(CutRevision, CutRevision.id == DeliveryVariant.cut_revision_id)
+        .join(EpisodeCut, EpisodeCut.id == CutRevision.cut_id)
+        .where(
+            EpisodeCut.episode_id == episode.id,
+            EditorExport.status == EditorExportStatus.SUCCEEDED,
+            EditorExport.output_asset_id.is_not(None),
+        )
+        .order_by(EditorExport.created_at.desc())
+        .limit(1)
+    )
+    exported = _video_asset(session, export_asset_id)
+    if exported is not None:
+        return exported
+
+    cut_source_id = session.scalar(
+        select(EpisodeCut.source_asset_id)
+        .where(
+            EpisodeCut.episode_id == episode.id,
+            EpisodeCut.source_asset_id.is_not(None),
+        )
+        .order_by(EpisodeCut.created_at.desc())
+        .limit(1)
+    )
+    return _video_asset(session, cut_source_id)
+
+
+def episodes_with_preview_source(session: Session, *, episode_ids: list[str]) -> set[str]:
+    """Which of `episode_ids` have a video `resolve_episode_preview_source`
+    would pick — one batched read per source kind, not per episode."""
+    if not episode_ids:
+        return set()
+    found: set[str] = set()
+
+    found.update(
+        session.scalars(
+            select(DramaEpisode.id)
+            .join(Work, Work.id == DramaEpisode.canonical_work_id)
+            .join(WorkVersion, WorkVersion.id == Work.current_version_id)
+            .join(Asset, Asset.id == WorkVersion.primary_output_asset_id)
+            .where(DramaEpisode.id.in_(episode_ids), Asset.media_type == MediaType.VIDEO)
+        )
+    )
+    found.update(
+        session.scalars(
+            select(EpisodeContentLink.episode_id)
+            .join(Draft, Draft.id == EpisodeContentLink.content_ref_id)
+            .join(Asset, Asset.id == Draft.output_asset_id)
+            .where(
+                EpisodeContentLink.episode_id.in_(episode_ids),
+                EpisodeContentLink.content_type == EpisodeContentType.DRAFT,
+                Asset.media_type == MediaType.VIDEO,
+            )
+        )
+    )
+    found.update(
+        session.scalars(
+            select(EpisodeContentLink.episode_id)
+            .join(Work, Work.id == EpisodeContentLink.content_ref_id)
+            .join(WorkVersion, WorkVersion.id == Work.current_version_id)
+            .join(Asset, Asset.id == WorkVersion.primary_output_asset_id)
+            .where(
+                EpisodeContentLink.episode_id.in_(episode_ids),
+                EpisodeContentLink.content_type == EpisodeContentType.WORK,
+                Asset.media_type == MediaType.VIDEO,
+            )
+        )
+    )
+    found.update(
+        session.scalars(
+            select(EpisodeCut.episode_id)
+            .join(CutRevision, CutRevision.cut_id == EpisodeCut.id)
+            .join(DeliveryVariant, DeliveryVariant.cut_revision_id == CutRevision.id)
+            .join(EditorExport, EditorExport.variant_id == DeliveryVariant.id)
+            .join(Asset, Asset.id == EditorExport.output_asset_id)
+            .where(
+                EpisodeCut.episode_id.in_(episode_ids),
+                EditorExport.status == EditorExportStatus.SUCCEEDED,
+                Asset.media_type == MediaType.VIDEO,
+            )
+        )
+    )
+    found.update(
+        session.scalars(
+            select(EpisodeCut.episode_id)
+            .join(Asset, Asset.id == EpisodeCut.source_asset_id)
+            .where(EpisodeCut.episode_id.in_(episode_ids), Asset.media_type == MediaType.VIDEO)
+        )
+    )
+    return found
+
+
+def maybe_fill_episode_preview(
+    session: Session,
+    *,
+    episode: DramaEpisode,
+    actor_user_id: str,
+    overwrite: bool = False,
+) -> DramaEpisode:
+    """Extract the source video's first frame into `preview_asset_id`.
+
+    Auto-fill (`overwrite=False`) is a no-op once a preview is set — a
+    user upload must not be replaced when a later clip lands. Explicit
+    `POST .../preview:from-video` passes `overwrite=True`. Extraction
+    runs as the *video owner* so a collaborator can fill from the
+    owner's clip (and vice versa) without tripping
+    `extract_video_frame`'s owner check. `actor_user_id` is the caller
+    who already passed `_accessible_episode`.
+    """
+    del actor_user_id
+    if episode.preview_asset_id and not overwrite:
+        return episode
+    source = resolve_episode_preview_source(session, episode)
+    if source is None:
+        if overwrite:
+            raise ValidationFailed("该集暂无可用视频，无法截取预览图。")
+        return episode
+    from app.domain.media import service as media_service
+
+    frame = media_service.extract_video_frame(
+        session, user_id=source.owner_user_id, asset_id=source.id, position="first"
+    )
+    episode.preview_asset_id = frame.id
+    session.flush()
+    return episode
+
+
+def _try_fill_episode_preview(
+    session: Session, *, episode: DramaEpisode, user_id: str
+) -> None:
+    """Auto-fill must never fail the write that produced the video."""
+    try:
+        maybe_fill_episode_preview(session, episode=episode, actor_user_id=user_id)
+    except Exception:
+        logger.exception("episode preview auto-fill failed for %s", episode.id)
 
 
 _PUBLISHED_OUTPUT_MESSAGE = "该集已有已发布成片，不能删除。"
@@ -730,6 +942,9 @@ def create_content_link(
         if existing.role != role:
             existing.role = role
             session.flush()
+        if content_type == EpisodeContentType.DRAFT:
+            _seed_draft_link_episode_id(session, draft_id=content_ref_id, episode_id=episode.id)
+        _try_fill_episode_preview(session, episode=episode, user_id=user_id)
         return existing
     link = EpisodeContentLink(
         episode_id=episode.id,
@@ -739,7 +954,30 @@ def create_content_link(
     )
     session.add(link)
     session.flush()
+    if content_type == EpisodeContentType.DRAFT:
+        _seed_draft_link_episode_id(session, draft_id=content_ref_id, episode_id=episode.id)
+    _try_fill_episode_preview(session, episode=episode, user_id=user_id)
     return link
+
+
+def _seed_draft_link_episode_id(session: Session, *, draft_id: str, episode_id: str) -> None:
+    """Write `params.link_episode_id` only when the draft has none yet.
+
+    A script-studio jump-out already set the param; overwriting it would
+    send a later "进入剪辑" at the wrong episode. A standalone video
+    creation draft has no param, so this is what stops `from-job` minting
+    a second series/episode after a post-hoc content-link.
+    """
+    draft = session.get(Draft, draft_id)
+    if draft is None:
+        return
+    params = dict(draft.params_json or {})
+    existing = params.get("link_episode_id")
+    if isinstance(existing, str) and existing:
+        return
+    params["link_episode_id"] = episode_id
+    draft.params_json = params
+    session.flush()
 
 
 def maybe_link_draft(
@@ -818,6 +1056,7 @@ def set_canonical_work(
         )
     episode.canonical_work_id = work_id
     session.flush()
+    _try_fill_episode_preview(session, episode=episode, user_id=user_id)
     return episode
 
 
@@ -832,12 +1071,15 @@ def list_cuts(session: Session, *, user_id: str, episode_id: str) -> list[Episod
     return list(session.scalars(stmt))
 
 
+DEFAULT_CUT_NAME = "主剪辑"
+
+
 def _linked_episode_id_from_job(session: Session, job: GenerationJob) -> str | None:
     """The script-studio jump-out writes `params.link_episode_id` on the
     draft. A missing draft, or a missing/non-string value, means this job
     is not that path — the caller may fall back to minting a shell.
-    A *present* id is never treated as absent: resolving it is the
-    caller's job, including the 4xx when the episode is gone or foreign.
+    A *present* id is never treated as absent here: the caller decides
+    whether a foreign row is 4xx or a deleted row is cleared as stale.
     """
     if not job.draft_id:
         return None
@@ -848,6 +1090,51 @@ def _linked_episode_id_from_job(session: Session, job: GenerationJob) -> str | N
     if not isinstance(episode_id, str) or not episode_id:
         return None
     return episode_id
+
+
+def _require_head_revision(session: Session, cut: EpisodeCut) -> CutRevision:
+    if not cut.head_revision_id:
+        raise NotFound("剪辑版本不存在。")
+    revision = session.get(CutRevision, cut.head_revision_id)
+    if revision is None:
+        raise NotFound("剪辑版本不存在。")
+    return revision
+
+
+def _cut_for_source_job(session: Session, *, user_id: str, job_id: str) -> EpisodeCut | None:
+    cut = session.scalars(select(EpisodeCut).where(EpisodeCut.source_job_id == job_id)).first()
+    if cut is None:
+        return None
+    return _owned_cut(session, user_id=user_id, cut_id=cut.id)
+
+
+def _default_full_cut(session: Session, *, episode_id: str) -> EpisodeCut | None:
+    return session.scalars(
+        select(EpisodeCut).where(
+            EpisodeCut.episode_id == episode_id,
+            EpisodeCut.kind == EpisodeCutKind.FULL,
+            EpisodeCut.name == DEFAULT_CUT_NAME,
+        )
+    ).first()
+
+
+def _clear_stale_link_episode_id(
+    session: Session, *, job: GenerationJob, episode_id: str
+) -> None:
+    """Drop a draft pointer whose episode row is gone so the shell-creating
+    fallback can write a fresh `link_episode_id`. Copy-then-reassign: a
+    nested JSON mutation is otherwise silently lost."""
+    if not job.draft_id:
+        return
+    draft = session.get(Draft, job.draft_id)
+    if draft is None:
+        return
+    params = dict(draft.params_json or {})
+    if params.get("link_episode_id") != episode_id:
+        return
+    params.pop("link_episode_id", None)
+    draft.params_json = params
+    session.flush()
 
 
 def create_cut_from_job(
@@ -864,14 +1151,26 @@ def create_cut_from_job(
         raise NotFound("生成任务不存在。")
     if job.status != JobStatus.SUCCEEDED or not job.output_asset_id:
         raise ValidationFailed("只有成功且带成片的任务才能进入剪辑。")
+    # Same job, second click — return the cut we already minted.
+    existing_for_job = _cut_for_source_job(session, user_id=user_id, job_id=job.id)
+    if existing_for_job is not None:
+        _link_job_draft_to_episode(
+            session, user_id=user_id, job=job, episode_id=existing_for_job.episode_id
+        )
+        return existing_for_job, _require_head_revision(session, existing_for_job)
     # A script-studio video jump-out already named the episode. Reuse it —
     # never mint a second series/episode, even if `series_id` was also sent.
-    # A present-but-foreign/missing id must 4xx rather than fall through to
-    # the shell-creating fallback below.
+    # A present-but-foreign id must 4xx rather than fall through. A present
+    # id whose episode row is gone is stale (the user deleted the episode
+    # after the draft was bound) — clear it and mint a new shell.
+    episode: DramaEpisode | None = None
     linked_episode_id = _linked_episode_id_from_job(session, job)
     if linked_episode_id is not None:
-        episode = _owned_episode(session, user_id=user_id, episode_id=linked_episode_id)
-    elif series_id:
+        if session.get(DramaEpisode, linked_episode_id) is None:
+            _clear_stale_link_episode_id(session, job=job, episode_id=linked_episode_id)
+        else:
+            episode = _owned_episode(session, user_id=user_id, episode_id=linked_episode_id)
+    if episode is None and series_id:
         series = require_drama_series(session, user_id=user_id, series_id=series_id)
         episode = create_episode(
             session,
@@ -879,7 +1178,7 @@ def create_cut_from_job(
             series_id=series.id,
             title=(title or "新一集").strip() or "新一集",
         )
-    else:
+    elif episode is None:
         existing = session.scalars(
             select(Series)
             .where(
@@ -906,6 +1205,13 @@ def create_cut_from_job(
             series_id=series.id,
             title=(title or "新一集").strip() or "新一集",
         )
+    # One (episode, kind=full, name=主剪辑) row is allowed. A later
+    # generation on the same draft must open that timeline, not INSERT
+    # another "主剪辑" and 500 on `uq_episode_cuts_episode_kind_name`.
+    existing_cut = _default_full_cut(session, episode_id=episode.id)
+    if existing_cut is not None:
+        _link_job_draft_to_episode(session, user_id=user_id, job=job, episode_id=episode.id)
+        return existing_cut, _require_head_revision(session, existing_cut)
     cut, revision = create_cut_from_asset(
         session,
         user_id=user_id,
@@ -914,6 +1220,7 @@ def create_cut_from_job(
         job_id=job.id,
     )
     _link_job_draft_to_episode(session, user_id=user_id, job=job, episode_id=episode.id)
+    _try_fill_episode_preview(session, episode=episode, user_id=user_id)
     return cut, revision
 
 
@@ -944,7 +1251,7 @@ def create_cut_from_asset(
     user_id: str,
     episode_id: str,
     asset_id: str,
-    name: str = "主剪辑",
+    name: str = DEFAULT_CUT_NAME,
     kind: str = EpisodeCutKind.FULL,
     job_id: str | None = None,
 ) -> tuple[EpisodeCut, CutRevision]:
@@ -960,13 +1267,18 @@ def create_cut_from_asset(
     cut = EpisodeCut(
         episode_id=episode.id,
         kind=kind,
-        name=name.strip() or "主剪辑",
+        name=name.strip() or DEFAULT_CUT_NAME,
         status=EpisodeCutStatus.DRAFT,
         source_asset_id=asset.id,
         source_job_id=job_id,
     )
     session.add(cut)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError as error:
+        if "uq_episode_cuts_episode_kind_name" not in str(getattr(error, "orig", error)):
+            raise
+        raise Conflict("该集已有同名剪辑。") from error
     duration = ticks_from_ms(asset.duration_ms)
     canvas_w = asset.width or 1080
     canvas_h = asset.height or 1920
@@ -1002,6 +1314,21 @@ def create_cut_from_asset(
     cut.status = EpisodeCutStatus.EDITING
     session.flush()
     return cut, revision
+
+
+def rename_cut(session: Session, *, user_id: str, cut_id: str, name: str) -> EpisodeCut:
+    """Owner-only, flag-gated like every other cut write. The name is
+    cut-level metadata (not part of any revision), so renaming never
+    touches head or needs a lease — the header can rename inline while
+    another tab holds the write lease."""
+    editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
+    cut = _owned_cut(session, user_id=user_id, cut_id=cut_id)
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValidationFailed("剪辑名称不能为空。")
+    cut.name = cleaned[:120]
+    session.flush()
+    return cut
 
 
 def acquire_lease(

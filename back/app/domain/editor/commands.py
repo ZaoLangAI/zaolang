@@ -69,6 +69,7 @@ ALLOWED_TYPES = frozenset(
         "insert_clip",
         "delete_elements",
         "move_elements",
+        "duplicate_elements",
         "trim_element",
         "split_element",
         "set_clip_volume",
@@ -169,6 +170,7 @@ def _allowed_keys(command_type: str) -> set[str]:
         },
         "delete_elements": {"element_ids"},
         "move_elements": {"element_ids", "delta_ticks", "track_id"},
+        "duplicate_elements": {"element_ids", "delta_ticks", "new_element_ids"},
         "trim_element": {
             "element_id",
             "start_ticks",
@@ -176,7 +178,7 @@ def _allowed_keys(command_type: str) -> set[str]:
             "source_in_ticks",
             "source_out_ticks",
         },
-        "split_element": {"element_id", "at_ticks"},
+        "split_element": {"element_id", "at_ticks", "new_element_id"},
         "set_clip_volume": {"element_id", "volume_millipercent"},
         "set_clip_speed": {"element_id", "speed_millipercent"},
         "insert_caption": {
@@ -234,10 +236,29 @@ def _validate_command(command: dict[str, Any]) -> None:
         speed = int(command["speed_millipercent"])
         if speed < 25_000 or speed > 400_000:
             raise ValidationFailed("倍速 millipercent 必须在 25000 到 400000 之间。")
-    if command_type == "delete_elements":
+    if command_type in {"delete_elements", "duplicate_elements"}:
         ids = command.get("element_ids")
         if not isinstance(ids, list) or not ids:
             raise ValidationFailed("element_ids 不能为空。")
+    if command_type == "duplicate_elements" and command.get("delta_ticks") is not None:
+        delta = command["delta_ticks"]
+        # Negative is fine here (paste before the source), so this deliberately
+        # isn't `_require_int`, which rejects anything below zero.
+        if not isinstance(delta, int) or isinstance(delta, bool):
+            raise ValidationFailed("delta_ticks 必须是整数 tick。")
+    if command_type == "duplicate_elements" and command.get("new_element_ids") is not None:
+        new_ids = command["new_element_ids"]
+        if (
+            not isinstance(new_ids, list)
+            or len(new_ids) != len(command.get("element_ids") or [])
+            or any(not isinstance(item, str) or not item.strip() for item in new_ids)
+            or len(set(new_ids)) != len(new_ids)
+        ):
+            raise ValidationFailed("new_element_ids 必须与 element_ids 一一对应且互不重复。")
+    if command_type == "split_element" and command.get("new_element_id") is not None:
+        new_id_value = command["new_element_id"]
+        if not isinstance(new_id_value, str) or not new_id_value.strip():
+            raise ValidationFailed("new_element_id 必须是非空字符串。")
     if command_type == "insert_clip" and not command.get("asset_id"):
         raise ValidationFailed("insert_clip 需要 asset_id。")
     if command_type == "insert_caption" and not str(command.get("text") or "").strip():
@@ -314,6 +335,8 @@ def _apply_one(
             track["elements"] = [el for el in track["elements"] if el["id"] not in ids]
     elif command_type == "move_elements":
         _move_elements(document, command)
+    elif command_type == "duplicate_elements":
+        _duplicate_elements(document, command)
     elif command_type == "trim_element":
         found = docs.find_element(document, command["element_id"])
         if found is None:
@@ -655,6 +678,60 @@ def _move_elements(document: dict[str, Any], command: dict[str, Any]) -> None:
             target_track["elements"].append(element)
 
 
+def _deep_copy_element(element: dict[str, Any]) -> dict[str, Any]:
+    """Same per-field copy `_split_element` needs: `dict(element)` still shares
+    the `effects` list (and each effect's `params`) and the `animations.channels`
+    map, which later commands mutate in place. `mask`/transitions are always
+    replaced wholesale, so a shallow copy of those is enough."""
+    copied = dict(element)
+    copied["effects"] = [
+        {**effect, "params": dict(effect.get("params") or {})}
+        for effect in element.get("effects") or []
+    ]
+    copied["animations"] = {
+        "channels": {
+            prop: {"kind": channel["kind"], "points": [dict(p) for p in channel["points"]]}
+            for prop, channel in (element.get("animations") or {}).get("channels", {}).items()
+        }
+    }
+    copied["mask"] = dict(element["mask"]) if element.get("mask") else None
+    for edge in ("transition_in", "transition_out"):
+        copied[edge] = dict(element[edge]) if element.get(edge) else None
+    return copied
+
+
+def _duplicate_elements(document: dict[str, Any], command: dict[str, Any]) -> None:
+    """Copies each named element onto its own track with a fresh id. Without
+    `delta_ticks` the copy lands right after the source's own end (the
+    "Ctrl+D" case); with it, the copy is shifted by that amount from the
+    source's start (the "paste at playhead" case). Everything else — trims,
+    effects, mask, keyframes, transitions — comes along verbatim."""
+    delta = command.get("delta_ticks")
+    # Client-supplied ids (like `insert_clip.element_id`) let an optimistic
+    # frontend predict the copy's id and target it in a follow-up batch
+    # before this one has round-tripped; omitted, the server mints them.
+    new_ids: list[str | None] = list(command.get("new_element_ids") or [])
+    copies: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for index, element_id in enumerate(command["element_ids"]):
+        found = docs.find_element(document, element_id)
+        if found is None:
+            raise ValidationFailed("元素不存在。")
+        track, element = found
+        copied = _deep_copy_element(element)
+        requested = new_ids[index] if index < len(new_ids) else None
+        if requested and docs.find_element(document, requested) is not None:
+            raise ValidationFailed("元素 id 已存在。")
+        copied["id"] = requested or new_id("el")
+        start = int(element["start_ticks"])
+        if delta is None:
+            copied["start_ticks"] = start + int(element["duration_ticks"])
+        else:
+            copied["start_ticks"] = max(0, start + int(delta))
+        copies.append((track, copied))
+    for track, copied in copies:
+        track["elements"].append(copied)
+
+
 def _split_element(document: dict[str, Any], command: dict[str, Any]) -> None:
     found = docs.find_element(document, command["element_id"])
     if found is None:
@@ -682,7 +759,10 @@ def _split_element(document: dict[str, Any], command: dict[str, Any]) -> None:
             for prop, channel in (element.get("animations") or {}).get("channels", {}).items()
         }
     }
-    right["id"] = new_id("el")
+    requested = command.get("new_element_id")
+    if requested and docs.find_element(document, requested) is not None:
+        raise ValidationFailed("元素 id 已存在。")
+    right["id"] = requested or new_id("el")
     right["start_ticks"] = at_ticks
     right["duration_ticks"] = right_duration
     right["source_in_ticks"] = source_in + left_duration

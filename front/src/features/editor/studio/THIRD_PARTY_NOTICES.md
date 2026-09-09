@@ -8,12 +8,26 @@ is adapted from **OpenCut** (`opencut-app/opencut-classic`), specifically:
 - `apps/web/src/components/editor/editor-header.tsx` → `editor-header.tsx`
 - `apps/web/src/components/editor/panels/assets/index.tsx` and `tabbar.tsx` — the tab bar +
   view-map pattern → `media-library-panel.tsx`
-- `apps/web/src/components/editor/panels/properties/index.tsx` and `empty-view.tsx` —
-  the properties-panel shell → `properties-panel.tsx`
+- `apps/web/src/components/editor/panels/properties/index.tsx`, `empty-view.tsx` and the
+  per-type `registry.ts` sub-tab idea → `properties-panel.tsx`
+- `apps/web/src/components/editor/panels/properties/property-item.tsx` — the numeric row
+  whose label scrubs the value and shows a reset glyph → `number-field.tsx`
+- `apps/web/src/components/editor/panels/assets/views/media.tsx` — whole-panel drop-to-
+  upload overlay, search box, grid/list toggle, draggable cards → `media-library-panel.tsx`
+- `apps/web/src/components/editor/timeline/timeline-toolbar.tsx` — the icon toolbar layout
+  (split / keep-left / keep-right / duplicate / delete / marker / snapping / zoom slider)
+  → `../timeline/toolbar.tsx`
+- `apps/web/src/components/editor/preview-panel.tsx` (toolbar portion only) — the
+  transport bar (skip / step / play / timecode / fullscreen) → the toolbar in `../preview.tsx`
+- `apps/web/src/hooks/use-keyboard-shortcuts.ts` — the key map (Space/K, J/L, S/W/Q,
+  Ctrl+D, N, M, Home/End …) → `useEditorShortcuts` in `studio-shell.tsx` and the listing
+  in `shortcuts-dialog.tsx`
 
 Only UI shell/layout/presentational structure was adapted. None of OpenCut's own timeline
 data model, undo/redo command stack, canvas/WASM compositor, or rendering/export code was
-used — this editor's timeline, preview, and export logic are ZaoLang's own
+used — this editor's timeline geometry/snapping (`../timeline/geometry.ts`), ruler,
+drag/drop/marquee logic (`../timeline/timeline.tsx`), on-canvas transform gizmo
+(`../transform-gizmo.tsx`), preview compositor, and export logic are ZaoLang's own
 (`front/src/features/editor/engine/`), unrelated to OpenCut's implementation.
 
 ```

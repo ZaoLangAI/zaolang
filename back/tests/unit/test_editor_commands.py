@@ -446,12 +446,193 @@ def test_split_element_does_not_alias_effects_between_halves() -> None:
     assert len(right["effects"]) == 2
 
 
+def test_duplicate_elements_lands_after_the_source_by_default() -> None:
+    document = commands.apply_batch(
+        _document_with_clip(),
+        [{"type": "duplicate_elements", "element_ids": ["el_clip"]}],
+        known_assets=set(),
+    )
+    elements = document["tracks"][0]["elements"]
+    assert len(elements) == 2
+    copy = next(el for el in elements if el["id"] != "el_clip")
+    assert copy["id"].startswith("el_")
+    assert copy["start_ticks"] == 4 * 120_000
+    assert copy["duration_ticks"] == 4 * 120_000
+    assert copy["asset_id"] == "ast_ok"
+    assert copy["track_id"] == "trk_video"
+
+
+def test_duplicate_elements_with_delta_offsets_from_the_source_start() -> None:
+    document = commands.apply_batch(
+        _document_with_clip(),
+        [{"type": "duplicate_elements", "element_ids": ["el_clip"], "delta_ticks": 10 * 120_000}],
+        known_assets=set(),
+    )
+    copy = next(el for el in document["tracks"][0]["elements"] if el["id"] != "el_clip")
+    assert copy["start_ticks"] == 10 * 120_000
+    # A negative delta is allowed (paste before the source) but clamps at 0.
+    document = commands.apply_batch(
+        document,
+        [{"type": "duplicate_elements", "element_ids": ["el_clip"], "delta_ticks": -5 * 120_000}],
+        known_assets=set(),
+    )
+    assert len(document["tracks"][0]["elements"]) == 3
+    assert any(
+        el["start_ticks"] == 0 and el["id"] != "el_clip" for el in document["tracks"][0]["elements"]
+    )
+
+
+def test_duplicate_elements_does_not_alias_effects_or_keyframes() -> None:
+    document = commands.apply_batch(
+        _document_with_clip(),
+        [
+            {
+                "type": "add_effect",
+                "element_id": "el_clip",
+                "effect": {"type": "blur", "params": {"intensity": 20}},
+            },
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 50_000,
+            },
+            {"type": "duplicate_elements", "element_ids": ["el_clip"]},
+        ],
+        known_assets=set(),
+    )
+    copy = next(el for el in document["tracks"][0]["elements"] if el["id"] != "el_clip")
+    assert copy["effects"] == [{"type": "blur", "params": {"intensity": 20}}]
+    assert copy["animations"]["channels"]["opacity"]["points"][0]["value"] == 50_000
+
+    document = commands.apply_batch(
+        document,
+        [
+            {
+                "type": "update_effect_params",
+                "element_id": copy["id"],
+                "effect_index": 0,
+                "params": {"intensity": 80},
+            },
+            {
+                "type": "set_keyframe",
+                "element_id": copy["id"],
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 0,
+            },
+        ],
+        known_assets=set(),
+    )
+    original = _clip(document)
+    assert original["effects"][0]["params"]["intensity"] == 20, (
+        "the source must not see the copy's edit"
+    )
+    assert original["animations"]["channels"]["opacity"]["points"][0]["value"] == 50_000
+
+
+def test_split_and_duplicate_honour_client_supplied_ids() -> None:
+    document = commands.apply_batch(
+        _document_with_clip(),
+        [
+            {
+                "type": "split_element",
+                "element_id": "el_clip",
+                "at_ticks": 2 * 120_000,
+                "new_element_id": "el_right",
+            },
+            {
+                "type": "duplicate_elements",
+                "element_ids": ["el_clip", "el_right"],
+                "new_element_ids": ["el_c1", "el_c2"],
+            },
+            # The predicted id is usable in the very same batch.
+            {"type": "move_elements", "element_ids": ["el_c2"], "delta_ticks": 120_000},
+        ],
+        known_assets=set(),
+    )
+    ids = {el["id"]: el for el in document["tracks"][0]["elements"]}
+    assert set(ids) == {"el_clip", "el_right", "el_c1", "el_c2"}
+    assert (
+        ids["el_c2"]["start_ticks"]
+        == ids["el_right"]["start_ticks"] + ids["el_right"]["duration_ticks"] + 120_000
+    )
+
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            document,
+            [
+                {
+                    "type": "split_element",
+                    "element_id": "el_c1",
+                    "at_ticks": 5 * 120_000,
+                    "new_element_id": "el_clip",
+                }
+            ],
+            known_assets=set(),
+        )
+    with pytest.raises(ValidationFailed):
+        commands.validate_batch(
+            {
+                "schema_version": 1,
+                "batch_id": "b1",
+                "commands": [
+                    {
+                        "type": "duplicate_elements",
+                        "element_ids": ["a", "b"],
+                        "new_element_ids": ["x"],
+                    }
+                ],
+            }
+        )
+
+
+def test_duplicate_elements_rejects_missing_ids_and_bad_delta() -> None:
+    with pytest.raises(BatchRolledBack):
+        commands.apply_batch(
+            _document_with_clip(),
+            [{"type": "duplicate_elements", "element_ids": ["el_missing"]}],
+            known_assets=set(),
+        )
+    with pytest.raises(ValidationFailed):
+        commands.validate_batch(
+            {
+                "schema_version": 1,
+                "batch_id": "b1",
+                "commands": [
+                    {"type": "duplicate_elements", "element_ids": ["el_clip"], "delta_ticks": 1.5}
+                ],
+            }
+        )
+    with pytest.raises(ValidationFailed):
+        commands.validate_batch(
+            {
+                "schema_version": 1,
+                "batch_id": "b1",
+                "commands": [{"type": "duplicate_elements", "element_ids": []}],
+            }
+        )
+
+
 def test_set_keyframe_inserts_sorted_and_replaces_same_tick() -> None:
     document = commands.apply_batch(
         _document_with_clip(),
         [
-            {"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 2 * 120_000, "value": 100_000},
-            {"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 0},
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 2 * 120_000,
+                "value": 100_000,
+            },
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 0,
+            },
         ],
         known_assets=set(),
     )
@@ -460,7 +641,15 @@ def test_set_keyframe_inserts_sorted_and_replaces_same_tick() -> None:
 
     document = commands.apply_batch(
         document,
-        [{"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 90_000}],
+        [
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 90_000,
+            }
+        ],
         known_assets=set(),
     )
     points = _clip(document)["animations"]["channels"]["opacity"]["points"]
@@ -475,13 +664,29 @@ def test_set_keyframe_rejects_unknown_property_and_out_of_range_value() -> None:
     with pytest.raises(BatchRolledBack):
         commands.apply_batch(
             document,
-            [{"type": "set_keyframe", "element_id": "el_clip", "property": "color", "at_ticks": 0, "value": 0}],
+            [
+                {
+                    "type": "set_keyframe",
+                    "element_id": "el_clip",
+                    "property": "color",
+                    "at_ticks": 0,
+                    "value": 0,
+                }
+            ],
             known_assets=set(),
         )
     with pytest.raises(BatchRolledBack):
         commands.apply_batch(
             document,
-            [{"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 999_999}],
+            [
+                {
+                    "type": "set_keyframe",
+                    "element_id": "el_clip",
+                    "property": "opacity",
+                    "at_ticks": 0,
+                    "value": 999_999,
+                }
+            ],
             known_assets=set(),
         )
 
@@ -569,19 +774,41 @@ def test_set_keyframe_rejects_a_volume_value_outside_0_to_200000() -> None:
 def test_delete_keyframe_removes_exact_tick_and_rejects_missing() -> None:
     document = commands.apply_batch(
         _document_with_clip(),
-        [{"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 50_000}],
+        [
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 50_000,
+            }
+        ],
         known_assets=set(),
     )
     document = commands.apply_batch(
         document,
-        [{"type": "delete_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0}],
+        [
+            {
+                "type": "delete_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+            }
+        ],
         known_assets=set(),
     )
     assert _clip(document)["animations"]["channels"]["opacity"]["points"] == []
     with pytest.raises(BatchRolledBack):
         commands.apply_batch(
             document,
-            [{"type": "delete_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0}],
+            [
+                {
+                    "type": "delete_keyframe",
+                    "element_id": "el_clip",
+                    "property": "opacity",
+                    "at_ticks": 0,
+                }
+            ],
             known_assets=set(),
         )
 
@@ -590,13 +817,27 @@ def test_clear_keyframes_removes_the_whole_channel() -> None:
     document = commands.apply_batch(
         _document_with_clip(),
         [
-            {"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 0},
-            {"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 1000, "value": 100_000},
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 0,
+            },
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 1000,
+                "value": 100_000,
+            },
         ],
         known_assets=set(),
     )
     document = commands.apply_batch(
-        document, [{"type": "clear_keyframes", "element_id": "el_clip", "property": "opacity"}], known_assets=set()
+        document,
+        [{"type": "clear_keyframes", "element_id": "el_clip", "property": "opacity"}],
+        known_assets=set(),
     )
     assert "opacity" not in _clip(document)["animations"]["channels"]
 
@@ -605,7 +846,13 @@ def test_split_element_does_not_alias_keyframe_channels_between_halves() -> None
     document = commands.apply_batch(
         _document_with_clip(),
         [
-            {"type": "set_keyframe", "element_id": "el_clip", "property": "opacity", "at_ticks": 0, "value": 50_000},
+            {
+                "type": "set_keyframe",
+                "element_id": "el_clip",
+                "property": "opacity",
+                "at_ticks": 0,
+                "value": 50_000,
+            },
             {"type": "split_element", "element_id": "el_clip", "at_ticks": 2 * 120_000},
         ],
         known_assets=set(),
@@ -614,7 +861,15 @@ def test_split_element_does_not_alias_keyframe_channels_between_halves() -> None
     right = next(el for el in elements if el["id"] != "el_clip")
     document = commands.apply_batch(
         document,
-        [{"type": "set_keyframe", "element_id": right["id"], "property": "opacity", "at_ticks": 500, "value": 20_000}],
+        [
+            {
+                "type": "set_keyframe",
+                "element_id": right["id"],
+                "property": "opacity",
+                "at_ticks": 500,
+                "value": 20_000,
+            }
+        ],
         known_assets=set(),
     )
     left = next(el for el in document["tracks"][0]["elements"] if el["id"] == "el_clip")

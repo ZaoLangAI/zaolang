@@ -115,6 +115,9 @@ class DramaEpisodeUpdateRequest(ApiModel):
     season_number: int | None = Field(default=None, ge=1, le=1_000)
     episode_number: int | None = Field(default=None, ge=1, le=10_000)
     status: str | None = None
+    # Present in `model_fields_set` means apply: a non-empty id binds the
+    # roster thumbnail, `null` / "" clears it so auto-extract can refill.
+    preview_asset_id: str | None = Field(default=None, max_length=40)
 
 
 class DramaEpisodeResponse(ApiModel):
@@ -132,6 +135,11 @@ class DramaEpisodeResponse(ApiModel):
     # finished (see `script_writing_service.list_scripts`'s own relaxed
     # filter) without a second round trip to `GET /v1/scripts/{episode_id}`.
     has_script_turns: bool = False
+    preview_asset_id: str | None = None
+    preview_url: str | None = None
+    # True when a video exists that `POST .../preview:from-video` can
+    # extract from — batched on list so the roster does not N+1.
+    has_preview_source: bool = False
 
 
 class EpisodeContentLinkCreateRequest(ApiModel):
@@ -175,6 +183,19 @@ class TimelineSummaryResponse(ApiModel):
     markers: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class RevisionAssetMeta(ApiModel):
+    """Intrinsic facts about one asset a revision references — what the
+    timeline needs to clamp a trim to the source's real length, label a
+    clip, and size thumbnails — separate from the short-lived signed URL in
+    `asset_urls` because these never expire."""
+
+    media_type: str
+    mime_type: str
+    duration_ticks: int | None = None
+    width: int | None = None
+    height: int | None = None
+
+
 class CutRevisionResponse(ApiModel):
     id: str
     cut_id: str
@@ -185,7 +206,12 @@ class CutRevisionResponse(ApiModel):
     summary: TimelineSummaryResponse
     document: dict[str, Any] = Field(default_factory=dict)
     asset_urls: dict[str, str] = Field(default_factory=dict)
+    asset_meta: dict[str, RevisionAssetMeta] = Field(default_factory=dict)
     created_at: dt.datetime
+
+
+class CutUpdateRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
 
 
 class EpisodeCutResponse(ApiModel):

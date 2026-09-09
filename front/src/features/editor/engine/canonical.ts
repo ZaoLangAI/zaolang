@@ -17,6 +17,7 @@ const ALLOWED = new Set([
   'insert_clip',
   'delete_elements',
   'move_elements',
+  'duplicate_elements',
   'trim_element',
   'split_element',
   'set_clip_volume',
@@ -179,16 +180,44 @@ function findElement(
   return undefined;
 }
 
-function newElementId(): string {
+/**
+ * Exported so the UI can mint ids *before* a batch is sent — the optimistic
+ * local apply and the server then agree on every new element/track/marker
+ * id, and a follow-up batch can target them before the first round-trips.
+ */
+export function newElementId(): string {
   return `el_${randomUuid().replaceAll('-', '').slice(0, 16)}`;
 }
 
-function newTrackId(): string {
+export function newTrackId(): string {
   return `trk_${randomUuid().replaceAll('-', '').slice(0, 16)}`;
 }
 
-function newMarkerId(): string {
+export function newMarkerId(): string {
   return `mrk_${randomUuid().replaceAll('-', '').slice(0, 16)}`;
+}
+
+/**
+ * The same per-field copy `split_element` needs: a spread still shares the
+ * `effects` array (and each effect's `params`) and the `animations.channels`
+ * map with the original, and later commands mutate those in place.
+ */
+function deepCopyElement(element: TimelineElement): TimelineElement {
+  return {
+    ...element,
+    effects: element.effects.map((effect) => ({ ...effect, params: { ...effect.params } })),
+    animations: {
+      channels: Object.fromEntries(
+        Object.entries(element.animations.channels).map(([property, channel]) => [
+          property,
+          { kind: channel!.kind, points: channel!.points.map((point) => ({ ...point })) },
+        ]),
+      ),
+    },
+    mask: element.mask ? { ...element.mask } : null,
+    transition_in: element.transition_in ? { ...element.transition_in } : null,
+    transition_out: element.transition_out ? { ...element.transition_out } : null,
+  };
 }
 
 function applyOne(
@@ -252,6 +281,28 @@ function applyOne(
       }
       return;
     }
+    case 'duplicate_elements': {
+      const copies: { track: TimelineTrack; element: TimelineElement }[] = [];
+      const newIds = command.new_element_ids ?? [];
+      if (command.new_element_ids && newIds.length !== command.element_ids.length) {
+        throw new Error('new_element_ids 必须与 element_ids 一一对应且互不重复。');
+      }
+      for (const [index, elementId] of command.element_ids.entries()) {
+        const found = findElement(document, elementId);
+        if (!found) throw new Error('元素不存在。');
+        const requested = newIds[index];
+        if (requested && findElement(document, requested)) throw new Error('元素 id 已存在。');
+        const copy = deepCopyElement(found.element);
+        copy.id = requested || newElementId();
+        copy.start_ticks =
+          command.delta_ticks === undefined
+            ? found.element.start_ticks + found.element.duration_ticks
+            : Math.max(0, found.element.start_ticks + command.delta_ticks);
+        copies.push({ track: found.track, element: copy });
+      }
+      for (const { track, element } of copies) track.elements.push(element);
+      return;
+    }
     case 'trim_element': {
       const found = findElement(document, command.element_id);
       if (!found) throw new Error('元素不存在。');
@@ -271,24 +322,16 @@ function applyOne(
       }
       const left = command.at_ticks - start;
       const sourceIn = found.element.source_in_ticks;
+      if (command.new_element_id && findElement(document, command.new_element_id)) {
+        throw new Error('元素 id 已存在。');
+      }
       const right: TimelineElement = {
-        ...found.element,
-        // A shallow spread still shares the `effects` array (and its effect
-        // objects), and the `animations.channels` map, with the original —
-        // `update_effect_params`/`set_keyframe` mutate a key on one of those
-        // shared objects in place, which would otherwise leak across both
-        // split halves. `mask` needs no such copy: every write to it
-        // replaces the whole value rather than mutating it.
-        effects: found.element.effects.map((effect) => ({ ...effect })),
-        animations: {
-          channels: Object.fromEntries(
-            Object.entries(found.element.animations.channels).map(([property, channel]) => [
-              property,
-              { kind: channel!.kind, points: [...channel!.points] },
-            ]),
-          ),
-        },
-        id: newElementId(),
+        // `deepCopyElement` breaks the `effects`/`animations.channels`
+        // aliasing a plain spread would leave between the two halves — see
+        // its docstring; `update_effect_params`/`set_keyframe` mutate those
+        // in place.
+        ...deepCopyElement(found.element),
+        id: command.new_element_id || newElementId(),
         start_ticks: command.at_ticks,
         duration_ticks: duration - left,
         source_in_ticks: sourceIn + left,

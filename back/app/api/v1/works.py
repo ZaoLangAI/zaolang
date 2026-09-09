@@ -512,7 +512,8 @@ def _summaries(  # type: ignore[no-untyped-def]
     of per row. `session.get` in `media_urls` already checks the identity map
     before issuing SQL, so warming it with a single bulk `SELECT ... IN (...)`
     is enough to make every later `asset_url`/`asset_size`/`media_type_of`
-    call free — no change needed to those helpers or to single-item callers.
+    /`asset_duration_ms` call free — no change needed to those helpers or to
+    single-item callers.
     """
     if not pairs:
         return []
@@ -551,6 +552,7 @@ def _summaries(  # type: ignore[no-untyped-def]
                 cover_width=cover_size[0] if cover_size else None,
                 cover_height=cover_size[1] if cover_size else None,
                 media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
+                duration_ms=media_urls.asset_duration_ms(session, version.primary_output_asset_id),
                 author=_author_view(
                     session, work.owner_user_id, profiles_by_owner.get(work.owner_user_id)
                 ),

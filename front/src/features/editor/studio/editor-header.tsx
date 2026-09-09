@@ -4,8 +4,8 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 
 import { ThemeMenu } from '@/components/layout/theme-menu';
-import { IconButton } from '@/components/ui/button';
-import { IconClose } from '@/components/ui/icons';
+import { Button, IconButton } from '@/components/ui/button';
+import { IconClose, IconDownload, IconQuestion } from '@/components/ui/icons';
 import { cn } from '@/lib/cn';
 import { useRouter } from '@/i18n/navigation';
 
@@ -51,25 +51,93 @@ function LeaseCountdown({ expiresAt }: { expiresAt: string | null }) {
   );
 }
 
+/** Click-to-edit title, mirroring OpenCut's `ProjectNameEditor` (Enter commits, Escape reverts, blur commits). */
+function InlineTitle({
+  title,
+  disabled,
+  onRename,
+}: {
+  title: string;
+  disabled: boolean;
+  onRename: (name: string) => void;
+}) {
+  const t = useTranslations('editor');
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next && next !== title) onRename(next);
+    else setDraft(title);
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        title={disabled ? undefined : t('renameCutHint')}
+        onClick={() => {
+          setDraft(title);
+          setEditing(true);
+        }}
+        className={cn(
+          'min-w-0 truncate rounded px-1 text-sm font-semibold text-text',
+          disabled ? 'cursor-default' : 'hover:bg-surface-soft',
+        )}
+      >
+        {title}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={draft}
+      maxLength={120}
+      aria-label={t('renameCutHint')}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit();
+        else if (event.key === 'Escape') {
+          setDraft(title);
+          setEditing(false);
+        }
+      }}
+      className="min-w-0 rounded border border-border bg-surface px-1 text-sm font-semibold text-text outline-none focus:border-primary"
+    />
+  );
+}
+
 /**
  * Adapted from OpenCut's `components/editor/editor-header.tsx` — a slim
- * top bar carrying the project name and export/theme controls. Everything
- * OpenCut-specific (Discord link, feedback popover, rename/delete project
- * dialogs) is dropped; export lives in the pinned `ExportPanel` in the
- * properties column instead of a header button, since this route has no
- * `TopBar` at all — the theme toggle would otherwise be unreachable here.
+ * top bar carrying the project name (click to rename), an export button and
+ * the theme toggle (this route has no `TopBar`, so it would otherwise be
+ * unreachable). OpenCut's Discord link, feedback popover and delete-project
+ * dialog are dropped; export jumps to the pinned panel in the properties
+ * column rather than opening a dialog.
  */
 export function EditorHeader({
   title,
   episodeId,
   saveStatus,
   leaseExpiresAt,
+  disabled,
+  onRename,
+  onExport,
+  onShowShortcuts,
 }: {
   title: string;
   episodeId: string | null;
   saveStatus: 'idle' | 'saving' | 'saved';
   /** Own write-lease expiry, or `null` while read-only / not yet acquired. */
   leaseExpiresAt: string | null;
+  disabled: boolean;
+  onRename: (name: string) => void;
+  onExport: () => void;
+  onShowShortcuts: () => void;
 }) {
   const t = useTranslations('editor');
   const router = useRouter();
@@ -85,7 +153,7 @@ export function EditorHeader({
         <IconButton label={t('closeStudio')} onClick={closeStudio}>
           <IconClose className="size-4" />
         </IconButton>
-        <span className="truncate text-sm font-semibold">{title}</span>
+        <InlineTitle title={title} disabled={disabled} onRename={onRename} />
         {saveStatus !== 'idle' ? (
           <span
             role="status"
@@ -98,6 +166,13 @@ export function EditorHeader({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <LeaseCountdown expiresAt={leaseExpiresAt} />
+        <IconButton label={t('shortcutsTitle')} onClick={onShowShortcuts}>
+          <IconQuestion className="size-4" />
+        </IconButton>
+        <Button size="sm" onClick={onExport}>
+          <IconDownload className="size-4" />
+          {t('exportButton')}
+        </Button>
         <ThemeMenu />
       </div>
     </header>

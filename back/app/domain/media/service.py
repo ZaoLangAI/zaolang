@@ -22,7 +22,7 @@ from typing import Any
 import imagehash
 from botocore.exceptions import ClientError
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -32,15 +32,25 @@ from app.models import (
     Asset,
     ContentFingerprint,
     Draft,
+    DramaEpisode,
+    GenerationJob,
     LineageEdge,
     Profile,
     ProvenanceManifest,
+    Series,
     UploadSession,
     Work,
     WorkVersion,
 )
 from app.models.base import new_id, utcnow
-from app.models.enums import AssetRole, MediaType, ModerationStatus, Operation, Visibility
+from app.models.enums import (
+    AssetRole,
+    ImageAssetKind,
+    MediaType,
+    ModerationStatus,
+    Operation,
+    Visibility,
+)
 from app.providers.base import ProviderReference
 from app.storage import s3
 
@@ -59,10 +69,16 @@ PURPOSE_TO_ROLE: dict[str, AssetRole] = {
     "learn_media": AssetRole.LEARN_MEDIA,
     "style_gallery_cover": AssetRole.COVER,
     "series_logo": AssetRole.COVER,
+    "episode_preview": AssetRole.COVER,
     # Ends up in `reference_asset_ids` exactly like `generation_reference` —
     # it only needs its own upload `purpose` for the bigger size ceiling a
     # 3-minute clip needs (see `s3.MAX_UPLOAD_BYTES`).
     "video_analysis_source": AssetRole.GENERATION_REFERENCE,
+    # Same reasoning as `video_analysis_source` above: a voice-clone sample
+    # ends up in `reference_asset_ids` (as the `AUDIO_GENERATION` job's
+    # `reference_asset_id` extra) exactly like any other reference asset —
+    # it only needs its own purpose for the audio MIME gate + size ceiling.
+    "voice_sample": AssetRole.GENERATION_REFERENCE,
     "editor_source": AssetRole.EDITOR_SOURCE,
     "editor_export": AssetRole.EDITOR_EXPORT,
     "caption": AssetRole.EDITOR_CAPTION,
@@ -109,10 +125,13 @@ def presign_upload(
         "learn_media",
         "style_gallery_cover",
         "series_logo",
+        "episode_preview",
     ) and not mime_type.startswith("image/"):
         raise ValidationFailed("头像、封面与学习内容配图必须是图片。", mime_type=mime_type)
     if purpose == "video_analysis_source" and not mime_type.startswith("video/"):
         raise ValidationFailed("视频解析的参考素材必须是视频。", mime_type=mime_type)
+    if purpose == "voice_sample" and not mime_type.startswith("audio/"):
+        raise ValidationFailed("声音克隆参考样本必须是音频。", mime_type=mime_type)
 
     # The key embeds the owner, so an object's directory alone proves who may
     # write to it.
@@ -225,6 +244,15 @@ def object_keys_for(session: Session, *, asset_ids: Sequence[str]) -> list[str]:
     return [by_id[asset_id] for asset_id in asset_ids if asset_id in by_id]
 
 
+# Character sheets and scene plates belong in the character/scene libraries,
+# not the drama editor's footage rail. Hidden in SQL so they cannot fill the
+# `limit=40` page. Videos (including `character_action`) stay visible.
+_EDITOR_LIBRARY_HIDDEN_ASSET_KINDS: tuple[str, ...] = (
+    ImageAssetKind.CHARACTER.value,
+    ImageAssetKind.SCENE.value,
+)
+
+
 def list_owned_media(
     session: Session,
     *,
@@ -236,13 +264,26 @@ def list_owned_media(
 
     Scoped to `GENERATION_OUTPUT`/`EDITOR_SOURCE` roles only, so an avatar,
     consent-evidence, or learn-media asset never shows up as pickable footage.
+    Image outputs of `asset_kind=character`/`scene` jobs are excluded — those
+    stay on the character/scene library pickers (`GET /v1/generation-jobs`).
     """
+    sheet_output = exists().where(
+        GenerationJob.request_json["asset_kind"].astext.in_(_EDITOR_LIBRARY_HIDDEN_ASSET_KINDS),
+        or_(
+            GenerationJob.output_asset_id == Asset.id,
+            GenerationJob.output_asset_ids_json.op("@>")(func.to_jsonb(Asset.id)),
+            # Failed/partial jobs still write `generated/{job_id}/…` but may
+            # never stamp `output_asset_id`.
+            Asset.object_key.like(func.concat("generated/", GenerationJob.id, "/%")),
+        ),
+    )
     stmt = (
         select(Asset)
         .where(
             Asset.owner_user_id == user_id,
             Asset.role.in_([AssetRole.GENERATION_OUTPUT, AssetRole.EDITOR_SOURCE]),
             Asset.moderation_status != ModerationStatus.REJECTED,
+            or_(Asset.media_type != MediaType.IMAGE, ~sheet_output),
         )
         .order_by(Asset.created_at.desc())
         .limit(limit)
@@ -313,12 +354,21 @@ def _asset_is_usable_reference(
     *,
     user_id: str,
     licensed_source_id: str | None,
+    session: Session | None = None,
 ) -> bool:
     if asset is None:
         return False
     if asset.owner_user_id == user_id:
         return True
-    return bool(licensed_source_id) and asset.id == licensed_source_id
+    if licensed_source_id and asset.id == licensed_source_id:
+        return True
+    if session is None:
+        return False
+    from app.domain.skill_library import service as skill_library_service
+
+    return skill_library_service.asset_is_usable_skill_reference(
+        session, asset=asset, viewer_id=user_id
+    )
 
 
 def validate_generation_references(
@@ -333,8 +383,9 @@ def validate_generation_references(
 
     Asset ids are user input.  Resolving them later in a worker without this
     ownership check would let a guessed private id become a signed provider
-    URL, even though the object itself never becomes public. The one
-    exception is a remix-licensed source version's primary output.
+    URL, even though the object itself never becomes public.     The exceptions are a remix-licensed source version's primary output,
+    and a published marketplace skill's public cover (so an image-asset
+    recipe can ride as an img2img reference without cloning the still).
     """
 
     ordinary_ids = list(params.get("reference_asset_ids") or [])
@@ -357,7 +408,10 @@ def validate_generation_references(
     by_id = {asset.id: asset for asset in rows}
     for asset_id in requested:
         if not _asset_is_usable_reference(
-            by_id.get(asset_id), user_id=user_id, licensed_source_id=licensed_source_id
+            by_id.get(asset_id),
+            user_id=user_id,
+            licensed_source_id=licensed_source_id,
+            session=session,
         ):
             raise ValidationFailed(
                 "参考素材不存在或不属于当前用户。",
@@ -388,6 +442,26 @@ def validate_generation_references(
                 "视频生成参考素材仅支持图片或视频。",
                 fields={"params.reference_asset_ids": "仅支持图片或视频"},
             )
+    elif operation == Operation.AUDIO_GENERATION.value:
+        # The one reference `audio_generation` ever takes is a voice-clone
+        # sample — count-capped to 1 in `validate_generation_params`
+        # (`api/schemas/jobs.py`), media-type-checked here like every other
+        # operation's references.
+        if any(by_id[asset_id].media_type != MediaType.AUDIO for asset_id in ordinary_ids):
+            raise ValidationFailed(
+                "声音克隆参考素材必须是音频。",
+                fields={"params.reference_asset_ids": "必须是音频"},
+            )
+    elif operation == Operation.MUSIC_GENERATION.value:
+        # `api.schemas.jobs.validate_generation_params` already rejects any
+        # reference for this operation before credits are reserved — this
+        # is the belt-and-suspenders check for a caller that bypasses that
+        # schema (or a future regression in it): no reference asset is ever
+        # a legal `music_generation` input in v1, regardless of media type.
+        raise ValidationFailed(
+            "音乐/音效生成不支持参考素材。",
+            fields={"params.reference_asset_ids": "暂不支持参考素材"},
+        )
     elif operation == Operation.VIDEO_ANALYSIS.value:
         if any(by_id[asset_id].media_type != MediaType.VIDEO for asset_id in ordinary_ids):
             raise ValidationFailed(
@@ -430,7 +504,12 @@ def provider_references_for(
     by_id = {
         asset.id: asset
         for asset in rows
-        if _asset_is_usable_reference(asset, user_id=user_id, licensed_source_id=licensed_source_id)
+        if _asset_is_usable_reference(
+            asset,
+            user_id=user_id,
+            licensed_source_id=licensed_source_id,
+            session=session,
+        )
     }
     return [
         ProviderReference(
@@ -681,13 +760,31 @@ def find_near_duplicates(
     return matches[:limit]
 
 
+def download_filename_for(asset: Asset) -> str:
+    """ASCII-safe attachment name: `{asset.id}` plus the MIME's known suffix.
+
+    Asset ids are typed prefixes (`ast_…`), so they are safe to interpolate
+    into `Content-Disposition: filename="…"`. An unknown MIME keeps the bare
+    id rather than inventing an extension.
+    """
+    ext = s3.ALLOWED_UPLOAD_MIME_TYPES.get(asset.mime_type, "")
+    return f"{asset.id}{ext}"
+
+
 def signed_url_for(
-    session: Session, *, asset_id: str, viewer_user_id: str | None, viewer_is_staff: bool = False
+    session: Session,
+    *,
+    asset_id: str,
+    viewer_user_id: str | None,
+    viewer_is_staff: bool = False,
+    download_name: str | None = None,
 ) -> str:
     """Mints a short-lived URL after an access check.
 
     Generation output and consent evidence stay owner-only until the work that
-    contains them is published.
+    contains them is published. Pass `download_name` to force
+    `Content-Disposition: attachment` so a browser saves the object instead
+    of playing it inline — playback URLs must omit it.
     """
     asset = session.get(Asset, asset_id)
     if asset is None:
@@ -698,7 +795,11 @@ def signed_url_for(
         raise NotFound("素材不存在。")
 
     settings = get_settings()
-    return s3.presign_get(asset.object_key, expires_in=settings.download_url_ttl_seconds)
+    return s3.presign_get(
+        asset.object_key,
+        expires_in=settings.download_url_ttl_seconds,
+        download_name=download_name,
+    )
 
 
 def publish_asset(session: Session, asset: Asset) -> None:
@@ -756,6 +857,18 @@ def _is_shared(session: Session, asset_id: str, except_work_id: str) -> bool:
         .limit(1)
     )
     if profile is not None:
+        return True
+
+    series_logo = session.scalar(
+        select(Series.id).where(Series.logo_asset_id == asset_id).limit(1)
+    )
+    if series_logo is not None:
+        return True
+
+    episode_preview = session.scalar(
+        select(DramaEpisode.id).where(DramaEpisode.preview_asset_id == asset_id).limit(1)
+    )
+    if episode_preview is not None:
         return True
 
     for reused in session.scalars(select(LineageEdge.reused_asset_ids_json)):

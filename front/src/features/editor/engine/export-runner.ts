@@ -1,8 +1,5 @@
 import { composeFrame, MediaPool, resolveAudioLayers } from './compositor';
 import {
-  EXPORT_MAX_DURATION_TICKS,
-  EXPORT_MAX_ESTIMATED_BYTES,
-  EXPORT_MAX_PIXELS,
   TICKS_PER_SECOND,
   type CanonicalDocument,
   type CapabilityReport,
@@ -14,28 +11,14 @@ import {
 
 const AUDIO_SAMPLE_RATE = 48_000;
 const AUDIO_CHANNELS = 2;
-/** BufferTarget memory cap: 720p box, swapped for portrait so orientation is kept. */
-const EXPORT_MAX_LONG_EDGE = 1280;
-const EXPORT_MAX_SHORT_EDGE = 720;
 
 function evenPixel(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
 }
 
-/** Fit a delivery spec into the 720p memory box without flipping orientation. */
+/** Round a delivery spec to even pixels for H.264, without downscaling. */
 export function fitExportCanvas(width: number, height: number): { width: number; height: number } {
-  const landscape = width >= height;
-  const boxWidth = landscape ? EXPORT_MAX_LONG_EDGE : EXPORT_MAX_SHORT_EDGE;
-  const boxHeight = landscape ? EXPORT_MAX_SHORT_EDGE : EXPORT_MAX_LONG_EDGE;
-  const scale = Math.min(1, boxWidth / width, boxHeight / height);
-  let outWidth = evenPixel(Math.round(width * scale));
-  let outHeight = evenPixel(Math.round(height * scale));
-  if (landscape && outWidth < outHeight) {
-    outWidth = evenPixel(outHeight);
-  } else if (!landscape && outHeight < outWidth) {
-    outHeight = evenPixel(outWidth);
-  }
-  return { width: outWidth, height: outHeight };
+  return { width: evenPixel(width), height: evenPixel(height) };
 }
 
 function documentHasAudibleContent(document: CanonicalDocument): boolean {
@@ -140,21 +123,19 @@ async function renderMixedAudio(
 /**
  * Sequential browser export. Renders the same edited timeline the preview
  * shows (via `compositor.ts`) frame by frame into a canvas, then encodes it
- * with mediabunny. Classic BufferTarget holds the file in memory, so product
- * hard limits (30s / 1080p / 80MB estimate) are the stop-gate until a
- * streaming encoder lands. Audio is mixed offline from every audible layer
- * (`renderMixedAudio`) and added as a second track alongside the picture.
+ * with mediabunny at the delivery variant's own resolution. Classic
+ * BufferTarget still holds the file in memory — a long or high-resolution
+ * cut can OOM the tab; that is accepted until a streaming encoder lands.
+ * Audio is mixed offline from every audible layer (`renderMixedAudio`) and
+ * added as a second track alongside the picture.
  */
 export class SequentialExportRunner implements RendererBackend {
   async preflight(spec: VariantSpec): Promise<CapabilityReport> {
     const reasons: string[] = [];
     const pixels = spec.width * spec.height;
-    if (pixels > EXPORT_MAX_PIXELS) reasons.push('resolution');
-    if (spec.max_duration_ticks > EXPORT_MAX_DURATION_TICKS) reasons.push('duration');
     const chrome = /Chrome|Edg\//.test(navigator.userAgent) && !/Mobile/.test(navigator.userAgent);
     if (!chrome) reasons.push('browser');
     const estimated = Math.ceil((spec.max_duration_ticks / TICKS_PER_SECOND) * pixels * 0.12);
-    if (estimated > EXPORT_MAX_ESTIMATED_BYTES) reasons.push('memory');
     if (typeof VideoEncoder === 'undefined') reasons.push('webcodecs');
     return { ok: reasons.length === 0, reasons, estimated_bytes: estimated };
   }
@@ -186,10 +167,7 @@ export class SequentialExportRunner implements RendererBackend {
       QUALITY_MEDIUM,
     } = await import('mediabunny');
 
-    const seconds = Math.min(
-      EXPORT_MAX_DURATION_TICKS / TICKS_PER_SECOND,
-      spec.max_duration_ticks / TICKS_PER_SECOND,
-    );
+    const seconds = spec.max_duration_ticks / TICKS_PER_SECOND;
     const fps = spec.fps_num / Math.max(1, spec.fps_den);
     const frames = Math.max(1, Math.round(seconds * fps));
     const target = new BufferTarget();

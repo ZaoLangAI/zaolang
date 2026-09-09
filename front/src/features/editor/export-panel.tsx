@@ -115,7 +115,7 @@ export function ExportPanel({
         format: 'mp4' as const,
         caption_language: null,
         caption_mode: 'burned' as const,
-        max_duration_ticks: Math.min(durationTicks, 30 * TICKS_PER_SECOND),
+        max_duration_ticks: durationTicks,
       };
       let blob: Blob | undefined;
       for await (const step of runner.export(spec, document, assets, controller.signal)) {
@@ -190,7 +190,6 @@ export function ExportPanel({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-muted">{t('exportHint')}</p>
-      <p className="text-xs text-muted">{t('hardLimitHint')}</p>
       <p className="text-xs text-muted">{t('sequentialHint')}</p>
       <fieldset className="flex flex-col gap-2" disabled={disabled || busy}>
         <legend className="text-xs text-muted">{t('variantProfiles')}</legend>

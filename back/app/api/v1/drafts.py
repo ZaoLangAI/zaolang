@@ -5,12 +5,12 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 
 from app.api import idempotency
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.works import (
+    AppliedVersionRequest,
     DraftCreateRequest,
     DraftResponse,
     LicenseInfo,
@@ -46,12 +46,12 @@ def create_draft(
 
 @router.get("", response_model=Page[DraftResponse])
 def list_drafts(user: CurrentUser, session: DbSession) -> Page[DraftResponse]:
-    drafts = session.scalars(
-        select(Draft)
-        .where(Draft.user_id == user.id, Draft.published_work_id.is_(None))
-        .order_by(Draft.created_at.desc())
-        .limit(50)
-    )
+    """Unpublished drafts the current user created.
+
+    Another user's drafts never appear. A former collaborator's jump-outs
+    bound to a series they left are omitted from this list too.
+    """
+    drafts = publishing.list_unpublished_work_drafts(session, user_id=user.id)
     return Page(items=[_response(session, d) for d in drafts])
 
 
@@ -126,6 +126,36 @@ def publish(
     return response
 
 
+@router.post(
+    "/{draft_id}/applied-version",
+    response_model=DraftResponse,
+)
+def apply_draft_version(
+    draft_id: str,
+    payload: AppliedVersionRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> DraftResponse:
+    draft = publishing.apply_draft_version(
+        session, user_id=user.id, draft_id=draft_id, job_id=payload.job_id
+    )
+    session.commit()
+    return _response(session, draft)
+
+
+@router.delete("/{draft_id}/versions/{job_id}", status_code=204)
+def hide_draft_version(
+    draft_id: str,
+    job_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> None:
+    publishing.hide_draft_version(session, user_id=user.id, draft_id=draft_id, job_id=job_id)
+    session.commit()
+
+
 @router.delete("/{draft_id}", status_code=204)
 def delete_draft(draft_id: str, user: CurrentUser, session: DbSession) -> None:
     draft = _owned(session, draft_id, user.id)
@@ -165,11 +195,12 @@ def _response(session, draft: Draft) -> DraftResponse:  # type: ignore[no-untype
     return DraftResponse(
         id=draft.id,
         source_work_version_id=draft.source_work_version_id,
-        title=draft.title,
+        title=draft.title or publishing.title_from_prompt((draft.params_json or {}).get("prompt")),
         description=draft.description,
         params=draft.params_json,
         license=license_info,
         latest_job_id=draft.latest_job_id,
+        applied_job_id=draft.applied_job_id,
         output_asset_id=draft.output_asset_id,
         output_url=media_urls.asset_url(session, draft.output_asset_id),
         output_media_type=MediaType(asset.media_type) if asset else None,

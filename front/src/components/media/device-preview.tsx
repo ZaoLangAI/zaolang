@@ -13,6 +13,7 @@ import {
   DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { IconCheck, IconVideo } from '@/components/ui/icons';
+import { MediaLightbox } from '@/components/ui/media-lightbox';
 import { cn } from '@/lib/cn';
 import {
   DEVICES,
@@ -219,8 +220,7 @@ function StageMedia({
   if (mediaType === 'image') {
     if (framed) {
       return src ? (
-        // eslint-disable-next-line @next/next/no-img-element -- signed object URLs.
-        <img src={src} alt={title} className="size-full object-cover" />
+        <StillLightboxTrigger src={src} title={title} imgClassName="size-full object-cover" />
       ) : (
         <div className="grid size-full place-items-center text-sm text-muted">{title}</div>
       );
@@ -276,11 +276,10 @@ function CappedStill({
         }
       >
         {src ? (
-          // eslint-disable-next-line @next/next/no-img-element -- signed object URLs.
-          <img
+          <StillLightboxTrigger
             src={src}
-            alt={title}
-            className="size-full object-contain"
+            title={title}
+            imgClassName="size-full object-contain"
             onLoad={(event) => {
               const image = event.currentTarget;
               if (image.naturalWidth > 0 && image.naturalHeight > 0) {
@@ -293,6 +292,41 @@ function CappedStill({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Image-only click-to-enlarge. Video stays on `VideoPlayer`; this trigger
+ * is what studio success, `/jobs/{id}`, and `/work/{id}` share via
+ * `DevicePreview` so each caller does not grow its own lightbox state.
+ */
+function StillLightboxTrigger({
+  src,
+  title,
+  imgClassName,
+  onLoad,
+}: {
+  src: string;
+  title: string;
+  imgClassName: string;
+  onLoad?: (event: React.SyntheticEvent<HTMLImageElement>) => void;
+}) {
+  const t = useTranslations('media');
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={t('lightboxTitle')}
+        onClick={() => setOpen(true)}
+        className="size-full cursor-zoom-in bg-transparent p-0 hover:opacity-90 focus-visible:outline-2"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- signed object URLs. */}
+        <img src={src} alt={title} className={imgClassName} onLoad={onLoad} />
+      </button>
+      <MediaLightbox open={open} src={src} alt={title} onClose={() => setOpen(false)} />
+    </>
   );
 }
 

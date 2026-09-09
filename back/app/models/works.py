@@ -225,6 +225,12 @@ class Draft(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     params_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     latest_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The version the draft currently applies (preview / publish output).
+    # Distinct from `latest_job_id` (last submit, used by retry notifications).
+    # A later successful job overwrites this; the author can also pin an
+    # older succeeded job until the next success. Plain string, not FK-checked
+    # (matching `latest_job_id`).
+    applied_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     output_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )

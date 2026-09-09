@@ -1,21 +1,22 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ErrorNotice } from '@/components/ui/primitives';
 import type { ShortformProfile } from '@/lib/api/types';
 
+import type { EditorActions } from '../actions';
 import type { CanonicalDocument, EditCommand, ResolvedAsset, TimelineElement } from '../engine/ports';
 import { TICKS_PER_SECOND } from '../engine/ports';
 import { Preview } from '../preview';
-import { useEditorUi } from '../store';
-import { Timeline } from '../timeline';
+import { Timeline } from '../timeline/timeline';
 import { EditorHeader } from './editor-header';
 import { MediaLibraryPanel } from './media-library-panel';
-import { PropertiesPanel } from './properties-panel';
+import { PropertiesPanel, type PropertiesTab } from './properties-panel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './resizable';
+import { ShortcutsDialog } from './shortcuts-dialog';
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -28,12 +29,135 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
+ * The keyboard map, adapted from OpenCut's `use-keyboard-shortcuts` and
+ * listed verbatim in `shortcuts-dialog.tsx`. Edit verbs are gated on
+ * `disabled` (no write lease); transport and selection keys always work.
+ */
+function useEditorShortcuts(actions: EditorActions, disabled: boolean, onToggleHelp: () => void) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      // Transport — never gated.
+      if (event.code === 'Space' || (key === 'k' && !modifier)) {
+        event.preventDefault();
+        actions.togglePlay();
+        return;
+      }
+      if (!modifier && (key === 'j' || key === 'l')) {
+        event.preventDefault();
+        actions.seekBy(key === 'j' ? -TICKS_PER_SECOND : TICKS_PER_SECOND);
+        return;
+      }
+      if (key === 'arrowleft' || key === 'arrowright') {
+        event.preventDefault();
+        const direction = key === 'arrowleft' ? -1 : 1;
+        if (event.shiftKey) actions.seekBy(direction * 5 * TICKS_PER_SECOND);
+        else actions.stepFrames(direction);
+        return;
+      }
+      if (key === 'home') {
+        event.preventDefault();
+        actions.goToStart();
+        return;
+      }
+      if (key === 'end') {
+        event.preventDefault();
+        actions.goToEnd();
+        return;
+      }
+      if (key === '?' || (event.shiftKey && key === '/')) {
+        event.preventDefault();
+        onToggleHelp();
+        return;
+      }
+
+      // Selection — never gated either.
+      if (modifier && key === 'a') {
+        event.preventDefault();
+        actions.selectAll();
+        return;
+      }
+      if (key === 'escape') {
+        actions.deselectAll();
+        return;
+      }
+      if (!modifier && key === 'n') {
+        event.preventDefault();
+        actions.toggleSnapping();
+        return;
+      }
+
+      if (disabled) return;
+
+      if (modifier && key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) actions.redo();
+        else actions.undo();
+        return;
+      }
+      if (modifier && key === 'y') {
+        event.preventDefault();
+        actions.redo();
+        return;
+      }
+      if (modifier && key === 'd') {
+        event.preventDefault();
+        actions.duplicateSelected();
+        return;
+      }
+      if (modifier && key === 'c') {
+        actions.copySelected();
+        return;
+      }
+      if (modifier && key === 'v') {
+        if (!actions.canPaste) return;
+        event.preventDefault();
+        actions.paste();
+        return;
+      }
+      if (modifier) return;
+      switch (key) {
+        case 'delete':
+        case 'backspace':
+          event.preventDefault();
+          actions.deleteSelected();
+          return;
+        case 's':
+          event.preventDefault();
+          actions.splitAtPlayhead();
+          return;
+        case 'w':
+          event.preventDefault();
+          actions.keepLeft();
+          return;
+        case 'q':
+          event.preventDefault();
+          actions.keepRight();
+          return;
+        case 'm':
+          event.preventDefault();
+          actions.toggleMarkerAtPlayhead();
+          return;
+        default:
+          return;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [actions, disabled, onToggleHelp]);
+}
+
+/**
  * Adapted from OpenCut's `app/editor/[project_id]/page.tsx` `EditorLayout` —
  * the same nesting (a vertical group holding a horizontal 3-column region
- * above a full-width timeline) — wired to ZaoLang's own engine state
- * instead of OpenCut's `useEditor`/`usePanelStore`. `Onboarding`,
- * `MigrationDialog`, and `ChangelogNotification` (OpenCut-account-specific)
- * are not carried over.
+ * above a full-width timeline), the same 25/50/25 + 50/50 defaults, and
+ * `autoSaveId` so the user's panel sizes survive a reload — wired to
+ * ZaoLang's own engine state instead of OpenCut's `useEditor`/
+ * `usePanelStore`. `Onboarding`, `MigrationDialog` and
+ * `ChangelogNotification` (OpenCut-account-specific) are not carried over.
  */
 export function StudioShell({
   cutName,
@@ -48,18 +172,14 @@ export function StudioShell({
   assets,
   durationTicks,
   disabled,
+  serverBusy,
   selected,
   selectedIds,
   caption,
   onCaptionChange,
-  onSelect,
   onApply,
-  onDeleteSelected,
-  onSplitAtPlayhead,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
+  onRename,
+  actions,
   revisionId,
   syncNonce,
   draftId,
@@ -70,6 +190,7 @@ export function StudioShell({
   leaseToken,
   onPlanApplied,
   onRestore,
+  onDropFiles,
 }: {
   cutName: string;
   episodeId: string | null;
@@ -83,18 +204,15 @@ export function StudioShell({
   assets: ResolvedAsset[];
   durationTicks: number;
   disabled: boolean;
+  /** A server round-trip (save/restore) is in flight — only the panels that must see a settled head care. */
+  serverBusy: boolean;
   selected: TimelineElement | undefined;
   selectedIds: string[];
   caption: string;
   onCaptionChange: (value: string) => void;
-  onSelect: (element: TimelineElement) => void;
   onApply: (commands: EditCommand[]) => void;
-  onDeleteSelected: () => void;
-  onSplitAtPlayhead: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
+  onRename: (name: string) => void;
+  actions: EditorActions;
   revisionId: string | null;
   syncNonce: number;
   draftId: string | null;
@@ -105,60 +223,14 @@ export function StudioShell({
   leaseToken: string | null;
   onPlanApplied: () => void;
   onRestore: (revisionId: string) => void;
+  onDropFiles: (files: File[], atTicks: number) => void;
 }) {
   const t = useTranslations('editor');
-  const playheadTicks = useEditorUi((state) => state.playheadTicks);
-  const setPlayhead = useEditorUi((state) => state.setPlayhead);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [propertiesTab, setPropertiesTab] = useState<PropertiesTab>('element');
+  const [exportRequestNonce, setExportRequestNonce] = useState(0);
 
-  // Walkthrough finding: every edit required reaching for the mouse (no
-  // Delete/split/frame-step shortcuts), which made fine-grained trimming
-  // and cleanup noticeably slower than a desktop NLE. Space/play is handled
-  // locally inside `Preview` (it owns the playing state); this covers the
-  // shortcuts that operate on the shared selection/playhead instead.
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (disabled || isTypingTarget(event.target)) return;
-      const modifier = event.metaKey || event.ctrlKey;
-      if (modifier && event.key.toLowerCase() === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) onRedo();
-        else onUndo();
-        return;
-      }
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        if (selectedIds.length === 0) return;
-        event.preventDefault();
-        onDeleteSelected();
-      } else if (event.key === 's' || event.key === 'S') {
-        if (!selected) return;
-        event.preventDefault();
-        onSplitAtPlayhead();
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault();
-        const frameTicks = Math.max(
-          1,
-          Math.round((TICKS_PER_SECOND * document.canvas.fps_den) / document.canvas.fps_num),
-        );
-        const delta = event.key === 'ArrowLeft' ? -frameTicks : frameTicks;
-        setPlayhead(Math.max(0, Math.min(durationTicks, playheadTicks + delta)));
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    disabled,
-    selectedIds,
-    selected,
-    onDeleteSelected,
-    onSplitAtPlayhead,
-    onUndo,
-    onRedo,
-    document.canvas.fps_den,
-    document.canvas.fps_num,
-    durationTicks,
-    playheadTicks,
-    setPlayhead,
-  ]);
+  useEditorShortcuts(actions, disabled, () => setHelpOpen((open) => !open));
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -167,6 +239,13 @@ export function StudioShell({
         episodeId={episodeId}
         saveStatus={saveStatus}
         leaseExpiresAt={readonly ? null : leaseExpiresAt}
+        disabled={disabled}
+        onRename={onRename}
+        onExport={() => {
+          setPropertiesTab('document');
+          setExportRequestNonce((n) => n + 1);
+        }}
+        onShowShortcuts={() => setHelpOpen(true)}
       />
       {readonly ? (
         <div className="border-b border-border">
@@ -182,10 +261,10 @@ export function StudioShell({
         </div>
       ) : null}
       <div className="min-h-0 flex-1">
-        <ResizablePanelGroup direction="vertical">
-          <ResizablePanel defaultSize={58} minSize={32} className="min-h-0 min-w-0 overflow-hidden">
-            <ResizablePanelGroup direction="horizontal">
-              <ResizablePanel defaultSize={22} minSize={15} maxSize={40} className="min-h-0 min-w-0 overflow-hidden">
+        <ResizablePanelGroup direction="vertical" autoSaveId="zaolang-studio-editor-v">
+          <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 min-w-0 overflow-hidden">
+            <ResizablePanelGroup direction="horizontal" autoSaveId="zaolang-studio-editor-h">
+              <ResizablePanel defaultSize={25} minSize={15} maxSize={40} className="min-h-0 min-w-0 overflow-hidden">
                 <MediaLibraryPanel
                   disabled={disabled}
                   onApply={onApply}
@@ -194,8 +273,8 @@ export function StudioShell({
                 />
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={53} minSize={30} className="min-h-0 min-w-0 overflow-hidden">
-                <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden p-3">
+              <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 min-w-0 overflow-hidden">
+                <div className="flex h-full min-h-0 flex-col overflow-hidden">
                   <Preview
                     document={document}
                     assets={assets}
@@ -203,14 +282,9 @@ export function StudioShell({
                     title={cutName}
                     selected={selected}
                     disabled={disabled}
+                    actions={actions}
                     onApply={onApply}
                   />
-                  <p className="shrink-0 text-xs text-muted">
-                    {t('canvasLabel')} · {document.canvas.width}×{document.canvas.height} ·{' '}
-                    {t('durationLabel', {
-                      seconds: (Math.max(durationTicks, 0) / TICKS_PER_SECOND).toFixed(1),
-                    })}
-                  </p>
                 </div>
               </ResizablePanel>
               <ResizableHandle />
@@ -223,73 +297,40 @@ export function StudioShell({
                   syncNonce={syncNonce}
                   draftId={draftId}
                   disabled={disabled}
+                  serverBusy={serverBusy}
                   profiles={profiles}
                   defaultProfile={defaultProfile}
                   selected={selected}
+                  selectedIds={selectedIds}
+                  actions={actions}
                   cutId={cutId}
                   leaseId={leaseId}
                   leaseToken={leaseToken}
                   onApply={onApply}
                   onPlanApplied={onPlanApplied}
                   onRestore={onRestore}
+                  tab={propertiesTab}
+                  onTabChange={setPropertiesTab}
+                  exportRequestNonce={exportRequestNonce}
                 />
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel defaultSize={42} minSize={24} maxSize={60} className="min-h-0 min-w-0 overflow-hidden">
-            <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden p-3">
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={disabled || !canUndo}
-                  onClick={onUndo}
-                  title={t('undoShortcutHint')}
-                >
-                  {t('undo')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={disabled || !canRedo}
-                  onClick={onRedo}
-                  title={t('redoShortcutHint')}
-                >
-                  {t('redo')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={disabled || selectedIds.length === 0}
-                  onClick={onDeleteSelected}
-                  title={t('deleteSelectedShortcutHint')}
-                >
-                  {t('deleteSelected')}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={disabled || !selected}
-                  onClick={onSplitAtPlayhead}
-                  title={t('splitAtPlayheadShortcutHint')}
-                >
-                  {t('splitAtPlayhead')}
-                </Button>
-              </div>
-              <Timeline
-                document={document}
-                assets={assets}
-                durationTicks={durationTicks || TICKS_PER_SECOND}
-                disabled={disabled}
-                playheadLabel={t('playhead')}
-                onSelect={onSelect}
-                onCommand={onApply}
-              />
-            </div>
+          <ResizablePanel defaultSize={50} minSize={20} maxSize={70} className="min-h-0 min-w-0 overflow-hidden">
+            <Timeline
+              document={document}
+              assets={assets}
+              durationTicks={durationTicks}
+              disabled={disabled}
+              actions={actions}
+              onCommand={onApply}
+              onDropFiles={onDropFiles}
+            />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+      <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

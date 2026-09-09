@@ -71,6 +71,13 @@ class DramaEpisode(Base, TimestampMixin):
     canonical_work_id: Mapped[str | None] = mapped_column(
         ForeignKey("works.id", ondelete="SET NULL"), nullable=True
     )
+    # Roster thumbnail on `/create/short/series/{id}` — user upload or the
+    # first frame of the episode's current video. Same SET NULL pattern as
+    # `Series.logo_asset_id`; a missing preview is an empty poster, not a
+    # broken FK. Auto-fill only writes when this is still null.
+    preview_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint(

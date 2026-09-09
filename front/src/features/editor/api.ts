@@ -106,6 +106,10 @@ export interface DramaEpisode {
    * failed outright (see `back/app/domain/script_writing/service.py`'s
    * `list_scripts`, which is turn-agnostic for the same reason). */
   has_script_turns: boolean;
+  preview_asset_id: string | null;
+  preview_url: string | null;
+  /** True when a video exists that `fillEpisodePreviewFromVideo` can extract. */
+  has_preview_source: boolean;
 }
 
 export interface EpisodeContentLink {
@@ -127,7 +131,17 @@ export interface CutRevision {
   document: CanonicalDocument;
   /** asset_id -> short-lived playable URL, for every asset referenced by this revision. */
   asset_urls: Record<string, string>;
+  /** asset_id -> intrinsic facts (kind, mime, source length, pixel size) — never expire, unlike `asset_urls`. */
+  asset_meta: Record<string, RevisionAssetMeta>;
   created_at: string;
+}
+
+export interface RevisionAssetMeta {
+  media_type: string;
+  mime_type: string;
+  duration_ticks: number | null;
+  width: number | null;
+  height: number | null;
 }
 
 export interface EpisodeCut {
@@ -298,9 +312,14 @@ export function updateEpisode(
     season_number: number;
     episode_number: number;
     status: string;
+    preview_asset_id: string | null;
   }>,
 ) {
   return api.patch<DramaEpisode>(`/v1/drama-episodes/${episodeId}`, input);
+}
+
+export function fillEpisodePreviewFromVideo(episodeId: string) {
+  return api.post<DramaEpisode>(`/v1/drama-episodes/${episodeId}/preview:from-video`);
 }
 
 export function deleteEpisode(episodeId: string) {
@@ -345,6 +364,10 @@ export function createCutFromAsset(
 
 export function getCut(cutId: string) {
   return api.get<EpisodeCut>(`/v1/episode-cuts/${cutId}`);
+}
+
+export function renameCut(cutId: string, name: string) {
+  return api.patch<EpisodeCut>(`/v1/episode-cuts/${cutId}`, { name });
 }
 
 export function listCutRevisions(cutId: string) {

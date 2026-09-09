@@ -41,18 +41,15 @@ describe('SequentialExportRunner.preflight', () => {
     expect(report.reasons).toEqual([]);
   });
 
-  it('rejects resolution over the pixel cap', async () => {
-    const report = await new SequentialExportRunner().preflight({ ...BASE_SPEC, width: 3840, height: 2160 });
-    expect(report.ok).toBe(false);
-    expect(report.reasons).toContain('resolution');
-  });
-
-  it('rejects duration over the hard cap', async () => {
+  it('accepts 4K and 60s on desktop Chrome with WebCodecs', async () => {
     const report = await new SequentialExportRunner().preflight({
       ...BASE_SPEC,
+      width: 3840,
+      height: 2160,
       max_duration_ticks: 60 * TICKS_PER_SECOND,
     });
-    expect(report.reasons).toContain('duration');
+    expect(report.ok).toBe(true);
+    expect(report.reasons).toEqual([]);
   });
 
   it('rejects a non-Chrome/Edge browser', async () => {
@@ -78,37 +75,19 @@ describe('SequentialExportRunner.preflight', () => {
     const report = await new SequentialExportRunner().preflight(BASE_SPEC);
     expect(report.reasons).toContain('webcodecs');
   });
-
-  it('rejects an oversized estimated memory footprint', async () => {
-    // duration_seconds * pixels * 0.12 must clear the 80MB cap; at the
-    // resolution cap that only happens well past the duration cap too, so
-    // this scenario legitimately trips both reasons at once.
-    const report = await new SequentialExportRunner().preflight({
-      ...BASE_SPEC,
-      width: 1920,
-      height: 1080,
-      max_duration_ticks: 400 * TICKS_PER_SECOND,
-    });
-    expect(report.reasons).toContain('memory');
-    expect(report.reasons).toContain('duration');
-  });
 });
 
 describe('fitExportCanvas', () => {
-  it('fits a 9:16 spec into a portrait 720p box', () => {
-    expect(fitExportCanvas(1080, 1920)).toEqual({ width: 720, height: 1280 });
+  it('keeps a 9:16 spec at even original pixels', () => {
+    expect(fitExportCanvas(1080, 1920)).toEqual({ width: 1080, height: 1920 });
   });
 
-  it('fits a 16:9 spec into a landscape 720p box', () => {
-    expect(fitExportCanvas(1920, 1080)).toEqual({ width: 1280, height: 720 });
+  it('keeps a 16:9 spec at even original pixels', () => {
+    expect(fitExportCanvas(1920, 1080)).toEqual({ width: 1920, height: 1080 });
   });
 
-  it('leaves a spec already inside the box unchanged', () => {
-    expect(fitExportCanvas(720, 1280)).toEqual({ width: 720, height: 1280 });
-    expect(fitExportCanvas(1280, 720)).toEqual({ width: 1280, height: 720 });
-  });
-
-  it('does not flip orientation', () => {
+  it('rounds odd edges down to even without flipping orientation', () => {
+    expect(fitExportCanvas(1081, 1921)).toEqual({ width: 1080, height: 1920 });
     const portrait = fitExportCanvas(1080, 1920);
     expect(portrait.height).toBeGreaterThan(portrait.width);
     const landscape = fitExportCanvas(1920, 1080);

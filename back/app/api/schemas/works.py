@@ -59,6 +59,8 @@ class WorkSummary(ApiModel):
     cover_width: int | None = None
     cover_height: int | None = None
     media_type: MediaType | None = None
+    # Primary output duration, when the asset recorded one. Images stay null.
+    duration_ms: int | None = None
     author: AuthorSummary
     stats: WorkStats
     tags: list[str] = Field(default_factory=list)
@@ -188,6 +190,7 @@ class DraftResponse(ApiModel):
     params: dict[str, Any] = Field(default_factory=dict)
     license: LicenseInfo | None = None
     latest_job_id: str | None = None
+    applied_job_id: str | None = None
     output_asset_id: str | None = None
     output_url: str | None = None
     output_media_type: MediaType | None = None
@@ -198,6 +201,10 @@ class DraftResponse(ApiModel):
     publish_status: DraftPublishStatus | None = None
     publish_failure_message: str | None = None
     created_at: dt.datetime
+
+
+class AppliedVersionRequest(ApiModel):
+    job_id: str = Field(min_length=1, max_length=40)
 
 
 class PublishRequest(ApiModel):

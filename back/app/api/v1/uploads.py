@@ -83,7 +83,18 @@ def complete(
 
 
 @router.get("/assets/{asset_id}", response_model=AssetResponse)
-def get_asset(asset_id: str, session: DbSession, viewer: OptionalUser) -> AssetResponse:
+def get_asset(
+    asset_id: str,
+    session: DbSession,
+    viewer: OptionalUser,
+    download: bool = Query(default=False),
+) -> AssetResponse:
+    """Returns the asset after an access check.
+
+    `download=true` mints `url` with `Content-Disposition: attachment` so the
+    browser saves the object. The default playback URL is left unsigned for
+    disposition so a `<video>` / `<img>` src is not forced to download.
+    """
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise NotFound("素材不存在。")
@@ -101,7 +112,9 @@ def get_asset(asset_id: str, session: DbSession, viewer: OptionalUser) -> AssetR
         asset_id=asset_id,
         viewer_user_id=viewer.id if viewer else None,
     )
-    return _asset_response(session, asset, viewer_id=viewer.id if viewer else None)
+    return _asset_response(
+        session, asset, viewer_id=viewer.id if viewer else None, download=download
+    )
 
 
 @router.post("/assets/{asset_id}/frame", response_model=AssetResponse, status_code=201)
@@ -140,7 +153,10 @@ def asset_provenance(asset_id: str, session: DbSession, viewer: OptionalUser) ->
     )
 
 
-def _asset_response(session, asset: Asset, *, viewer_id: str | None) -> AssetResponse:  # type: ignore[no-untyped-def]
+def _asset_response(  # type: ignore[no-untyped-def]
+    session, asset: Asset, *, viewer_id: str | None, download: bool = False
+) -> AssetResponse:
+    download_name = media_service.download_filename_for(asset) if download else None
     return AssetResponse(
         id=asset.id,
         media_type=MediaType(asset.media_type),
@@ -149,7 +165,7 @@ def _asset_response(session, asset: Asset, *, viewer_id: str | None) -> AssetRes
         width=asset.width,
         height=asset.height,
         duration_ms=asset.duration_ms,
-        url=media_urls.asset_url(session, asset.id),
+        url=media_urls.asset_url(session, asset.id, download_name=download_name),
         moderation_status=asset.moderation_status,
         is_prototype=asset.is_prototype,
         ai_generated=asset.role == AssetRole.GENERATION_OUTPUT,

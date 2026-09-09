@@ -6,11 +6,6 @@ export const MAX_COMMANDS_PER_BATCH = 100;
 export const MAX_ELEMENTS_PER_DOCUMENT = 5_000;
 export const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 
-/** MVP product cap: classic SceneExporter holds the full output in memory. */
-export const EXPORT_MAX_DURATION_TICKS = 30 * TICKS_PER_SECOND;
-export const EXPORT_MAX_PIXELS = 1920 * 1080;
-export const EXPORT_MAX_ESTIMATED_BYTES = 80 * 1024 * 1024;
-
 export type TrackKind = 'video' | 'audio' | 'caption' | 'overlay';
 /** `sticker` is structurally identical to `clip` (same fields, same track kind) — see `insert_clip`'s `element_type`. */
 export type ElementType = 'clip' | 'caption' | 'brand' | 'sticker';
@@ -172,6 +167,8 @@ export type EditCommand =
     }
   | { type: 'delete_elements'; element_ids: string[] }
   | { type: 'move_elements'; element_ids: string[]; delta_ticks: number; track_id?: string }
+  /** Copies each element onto its own track with a fresh id; without `delta_ticks` the copy lands right after the source's end, with it the copy is offset from the source's start. `new_element_ids` (one per source) lets the optimistic frontend predict the ids. */
+  | { type: 'duplicate_elements'; element_ids: string[]; delta_ticks?: number; new_element_ids?: string[] }
   | {
       type: 'trim_element';
       element_id: string;
@@ -180,7 +177,7 @@ export type EditCommand =
       source_in_ticks: number;
       source_out_ticks: number;
     }
-  | { type: 'split_element'; element_id: string; at_ticks: number }
+  | { type: 'split_element'; element_id: string; at_ticks: number; new_element_id?: string }
   | { type: 'set_clip_volume'; element_id: string; volume_millipercent: number }
   | { type: 'set_clip_speed'; element_id: string; speed_millipercent: number }
   | {
@@ -267,6 +264,8 @@ export interface ResolvedAsset {
   duration_ticks: number | null;
   width: number | null;
   height: number | null;
+  /** `video` | `audio` | `image` — from the server's `asset_meta`; absent for assets the revision knows only by URL. */
+  media_type?: string;
 }
 
 export interface VariantSpec {

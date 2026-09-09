@@ -39,6 +39,38 @@ def test_owner_can_read_their_own_private_asset(
     asset = _asset(db, author)
     response = client.get(f"/v1/assets/{asset.id}", headers=auth_header(author))
     assert response.status_code == 200, response.text
+    url = response.json()["url"]
+    assert url
+    assert "response-content-disposition" not in url.lower()
+
+
+def test_owner_download_url_sets_content_disposition(
+    client: TestClient, db: Session, author: User
+) -> None:
+    asset = _asset(db, author)
+    response = client.get(
+        f"/v1/assets/{asset.id}",
+        params={"download": True},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    url = response.json()["url"]
+    lowered = url.lower()
+    assert "response-content-disposition" in lowered
+    assert "attachment" in lowered
+    assert asset.id in url
+
+
+def test_a_stranger_cannot_mint_a_download_url_for_a_private_asset(
+    client: TestClient, db: Session, author: User, remixer: User
+) -> None:
+    asset = _asset(db, author)
+    response = client.get(
+        f"/v1/assets/{asset.id}",
+        params={"download": True},
+        headers=auth_header(remixer),
+    )
+    assert response.status_code == 404
 
 
 def test_a_stranger_gets_not_found_for_a_private_asset(

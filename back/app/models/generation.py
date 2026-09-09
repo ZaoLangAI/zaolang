@@ -196,6 +196,13 @@ class GenerationJob(Base, TimestampMixin):
     # (a resubmission after failure at the same tier) so cost/funnel analytics
     # can tell "retried after failure" apart from "promoted from a preview".
     promoted_from_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Soft-hide from a draft's version-history strip. The job, ledger, events
+    # and assets stay — a version delete is a history tombstone, not a
+    # hard delete. `None` means the job still appears when listed by
+    # `draft_id`.
+    draft_history_hidden_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_generation_jobs_idempotency"),

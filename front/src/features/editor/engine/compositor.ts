@@ -46,6 +46,8 @@ export interface ActiveClipLayer {
   /** Resolved 0-1 from the `opacity` channel (or 1, static default). */
   opacity: number;
   transform: ClipTransform;
+  /** Playback-rate multiplier from `speed_millipercent` — drives `<video>.playbackRate` while previewing in play mode. */
+  speedFactor: number;
 }
 
 /** One audio-producing element active at a tick — an audio-track clip, or the visible video clip's own sound. */
@@ -170,6 +172,7 @@ function buildClipLayer(element: TimelineElement, atTicks: number, weight: numbe
     effects: element.effects,
     mask: element.mask,
     opacity: Math.min(1, Math.max(0, baseOpacity * weight)),
+    speedFactor: Math.max(element.speed_millipercent, 1) / 100_000,
     transform: {
       xMilli: resolveNumberAtTime(animations, 'transform.x_milli', atTicks, IDENTITY_TRANSFORM.xMilli),
       yMilli: resolveNumberAtTime(animations, 'transform.y_milli', atTicks, IDENTITY_TRANSFORM.yMilli),
@@ -275,6 +278,7 @@ export class MediaPool {
   private scratch: OffscreenCanvas | null = null;
   private scratchTainted = false;
   private effectsScratch: OffscreenCanvas | null = null;
+  private frame: OffscreenCanvas | null = null;
   private wasm: WasmCompositor | null | undefined;
   private wasmDimensions: { width: number; height: number } | null = null;
 
@@ -341,6 +345,37 @@ export class MediaPool {
    */
   markScratchTainted(): void {
     this.scratchTainted = true;
+    // The tainted scratch gets drawn onto the frame buffer too; drop it so
+    // the next frame starts from a clean surface as well.
+    this.frame = null;
+  }
+
+  /**
+   * Off-screen surface a whole frame is composed on before being blitted to
+   * the visible canvas in one `drawImage`. Composing directly on the visible
+   * canvas showed its cleared background for the whole duration of the
+   * clip's seek/decode await — i.e. a black preview for most of playback.
+   */
+  frameCanvas(width: number, height: number): OffscreenCanvas {
+    if (!this.frame || this.frame.width !== width || this.frame.height !== height) {
+      this.frame = new OffscreenCanvas(width, height);
+    }
+    return this.frame;
+  }
+
+  /**
+   * Play mode: keep exactly the given assets' `<video>` elements running and
+   * pause every other pooled one, so a clip that just left the playhead
+   * doesn't keep decoding (and drifting) in the background.
+   */
+  keepPlaying(assetIds: ReadonlySet<string>): void {
+    for (const [assetId, video] of this.videos) {
+      if (!assetIds.has(assetId) && !video.paused) video.pause();
+    }
+  }
+
+  pauseAll(): void {
+    this.keepPlaying(new Set());
   }
 
   /** A second scratch buffer for `applyClipEffects`, kept separate from `scratchCanvas` since both can be read from in the same frame. */
@@ -409,6 +444,39 @@ export async function seekVideo(video: HTMLVideoElement, seconds: number): Promi
   });
 }
 
+/**
+ * Beyond this the element's own clock and the editor playhead have visibly
+ * parted ways (a dropped rAF burst, a tab switch, ...) and a hard re-seek is
+ * cheaper than the stutter; under it the two are left to free-run, since
+ * seeking every frame is exactly what made playback a black flicker.
+ */
+const PLAYBACK_DRIFT_SECONDS = 0.2;
+const MIN_PLAYBACK_RATE = 0.0625;
+const MAX_PLAYBACK_RATE = 16;
+
+/**
+ * Play mode: instead of seeking a paused `<video>` to every frame (each seek
+ * is a decode round-trip that leaves the element with no current frame for
+ * tens of milliseconds), let the element *play* at the clip's speed and only
+ * nudge it back on drift. Whatever frame it has right now is what gets drawn.
+ */
+function syncPlayingVideo(video: HTMLVideoElement, seconds: number, speedFactor: number): void {
+  const target = Math.max(0, seconds);
+  const rate = Math.min(MAX_PLAYBACK_RATE, Math.max(MIN_PLAYBACK_RATE, speedFactor));
+  if (video.playbackRate !== rate) video.playbackRate = rate;
+  if (!video.seeking && Math.abs(video.currentTime - target) > PLAYBACK_DRIFT_SECONDS) {
+    video.currentTime = target;
+  }
+  // Past the source's end there is nothing more to play — calling `play()`
+  // on an ended element would loop it back to 0.
+  const beyondEnd = Number.isFinite(video.duration) && target >= video.duration;
+  if (video.paused && !beyondEnd && video.readyState >= 1) {
+    // Autoplay policy permits muted playback without a gesture; a rejection
+    // here just means this frame draws whatever was last decoded.
+    void video.play().catch(() => undefined);
+  }
+}
+
 function waitForImage(image: HTMLImageElement): Promise<void> {
   if (image.complete && image.naturalWidth > 0) return Promise.resolve();
   return new Promise<void>((resolve) => {
@@ -468,7 +536,7 @@ function drawClipTransformed(
 }
 
 function drawCaptions(
-  ctx: CanvasRenderingContext2D,
+  ctx: Canvas2DContext,
   canvasWidth: number,
   canvasHeight: number,
   captions: string[],
@@ -512,38 +580,45 @@ function drawCaptions(
  * only when a transition is actually blending two pictures together.
  */
 async function renderClipLayer(
-  ctx: CanvasRenderingContext2D,
+  ctx: Canvas2DContext,
   canvasWidth: number,
   canvasHeight: number,
   clip: ActiveClipLayer,
   assets: ResolvedAsset[],
   pool: MediaPool,
-): Promise<void> {
+  playing: boolean,
+): Promise<boolean> {
   const asset = assets.find((item) => item.asset_id === clip.asset_id);
-  if (!asset) return;
+  if (!asset) return true;
   const video = pool.video(asset.asset_id, asset.url);
   try {
-    await seekVideo(video, clip.sourceSeconds);
+    if (playing) {
+      syncPlayingVideo(video, clip.sourceSeconds, clip.speedFactor);
+    } else {
+      if (!video.paused) video.pause();
+      await seekVideo(video, clip.sourceSeconds);
+    }
+
+    // A video that hasn't buffered an actual frame yet (readyState still
+    // HAVE_NOTHING/HAVE_METADATA — a stalled network fetch, a seek that
+    // timed out in `seekVideo`, a play-mode drift correction still in
+    // flight, ...) makes `drawImage` throw InvalidStateError rather than
+    // silently no-op. Report "no picture" so the caller can decide whether
+    // to show the blank or hold the previous frame.
+    if (video.readyState < 2 || video.seeking) return false;
 
     const scratch = pool.scratchCanvas(canvasWidth, canvasHeight);
     const scratchCtx = scratch.getContext('2d');
-    if (!scratchCtx) return;
+    if (!scratchCtx) return false;
     scratchCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-    // A video that hasn't buffered an actual frame yet (readyState still
-    // HAVE_NOTHING/HAVE_METADATA — a stalled network fetch, a seek that
-    // timed out in `seekVideo`, ...) makes `drawImage` throw InvalidStateError
-    // rather than silently no-op. Skip the draw and leave this frame's clip
-    // area blank instead of letting that throw escape the render loop.
-    if (video.readyState >= 2) {
-      drawCover(
-        scratchCtx,
-        video,
-        video.videoWidth || canvasWidth,
-        video.videoHeight || canvasHeight,
-        canvasWidth,
-        canvasHeight,
-      );
-    }
+    drawCover(
+      scratchCtx,
+      video,
+      video.videoWidth || canvasWidth,
+      video.videoHeight || canvasHeight,
+      canvasWidth,
+      canvasHeight,
+    );
 
     // A cross-origin source that fails strict CORS validation (stale cache
     // entry from a non-crossOrigin request to the same URL elsewhere, a
@@ -581,31 +656,60 @@ async function renderClipLayer(
         )
       : renderedSource;
     drawClipTransformed(ctx, finalSource, canvasWidth, canvasHeight, clip.opacity, clip.transform);
+    return true;
   } catch (error) {
     // Never let one bad frame (stalled decode, an unexpected GPU error,
     // ...) throw out of the render loop — the caller already cleared the
     // canvas to the background color, so worst case this frame's clip area
     // stays blank instead of freezing/crashing the whole preview.
     console.error('[editor] renderClipLayer failed, skipping this frame', error);
+    return false;
   }
 }
 
+export interface ComposeFrameOptions {
+  /**
+   * Live playback: the active clips' `<video>` elements free-run at clip
+   * speed and the frame draws whatever they currently hold, instead of the
+   * exact-seek-per-frame path that scrubbing and export rely on.
+   */
+  playing?: boolean;
+}
+
 export async function composeFrame(
-  ctx: CanvasRenderingContext2D,
+  target: CanvasRenderingContext2D,
   canvasWidth: number,
   canvasHeight: number,
   document: CanonicalDocument,
   atTicks: number,
   assets: ResolvedAsset[],
   pool: MediaPool,
+  options: ComposeFrameOptions = {},
 ): Promise<{ layers: FrameLayers; clipVolume: number | null }> {
+  const playing = options.playing === true;
   const layers = resolveFrame(document, atTicks);
+
+  // Compose off-screen, blit once at the end: the visible canvas never shows
+  // the half-built (background-only) state while a clip is still seeking.
+  const frame = pool.frameCanvas(canvasWidth, canvasHeight);
+  const ctx = frame.getContext('2d');
+  if (!ctx) return { layers, clipVolume: null };
   ctx.fillStyle = '#0b0b0d';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
+  if (playing) {
+    const active = new Set<string>();
+    if (layers.clip) active.add(layers.clip.asset_id);
+    if (layers.transitionLayer) active.add(layers.transitionLayer.asset_id);
+    pool.keepPlaying(active);
+  } else {
+    pool.pauseAll();
+  }
+
   let clipVolume: number | null = null;
+  let complete = true;
   if (layers.clip) {
-    await renderClipLayer(ctx, canvasWidth, canvasHeight, layers.clip, assets, pool);
+    complete = await renderClipLayer(ctx, canvasWidth, canvasHeight, layers.clip, assets, pool, playing);
     clipVolume = layers.clip.volume;
   }
   // Drawn on top of the primary layer with its own resolved (already
@@ -613,8 +717,23 @@ export async function composeFrame(
   // dip_to_black never produces a transitionLayer, since it shows only one
   // picture at a time by construction (see `resolveOverlap`).
   if (layers.transitionLayer) {
-    await renderClipLayer(ctx, canvasWidth, canvasHeight, layers.transitionLayer, assets, pool);
+    const drew = await renderClipLayer(
+      ctx,
+      canvasWidth,
+      canvasHeight,
+      layers.transitionLayer,
+      assets,
+      pool,
+      playing,
+    );
+    complete = complete && drew;
   }
+  // Play mode only: a clip whose element is mid-seek (it just entered the
+  // playhead, or a drift correction is in flight) has no frame to give yet.
+  // Holding the last presented frame for those few milliseconds beats
+  // flashing the background; scrubbing and export always present, since
+  // they waited for the seek and a blank there is real information.
+  if (playing && !complete) return { layers, clipVolume };
 
   if (layers.overlay) {
     const overlayAsset = assets.find((item) => item.asset_id === layers.overlay!.asset_id);
@@ -635,5 +754,6 @@ export async function composeFrame(
     drawCaptions(ctx, canvasWidth, canvasHeight, layers.captions);
   }
 
+  target.drawImage(frame, 0, 0, canvasWidth, canvasHeight);
   return { layers, clipVolume };
 }

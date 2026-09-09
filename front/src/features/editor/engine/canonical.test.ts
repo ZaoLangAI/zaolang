@@ -192,6 +192,68 @@ describe('applyBatch — move_elements', () => {
   });
 });
 
+describe('applyBatch — duplicate_elements', () => {
+  it('lands the copy right after the source by default, with a fresh id', () => {
+    const document = apply(withClip(emptyDocument()), [
+      { type: 'duplicate_elements', element_ids: ['el_clip'] },
+    ]);
+    const elements = document.tracks[0]!.elements;
+    expect(elements).toHaveLength(2);
+    const copy = elements.find((element) => element.id !== 'el_clip')!;
+    expect(copy.id).toMatch(/^el_/);
+    expect(copy.start_ticks).toBe(2 * TICKS_PER_SECOND);
+    expect(copy.duration_ticks).toBe(2 * TICKS_PER_SECOND);
+    expect(copy.asset_id).toBe('ast_1');
+  });
+
+  it('offsets from the source start when delta_ticks is given and clamps at zero', () => {
+    const document = apply(withClip(emptyDocument()), [
+      { type: 'duplicate_elements', element_ids: ['el_clip'], delta_ticks: 5 * TICKS_PER_SECOND },
+      { type: 'duplicate_elements', element_ids: ['el_clip'], delta_ticks: -TICKS_PER_SECOND },
+    ]);
+    const starts = document.tracks[0]!.elements.map((element) => element.start_ticks).sort((a, b) => a - b);
+    expect(starts).toEqual([0, 0, 5 * TICKS_PER_SECOND]);
+  });
+
+  it('deep-copies effects and keyframes so later edits do not alias', () => {
+    const document = apply(withClip(emptyDocument()), [
+      { type: 'add_effect', element_id: 'el_clip', effect: { type: 'blur', params: { intensity: 20 } } },
+      { type: 'set_keyframe', element_id: 'el_clip', property: 'opacity', at_ticks: 0, value: 50_000 },
+      { type: 'duplicate_elements', element_ids: ['el_clip'] },
+    ]);
+    const copy = document.tracks[0]!.elements.find((element) => element.id !== 'el_clip')!;
+    const edited = apply(document, [
+      { type: 'update_effect_params', element_id: copy.id, effect_index: 0, params: { intensity: 80 } },
+      { type: 'set_keyframe', element_id: copy.id, property: 'opacity', at_ticks: 0, value: 0 },
+    ]);
+    const original = edited.tracks[0]!.elements.find((element) => element.id === 'el_clip')!;
+    expect(original.effects[0]!.params.intensity).toBe(20);
+    expect(original.animations.channels.opacity!.points[0]!.value).toBe(50_000);
+  });
+
+  it('rolls back when an element does not exist', () => {
+    expect(() =>
+      apply(withClip(emptyDocument()), [{ type: 'duplicate_elements', element_ids: ['el_clip', 'el_missing'] }]),
+    ).toThrow(BatchRolledBackError);
+  });
+
+  it('honours client-supplied ids for split and duplicate so a follow-up can target them', () => {
+    const document = apply(withClip(emptyDocument()), [
+      { type: 'split_element', element_id: 'el_clip', at_ticks: TICKS_PER_SECOND, new_element_id: 'el_right' },
+      { type: 'duplicate_elements', element_ids: ['el_right'], new_element_ids: ['el_copy'] },
+      { type: 'move_elements', element_ids: ['el_copy'], delta_ticks: TICKS_PER_SECOND },
+    ]);
+    const ids = document.tracks[0]!.elements.map((element) => element.id).sort();
+    expect(ids).toEqual(['el_clip', 'el_copy', 'el_right']);
+    expect(() =>
+      apply(document, [{ type: 'split_element', element_id: 'el_copy', at_ticks: 2.5 * TICKS_PER_SECOND, new_element_id: 'el_clip' }]),
+    ).toThrow(BatchRolledBackError);
+    expect(() =>
+      apply(document, [{ type: 'duplicate_elements', element_ids: ['el_clip', 'el_right'], new_element_ids: ['x'] }]),
+    ).toThrow(BatchRolledBackError);
+  });
+});
+
 describe('applyBatch — trim_element', () => {
   it('updates start/duration/source bounds together', () => {
     const document = withClip(emptyDocument());

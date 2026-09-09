@@ -71,6 +71,110 @@ def test_editor_routes_are_hidden_when_flags_are_off(client: TestClient, author:
     assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
+def _audio_asset(session: Session, owner: User, *, duration_ms: int = 4_500) -> Asset:
+    """A `run_audio_generation`/`run_music_generation` output — same shape
+    `register_generated_asset` writes (`media_type=AUDIO`, `duration_ms` set
+    per phase 0's `probe_bytes` fix). Used to prove the timeline editor's
+    `insert_clip` never gates on an asset's `media_type` (see
+    `TRACK_KINDS_ADDABLE`/`_insert_clip` in `app/domain/editor/commands.py`)
+    — a generated voice/BGM/SFX clip drags onto `trk_audio` exactly like an
+    uploaded one, with no server-side special-casing needed."""
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp3",
+        media_type=MediaType.AUDIO,
+        mime_type="audio/mpeg",
+        size_bytes=51_200,
+        checksum_sha256="d" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        duration_ms=duration_ms,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+def test_an_owner_can_insert_a_generated_audio_asset_onto_the_audio_track(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    video_asset = _video_asset(db, author)
+    audio_asset = _audio_asset(db, author, duration_ms=4_500)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "配音测试", "target_platforms": ["manual_download"]},
+    )
+    assert series.status_code == 201, series.text
+    episode = client.post(
+        f"/v1/drama-series/{series.json()['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    )
+    assert episode.status_code == 201, episode.text
+    cut = client.post(
+        f"/v1/drama-episodes/{episode.json()['id']}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": video_asset.id, "name": "主剪辑"},
+    )
+    assert cut.status_code == 201, cut.text
+    cut_id = cut.json()["id"]
+    head_id = cut.json()["head_revision_id"]
+    lease = client.post(
+        f"/v1/episode-cuts/{cut_id}/leases",
+        headers=auth_header(author),
+        json={"browser_instance_id": "browser-a"},
+    )
+    assert lease.status_code == 201, lease.text
+    # `duration_ticks` mirrors the front end's `defaultInsertDuration` —
+    # `round(duration_ms / 1000 * TICKS_PER_SECOND)`, 120_000 ticks/second.
+    applied = client.post(
+        f"/v1/episode-cuts/{cut_id}/revisions",
+        headers=auth_header(author),
+        json={
+            "schema_version": 1,
+            "batch_id": "bat_test_audio",
+            "expected_revision_id": head_id,
+            "lease_id": lease.json()["id"],
+            "lease_token": lease.json()["token"],
+            "commands": [
+                {
+                    "type": "insert_clip",
+                    "track_id": "trk_audio",
+                    "asset_id": audio_asset.id,
+                    "at_ticks": 0,
+                    "duration_ticks": 540_000,
+                    "element_id": "el_dub",
+                }
+            ],
+        },
+    )
+    assert applied.status_code == 201, applied.text
+
+    fetched = client.get(f"/v1/episode-cuts/{cut_id}", headers=auth_header(author))
+    assert fetched.status_code == 200, fetched.text
+    head = fetched.json()["head"]
+    audio_track = next(track for track in head["document"]["tracks"] if track["id"] == "trk_audio")
+    [element] = audio_track["elements"]
+    assert element["asset_id"] == audio_asset.id
+    assert element["duration_ticks"] == 540_000
+
+    meta = head["asset_meta"][audio_asset.id]
+    assert meta["media_type"] == "audio"
+    assert meta["mime_type"] == "audio/mpeg"
+    # `duration_ms=4_500` -> 4.5s * 120_000 ticks/s.
+    assert meta["duration_ticks"] == 540_000
+    assert audio_asset.id in head["asset_urls"]
+    # The cut's own video asset was auto-inserted onto `trk_video` at creation
+    # time and stays put, untouched by the dub insert — the two tracks/kinds
+    # coexist independently.
+    video_track = next(track for track in head["document"]["tracks"] if track["id"] == "trk_video")
+    [video_element] = video_track["elements"]
+    assert video_element["asset_id"] == video_asset.id
+
+
 def test_an_owner_can_create_a_cut_and_apply_a_command(
     client: TestClient, db: Session, author: User, admin: User
 ) -> None:
@@ -125,6 +229,57 @@ def test_an_owner_can_create_a_cut_and_apply_a_command(
     )
     assert applied.status_code == 201, applied.text
     assert applied.json()["id"] != head_id
+
+
+def test_cut_head_carries_asset_meta_and_can_be_renamed(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    stranger = make_user(db, email="rename-outsider@example.com", handle="renameout")
+    asset = _video_asset(db, author)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "元数据", "target_platforms": ["manual_download"]},
+    )
+    episode = client.post(
+        f"/v1/drama-series/{series.json()['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    )
+    cut = client.post(
+        f"/v1/drama-episodes/{episode.json()['id']}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": asset.id, "name": "主剪辑"},
+    )
+    assert cut.status_code == 201, cut.text
+    head = cut.json()["head"]
+    meta = head["asset_meta"][asset.id]
+    assert meta["media_type"] == "video"
+    assert meta["mime_type"] == "video/mp4"
+    assert meta["duration_ticks"] == 10 * 120_000
+    assert meta["width"] == 1080 and meta["height"] == 1920
+    assert asset.id in head["asset_urls"]
+
+    cut_id = cut.json()["id"]
+    renamed = client.patch(
+        f"/v1/episode-cuts/{cut_id}",
+        headers=auth_header(author),
+        json={"name": "  第一集 精剪  "},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["name"] == "第一集 精剪"
+    fetched = client.get(f"/v1/episode-cuts/{cut_id}", headers=auth_header(author))
+    assert fetched.json()["name"] == "第一集 精剪"
+
+    blank = client.patch(
+        f"/v1/episode-cuts/{cut_id}", headers=auth_header(author), json={"name": "   "}
+    )
+    assert blank.status_code == 422
+    foreign = client.patch(
+        f"/v1/episode-cuts/{cut_id}", headers=auth_header(stranger), json={"name": "偷改"}
+    )
+    assert foreign.status_code == 404
 
 
 def test_add_track_then_insert_clip_round_trips_through_the_api(
@@ -733,6 +888,155 @@ def test_cut_from_job_rejects_a_foreign_link_episode_id(
     assert series_list.json() == []
 
 
+def test_cut_from_job_is_idempotent_for_the_same_job(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    db.flush()
+
+    first = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert first.status_code == 201, first.text
+    second = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] == first.json()["id"]
+    assert second.json()["head_revision_id"] == first.json()["head_revision_id"]
+
+
+def test_cut_from_job_reuses_the_episode_primary_cut(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """A later succeeded job on the same linked episode must open the
+    existing 主剪辑. Inserting a second row with the same
+    (episode, kind, name) hits `uq_episode_cuts_episode_kind_name` and
+    used to 500 the 进入剪辑 button."""
+    _enable_editor(db, admin)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "已有短剧", "target_platforms": ["manual_download"]},
+    ).json()
+    episode = client.post(
+        f"/v1/drama-series/{series['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    ).json()
+    draft = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "值班室", "link_episode_id": episode["id"]}},
+    )
+    assert draft.status_code == 201, draft.text
+    draft_id = draft.json()["id"]
+
+    first_asset = _video_asset(db, author)
+    first_job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    first_job.output_asset_id = first_asset.id
+    first_job.draft_id = draft_id
+    db.flush()
+    first = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": first_job.id},
+    )
+    assert first.status_code == 201, first.text
+
+    later_asset = _video_asset(db, author)
+    later_job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    later_job.output_asset_id = later_asset.id
+    later_job.draft_id = draft_id
+    db.flush()
+    later = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": later_job.id},
+    )
+    assert later.status_code == 201, later.text
+    assert later.json()["id"] == first.json()["id"]
+    assert later.json()["episode_id"] == episode["id"]
+
+    listed = client.get(f"/v1/drama-episodes/{episode['id']}/cuts", headers=auth_header(author))
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()] == [first.json()["id"]]
+
+
+def test_cut_from_job_heals_a_missing_link_episode_id(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    """A draft can still carry `link_episode_id` after the episode was
+    deleted. That stale pointer must not 404 进入剪辑 — clear it and
+    mint a new shell, same as a draft that never had a link."""
+    _enable_editor(db, admin)
+    draft = client.post(
+        "/v1/drafts",
+        headers=auth_header(author),
+        json={"params": {"prompt": "已删的集", "link_episode_id": "dep_does_not_exist"}},
+    )
+    assert draft.status_code == 201, draft.text
+    draft_id = draft.json()["id"]
+
+    asset = _video_asset(db, author)
+    job = make_job(db, author, status=JobStatus.SUCCEEDED, operation=Operation.TEXT_TO_VIDEO)
+    job.output_asset_id = asset.id
+    job.draft_id = draft_id
+    db.flush()
+
+    response = client.post(
+        "/v1/episode-cuts:from-job",
+        headers=auth_header(author),
+        json={"job_id": job.id},
+    )
+    assert response.status_code == 201, response.text
+    episode_id = response.json()["episode_id"]
+    assert episode_id != "dep_does_not_exist"
+
+    db.expire_all()
+    stored = db.get(Draft, draft_id)
+    assert stored is not None
+    assert stored.params_json.get("link_episode_id") == episode_id
+
+
+def test_creating_a_cut_with_a_duplicate_name_conflicts(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    asset = _video_asset(db, author)
+    other = _video_asset(db, author)
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "同名剪辑", "target_platforms": ["manual_download"]},
+    )
+    episode = client.post(
+        f"/v1/drama-series/{series.json()['id']}/episodes",
+        headers=auth_header(author),
+        json={"title": "第一集"},
+    )
+    first = client.post(
+        f"/v1/drama-episodes/{episode.json()['id']}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": asset.id, "name": "主剪辑"},
+    )
+    assert first.status_code == 201, first.text
+    duplicate = client.post(
+        f"/v1/drama-episodes/{episode.json()['id']}/cuts",
+        headers=auth_header(author),
+        json={"asset_id": other.id, "name": "主剪辑"},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["error"]["code"] == "CONFLICT"
+
+
 @contextmanager
 def _committed_client(committed_db: Session) -> Iterator[TestClient]:
     from app.api.deps import get_db
@@ -1019,9 +1323,7 @@ def test_bind_editor_export_requires_a_succeeded_output(
     assert bound.json()["export_id"] == export.id
 
 
-def _succeeded_export(
-    db: Session, revision_id: str, asset: Asset, *, operation_key: str
-) -> Any:
+def _succeeded_export(db: Session, revision_id: str, asset: Asset, *, operation_key: str) -> Any:
     from app.models import DeliveryVariant, EditorExport
     from app.models.enums import DeliveryVariantStatus, EditorExportStatus
 
@@ -1281,9 +1583,7 @@ def test_delete_export_removes_unpublished_record_and_unbinds_draft(
     _enable_editor(db, admin)
     asset = _video_asset(db, author)
     opened = _open_cut(client, author, asset)
-    export = _succeeded_export(
-        db, opened["cut"]["head_revision_id"], asset, operation_key="op_del"
-    )
+    export = _succeeded_export(db, opened["cut"]["head_revision_id"], asset, operation_key="op_del")
     bound = client.post(
         f"/v1/editor-exports/{export.id}/ensure-bound-draft",
         headers=auth_header(author),
@@ -1670,6 +1970,30 @@ def _ready_variant(session: Session, revision_id: str, *, digest: str = "q") -> 
     session.add(variant)
     session.flush()
     return variant
+
+
+def test_queue_exports_accepts_long_and_high_resolution_variants(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    from app.domain.editor import exports as export_service
+    from app.models import CutRevision
+    from app.models.enums import EditorExportStatus
+
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    revision = db.get(CutRevision, opened["cut"]["head_revision_id"])
+    assert revision is not None
+    revision.duration_ticks = 60 * 120_000
+    variant = _ready_variant(db, revision.id, digest="u")
+    variant.width = 3840
+    variant.height = 2160
+    db.flush()
+
+    queued = export_service.queue_exports(
+        db, user_id=author.id, variant_ids=[variant.id], operation_key="op-uncapped"
+    )
+    assert len(queued) == 1
+    assert queued[0].status == EditorExportStatus.QUEUED
 
 
 def test_queue_exports_reclaims_an_expired_in_flight_variant(
