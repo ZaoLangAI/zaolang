@@ -30,6 +30,18 @@ export const regionLocale: Record<Region, Locale> = {
   JP: 'ja',
 };
 
+/**
+ * One platform wall clock. Language/region only change copy and currency;
+ * stored timestamps stay UTC and are converted here for display.
+ */
+export const DISPLAY_TIME_ZONE = 'Asia/Shanghai';
+
+export const localeTimeZone: Record<Locale, string> = {
+  'zh-CN': DISPLAY_TIME_ZONE,
+  en: DISPLAY_TIME_ZONE,
+  ja: DISPLAY_TIME_ZONE,
+};
+
 export const routing = defineRouting({
   locales,
   defaultLocale,

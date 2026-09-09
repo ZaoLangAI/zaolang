@@ -24,8 +24,9 @@
 `(site)`，不挂载站点顶栏/登录弹窗/通知栈，只挂载 `SessionProvider`。
 
 素材库读取 `GET /v1/assets:mine`（`back/app/api/v1/uploads.py`），列出
-调用者自己的 `generation_output`/`editor_source` 资产；插入时间线复用
-既有 `insert_clip` 命令，不新增命令类型或轨道。
+调用者自己的 `generation_output`/`editor_source` 资产，并排除
+`asset_kind=character`/`scene` 的任务产出图（角色设定图 / 场景图留在各自
+库里选）；插入时间线复用既有 `insert_clip` 命令，不新增命令类型或轨道。
 
 ## 能力对齐（Phase 1-5）
 

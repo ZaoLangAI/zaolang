@@ -15,7 +15,9 @@
       "unlockConfirm": "用 {credits} 积分解锁后即可无限二创。",
       "unlocking": "正在解锁",
       "unlockFailed": "解锁失败，请检查余额后重试。",
-      "unlockDone": "已解锁，可以开始二创。"
+      "unlockDone": "已解锁，可以开始二创。",
+      "download": "下载",
+      "downloadFailed": "下载失败，请重试。"
     },
     "workPage": {
       "unlockCta": "积分解锁并二创",
@@ -85,7 +87,9 @@
       "unlockConfirm": "Pay {credits} credits once to remix this work as often as you like.",
       "unlocking": "Unlocking",
       "unlockFailed": "Unlock failed. Check your balance and try again.",
-      "unlockDone": "Unlocked. You can start remixing."
+      "unlockDone": "Unlocked. You can start remixing.",
+      "download": "Download",
+      "downloadFailed": "Could not download. Please try again."
     },
     "workPage": {
       "unlockCta": "Unlock and remix",
@@ -155,7 +159,9 @@
       "unlockConfirm": "{credits} クレジットを一度支払うと、何度でもリミックスできます。",
       "unlocking": "解除中",
       "unlockFailed": "解除に失敗しました。残高を確認して再試行してください。",
-      "unlockDone": "解除しました。リミックスを始められます。"
+      "unlockDone": "解除しました。リミックスを始められます。",
+      "download": "ダウンロード",
+      "downloadFailed": "ダウンロードに失敗しました。再試行してください。"
     },
     "workPage": {
       "unlockCta": "解除してリミックス",

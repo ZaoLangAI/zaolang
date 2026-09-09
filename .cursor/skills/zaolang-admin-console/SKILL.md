@@ -27,10 +27,10 @@ Admin code lives inside `front/` and `back/`, but **its session, namespace, rate
 | File | Contents |
 | --- | --- |
 | `front/src/app/[locale]/(admin)/admin/login/page.tsx` | a standalone login page (never reuses the consumer login dialog) |
-| `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | the console shell |
+| `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | the console shell, over sixteen route directories — `agents`, `announcements`, `audit`, `config`, `credits`, `data`, `jobs`, `learn-posts`, `models`, `moderation`, `reports`, `routing`, `skill-library`, `statistics`, `style-gallery`, `users` — plus the `/admin` index. **`NAV_GROUPS` in `lib/admin/rbac.ts` is the authoritative list**, not this table: a page missing from it is unreachable regardless of the directory existing |
 | `front/src/components/admin/admin-session-provider.tsx` | the admin session context |
 | `front/src/components/admin/admin-sidebar.tsx` + `front/src/lib/admin/rbac.ts` | `NAV_GROUPS` / `visibleGroups(role)` / `atLeast` |
-| `front/src/components/admin/` | `data-table` / `filter-bar` (incl. `daterange`) / `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor` (sandbox run history is a floating window over the canvas — see `zaolang-admin-ops`) / `models/llm-providers-panel` (model management: a flat primary/backup list + per-endpoint primary/backup) / `audit/log-center-console` / `statistics/*` (daily trends, see `zaolang-admin-statistics`) |
+| `front/src/components/admin/` | the shared primitives — `data-table` / `filter-bar` (incl. `daterange`) / `detail-drawer` / `danger-confirm` / `json-diff` / `timeline` / `stepper` / `duration-bars` / `subject-thumb` / `admin-login-form` — plus one directory per domain: `announcements/`, `appeals/`, `config/` (`runtime-config-panel` + `runtime-config-dialog`), `credits/` (`ledger-console`, `dangling-reserves`, `redemption-codes-panel`), `data/` (`backups-panel`, `lifecycle-panel`, `seed-panel`), `health/`, `learn-posts/`, `moderation/` (`moderation-queue`, `moderation-workspace`, `duplicate-groups`), `reports/`, and `agents/agent-skills-panel` / `agents/agent-profile-dialog` / `workflows/workflow-editor` (sandbox run history is a floating window over the canvas — see `zaolang-admin-ops`) / `models/llm-providers-panel` (model management: a flat primary/backup list + per-endpoint primary/backup) / `audit/log-center-console` / `statistics/*` (daily trends, see `zaolang-admin-statistics`) |
 | `front/src/lib/api/admin-client.ts`, `admin-server.ts`; `front/src/lib/admin/use-admin-list.ts` | admin-only client and list hook (the hook lives under `lib/admin/`, next to `rbac.ts` and `operations.ts`, not `lib/api/`) |
 
 ## Invariants
@@ -43,7 +43,7 @@ Admin code lives inside `front/` and `back/`, but **its session, namespace, rate
 6. **Admin rate limits are metered per admin, independently**: `admin_read` 300/60s, `admin_write` 60/60s, `admin_dangerous` 10/300s.
 7. **An admin can't remove their own admin role** (a lockout guard), enforced by a dedicated test.
 8. **A suspended admin loses access immediately**, not waiting for their token to expire.
-9. **Admin reuses the same design tokens and three-state theme as consumer**, but its component family is entirely different (tables, filters, cursor pagination, bulk actions, drawers, JSON diffs, timelines). Admin copy is `zh-CN` and `en`; `ja` falls back to `en`.
+9. **Admin reuses the same design tokens and three-state theme as consumer**, but its component family is entirely different (tables, filters, cursor pagination, bulk actions, drawers, JSON diffs, timelines). Admin copy is written in `zh-CN` and `en`, and the `ja` file carries the **English** string for those keys — but that is a *build-time* copy done by `front/scripts/merge-messages.mjs` (`fragment[locale] ?? fragment.en`), **not** a runtime fallback. `front/src/i18n/request.ts` loads exactly one catalogue with no `getMessageFallback`, so an admin key missing from `ja.json` is a runtime error like any other, and `make messages` still enforces key parity across all three. See `zaolang-i18n-region` invariant #7.
 10. **Lists and detail views show human-readable names first, with raw IDs tucked into a tooltip** — never dump a bare `usr_.../job_.../ep_...` directly into the body copy. Convention: the backend schema keeps the raw ID field but adds a resolved name field alongside it (e.g. `user_display_name`/`provider_label`/`agent_display_name`); the frontend renders the name and uses the ID only as a `title` tooltip or secondary note — see the user/provider/AgentRuns columns in `jobs-console.tsx` for the pattern. Any new admin page listing users, providers, or agents must follow this, or operators are left guessing at raw IDs.
 
 ## Extension Points
@@ -59,7 +59,7 @@ Admin code lives inside `front/` and `back/`, but **its session, namespace, rate
 
 1. Create a directory under `(console)/` → assemble it with `lib/admin/use-admin-list.ts` + `data-table.tsx`.
 2. Add a nav item to `rbac.ts`'s `NAV_GROUPS` with an explicit `requires`.
-3. Add trilingual copy (`ja` reuses the `en` value).
+3. Add trilingual copy — all three keys must exist; `ja`'s *value* reuses the `en` text (invariant #9).
 4. Add a "the page opens and shows real data" case to `front/e2e/flows/admin.spec.ts`.
 
 ## Verify

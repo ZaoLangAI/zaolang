@@ -53,3 +53,17 @@ setup('sign in as a consumer', async ({ page }) => {
   await expect(page.getByRole('button', { name: '账号菜单' })).toBeVisible();
   await page.context().storageState({ path: STATE_FILES.consumer });
 });
+
+setup('sign in as the seeded author', async ({ page }) => {
+  // Separate from the consumer session: the demo drama series belongs to this
+  // account, so canvas drama-mode coverage needs it rather than the remixer.
+  await page.goto('/zh-CN/discover');
+  await page.getByRole('button', { name: '登录', exact: true }).first().click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('邮箱').fill(ACCOUNTS.author);
+  await dialog.getByLabel('密码').fill(SEED_PASSWORD);
+  await dialog.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('button', { name: '账号菜单' })).toBeVisible();
+  await page.context().storageState({ path: STATE_FILES.author });
+});

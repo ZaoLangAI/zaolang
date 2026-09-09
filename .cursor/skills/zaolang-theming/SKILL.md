@@ -19,7 +19,8 @@ Dark is the design-acceptance baseline — its values are locked in `front/src/a
 | `front/src/components/theme/theme-init-script.tsx` | injects `themeInitScript` into `<head>` via `useServerInsertedHTML` (not a React child) |
 | `front/src/components/theme/theme-provider.tsx` | client-side three-state switching and persistence |
 | `front/src/app/[locale]/layout.tsx` | renders `data-theme` onto `<html>` at SSR time and mounts `ThemeInitScript` |
-| `front/src/components/layout/preference-menu.tsx` | top-bar quick switcher |
+| `front/src/components/layout/theme-menu.tsx` | **the** theme switcher: `themePreferences` → three `DropdownMenuRadioItem`s (`IconMonitor` / `IconMoon` / `IconSun`). It has two mount points, not one — `layout/preference-menu.tsx` (now just `<RegionMenu /> + <ThemeMenu />` in the site top bar) and `features/editor/studio/editor-header.tsx`, since the chrome-less `(studio)` group has no top bar. A change here shows up in both |
+| `front/src/components/layout/preference-menu.tsx` | the top-bar composition of `RegionMenu` + `ThemeMenu` — no logic of its own |
 | `front/src/components/settings/settings-shell.tsx` | full three-state control + accessibility settings at `/profile/settings` |
 
 ## Two-Layer Tokens

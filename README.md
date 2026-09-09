@@ -33,6 +33,39 @@
 
 前端用 [fnm](https://github.com/Schniz/fnm) 管理 Node 版本，后端用 conda 管理 Python 环境，外部依赖全部跑在本地容器。
 
+### 支持的模型供应商
+
+后台 `/admin/models` 的「服务商 → 已知模型」目录来自 `back/app/providers/model_catalog.py`。浏览器不直连这些站点；密钥只存在于后端。下列主页供运营核对渠道与价目。同一名义上游模型在不同渠道的价格不得混用。
+
+#### 接入渠道
+
+| 目录 ID | 供应商 | 主页 | 文档 / 控制台 |
+|---|---|---|---|
+| `aihubmix` | AiHubMix（国际，USD） | [aihubmix.com](https://aihubmix.com) | [文档](https://docs.aihubmix.com) · [控制台](https://console.aihubmix.com) |
+| `dmxapi` | DMXAPI（国内，CNY） | [www.dmxapi.cn](https://www.dmxapi.cn) | [文档](https://doc.dmxapi.cn) |
+| `metaso` | 秘塔 | [metaso.cn](https://metaso.cn) | [MiniMax H3 价目](https://metaso.cn/minimax-h3) |
+| `fal` | fal.ai | [fal.ai](https://fal.ai) | [文档](https://fal.ai/docs) |
+
+目录中的已知模型：
+
+- **AiHubMix**：MiniMax H3、通义万相 2.7 视频编辑、豆包 Seedance 2.5、GPT Image 2
+- **DMXAPI**：MiniMax H3、MiniMax H3 视频再生成、豆包 Seedance 2.5、通义万相 3.0、豆包 Seedream 5.0 Pro、智谱 GLM-5.3-Flash、通义千问 Qwen3.8-Flash
+- **秘塔**：MiniMax H3（官方 Video V2）
+- **fal.ai**：MiniMax H3 Max
+
+自定义端点仍可手填任意 `base_url` / 模型名；上表只覆盖目录预填项。
+
+#### 上游厂商
+
+| 厂商 | 主页 |
+|---|---|
+| MiniMax | [minimax.io](https://www.minimax.io) · [开放平台（国内）](https://platform.minimaxi.com) |
+| OpenAI | [openai.com](https://openai.com) |
+| 火山引擎 / 豆包 | [volcengine.com](https://www.volcengine.com) · [火山方舟](https://ark.volcengine.com) |
+| BytePlus | [byteplus.com](https://www.byteplus.com) |
+| 阿里云 / 通义 | [aliyun.com](https://www.aliyun.com) |
+| 智谱 | [zhipuai.cn](https://www.zhipuai.cn) · [开放平台](https://open.bigmodel.cn) |
+
 ### 快速开始
 
 ```bash
@@ -100,6 +133,39 @@ Non-negotiable constraints:
 | Object storage | MinIO (local, S3-compatible) |
 
 Node versions are managed with fnm, Python with conda, and all external dependencies run in local containers.
+
+### Supported model vendors
+
+The `/admin/models` “service provider → known model” picker is backed by `back/app/providers/model_catalog.py`. The browser never talks to these sites; credentials live only on the backend. Use the pages below to verify a channel and its list prices. Two catalogue vendors are never assumed to charge the same amount for the same nominal upstream model.
+
+#### Gateway channels
+
+| Catalog ID | Vendor | Homepage | Docs / console |
+|---|---|---|---|
+| `aihubmix` | AiHubMix (international, USD) | [aihubmix.com](https://aihubmix.com) | [Docs](https://docs.aihubmix.com) · [Console](https://console.aihubmix.com) |
+| `dmxapi` | DMXAPI (domestic, CNY) | [www.dmxapi.cn](https://www.dmxapi.cn) | [Docs](https://doc.dmxapi.cn) |
+| `metaso` | Metaso | [metaso.cn](https://metaso.cn) | [MiniMax H3 pricing](https://metaso.cn/minimax-h3) |
+| `fal` | fal.ai | [fal.ai](https://fal.ai) | [Docs](https://fal.ai/docs) |
+
+Known models in the catalogue:
+
+- **AiHubMix**: MiniMax H3, Wan 2.7 video edit, Doubao Seedance 2.5, GPT Image 2
+- **DMXAPI**: MiniMax H3, MiniMax H3 video regeneration, Doubao Seedance 2.5, Wan 3.0, Doubao Seedream 5.0 Pro, GLM-5.3-Flash, Qwen3.8-Flash
+- **Metaso**: MiniMax H3 (official Video V2)
+- **fal.ai**: MiniMax H3 Max
+
+A custom endpoint can still take any typed `base_url` / model id; the table above only covers catalogue presets.
+
+#### Upstream vendors
+
+| Vendor | Homepage |
+|---|---|
+| MiniMax | [minimax.io](https://www.minimax.io) · [China platform](https://platform.minimaxi.com) |
+| OpenAI | [openai.com](https://openai.com) |
+| Volcengine / Doubao | [volcengine.com](https://www.volcengine.com) · [Ark](https://ark.volcengine.com) |
+| BytePlus | [byteplus.com](https://www.byteplus.com) |
+| Alibaba Cloud / Tongyi | [aliyun.com](https://www.aliyun.com) |
+| Zhipu | [zhipuai.cn](https://www.zhipuai.cn) · [Open platform](https://open.bigmodel.cn) |
 
 ### Getting started
 

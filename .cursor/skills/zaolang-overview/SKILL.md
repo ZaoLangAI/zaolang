@@ -1,6 +1,6 @@
 ---
 name: zaolang-overview
-description: The ZaoLang repository's master index and routing table — front/back/ios/infra ownership, the boundaries of the 23 module skills, and which one to load explicitly for a given change. Use when working anywhere in this repository, or when the user mentions ZaoLang, works and lineage, the credit ledger, generation jobs, the agent gateway, the admin console, admin statistics, the iOS client, the drama editor, or asks where a feature lives in this codebase.
+description: The ZaoLang repository's master index and routing table — front/back/ios/infra ownership, the boundaries of the 24 module skills, and which one to load explicitly for a given change. Use when working anywhere in this repository, or when the user mentions ZaoLang, works and lineage, the credit ledger, generation jobs, the agent gateway, the admin console, admin statistics, the iOS client, the drama editor, or asks where a feature lives in this codebase.
 ---
 
 # ZaoLang — Repository Overview
@@ -39,6 +39,7 @@ Backend layering: `api/v1` (the HTTP contract) → `domain/*` (where invariants 
 | Colour tokens, dark/light theming, flicker-free SSR | `zaolang-theming` |
 | Trilingual copy, locale and region, currency/date formatting | `zaolang-i18n-region` |
 | The lineage-graph DAG, version-parameter diffing | `zaolang-lineage-graph` |
+| The infinite canvas: card/edge row storage, per-node CAS, the `/graph-ops` write path, the change feed, domain bindings | `zaolang-canvas` |
 | The admin shell, its separate login, RBAC nav, tables and dangerous-action components | `zaolang-admin-console` |
 | Admin-ops endpoints and pages (incl. the skill library, style gallery, redemption codes, log center) | `zaolang-admin-ops` |
 | The admin statistics center, daily-trend timeseries, empty-day zero-fill | `zaolang-admin-statistics` |

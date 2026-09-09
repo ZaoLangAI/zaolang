@@ -18,8 +18,8 @@
 {
   "error": {
     "code": "VALIDATION_FAILED",
-    "message": "请求参数不合法。",
-    "details": { "fields": { "reason": "String should have at least 4 characters" } },
+    "message": "首尾帧不能与角色参考、场景参考同时使用。请取消首尾帧，或改回图片/视频参考。",
+    "details": { "fields": { "params": "首尾帧不能与角色参考、场景参考同时使用。请取消首尾帧，或改回图片/视频参考。" } },
     "request_id": "req_05809e3652d04fe8318000c8"
   }
 }

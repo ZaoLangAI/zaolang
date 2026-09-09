@@ -73,12 +73,21 @@ async function seededPaths(page: Page) {
   const drafts = await page.request.get(`${API_URL}/v1/drafts`, { headers: authorization });
 
   const work = ((await works.json()) as { items: Array<{ id: string }> }).items[0];
-  const draft = ((await drafts.json()) as { items: Array<{ id: string; latest_job_id?: string }> })
-    .items[0];
+  const draftItems = (
+    (await drafts.json()) as {
+      items: Array<{ id: string; latest_job_id?: string; params?: { operation?: string } }>;
+    }
+  ).items;
+  const draft = draftItems[0];
+  // Image/video jobs redirect off `/jobs/[jobId]` into the studio; only audio
+  // still renders the standalone progress page this label is meant to scan.
+  const audioDraft = draftItems.find((item) => item.params?.operation === 'audio_generation');
 
   return [
     work ? { path: `/zh-CN/work/${work.id}`, label: 'work' } : null,
-    draft?.latest_job_id ? { path: `/zh-CN/jobs/${draft.latest_job_id}`, label: 'jobs' } : null,
+    audioDraft?.latest_job_id
+      ? { path: `/zh-CN/jobs/${audioDraft.latest_job_id}`, label: 'jobs' }
+      : null,
     draft ? { path: `/zh-CN/publish/${draft.id}`, label: 'publish' } : null,
   ].filter((entry) => entry !== null);
 }

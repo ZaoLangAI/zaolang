@@ -8,18 +8,18 @@ disable-model-invocation: true
 
 ## Scope
 
-The single source of truth for money. The ledger is **append-only**; account balances are just its cache. Any balance change must go through `app/domain/credits/service.py` — bypassing it with a direct account UPDATE means the books stop reconciling.
+The single source of truth for money. The ledger is **append-only**; account balances are just its cache, and what the consumer billing page shows is a read-time projection over it (invariant #10) rather than the rows themselves. Any balance change must go through `app/domain/credits/service.py` — bypassing it with a direct account UPDATE means the books stop reconciling.
 
 ## Key Paths
 
 | File | Contents |
 | --- | --- |
-| `back/app/domain/credits/service.py` | `grant` / `purchase` / `reserve` / `capture` / `release` / `adjust` / `royalty_transfer` / `access_transfer` / `list_ledger`, all funneling through the private `_apply` |
+| `back/app/domain/credits/service.py` | `grant` / `purchase` / `reserve` / `capture` / `release` / `adjust` / `royalty_transfer` / `access_transfer` / `list_ledger`, all funneling through the private `_apply`; plus `list_billing_history` / `BillingLedgerRow`, the consumer-facing **projection** over that ledger (invariant #10) |
 | `back/app/domain/credits/pricing.py` | `quote()` for pricing, `settlement_credits()` for actual-usage conversion |
 | `back/app/domain/credits/royalty.py` | `plan_royalties` / `distribute` for payback to ancestors |
 | `back/app/domain/credits/reconciliation.py` | `derive_totals` / `find_mismatches` / `find_dangling_reservations` (unsettled reserves whose job is already terminal) / `build_report` |
 | `back/app/domain/credits/redemption.py` | redemption-code generation/redemption (`RedemptionCodeKind.INVITE` one-to-one referral / `PROMO` shared campaign code), internally routed through `grant` |
-| `back/app/api/v1/credits.py` | balance, billing history, packages, mock payment + webhook, `POST /redeem` |
+| `back/app/api/v1/credits.py` | balance, billing history (`GET /credits/ledger` calls `list_billing_history`, **not** `list_ledger`), packages, mock payment + webhook (incl. `GET /credits/checkout/{external_reference}` for polling one intent), `POST /redeem` |
 | `back/app/api/v1/admin/ledger.py` | admin ledger search, reconciliation reports, dangling reservations, manual adjustments |
 | `back/tests/unit/test_credits_invariants.py` / `test_credits_properties.py` / `back/tests/concurrency/test_credit_races.py` | example-based, property-based, and race-condition test layers |
 
@@ -34,6 +34,7 @@ The single source of truth for money. The ledger is **append-only**; account bal
 7. **Royalty payback is best-effort**: a failed `_pay_royalties` must not roll back the publish, but a successful one must post both sides of the entry (`royalty_out` / `royalty_in`) — the amounts must balance.
 8. **A marketplace unlock is a forced transfer**: `access_transfer` posts `access_out` / `access_in` — the buyer pays the full price, the seller receives the net amount, and the platform fee is burned; insufficient balance must fail, and it must never reuse `royalty_transfer`. Credits earned this way are spendable on-platform only; there is no cash withdrawal in this version.
 9. **`IntegrityError` triggers `session.rollback()`** (inside `_apply`), discarding the entire unit of work. Callers must either stop depending on previously flushed objects afterward, or commit first — a past bug here is why `tests/conftest.py`'s `committed_db` fixture exists.
+10. **The consumer billing view is a projection; the stored ledger is not.** `GET /v1/credits/ledger` returns `list_billing_history`, which folds a job's lifecycle into one visible row: stored `capture`/`release` entries are omitted entirely, an unsettled `reserve` stays a hold, a captured reserve is projected as a `capture` carrying the **reserve's** id and `created_at` with the **settlement's** amount and `balance_after`, and a released reserve becomes a zero-amount `release`. `BillingLedgerRow` is a frozen dataclass and must never be persisted — the append-only table is untouched, and admin search plus `reconciliation.py` keep reading raw rows via `list_ledger`. Don't "fix" a reconciliation discrepancy by reading the projection: the two are supposed to differ in shape, not in totals.
 
 ## Pricing & Settlement
 
@@ -50,7 +51,7 @@ The report counts by job terminality; the endpoint counts by age. The two number
 ## Extension Points
 
 - **Add a ledger entry type**: add a value to `LedgerEntryType` → add a thin wrapper in the service calling `_apply` (with explicit `available_delta` / `reserved_delta`) → cover it in the property tests' invariant assertions → add a display name to `billing/ledger-table.tsx` and the trilingual copy. `LedgerEntryType.REFUND` already exists (and reconciliation's `EXTERNAL_TYPES` counts it) but `credits/service.py` has no `refund()` wrapper — the first real refund path must add one rather than posting the type by hand.
-- **Wire up real payments**: there is no `PaymentProvider` adapter or module yet — the mock checkout (`POST /credits/checkout`, `POST /credits/checkout/confirm`) and the HMAC-verified webhook (`POST /webhooks/payments/mock`: `X-Signature` over `timestamp.raw_body`, `X-Timestamp` window, `WebhookEvent` unique-event-id replay protection) live inline in `api/v1/credits.py`. Swapping in Stripe means extracting that verification into an adapter and replacing it — **posting still goes through `purchase` with a unique `payment_reference`**.
+- **Wire up real payments**: there is no `PaymentProvider` adapter or module yet — the mock checkout (`POST /credits/checkout`, `POST /credits/checkout/confirm`, `GET /credits/checkout/{external_reference}`) and the HMAC-verified webhook (`POST /webhooks/payments/mock`: `X-Signature` over `timestamp.raw_body`, `X-Timestamp` window, `WebhookEvent` unique-event-id replay protection) live inline in `api/v1/credits.py`. Swapping in Stripe means extracting that verification into an adapter and replacing it — **posting still goes through `purchase` with a unique `payment_reference`**.
 - **Change royalty rules**: edit the config center's `royalty` section and `royalty.py`'s `plan_royalties`, mindful of the ancestor-depth cap and the total-share cap.
 
 ## Verify
