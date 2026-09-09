@@ -54,7 +54,7 @@ def ledger(
 ) -> Page[LedgerEntryResponse]:
     credits_service.get_or_create_account(session, user.id)
     session.commit()
-    entries = credits_service.list_ledger(session, user.id, cursor=cursor, limit=limit + 1)
+    entries = credits_service.list_billing_history(session, user.id, cursor=cursor, limit=limit + 1)
     has_more = len(entries) > limit
     page = entries[:limit]
     return Page(

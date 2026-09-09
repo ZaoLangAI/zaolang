@@ -12,8 +12,8 @@ import {
 } from 'recharts';
 
 import { EmptyState } from '@/components/ui/primitives';
-import type { Locale } from '@/i18n/routing';
-import { formatDate, formatNumber } from '@/lib/format';
+import { DISPLAY_TIME_ZONE, type Locale } from '@/i18n/routing';
+import { formatDate, formatNumber, parseInstant } from '@/lib/format';
 
 export type TrendColor = 'primary' | 'success' | 'amber' | 'danger' | 'muted';
 
@@ -114,7 +114,9 @@ export function TrendChart<T extends { date: string }>({
 }
 
 function formatAxisDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(
-    new Date(value),
-  );
+  return new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: DISPLAY_TIME_ZONE,
+  }).format(parseInstant(value));
 }

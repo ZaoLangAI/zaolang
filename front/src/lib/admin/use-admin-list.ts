@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { DISPLAY_TIME_ZONE } from '@/i18n/routing';
 import { adminApi } from '@/lib/api/admin-client';
 import type { Page } from '@/lib/api/admin-types';
+import { isLocalDateTime, localDateTimeToIso } from '@/lib/format';
 
 export interface AdminList<T> {
   rows: T[];
@@ -59,7 +61,11 @@ export function useAdminList<T>(
     let cancelled = false;
     void adminApi
       .get<Page<T>>(path, {
-        query: { ...JSON.parse(filterKey), cursor: cursor ?? undefined, limit: pageSize },
+        query: {
+          ...zonedFilterQuery(JSON.parse(filterKey) as Record<string, string>, DISPLAY_TIME_ZONE),
+          cursor: cursor ?? undefined,
+          limit: pageSize,
+        },
       })
       .then((body) => {
         if (cancelled) return;
@@ -116,4 +122,16 @@ export function useAdminList<T>(
     prevPage: () => setCursors((stack) => (stack.length > 1 ? stack.slice(0, -1) : stack)),
     reload: () => setReloadToken((token) => token + 1),
   };
+}
+
+function zonedFilterQuery(
+  filters: Record<string, string>,
+  timeZone: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(filters).map(([key, value]) => [
+      key,
+      isLocalDateTime(value) ? localDateTimeToIso(value, timeZone) : value,
+    ]),
+  );
 }

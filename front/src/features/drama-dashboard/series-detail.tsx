@@ -1,21 +1,30 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { SignInPrompt } from '@/components/auth/sign-in-prompt';
 import { Poster } from '@/components/media/poster';
 import { Button } from '@/components/ui/button';
-import { IconPencil, IconPlus, IconRefresh, IconTrash, IconTrashX } from '@/components/ui/icons';
+import {
+  IconBranch,
+  IconPencil,
+  IconPlus,
+  IconRefresh,
+  IconTrash,
+  IconTrashX,
+} from '@/components/ui/icons';
 import { Badge, EmptyState, SectionHeading } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
+import { getSeriesCanvas } from '@/features/canvas/api';
 import * as editorApi from '@/features/editor/api';
 import { Link, useRouter } from '@/i18n/navigation';
 import { isApiError } from '@/lib/api/errors';
 
 import { CollaboratorsPanel } from './collaborators-panel';
+import { EpisodePreviewThumb } from './episode-preview-thumb';
 import { episodeStatusTone, pascalCase } from './format';
 import { PurgeSeriesDialog } from './purge-series-dialog';
 import { SeriesAnalyticsOverview } from './series-analytics-overview';
@@ -25,6 +34,7 @@ import { TrashSeriesDialog } from './trash-series-dialog';
 /** `/create/short/series/{seriesId}`: the series' own episode roster. */
 export function SeriesDetail({ seriesId }: { seriesId: string }) {
   const t = useTranslations('editor');
+  const tCanvas = useTranslations('canvas');
   const { status } = useSession();
   const { notify } = useToast();
   const router = useRouter();
@@ -37,6 +47,8 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
   const [trashOpen, setTrashOpen] = useState(false);
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [openingCanvas, setOpeningCanvas] = useState(false);
+  const previewFillAttempted = useRef(new Set<string>());
 
   const load = useCallback(() => {
     if (status !== 'authenticated') return;
@@ -56,6 +68,34 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const missing = episodes.filter(
+      (item) =>
+        !item.preview_url &&
+        item.has_preview_source &&
+        !previewFillAttempted.current.has(item.id),
+    );
+    if (missing.length === 0) return;
+    for (const item of missing) previewFillAttempted.current.add(item.id);
+    let cancelled = false;
+    void (async () => {
+      for (const item of missing) {
+        if (cancelled) return;
+        try {
+          const updated = await editorApi.fillEpisodePreviewFromVideo(item.id);
+          setEpisodes((current) =>
+            current.map((episode) => (episode.id === updated.id ? updated : episode)),
+          );
+        } catch {
+          // Empty poster stays; the thumb still offers a manual extract.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [episodes]);
+
   const restore = () => {
     setRestoring(true);
     void editorApi
@@ -68,6 +108,18 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
         notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
       })
       .finally(() => setRestoring(false));
+  };
+
+  /** Resolve-or-create on the server, so the first visit needs no setup step
+   * and every later one lands on the same canvas. */
+  const openCanvas = () => {
+    setOpeningCanvas(true);
+    void getSeriesCanvas(seriesId)
+      .then((canvas) => router.push(`/canvas/${canvas.id}`))
+      .catch((error: unknown) => {
+        notify(isApiError(error) ? error.message : t('commandFailed'), 'error');
+        setOpeningCanvas(false);
+      });
   };
 
   if (status === 'anonymous') return <SignInPrompt description={t('signInHint')} />;
@@ -144,6 +196,17 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
               onClick={() => setEditOpen(true)}
             >
               {t('seriesEditAction')}
+            </Button>
+            {/* Open to collaborators too: arranging the canvas is part of
+                the same management grant as editing episodes and scripts. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<IconBranch className="size-3.5" />}
+              loading={openingCanvas}
+              onClick={openCanvas}
+            >
+              {tCanvas('openCanvas')}
             </Button>
             {!isTrashed && !isCollaborator ? (
               <Button
@@ -239,23 +302,33 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
                 <ul className="flex flex-col gap-2">
                   {grouped.get(seasonNumber)!.map((episode) => (
                     <li key={episode.id}>
-                      <Link
-                        href={`/create/short/episodes/${episode.id}`}
-                        className="flex flex-wrap items-center gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong hover:bg-surface-soft"
-                      >
-                        <Badge tone="neutral">
-                          {t(`episodeKind${pascalCase(episode.episode_kind)}`)}
-                        </Badge>
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {episode.episode_number}. {episode.title}
-                        </span>
-                        {!episode.has_script_turns ? (
-                          <Badge tone="amber">{t('scriptPendingBadge')}</Badge>
-                        ) : null}
-                        <Badge tone={episodeStatusTone(episode.status)}>
-                          {t(`status${pascalCase(episode.status)}`)}
-                        </Badge>
-                      </Link>
+                      <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-border bg-surface px-3 py-2 transition-colors hover:border-border-strong hover:bg-surface-soft sm:px-4 sm:py-3">
+                        <EpisodePreviewThumb
+                          episode={episode}
+                          onUpdated={(updated) =>
+                            setEpisodes((current) =>
+                              current.map((item) => (item.id === updated.id ? updated : item)),
+                            )
+                          }
+                        />
+                        <Link
+                          href={`/create/short/episodes/${episode.id}`}
+                          className="flex min-w-0 flex-1 flex-wrap items-center gap-3 py-1"
+                        >
+                          <Badge tone="neutral">
+                            {t(`episodeKind${pascalCase(episode.episode_kind)}`)}
+                          </Badge>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {episode.episode_number}. {episode.title}
+                          </span>
+                          {!episode.has_script_turns ? (
+                            <Badge tone="amber">{t('scriptPendingBadge')}</Badge>
+                          ) : null}
+                          <Badge tone={episodeStatusTone(episode.status)}>
+                            {t(`status${pascalCase(episode.status)}`)}
+                          </Badge>
+                        </Link>
+                      </div>
                     </li>
                   ))}
                 </ul>

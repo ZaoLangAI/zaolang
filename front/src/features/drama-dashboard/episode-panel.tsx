@@ -13,6 +13,7 @@ import {
   IconClock,
   IconImage,
   IconMessage,
+  IconPlus,
   IconTrash,
   IconUser,
   IconWand,
@@ -29,8 +30,10 @@ import { isApiError } from '@/lib/api/errors';
 import type { Draft, WorkDetail } from '@/lib/api/types';
 import { formatRelative } from '@/lib/format';
 
+import { AttachGeneratedVideoDialog } from './attach-generated-video-dialog';
 import { AnalyticsPanel } from './analytics-panel';
 import { DeleteEpisodeDialog } from './delete-episode-dialog';
+import { EpisodePreviewThumb } from './episode-preview-thumb';
 import { DeleteExportDialog } from './delete-export-dialog';
 import { isEpisodeDeleteBlocked, isExportRecordDeletable, resumeEditorHref } from './episode-delete-gate';
 import { pascalCase } from './format';
@@ -58,16 +61,17 @@ function draftCardLabel(draft: Draft | undefined, fallback: string): string {
  * status, saved automatically on change — no submit button). Cut/version
  * history no longer lists here at all; it lives inside the editor itself
  * (`HistoryPanel`) and always resumes at the cut's current head.
- * "关联已有素材" (manual attach-by-id) is gone — the only content this
- * page still surfaces is the "生成的视频" candidates (auto-linked via
- * `linkEpisodeId`, shown only once a draft has an output) and the "最终成片" list, which is populated purely by
- * what the editor has actually exported. Connect/publish/analytics only
+ * "生成的视频" lists auto-linked drafts plus ones the author attached
+ * from standalone 视频创作 (`AttachGeneratedVideoDialog` →
+ * `POST .../content-links`). The old attach-by-id form is still gone.
+ * The "最终成片" list is populated purely by what the editor has actually
+ * exported. Connect/publish/analytics only
  * ever render for the one export promoted to `episode.canonical_work_id`.
  * The old standalone "打开文案" button is gone too — its destination is
  * now a clickable script-summary card (prompt/character/scene counts,
  * timestamps) fetched on its own and rendered ahead of "生成的视频".
  * Each generated-video poster links to that clip's detail (`/work/{id}`
- * once published, otherwise `/jobs/{latest_job_id}`); "进入剪辑" stays
+ * once published, otherwise `videoCreationStudioHref(draft.id)`); "进入剪辑" stays
  * a separate action and must not ride the same navigation.
  */
 export function EpisodePanel({ episodeId }: { episodeId: string }) {
@@ -93,6 +97,7 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const [clearingCanonical, setClearingCanonical] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteExportId, setDeleteExportId] = useState<string | null>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
 
   const [title, setTitle] = useState('');
   const [kind, setKind] = useState('main');
@@ -101,6 +106,7 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const [justSaved, setJustSaved] = useState(false);
   const savedIndicatorTimeoutRef = useRef<number | null>(null);
   const [viewerRole, setViewerRole] = useState<'owner' | 'collaborator'>('owner');
+  const previewFillAttempted = useRef(false);
 
   const load = useCallback(() => {
     if (status !== 'authenticated') return;
@@ -140,6 +146,16 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!episode || episode.preview_url || !episode.has_preview_source) return;
+    if (previewFillAttempted.current) return;
+    previewFillAttempted.current = true;
+    void editorApi
+      .fillEpisodePreviewFromVideo(episode.id)
+      .then(setEpisode)
+      .catch(() => undefined);
+  }, [episode]);
 
   const refreshExports = useCallback(() => {
     void editorApi
@@ -342,6 +358,9 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     const draft = link.content_type === 'draft' ? draftDetails[link.content_ref_id] : undefined;
     return isGeneratedVideoCard({ contentType: link.content_type, draft });
   });
+  const linkedDraftIds = new Set(
+    links.filter((link) => link.content_type === 'draft').map((link) => link.content_ref_id),
+  );
   const scriptDoc = script?.script;
   const mainPrompt = script?.turns[0]?.user_message ?? '';
   const hasScriptContent = Boolean(
@@ -387,6 +406,11 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
             <SectionHeading
               title={t('episodeMetaTitle')}
               action={justSaved ? <span className="text-xs text-muted">{tActions('saved')}</span> : null}
+            />
+            <EpisodePreviewThumb
+              episode={episode}
+              layout="stack"
+              onUpdated={setEpisode}
             />
             <TextInput
               label={t('episodeTitleFieldLabel')}
@@ -478,7 +502,20 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
           </Link>
 
           <section>
-            <SectionHeading title={t('generatedVideosTitle')} description={t('generatedVideosHint')} />
+            <SectionHeading
+              title={t('generatedVideosTitle')}
+              description={t('generatedVideosHint')}
+              action={
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<IconPlus className="size-3.5" />}
+                  onClick={() => setAttachOpen(true)}
+                >
+                  {t('addExistingVideo')}
+                </Button>
+              }
+            />
             {videoLinks.length === 0 ? (
               <p className="text-sm text-muted">{t('generatedVideosEmpty')}</p>
             ) : (
@@ -682,6 +719,16 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
         onDeleted={() => {
           setDeleteExportId(null);
           refreshExports();
+        }}
+      />
+      <AttachGeneratedVideoDialog
+        open={attachOpen}
+        onClose={() => setAttachOpen(false)}
+        episodeId={episode.id}
+        linkedDraftIds={linkedDraftIds}
+        onAttached={() => {
+          notify(t('addExistingVideoDone'), 'success');
+          load();
         }}
       />
     </div>

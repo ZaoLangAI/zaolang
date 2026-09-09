@@ -1,10 +1,12 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
 import { IconRefresh } from '@/components/ui/icons';
 import { ErrorNotice } from '@/components/ui/primitives';
+import type { Locale } from '@/i18n/routing';
+import { formatDateTime } from '@/lib/format';
 import { useResource } from '@/lib/use-resource';
 
 import { ChannelMetricChart, ChannelMetricChartSkeleton } from './channel-metric-chart';
@@ -35,6 +37,7 @@ interface EpisodeExternalMetric {
 export function AnalyticsPanel({ workId }: { workId: string }) {
   const t = useTranslations('editor');
   const tActions = useTranslations('actions');
+  const locale = useLocale() as Locale;
   const resource = useResource<EpisodeExternalMetric[]>(`/v1/works/${workId}/metrics`);
 
   if (resource.status === 'idle' || resource.status === 'loading') {
@@ -98,7 +101,7 @@ export function AnalyticsPanel({ workId }: { workId: string }) {
             <li key={`${metric.channel}-${metric.external_post_id}`} className="text-xs text-muted">
               {t(CHANNEL_LABEL_KEYS[metric.channel] ?? metric.channel)}
               {' · '}
-              {t('analyticsLastUpdated', { time: new Date(metric.fetched_at).toLocaleString() })}
+              {t('analyticsLastUpdated', { time: formatDateTime(metric.fetched_at, locale) })}
               {metric.finish_rate !== null ? (
                 <>
                   {' · '}

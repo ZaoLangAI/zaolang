@@ -9,12 +9,13 @@ import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
 import {
   CHARACTER_VIEW_LABEL_KEY,
-  STAGE_FOR_EVENT,
   STAGES,
   stageLabelKey,
   type Stage,
 } from '@/components/job/job-stages';
+import { jobStageState } from '@/components/job/job-stage-state';
 import { DevicePreview } from '@/components/media/device-preview';
+import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { OutputGallery } from '@/components/media/output-gallery';
 import { SaveCoverAsSkillDialog } from '@/components/studio/save-cover-as-skill-dialog';
 import { Button } from '@/components/ui/button';
@@ -67,24 +68,12 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   const pendingRetryKey = useRef<string | null>(null);
 
   const current = job ?? initial;
-  const reached = new Set<Stage>();
-  for (const event of events) {
-    const stage = STAGE_FOR_EVENT[event.event_type];
-    if (stage) reached.add(stage);
-  }
-  if (current.status === 'succeeded') for (const stage of STAGES) reached.add(stage);
-
-  const activeIndex = STAGES.findIndex((stage) => !reached.has(stage));
-  const finished = ['succeeded', 'failed', 'cancelled', 'expired'].includes(current.status);
-  const reachedKey = STAGES.filter((stage) => reached.has(stage)).join(',');
+  const { reached, displayStage, finished, awaitingInput, reachedKey } = jobStageState(
+    current.status,
+    events,
+  );
   const latestEvent = events[events.length - 1];
-  const awaitingInput = current.status === 'awaiting_input';
   const showAwaitingPanel = awaitingInput && !current.cancel_requested;
-  const displayStage: Stage = awaitingInput
-    ? 'planning'
-    : finished && current.status !== 'succeeded'
-      ? ([...STAGES].reverse().find((stage) => reached.has(stage)) ?? 'queued')
-      : (STAGES[activeIndex] ?? 'done');
 
   // A multi-view `CHARACTER` job loops back through `asset_planning` once
   // per remaining view (see `execute_asset_output_advance`) — one `node_id
@@ -181,11 +170,9 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
     setRetrying(true);
     try {
       pendingRetryKey.current ??= newIdempotencyKey();
-      const next = await api.post<GenerationJob>(
-        `/v1/generation-jobs/${jobId}/retry`,
-        undefined,
-        { idempotencyKey: pendingRetryKey.current },
-      );
+      const next = await api.post<GenerationJob>(`/v1/generation-jobs/${jobId}/retry`, undefined, {
+        idempotencyKey: pendingRetryKey.current,
+      });
       pendingRetryKey.current = null;
       router.push(`/jobs/${next.id}`);
     } catch (error) {
@@ -215,7 +202,15 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
       else router.push(path);
     } catch (error) {
       tab?.close();
-      if (isApiError(error) && error.isNotFound && current.draft_id) {
+      // Flag-off is the only 404 that should degrade to publish. A missing
+      // or foreign `link_episode_id` is also NOT_FOUND — sending that to
+      // `/publish` hid the real error behind a different page.
+      if (
+        isApiError(error) &&
+        error.isNotFound &&
+        error.message.includes('暂未开放') &&
+        current.draft_id
+      ) {
         router.push(`/publish/${current.draft_id}`);
         return;
       }
@@ -244,12 +239,18 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
   // COVER_ASSET`'s own note on why it has no dedicated CRUD surface, just
   // this `POST /v1/skills` call with the job's own output as the thumbnail.
   const canSaveCoverSkill =
-    current.status === 'succeeded' && current.asset_kind === 'cover' && Boolean(current.output_asset_id);
+    current.status === 'succeeded' &&
+    current.asset_kind === 'cover' &&
+    Boolean(current.output_asset_id);
 
   // A preview-tier success is a cheap, fast sample — this is the only route
   // from it to a full-priced standard/cinematic render (`POST .../promote`
   // reserves that as its own new job, see the dialog's own doc comment).
   const canPromote = current.status === 'succeeded' && current.quality_tier === 'preview';
+  const canDownload =
+    current.status === 'succeeded' &&
+    current.output_media_type === 'video' &&
+    Boolean(current.output_asset_id);
 
   // Fetched only once there's a draft worth asking about, so the "去发布"
   // button can tell "already submitted, wait" and "already live" apart from
@@ -387,11 +388,11 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
             <ol
               className={cn('flex flex-wrap gap-x-6 gap-y-3', current.output_url ? 'mt-4' : null)}
             >
-              {STAGES.map((stage, index) => {
+              {STAGES.map((stage) => {
                 const done = awaitingInput && stage === 'planning' ? false : reached.has(stage);
                 const active = awaitingInput
                   ? stage === 'planning'
-                  : index === activeIndex && !finished;
+                  : stage === displayStage && !finished;
                 return (
                   <li
                     key={stage}
@@ -459,7 +460,12 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={current.failure_message ?? t('failedTitle')}
               detail={`${t('failedHint')}${current.failure_code ? ` · ${tJob('errorCode', { code: current.failure_code })}` : ''}`}
               action={
-                <Button size="sm" variant="secondary" loading={retrying} onClick={() => void retry()}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={retrying}
+                  onClick={() => void retry()}
+                >
                   {tJob('retry')}
                 </Button>
               }
@@ -471,7 +477,12 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               title={t('cancelledTitle')}
               detail={t('failedHint')}
               action={
-                <Button size="sm" variant="secondary" loading={retrying} onClick={() => void retry()}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={retrying}
+                  onClick={() => void retry()}
+                >
                   {tJob('retry')}
                 </Button>
               }
@@ -497,6 +508,14 @@ export function JobProgress({ jobId, initial }: { jobId: string; initial: Genera
               <Button onClick={() => void enterEditor()} loading={openingEditor}>
                 {tJob('enterEditor')}
               </Button>
+            ) : null}
+            {canDownload && current.output_asset_id ? (
+              <DownloadAssetButton
+                assetId={current.output_asset_id}
+                label={t('download')}
+                failedMessage={t('downloadFailed')}
+                size="md"
+              />
             ) : null}
             {current.status === 'succeeded' && current.draft_id ? (
               publishedWorkId ? (

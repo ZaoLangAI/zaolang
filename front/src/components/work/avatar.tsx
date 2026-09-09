@@ -2,7 +2,12 @@ import Image from 'next/image';
 
 import { cn } from '@/lib/cn';
 
-const sizes = { sm: 'size-8 text-xs', md: 'size-10 text-sm', lg: 'size-14 text-lg' } as const;
+const sizes = {
+  xs: 'size-5 text-[10px]',
+  sm: 'size-8 text-xs',
+  md: 'size-10 text-sm',
+  lg: 'size-14 text-lg',
+} as const;
 
 /**
  * Falls back to the first character rather than a generic silhouette, so a
@@ -19,7 +24,7 @@ export function Avatar({
   size?: keyof typeof sizes;
   className?: string;
 }) {
-  const pixels = size === 'sm' ? 32 : size === 'md' ? 40 : 56;
+  const pixels = size === 'xs' ? 20 : size === 'sm' ? 32 : size === 'md' ? 40 : 56;
 
   return (
     <span

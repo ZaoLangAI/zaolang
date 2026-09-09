@@ -36,6 +36,27 @@ class LedgerResult:
     reserved_balance: int
 
 
+@dataclass(slots=True, frozen=True)
+class BillingLedgerRow:
+    """One consumer-visible billing line. Not a stored ledger row.
+
+    A job's reserve is folded with its later capture or release so the
+    billing page shows one lifecycle record. The append-only table is
+    unchanged; do not persist this projection.
+    """
+
+    id: str
+    type: LedgerEntryType
+    amount: int
+    balance_after: int
+    job_id: str | None
+    reason: str | None
+    created_at: dt.datetime
+
+
+_SETTLEMENT_TYPES = (LedgerEntryType.CAPTURE, LedgerEntryType.RELEASE)
+
+
 def get_or_create_account(session: Session, user_id: str) -> CreditAccount:
     account = session.scalar(select(CreditAccount).where(CreditAccount.user_id == user_id))
     if account is None:
@@ -416,3 +437,87 @@ def list_ledger(
     if cursor:
         stmt = stmt.where(CreditLedgerEntry.id < cursor)
     return list(session.scalars(stmt))
+
+
+def _as_billing_row(entry: CreditLedgerEntry) -> BillingLedgerRow:
+    return BillingLedgerRow(
+        id=entry.id,
+        type=LedgerEntryType(entry.type),
+        amount=entry.amount,
+        balance_after=entry.balance_after,
+        job_id=entry.job_id,
+        reason=entry.reason,
+        created_at=entry.created_at,
+    )
+
+
+def _project_reserve(
+    reserve: CreditLedgerEntry, settlement: CreditLedgerEntry | None
+) -> BillingLedgerRow:
+    if settlement is None:
+        return _as_billing_row(reserve)
+    if settlement.type == LedgerEntryType.CAPTURE:
+        return BillingLedgerRow(
+            id=reserve.id,
+            type=LedgerEntryType.CAPTURE,
+            amount=settlement.amount,
+            balance_after=settlement.balance_after,
+            job_id=reserve.job_id,
+            reason=settlement.reason or reserve.reason,
+            created_at=reserve.created_at,
+        )
+    return BillingLedgerRow(
+        id=reserve.id,
+        type=LedgerEntryType.RELEASE,
+        amount=0,
+        balance_after=settlement.balance_after,
+        job_id=reserve.job_id,
+        reason=settlement.reason or reserve.reason,
+        created_at=reserve.created_at,
+    )
+
+
+def list_billing_history(
+    session: Session, user_id: str, *, cursor: str | None = None, limit: int = 20
+) -> list[BillingLedgerRow]:
+    """Consumer billing history: one visible row per job lifecycle.
+
+    Stored `capture` / `release` rows are omitted; an open reserve stays a
+    hold, a captured reserve becomes a settlement (actual charge), and a
+    released reserve becomes a zero-amount release. Admin and reconciliation
+    keep reading the raw ledger via `list_ledger`.
+    """
+    account = get_account(session, user_id)
+    stmt = (
+        select(CreditLedgerEntry)
+        .where(
+            CreditLedgerEntry.account_id == account.id,
+            CreditLedgerEntry.type.notin_(_SETTLEMENT_TYPES),
+        )
+        .order_by(CreditLedgerEntry.created_at.desc(), CreditLedgerEntry.id.desc())
+        .limit(limit)
+    )
+    if cursor:
+        stmt = stmt.where(CreditLedgerEntry.id < cursor)
+    rows = list(session.scalars(stmt))
+
+    job_ids = [row.job_id for row in rows if row.type == LedgerEntryType.RESERVE and row.job_id]
+    settlements_by_job: dict[str, CreditLedgerEntry] = {}
+    if job_ids:
+        for settlement in session.scalars(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.account_id == account.id,
+                CreditLedgerEntry.job_id.in_(job_ids),
+                CreditLedgerEntry.type.in_(_SETTLEMENT_TYPES),
+            )
+        ):
+            if settlement.job_id is not None:
+                settlements_by_job[settlement.job_id] = settlement
+
+    projected: list[BillingLedgerRow] = []
+    for row in rows:
+        if row.type == LedgerEntryType.RESERVE and row.job_id:
+            projected.append(_project_reserve(row, settlements_by_job.get(row.job_id)))
+        else:
+            projected.append(_as_billing_row(row))
+    return projected

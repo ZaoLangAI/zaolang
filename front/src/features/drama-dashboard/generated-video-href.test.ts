@@ -28,14 +28,14 @@ describe('generatedVideoDetailHref', () => {
     ).toBe('/work/w_pub');
   });
 
-  it('routes an unpublished draft with a job to the job page', () => {
+  it('routes an unpublished draft with a job to the video studio', () => {
     expect(
       generatedVideoDetailHref({
         contentType: 'draft',
         contentRefId: 'drf_1',
         draft: draft({ latest_job_id: 'job_abc' }),
       }),
-    ).toBe('/jobs/job_abc');
+    ).toBe('/create/new?mode=video_creation&draftId=drf_1');
   });
 
   it('returns undefined when the draft has no job yet', () => {

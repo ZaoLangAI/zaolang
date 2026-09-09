@@ -31,6 +31,7 @@ import type {
   WorkSummary,
 } from '@/lib/api/types';
 import { cn, controlPress } from '@/lib/cn';
+import { draftDisplayTitle } from '@/lib/draft-title';
 import { imageCreationStudioHref, isImageCreationOperation } from '@/lib/image-draft';
 import { isVideoCreationOperation, videoCreationStudioHref } from '@/lib/video-draft';
 import { useResource } from '@/lib/use-resource';
@@ -303,7 +304,7 @@ export function LibraryTabs({
                 <Link href={draftResumeHref(draft)} className="block">
                   <DraftPoster
                     draft={draft}
-                    alt={draft.title ?? t('tabDrafts')}
+                    alt={draftDisplayTitle(draft, t('untitledDraft'))}
                     className="border border-border"
                   >
                     <span
@@ -339,7 +340,7 @@ export function LibraryTabs({
                     </span>
                   </DraftPoster>
                   <p className="mt-2 truncate text-sm font-medium">
-                    {draft.title ?? t('tabDrafts')}
+                    {draftDisplayTitle(draft, t('untitledDraft'))}
                   </p>
                 </Link>
               </li>

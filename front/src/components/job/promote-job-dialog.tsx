@@ -148,11 +148,15 @@ export function PromoteJobDialog({
             value,
             label: value === 'standard' ? t('promoteTierStandard') : t('promoteTierCinematic'),
             trailing:
-              quote && tier === value ? t('promoteTierCredits', { count: formatCount(quote.credits, locale) }) : undefined,
+              quote && tier === value
+                ? t('promoteTierCredits', { count: formatCount(quote.credits, locale) })
+                : undefined,
           }))}
         />
         {quoteFailed ? <ErrorNotice title={t('quoteFailed')} /> : null}
-        {quote && !quote.sufficient ? <ErrorNotice title={t('promoteInsufficientCredits')} /> : null}
+        {quote && !quote.sufficient ? (
+          <ErrorNotice title={t('promoteInsufficientCredits')} />
+        ) : null}
         {error ? <ErrorNotice title={error} /> : null}
       </div>
     </Dialog>

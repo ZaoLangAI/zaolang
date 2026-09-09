@@ -8,6 +8,7 @@ import {
   IconImage,
   IconMessage,
   IconMic,
+  IconMusic,
   IconPhone,
   IconRemix,
   IconShield,
@@ -250,6 +251,8 @@ function operationLabel(payload: Record<string, unknown>, tBody: TBody): string 
       return tBody('opVideoToVideo');
     case 'audio_generation':
       return tBody('opAudio');
+    case 'music_generation':
+      return tBody('opMusic');
     case 'drama_export':
       return tBody('opDramaExport');
     default:
@@ -322,6 +325,8 @@ function creationIcon(item: Notification, payload: Record<string, unknown>): Ico
       return IconImage;
     case 'audio_generation':
       return IconMic;
+    case 'music_generation':
+      return IconMusic;
     default:
       if (item.type.startsWith('job_')) return IconSparkle;
       return IconBell;

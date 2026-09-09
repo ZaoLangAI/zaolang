@@ -59,7 +59,9 @@ export const STAGE_FOR_EVENT: Record<string, Stage> = {
  * `generating` uses the shared label, since only audio's own output
  * genuinely differs from the generic "generating" wording. */
 export function stageLabelKey(stage: Stage, operation: string): string {
-  if (stage === 'generating' && operation === 'audio_generation') return 'stageSound';
+  if (stage === 'generating' && (operation === 'audio_generation' || operation === 'music_generation')) {
+    return 'stageSound';
+  }
   return STAGE_LABEL[stage];
 }
 

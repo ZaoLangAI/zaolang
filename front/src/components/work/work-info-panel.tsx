@@ -13,6 +13,7 @@ import { LineageStrip } from '@/components/work/lineage-strip';
 import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
 import { ReportDialog } from '@/components/work/report-dialog';
 import { ReusableParamsList } from '@/components/work/reusable-params';
+import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { Button } from '@/components/ui/button';
 import {
   IconAlert,
@@ -82,6 +83,9 @@ export function WorkInfoPanel({
   const isHidden = work.lifecycle_status === 'hidden';
   const isTrashed = work.lifecycle_status === 'trashed';
   const canTrash = isOwner && !compact && (work.lifecycle_status === 'active' || isHidden);
+  const videoAssetId = work.current_version?.output_asset_id ?? null;
+  const isVideo = (work.media_type ?? work.current_version?.media_type) === 'video';
+  const canDownload = !compact && isVideo && Boolean(videoAssetId);
 
   const toggleLike = () =>
     requireAuth({
@@ -324,6 +328,14 @@ export function WorkInfoPanel({
           >
             {liked ? t('liked') : t('like')}
           </Button>
+          {canDownload && videoAssetId ? (
+            <DownloadAssetButton
+              assetId={videoAssetId}
+              label={t('download')}
+              failedMessage={t('downloadFailed')}
+              variant="ghost"
+            />
+          ) : null}
           {canTrash ? (
             <Button
               variant="ghost"

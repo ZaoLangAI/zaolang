@@ -4,7 +4,11 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { inputRequestRetryMs } from '@/components/job/input-request-retry';
-import { hasMissingRequiredAnswer, QuestionField, type QuestionAnswer } from '@/components/studio/question-field';
+import {
+  hasMissingRequiredAnswer,
+  QuestionField,
+  type QuestionAnswer,
+} from '@/components/studio/question-field';
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
@@ -150,9 +154,7 @@ export function AwaitingInputPanel({
           value={answers[question.id]}
           requiredLabel={t('awaitingInputRequired')}
           choosePlaceholder={t('awaitingInputChoosePlaceholder')}
-          onChange={(value) =>
-            setAnswers((current) => ({ ...current, [question.id]: value }))
-          }
+          onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))}
         />
       ))}
 
