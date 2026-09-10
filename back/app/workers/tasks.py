@@ -487,6 +487,39 @@ def purge_expired_records() -> dict[str, int]:
     return counts
 
 
+@celery_app.task(name="app.workers.tasks.run_scheduled_backup", **_SLOW)
+def run_scheduled_backup() -> str:
+    """Daily `pg_dump` to object storage.
+
+    Before this task existed, a backup only ever happened when an operator
+    opened the admin console and manually clicked "触发备份"
+    (`api.v1.admin.data.trigger_backup`) — this host had no automation of
+    any kind (confirmed directly: no crontab entry, no systemd timer).
+    Shares `app.domain.ops.backups.run_database_backup` with that endpoint,
+    but writes its own `BackupRecord` with no `triggered_by_user_id` (there
+    is no operator to attribute this run to) and no audit-log entry (audit
+    is for someone's action, not a scheduled tick).
+    """
+    from app.domain.ops import backups as backups_service
+    from app.models import BackupRecord
+
+    with session_scope() as session:
+        record = BackupRecord(kind="database", status="running")
+        session.add(record)
+        session.flush()
+        try:
+            object_key, size = backups_service.run_database_backup()
+            record.status = "succeeded"
+            record.object_key = object_key
+            record.size_bytes = size
+        except Exception as exc:
+            logger.exception("scheduled backup failed")
+            record.status = "failed"
+            record.message = f"{type(exc).__name__}: {exc}"[:500]
+        session.commit()
+        return record.id
+
+
 @celery_app.task(name="app.workers.tasks.run_media_analysis", **_SLOW)
 def run_media_analysis(analysis_id: str) -> str:
     from app.domain.editor import analysis as media_analysis

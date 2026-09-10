@@ -108,6 +108,7 @@ celery_app.conf.update(
         # land it on `task_default_queue` (`image_generation`) instead,
         # competing with real generation work for the same worker slot.
         "app.workers.tasks.reconcile_credits": {"queue": "webhook_reconcile"},
+        "app.workers.tasks.run_scheduled_backup": {"queue": "webhook_reconcile"},
     },
     beat_schedule={
         "expire-stale-jobs": {
@@ -162,6 +163,12 @@ celery_app.conf.update(
         # these append-only tables have no natural cap and grow forever.
         "purge-expired-records": {
             "task": "app.workers.tasks.purge_expired_records",
+            "schedule": 86400.0,
+        },
+        # This host had no backup automation at all until this line — see
+        # `app.workers.tasks.run_scheduled_backup`'s docstring.
+        "scheduled-backup": {
+            "task": "app.workers.tasks.run_scheduled_backup",
             "schedule": 86400.0,
         },
     },

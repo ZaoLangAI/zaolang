@@ -421,6 +421,7 @@ def test_lifecycle_rules_can_be_applied_and_read_back(client: TestClient, admin:
     assert {r["ID"] for r in response.json()["lifecycle_rules"]} == {
         "expire-staging",
         "expire-exports",
+        "expire-backups",
     }
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 
 from fastapi import APIRouter, Request
 from sqlalchemy import select
@@ -20,8 +19,8 @@ from app.api.v1.admin.deps import Admin, AdminDangerous, AdminRead, Viewer, requ
 from app.config import get_settings
 from app.domain.audit import service as audit
 from app.domain.errors import Conflict
+from app.domain.ops import backups as backups_service
 from app.models import BackupRecord
-from app.models.base import utcnow
 from app.storage import s3
 
 logger = logging.getLogger(__name__)
@@ -41,6 +40,17 @@ DEFAULT_LIFECYCLE_RULES = [
         "Status": "Enabled",
         "Filter": {"Prefix": "exports/"},
         "Expiration": {"Days": 30},
+    },
+    # Both the admin-triggered and the daily scheduled backup
+    # (`app.workers.tasks.run_scheduled_backup`) write here — without this,
+    # a `pg_dump` archive every day forever is the exact unbounded-growth
+    # pattern the rest of this bucket's rules exist to prevent. 60 days
+    # comfortably outlives any plausible "restore last week's data" request.
+    {
+        "ID": "expire-backups",
+        "Status": "Enabled",
+        "Filter": {"Prefix": "backups/db/"},
+        "Expiration": {"Days": 60},
     },
 ]
 
@@ -101,7 +111,7 @@ def trigger_backup(
     session.flush()
 
     try:
-        object_key, size = _run_database_backup()
+        object_key, size = backups_service.run_database_backup()
         record.status = "succeeded"
         record.object_key = object_key
         record.size_bytes = size
@@ -154,18 +164,3 @@ def seed(
 
     seed_script.run(reset=payload.reset)
     return OkResponse()
-
-
-def _run_database_backup() -> tuple[str, int]:
-    settings = get_settings()
-    # psycopg's SQLAlchemy prefix is not a libpq URL.
-    dsn = settings.database_url.replace("postgresql+psycopg://", "postgresql://")
-    completed = subprocess.run(
-        ["pg_dump", "--format=custom", "--no-owner", dsn],
-        capture_output=True,
-        check=True,
-        timeout=600,
-    )
-    key = f"backups/db/{utcnow():%Y%m%dT%H%M%SZ}.dump"
-    s3.put_object(key, completed.stdout, content_type="application/octet-stream")
-    return key, len(completed.stdout)
