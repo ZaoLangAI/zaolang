@@ -1086,6 +1086,15 @@ def _link_character_action_output(
     clip in there would hand it to the next image generation as if it were
     a still reference. Also the fallback when `target_id` no longer
     resolves, same reason as `_link_character_output`'s.
+
+    Same-name reuse mirrors `_link_character_output`'s auto-create branch:
+    character titles are unique per owner, so a second `character_action`
+    job that lands on the same `subject_name` (explicit hint, or the shared
+    "新角色" default) must reuse the owner's existing card instead of racing
+    `create_character` into a `ValidationFailed` that used to silently drop
+    the clip — this is exactly what happened in production before this fix:
+    the output stayed a plain generated asset and `linked_character_id` was
+    never set, with no user-visible error.
     """
     if target_id:
         try:
@@ -1104,21 +1113,44 @@ def _link_character_action_output(
             )
     if not config.auto_create_character:
         return None
-    character = characters_service.create_character(
-        ctx.session,
-        user_id=ctx.job.user_id,
-        name=subject_name,
-        description=None,
-        reference_asset_ids=[],
-        voice_description=None,
+    # Character titles are unique per owner. Reuse a same-name card before
+    # create so a second `character_action` job with the same
+    # `subject_name_hint` (or the same default) does not 422 / drop the clip.
+    existing = characters_service.find_owned_character_by_name(
+        ctx.session, user_id=ctx.job.user_id, name=subject_name
     )
+    if existing is not None:
+        characters_service.append_action_clip(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            character_id=existing.id,
+            asset_id=asset_id,
+        )
+        return existing.id
+    try:
+        character = characters_service.create_character(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            name=subject_name,
+            description=None,
+            reference_asset_ids=[],
+            voice_description=None,
+        )
+    except ValidationFailed:
+        raced = characters_service.find_owned_character_by_name(
+            ctx.session, user_id=ctx.job.user_id, name=subject_name
+        )
+        if raced is None:
+            raise
+        character = raced
+    else:
+        ctx.state["created_character_id"] = character.id
     characters_service.append_action_clip(
         ctx.session,
         user_id=ctx.job.user_id,
         character_id=character.id,
         asset_id=asset_id,
     )
-    ctx.state["created_character_id"] = character.id
     return character.id
 
 

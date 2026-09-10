@@ -16,7 +16,13 @@ from app.domain.jobs import state_machine as sm
 from app.domain.scenes import service as scenes_service
 from app.models import Asset, User
 from app.models.base import new_id
-from app.models.enums import CharacterViewAngle, ImageAssetKind, MediaType, Operation
+from app.models.enums import (
+    CharacterViewAngle,
+    ImageAssetKind,
+    MediaType,
+    Operation,
+    VideoAssetKind,
+)
 from app.workflows.configs import (
     AssetOutputAdvanceConfig,
     AssetOutputLinkConfig,
@@ -607,6 +613,84 @@ def test_asset_output_link_cover_kind_has_no_library_to_attach_to(
     result = execute_asset_output_link(ctx, AssetOutputLinkConfig())
     assert result.port == "ok"
     assert characters_service.list_characters(db, user_id=author.id) == []
+
+
+def test_asset_output_link_character_action_auto_creates_a_character_when_no_target_is_given(
+    db: Session, author: User
+) -> None:
+    """The video-side counterpart of
+    `test_asset_output_link_auto_creates_a_character_when_no_target_is_given`."""
+    asset = _asset(db, author, media_type=MediaType.VIDEO)
+    ctx = _ctx(db, author, params={"video_asset_kind": VideoAssetKind.CHARACTER_ACTION.value})
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    created_id = ctx.state["created_character_id"]
+    character = characters_service.get_character(db, user_id=author.id, character_id=created_id)
+    assert character.name == "新角色"
+    assert [clip["asset_id"] for clip in character.action_clips] == [asset.id]
+    assert ctx.job.linked_character_id == created_id
+
+
+def test_asset_output_link_character_action_reuses_an_existing_character_with_the_same_name(
+    db: Session, author: User
+) -> None:
+    """Regression test for the production defect this fix closes: a second
+    `character_action` job landing on the same default name ("新角色") must
+    reuse the owner's existing card, exactly like the image path's
+    `test_asset_output_link_reuses_an_existing_character_with_the_same_name`
+    — not silently drop the clip because `create_character` raised
+    `ValidationFailed`. Before this fix, `_link_character_action_output` had
+    no same-name reuse step and this reproduced the exact failure seen in
+    production logs (`asset_output_link failed … ValidationFailed: 角色名称
+    已存在。`, `linked_character_id` left `None`).
+    """
+    existing = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="新角色",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    asset = _asset(db, author, media_type=MediaType.VIDEO)
+    ctx = _ctx(db, author, params={"video_asset_kind": VideoAssetKind.CHARACTER_ACTION.value})
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    assert "created_character_id" not in ctx.state
+    assert ctx.job.linked_character_id == existing.id
+    refreshed = characters_service.get_character(db, user_id=author.id, character_id=existing.id)
+    assert [clip["asset_id"] for clip in refreshed.action_clips] == [asset.id]
+    assert len(characters_service.list_characters(db, user_id=author.id)) == 1
+
+
+def test_asset_output_link_character_action_attaches_to_an_existing_target_character(
+    db: Session, author: User
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="周岩",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    asset = _asset(db, author, media_type=MediaType.VIDEO)
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "video_asset_kind": VideoAssetKind.CHARACTER_ACTION.value,
+            "target_character_id": character.id,
+        },
+    )
+    ctx.state["asset_id"] = asset.id
+    execute_asset_output_link(ctx, AssetOutputLinkConfig())
+
+    refreshed = characters_service.get_character(db, user_id=author.id, character_id=character.id)
+    assert [clip["asset_id"] for clip in refreshed.action_clips] == [asset.id]
+    assert "created_character_id" not in ctx.state
 
 
 def test_asset_output_link_falls_back_to_a_new_character_when_the_target_is_gone(
