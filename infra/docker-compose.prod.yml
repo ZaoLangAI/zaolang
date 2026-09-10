@@ -9,6 +9,19 @@ name: zaolang-prod
 # `infra/.env.prod` is never committed (see infra/.env.prod.example for the
 # template) — it carries real secrets and the server's public IP/host.
 
+# Every service defaults to the `json-file` driver with no `max-size`/
+# `max-file`, i.e. unbounded on-disk growth for as long as a container keeps
+# writing to stdout/stderr — a chatty one (nginx's access log, or a worker
+# stuck retrying) can quietly fill the host's disk with nothing to show for
+# it. Capped and rotated here instead: 10MB × 3 files per container is enough
+# to grep a recent incident without needing a log shipper on a single-host
+# deployment this size.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
 x-backend: &backend
   build:
     context: ../back
@@ -19,10 +32,12 @@ x-backend: &backend
       APT_MIRROR: ${APT_MIRROR:-}
       PIP_INDEX_URL: ${PIP_INDEX_URL:-}
   image: zaolang-back:prod
+  logging: *default-logging
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-zaolang}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -38,6 +53,7 @@ services:
 
   redis:
     image: redis:8-alpine
+    logging: *default-logging
     # Without maxmemory the default policy is `noeviction` — once memory fills,
     # every write (rate limiting, Celery enqueue, pubsub) starts erroring
     # instead of gracefully evicting. `volatile-lru` only evicts keys that
@@ -61,6 +77,7 @@ services:
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    logging: *default-logging
     command: ['server', '/data', '--console-address', ':9001']
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -76,6 +93,7 @@ services:
 
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    logging: *default-logging
     depends_on:
       minio:
         condition: service_healthy
@@ -239,6 +257,7 @@ services:
         NEXT_PUBLIC_API_URL: http://${PUBLIC_HOST}
         APP_VERSION: ${APP_VERSION:-0.0.0-dev}
     image: zaolang-front:prod
+    logging: *default-logging
     depends_on:
       - api
     environment:
@@ -254,6 +273,7 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
+    logging: *default-logging
     depends_on:
       - api
       - web
