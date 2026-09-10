@@ -32,13 +32,28 @@ FROM python:3.12-slim-bookworm AS runtime
 
 ARG APT_MIRROR=
 
-# `pg_dump` is not optional: the admin backup endpoint shells out to it, so an
-# image without it would fail only when an operator triggers a backup.
+# `pg_dump` is not optional: the admin backup endpoint (and the daily
+# scheduled backup, `app.workers.tasks.run_scheduled_backup`) shell out to
+# it, so an image without it would fail only when a backup is attempted.
+#
+# Debian bookworm's own repo ships client 15; `infra/docker-compose*.yml` run
+# `pgvector/pgvector:pg17` (server 17). `pg_dump` refuses to dump from a
+# *newer* server than itself ("aborting because of server version
+# mismatch") — this bit in production the first time a backup actually ran,
+# not at build time, because the mismatched binary installs and starts up
+# fine. The PGDG apt repo is what installs a client new enough to match.
 RUN if [ -n "$APT_MIRROR" ]; then \
         sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; \
     fi \
     && apt-get update \
-    && apt-get install -y --no-install-recommends curl postgresql-client ffmpeg \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg lsb-release ffmpeg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
+    && apt-get purge -y --auto-remove gnupg lsb-release \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 zaolang
 
