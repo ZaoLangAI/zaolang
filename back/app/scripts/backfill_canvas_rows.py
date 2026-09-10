@@ -72,7 +72,10 @@ def _backfill(session: Session) -> dict[str, int]:
     # Not an ORM-mapped column any more (see `app.models.canvas.CanvasProject`),
     # so it has to be read with a plain SELECT rather than through the model.
     rows = session.execute(
-        text("SELECT id, owner_user_id, graph_json FROM canvas_projects WHERE graph_json IS NOT NULL")
+        text(
+            "SELECT id, owner_user_id, graph_json FROM canvas_projects "
+            "WHERE graph_json IS NOT NULL"
+        )
     ).all()
 
     projects_touched: list[str] = []
