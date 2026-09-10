@@ -2,6 +2,14 @@
 
 统计时间：2026-08-29。范围：`back/app/models/`、`back/app/workers/`、`back/app/api/`、`back/app/domain/*/service.py`、Redis 全部使用点、`infra/docker-compose*.yml`。方法：逐文件读取 + 全仓 grep 交叉核验，所有结论都带 `file:line` 证据，未核实的猜测一律不写入本报告。
 
+> **校订（2026-09-10）**：一次线上数据/日志审计里，对照当前代码重新核验了本报告的每一条结论，发现三条已经在本报告成文之后被修复，却仍以“未修复”措辞留在下方——继续原样阅读会误导后续排查。已在原文对应位置就地标注 **[✅ 已修复]** 并补上现状证据，历史分析原文保留不删，方便对照修复前后的差异：
+>
+> - **P0-3 死上游任务无限轮询** → `MAX_POLL_DURATION_SECONDS` 硬上限 + `PROVIDER_TIMEOUT` 熔断，已有生产触发记录，见下方标注。
+> - **P1-5 无 Celery 硬超时 / visibility_timeout 未配置** → 按队列分级的软硬超时常量、`broker_transport_options={"visibility_timeout": 1800}` 均已落地，见下方标注。
+> - **P1-6 worker 无显式并发数 / reconcile_credits 路由遗漏** → 两处都已修复，见下方标注。
+>
+> 未在本轮复核范围内的其余结论（P0-1、P0-2、P0-4、P1-1～P1-4、P1-7、P2-*、六节的死代码清点等）状态未变，仍按原文对待；也不代表这三条以外的内容都已重新验证过。核验方法论上的教训是：复述一份历史审计文档前，先对每条仍标"未修复"的结论重新跑一遍对应的 grep/测试，而不是假设文档本身仍与当前代码一致。
+
 ## 总体结论
 
 写路径和「按主键/外键」的读路径设计是扎实的：ID 生成方案（`new_id`，48bit 毫秒时间戳前缀保证索引局部性）、`CreditAccount` 物化余额（读余额不扫账本历史）、pgvector 的 HNSW 索引、SSE 的会话生命周期管理（不长期占用 DB 连接池）都做对了。
@@ -9,7 +17,7 @@
 真正的风险集中在**「随时间/流量增长」这个维度**，具体是六类问题，按对生产稳定性的影响从高到低：
 
 1. 日志/事件/幂等类 append-only 表完全没有 retention 或分区策略；
-2. 异步供应商任务的轮询器对已死的外部任务**刻意设计为无限轮询**，是唯一会导致「无效任务长期占用资源」的确认项；
+2. 异步供应商任务的轮询器对已死的外部任务**刻意设计为无限轮询**，是唯一会导致「无效任务长期占用资源」的确认项——**[✅ 已修复，见第三节 P0-3 标注]**；
 3. 限流用的 Redis ZSET 在持续攻击流量下是无界增长的（先写后判）；
 4. 列表类 API 普遍存在 N+1 查询，是当前对用户可感知延迟影响最大的问题；
 5. 部分统计/排序查询的索引与实际查询列不匹配（甚至完全没建索引）；
@@ -161,7 +169,14 @@ job = input_requests.answer(session, job, raw_answers)
 | `visibility_timeout` | **未配置**（Redis 默认约 3600s） | 全仓无匹配 |
 | `worker_concurrency` | **未在配置中设置**（走 CLI/CPU 默认） | — |
 
-### P0-3：死上游任务无限轮询（本次审计中最明确的"无效任务占用资源"问题）
+### P0-3：死上游任务无限轮询（本次审计中最明确的"无效任务占用资源"问题）【✅ 已修复】
+
+> **现状（2026-09-10 校订）**：`back/app/domain/jobs/async_tasks.py` 已加入
+> `MAX_POLL_DURATION_SECONDS = 2 * 60 * 60`——从不可变的 `created_at` 起算的墙钟硬上限，与本节建议的修复方向一致。触发时由
+> `back/app/workers/async_polling.py::_give_up_on_dead_upstream` 记录
+> `system_log.emit(event="async_task_poll_budget_exceeded", ...)`，随后
+> `_close_attempt` + `_resume_failed(..., code="PROVIDER_TIMEOUT")` 释放积分预留并转入失败态——正是下面"修复"段落要的效果。生产日志里已有一次真实触发（`async_task_poll_budget_exceeded` 命中 1 次），说明这条熔断路径不是只在测试里成立。
+> `tests/unit/test_async_provider_tasks.py` 也已经补了对应用例（把 `created_at` 拨回 `MAX_POLL_DURATION_SECONDS + 1` 之前，循环 `poll_once` 断言最终进入终态），下面提到的"需要同步更新的断言"已经完成，不是遗留任务。以下原文分析保留作为问题背景。
 
 ```32:37:back/app/domain/jobs/async_tasks.py
 # Platform policy, not a provider's: how often to check on an external render.
@@ -176,13 +191,20 @@ job = input_requests.answer(session, job, raw_answers)
 
 修复：给 `poll_count` 或墙钟时间加硬上限（例如 1-2 小时，或 `TASK_TIMEOUT_SECONDS(480s) × N` 次续租），超过后主动判定 `PROVIDER_TIMEOUT`，走 `settle_release` 释放积分预留并转入失败态，而不是无限续租。需要同步更新 `test_a_render_past_its_deadline_keeps_polling` 的断言（该用例目前断言"过期后仍继续轮询"，实现放弃语义后这个断言本身要改成"超过硬上限后停止并结算失败"）。
 
-### P1-5：无 Celery 硬超时 + broker visibility_timeout 未配置
+### P1-5：无 Celery 硬超时 + broker visibility_timeout 未配置【✅ 已修复】
+
+> **现状（2026-09-10 校订）**：`back/app/workers/tasks.py` 已按队列/任务性质分级设置了软硬超时常量（`_QUICK`/`_MODERATE`/`_GENERATION`/`_IMAGE_GENERATION`/`_LONG_GENERATION`/`_BATCH`/`_SLOW` 等），每个任务装饰器都带上其中一组；`back/app/workers/celery_app.py` 也已设置 `broker_transport_options={"visibility_timeout": 1800}`。以下原文分析保留作为问题背景，"修复"段落的建议已经落地，不是遗留任务。
 
 全仓库没有配置 `task_time_limit`/`soft_time_limit`；也没有配置 `broker_transport_options.visibility_timeout`（Redis broker 默认约 3600s）。二者叠加 `task_acks_late=True` 时，一个长时间不 ack 的任务在 visibility_timeout 到期后可能被重新投递，造成重复执行。
 
 修复：按队列分级设置软硬超时（例如图片类 300s 软/360s 硬，`video_analysis` 600-900s），并设置 `visibility_timeout` ≥ 所有队列里最大的硬超时 + 缓冲。长视频渲染本身应该继续走"创建后挂起+轮询"的模式，不应该把多分钟渲染绑定在一个 worker 槽位上等待。
 
-### P1-6：生产 worker 无显式并发数 + 一处路由遗漏
+### P1-6：生产 worker 无显式并发数 + 一处路由遗漏【✅ 已修复】
+
+> **现状（2026-09-10 校订）**：两处都已落地——`infra/docker-compose.prod.yml` 的 `worker` 服务已带
+> `--concurrency=${WORKER_CONCURRENCY:-4}`（默认 4，可通过环境变量调整）；`back/app/workers/celery_app.py` 的
+> `task_routes` 里已包含 `"app.workers.tasks.reconcile_credits": {"queue": "webhook_reconcile"}`，不再落到
+> `image_generation` 默认队列。以下原文分析保留作为问题背景，"修复"段落的建议已经落地，不是遗留任务。
 
 - `infra/docker-compose.prod.yml`/`release.yml` 和 `Makefile` 的 worker 命令都没有设置 `--concurrency`，主 worker 单进程要吃 8 个异构队列（含高频 Beat 的 `webhook_reconcile` 和长耗时的 `video_generation_long`），容易被长任务"饿死"短任务。
 - `reconcile_credits` 在 Beat 里有调度，但在 `task_routes`（`celery_app.py:115-118`）里没有对应路由，默认落到 `task_default_queue`（`image_generation`），会和真正的生成任务抢同一个 worker 槽位。
@@ -231,7 +253,10 @@ job = input_requests.answer(session, job, raw_answers)
 
 修复：在 Lua 脚本或 pipeline 内先 `ZCARD` 判断是否已达 `limit`，达到后**只刷新 TTL、不再 `ZADD`**，把 ZSET 大小硬性收敛到 `limit` 量级。
 
-### P0-5：Redis 未配置 maxmemory / eviction policy
+### P0-5：Redis 未配置 maxmemory / eviction policy【✅ 已修复】
+
+> **现状（2026-09-10 校订，非本轮"三条"复核范围，顺手核对）**：`infra/docker-compose.prod.yml` 已带
+> `--maxmemory ${REDIS_MAXMEMORY:-512mb} --maxmemory-policy volatile-lru`，与下方"修复"段落建议一致。未核对 `.release.yml`/本地 `.yml` 是否同步。
 
 生产部署（`infra/docker-compose.yml` / `.prod.yml` / `.release.yml`）都只配置了 `--appendonly yes`，没有 `maxmemory`，Redis 默认策略是 `noeviction`——一旦内存被打满，写命令会直接报错而不是优雅淘汰旧数据，会直接影响限流、Celery 入队等所有写路径。
 
@@ -313,7 +338,7 @@ Broker 队列本身是无 TTL 的 Redis list；worker/Beat 停摆或数据库被
 - 数据库连接池未设置 `pool_recycle`，云数据库/负载均衡场景下连接可能被服务端悄悄断开而未被感知，建议设为 1800-3600 秒。
 - `AgentRun.input_json` 存储完整 prompt 全文，百万行规模后行宽、TOAST 存储、备份体积都会显著放大，建议摘要化或外置对象存储，只在 DB 里留引用。
 - Celery 缺少死信队列（DLQ），失败任务仅靠 `on_failure` 结算积分，没有额外的可观测性；建议为超过重试上限的任务补充结构化日志或指标。
-- `reconcile_credits` 路由遗漏（见第三节 P1-6），属于配置疏漏，随 Celery 配置修复批次一并处理。
+- `reconcile_credits` 路由遗漏（见第三节 P1-6）——**[✅ 已修复，2026-09-10 校订]**，已路由到 `webhook_reconcile`，不再需要随批次处理。
 
 ---
 
@@ -321,8 +346,8 @@ Broker 队列本身是无 TTL 的 Redis list；worker/Beat 停摆或数据库被
 
 按下面的批次顺序推进，**每批独立提交、独立验证，不同风险等级不要混在一次改动里**，允许包含结构性数据库变更（含分区/归档）：
 
-1. **P0 批次**：限流 ZSET 修复、Redis `maxmemory` 配置、异步轮询硬超时（同步更新相关单测）、日志/事件/幂等类表的 retention Beat 任务上线。
-2. **P1 批次**：`works`/`jobs`/`collections`/`community` 列表接口的 N+1 批量化改造；补齐统计相关索引，修正 `SystemLog` 索引错配；Celery `task_time_limit`/`visibility_timeout`/`worker --concurrency`/`reconcile_credits` 路由修正；关键词搜索加 `pg_trgm`。
+1. **P0 批次**：限流 ZSET 修复、~~Redis `maxmemory` 配置~~（**[✅ 已修复]**，`infra/docker-compose.prod.yml` 已设 `--maxmemory ${REDIS_MAXMEMORY:-512mb} --maxmemory-policy volatile-lru`）、~~异步轮询硬超时（同步更新相关单测）~~（**[✅ 已修复，见 P0-3 标注]**）、日志/事件/幂等类表的 retention Beat 任务上线。
+2. **P1 批次**：`works`/`jobs`/`collections`/`community` 列表接口的 N+1 批量化改造；补齐统计相关索引，修正 `SystemLog` 索引错配；~~Celery `task_time_limit`/`visibility_timeout`/`worker --concurrency`/`reconcile_credits` 路由修正~~（**[✅ 已修复，见 P1-5/P1-6 标注]**）；关键词搜索加 `pg_trgm`。
 3. **P2 批次**：连接池 `pool_recycle`、大 JSON 列瘦身、冗余索引清理、`llmfo` TTL 修正、SSE 并发配额、`descendant_count` 下推 SQL。
 4. **死代码清理批次**（与性能改动分开提交，便于 review）：先删零风险项，再清理已死的 shortform 配置开关（需要同步前端与测试），`Series(kind=cast)` 收尾单独作为一个小批次（涉及数据核对与可能的 migration）。
 5. **结构性改动**（需要单独的 migration 评审窗口）：`job_events`/`agent_runs` 等高增长表按月分区或归档策略。
