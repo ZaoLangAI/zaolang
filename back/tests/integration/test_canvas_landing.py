@@ -10,6 +10,7 @@ transition must not insert the card twice.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.domain.canvas import agent_service, graph_service
@@ -24,6 +25,7 @@ from app.models import (
     CanvasNode,
     CanvasProject,
     GenerationJob,
+    JobEvent,
     User,
 )
 from app.models.base import new_id
@@ -33,6 +35,7 @@ from app.models.enums import (
     CanvasAgentTaskStatus,
     CanvasNodeKind,
     CanvasNodeOrigin,
+    JobEventType,
     JobStatus,
     MediaType,
     Operation,
@@ -40,6 +43,7 @@ from app.models.enums import (
 )
 from app.platform_config import service as config_service
 from app.platform_config.schemas import FeatureFlags
+from tests.factories import make_job
 
 pytestmark = pytest.mark.usefixtures("fake_media_catalog")
 
@@ -358,6 +362,50 @@ def test_a_landing_failure_does_not_fail_the_job(
 
     db.refresh(job)
     assert job.status == JobStatus.SUCCEEDED
+
+
+@pytest.mark.parametrize(
+    ("target", "event_type", "public_message"),
+    [
+        (JobStatus.SUCCEEDED, JobEventType.SUCCEEDED, "生成完成"),
+        (JobStatus.CANCELLED, JobEventType.CANCELLED, "已取消"),
+    ],
+)
+def test_a_missing_canvas_table_does_not_abort_a_terminal_transition(
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+    target: JobStatus,
+    event_type: JobEventType,
+    public_message: str,
+) -> None:
+    """`UndefinedTable` aborts the Postgres transaction unless the hook
+    isolates the SELECT behind a savepoint. Without that, `append_event`
+    after `transition` raises `InFailedSqlTransaction` and the job never
+    reaches a terminal status — the live poller / expire loop."""
+
+    def explode(session: Session, **_kwargs: object) -> None:
+        session.execute(text("SELECT 1 FROM canvas_agent_tasks_missing_on_purpose"))
+
+    monkeypatch.setattr(agent_service, "land_job_result", explode)
+    job = make_job(db, author, status=JobStatus.RUNNING)
+    sm.transition(db, job.id, target)
+    event = sm.append_event(
+        db,
+        job.id,
+        event_type=event_type,
+        status=target,
+        public_message=public_message,
+        progress=100,
+    )
+    db.flush()
+
+    db.refresh(job)
+    assert job.status == target
+    assert job.finished_at is not None
+    assert event.sequence == 1
+    stored = db.query(JobEvent).filter(JobEvent.job_id == job.id).one()
+    assert stored.event_type == event_type
 
 
 # ---------------------------------------------------------------------------

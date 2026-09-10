@@ -38,20 +38,27 @@ def _land_on_canvas(session: Session, job: GenerationJob) -> None:
     from app.domain.canvas import agent_service
 
     try:
-        agent_service.land_job_result(session, job=job)
+        # A failed SELECT (missing table, constraint, …) aborts the whole
+        # Postgres transaction. Without a savepoint the subsequent
+        # `append_event` / credit writes in the same session raise
+        # `InFailedSqlTransaction` and the job never reaches a terminal
+        # status — exactly how a drifted canvas schema parked live jobs.
+        with session.begin_nested():
+            agent_service.land_job_result(session, job=job)
     except Exception:
         # Placing a card must never be able to fail a job whose credits were
         # just settled. The user's money is already spent and their output
         # already exists; losing the card is recoverable, losing the job is not.
         logger.exception("could not land job %s on its canvas", job.id)
         try:
-            system_log.emit(
-                source=SystemLogSource.PIPELINE,
-                event="canvas_land_failure",
-                message=f"job={job.id}",
-                dedup_key=f"canvas-land:{job.id}",
-                level=SystemLogLevel.ERROR,
-                job_id=job.id,
-            )
+            with session.begin_nested():
+                system_log.emit(
+                    source=SystemLogSource.PIPELINE,
+                    event="canvas_land_failure",
+                    message=f"job={job.id}",
+                    dedup_key=f"canvas-land:{job.id}",
+                    level=SystemLogLevel.ERROR,
+                    job_id=job.id,
+                )
         except Exception:  # pragma: no cover - logging must not raise either
             logger.exception("could not record the canvas landing failure")
