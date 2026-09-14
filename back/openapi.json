@@ -36109,6 +36109,13 @@
             "type": "array",
             "title": "Turns"
           },
+          "lint": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptLintIssue"
+            },
+            "type": "array",
+            "title": "Lint"
+          },
           "source_idea": {
             "type": "string",
             "title": "Source Idea",
@@ -36236,6 +36243,86 @@
         "type": "object",
         "title": "ScriptLinksUpdateRequest",
         "description": "A structural edit, not a content revision — never goes through the\nLLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched\nby `name`/`heading` against the episode's current `script_json` rather\nthan by index, since either list can be reordered by a revision turn\nthat runs concurrently with a link update landing."
+      },
+      "ScriptLintIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "scene_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Index"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading",
+            "default": ""
+          },
+          "block_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Index"
+          },
+          "breakpoint_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakpoint Key"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "suggested_skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggested Skills"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ScriptLintIssue",
+        "description": "One deterministic lint finding (`app.domain.script_writing.lint`) — a\nsuggestion shown beside the script, never a blocker."
       },
       "ScriptRetryRequest": {
         "properties": {

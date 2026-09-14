@@ -55,6 +55,22 @@ export interface ScriptSummary {
   updated_at: string;
 }
 
+/** One deterministic lint finding (`app/domain/script_writing/lint.py`) — a
+ * suggestion beside the script, never a blocker. `message` is written by the
+ * backend in the script's own language. */
+export interface ScriptLintIssue {
+  code: string;
+  severity: 'warning' | 'info';
+  message: string;
+  scene_index: number | null;
+  heading: string;
+  block_index: number | null;
+  breakpoint_key: string | null;
+  dimension: string | null;
+  /** Titles of `format` skills that fix this dimension — `@`-able next turn. */
+  suggested_skills: string[];
+}
+
 export interface ScriptDetail {
   episode_id: string;
   series_id: string;
@@ -62,6 +78,8 @@ export interface ScriptDetail {
   status: string;
   script: ScriptDocument;
   turns: ScriptTurnSummary[];
+  /** Lint of the latest saved script (not of an older turn snapshot). */
+  lint: ScriptLintIssue[];
   /** Author's first-draft prompt, so an empty shell can be retried without re-typing. */
   source_idea: string;
   source_referenced_skill_ids: string[];

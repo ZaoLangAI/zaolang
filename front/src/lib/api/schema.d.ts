@@ -11348,6 +11348,8 @@ export interface components {
             script: components["schemas"]["ScriptDocument"];
             /** Turns */
             turns: components["schemas"]["ScriptTurnSummary"][];
+            /** Lint */
+            lint?: components["schemas"]["ScriptLintIssue"][];
             /**
              * Source Idea
              * @default
@@ -11409,6 +11411,34 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
+        };
+        /**
+         * ScriptLintIssue
+         * @description One deterministic lint finding (`app.domain.script_writing.lint`) — a
+         *     suggestion shown beside the script, never a blocker.
+         */
+        ScriptLintIssue: {
+            /** Code */
+            code: string;
+            /** Severity */
+            severity: string;
+            /** Message */
+            message: string;
+            /** Scene Index */
+            scene_index?: number | null;
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /** Block Index */
+            block_index?: number | null;
+            /** Breakpoint Key */
+            breakpoint_key?: string | null;
+            /** Dimension */
+            dimension?: string | null;
+            /** Suggested Skills */
+            suggested_skills?: string[];
         };
         /**
          * ScriptRetryRequest

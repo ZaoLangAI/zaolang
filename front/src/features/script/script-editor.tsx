@@ -34,6 +34,7 @@ import {
 import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
 import { ScriptBatchDialog } from './script-batch-dialog';
 import { ScriptBatchToolbar } from './script-batch-toolbar';
+import { ScriptLintPanel } from './script-lint-panel';
 import { ScriptChatPanel } from './script-chat-panel';
 import { dubbedDialogueKeys, indexBreakpointVideos } from './script-breakpoint';
 import { ScriptDocumentView } from './script-document-view';
@@ -596,6 +597,7 @@ export function ScriptEditor({
             onResume={() => void batch.resumeQueue()}
           />
         ) : null}
+        {isViewingLatest && !documentStreaming ? <ScriptLintPanel issues={detail.lint} /> : null}
         {documentStreaming ? (
           <ScriptDocumentLoading label={t('generating')} hint={t('scriptGeneratingBody')} />
         ) : (
