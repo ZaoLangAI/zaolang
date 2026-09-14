@@ -310,6 +310,9 @@ export interface ExportRenderOptions {
    * written regardless. The text comes from the caller: the engine does not
    * import next-intl. */
   aiLabel?: { text: string };
+  /** Brings the mixed audio to −14 LUFS, sample peak ≤ −1 dBFS
+   * (`loudness.ts`). Export-only mastering; the preview is not normalised. */
+  normalizeLoudness?: boolean;
 }
 
 export interface RendererBackend {

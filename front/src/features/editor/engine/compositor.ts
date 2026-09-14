@@ -160,16 +160,31 @@ export function activeVideoLayer(
   return activeVideoLayers(document, atTicks)[0];
 }
 
+/** `volume_millipercent` and the `volume` keyframe channel both go up to
+ * 200% (`PROPERTY_RANGES`), so a quiet line can be boosted, not only cut. */
+export const MAX_LAYER_VOLUME = 2;
+
+/** An element's gain (0–2) at `atTicks`: its `volume` channel, else its
+ * static volume. Preview and export both read it through the layers below. */
+export function layerVolumeAt(element: TimelineElement, atTicks: number): number {
+  const resolved = resolveNumberAtTime(
+    element.animations,
+    'volume',
+    atTicks,
+    element.volume_millipercent,
+  );
+  return Math.min(MAX_LAYER_VOLUME, Math.max(0, resolved / 100_000));
+}
+
 function buildClipLayer(element: TimelineElement, atTicks: number, weight: number): ActiveClipLayer | null {
   if (!element.asset_id) return null;
   const animations = element.animations;
   const baseOpacity = resolveNumberAtTime(animations, 'opacity', atTicks, 100_000) / 100_000;
-  const resolvedVolume = resolveNumberAtTime(animations, 'volume', atTicks, element.volume_millipercent);
   return {
     asset_id: element.asset_id,
     element_id: element.id,
     sourceSeconds: elementSourceSeconds(element, atTicks),
-    volume: Math.min(1, Math.max(0, resolvedVolume / 100_000)),
+    volume: layerVolumeAt(element, atTicks),
     effects: element.effects,
     mask: element.mask,
     opacity: Math.min(1, Math.max(0, baseOpacity * weight)),
@@ -224,18 +239,12 @@ function toAudioLayer(
   trackId: string,
   atTicks: number,
 ): ActiveAudioLayer {
-  const resolvedVolume = resolveNumberAtTime(
-    element.animations,
-    'volume',
-    atTicks,
-    element.volume_millipercent,
-  );
   return {
     asset_id: element.asset_id as string,
     element_id: element.id,
     track_id: trackId,
     sourceSeconds: elementSourceSeconds(element, atTicks),
-    volume: Math.min(1, Math.max(0, resolvedVolume / 100_000)),
+    volume: layerVolumeAt(element, atTicks),
     speedFactor: Math.max(element.speed_millipercent, 1) / 100_000,
   };
 }

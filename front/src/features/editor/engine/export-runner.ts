@@ -1,6 +1,7 @@
 import type { MetadataTags } from 'mediabunny';
 
-import { composeFrame, MediaPool, resolveAudioLayers } from './compositor';
+import { composeFrame, layerVolumeAt, MediaPool, resolveAudioLayers } from './compositor';
+import { normalizeAudioBuffer } from './loudness';
 import {
   TICKS_PER_SECOND,
   type CanonicalDocument,
@@ -9,11 +10,34 @@ import {
   type ExportRenderOptions,
   type RendererBackend,
   type ResolvedAsset,
+  type TimelineElement,
   type VariantSpec,
 } from './ports';
 
 const AUDIO_SAMPLE_RATE = 48_000;
 const AUDIO_CHANNELS = 2;
+const VOLUME_CURVE_STEPS = 32;
+
+/**
+ * An element's gain sampled evenly across `[startTicks, endTicks]`, for
+ * `AudioParam.setValueCurveAtTime`. Segments are cut at every volume
+ * keyframe, so within one the value only moves along that keyframe's easing
+ * — the curve follows it exactly instead of holding the segment's first
+ * value (which turned every fade into a step).
+ */
+export function volumeCurve(
+  element: TimelineElement,
+  startTicks: number,
+  endTicks: number,
+  steps = VOLUME_CURVE_STEPS,
+): Float32Array {
+  const curve = new Float32Array(Math.max(2, steps));
+  for (let index = 0; index < curve.length; index += 1) {
+    const atTicks = startTicks + ((endTicks - startTicks) * index) / (curve.length - 1);
+    curve[index] = layerVolumeAt(element, atTicks);
+  }
+  return curve;
+}
 
 function evenPixel(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
@@ -122,6 +146,9 @@ async function renderMixedAudio(
 
   const maxTicks = Math.round(seconds * TICKS_PER_SECOND);
   const breakpoints = audioBreakpoints(document, maxTicks);
+  const elementsById = new Map(
+    document.tracks.flatMap((track) => track.elements.map((element) => [element.id, element] as const)),
+  );
   let scheduled = false;
   for (let index = 0; index < breakpoints.length - 1; index += 1) {
     const start = breakpoints[index] ?? 0;
@@ -136,7 +163,16 @@ async function renderMixedAudio(
       );
       if (durationSeconds <= 0) continue;
       const gain = offline.createGain();
-      gain.gain.value = layer.volume;
+      const element = elementsById.get(layer.element_id);
+      if (element && (element.animations.channels.volume?.points.length ?? 0) > 1) {
+        gain.gain.setValueCurveAtTime(
+          volumeCurve(element, start, end),
+          start / TICKS_PER_SECOND,
+          (end - start) / TICKS_PER_SECOND,
+        );
+      } else {
+        gain.gain.value = layer.volume;
+      }
       gain.connect(offline.destination);
       const node = offline.createBufferSource();
       node.buffer = buffer;
@@ -249,7 +285,11 @@ export class SequentialExportRunner implements RendererBackend {
     if (audioSource) {
       yield { percent: 98, stage: 'encoding', message: 'audio' };
       const mixed = await renderMixedAudio(document, seconds, assets);
-      if (mixed) await audioSource.add(mixed);
+      if (mixed) {
+        // Mastering on the finished mix only; the preview plays it as-is.
+        if (options.normalizeLoudness) normalizeAudioBuffer(mixed);
+        await audioSource.add(mixed);
+      }
       audioSource.close();
     }
 
