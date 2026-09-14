@@ -3,10 +3,15 @@ import { streamPost as streamAgentPost } from '@/lib/sse-post';
 
 export type ScriptBlockType = 'scene' | 'action' | 'camera' | 'dialogue' | 'breakpoint';
 
+/** A dialogue line's delivery for dubbing — the backend's closed
+ * `copywriter.SCRIPT_EMOTIONS`. Absent/null means said plainly. */
+export type ScriptEmotion = 'happy' | 'sad' | 'angry' | 'fear' | 'surprise' | 'calm';
+
 export interface ScriptBlock {
   type: ScriptBlockType;
   character: string | null;
   text: string;
+  emotion?: ScriptEmotion | null;
 }
 
 export interface ScriptScene {

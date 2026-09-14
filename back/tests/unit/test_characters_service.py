@@ -448,7 +448,12 @@ def test_apply_character_refs_merges_reference_assets_and_voice_profiles(
     assert params["reference_asset_ids"] == ["ast_existing", asset.id]
     profiles = params["extra"]["character_voice_profiles"]
     assert profiles == [
-        {"character_id": character.id, "name": "林夏", "voice_description": "低沉、克制"}
+        {
+            "character_id": character.id,
+            "name": "林夏",
+            "voice_description": "低沉、克制",
+            "preset_voice": None,
+        }
     ]
 
 

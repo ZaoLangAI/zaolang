@@ -1046,13 +1046,16 @@ def _sanitize_script_segment(raw: Any, original: dict | None) -> dict | None:
         if not isinstance(item, dict) or str(item.get("type") or "") != current_type:
             return {"heading": heading, "blocks": list(original_blocks)}
         text = str(item.get("text") or "").strip()[:MAX_TEXT_LEN] or str(current.get("text") or "")
-        blocks.append(
-            {
-                "type": current_type,
-                "character": current.get("character"),
-                "text": text,
-            }
-        )
+        entry: dict[str, Any] = {
+            "type": current_type,
+            "character": current.get("character"),
+            "text": text,
+        }
+        # Delivery is the author's (or the draft turn's) call, not the
+        # segment rewrite's — carry it over like `character`.
+        if current_type == "dialogue" and current.get("emotion") in SCRIPT_EMOTIONS:
+            entry["emotion"] = current["emotion"]
+        blocks.append(entry)
     return {"heading": heading, "blocks": blocks}
 
 
@@ -1254,12 +1257,17 @@ SCRIPT_REVISE_SLOT = "script_revise"
 # `_script_text_is_usable` below).
 SCRIPT_MAX_TOKENS = 8192
 
+# A dialogue line's delivery, closed so every TTS upstream can map it
+# (`app.providers.tts_direction`). Optional: absent means "say it plainly".
+SCRIPT_EMOTIONS = ("happy", "sad", "angry", "fear", "surprise", "calm")
+
 SCRIPT_JSON_SHAPE = (
     '{"title": string, "logline": string, '
     '"characters": [{"name": string, "traits": string}], '
     '"scenes": [{"heading": string, "blocks": '
     '[{"type": "scene"|"action"|"camera"|"dialogue"|"breakpoint", '
-    '"character": string|null, "text": string}]}]}'
+    '"character": string|null, "text": string, '
+    '"emotion": "happy"|"sad"|"angry"|"fear"|"surprise"|"calm"|null}]}]}'
 )
 
 # Shared between the draft and revise prompts so a color block's meaning
@@ -1297,7 +1305,10 @@ _BLOCK_TYPE_RULES = f"""- type 含义与写法：
 一个运镜动作——需要两段运动就拆成两个色块，叠加运镜在生成时会在切换点抖动。禁止\
 「镜头缓缓移动」这种没有方向的写法，也禁止「特写环绕」这种把景别和运镜挤成一个词的写法
   - dialogue：character 字段填说话人姓名，其余类型 character 为 null。同一角色从头到尾用\
-完全相同的姓名写法，不要在「他」「男人」「穿风衣的男人」之间换来换去
+完全相同的姓名写法，不要在「他」「男人」「穿风衣的男人」之间换来换去。emotion 只用于 dialogue：\
+这句台词语气明显时填 happy/sad/angry/fear/surprise/calm 之一（配音会按它调整语气），语气平淡\
+就填 null，其余类型 emotion 一律为 null；语气只写进 emotion，\
+不要在台词正文里加「（冷笑）」这类括号提示
   - breakpoint：建议的生成/剪辑切分点，不是场景内容本身
 - 每一场戏必须包含至少一个 scene 色块，为这场戏保留一段可以直接拿去生成场景图的干净环境描述；\
 scene 色块之外，同一场戏还要至少覆盖 action、dialogue 两类中的一类
@@ -1577,7 +1588,17 @@ def _sanitize_script(raw: Any) -> dict[str, Any] | None:
                         continue
                     character = block.get("character")
                     character_name = str(character).strip()[:MAX_TITLE_LEN] if character else None
-                    blocks.append({"type": block_type, "character": character_name, "text": text})
+                    entry: dict[str, Any] = {
+                        "type": block_type,
+                        "character": character_name,
+                        "text": text,
+                    }
+                    # Only a known delivery on a spoken line survives; the key
+                    # is omitted otherwise so a plain line stays a 3-key block.
+                    emotion = block.get("emotion")
+                    if block_type == "dialogue" and emotion in SCRIPT_EMOTIONS:
+                        entry["emotion"] = emotion
+                    blocks.append(entry)
             if blocks:
                 ref = scene.get("ref_id")
                 scenes.append(

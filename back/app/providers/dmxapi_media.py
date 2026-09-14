@@ -40,6 +40,7 @@ from typing import Any
 import httpx
 from PIL import Image, UnidentifiedImageError
 
+from app.providers import tts_direction
 from app.providers.aihubmix_media import media_client_base, media_request_path
 from app.providers.base import (
     GenerationProvider,
@@ -968,10 +969,12 @@ class DmxApiMediaProvider(GenerationProvider):
             "voice": voice,
             "response_format": "mp3",
         }
-        if self._model == AUDIO_MODEL_TTS_PRO:
-            emotion = request.extra.get("emotion")
-            if emotion:
-                body["emotion"] = emotion
+        emotion = tts_direction.tts_pro_emotion(request.extra.get("emotion"))
+        if self._model == AUDIO_MODEL_TTS_PRO and emotion:
+            body["emotion"] = emotion
+        instructions = tts_direction.instructions_for(self._model, request.extra.get("emotion"))
+        if instructions:
+            body["instructions"] = instructions
         with self._client() as client:
             response = client.post(
                 media_request_path(self._creds.base_url, "/v1/audio/speech"), json=body
