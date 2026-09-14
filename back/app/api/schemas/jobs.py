@@ -219,7 +219,9 @@ def validate_generation_params(
         if len(references) > AUDIO_CLONE_MAX_REFERENCES:
             raise ValueError("音频生成最多只能提供 1 段声音克隆参考音频。")
         voice = extras.get("voice")
-        has_valid_voice = isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        has_valid_voice = (
+            isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        )
         # A clone reference stands in for a named voice — the reference audio
         # itself carries the identity, so `voice` becomes optional once one
         # is attached (some clone models still take an optional style/voice
@@ -240,9 +242,7 @@ def validate_generation_params(
             audio_style == "sfx"
             and duration_seconds
             and not (
-                MUSIC_SFX_MIN_DURATION_SECONDS
-                <= duration_seconds
-                <= MUSIC_SFX_MAX_DURATION_SECONDS
+                MUSIC_SFX_MIN_DURATION_SECONDS <= duration_seconds <= MUSIC_SFX_MAX_DURATION_SECONDS
             )
         ):
             raise ValueError(
@@ -721,6 +721,10 @@ class UploadPresignRequest(ApiModel):
             r"|editor_export|caption|font|voice_sample)$"
         )
     )
+    # The uploader's own declaration that an image/video shows a real person —
+    # such a reference then needs a portrait consent (`POST
+    # /v1/assets/{asset_id}/consents`) before a generation job may use it.
+    depicts_real_person: bool = False
 
 
 class UploadPresignResponse(ApiModel):
@@ -754,6 +758,7 @@ class AssetResponse(ApiModel):
     moderation_status: str
     is_prototype: bool = False
     ai_generated: bool = False
+    depicts_real_person: bool = False
 
 
 class ProvenanceResponse(ApiModel):
@@ -767,6 +772,33 @@ class ProvenanceResponse(ApiModel):
     generation_job_id: str | None = None
     claim: dict[str, Any]
     signed: bool = False
+
+
+class ConsentDeclareRequest(ApiModel):
+    """The uploader declares that the real person whose voice or likeness the
+    asset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`
+    is an optional `consent_evidence` upload an operator can verify against."""
+
+    consent_type: Literal["voice", "portrait"]
+    subject_reference: str = Field(min_length=1, max_length=255)
+    evidence_asset_id: str | None = None
+    expires_at: dt.datetime | None = None
+
+
+class ConsentRevokeRequest(ApiModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ConsentResponse(ApiModel):
+    id: str
+    asset_id: str
+    consent_type: str
+    subject_reference: str
+    status: str
+    has_evidence: bool
+    expires_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+    created_at: dt.datetime
 
 
 class CreditBalanceResponse(ApiModel):

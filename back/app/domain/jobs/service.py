@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.characters import service as characters_service
+from app.domain.consent import service as consent_service
 from app.domain.credits import service as credits_service
 from app.domain.credits.pricing import Quote
 from app.domain.credits.pricing import quote as compute_quote
@@ -219,6 +220,10 @@ def submit(
         params=params,
         source_work_version_id=source_work_version_id,
     )
+    # A voice-clone sample or a real-person reference needs that person's
+    # consent (深度合成管理规定 §14). Checked before quoting, like the
+    # ownership check above, so a missing consent never reserves credits.
+    consent_service.assert_reference_consents(session, operation=operation, params=params)
     shortform_service.assert_params_consistent(session, params)
 
     priced = quote_for(

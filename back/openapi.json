@@ -5640,6 +5640,205 @@
         }
       }
     },
+    "/v1/assets/{asset_id}/consents": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "List Consents",
+        "description": "The caller's consent declarations for one of their own assets.",
+        "operationId": "list_consents_v1_assets__asset_id__consents_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConsentResponse"
+                  },
+                  "title": "Response List Consents V1 Assets  Asset Id  Consents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Declare Consent",
+        "description": "Declares that the real person whose voice or likeness `asset_id`\ncarries consented to its use as generation input — required before a\nvoice-clone sample or a real-person reference can be submitted.",
+        "operationId": "declare_consent_v1_assets__asset_id__consents_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentDeclareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/asset-consents/{consent_id}/revoke": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Revoke Consent",
+        "description": "Withdraws a consent; the asset can no longer feed a new generation job.",
+        "operationId": "revoke_consent_v1_asset_consents__consent_id__revoke_post",
+        "parameters": [
+          {
+            "name": "consent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Consent Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentRevokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/credits/balance": {
       "get": {
         "tags": [
@@ -22611,6 +22810,11 @@
             "type": "boolean",
             "title": "Ai Generated",
             "default": false
+          },
+          "depicts_real_person": {
+            "type": "boolean",
+            "title": "Depicts Real Person",
+            "default": false
           }
         },
         "type": "object",
@@ -24918,6 +25122,140 @@
           "created_at"
         ],
         "title": "ConfigVersionView"
+      },
+      "ConsentDeclareRequest": {
+        "properties": {
+          "consent_type": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "portrait"
+            ],
+            "title": "Consent Type"
+          },
+          "subject_reference": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Subject Reference"
+          },
+          "evidence_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Asset Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "consent_type",
+          "subject_reference"
+        ],
+        "title": "ConsentDeclareRequest",
+        "description": "The uploader declares that the real person whose voice or likeness the\nasset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`\nis an optional `consent_evidence` upload an operator can verify against."
+      },
+      "ConsentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "consent_type": {
+            "type": "string",
+            "title": "Consent Type"
+          },
+          "subject_reference": {
+            "type": "string",
+            "title": "Subject Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "has_evidence": {
+            "type": "boolean",
+            "title": "Has Evidence"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "asset_id",
+          "consent_type",
+          "subject_reference",
+          "status",
+          "has_evidence",
+          "created_at"
+        ],
+        "title": "ConsentResponse"
+      },
+      "ConsentRevokeRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "ConsentRevokeRequest"
       },
       "ContentDailyPoint": {
         "properties": {
@@ -37567,6 +37905,11 @@
             "type": "string",
             "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media|style_gallery_cover|series_logo|episode_preview|video_analysis_source|editor_source|editor_export|caption|font|voice_sample)$",
             "title": "Purpose"
+          },
+          "depicts_real_person": {
+            "type": "boolean",
+            "title": "Depicts Real Person",
+            "default": false
           }
         },
         "type": "object",

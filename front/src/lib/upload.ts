@@ -6,6 +6,8 @@ export { sha256Hex } from '@/lib/sha256';
 
 type Presign = components['schemas']['UploadPresignResponse'];
 export type Asset = components['schemas']['AssetResponse'];
+export type Consent = components['schemas']['ConsentResponse'];
+export type ConsentType = 'voice' | 'portrait';
 
 /**
  * Three-step upload: presign, PUT straight to object storage, then register.
@@ -30,6 +32,12 @@ export async function uploadFile(
     | 'caption'
     | 'font'
     | 'voice_sample',
+  options: {
+    /** The uploader's declaration that an image/video shows a real person —
+     * such a reference then needs a portrait consent (`declareConsent`)
+     * before a generation job may use it. Ignored for other media. */
+    depictsRealPerson?: boolean;
+  } = {},
 ): Promise<Asset> {
   const checksum = await sha256Hex(await file.arrayBuffer());
 
@@ -39,6 +47,7 @@ export async function uploadFile(
     size_bytes: file.size,
     checksum_sha256: checksum,
     purpose,
+    depicts_real_person: options.depictsRealPerson ?? false,
   });
 
   const put = await fetch(presigned.upload_url, {
@@ -50,5 +59,21 @@ export async function uploadFile(
 
   return api.post<Asset>('/v1/uploads/complete', {
     upload_session_id: presigned.upload_session_id,
+  });
+}
+
+/**
+ * Records that the real person whose voice or likeness an uploaded asset
+ * carries has personally consented to its use (深度合成管理规定 §14). A
+ * voice-clone sample, or a reference uploaded with `depictsRealPerson`, is
+ * refused at submit (`ASSET_RIGHTS_REQUIRED`) until this exists.
+ */
+export function declareConsent(
+  assetId: string,
+  consent: { type: ConsentType; subject: string },
+): Promise<Consent> {
+  return api.post<Consent>(`/v1/assets/${assetId}/consents`, {
+    consent_type: consent.type,
+    subject_reference: consent.subject,
   });
 }

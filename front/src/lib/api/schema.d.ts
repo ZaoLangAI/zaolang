@@ -1399,6 +1399,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/assets/{asset_id}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Consents
+         * @description The caller's consent declarations for one of their own assets.
+         */
+        get: operations["list_consents_v1_assets__asset_id__consents_get"];
+        put?: never;
+        /**
+         * Declare Consent
+         * @description Declares that the real person whose voice or likeness `asset_id`
+         *     carries consented to its use as generation input — required before a
+         *     voice-clone sample or a real-person reference can be submitted.
+         */
+        post: operations["declare_consent_v1_assets__asset_id__consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/asset-consents/{consent_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Consent
+         * @description Withdraws a consent; the asset can no longer feed a new generation job.
+         */
+        post: operations["revoke_consent_v1_asset_consents__consent_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/credits/balance": {
         parameters: {
             query?: never;
@@ -6033,6 +6079,11 @@ export interface components {
              * @default false
              */
             ai_generated: boolean;
+            /**
+             * Depicts Real Person
+             * @default false
+             */
+            depicts_real_person: boolean;
         };
         /**
          * AsyncProviderTaskView
@@ -6992,6 +7043,54 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * ConsentDeclareRequest
+         * @description The uploader declares that the real person whose voice or likeness the
+         *     asset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`
+         *     is an optional `consent_evidence` upload an operator can verify against.
+         */
+        ConsentDeclareRequest: {
+            /**
+             * Consent Type
+             * @enum {string}
+             */
+            consent_type: "voice" | "portrait";
+            /** Subject Reference */
+            subject_reference: string;
+            /** Evidence Asset Id */
+            evidence_asset_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** ConsentResponse */
+        ConsentResponse: {
+            /** Id */
+            id: string;
+            /** Asset Id */
+            asset_id: string;
+            /** Consent Type */
+            consent_type: string;
+            /** Subject Reference */
+            subject_reference: string;
+            /** Status */
+            status: string;
+            /** Has Evidence */
+            has_evidence: boolean;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ConsentRevokeRequest */
+        ConsentRevokeRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /** ContentDailyPoint */
         ContentDailyPoint: {
@@ -12027,6 +12126,11 @@ export interface components {
             checksum_sha256: string;
             /** Purpose */
             purpose: string;
+            /**
+             * Depicts Real Person
+             * @default false
+             */
+            depicts_real_person: boolean;
         };
         /** UploadPresignResponse */
         UploadPresignResponse: {
@@ -15658,6 +15762,113 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProvenanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_consents_v1_assets__asset_id__consents_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_consent_v1_assets__asset_id__consents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentDeclareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_consent_v1_asset_consents__consent_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                consent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"];
                 };
             };
             /** @description Validation Error */

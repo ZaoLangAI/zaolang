@@ -13,7 +13,7 @@ import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
 import { KNOWN_PRESET_KEYS, useStyleAndSkillPicker } from '@/components/studio/style-and-skill-picker';
 import { IconButton } from '@/components/ui/button';
-import { Select } from '@/components/ui/field';
+import { Select, TextInput } from '@/components/ui/field';
 import { IconClose, IconMic, IconUpload } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -21,7 +21,7 @@ import type { Locale } from '@/i18n/routing';
 import type { QualityTier, WorkDetail } from '@/lib/api/types';
 import { formatCount, formatDuration } from '@/lib/format';
 import { FALLBACK_VOICES, unionVoices, useGenerationModels } from '@/lib/use-generation-models';
-import { type Asset, uploadFile } from '@/lib/upload';
+import { type Asset, declareConsent, uploadFile } from '@/lib/upload';
 import { useGenerationSubmit } from '@/lib/use-generation-submit';
 
 // The shared submit schema always wants a valid `aspect_ratio` (backend
@@ -31,6 +31,8 @@ const AUDIO_ASPECT_RATIO = '16:9';
 // `AUDIO_CLONE_MAX_REFERENCES` in `app/api/schemas/jobs.py` — a clone call
 // takes exactly one reference voice.
 const CLONE_ACCEPT = 'audio/mpeg,audio/wav';
+// `SUBJECT_MAX_LENGTH` in `app/domain/consent/service.py`.
+const CONSENT_SUBJECT_MAX_LENGTH = 255;
 
 type AudioMode = 'voice' | 'clone';
 
@@ -48,7 +50,13 @@ type AudioMode = 'voice' | 'clone';
  * live from `app.providers.model_catalog.voices_for_model`), "克隆音色"
  * uploads a short reference sample instead (`voice_sample` purpose,
  * `reference_asset_ids`) — the two are mutually exclusive per
- * `AUDIO_CLONE_MAX_REFERENCES=1` on the backend. */
+ * `AUDIO_CLONE_MAX_REFERENCES=1` on the backend.
+ *
+ * Cloning needs the voice owner's own consent (深度合成管理规定 §14): the
+ * backend refuses a clone submit with `ASSET_RIGHTS_REQUIRED` until a voice
+ * consent exists for the sample, so the clone tab collects who the voice
+ * belongs to plus an explicit confirmation, and records the consent
+ * (`declareConsent`) right before submitting. */
 export function AudioGenerationStudio({
   source,
   reference,
@@ -108,16 +116,22 @@ export function AudioGenerationStudio({
     }
   }, [forcedModel, selectedModelOption]);
 
-  // -- clone reference upload -------------------------------------------
+  // -- clone reference upload + the voice owner's consent ---------------
   const [cloneAsset, setCloneAsset] = useState<Asset | null>(null);
   const [cloneUploading, setCloneUploading] = useState(false);
   const cloneInputRef = useRef<HTMLInputElement>(null);
+  const [consentSubject, setConsentSubject] = useState('');
+  const [consentConfirmed, setConsentConfirmed] = useState(false);
+  // The sample a consent has already been recorded for — a new sample needs
+  // its own declaration.
+  const [consentAssetId, setConsentAssetId] = useState<string | null>(null);
 
   const pickClone = async (file: File | undefined) => {
     if (!file) return;
     setCloneUploading(true);
     try {
       setCloneAsset(await uploadFile(file, 'voice_sample'));
+      setConsentConfirmed(false);
     } catch {
       notify(tStates('error'), 'error');
     } finally {
@@ -125,6 +139,16 @@ export function AudioGenerationStudio({
       if (cloneInputRef.current) cloneInputRef.current.value = '';
     }
   };
+
+  const removeClone = () => {
+    setCloneAsset(null);
+    setConsentConfirmed(false);
+  };
+
+  const consentRecorded = cloneAsset !== null && consentAssetId === cloneAsset.id;
+  const cloneReady =
+    cloneAsset !== null &&
+    (consentRecorded || (consentSubject.trim().length > 0 && consentConfirmed));
 
   /** Shared by presets, skills and the style gallery: all three apply the same `prompt`/extras shape (no `aspect_ratio` here — audio has no aspect control). */
   const applyParams = (params: Record<string, unknown>) => {
@@ -159,9 +183,18 @@ export function AudioGenerationStudio({
     rightsConfirmed &&
     !submitting &&
     (quote?.sufficient ?? true) &&
-    (mode === 'voice' || cloneAsset !== null);
+    (mode === 'voice' || cloneReady);
 
-  const runSubmit = () =>
+  const runSubmit = async () => {
+    if (mode === 'clone' && cloneAsset && !consentRecorded) {
+      try {
+        await declareConsent(cloneAsset.id, { type: 'voice', subject: consentSubject.trim() });
+        setConsentAssetId(cloneAsset.id);
+      } catch {
+        notify(t('consentFailed'), 'error');
+        return;
+      }
+    }
     submit({
       operation: 'audio_generation',
       qualityTier: tier,
@@ -177,6 +210,7 @@ export function AudioGenerationStudio({
       maxCredits: quote?.credits,
       draftTitle: source?.work.title ?? null,
     });
+  };
 
   const estimate = quote ? formatDuration(quote.estimated_seconds) : '—';
   const price = quote ? tCredits('amount', { count: formatCount(quote.credits, locale) }) : '—';
@@ -234,7 +268,7 @@ export function AudioGenerationStudio({
                 label={t('cloneRemove')}
                 size="sm"
                 variant="secondary"
-                onClick={() => setCloneAsset(null)}
+                onClick={removeClone}
               >
                 <IconClose className="size-3.5" />
               </IconButton>
@@ -258,6 +292,31 @@ export function AudioGenerationStudio({
             className="sr-only"
             onChange={(event) => void pickClone(event.target.files?.[0])}
           />
+          {cloneAsset ? (
+            consentRecorded ? (
+              <p className="text-xs text-muted">{t('consentDeclared')}</p>
+            ) : (
+              <div className="flex flex-col gap-2 rounded-[var(--radius-sm)] border border-border p-2.5">
+                <TextInput
+                  label={t('consentSubjectLabel')}
+                  hint={t('consentSubjectHint')}
+                  value={consentSubject}
+                  maxLength={CONSENT_SUBJECT_MAX_LENGTH}
+                  required
+                  onChange={(event) => setConsentSubject(event.target.value)}
+                />
+                <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed">
+                  <input
+                    type="checkbox"
+                    checked={consentConfirmed}
+                    onChange={(event) => setConsentConfirmed(event.target.checked)}
+                    className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]"
+                  />
+                  {t('consentConfirmVoice')}
+                </label>
+              </div>
+            )
+          ) : null}
         </div>
       )}
 
@@ -298,7 +357,7 @@ export function AudioGenerationStudio({
       promptSlot={promptComposer}
       canSubmit={canSubmit}
       submitting={submitting}
-      onSubmit={runSubmit}
+      onSubmit={() => void runSubmit()}
       price={price}
       estimate={estimate}
       error={error}
