@@ -15,12 +15,12 @@ import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import { FALLBACK_VOICES } from '@/lib/use-generation-models';
 
 import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
-import type { PendingAudio, PendingVideo } from './batch-plan';
+import type { PendingAudio, PendingKeyframe, PendingVideo } from './batch-plan';
 import { characterImagePrompt, sceneImagePrompt } from './script-prompts';
-import { type BreakpointVideoBinding } from './script-breakpoint';
+import { keyframeKey, type BreakpointVideoBinding } from './script-breakpoint';
 
-export type BatchKind = 'characters' | 'scenes' | 'videos' | 'audio';
-export type BatchItemKind = 'character' | 'scene' | 'video' | 'audio';
+export type BatchKind = 'characters' | 'scenes' | 'keyframes' | 'videos' | 'audio';
+export type BatchItemKind = 'character' | 'scene' | 'keyframe' | 'video' | 'audio';
 export type BatchItemStatus =
   | 'queued'
   | 'submitting'
@@ -63,6 +63,14 @@ export const DEFAULT_SCENE_PARAMS: BatchParams = {
   qualityTier: 'standard',
   durationSeconds: 0,
   aspectRatio: '16:9',
+  resolution: '1080p',
+};
+
+/** Storyboard keyframes: cheap stills at the video's own aspect. */
+export const DEFAULT_KEYFRAME_PARAMS: BatchParams = {
+  qualityTier: 'standard',
+  durationSeconds: 0,
+  aspectRatio: '9:16',
   resolution: '1080p',
 };
 
@@ -171,28 +179,43 @@ function clipPrompt(value: string): string {
   return value.slice(0, STUDIO_PROMPT_MAX_LENGTH);
 }
 
+/**
+ * `framedCount` (videos only): how many of the `count` segments start from a
+ * confirmed keyframe. Those are `image_to_video`, priced separately, so each
+ * operation is its own quote line and the total stays an exact sum.
+ */
 export function quoteForBatch(
   kind: BatchKind,
   params: BatchParams,
   count: number,
+  framedCount = 0,
 ): Promise<BatchQuote> {
+  const line = (operation: Operation, lineCount: number) => ({
+    operation,
+    quality_tier: params.qualityTier,
+    duration_seconds: kind === 'videos' ? params.durationSeconds : 0,
+    asset_kind: kind === 'characters' ? 'character' : kind === 'scenes' ? 'scene' : 'general',
+    character_views: kind === 'characters' ? ['front'] : null,
+    count: lineCount,
+  });
+  const total = Math.max(1, count);
+  const framed = kind === 'videos' ? Math.min(Math.max(0, framedCount), total) : 0;
   const operation: Operation =
     kind === 'videos' ? 'text_to_video' : kind === 'audio' ? 'audio_generation' : 'text_to_image';
+  const items =
+    framed > 0
+      ? [
+          ...(total - framed > 0 ? [line('text_to_video', total - framed)] : []),
+          line('image_to_video', framed),
+        ]
+      : [line(operation, total)];
   return api
-    .post<BatchQuoteResult>('/v1/generation-jobs/quote:batch', {
-      items: [
-        {
-          operation,
-          quality_tier: params.qualityTier,
-          duration_seconds: kind === 'videos' ? params.durationSeconds : 0,
-          asset_kind: kind === 'characters' ? 'character' : kind === 'scenes' ? 'scene' : 'general',
-          character_views: kind === 'characters' ? ['front'] : null,
-          count: Math.max(1, count),
-        },
-      ],
-    })
+    .post<BatchQuoteResult>('/v1/generation-jobs/quote:batch', { items })
     .then((quote) => ({
-      unitCredits: quote.items[0]?.unit_credits ?? 0,
+      // The per-job `max_credits` ceiling: the dearer line, so a segment
+      // started from its keyframe never trips it. What is charged is still
+      // each job's own quote.
+      unitCredits: Math.max(0, ...quote.items.map((item) => item.unit_credits)),
       totalCredits: quote.total_credits,
       count,
       availableCredits: quote.available_credits,
@@ -493,20 +516,30 @@ export function useScriptBatch({
       if (signal.aborted) return 'aborted' as const;
       try {
         const existing = itemsRef.current.find((row) => row.kind === 'video' && row.id === item.id);
+        // A confirmed storyboard keyframe becomes the first frame. Frame
+        // mode takes no other references (`validate_generation_params`) —
+        // the keyframe was generated with the cast and set, so it carries them.
+        const firstFrame = video.firstFrameAssetId ?? null;
         const job = await submitJob({
-          operation: 'text_to_video',
+          operation: firstFrame ? 'image_to_video' : 'text_to_video',
           qualityTier: params.qualityTier,
           prompt: clipPrompt(video.prompt),
           aspectRatio: params.aspectRatio,
           durationSeconds: params.durationSeconds,
           draftTitle: video.heading,
           draftId: existing?.draftId,
-          characterIds: video.characterIds,
-          sceneIds: video.sceneId ? [video.sceneId] : [],
-          videoOptions: {
-            resolution: params.resolution,
-            reference_mode: 'input_references',
-          },
+          characterIds: firstFrame ? [] : video.characterIds,
+          sceneIds: firstFrame || !video.sceneId ? [] : [video.sceneId],
+          videoOptions: firstFrame
+            ? {
+                resolution: params.resolution,
+                reference_mode: 'frame_images',
+                first_frame_asset_id: firstFrame,
+              }
+            : {
+                resolution: params.resolution,
+                reference_mode: 'input_references',
+              },
           linkEpisodeId: episodeId,
           linkBreakpointKey: video.key,
           maxCredits: unitCredits,
@@ -545,6 +578,89 @@ export function useScriptBatch({
       }
     },
     [episodeId, paceSubmit, patchItem],
+  );
+
+  // The last params a keyframe batch ran with, so a single regenerate
+  // keeps the storyboard's aspect/tier.
+  const keyframeParamsRef = useRef<BatchParams>(DEFAULT_KEYFRAME_PARAMS);
+
+  /** One storyboard keyframe: a cheap `text_to_image` of the segment's
+   * opening, with its cast and set as references, into the segment's
+   * `{heading}#K{n}` draft (a regenerate reuses that draft, so versions
+   * stack up there). Never used as a first frame until the author confirms. */
+  const runKeyframe = useCallback(
+    async (
+      item: BatchItemState,
+      task: PendingKeyframe,
+      params: BatchParams,
+      unitCredits: number,
+      signal: AbortSignal,
+    ) => {
+      patchItem('keyframe', item.id, { status: 'submitting', error: undefined });
+      await paceSubmit(signal);
+      if (signal.aborted) return;
+      try {
+        const job = await submitJob({
+          operation: 'text_to_image',
+          qualityTier: params.qualityTier,
+          prompt: clipPrompt(task.prompt),
+          aspectRatio: params.aspectRatio,
+          durationSeconds: 0,
+          draftTitle: task.heading,
+          draftId: task.draftId ?? undefined,
+          characterIds: task.characterIds,
+          sceneIds: task.sceneId ? [task.sceneId] : [],
+          linkEpisodeId: episodeId,
+          linkBreakpointKey: keyframeKey(task.key),
+          maxCredits: unitCredits,
+        });
+        patchItem('keyframe', item.id, {
+          status: 'running',
+          jobId: job.id,
+          draftId: job.draft_id ?? undefined,
+        });
+        onVideoDraftCreatedRef.current();
+        const finished = TERMINAL.has(job.status) ? job : await pollJob(job.id, signal);
+        if (finished.status !== 'succeeded' || !finished.output_asset_id) {
+          patchItem('keyframe', item.id, {
+            status: 'failed',
+            error: finished.failure_message || finished.status,
+          });
+          return;
+        }
+        patchItem('keyframe', item.id, { status: 'succeeded', error: undefined });
+        onVideoDraftCreatedRef.current();
+      } catch (error) {
+        if (signal.aborted) return;
+        patchItem('keyframe', item.id, {
+          status: 'failed',
+          error: isApiError(error) ? error.message : 'failed',
+        });
+      }
+    },
+    [episodeId, paceSubmit, patchItem],
+  );
+
+  const runKeyframePool = useCallback(
+    async (tasks: PendingKeyframe[], params: BatchParams, unitCredits: number, signal: AbortSignal) => {
+      let cursor = 0;
+      const workers = Array.from({ length: Math.min(IMAGE_CONCURRENCY, tasks.length) }, async () => {
+        while (!signal.aborted) {
+          const task = tasks[cursor];
+          cursor += 1;
+          if (!task) return;
+          await runKeyframe(
+            { kind: 'keyframe', id: task.key, label: task.heading, status: 'queued' },
+            task,
+            params,
+            unitCredits,
+            signal,
+          );
+        }
+      });
+      await Promise.all(workers);
+    },
+    [runKeyframe],
   );
 
   const runImagePool = useCallback(
@@ -702,6 +818,7 @@ export function useScriptBatch({
       unitCredits: number;
       characters?: ScriptCharacter[];
       scenes?: ScriptScene[];
+      keyframes?: PendingKeyframe[];
       videos?: PendingVideo[];
       audios?: PendingAudio[];
       document?: ScriptDocument;
@@ -718,39 +835,31 @@ export function useScriptBatch({
       pendingAudiosRef.current = input.audios ?? [];
       setPaused(false);
 
+      if (input.kind === 'keyframes') keyframeParamsRef.current = input.params;
+      const queued = (kind: BatchItemKind, id: string, label: string): BatchItemState => ({
+        kind,
+        id,
+        label,
+        status: 'queued',
+      });
       const nextItems: BatchItemState[] =
         input.kind === 'characters'
-          ? (input.characters ?? []).map((character) => ({
-              kind: 'character',
-              id: character.name,
-              label: character.name,
-              status: 'queued',
-            }))
+          ? (input.characters ?? []).map((character) =>
+              queued('character', character.name, character.name),
+            )
           : input.kind === 'scenes'
-            ? (input.scenes ?? []).map((scene) => ({
-                kind: 'scene',
-                id: scene.heading,
-                label: scene.heading,
-                status: 'queued',
-              }))
-            : input.kind === 'audio'
-              ? (input.audios ?? []).map((audio) => ({
-                  kind: 'audio',
-                  id: audio.key,
-                  label: audio.heading,
-                  status: 'queued',
-                }))
-              : (input.videos ?? []).map((video) => ({
-                  kind: 'video',
-                  id: video.key,
-                  label: video.heading,
-                  status: 'queued',
-                }));
+            ? (input.scenes ?? []).map((scene) => queued('scene', scene.heading, scene.heading))
+            : input.kind === 'keyframes'
+              ? (input.keyframes ?? []).map((task) => queued('keyframe', task.key, task.heading))
+              : input.kind === 'audio'
+                ? (input.audios ?? []).map((audio) => queued('audio', audio.key, audio.heading))
+                : (input.videos ?? []).map((video) => queued('video', video.key, video.heading));
 
       setItems((current) => {
         const kept = current.filter((item) => {
           if (input.kind === 'characters') return item.kind !== 'character';
           if (input.kind === 'scenes') return item.kind !== 'scene';
+          if (input.kind === 'keyframes') return item.kind !== 'keyframe';
           if (input.kind === 'audio') return item.kind !== 'audio';
           return item.kind !== 'video';
         });
@@ -795,6 +904,13 @@ export function useScriptBatch({
           await runVideoQueue(input.videos, controller.signal);
         } else if (input.kind === 'audio' && input.audios) {
           await runAudioQueue(input.audios, controller.signal);
+        } else if (input.kind === 'keyframes' && input.keyframes) {
+          await runKeyframePool(
+            input.keyframes,
+            input.params,
+            input.unitCredits,
+            controller.signal,
+          );
         }
       } finally {
         if (abortRef.current === controller) {
@@ -803,7 +919,41 @@ export function useScriptBatch({
         }
       }
     },
-    [persist, runAudioQueue, runImagePool, runVideoQueue, running],
+    [persist, runAudioQueue, runImagePool, runKeyframePool, runVideoQueue, running],
+  );
+
+  /** Regenerates one segment's keyframe into its existing draft. */
+  const regenerateKeyframe = useCallback(
+    async (task: PendingKeyframe) => {
+      if (running) return;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setItems((current) => {
+        const next = [
+          ...current.filter((row) => !(row.kind === 'keyframe' && row.id === task.key)),
+          { kind: 'keyframe' as const, id: task.key, label: task.heading, status: 'queued' as const },
+        ];
+        persist(next);
+        return next;
+      });
+      setRunning(true);
+      try {
+        const quote = await quoteForBatch('keyframes', keyframeParamsRef.current, 1);
+        await runKeyframe(
+          { kind: 'keyframe', id: task.key, label: task.heading, status: 'queued' },
+          task,
+          keyframeParamsRef.current,
+          quote.unitCredits,
+          controller.signal,
+        );
+      } catch {
+        patchItem('keyframe', task.key, { status: 'failed', error: 'quote_failed' });
+      } finally {
+        if (abortRef.current === controller) setRunning(false);
+      }
+    },
+    [patchItem, persist, runKeyframe, running],
   );
 
   const retryImage = useCallback(
@@ -858,7 +1008,12 @@ export function useScriptBatch({
     setRunning(true);
     try {
       try {
-        const quote = await quoteForBatch('videos', persistParams.current, remaining.length);
+        const quote = await quoteForBatch(
+          'videos',
+          persistParams.current,
+          remaining.length,
+          remaining.filter((video) => video.firstFrameAssetId).length,
+        );
         unitCreditsRef.current = quote.unitCredits;
       } catch {
         /* keep the last known unit price */
@@ -968,6 +1123,16 @@ export function useScriptBatch({
                     error: job.failure_message || job.status,
                   });
                 }
+              } else if (item.kind === 'keyframe') {
+                if (job.status === 'succeeded' && job.output_asset_id) {
+                  patchItem('keyframe', item.id, { status: 'succeeded', error: undefined });
+                  onVideoDraftCreatedRef.current();
+                } else {
+                  patchItem('keyframe', item.id, {
+                    status: 'failed',
+                    error: job.failure_message || job.status,
+                  });
+                }
               } else {
                 await finishImage(item, job);
               }
@@ -1018,6 +1183,7 @@ export function useScriptBatch({
     itemByKey,
     start,
     retryImage,
+    regenerateKeyframe,
     resumeQueue,
   };
 }

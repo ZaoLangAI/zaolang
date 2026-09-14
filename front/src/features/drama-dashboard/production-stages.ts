@@ -180,7 +180,8 @@ export function unmatchedVideoDraftCount(
   return drafts.filter((draft) => {
     const operation = draft.params?.operation;
     const key = draft.params?.link_breakpoint_key;
-    const isVideo = !operation || operation === 'text_to_video';
+    const isVideo =
+      !operation || operation === 'text_to_video' || operation === 'image_to_video';
     return isVideo && typeof key === 'string' && key !== '' && !keys.has(key);
   }).length;
 }

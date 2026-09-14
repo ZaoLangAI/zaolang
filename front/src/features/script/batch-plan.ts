@@ -14,6 +14,21 @@ export interface PendingVideo {
   characterIds: string[];
   sceneId: string | null;
   prompt: string;
+  /** The segment's confirmed storyboard keyframe: the video starts from it
+   * (`image_to_video`, frame mode) instead of from reference images. */
+  firstFrameAssetId?: string | null;
+}
+
+/** A segment's storyboard keyframe to generate (or regenerate into `draftId`). */
+export interface PendingKeyframe {
+  /** The segment key, `{heading}#{ordinal}` — its draft is `keyframeKey(key)`. */
+  key: string;
+  heading: string;
+  blockIndex: number;
+  characterIds: string[];
+  sceneId: string | null;
+  prompt: string;
+  draftId: string | null;
 }
 
 /** One dialogue line the batch runner can dub, in script order — the unit
@@ -150,16 +165,24 @@ function segmentHasRefs(
   return refs.characterIds.length > 0 || Boolean(refs.sceneId);
 }
 
+/** Unbound segments the runner can generate: ones with a character/scene
+ * ref, and — even without one — ones with a confirmed keyframe
+ * (`firstFrames`, segment key → asset id), which then carries identity. */
 export function pendingVideos(
   document: ScriptDocument,
   bindings: Record<string, BreakpointVideoBinding>,
   inFlightKeys: ReadonlySet<string> = new Set(),
+  firstFrames: Readonly<Record<string, string>> = {},
 ): PendingVideo[] {
   const pending: PendingVideo[] = [];
   for (const key of orderedBreakpointKeys(document)) {
     if (key in bindings || inFlightKeys.has(key)) continue;
     const located = locateBreakpoint(document, key);
-    if (!located || !segmentHasRefs(document, located.scene, located.blockIndex)) continue;
+    if (!located) continue;
+    const firstFrameAssetId = firstFrames[key] ?? null;
+    if (!firstFrameAssetId && !segmentHasRefs(document, located.scene, located.blockIndex)) {
+      continue;
+    }
     const refs = resolveBreakpointRefs(document, located.scene, located.blockIndex);
     pending.push({
       key,
@@ -168,9 +191,48 @@ export function pendingVideos(
       characterIds: refs.characterIds,
       sceneId: refs.sceneId,
       prompt: breakpointSegmentPrompt(located.scene, located.blockIndex),
+      firstFrameAssetId,
     });
   }
   return pending;
+}
+
+const KEYFRAME_PROMPT_SUFFIX =
+  '电影感分镜关键帧：只画这一段开头的一个画面，构图清晰，人物与场景和参考图一致，画面里不要出现文字。';
+
+/** One segment's keyframe task, or null for an unknown key. */
+export function keyframeTask(
+  document: ScriptDocument,
+  key: string,
+  draftId: string | null = null,
+): PendingKeyframe | null {
+  const located = locateBreakpoint(document, key);
+  if (!located) return null;
+  const refs = resolveBreakpointRefs(document, located.scene, located.blockIndex);
+  return {
+    key,
+    heading: located.scene.heading,
+    blockIndex: located.blockIndex,
+    characterIds: refs.characterIds,
+    sceneId: refs.sceneId,
+    prompt: `${breakpointSegmentPrompt(located.scene, located.blockIndex)}\n${KEYFRAME_PROMPT_SUFFIX}`,
+    draftId,
+  };
+}
+
+/** Segments with no video and no keyframe draft yet, in shoot order. */
+export function pendingKeyframes(
+  document: ScriptDocument,
+  videoBindings: Record<string, BreakpointVideoBinding>,
+  keyframes: Record<string, unknown>,
+  inFlightKeys: ReadonlySet<string> = new Set(),
+): PendingKeyframe[] {
+  return orderedBreakpointKeys(document)
+    .filter((key) => !(key in videoBindings) && !(key in keyframes) && !inFlightKeys.has(key))
+    .flatMap((key) => {
+      const task = keyframeTask(document, key);
+      return task ? [task] : [];
+    });
 }
 
 export function boundVideoCount(
@@ -184,10 +246,11 @@ export function boundVideoCount(
 export function unreferencedVideoKeys(
   document: ScriptDocument,
   bindings: Record<string, BreakpointVideoBinding>,
+  firstFrames: Readonly<Record<string, string>> = {},
 ): string[] {
   const keys: string[] = [];
   for (const key of orderedBreakpointKeys(document)) {
-    if (key in bindings) continue;
+    if (key in bindings || key in firstFrames) continue;
     const located = locateBreakpoint(document, key);
     if (!located || segmentHasRefs(document, located.scene, located.blockIndex)) continue;
     keys.push(key);

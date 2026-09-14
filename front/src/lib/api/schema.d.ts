@@ -762,6 +762,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drafts/{draft_id}/keyframe-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Keyframe
+         * @description Confirms (or withdraws) a storyboard keyframe version as its
+         *     segment's video first frame — see `publishing.confirm_keyframe`.
+         */
+        post: operations["confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/drafts/{draft_id}/versions/{job_id}": {
         parameters: {
             query?: never;
@@ -8928,6 +8949,15 @@ export interface components {
             /** Points */
             points?: components["schemas"]["JobsDailyPoint"][];
         };
+        /**
+         * KeyframeConfirmationRequest
+         * @description Confirms one version of a storyboard keyframe draft as its segment's
+         *     video first frame; `null` withdraws the confirmation.
+         */
+        KeyframeConfirmationRequest: {
+            /** Job Id */
+            job_id?: string | null;
+        };
         /** LearnPostAdminView */
         LearnPostAdminView: {
             /** Id */
@@ -14641,6 +14671,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AppliedVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyframeConfirmationRequest"];
             };
         };
         responses: {
