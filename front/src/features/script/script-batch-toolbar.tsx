@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { IconImage, IconMic, IconUser, IconVideo } from '@/components/ui/icons';
+import { IconImage, IconMic, IconScissors, IconUser, IconVideo } from '@/components/ui/icons';
 
 import type { BatchKind } from './use-script-batch';
 
@@ -14,6 +14,9 @@ export function ScriptBatchToolbar({
   videoCount,
   videoDisabled,
   audioCount,
+  assembleCount,
+  assembling,
+  onAssemble,
   disabled,
   running,
   paused,
@@ -29,6 +32,10 @@ export function ScriptBatchToolbar({
   videoDisabled: boolean;
   /** Dialogue lines with no dubbed `audio_generation` draft yet — see `pendingDialogueLines`. */
   audioCount: number;
+  /** Segments with a generated video — what `POST /v1/episode-cuts:assemble` can lay down. */
+  assembleCount: number;
+  assembling: boolean;
+  onAssemble: () => void;
   disabled: boolean;
   running: boolean;
   paused: boolean;
@@ -89,6 +96,16 @@ export function ScriptBatchToolbar({
           onClick={() => onOpen('audio')}
         >
           {t('batchGenerateAudio', { count: audioCount })}
+        </Button>
+        <Button
+          size="sm"
+          icon={<IconScissors className="size-3.5" />}
+          loading={assembling}
+          disabled={busy || assembling || assembleCount === 0}
+          title={assembleCount === 0 ? t('batchAssembleNothing') : t('batchAssembleHint')}
+          onClick={onAssemble}
+        >
+          {t('batchAssembleCut', { count: assembleCount })}
         </Button>
         {paused && !running ? (
           <Button size="sm" onClick={onResume}>
