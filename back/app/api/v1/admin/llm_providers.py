@@ -56,7 +56,7 @@ from app.platform_config.schemas import (
     LlmProviderConfig,
     LlmProviderEndpoint,
 )
-from app.providers import connectivity, model_catalog, validation_jobs
+from app.providers import connectivity, media_breaker, model_catalog, validation_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -418,7 +418,11 @@ def _endpoint_view(endpoint_id: str, endpoint: LlmProviderEndpoint) -> LlmProvid
         generation_kind=endpoint.generation_kind,
         audio_generation_kind=endpoint.audio_generation_kind,
         concurrency_in_use=status.concurrency_in_use,
-        circuit_breaker_open=status.circuit_breaker_open,
+        # The LLM gateway's breaker, or any of this endpoint's media routes
+        # cooling down in the cross-job media breaker.
+        circuit_breaker_open=(
+            status.circuit_breaker_open or bool(media_breaker.open_routes_for_endpoint(endpoint_id))
+        ),
         recent_attempts=status.recent_attempts,
         recent_success_rate=status.recent_success_rate,
     )

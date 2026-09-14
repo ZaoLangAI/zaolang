@@ -584,9 +584,7 @@ def _apply_character_visual_medium(ctx: WorkflowContext) -> None:
             else _CHARACTER_PHOTOREAL_MEDIUM
         )
         medium = "photoreal"
-    negative = (
-        _CHARACTER_ANIME_NEGATIVE if medium == "anime" else _CHARACTER_PHOTOREAL_NEGATIVE
-    )
+    negative = _CHARACTER_ANIME_NEGATIVE if medium == "anime" else _CHARACTER_PHOTOREAL_NEGATIVE
     existing = ctx.params.get("negative_prompt")
     if negative not in (existing or ""):
         ctx.params["negative_prompt"] = _merge_negative(existing, negative)
@@ -701,9 +699,7 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     character_view = _current_character_view(ctx) if is_character else None
-    is_completion_pass = (
-        is_character and character_view in _CHARACTER_COMPLETION_FIXED_PROMPTS
-    )
+    is_completion_pass = is_character and character_view in _CHARACTER_COMPLETION_FIXED_PROMPTS
     if is_completion_pass and character_view:
         ctx.prompt = _CHARACTER_COMPLETION_FIXED_PROMPTS[character_view]
         ctx.params["negative_prompt"] = _merge_negative(
@@ -1789,6 +1785,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             latency_ms=result.latency_ms,
             cost_minor=result.cost_minor,
             cost_micro_usd=attempt_cost_micro_usd,
+            failure_code=None if result.succeeded else result.failure_code,
         )
         ctx.session.flush()
 
@@ -1935,6 +1932,7 @@ def execute_video_analysis_generate(
             latency_ms=result.latency_ms,
             cost_minor=result.cost_minor,
             cost_micro_usd=attempt_cost_micro_usd,
+            failure_code=None if result.succeeded else result.failure_code,
         )
         ctx.session.flush()
 
@@ -1963,9 +1961,7 @@ def execute_video_analysis_generate(
     if ctx.dry_run and ctx.live_provider:
         ctx.state["_preview_result_json"] = result.output_json
     _emit(ctx, JobEventType.GENERATING, JobStatus.RUNNING, "解析完成，正在结算", 85)
-    return NodeResult(
-        port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功"
-    )
+    return NodeResult(port="succeeded", summary=f"{capability.name} 第 {attempt_number} 次尝试成功")
 
 
 def _maybe_fill_linked_episode_preview(session: Any, draft: Draft) -> None:
