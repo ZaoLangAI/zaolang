@@ -6,6 +6,7 @@
  */
 
 import { resolveNumberAtTime } from './animation';
+import { type CaptionLayout, layoutCaptionLines } from './caption-layout';
 import { applyClipEffects } from './effects';
 import {
   TICKS_PER_SECOND,
@@ -535,31 +536,81 @@ function drawClipTransformed(
   ctx.restore();
 }
 
+// Export draws the same caption every frame for seconds at a time; laying it
+// out once per (text, size, width) keeps `measureText` off the hot path.
+const captionLayoutCache = new Map<string, CaptionLayout>();
+const CAPTION_LAYOUT_CACHE_LIMIT = 256;
+
+function captionLayout(
+  ctx: Canvas2DContext,
+  text: string,
+  baseFontSize: number,
+  maxWidth: number,
+  maxLines: number,
+): CaptionLayout {
+  const key = `${baseFontSize}|${Math.round(maxWidth)}|${maxLines}|${text}`;
+  const cached = captionLayoutCache.get(key);
+  if (cached) return cached;
+  const layout = layoutCaptionLines(
+    text,
+    maxWidth,
+    (value, scale) => {
+      ctx.font = `600 ${Math.round(baseFontSize * scale)}px sans-serif`;
+      return ctx.measureText(value).width;
+    },
+    maxLines,
+  );
+  if (captionLayoutCache.size >= CAPTION_LAYOUT_CACHE_LIMIT) captionLayoutCache.clear();
+  captionLayoutCache.set(key, layout);
+  return layout;
+}
+
+/**
+ * Bottom-anchored caption block: wrapped to at most two lines (more only
+ * when several captions show at once), shrunk then ellipsized rather than
+ * ever running off the frame — see `caption-layout.ts`. The last line keeps
+ * its old 0.88h position so single-line captions sit exactly where they did.
+ */
 function drawCaptions(
   ctx: Canvas2DContext,
   canvasWidth: number,
   canvasHeight: number,
   captions: string[],
 ): void {
-  const text = captions.join(' ');
-  if (!text) return;
-  const fontSize = Math.max(14, Math.round(canvasHeight * 0.045));
+  const paragraphs = captions.map((caption) => caption.trim()).filter(Boolean);
+  if (paragraphs.length === 0) return;
+  const baseFontSize = Math.max(14, Math.round(canvasHeight * 0.045));
+  const paddingX = 16;
+  const maxWidth = canvasWidth * 0.9 - paddingX * 2;
+  const layout = captionLayout(
+    ctx,
+    paragraphs.join('\n'),
+    baseFontSize,
+    maxWidth,
+    Math.max(2, paragraphs.length),
+  );
+  if (layout.lines.length === 0) return;
+
+  const fontSize = Math.round(baseFontSize * layout.fontScale);
   ctx.font = `600 ${fontSize}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const y = canvasHeight * 0.88;
-  const metrics = ctx.measureText(text);
-  const paddingX = 16;
+  const lineHeight = fontSize * 1.3;
   const boxHeight = fontSize * 1.6;
+  const lastY = canvasHeight * 0.88;
+  const firstY = lastY - (layout.lines.length - 1) * lineHeight;
+  const widest = Math.max(...layout.lines.map((line) => ctx.measureText(line).width));
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(
-    canvasWidth / 2 - metrics.width / 2 - paddingX,
-    y - boxHeight / 2,
-    metrics.width + paddingX * 2,
-    boxHeight,
+    canvasWidth / 2 - widest / 2 - paddingX,
+    firstY - boxHeight / 2,
+    widest + paddingX * 2,
+    lastY - firstY + boxHeight,
   );
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, canvasWidth / 2, y);
+  layout.lines.forEach((line, index) => {
+    ctx.fillText(line, canvasWidth / 2, firstY + index * lineHeight);
+  });
 }
 
 /**
