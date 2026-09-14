@@ -26,6 +26,7 @@ from app.domain.errors import (
     IdempotencyConflict,
     InsufficientCredits,
     NotFound,
+    SpendLimitExceeded,
 )
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
@@ -252,6 +253,15 @@ def submit(
                 f"需要 {priced.credits} 积分，当前可用 {account.available_balance}。",
                 required=priced.credits,
                 available=account.available_balance,
+            )
+        # Checked before the job row exists so an over-cap submit costs
+        # nothing; `reserve` enforces the same cap again inside its UPDATE.
+        remaining = credits_service.remaining_monthly_spend(account)
+        if remaining is not None and remaining < priced.credits:
+            raise SpendLimitExceeded(
+                f"需要 {priced.credits} 积分，本月消费上限还剩 {remaining}。",
+                required=priced.credits,
+                remaining=remaining,
             )
 
     # Pinned now, not resolved lazily at run time: a template published while

@@ -16,12 +16,18 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import ColumnElement, case, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import rows_affected
-from app.domain.errors import Conflict, InsufficientCredits, NotFound, ReasonRequired
+from app.domain.errors import (
+    Conflict,
+    InsufficientCredits,
+    NotFound,
+    ReasonRequired,
+    SpendLimitExceeded,
+)
 from app.models import CreditAccount, CreditLedgerEntry
 from app.models.base import utcnow
 from app.models.enums import LedgerEntryType
@@ -73,6 +79,47 @@ def get_account(session: Session, user_id: str) -> CreditAccount:
     return account
 
 
+def current_spend_period(now: dt.datetime | None = None) -> str:
+    """The UTC calendar month a reserve counts toward, as "YYYY-MM"."""
+    return (now or utcnow()).astimezone(dt.UTC).strftime("%Y-%m")
+
+
+def period_spent(account: CreditAccount, period: str) -> int:
+    return account.period_spent if account.spend_period == period else 0
+
+
+def remaining_monthly_spend(
+    account: CreditAccount, *, now: dt.datetime | None = None
+) -> int | None:
+    """Credits the user may still reserve this month under their own cap;
+    `None` when they set no cap."""
+    if account.monthly_spend_limit is None:
+        return None
+    spent = period_spent(account, current_spend_period(now))
+    return max(0, account.monthly_spend_limit - spent)
+
+
+def set_monthly_spend_limit(session: Session, user_id: str, limit: int | None) -> CreditAccount:
+    """The user's own setting, not a balance movement: a versioned
+    conditional UPDATE like every other account write, but no ledger row.
+    Lowering it below this month's spend only blocks further reserves."""
+    if limit is not None and limit <= 0:
+        raise Conflict("消费上限必须为正数。")
+    account = get_or_create_account(session, user_id)
+    expected_version = account.version
+    matched = rows_affected(
+        session,
+        update(CreditAccount)
+        .where(CreditAccount.id == account.id, CreditAccount.version == expected_version)
+        .values(monthly_spend_limit=limit, version=expected_version + 1),
+    )
+    if matched != 1:
+        raise Conflict("积分账户已被并发修改，请重试。")
+    account.monthly_spend_limit = limit
+    account.version = expected_version + 1
+    return account
+
+
 def _apply(
     session: Session,
     account: CreditAccount,
@@ -88,12 +135,19 @@ def _apply(
     actor_user_id: str | None = None,
     metadata: dict[str, Any] | None = None,
     created_at: dt.datetime | None = None,
+    spend_delta: int = 0,
+    spend_period: str | None = None,
 ) -> LedgerResult:
     """Applies one balance movement and records it.
 
     The UPDATE carries the account version and non-negativity in its WHERE
     clause, so a losing racer simply matches zero rows and is told to retry
     instead of silently overdrawing.
+
+    `spend_delta` moves the month's spend for the monthly cap: positive on
+    a reserve (the cap is part of the same WHERE), negative when that
+    reserve is released or partly returned. A refund for a month that has
+    already rolled over has nothing left to undo and is dropped.
     """
     expected_version = account.version
     new_available = account.available_balance + available_delta
@@ -104,20 +158,48 @@ def _apply(
     if new_reserved < 0:
         raise Conflict("预扣余额不足，无法释放。")
 
+    conditions: list[ColumnElement[bool]] = [
+        CreditAccount.id == account.id,
+        CreditAccount.version == expected_version,
+        CreditAccount.available_balance + available_delta >= 0,
+        CreditAccount.reserved_balance + reserved_delta >= 0,
+    ]
+    values: dict[str, Any] = {
+        "available_balance": CreditAccount.available_balance + available_delta,
+        "reserved_balance": CreditAccount.reserved_balance + reserved_delta,
+        "version": expected_version + 1,
+    }
+    same_period = spend_period is not None and account.spend_period == spend_period
+    if spend_delta < 0 and not same_period:
+        spend_delta = 0
+    new_spent = account.period_spent
+    if spend_delta and spend_period is not None:
+        new_spent = max(0, (account.period_spent if same_period else 0) + spend_delta)
+        limit = account.monthly_spend_limit
+        if spend_delta > 0 and limit is not None and new_spent > limit:
+            raise SpendLimitExceeded(
+                f"本月消费上限 {limit} 积分，还可用 {max(0, limit - new_spent + spend_delta)}。",
+                limit=limit,
+                remaining=max(0, limit - new_spent + spend_delta),
+            )
+        spent_now = case(
+            (CreditAccount.spend_period == spend_period, CreditAccount.period_spent), else_=0
+        )
+        if spend_delta > 0:
+            conditions.append(
+                or_(
+                    CreditAccount.monthly_spend_limit.is_(None),
+                    spent_now + spend_delta <= CreditAccount.monthly_spend_limit,
+                )
+            )
+        else:
+            conditions.append(CreditAccount.spend_period == spend_period)
+        values["spend_period"] = spend_period
+        values["period_spent"] = func.greatest(spent_now + spend_delta, 0)
+
     matched = rows_affected(
         session,
-        update(CreditAccount)
-        .where(
-            CreditAccount.id == account.id,
-            CreditAccount.version == expected_version,
-            CreditAccount.available_balance + available_delta >= 0,
-            CreditAccount.reserved_balance + reserved_delta >= 0,
-        )
-        .values(
-            available_balance=CreditAccount.available_balance + available_delta,
-            reserved_balance=CreditAccount.reserved_balance + reserved_delta,
-            version=expected_version + 1,
-        ),
+        update(CreditAccount).where(*conditions).values(**values),
     )
     if matched != 1:
         raise Conflict("积分账户已被并发修改，请重试。")
@@ -146,6 +228,9 @@ def _apply(
     account.available_balance = new_available
     account.reserved_balance = new_reserved
     account.version = expected_version + 1
+    if spend_delta and spend_period is not None:
+        account.spend_period = spend_period
+        account.period_spent = new_spent
     return LedgerResult(entry=entry, available_balance=new_available, reserved_balance=new_reserved)
 
 
@@ -208,6 +293,9 @@ def reserve(session: Session, user_id: str, amount: int, *, job_id: str) -> Ledg
     account = get_or_create_account(session, user_id)
     if account.available_balance < amount:
         raise InsufficientCredits()
+    # The month is stamped on the reserve so its later release/capture
+    # refunds the right month's spend (or nothing, once it has rolled over).
+    period = current_spend_period()
     return _apply(
         session,
         account,
@@ -216,7 +304,15 @@ def reserve(session: Session, user_id: str, amount: int, *, job_id: str) -> Ledg
         entry_type=LedgerEntryType.RESERVE,
         amount=-amount,
         job_id=job_id,
+        metadata={"spend_period": period},
+        spend_delta=amount,
+        spend_period=period,
     )
+
+
+def _reserve_period(reservation: CreditLedgerEntry) -> str | None:
+    period = (reservation.metadata_json or {}).get("spend_period")
+    return period if isinstance(period, str) else None
 
 
 def capture(session: Session, user_id: str, *, job_id: str, actual_amount: int) -> LedgerResult:
@@ -251,6 +347,8 @@ def capture(session: Session, user_id: str, *, job_id: str, actual_amount: int) 
         amount=-settled,
         job_id=job_id,
         metadata={"reserved": reserved_amount, "settled": settled, "returned": refund},
+        spend_delta=-refund,
+        spend_period=_reserve_period(reservation),
     )
 
 
@@ -277,6 +375,8 @@ def release(
         amount=reserved_amount,
         job_id=job_id,
         reason=reason,
+        spend_delta=-reserved_amount,
+        spend_period=_reserve_period(reservation),
     )
 
 

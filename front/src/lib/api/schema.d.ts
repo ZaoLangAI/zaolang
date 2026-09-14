@@ -799,6 +799,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/generation-jobs/quote:batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quote Batch
+         * @description A whole batch priced before anything is committed: each line through
+         *     the same `quote_for` a submit uses, summed — plus what the balance and
+         *     the user's own monthly cap still allow.
+         */
+        post: operations["quote_batch_v1_generation_jobs_quote_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/generation-jobs/models": {
         parameters: {
             query?: never;
@@ -1455,6 +1477,26 @@ export interface paths {
         /** Balance */
         get: operations["balance_v1_credits_balance_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/credits/spend-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Spend Limit
+         * @description The user's own monthly cap on generation spend (`null` removes it).
+         */
+        put: operations["set_spend_limit_v1_credits_spend_limit_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6245,6 +6287,63 @@ export interface components {
              */
             kind: "database" | "objects";
         };
+        /**
+         * BatchQuoteItem
+         * @description One line of a batch: `count` identical jobs.
+         */
+        BatchQuoteItem: {
+            operation: components["schemas"]["Operation"];
+            quality_tier: components["schemas"]["QualityTier"];
+            /**
+             * Duration Seconds
+             * @default 0
+             */
+            duration_seconds: number;
+            /** @default general */
+            asset_kind: components["schemas"]["ImageAssetKind"];
+            /** Character Views */
+            character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+        };
+        /** BatchQuoteLine */
+        BatchQuoteLine: {
+            /** Unit Credits */
+            unit_credits: number;
+            /** Count */
+            count: number;
+            /** Credits */
+            credits: number;
+            /** Estimated Seconds */
+            estimated_seconds: number;
+        };
+        /** BatchQuoteRequest */
+        BatchQuoteRequest: {
+            /** Items */
+            items: components["schemas"]["BatchQuoteItem"][];
+        };
+        /**
+         * BatchQuoteResponse
+         * @description A batch priced line by line with the same `quote_for` a submit uses
+         *     — an exact sum, never a range (credits-billing invariant #4).
+         */
+        BatchQuoteResponse: {
+            /** Items */
+            items: components["schemas"]["BatchQuoteLine"][];
+            /** Total Credits */
+            total_credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
+        };
         /** BindEditorExportRequest */
         BindEditorExportRequest: {
             /** Export Id */
@@ -7427,6 +7526,20 @@ export interface components {
              * @default CREDIT
              */
             currency: string;
+            /** Monthly Spend Limit */
+            monthly_spend_limit?: number | null;
+            /**
+             * Period
+             * @default
+             */
+            period: string;
+            /**
+             * Period Spent
+             * @default 0
+             */
+            period_spent: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
         };
         /** CreditFlowDailyPoint */
         CreditFlowDailyPoint: {
@@ -11869,6 +11982,14 @@ export interface components {
             /** Asset Kind */
             asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
         };
+        /**
+         * SpendLimitRequest
+         * @description `null` removes the cap.
+         */
+        SpendLimitRequest: {
+            /** Monthly Spend Limit */
+            monthly_spend_limit?: number | null;
+        };
         /** StorageUsageResponse */
         StorageUsageResponse: {
             /** Bucket */
@@ -14610,6 +14731,41 @@ export interface operations {
             };
         };
     };
+    quote_batch_v1_generation_jobs_quote_batch_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchQuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_generation_models_v1_generation_jobs_models_get: {
         parameters: {
             query: {
@@ -15983,6 +16139,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditBalanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_spend_limit_v1_credits_spend_limit_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpendLimitRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

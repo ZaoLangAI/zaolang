@@ -453,6 +453,36 @@ class QuoteResponse(ApiModel):
     sufficient: bool
 
 
+class BatchQuoteItem(QuoteRequest):
+    """One line of a batch: `count` identical jobs."""
+
+    count: int = Field(default=1, ge=1, le=500)
+
+
+class BatchQuoteRequest(ApiModel):
+    items: list[BatchQuoteItem] = Field(min_length=1, max_length=50)
+
+
+class BatchQuoteLine(ApiModel):
+    unit_credits: int
+    count: int
+    credits: int
+    estimated_seconds: int
+
+
+class BatchQuoteResponse(ApiModel):
+    """A batch priced line by line with the same `quote_for` a submit uses
+    — an exact sum, never a range (credits-billing invariant #4)."""
+
+    items: list[BatchQuoteLine]
+    total_credits: int
+    available_credits: int
+    # What the user's own monthly cap still allows; null = no cap.
+    period_remaining: int | None = None
+    within_spend_limit: bool
+    sufficient: bool
+
+
 class GenerationModelOption(ApiModel):
     """One directly-selectable model for `GenerationParams.forced_model`.
 
@@ -805,6 +835,17 @@ class CreditBalanceResponse(ApiModel):
     available: int
     reserved: int
     currency: str = "CREDIT"
+    # The user's own cap on generation spend per UTC month; null = no cap.
+    monthly_spend_limit: int | None = None
+    period: str = ""
+    period_spent: int = 0
+    period_remaining: int | None = None
+
+
+class SpendLimitRequest(ApiModel):
+    """`null` removes the cap."""
+
+    monthly_spend_limit: int | None = Field(default=None, ge=1, le=100_000_000)
 
 
 class LedgerEntryResponse(ApiModel):

@@ -3304,6 +3304,66 @@
         }
       }
     },
+    "/v1/generation-jobs/quote:batch": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Quote Batch",
+        "description": "A whole batch priced before anything is committed: each line through\nthe same `quote_for` a submit uses, summed — plus what the balance and\nthe user's own monthly cap still allow.",
+        "operationId": "quote_batch_v1_generation_jobs_quote_batch_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchQuoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/generation-jobs/models": {
       "get": {
         "tags": [
@@ -5864,6 +5924,66 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditBalanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/credits/spend-limit": {
+      "put": {
+        "tags": [
+          "credits"
+        ],
+        "summary": "Set Spend Limit",
+        "description": "The user's own monthly cap on generation spend (`null` removes it).",
+        "operationId": "set_spend_limit_v1_credits_spend_limit_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendLimitRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -23236,6 +23356,150 @@
         ],
         "title": "BackupTriggerRequest"
       },
+      "BatchQuoteItem": {
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/Operation"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Duration Seconds",
+            "default": 0
+          },
+          "asset_kind": {
+            "$ref": "#/components/schemas/ImageAssetKind",
+            "default": "general"
+          },
+          "character_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterViewAngle"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Views"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation",
+          "quality_tier"
+        ],
+        "title": "BatchQuoteItem",
+        "description": "One line of a batch: `count` identical jobs."
+      },
+      "BatchQuoteLine": {
+        "properties": {
+          "unit_credits": {
+            "type": "integer",
+            "title": "Unit Credits"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "estimated_seconds": {
+            "type": "integer",
+            "title": "Estimated Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit_credits",
+          "count",
+          "credits",
+          "estimated_seconds"
+        ],
+        "title": "BatchQuoteLine"
+      },
+      "BatchQuoteRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteItem"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchQuoteRequest"
+      },
+      "BatchQuoteResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteLine"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_credits": {
+            "type": "integer",
+            "title": "Total Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total_credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "BatchQuoteResponse",
+        "description": "A batch priced line by line with the same `quote_for` a submit uses\n— an exact sum, never a range (credits-billing invariant #4)."
+      },
       "BindEditorExportRequest": {
         "properties": {
           "export_id": {
@@ -26013,6 +26277,38 @@
             "type": "string",
             "title": "Currency",
             "default": "CREDIT"
+          },
+          "monthly_spend_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Spend Limit"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period",
+            "default": ""
+          },
+          "period_spent": {
+            "type": "integer",
+            "title": "Period Spent",
+            "default": 0
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
           }
         },
         "type": "object",
@@ -37384,6 +37680,26 @@
         ],
         "title": "SkillTemplateView",
         "description": "A starting prompt the skill editor can load.\n\nLoading one only fills the form: publishing stays a separate confirmed\naction, because the published text is what decides whether content gets\nrejected or a retry spends credits."
+      },
+      "SpendLimitRequest": {
+        "properties": {
+          "monthly_spend_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Spend Limit"
+          }
+        },
+        "type": "object",
+        "title": "SpendLimitRequest",
+        "description": "`null` removes the cap."
       },
       "StorageUsageResponse": {
         "properties": {

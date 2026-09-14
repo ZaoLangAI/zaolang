@@ -33,6 +33,8 @@ const ZERO_QUOTE: BatchQuote = {
   totalCredits: 0,
   count: 0,
   availableCredits: 0,
+  periodRemaining: null,
+  withinSpendLimit: true,
   sufficient: true,
 };
 
@@ -322,7 +324,15 @@ export function ScriptBatchDialog({
           </div>
         ) : null}
         {quoteFailed ? <ErrorNotice title={t('batchQuoteFailed')} /> : null}
-        {quote && !quote.sufficient ? <ErrorNotice title={t('batchInsufficient')} /> : null}
+        {quote && !quote.sufficient ? (
+          <ErrorNotice
+            title={
+              quote.withinSpendLimit
+                ? t('batchInsufficient')
+                : t('batchSpendLimit', { remaining: formatCount(quote.periodRemaining ?? 0, locale) })
+            }
+          />
+        ) : null}
         {quote && generateCount > 0 ? (
           <p className="text-sm text-amber">
             {tCredits('amount', { count: formatCount(quote.totalCredits, locale) })}

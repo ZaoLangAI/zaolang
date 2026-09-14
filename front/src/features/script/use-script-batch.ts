@@ -10,7 +10,6 @@ import type {
   JobStatus,
   Operation,
   QualityTier,
-  Quote,
 } from '@/lib/api/types';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
 import { FALLBACK_VOICES } from '@/lib/use-generation-models';
@@ -90,6 +89,20 @@ export interface BatchQuote {
   totalCredits: number;
   count: number;
   availableCredits: number;
+  /** What the user's own monthly spend cap still allows; null = no cap. */
+  periodRemaining: number | null;
+  withinSpendLimit: boolean;
+  /** Enough balance *and* within the monthly cap. */
+  sufficient: boolean;
+}
+
+/** `POST /v1/generation-jobs/quote:batch` — an exact sum of per-line quotes. */
+interface BatchQuoteResult {
+  items: Array<{ unit_credits: number; count: number; credits: number }>;
+  total_credits: number;
+  available_credits: number;
+  period_remaining: number | null;
+  within_spend_limit: boolean;
   sufficient: boolean;
 }
 
@@ -166,23 +179,27 @@ export function quoteForBatch(
   const operation: Operation =
     kind === 'videos' ? 'text_to_video' : kind === 'audio' ? 'audio_generation' : 'text_to_image';
   return api
-    .post<Quote>('/v1/generation-jobs/quote', {
-      operation,
-      quality_tier: params.qualityTier,
-      duration_seconds: kind === 'videos' ? params.durationSeconds : 0,
-      asset_kind: kind === 'characters' ? 'character' : kind === 'scenes' ? 'scene' : 'general',
-      character_views: kind === 'characters' ? ['front'] : null,
+    .post<BatchQuoteResult>('/v1/generation-jobs/quote:batch', {
+      items: [
+        {
+          operation,
+          quality_tier: params.qualityTier,
+          duration_seconds: kind === 'videos' ? params.durationSeconds : 0,
+          asset_kind: kind === 'characters' ? 'character' : kind === 'scenes' ? 'scene' : 'general',
+          character_views: kind === 'characters' ? ['front'] : null,
+          count: Math.max(1, count),
+        },
+      ],
     })
-    .then((quote) => {
-      const totalCredits = quote.credits * count;
-      return {
-        unitCredits: quote.credits,
-        totalCredits,
-        count,
-        availableCredits: quote.available_credits,
-        sufficient: quote.available_credits >= totalCredits,
-      };
-    });
+    .then((quote) => ({
+      unitCredits: quote.items[0]?.unit_credits ?? 0,
+      totalCredits: quote.total_credits,
+      count,
+      availableCredits: quote.available_credits,
+      periodRemaining: quote.period_remaining,
+      withinSpendLimit: quote.within_spend_limit,
+      sufficient: quote.sufficient,
+    }));
 }
 
 export function inFlightIds(

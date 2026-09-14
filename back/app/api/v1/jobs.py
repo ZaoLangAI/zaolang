@@ -18,6 +18,9 @@ from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
     IMAGE_OPERATIONS,
+    BatchQuoteLine,
+    BatchQuoteRequest,
+    BatchQuoteResponse,
     GenerationJobCreateRequest,
     GenerationJobResponse,
     GenerationModelListResponse,
@@ -136,6 +139,47 @@ def quote(payload: QuoteRequest, user: CurrentUser, session: DbSession) -> Quote
         breakdown=priced.breakdown,
         available_credits=account.available_balance,
         sufficient=account.available_balance >= priced.credits,
+    )
+
+
+@router.post("/generation-jobs/quote:batch", response_model=BatchQuoteResponse)
+def quote_batch(
+    payload: BatchQuoteRequest, user: CurrentUser, session: DbSession
+) -> BatchQuoteResponse:
+    """A whole batch priced before anything is committed: each line through
+    the same `quote_for` a submit uses, summed — plus what the balance and
+    the user's own monthly cap still allow."""
+    lines: list[BatchQuoteLine] = []
+    for item in payload.items:
+        priced = jobs_service.quote_for(
+            session,
+            operation=item.operation,
+            quality_tier=item.quality_tier,
+            duration_seconds=item.duration_seconds,
+            output_count=jobs_service.character_output_count(
+                asset_kind=item.asset_kind.value, character_views=item.character_views
+            ),
+        )
+        lines.append(
+            BatchQuoteLine(
+                unit_credits=priced.credits,
+                count=item.count,
+                credits=priced.credits * item.count,
+                estimated_seconds=priced.estimated_seconds,
+            )
+        )
+    total = sum(line.credits for line in lines)
+    account = credits_service.get_or_create_account(session, user.id)
+    remaining = credits_service.remaining_monthly_spend(account)
+    session.commit()
+    within = remaining is None or remaining >= total
+    return BatchQuoteResponse(
+        items=lines,
+        total_credits=total,
+        available_credits=account.available_balance,
+        period_remaining=remaining,
+        within_spend_limit=within,
+        sufficient=account.available_balance >= total and within,
     )
 
 
