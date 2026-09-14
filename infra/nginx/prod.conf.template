@@ -6,12 +6,39 @@
 # built-in docker-entrypoint envsubst step (this file lives under
 # /etc/nginx/templates/, which is templated automatically); it must match
 # `S3_BUCKET` in infra/.env.prod or signed media URLs will 404 here.
+#
+# Upstreams are resolved per request, not once at startup. A literal
+# `proxy_pass http://api:8000;` pins the IP nginx saw when it booted, and
+# `make prod-up` recreates api/web (new IPs) while leaving this container
+# running — so every /v1 and /healthz request would 502 against the old IP
+# until nginx itself was restarted. Routing each proxy_pass through a variable
+# makes nginx re-resolve the name via `resolver` (Docker's embedded DNS), and
+# also lets it boot while an upstream container doesn't exist yet. Two rules:
+#   - Keep proxy_pass URI-less (`$api_upstream`, never `$api_upstream/...`):
+#     nginx then forwards the client's original, unnormalised URI and query
+#     string, exactly like the literal form — MinIO's SigV4 signature covers
+#     that path.
+#   - Keep these variable names lowercase: envsubst only replaces names that
+#     are set in the container's environment, so `$api_upstream` survives
+#     rendering while `${MEDIA_BUCKET}` does not.
 
 client_max_body_size 300m;
 
 server {
     listen 80 default_server;
     server_name _;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api_upstream http://api:8000;
+    set $web_upstream http://web:3000;
+    set $minio_upstream http://minio:9000;
+
+    # A variable proxy_pass drops nginx's implicit `proxy_redirect default`
+    # (which rewrote an upstream's own `Location: http://api:8000/...` to
+    # `/...`); spell those rewrites out so redirects behave as before.
+    proxy_redirect http://api:8000/ /;
+    proxy_redirect http://web:3000/ /;
+    proxy_redirect http://minio:9000/ /;
 
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -21,7 +48,7 @@ server {
     # SigV4 signature (minted against `S3_PUBLIC_ENDPOINT_URL`) covers the Host
     # header, so rewriting it here would invalidate every signed URL.
     location /${MEDIA_BUCKET}/ {
-        proxy_pass http://minio:9000;
+        proxy_pass $minio_upstream;
         proxy_set_header Host $host;
         proxy_http_version 1.1;
         proxy_read_timeout 300s;
@@ -31,7 +58,7 @@ server {
     # The product API, mounted under /v1 (see back/app/main.py:API_PREFIX),
     # plus the handful of routes registered without that prefix.
     location /v1/ {
-        proxy_pass http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
@@ -44,35 +71,35 @@ server {
     }
 
     location = /mcp {
-        proxy_pass http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
         proxy_http_version 1.1;
     }
 
     location = /healthz {
-        proxy_pass http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
     }
 
     location = /readyz {
-        proxy_pass http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
     }
 
     location = /openapi.json {
-        proxy_pass http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
     }
 
     location = /docs {
-        proxy_pass http://api:8000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
     }
 
     # Everything else: the Next.js app (consumer + admin console share one
     # project — see .cursor/skills/zaolang-overview/SKILL.md).
     location / {
-        proxy_pass http://web:3000;
+        proxy_pass $web_upstream;
         proxy_set_header Host $host;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;

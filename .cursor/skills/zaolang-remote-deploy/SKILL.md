@@ -27,7 +27,7 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 | --- | --- |
 | `infra/docker-compose.prod.yml` | postgres / redis / minio / minio-init / migrate / api / worker / poller / beat / web / nginx. Only nginx publishes a host port (`:80`); the API container listens on `8000` internally (`API_INTERNAL_URL=http://api:8000`, not the laptop's `3001`). Worker `-Q` mirrors `make dev-worker` (incl. `platform_distribution`, `video_analysis`), `--concurrency=${WORKER_CONCURRENCY:-4}` |
 | `infra/.env.prod.example` | placeholder template; real values live only on the server. Besides secrets: `COOKIE_SECURE=false` (HTTP-only box, flip on HTTPS), `WORKER_CONCURRENCY`, `REDIS_MAXMEMORY`, build-time-only `APT_MIRROR` / `PIP_INDEX_URL` |
-| `infra/nginx/prod.conf.template` | `/v1` `/mcp` health + MinIO `location /${MEDIA_BUCKET}/` (envsubst'd at container start; compose sets `MEDIA_BUCKET` from `S3_BUCKET`) + Next.js |
+| `infra/nginx/prod.conf.template` | `/v1` `/mcp` health + MinIO `location /${MEDIA_BUCKET}/` (envsubst'd at container start; compose sets `MEDIA_BUCKET` from `S3_BUCKET`) + Next.js. Upstreams resolve per request through Docker DNS (`resolver 127.0.0.11` + `proxy_pass $api_upstream` / `$web_upstream` / `$minio_upstream`), so a recreated container is picked up without touching nginx |
 | `Makefile` `prod-up` / `prod-down` / `prod-logs` | remote compose wrappers |
 | `infra/scripts/backup.sh` | local `pg_dump` only — not the remote restore path |
 
@@ -56,6 +56,14 @@ rsync -az --delete \
 make prod-up
 ```
 
+`make prod-up` recreates `api` / `web` / the Celery services (new container IPs) but leaves `nginx` running. That is fine: nginx re-resolves `api` / `web` / `minio` through Docker DNS (`valid=10s`), so it reaches the new containers within ~10s without a restart.
+
+If the rsync changed `infra/nginx/prod.conf.template` itself, `up -d` still leaves nginx alone — the bind-mounted file changed, the compose config did not. Restart it afterwards. `nginx -s reload` is not enough: the template is only envsubst-rendered when the container starts.
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod restart nginx
+```
+
 ## Catalogue backfill (only when named)
 
 ```bash
@@ -74,6 +82,7 @@ docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod \
 
 - **New compose env var**: add it to `x-backend` `environment` in `docker-compose.prod.yml` **and** a placeholder in `.env.prod.example`. On the next update, append the key to the server `.env.prod` — do not rsync a replacement file.
 - **New Celery queue**: `back/app/workers/celery_app.py` + `Makefile` `dev-worker` `-Q` + this prod compose `worker` command + the admin health page. Miss the prod list and those jobs hang on the box.
+- **New nginx upstream / location**: `proxy_pass` through a lowercase `$<name>_upstream` variable set next to the others (URI-less — no path after the variable), plus a matching `proxy_redirect`. A literal `proxy_pass http://host:port` pins the IP from nginx's startup and 502s once that container is recreated.
 - **Second host**: copy the Host table; do not fork a second skill.
 
 ## Verify
@@ -82,6 +91,13 @@ docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod \
 curl -sS http://124.223.45.115/healthz
 curl -sS http://124.223.45.115/readyz
 # on the server: alembic_version == laptop `alembic heads`
+```
+
+A 502 for up to ~10s right after `prod-up` is nginx's DNS cache expiring. If `/healthz` keeps returning 502 while `docker compose ps` shows `api` healthy, nginx is dialing a stale upstream (error log: `connect() failed (111: Connection refused) while connecting to upstream`). Check that the running config has the resolver; if it doesn't, the template on the box predates runtime resolution or nginx was never restarted after it changed — restart nginx as above.
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs --tail=20 nginx
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod exec nginx nginx -T | grep resolver
 ```
 
 Then in the browser: consumer login, `/admin`, one work whose cover loads from COS (not a 404). Admin health: Postgres / Redis / Celery green. MinIO may still report green (container up) while business I/O uses COS.
