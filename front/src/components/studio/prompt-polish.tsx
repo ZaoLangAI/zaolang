@@ -19,6 +19,7 @@ import { IconSparkle } from '@/components/ui/icons';
 import { ApiError } from '@/lib/api/errors';
 import type {
   PromptEnhancePayload,
+  PromptEnhanceReferencedSkill,
   PromptEnhanceResult,
   PromptEnhanceScriptSegment,
 } from '@/lib/api/types';
@@ -100,6 +101,9 @@ export function PromptPolish({
   const [error, setError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<PromptEnhanceResult | null>(null);
   const [thinking, setThinking] = useState('');
+  // Only shown while the round is streaming; the finished suggestion carries
+  // the same list on `referenced_skills`.
+  const [matchedSkills, setMatchedSkills] = useState<PromptEnhanceReferencedSkill[]>([]);
   const [instruction, setInstruction] = useState('');
   const [answers, setAnswers] = useState<Record<string, QuestionAnswer>>({});
 
@@ -160,6 +164,7 @@ export function PromptPolish({
         onPendingChangeRef.current?.(true);
         setError(null);
         setThinking('');
+        setMatchedSkills([]);
         try {
           const body: PromptEnhancePayload = {
             prompt: base.trim(),
@@ -180,6 +185,10 @@ export function PromptPolish({
           for await (const frame of streamPost(endpoint, body)) {
             if (frame.event === 'thinking' && typeof frame.data.text === 'string') {
               setThinking((current) => current + frame.data.text);
+            } else if (frame.event === 'matched') {
+              setMatchedSkills(
+                (frame.data.referenced_skills as PromptEnhanceReferencedSkill[] | undefined) ?? [],
+              );
             } else if (frame.event === 'complete') {
               result = frame.data as unknown as PromptEnhanceResult;
             } else if (frame.event === 'error') {
@@ -229,6 +238,7 @@ export function PromptPolish({
         onClose={() => setOpen(false)}
         pending={pending}
         thinking={thinking}
+        matchedSkills={matchedSkills}
         error={error}
         suggestion={suggestion}
         instruction={instruction}

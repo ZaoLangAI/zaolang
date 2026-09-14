@@ -69,6 +69,33 @@ class PromptDimension:
 
 
 @dataclass(slots=True, frozen=True)
+class AppliedFormatSkill:
+    """A `format` skill the coach auto-attached this round because a
+    diagnosed dimension came back `missing`/`weak` — see
+    `app.domain.skill_library.service.apply_matching_format_skills`. The
+    author sees which rule text landed in `prompt` and where it came from,
+    the same as if they had picked it from the prompt library by hand."""
+
+    id: str
+    title: str
+
+
+@dataclass(slots=True, frozen=True)
+class ReferencedSkill:
+    """A `drama` skill `app.agents.skill_matcher` matched to this story and
+    showed the coach as reference material.
+
+    The distinction from `AppliedFormatSkill` above is the whole point of the
+    two lists existing: an applied format skill's rule text is *in* `prompt`,
+    verbatim and by Python. A referenced skill was never appended to
+    anything — the coach read it and decided for itself what, if any, of it
+    was worth writing for this particular scene."""
+
+    id: str
+    title: str
+
+
+@dataclass(slots=True, frozen=True)
 class PromptQuestion:
     """One follow-up the coach wants answered before the next round.
 
@@ -90,6 +117,8 @@ class PromptEnhancement:
     feedback: str
     dimensions: list[PromptDimension] = field(default_factory=list)
     additions: list[str] = field(default_factory=list)
+    applied_format_skills: list[AppliedFormatSkill] = field(default_factory=list)
+    referenced_skills: list[ReferencedSkill] = field(default_factory=list)
     questions: list[PromptQuestion] = field(default_factory=list)
     # Not part of the API response: callers turn this into an error rather
     # than showing the fallback text. Kept on the result instead of raised
@@ -98,6 +127,31 @@ class PromptEnhancement:
     # one nobody can debug.
     degraded: bool = False
     script_segment: dict | None = None
+
+
+def matched_reference_skills(
+    session: Session, *, prompt: str, operation: str, user_id: str | None = None
+) -> list[dict[str, str]]:
+    """Seeded `drama` skills relevant to this story, as reference material.
+
+    Video only. Every `drama` row is scoped to the three video operations
+    and every one of them is about how a beat plays out over time, so
+    showing them to an image polish would spend a matcher call and several
+    hundred prompt tokens on advice a still cannot act on.
+
+    Never raises and never blocks: `select_reference_skills` degrades to an
+    empty list on any failure, and an empty list here means the polish runs
+    exactly as it did before this feature existed.
+    """
+    from app.agents import copywriter, skill_matcher
+    from app.domain.skill_library import service as skill_library_service
+
+    if operation not in copywriter.VIDEO_OPERATIONS_FOR_ENHANCE:
+        return []
+    matched_ids = skill_matcher.select_reference_skills(
+        session, brief=prompt, user_id=user_id
+    )
+    return skill_library_service.load_reference_skills(session, matched_ids)
 
 
 def enhance(
@@ -115,6 +169,9 @@ def enhance(
     from app.agents import copywriter
 
     ctx = context or PromptContext()
+    reference_skills = matched_reference_skills(
+        session, prompt=text, operation=ctx.operation, user_id=user_id
+    )
     outcome = copywriter.enhance_prompt(
         session,
         prompt=text,
@@ -130,6 +187,7 @@ def enhance(
         asset_kind=ctx.asset_kind,
         script_segment=ctx.script_segment,
         question_answers=ctx.question_answers,
+        reference_skills=reference_skills,
         user_id=user_id,
     )
     segment = outcome.data.get("script_segment")
@@ -142,10 +200,36 @@ def enhance(
             for d in outcome.data.get("dimensions", [])
         ],
         additions=list(outcome.data.get("additions", [])),
+        applied_format_skills=applied_format_skills_from(outcome.data.get("applied_format_skills")),
+        referenced_skills=referenced_skills_from(outcome.data.get("referenced_skills")),
         questions=questions_from(outcome.data.get("questions")),
         degraded=outcome.degraded,
         script_segment=segment if isinstance(segment, dict) else None,
     )
+
+
+def applied_format_skills_from(raw: object) -> list[AppliedFormatSkill]:
+    """`copywriter._sanitize_enhance_outcome` already built this list from a
+    real DB row (id + title), so this is a shape check, not a re-derivation."""
+    if not isinstance(raw, list):
+        return []
+    return [
+        AppliedFormatSkill(id=str(item["id"]), title=str(item["title"]))
+        for item in raw
+        if isinstance(item, dict) and item.get("id") and item.get("title")
+    ]
+
+
+def referenced_skills_from(raw: object) -> list[ReferencedSkill]:
+    """Same shape check as `applied_format_skills_from`: the sanitizer echoed
+    back rows the caller had already loaded from the DB."""
+    if not isinstance(raw, list):
+        return []
+    return [
+        ReferencedSkill(id=str(item["id"]), title=str(item["title"]))
+        for item in raw
+        if isinstance(item, dict) and item.get("id") and item.get("title")
+    ]
 
 
 def questions_from(raw: object) -> list[PromptQuestion]:

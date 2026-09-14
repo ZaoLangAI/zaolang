@@ -2680,6 +2680,8 @@
       "more_dramatic": "よりドラマチックに"
     },
     "addedLabel": "今回の追加",
+    "appliedSkillsLabel": "自動で適用した書式スキル",
+    "referencedSkillsLabel": "参考にしたシーン",
     "refineLabel": "この案をさらに調整",
     "instructionLabel": "追加の要望",
     "instructionPlaceholder": "例：最後にカメラへ振り向く",
@@ -3318,6 +3320,8 @@
     "categoryScene": "シーン",
     "categoryLens": "レンズ",
     "categoryStyle": "スタイル",
+    "categoryFormat": "プロンプト書式",
+    "categoryDrama": "シーンと感情",
     "categoryCharacter": "キャラクター画像",
     "categorySceneAsset": "シーン画像",
     "categoryCoverAsset": "カバー画像",

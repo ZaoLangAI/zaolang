@@ -2680,6 +2680,8 @@
       "more_dramatic": "More dramatic"
     },
     "addedLabel": "Added this round",
+    "appliedSkillsLabel": "Auto-applied format skills",
+    "referencedSkillsLabel": "Referenced these scenes",
     "refineLabel": "Keep refining this version",
     "instructionLabel": "Extra instruction",
     "instructionPlaceholder": "e.g. end with her turning to the camera",
@@ -3318,6 +3320,8 @@
     "categoryScene": "Scene",
     "categoryLens": "Lens",
     "categoryStyle": "Style",
+    "categoryFormat": "Prompt format",
+    "categoryDrama": "Scenes & emotions",
     "categoryCharacter": "Character images",
     "categorySceneAsset": "Scene images",
     "categoryCoverAsset": "Cover images",

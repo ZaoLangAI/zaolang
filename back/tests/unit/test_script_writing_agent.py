@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.agents import copywriter
 from app.llm import client as llm_client
 from app.llm.client import StreamChunk
+from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
+from app.scripts import seed
 
 
 def _drain(chunks) -> str:
@@ -341,6 +343,88 @@ def test_script_prompts_require_a_shared_visual_medium() -> None:
     assert appearance in draft
     assert appearance in revise
     assert "媒介句必须保持一致且原样保留" in revise
+    # `traits` is reused verbatim on every shot this character appears in, so
+    # a mood or pose written into it drifts the character between shots.
+    assert "稳定的静态特征" in appearance
+    assert "完全相同的措辞" in appearance
+
+
+def test_both_script_prompts_keep_the_factory_opener() -> None:
+    """`seed._publish_factory_prompt` only republishes a seeded prompt while
+    the stored draft still starts with a `_FACTORY_SCRIPT_OPENERS` prefix.
+
+    Rewording the opening sentence would sync once and then silently stop:
+    the next rewrite would look like an operator's hand-edit and be left
+    alone forever. This is cheap to assert and expensive to discover."""
+    for prompt in (
+        copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT,
+        copywriter.SCRIPT_REVISE_SYSTEM_PROMPT,
+    ):
+        assert prompt.startswith(seed._FACTORY_SCRIPT_OPENERS)
+        assert seed._looks_like_factory_prompt(prompt, seed._FACTORY_SCRIPT_OPENERS)
+
+
+def test_block_type_rules_split_framing_from_camera_movement() -> None:
+    """A `camera` block's text is what a shot's prompt is built from later, and
+    Kling's guide separates 「镜头语言」(framing, angle) from movement control
+    for a reason: written as one phrase such as 「特写环绕」the two drift, and
+    stacked moves wobble at the switch point.
+
+    The `action` rules carry the other half of the same budget — one beat per
+    block, counted where countable, emotion externalised — because five
+    vendors document that stacked actions deform the subject."""
+    rules = copywriter._BLOCK_TYPE_RULES
+
+    assert "先景别、再运镜" in rules
+    assert "一个 camera 色块只给一个运镜动作" in rules
+    assert "方式＋方向＋速度" in rules
+    assert "特写环绕" in rules
+
+    assert "写清次数与幅度" in rules
+    assert "情绪一律外化成看得见的生理信号" in rules
+
+    # `scene` still seeds `sceneImagePrompt` verbatim, so the no-people rule
+    # is load-bearing and must survive any rewrite of this block.
+    assert "不能出现任何人物" in rules
+    assert "只写镜头拍得到的东西" in rules
+
+    for prompt in (
+        copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT,
+        copywriter.SCRIPT_REVISE_SYSTEM_PROMPT,
+    ):
+        assert rules in prompt
+
+
+def test_breakpoint_rules_give_a_duration_baseline_to_estimate_with() -> None:
+    """"Estimate the duration" is unactionable on its own — the baselines turn
+    it into arithmetic against the platform's live per-generation ceiling."""
+    rules = copywriter._BREAKPOINT_RULES
+
+    assert "每秒 3 到 4 个字" in rules
+    assert "远景约 10 秒" in rules
+    assert str(MAX_GENERATION_DURATION_SECONDS) in rules
+    assert "留出接口" in rules
+
+
+def test_the_short_drama_craft_rules_reach_both_turns() -> None:
+    """Split out of the draft prompt so a revision turn writing a brand-new
+    scene is held to the same standard.
+
+    Revise scopes them to newly written content on purpose: its stronger
+    promise is "don't touch what the user didn't ask about", and a craft rule
+    that overrides that would make every revision a rewrite."""
+    rules = copywriter._SHORT_DRAMA_CRAFT_RULES
+
+    assert "直接冲突型" in rules and "强悬念型" in rules and "极致反差型" in rules
+    assert "悬念断" in rules and "情感断" in rules
+    assert "同一类不要连续用超过两次" in rules
+    assert "主要角色控制在 3 人以内" in rules
+    assert "双人不要左右并排" in rules
+    assert "优先中近景与特写" in rules
+
+    assert rules in copywriter.SCRIPT_DRAFT_SYSTEM_PROMPT
+    assert rules in copywriter.SCRIPT_REVISE_SYSTEM_PROMPT
+    assert "未被这一轮意见触及的既有内容不要为了符合这些" in copywriter.SCRIPT_REVISE_SYSTEM_PROMPT
 
 
 def test_empty_stream_is_not_a_successful_draft(

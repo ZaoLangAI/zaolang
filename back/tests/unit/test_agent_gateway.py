@@ -8,7 +8,15 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.agents import base as agent_base
-from app.agents import copywriter, editor_planner, intent_router, planner, router, tools
+from app.agents import (
+    copywriter,
+    editor_planner,
+    intent_router,
+    planner,
+    router,
+    skill_matcher,
+    tools,
+)
 from app.agents import slots as agent_slots
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ProviderTemporaryFailure, ValidationFailed
@@ -1111,6 +1119,7 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
             copywriter.CLARIFY_SLOT,
             copywriter.SCRIPT_DRAFT_SLOT,
             copywriter.SCRIPT_REVISE_SLOT,
+            skill_matcher.SKILL_MATCH_SLOT,
         },
         AgentName.INTENT_ROUTER.value: {
             intent_router.CLASSIFY_SLOT,

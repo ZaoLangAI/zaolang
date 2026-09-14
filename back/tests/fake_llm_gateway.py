@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterator, Sequence
 from copy import deepcopy
 from typing import Any
@@ -55,6 +56,12 @@ SENSITIVE_TERMS = ("血腥", "gore", "暴力", "violence", "武器", "weapon", "
 # suspending dozens of unrelated tests at `AWAITING_INPUT`. Opting into the
 # suspend path in a test is therefore explicit: include this marker.
 PLANNER_CLARIFY_MARKER = "需要追问"
+
+# `skill_match` is the one `copy` slot whose user turn is plain text rather
+# than JSON (a story plus a numbered shortlist — see
+# `app.agents.skill_matcher`), so `_copy`'s shape-based dispatch can't tell
+# it apart from the others. This heading is the discriminator.
+SKILL_MATCH_MARKER = "技能清单："
 
 
 def fake_complete(
@@ -517,9 +524,12 @@ def _intent_router(prompt: str) -> dict[str, Any]:
 
 
 def _copy(prompt: str) -> dict[str, Any]:
-    # `suggest`, `enhance` and `clarify` share one agent identity, so dispatch
-    # tells them apart by shape: `enhance`'s user turn carries `max_length`,
-    # `suggest`'s always carries `locale`, `clarify`'s carries only `prompt`.
+    # `suggest`, `enhance`, `clarify` and `skill_match` share one agent
+    # identity, so dispatch tells them apart by shape: `enhance`'s user turn
+    # carries `max_length`, `suggest`'s always carries `locale`, `clarify`'s
+    # carries only `prompt`, and `skill_match`'s is not JSON at all.
+    if SKILL_MATCH_MARKER in prompt:
+        return _copy_skill_match(prompt)
     try:
         payload = json.loads(prompt)
     except (TypeError, ValueError):
@@ -543,6 +553,37 @@ def _copy(prompt: str) -> dict[str, Any]:
         "description": "由造浪智能网关生成的作品，保留完整创作链与署名。",
         "tags": ["cinematic", "ai-generated", "remix"],
     }
+
+
+_SKILL_MATCH_LINE = re.compile(r"^(\d+)\.\s*(.+)$")
+
+
+def _copy_skill_match(prompt: str) -> dict[str, Any]:
+    """Mirrors `skill_matcher.SYSTEM_PROMPT`'s selection rule with character
+    overlap standing in for the real model's reading of the story.
+
+    Two properties of the live prompt are what make this worth faking rather
+    than returning a fixed list: it picks *at most* five, and it returns an
+    empty array when nothing in the shortlist actually appears in the story.
+    A fake that always filled five slots would hide the caller's own
+    "matched nothing, carry on" path, which is the one that has to work
+    when the matcher is having a bad day.
+    """
+    brief, _, listing = prompt.partition(SKILL_MATCH_MARKER)
+    brief = brief.strip()
+    bigrams = {brief[i : i + 2] for i in range(len(brief) - 1)}
+    scored: list[tuple[int, int, int]] = []
+    for line in listing.splitlines():
+        matched = _SKILL_MATCH_LINE.match(line.strip())
+        if matched is None:
+            continue
+        index = int(matched.group(1))
+        title = matched.group(2)
+        overlap = sum(1 for i in range(len(title) - 1) if title[i : i + 2] in bigrams)
+        if overlap:
+            scored.append((-overlap, index, index))
+    scored.sort()
+    return {"picks": [index for _, _, index in scored[:5]]}
 
 
 # Mirrors `copywriter.VIDEO_DIMENSIONS` / `.IMAGE_DIMENSIONS`. Duplicated rather

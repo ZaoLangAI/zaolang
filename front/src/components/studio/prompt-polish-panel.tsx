@@ -14,7 +14,11 @@ import { TextInput } from '@/components/ui/field';
 import { IconClose, IconSparkle } from '@/components/ui/icons';
 import { Badge, ErrorNotice, type BadgeTone } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
-import type { PromptEnhancePayload, PromptEnhanceResult } from '@/lib/api/types';
+import type {
+  PromptEnhancePayload,
+  PromptEnhanceReferencedSkill,
+  PromptEnhanceResult,
+} from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { loadAnime, useIsomorphicLayoutEffect, useReducedMotion } from '@/lib/motion';
 import { useOverlayTransition } from '@/lib/use-overlay-transition';
@@ -69,6 +73,7 @@ export function PromptPolishPanel({
   onClose,
   pending,
   thinking = '',
+  matchedSkills = [],
   error,
   suggestion,
   instruction,
@@ -85,6 +90,9 @@ export function PromptPolishPanel({
   onClose: () => void;
   pending: boolean;
   thinking?: string;
+  // Arrives on the stream's first frame, well before the polish itself, so
+  // the wait shows what the coach is reading rather than only a spinner.
+  matchedSkills?: PromptEnhanceReferencedSkill[];
   error: string | null;
   suggestion: PromptEnhanceResult | null;
   instruction: string;
@@ -170,6 +178,16 @@ export function PromptPolishPanel({
             <Spinner className="size-4" />
             {t('panelPendingHint')}
           </div>
+          {matchedSkills.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted">{t('referencedSkillsLabel')}</span>
+              {matchedSkills.map((skill) => (
+                <Badge key={skill.id} tone="neutral">
+                  {skill.title}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
           <LiveThinking thinking={thinking} label={t('thinkingLive')} className="max-h-32 overflow-y-auto" />
         </div>
       ) : null}
@@ -273,6 +291,31 @@ export function PromptPolishPanel({
               {suggestion.additions.map((addition) => (
                 <Badge key={addition} tone="primary">
                   {addition}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+
+          {suggestion.applied_format_skills && suggestion.applied_format_skills.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted">{t('appliedSkillsLabel')}</span>
+              {suggestion.applied_format_skills.map((skill) => (
+                <Badge key={skill.id} tone="amber">
+                  {skill.title}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Separate row and a different tone from the amber one above on
+              purpose: an applied format skill's rule text is verbatim in the
+              rewritten prompt, a referenced drama skill only informed it. */}
+          {suggestion.referenced_skills && suggestion.referenced_skills.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted">{t('referencedSkillsLabel')}</span>
+              {suggestion.referenced_skills.map((skill) => (
+                <Badge key={skill.id} tone="neutral">
+                  {skill.title}
                 </Badge>
               ))}
             </div>

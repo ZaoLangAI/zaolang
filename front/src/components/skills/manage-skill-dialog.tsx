@@ -21,7 +21,14 @@ import { useResource } from '@/lib/use-resource';
 // the skill plaza (its own card has no dedicated management page) — see
 // `IMAGE_ASSET_ONLY_CATEGORIES` below, which is why re-filing away from
 // `cover_asset` isn't offered either.
-const CATEGORIES: CreationSkillCategory[] = ['scene', 'lens', 'style', 'other'];
+const CATEGORIES: CreationSkillCategory[] = [
+  'scene',
+  'lens',
+  'style',
+  'format',
+  'drama',
+  'other',
+];
 const IMAGE_ASSET_ONLY_CATEGORIES = new Set<CreationSkillCategory>([
   'character',
   'scene_asset',
@@ -32,6 +39,8 @@ const CATEGORY_LABEL_KEY: Record<
   | 'categoryScene'
   | 'categoryLens'
   | 'categoryStyle'
+  | 'categoryFormat'
+  | 'categoryDrama'
   | 'categoryCharacter'
   | 'categorySceneAsset'
   | 'categoryCoverAsset'
@@ -40,6 +49,8 @@ const CATEGORY_LABEL_KEY: Record<
   scene: 'categoryScene',
   lens: 'categoryLens',
   style: 'categoryStyle',
+  format: 'categoryFormat',
+  drama: 'categoryDrama',
   character: 'categoryCharacter',
   scene_asset: 'categorySceneAsset',
   cover_asset: 'categoryCoverAsset',

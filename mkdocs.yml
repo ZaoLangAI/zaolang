@@ -74,6 +74,8 @@ nav:
   - 本地开发: local-development.md
   - 架构说明: architecture.md
   - 短剧剪辑: editor.md
+  - 视频提示词格式: video-prompt-formats.md
+  - 短剧戏码与情绪: video-drama-scenes.md
   - 接口参考: api.md
   - 运维手册: ops-runbook.md
   - 工程与发布: ci-release.md

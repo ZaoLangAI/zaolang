@@ -17,7 +17,7 @@ import { writeCanvasDrag } from './canvas-dnd';
  * The prompt library, as a drawer on the canvas.
  *
  * Reads the same `GET /v1/skills/public?content_type=template` the plaza does
- * — scene / lens / style / other, the categories whose `params_json` is a flat
+ * — scene / lens / style / format / other, the categories whose `params_json` is a flat
  * template rather than a character or scene asset. Picking one drops a `skill`
  * card bound to it; the card is the record, so nothing is "applied" here.
  *
@@ -29,7 +29,7 @@ import { writeCanvasDrag } from './canvas-dnd';
  * capped at five, and neither idea survives the trip to a canvas.
  */
 
-const CATEGORIES = ['scene', 'lens', 'style', 'other'] as const;
+const CATEGORIES = ['scene', 'lens', 'style', 'format', 'drama', 'other'] as const;
 
 type Filter = 'all' | (typeof CATEGORIES)[number];
 
@@ -37,6 +37,8 @@ const CATEGORY_LABEL_KEY: Record<(typeof CATEGORIES)[number], string> = {
   scene: 'categoryScene',
   lens: 'categoryLens',
   style: 'categoryStyle',
+  format: 'categoryFormat',
+  drama: 'categoryDrama',
   other: 'categoryOther',
 };
 

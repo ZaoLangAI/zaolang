@@ -40,6 +40,15 @@ def enhance_generation_prompt(
         raise ValidationFailed("请先填写画面描述。", fields={"prompt": "不能为空"})
 
     ctx = context_from(payload)
+    # Runs before the stream is opened, on the request session, because it is
+    # itself an LLM call and must not compete with the polish stream for the
+    # connection. The panel learns what it matched from the `matched` frame
+    # below rather than from a "matching now" one: no byte of this response
+    # can be sent until this returns, so an in-progress notice would arrive
+    # after the work it announces.
+    reference_skills = prompts.matched_reference_skills(
+        session, prompt=text, operation=ctx.operation, user_id=user.id
+    )
     chunks, finalize = copywriter.stream_enhance_prompt(
         session,
         prompt=text,
@@ -55,10 +64,22 @@ def enhance_generation_prompt(
         asset_kind=ctx.asset_kind,
         script_segment=ctx.script_segment,
         question_answers=ctx.question_answers,
+        reference_skills=reference_skills,
         user_id=user.id,
     )
 
     def generate() -> Iterator[str]:
+        if reference_skills:
+            yield format_sse(
+                "matched",
+                {
+                    "referenced_skills": [
+                        {"id": entry["id"], "title": entry["title"]}
+                        for entry in reference_skills
+                    ]
+                },
+            )
+
         def _finish() -> prompts.PromptEnhancement:
             with session_scope() as persist:
                 outcome = finalize(persist)
@@ -72,6 +93,12 @@ def enhance_generation_prompt(
                         for d in outcome.data.get("dimensions", [])
                     ],
                     additions=list(outcome.data.get("additions", [])),
+                    applied_format_skills=prompts.applied_format_skills_from(
+                        outcome.data.get("applied_format_skills")
+                    ),
+                    referenced_skills=prompts.referenced_skills_from(
+                        outcome.data.get("referenced_skills")
+                    ),
                     questions=prompts.questions_from(outcome.data.get("questions")),
                     degraded=outcome.degraded,
                     script_segment=segment if isinstance(segment, dict) else None,
@@ -99,6 +126,12 @@ def _enhance_complete_payload(result: prompts.PromptEnhancement) -> dict[str, An
             for d in result.dimensions
         ],
         "additions": result.additions,
+        "applied_format_skills": [
+            {"id": skill.id, "title": skill.title} for skill in result.applied_format_skills
+        ],
+        "referenced_skills": [
+            {"id": skill.id, "title": skill.title} for skill in result.referenced_skills
+        ],
         "questions": [
             view.model_dump(mode="json") for view in question_views(result.questions)
         ],

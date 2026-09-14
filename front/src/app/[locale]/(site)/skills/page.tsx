@@ -16,7 +16,7 @@ type ContentType = 'template' | 'image_asset';
 // image creation; the author's own roster still lives on
 // `/create/characters` / `/create/scenes`.
 const CATEGORIES_BY_CONTENT_TYPE: Record<ContentType, CreationSkillCategory[]> = {
-  template: ['scene', 'lens', 'style', 'other'],
+  template: ['scene', 'lens', 'style', 'format', 'drama', 'other'],
   image_asset: ['character', 'scene_asset', 'cover_asset'],
 };
 
@@ -25,6 +25,8 @@ const CATEGORY_LABEL_KEY: Record<
   | 'categoryScene'
   | 'categoryLens'
   | 'categoryStyle'
+  | 'categoryFormat'
+  | 'categoryDrama'
   | 'categoryCharacter'
   | 'categorySceneAsset'
   | 'categoryCoverAsset'
@@ -33,6 +35,8 @@ const CATEGORY_LABEL_KEY: Record<
   scene: 'categoryScene',
   lens: 'categoryLens',
   style: 'categoryStyle',
+  format: 'categoryFormat',
+  drama: 'categoryDrama',
   character: 'categoryCharacter',
   scene_asset: 'categorySceneAsset',
   cover_asset: 'categoryCoverAsset',

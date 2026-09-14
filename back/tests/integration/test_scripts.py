@@ -694,6 +694,54 @@ def test_referenced_skill_style_hint_reaches_the_prompt(
     assert skill.usage_count == 1
 
 
+def test_the_scenes_an_idea_contains_reach_the_prompt_without_being_used(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Auto-matched 「戏码与情绪」rows top the reference list up to the cap
+    even when the user picked nothing.
+
+    Two things must not follow from that. They are not a *use* of anyone's
+    skill, so `usage_count` stays put (the test above is what a real pick
+    looks like); and they must not land in `source_referenced_skill_ids_json`,
+    or a retry would replay them through `_resolve_referenced_skills` as if
+    the user had picked them."""
+    from app.agents import skill_matcher
+    from app.domain.skill_library import service as skill_library_service
+    from app.models import AgentRun, CreationSkill, EpisodeScriptTurn
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.flush()
+
+    response = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "男主在雨中告别女主，转身走进雨里，女主站在原地淋着雨"},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 202
+    complete = next(data for kind, data in _parse_sse(response.text) if kind == "complete")
+
+    turn = db.get(EpisodeScriptTurn, complete["turn_id"])
+    assert turn is not None and turn.agent_run_id is not None
+    run = db.get(AgentRun, turn.agent_run_id)
+    assert run is not None
+    assert "雨中告别·伞外的那一个" in json.dumps(run.input_json, ensure_ascii=False)
+
+    episode = db.get(DramaEpisode, complete["episode_id"])
+    assert episode is not None
+    assert episode.source_referenced_skill_ids_json == []
+
+    matched = db.scalars(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == author.id,
+            CreationSkill.category == CreationSkillCategory.DRAMA,
+        )
+    ).all()
+    assert len(matched) > skill_matcher.MAX_MATCHED_SKILLS
+    assert {row.usage_count for row in matched} == {0}
+
+
 def test_revise_turn_builds_on_the_client_supplied_current_script(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

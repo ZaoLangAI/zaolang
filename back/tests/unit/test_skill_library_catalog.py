@@ -233,14 +233,17 @@ def test_seeded_character_and_scene_assets_get_a_reference_still(
 
 
 def test_video_only_categories_never_declare_image_operations(db: Session, author: User) -> None:
-    """`lens`/`scene`/`other` (script beats) are shot-composition or
-    narrative recipes that don't mean anything applied to a single still —
-    only the "图片风格 image style" section (still `category=STYLE`) is
-    meant to reach `text_to_image`/`image_to_image`."""
+    """`lens`/`scene`/`format`/`drama`/`other` (script beats) are
+    shot-composition, prompt-format, scene-playing or narrative recipes that
+    don't mean anything applied to a single still — only the "图片风格 image
+    style" section (still `category=STYLE`) is meant to reach
+    `text_to_image`/`image_to_image`."""
     image_ops = {Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE}
     video_only_categories = {
         CreationSkillCategory.LENS,
         CreationSkillCategory.SCENE,
+        CreationSkillCategory.FORMAT,
+        CreationSkillCategory.DRAMA,
         CreationSkillCategory.OTHER,
     }
     for item in skill_catalog.CATALOG:
@@ -355,6 +358,159 @@ def test_a_seeded_image_style_skill_folds_its_prompt_suffix_into_an_image_job(
     assert ctx.params["aspect_ratio"] == sample.aspect_ratio
 
 
+_FORMAT_SUB_PREFIX_COUNTS = {
+    "fmt-frame-": 10,
+    "fmt-hook-": 10,
+    "fmt-action-": 10,
+    "fmt-vertical-": 10,
+    "fmt-camera-": 10,
+    "fmt-light-": 8,
+    "fmt-audio-": 8,
+    "fmt-transition-": 10,
+    # The largest axis on purpose: 8 rows about *binding a reference* plus
+    # 20 about holding one clip's state into the next, which is what
+    # `ENHANCE_SYSTEM_PROMPT`'s beat sequence needs to stay continuous.
+    "fmt-lock-": 28,
+    "fmt-teaser-": 8,
+    "fmt-guard-": 8,
+}
+
+
+def test_the_format_section_covers_every_writing_axis(db: Session, author: User) -> None:
+    """The 120 `fmt-*` rows are the seeded form of
+    `docs/video-prompt-formats.md`, and the eleven sub-prefixes are what keeps
+    them from collapsing into "a hundred variations on one camera rule".
+
+    Pinning the per-axis counts rather than just the total is the point: a
+    later addition that quietly lands nine more camera-move rows and nothing
+    about audio would still hit the total and would still be a worse
+    catalogue."""
+    items = [item for item in skill_catalog.CATALOG if item.key.startswith("fmt-")]
+
+    assert len(items) == 120
+    assert sum(_FORMAT_SUB_PREFIX_COUNTS.values()) == 120
+    for prefix, expected in _FORMAT_SUB_PREFIX_COUNTS.items():
+        found = [item for item in items if item.key.startswith(prefix)]
+        assert len(found) == expected, f"{prefix} has {len(found)}, expected {expected}"
+    for item in items:
+        matched = [p for p in _FORMAT_SUB_PREFIX_COUNTS if item.key.startswith(p)]
+        assert len(matched) == 1, f"{item.key} matches {matched}, expected exactly one axis"
+
+    for item in items:
+        assert item.category == CreationSkillCategory.FORMAT, item.key
+        assert item.applicable_operations == skill_catalog._VIDEO_OPERATIONS, item.key
+        assert item.aspect_ratio == "9:16", item.key
+        # A rule nobody can act on is worse than no rule: every row explains
+        # *why* in `description`, which is also the only field script
+        # writing's `@` reference reads (see `_resolve_referenced_skills`).
+        assert len(item.description) >= 40, item.key
+        assert item.prompt_suffix.strip(), item.key
+
+
+def test_format_prompt_suffixes_are_positive_phrasings(db: Session, author: User) -> None:
+    """Runway, Luma, PixVerse and Veo all document that a negation in the
+    prompt *body* biases the model toward the excluded thing — which is what
+    `fmt-guard-positive-phrasing` teaches.
+
+    `prompt_suffix` is appended straight into the outgoing prompt by
+    `fold_params_prompt`, so a `fmt-*` row phrased as "no camera shake" would
+    be the section contradicting its own advice on the wire. The rewrite is
+    always available: state the wanted end state instead."""
+    banned = {"no", "not", "never", "without", "avoid", "nothing", "neither", "nor"}
+    for item in skill_catalog.CATALOG:
+        if not item.key.startswith("fmt-"):
+            continue
+        words = {word.strip(",.:;") for word in item.prompt_suffix.lower().split()}
+        offenders = words & banned
+        assert not offenders, f"{item.key} uses negative phrasing: {sorted(offenders)}"
+
+
+_DRAMA_SUB_PREFIX_COUNTS = {"drama-scene-": 50, "drama-emotion-": 30}
+
+
+def test_the_drama_section_is_split_between_scenes_and_emotions(
+    db: Session, author: User
+) -> None:
+    """`drama` is the one category `app.agents.skill_matcher` searches, so
+    what it contains *is* what plot matching can ever find.
+
+    The two-way split is the substance of that: a story names a situation
+    and an emotional register, and matching only one of the two would
+    silently halve the feature. Pinning both counts stops a later addition
+    from turning this into eighty scene types and no emotional vocabulary."""
+    items = [item for item in skill_catalog.CATALOG if item.key.startswith("drama-")]
+
+    assert len(items) == 80
+    assert sum(_DRAMA_SUB_PREFIX_COUNTS.values()) == 80
+    for prefix, expected in _DRAMA_SUB_PREFIX_COUNTS.items():
+        found = [item for item in items if item.key.startswith(prefix)]
+        assert len(found) == expected, f"{prefix} has {len(found)}, expected {expected}"
+
+    for item in items:
+        assert item.category == CreationSkillCategory.DRAMA, item.key
+        assert item.applicable_operations == skill_catalog._VIDEO_OPERATIONS, item.key
+        assert item.aspect_ratio == "9:16", item.key
+        # `description` is the *only* field the matcher's candidate list and
+        # the agents' reference block ever read (see
+        # `skill_library.service.load_reference_skills`), so a thin one is a
+        # row that can be matched but conveys nothing once it is.
+        assert len(item.description) >= 60, item.key
+        assert item.prompt_suffix.strip(), item.key
+
+
+def test_drama_prompt_suffixes_are_positive_phrasings(db: Session, author: User) -> None:
+    """Same rule and same reason as the `fmt-*` rows: `prompt_suffix` is
+    appended straight into the outgoing prompt by `fold_params_prompt`, and
+    four vendors document that a negation in the body biases the model
+    toward the excluded thing.
+
+    Enforced separately rather than by widening the `fmt-*` test so each
+    section's failure names its own section."""
+    banned = {"no", "not", "never", "without", "avoid", "nothing", "neither", "nor"}
+    for item in skill_catalog.CATALOG:
+        if not item.key.startswith("drama-"):
+            continue
+        words = {word.strip(",.:;") for word in item.prompt_suffix.lower().split()}
+        offenders = words & banned
+        assert not offenders, f"{item.key} uses negative phrasing: {sorted(offenders)}"
+
+
+def test_a_seeded_format_skill_appends_its_rule_to_a_video_job(
+    db: Session, author: User
+) -> None:
+    """The `format` category ships through the plain `prompt_suffix` append
+    path — no new folding mechanism — so this asserts a rule row behaves
+    exactly like a `lens-*` recipe once seeded, only carrying a structural
+    constraint instead of a look."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    sample = skill_catalog.find("fmt-camera-one-move")
+    assert sample is not None
+    row = db.scalar(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == author.id, CreationSkill.title == sample.title
+        )
+    )
+    assert row is not None
+    assert row.category == CreationSkillCategory.FORMAT
+
+    job = make_job(db, author, operation=Operation.TEXT_TO_VIDEO)
+    ctx = WorkflowContext(
+        session=db,
+        job=job,
+        prompt="她推开门",
+        params={"prompt": "她推开门", "skill_ids": [row.id]},
+        dry_run=False,
+    )
+
+    execute_skill_context(ctx, SkillContextConfig())
+
+    # Appended, not substituted — the author's own description survives.
+    assert "她推开门" in ctx.prompt
+    assert sample.prompt_suffix in ctx.prompt
+
+
 def test_a_seeded_beat_skill_is_usable_as_a_script_style_reference(
     db: Session, author: User
 ) -> None:
@@ -379,3 +535,179 @@ def test_a_seeded_beat_skill_is_usable_as_a_script_style_reference(
     usable = skill_library_service.get_usable(db, skill_id=row.id, viewer_id=None)
     assert usable.id == row.id
     assert skill_library_service.viewer_has_access(db, usable, None) is True
+
+
+def _first_title(prefix: str) -> str:
+    """The same tie-break `apply_matching_format_skills` uses (`sorted()`
+    over a `frozenset`), so a test can predict which row gets picked without
+    hardcoding a Chinese title that would silently go stale on a catalogue
+    edit."""
+    return sorted(
+        item.title for item in skill_catalog.CATALOG if item.key.startswith(prefix)
+    )[0]
+
+
+def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
+    db: Session, author: User
+) -> None:
+    """`camera` maps onto `fmt-camera-*`; `scene` has no `format` axis at all
+    (see the mapping's own docstring) and must not match anything even when
+    flagged `missing`."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[
+            {"key": "camera", "status": "weak", "hint": "运镜太笼统"},
+            {"key": "scene", "status": "missing", "hint": "没写场景"},
+        ],
+        prompt="她推开门",
+        max_length=4096,
+    )
+
+    assert len(applied) == 1
+    expected_title = _first_title("fmt-camera-")
+    assert applied[0]["title"] == expected_title
+    expected_row = db.scalar(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == author.id, CreationSkill.title == expected_title
+        )
+    )
+    assert expected_row is not None
+    assert applied[0]["id"] == expected_row.id
+    assert "她推开门" in prompt
+    assert expected_row.params_json["prompt_suffix"] in prompt
+
+
+def test_apply_matching_format_skills_respects_the_dimension_order_and_limit(
+    db: Session, author: User
+) -> None:
+    """At most `MAX_AUTO_APPLIED_FORMAT_SKILLS`, taken in the diagnosis's own
+    dimension order — not every matching dimension gets a row once the cap
+    is hit."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    _prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[
+            {"key": "subject", "status": "missing", "hint": "x"},
+            {"key": "action", "status": "weak", "hint": "x"},
+            {"key": "camera", "status": "weak", "hint": "x"},
+        ],
+        prompt="她推开门",
+        max_length=4096,
+    )
+
+    assert skill_library_service.MAX_AUTO_APPLIED_FORMAT_SKILLS == 2
+    assert [item["title"] for item in applied] == [
+        _first_title("fmt-frame-"),
+        _first_title("fmt-action-"),
+    ]
+
+
+def test_apply_matching_format_skills_is_a_noop_for_an_image_operation(
+    db: Session, author: User
+) -> None:
+    """Every seeded `format` row is video-only — an image polish must never
+    pick one up even when a (hypothetical) dimension name collides."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_image",
+        dimensions=[{"key": "camera", "status": "missing", "hint": "x"}],
+        prompt="她推开门",
+        max_length=4096,
+    )
+
+    assert applied == []
+    assert prompt == "她推开门"
+
+
+def test_apply_matching_format_skills_never_exceeds_max_length(
+    db: Session, author: User
+) -> None:
+    """Appending is skipped rather than truncating a rule mid-sentence."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[{"key": "camera", "status": "weak", "hint": "x"}],
+        prompt="她推开门",
+        max_length=len("她推开门"),
+    )
+
+    assert applied == []
+    assert prompt == "她推开门"
+
+
+def test_apply_matching_format_skills_skips_a_suffix_already_in_the_prompt(
+    db: Session, author: User
+) -> None:
+    """A rule already spelled out by the author (or a previous round) is not
+    appended twice — the picker falls through to the next `fmt-camera-*` row
+    for that same dimension instead, since the dimension is still weak."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    first_title = _first_title("fmt-camera-")
+    first_row = db.scalar(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == author.id, CreationSkill.title == first_title
+        )
+    )
+    assert first_row is not None
+    suffix = first_row.params_json["prompt_suffix"]
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[{"key": "camera", "status": "weak", "hint": "x"}],
+        prompt=f"她推开门，{suffix}",
+        max_length=4096,
+    )
+
+    assert first_row.id not in {item["id"] for item in applied}
+    assert suffix in prompt
+    # `prompt.count` rather than `in`: the point is it was not appended a
+    # second time, not that it is absent.
+    assert prompt.count(suffix) == 1
+
+
+def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_used(
+    db: Session, author: User
+) -> None:
+    """Once every `fmt-camera-*` row's suffix is already on the wire, the
+    dimension contributes nothing rather than erroring or looping."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    camera_titles = [
+        item.title for item in skill_catalog.CATALOG if item.key.startswith("fmt-camera-")
+    ]
+    camera_rows = db.scalars(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == author.id,
+            CreationSkill.title.in_(camera_titles),
+        )
+    ).all()
+    assert camera_rows
+    already_present = "，".join(row.params_json["prompt_suffix"] for row in camera_rows)
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[{"key": "camera", "status": "weak", "hint": "x"}],
+        prompt=f"她推开门，{already_present}",
+        max_length=8192,
+    )
+
+    assert applied == []
+    assert prompt == f"她推开门，{already_present}"

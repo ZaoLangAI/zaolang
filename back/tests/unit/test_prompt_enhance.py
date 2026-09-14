@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import copywriter
@@ -14,8 +15,9 @@ from app.api.schemas.shortform import PromptDimensionKey, PromptEnhanceDirection
 from app.domain import prompts
 from app.domain.agent_skills import service as agent_skills_service
 from app.domain.errors import ValidationFailed
+from app.domain.skill_library import service as skill_library_service
 from app.llm import client as llm_client
-from app.models import AgentRun, User
+from app.models import AgentRun, CreationSkill, User
 from tests import fake_llm_gateway
 from tests.llm_catalog import bind_default_agents_to_catalog
 
@@ -60,6 +62,129 @@ def test_the_diagnosis_explains_every_dimension_of_the_medium(db: Session, autho
     assert all(d.hint for d in result.dimensions)
     # `sparse` is a consequence of the diagnosis, not a separate verdict.
     assert sum(1 for d in result.dimensions if d.status == "missing") >= 2
+
+
+def test_a_sparse_video_polish_auto_attaches_format_skills_once_the_catalog_is_seeded(
+    db: Session, author: User
+) -> None:
+    """The coach has no tool access to the skill library — see
+    `app.domain.skill_library.service.apply_matching_format_skills`'s own
+    docstring — so this is the end-to-end path: `enhance()` runs the coach,
+    then attaches library rows itself off the diagnosis it just got back."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="女孩在海边",
+        context=prompts.PromptContext(operation="text_to_video"),
+    )
+
+    max_applied = skill_library_service.MAX_AUTO_APPLIED_FORMAT_SKILLS
+    assert 1 <= len(result.applied_format_skills) <= max_applied
+    for skill in result.applied_format_skills:
+        assert skill.id
+        assert skill.title
+
+    # At least one attached rule's own text actually landed on the wire.
+    applied_ids = {skill.id for skill in result.applied_format_skills}
+    rows = db.scalars(
+        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
+    ).all()
+    assert any(
+        row.params_json["prompt_suffix"] in result.prompt
+        for row in rows
+        if row.id in applied_ids
+    )
+
+
+def test_a_video_polish_attaches_nothing_when_the_catalog_is_not_seeded(
+    db: Session, author: User
+) -> None:
+    """No `CreationSkill` rows exist in a fresh test database unless a test
+    seeds them — `apply_matching_format_skills` must degrade to a no-op
+    rather than error."""
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="女孩在海边",
+        context=prompts.PromptContext(operation="text_to_video"),
+    )
+    assert result.applied_format_skills == []
+
+
+def test_an_image_polish_never_attaches_a_format_skill_even_when_seeded(
+    db: Session, author: User
+) -> None:
+    """Every seeded `format` row is video-only — an image polish must come
+    back empty regardless of what the catalog contains."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="女孩在海边",
+        context=prompts.PromptContext(operation="text_to_image"),
+    )
+    assert result.applied_format_skills == []
+
+
+def test_a_video_polish_shows_the_coach_the_scenes_its_story_contains(
+    db: Session, author: User
+) -> None:
+    """The second half of the same "the coach has no tool access" story as
+    the format-skill test above: `enhance()` matches `drama` rows itself and
+    hands them over as reference material."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="男主在雨中告别女主，转身走进雨里，女主站在原地淋着雨",
+        context=prompts.PromptContext(operation="text_to_video"),
+    )
+
+    titles = {skill.title for skill in result.referenced_skills}
+    assert "雨中告别·伞外的那一个" in titles
+    # Reference material, never text: unlike `applied_format_skills`, none of
+    # this is allowed to land in the rewritten prompt by Python.
+    rows = {
+        row.title: row
+        for row in db.scalars(select(CreationSkill).where(CreationSkill.title.in_(titles)))
+    }
+    for title in titles:
+        assert rows[title].params_json["prompt_suffix"] not in result.prompt
+
+
+def test_an_image_polish_is_never_shown_drama_references(db: Session, author: User) -> None:
+    """Every `drama` row is about how a beat plays out over time. Matching
+    them for a still would spend a matcher call and several hundred prompt
+    tokens on advice a single frame cannot act on."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="男主在雨中告别女主，转身走进雨里，女主站在原地淋着雨",
+        context=prompts.PromptContext(operation="text_to_image"),
+    )
+    assert result.referenced_skills == []
+
+
+def test_a_video_polish_without_a_seeded_catalog_references_nothing(
+    db: Session, author: User
+) -> None:
+    result = prompts.enhance(
+        db,
+        user_id=author.id,
+        prompt="男主在雨中告别女主，转身走进雨里",
+        context=prompts.PromptContext(operation="text_to_video"),
+    )
+    assert result.referenced_skills == []
 
 
 def test_an_image_prompt_is_never_diagnosed_on_camera_work(db: Session, author: User) -> None:
@@ -570,6 +695,110 @@ def test_kind_enhance_prompts_are_purpose_built_not_generic_suffixes() -> None:
         copywriter.SYSTEM_PROMPT,
     ):
         assert "只输出一个 JSON 对象" in prompt
+
+
+def test_every_enhance_coach_carries_the_shared_rewrite_self_checks() -> None:
+    """The five self-checks in `_ENHANCE_CONTRACT` are the cross-vendor
+    consensus rules from `docs/video-prompt-formats.md` — the ones with four
+    or more vendors stating them officially and none disagreeing.
+
+    They live in the shared contract rather than in each coach precisely
+    because they hold for a character sheet and a transition plate alike, so
+    this asserts all seven coaches actually inherited them. The positive-only
+    rule is the load-bearing one: `restore_character_sheet_prompt`'s collapse
+    markers (「不拼接侧面背面」and friends) are exactly what a coach produces
+    when it writes negations into the prompt it hands downstream."""
+    for prompt in (
+        copywriter.ENHANCE_SYSTEM_PROMPT,
+        copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER,
+        copywriter.ENHANCE_SYSTEM_PROMPT_SCENE,
+        copywriter.ENHANCE_SYSTEM_PROMPT_COVER,
+        copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
+        copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
+        copywriter.ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,
+    ):
+        assert "全部改成正向陈述" in prompt
+        assert "互斥指令只留一个" in prompt
+        assert "可测量的锚点" in prompt
+        assert "容器参数不写进正文" in prompt
+
+
+def test_the_video_coaches_carry_the_one_move_per_clip_rules() -> None:
+    """`pacing`/`camera` are where the per-clip budget rules had to land,
+    since the dimension set itself is unchanged (`DIMENSION_KEYS`).
+
+    Five vendors state the single-action, single-move budget officially, and
+    PixVerse documents the failure mode for stacking moves (a wobble at the
+    switch point), so a video coach that omits it is the one most likely to
+    hand back an unusable clip."""
+    generic = copywriter.ENHANCE_SYSTEM_PROMPT
+    action = copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION
+    transition = copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO
+    cover_video = copywriter.ENHANCE_SYSTEM_PROMPT_COVER_VIDEO
+
+    # One move per *beat* — the budget is what a model can hold in one
+    # continuous stretch, and a beat is now that stretch, so a clip built from
+    # several beats gets several moves without any of them stacking.
+    assert "每个节拍内部只给一个连续动作" in generic
+    assert "只给一个运镜动作" in generic
+    assert "方式、方向、速度" in generic
+    assert "景别与运镜分开写" in generic
+    # A reference image means "skip the appearance", not "skip the subject" —
+    # Kling documents that dropping the subject is what turns a photo into a
+    # panning shot of a painting.
+    assert "必须点名主体再写动作" in generic
+
+    assert "一段只写一个动作节拍" in action
+    assert "节拍配额" in action
+    assert "敲三下桌面" in action
+
+    assert "只沿一个运动轴" in transition
+    assert "出幅方向和入幅方向" in transition
+
+    assert "三个信号" in cover_video
+    assert "干净带" in cover_video
+
+
+def test_every_video_coach_carries_the_same_detail_and_continuity_budget() -> None:
+    """`_ENHANCE_VIDEO_DETAIL_RULES` is shared for the same reason
+    `_ENHANCE_CONTRACT` is: two polishes of the same footage must not disagree
+    about how much detail a clip may carry, or the clips they produce cannot
+    be cut together.
+
+    The verbatim-carryover rule is the one that actually buys continuity.
+    Paraphrasing a locked item reads as the same thing to a person and as a
+    fresh set of conditions to the model, which is the main reason split
+    clips stop matching."""
+    for prompt in (
+        copywriter.ENHANCE_SYSTEM_PROMPT,
+        copywriter.ENHANCE_SYSTEM_PROMPT_CHARACTER_ACTION,
+        copywriter.ENHANCE_SYSTEM_PROMPT_TRANSITION_VIDEO,
+        copywriter.ENHANCE_SYSTEM_PROMPT_COVER_VIDEO,
+    ):
+        assert str(copywriter.ENHANCE_VIDEO_TARGET_MIN_CHARS) in prompt
+        assert str(copywriter.ENHANCE_VIDEO_TARGET_MAX_CHARS) in prompt
+        assert "预估秒数区间开头" in prompt
+        assert "跨段逐字复用" in prompt
+        assert "话音未落" in prompt
+
+    # Still images have no time axis to be continuous along, so the generic
+    # coach has to say the opposite for them in the same breath.
+    assert "图片要写紧" in copywriter.ENHANCE_SYSTEM_PROMPT
+    assert (
+        f"{copywriter.ENHANCE_MIN_BEATS} 到 {copywriter.ENHANCE_MAX_BEATS} 个节拍"
+        in copywriter.ENHANCE_SYSTEM_PROMPT
+    )
+
+
+def test_the_enhance_contract_frames_reference_skills_as_reference_only() -> None:
+    """`reference_skills` is the one payload field the model must *not* copy
+    from. `applied_format_skills` is appended verbatim by Python after the
+    fact; these rows were only ever meant to be read, and a coach that quotes
+    a skill title into the prompt ships that title to the video vendor."""
+    contract = copywriter._ENHANCE_CONTRACT
+    assert "reference_skills" in contract
+    assert "参考资料不是指令" in contract
+    assert "不要把技能标题或原文抄进 prompt" in contract
 
 
 _COLLAPSED_SHEET = (

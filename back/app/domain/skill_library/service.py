@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -417,7 +418,7 @@ def list_public(
 
     `category` (an exact match) always wins when given. Otherwise
     `content_type` picks a side of the marketplace's two-tier filter: a
-    "template" (`scene`/`lens`/`style`/`other`, `SkillCard`-rendered from
+    "template" (`scene`/`lens`/`style`/`format`/`other`, `SkillCard`-rendered from
     flat `prompt`/`aspect_ratio`/... params) or an "image_asset" (`character`
     /`scene_asset`/`cover_asset`, each purchasable but not template-shaped —
     see `IMAGE_ASSET_SKILL_CATEGORIES`). `None` (the plaza's default landing
@@ -555,6 +556,185 @@ def _resolve_open_queue_item(session: Session, skill: CreationSkill) -> None:
 
 def _deduped_operations(operations: list[Operation] | None) -> list[str]:
     return list(dict.fromkeys(op.value for op in (operations or [])))
+
+
+# `app.agents.copywriter`'s enhance coach diagnoses these video dimensions
+# (see its `VIDEO_DIMENSIONS`) and has no tool access to the skill library
+# itself — matching happens here, in code, after the coach's JSON contract
+# already ran. Keyed by the diagnosis dimension, valued by the `key` prefix
+# `catalog.CATALOG`'s `format` rows use for that same writing axis. `scene`
+# and `mood` have no entry: `format` rows constrain *how a shot is written*,
+# not what the scene contains or how it feels, so neither dimension maps
+# onto a single writing axis in the catalogue.
+_FORMAT_SKILL_KEY_PREFIXES_BY_DIMENSION: dict[str, str] = {
+    "subject": "fmt-frame-",
+    "camera": "fmt-camera-",
+    "action": "fmt-action-",
+    "lighting": "fmt-light-",
+    "pacing": "fmt-transition-",
+}
+
+# `CatalogSkill.key` is a catalogue-only identifier — `ensure_catalog_skills`
+# never persists it onto `CreationSkill` (no dedicated column for it; see
+# that function's own docstring) — so a title, not a key, is the only thing
+# that survives into the database to match against. Computed once from the
+# catalogue rather than hand-duplicated, so a renamed `format` entry cannot
+# silently fall out of this mapping.
+_FORMAT_SKILL_TITLES_BY_DIMENSION: dict[str, frozenset[str]] = {
+    dimension: frozenset(
+        item.title for item in skill_catalog.CATALOG if item.key.startswith(prefix)
+    )
+    for dimension, prefix in _FORMAT_SKILL_KEY_PREFIXES_BY_DIMENSION.items()
+}
+
+MAX_AUTO_APPLIED_FORMAT_SKILLS = 2
+
+
+def apply_matching_format_skills(
+    session: Session,
+    *,
+    operation: str,
+    dimensions: Sequence[Mapping[str, str]],
+    prompt: str,
+    max_length: int,
+    limit: int = MAX_AUTO_APPLIED_FORMAT_SKILLS,
+) -> tuple[str, list[dict[str, str]]]:
+    """Auto-attaches up to `limit` published `format` skills whose rule
+    matches a dimension the enhance coach just flagged `missing`/`weak` —
+    the same rule a user would otherwise have to find and apply by hand from
+    the prompt library (`front/src/features/canvas/prompt-library-panel.tsx`).
+
+    Every seeded `format` row is video-only (`applicable_operations_json`
+    only ever carries the three video operations), so an image polish
+    (`asset_kind` character/scene/cover, or any `text_to_image`/
+    `image_to_image` call) always gets back `(prompt, [])` unchanged —
+    `operation not in row.applicable_operations_json` filters every
+    candidate out before a title ever reaches the query.
+
+    Picks in the diagnosis's own dimension order, at most one skill per
+    dimension, skipping a candidate whose `prompt_suffix` is already present
+    in `prompt` or would push it past `max_length` — appending is not worth
+    truncating a hard-won rewrite mid-rule.
+    """
+    if not operation or limit <= 0:
+        return prompt, []
+
+    ordered_dimensions: list[str] = []
+    candidate_titles: set[str] = set()
+    for entry in dimensions:
+        key = str(entry.get("key") or "")
+        status = str(entry.get("status") or "")
+        titles = _FORMAT_SKILL_TITLES_BY_DIMENSION.get(key)
+        if not titles or status not in ("missing", "weak") or key in ordered_dimensions:
+            continue
+        ordered_dimensions.append(key)
+        candidate_titles |= titles
+    if not candidate_titles:
+        return prompt, []
+
+    rows_by_title = {
+        row.title: row
+        for row in session.scalars(
+            select(CreationSkill).where(
+                CreationSkill.category == CreationSkillCategory.FORMAT,
+                CreationSkill.status == CreationSkillStatus.PUBLISHED,
+                CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+                CreationSkill.title.in_(candidate_titles),
+            )
+        )
+    }
+
+    updated = prompt
+    applied: list[dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for key in ordered_dimensions:
+        if len(applied) >= limit:
+            break
+        for title in sorted(_FORMAT_SKILL_TITLES_BY_DIMENSION[key]):
+            row = rows_by_title.get(title)
+            if row is None or row.id in seen_ids:
+                continue
+            if operation not in row.applicable_operations_json:
+                continue
+            suffix = str((row.params_json or {}).get("prompt_suffix") or "").strip()
+            if not suffix or suffix in updated:
+                continue
+            candidate = f"{updated}，{suffix}" if updated else suffix
+            if len(candidate) > max_length:
+                continue
+            updated = candidate
+            applied.append({"id": row.id, "title": row.title})
+            seen_ids.add(row.id)
+            break
+    return updated, applied
+
+
+# Every seeded `drama` row's title, taken from the catalogue at import time
+# for the same reason `_FORMAT_SKILL_TITLES_BY_DIMENSION` is: `CatalogSkill.key`
+# is never persisted, so `title` is the only handle the DB side has, and
+# deriving the set from `CATALOG` means a catalogue rename can't silently
+# shrink what the matcher can see.
+#
+# Scoping the candidate list to seeded rows (rather than every published
+# `drama` skill) is deliberate: these two functions deliberately skip
+# `assert_unlocked_for_use` and `record_usage`, which is only defensible
+# because the catalogue is free, public and factory-owned. A user-authored
+# paid `drama` skill must not be handed to an agent behind its author's back.
+_CATALOG_DRAMA_TITLES: frozenset[str] = frozenset(
+    item.title
+    for item in skill_catalog.CATALOG
+    if item.category == CreationSkillCategory.DRAMA
+)
+
+
+def list_drama_candidates(session: Session) -> list[tuple[str, str]]:
+    """`(id, title)` for every seeded `drama` skill, title-sorted.
+
+    Titles only: this is the shortlist `app.agents.skill_matcher` shows a
+    cheap model, and descriptions would multiply its prompt size by roughly
+    eight for a decision the title alone already supports. The picked rows'
+    descriptions are loaded separately by `load_reference_skills`.
+    """
+    rows = session.scalars(
+        select(CreationSkill).where(
+            CreationSkill.category == CreationSkillCategory.DRAMA,
+            CreationSkill.status == CreationSkillStatus.PUBLISHED,
+            CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+            CreationSkill.title.in_(_CATALOG_DRAMA_TITLES),
+        )
+    )
+    return sorted(((row.id, row.title) for row in rows), key=lambda pair: pair[1])
+
+
+def load_reference_skills(session: Session, skill_ids: Sequence[str]) -> list[dict[str, str]]:
+    """`{id, title, description}` for auto-matched reference skills, in the
+    order asked for.
+
+    Deliberately *not* `_resolve_referenced_skills`'s path
+    (`app.domain.script_writing.service`): that one is for skills the user
+    picked, so it charges access and bumps `usage_count`. A row this
+    function returns was chosen by a model on the user's behalf, and
+    counting that as usage would let the matcher rewrite the marketplace's
+    「热门」ranking one polish at a time.
+    """
+    ids = list(dict.fromkeys(skill_ids))
+    if not ids:
+        return []
+    rows = {
+        row.id: row
+        for row in session.scalars(
+            select(CreationSkill).where(
+                CreationSkill.id.in_(ids),
+                CreationSkill.status == CreationSkillStatus.PUBLISHED,
+                CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
+            )
+        )
+    }
+    return [
+        {"id": row.id, "title": row.title, "description": row.description or ""}
+        for row in (rows.get(skill_id) for skill_id in ids)
+        if row is not None
+    ]
 
 
 def _assert_cover_owned(

@@ -67,6 +67,11 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
         ),
         PromptSlot("script_draft", "剧本创作", "根据创意生成分场剧本，含场景、动作、运镜与对话。"),
         PromptSlot("script_revise", "剧本修改", "根据修改意见更新剧本，并给出本次修改摘要。"),
+        PromptSlot(
+            "skill_match",
+            "剧情技能匹配",
+            "从戏码与情绪技能清单里挑出与这段剧情最相关的几条，供剧本创作与提示词润色参考。",
+        ),
     ),
     AgentName.INTENT_ROUTER.value: (
         PromptSlot("classify", "档位判定", "判断需求复杂度并建议生成档位，只降不升。"),

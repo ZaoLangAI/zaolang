@@ -2680,6 +2680,8 @@
       "more_dramatic": "更戏剧化"
     },
     "addedLabel": "本轮补充",
+    "appliedSkillsLabel": "已自动叠加格式技能",
+    "referencedSkillsLabel": "参考了这些戏码",
     "refineLabel": "继续调整这一版",
     "instructionLabel": "补充要求",
     "instructionPlaceholder": "例如：把结尾改成回头看镜头",
@@ -3318,6 +3320,8 @@
     "categoryScene": "场景",
     "categoryLens": "镜头",
     "categoryStyle": "风格",
+    "categoryFormat": "提示词格式",
+    "categoryDrama": "戏码与情绪",
     "categoryCharacter": "角色图",
     "categorySceneAsset": "场景图",
     "categoryCoverAsset": "封面图",

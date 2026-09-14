@@ -7132,7 +7132,7 @@ export interface components {
          * CreationSkillCategory
          * @enum {string}
          */
-        CreationSkillCategory: "scene" | "lens" | "style" | "character" | "scene_asset" | "cover_asset" | "other";
+        CreationSkillCategory: "scene" | "lens" | "style" | "format" | "drama" | "character" | "scene_asset" | "cover_asset" | "other";
         /** CreationSkillCreateRequest */
         CreationSkillCreateRequest: {
             /** Title */

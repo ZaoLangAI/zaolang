@@ -91,12 +91,30 @@ export interface PromptEnhanceQuestion {
   options?: Array<{ value: string; label: string }>;
   required?: boolean;
 }
+/** A `format` skill the coach auto-attached this round because a diagnosed
+ * dimension came back missing/weak — see
+ * `app.domain.skill_library.service.apply_matching_format_skills`. Video
+ * operations only; always empty for an image polish. */
+export interface PromptEnhanceAppliedFormatSkill {
+  id: string;
+  title: string;
+}
+/** A `drama` skill matched to the author's story and shown to the coach as
+ * reference material — see `app.agents.skill_matcher`. Nothing here was
+ * appended to `prompt`: the coach read them and chose what to use, which is
+ * what separates these from `applied_format_skills`. Video operations only. */
+export interface PromptEnhanceReferencedSkill {
+  id: string;
+  title: string;
+}
 export interface PromptEnhanceResult {
   prompt: string;
   detail_level: 'sparse' | 'adequate' | 'detailed';
   feedback: string;
   dimensions: PromptEnhanceDimension[];
   additions: string[];
+  applied_format_skills?: PromptEnhanceAppliedFormatSkill[];
+  referenced_skills?: PromptEnhanceReferencedSkill[];
   questions?: PromptEnhanceQuestion[];
   script_segment?: PromptEnhanceScriptSegment;
 }

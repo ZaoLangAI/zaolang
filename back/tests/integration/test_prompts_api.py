@@ -15,10 +15,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents import copywriter
+from app.agents import copywriter, skill_matcher
 from app.api.v1 import prompts as prompts_api
 from app.domain import prompts
 from app.domain.agent_skills import service as agent_skills_service
+from app.domain.skill_library import service as skill_library_service
 from app.llm import client as llm_client
 from app.models import AgentRun, User
 from tests.conftest import auth_header
@@ -98,6 +99,72 @@ def test_enhance_diagnoses_each_dimension(
     }
     assert all(d["status"] in ("missing", "weak", "ok") for d in body["dimensions"])
     assert body["additions"]
+
+
+def test_enhance_auto_attaches_format_skills_over_the_wire(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SSE `complete` frame carries `applied_format_skills` end to end —
+    not just `PromptEnhancement`'s in-process shape (see
+    `tests/unit/test_prompt_enhance.py`)."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+    _patch_stream_session(monkeypatch, db)
+
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={"prompt": "女孩在海边", "operation": "text_to_video", "duration_seconds": 8},
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    body = _enhance_complete(response)
+
+    max_applied = skill_library_service.MAX_AUTO_APPLIED_FORMAT_SKILLS
+    assert 1 <= len(body["applied_format_skills"]) <= max_applied
+    for skill in body["applied_format_skills"]:
+        assert skill["id"]
+        assert skill["title"]
+
+
+def test_enhance_streams_the_drama_scenes_it_matched_before_it_writes(
+    client: TestClient,
+    db: Session,
+    author: User,
+    bound_copy_agent: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Matching runs on the request session before the stream opens, so the
+    `matched` frame is the first thing the panel sees — it exists to explain
+    the pause the selector call costs.
+
+    The same list has to come back on `complete`, because a client that
+    reconnects mid-stream never saw the first frame."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    db.commit()
+    _patch_stream_session(monkeypatch, db)
+
+    response = client.post(
+        "/v1/generation/prompts/enhance",
+        json={
+            "prompt": "男主在雨中告别女主，转身走进雨里，女主站在原地淋着雨",
+            "operation": "text_to_video",
+            "duration_seconds": 8,
+        },
+        headers=auth_header(author),
+    )
+    assert response.status_code == 200, response.text
+    events = _parse_sse(response.text)
+    kinds = [kind for kind, _ in events]
+    assert kinds[0] == "matched"
+
+    matched = events[0][1]["referenced_skills"]
+    assert 1 <= len(matched) <= skill_matcher.MAX_MATCHED_SKILLS
+    assert "雨中告别·伞外的那一个" in {skill["title"] for skill in matched}
+    assert _enhance_complete(response)["referenced_skills"] == matched
 
 
 def test_enhance_video_asset_kind_general_uses_video_dimensions(

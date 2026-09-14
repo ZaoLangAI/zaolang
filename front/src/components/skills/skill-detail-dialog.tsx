@@ -24,6 +24,8 @@ const CATEGORY_LABEL_KEY: Record<
   | 'categoryScene'
   | 'categoryLens'
   | 'categoryStyle'
+  | 'categoryFormat'
+  | 'categoryDrama'
   | 'categoryCharacter'
   | 'categorySceneAsset'
   | 'categoryCoverAsset'
@@ -32,6 +34,8 @@ const CATEGORY_LABEL_KEY: Record<
   scene: 'categoryScene',
   lens: 'categoryLens',
   style: 'categoryStyle',
+  format: 'categoryFormat',
+  drama: 'categoryDrama',
   character: 'categoryCharacter',
   scene_asset: 'categorySceneAsset',
   cover_asset: 'categoryCoverAsset',

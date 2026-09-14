@@ -43,7 +43,7 @@ from typing import Any
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
-from app.agents import copywriter
+from app.agents import copywriter, skill_matcher
 from app.db import session_scope
 from app.domain.characters import service as characters_service
 from app.domain.editor import collaborators
@@ -188,6 +188,35 @@ def _resolve_referenced_skills(
 
 def _skill_hints(referenced: list[dict[str, str]]) -> list[dict[str, str]]:
     return [{"title": s["title"], "description": s["description"]} for s in referenced]
+
+
+def _topped_up_with_matches(
+    session: Session, *, user_id: str, brief: str, picked: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """`picked` first, then seeded `drama` skills the matcher found for
+    `brief`, up to `MAX_REFERENCED_SKILLS`.
+
+    The user's own `@` references always keep their slots — an automatic
+    suggestion may never displace an explicit choice — and the matcher is
+    told about them (`exclude_ids`) so it doesn't spend a pick re-choosing
+    one.
+
+    The result is prompt-facing only. `_store_source_prompt` keeps recording
+    the user's ids alone, because a matched id written there would come back
+    through `_resolve_referenced_skills` on the next retry and be charged
+    and counted as if the user had picked it.
+    """
+    remaining = MAX_REFERENCED_SKILLS - len(picked)
+    if remaining <= 0:
+        return picked
+    matched_ids = skill_matcher.select_reference_skills(
+        session,
+        brief=brief,
+        limit=remaining,
+        exclude_ids=tuple(entry["id"] for entry in picked),
+        user_id=user_id,
+    )
+    return picked + skill_library_service.load_reference_skills(session, matched_ids)
 
 
 def _store_source_prompt(episode: DramaEpisode, *, idea: str, skill_ids: list[str]) -> None:
@@ -386,7 +415,12 @@ def prepare_new_script(
     _notify_script(session, episode, status="generating", kind="draft", series=series)
 
     return NewScriptPrep(
-        episode_id=episode.id, title=title, idea=idea, referenced_skills=referenced
+        episode_id=episode.id,
+        title=title,
+        idea=idea,
+        referenced_skills=_topped_up_with_matches(
+            session, user_id=user_id, brief=idea, picked=referenced
+        ),
     )
 
 
@@ -435,7 +469,14 @@ def retry_new_script(
     # permanently block `stream_new_script`'s own "no title given yet" path
     # (`if not prep.title and outcome.script.get("title")`) from ever
     # applying the model's real title on a successful retry.
-    return NewScriptPrep(episode_id=episode.id, title="", idea=idea, referenced_skills=referenced)
+    return NewScriptPrep(
+        episode_id=episode.id,
+        title="",
+        idea=idea,
+        referenced_skills=_topped_up_with_matches(
+            session, user_id=user_id, brief=idea, picked=referenced
+        ),
+    )
 
 
 def prepare_turn(
@@ -486,7 +527,15 @@ def prepare_turn(
         episode_id=episode.id,
         message=message,
         current_script=current_script,
-        referenced_skills=referenced,
+        # The revision note alone ("把第三场写得更紧张") rarely names a scene
+        # type or an emotion, so the logline rides along as the story the
+        # matcher is actually matching against.
+        referenced_skills=_topped_up_with_matches(
+            session,
+            user_id=user_id,
+            brief=f"{str(current_script.get('logline') or '').strip()}\n{message}".strip(),
+            picked=referenced,
+        ),
         next_turn_no=(last_turn.turn_no + 1) if last_turn else 1,
         parent_turn_id=last_turn.id if last_turn else None,
     )

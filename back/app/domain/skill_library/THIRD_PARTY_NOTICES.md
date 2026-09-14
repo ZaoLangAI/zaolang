@@ -1,14 +1,17 @@
 # Third-Party Notices — `skill_library/catalog.py`
 
-`catalog.py`'s seed catalogue of `CreationSkill` templates has three parts: a
-short-drama video-recipe majority, a smaller "图片风格 image style"
+`catalog.py`'s seed catalogue of `CreationSkill` templates has four parts: a
+short-drama video-recipe majority, a 「提示词格式 format」section of
+structural prompt-writing rules, a smaller "图片风格 image style"
 section for the image studio, and a dual-shape 「图片资产」section
-(`character` / `scene_asset` / `cover_asset`). All three were informed only
-by genre/shot/scene or *layout naming conventions* — from open-source
-projects for the video section, from public 2026 AI-image prompt-trend
-write-ups for the image-style section, and from public character-sheet /
-empty-set / cover Agent Skills for the image-asset section (see the lists
-below) — never by copying content.
+(`character` / `scene_asset` / `cover_asset`). All four were informed only
+by genre/shot/scene or *layout naming conventions*, or — for the format
+section — by *which rules vendors state publicly* — from open-source
+projects for the video section, from eleven video vendors' own public
+prompting documentation for the format section, from public 2026 AI-image
+prompt-trend write-ups for the image-style section, and from public
+character-sheet / empty-set / cover Agent Skills for the image-asset section
+(see the lists below) — never by copying content.
 **No text, prompt, or `SKILL.md` content from any of these sources is
 copied into this repository** — every `title`, `description`, and
 `prompt_suffix` in `catalog.py` is original text written for this product's
@@ -44,6 +47,98 @@ example prompt.
   rebirth-open / time-cut / public-reveal locations such as wedding halls,
   classrooms, parking garages, airport gates) — informed category *gaps*,
   not wording.
+
+## Sources consulted — 提示词格式 "format" section
+
+The 120 `fmt-*` rows (`category=FORMAT`, `_VIDEO_OPERATIONS`) are different
+in kind from every other section: they name *constraints on how a prompt is
+written* rather than a look. That makes the sourcing question sharper, not
+looser, because several of these rules are stated in vendor documentation as
+plain imperative sentences — "one action per prompt", "keep it under 10
+seconds" — and a rule stated that plainly is easy to reproduce verbatim
+without noticing.
+
+The same "informed-naming-only, no copied prompt text" rule therefore
+applies, with one addition specific to this section: **a vendor's finding is
+recorded as a fact about that model's behaviour, and the wording that
+expresses it is written fresh.** So Runway's officially documented
+observation that a negation in the prompt body can produce the opposite
+result is used as evidence; its sentences are not. Every `title`,
+`description`, and `prompt_suffix` on these rows is original text written for
+this catalogue's appendable-`prompt_suffix` shape.
+
+`docs/video-prompt-formats.md` is the research document behind this section
+and carries the full per-vendor citation list with evidence-strength labels;
+it is not duplicated here. The sources fall into four groups:
+
+- **Vendor prompting documentation from eleven video models** — OpenAI
+  Sora 2, Google Veo (Vertex AI / Gemini API / DeepMind), 快手可灵 Kling,
+  Runway Gen-4 / Gen-4.5, 阿里通义万相 Wan, Vidu, MiniMax 海螺, PixVerse,
+  Luma Ray3, Pika, and 字节 Seedance / 即梦 (whose official pages render
+  client-side and were cross-checked against three independent
+  secondaries). These informed *which* rules are worth seeding, and the
+  evidence-strength label each carries in the research document. No vendor
+  example prompt, formula string, or documentation sentence is reproduced in
+  `catalog.py`.
+- **Traditional film craft** — shot-size and camera-move terminology,
+  key-to-fill lighting ratios, shot-list field sets, and trailer structure.
+  These are decades-old industry conventions with no single owner; the
+  research document cites the specific glossaries consulted (StudioBinder,
+  No Film School, Tools for Film, Derek Lieu's trailer-editing write-ups)
+  for traceability rather than because any of them is the origin of a term.
+- **Chinese vertical short-drama practice** — hook taxonomies, per-episode
+  pacing skeletons, cast-size limits, and vertical-framing habits, from
+  industry reports and platform methodology write-ups (快手研究院, 人民网,
+  爱奇艺's public creation methodology, 第一财经). These informed the
+  `fmt-hook-*`, `fmt-vertical-*` and `fmt-teaser-*` category *gaps*. Note
+  that no video vendor documents anything about opening seconds or trailer
+  structure at all, so these rows are labelled community practice in the
+  research document and their descriptions say so.
+- **Anti-pattern round-ups from tool vendors' blogs** (VIDEOAI.ME,
+  QuestStudio, PixVerse's own tutorials) — informed which failure modes are
+  common enough to seed a `fmt-guard-*` row for. Any measured figure in
+  those posts is self-reported by the vendor with no third-party
+  verification; the research document flags this explicitly, and no such
+  figure appears in any catalogue row or product copy.
+
+## Sources consulted — 戏码与情绪 "drama" section
+
+The 80 `drama-*` rows (`category=DRAMA`, `_VIDEO_OPERATIONS`) are the mirror
+of the section above: a `format` row stays true whatever the clip is about, a
+`drama` row means nothing outside the one situation or emotion it names.
+That flips the sourcing question, because **no video vendor documents any of
+this** — none of them will tell you how a hospital-bedside standoff should be
+cut into beats. `docs/video-drama-scenes.md` is the research document behind
+this section and carries the per-group evidence-strength table; the three
+source groups are:
+
+- **Traditional blocking and coverage convention** — the 180-degree line,
+  screen direction across a cut, side-by-side staging for a conversation
+  that cannot be had face to face, reaction shots landing before the event
+  they react to. These are decades-old craft conventions with no single
+  owner, and they are the strongest evidence in this section precisely
+  because they predate every model involved.
+- **Chinese vertical short-drama practice** — which scene types recur often
+  enough to be worth seeding, where the four-beat break usually falls, and
+  which openings hold. Same sources and same caveat as the `fmt-hook-*` /
+  `fmt-vertical-*` rows above: community practice, self-reported, no
+  first-party data. The scene-type *taxonomy* was informed by the
+  categorisations that recur across public short-drama script-structure
+  discussion; no scene list, beat sheet, or example line was copied, and
+  every `title` / `description` / `prompt_suffix` is original text written
+  for this catalogue.
+- **Acting-training tell inventories** — the visible physiological signals
+  behind the 30 `drama-emotion-*` rows (a swallow travelling the throat,
+  nails in the palm, shoulders dropping several centimetres). These are
+  long-standing performance conventions rather than anyone's proprietary
+  method. The open question is a different one and the research document
+  states it plainly: whether a given model can actually render a named tell
+  is unverified, which is why these rows are fed to the agents as reference
+  material rather than stapled onto the outgoing prompt.
+
+No character, plot, line of dialogue, or title from any actual short drama
+appears in these rows. A row names a *kind* of scene ("a bedside
+confrontation held at a whisper"), never a specific work's version of it.
 
 ## Sources consulted — 图片风格 "image style" section
 
@@ -138,6 +233,10 @@ copied prompt text" rule applies: every `title`, `description`, and
 | The 5-stage cinematic-prompt structuring idea | Mx-Shell's original prompt text (ARR) |
 | Which 2026 image-prompt *formats* are popular enough to name (figurine, diorama, sticker sheet, magazine cover, ...) | Any blog's actual example prompt sentence, template variable syntax, or marketing copy |
 | Character-sheet / empty-set / title-safe-cover *layout names* (turnaround, expression grid, establishing still) | Any Agent Skill's `SKILL.md` body, example prompt, or generated artwork |
+| Which prompt-writing rules eleven video vendors state publicly, and how strong the evidence for each is | Any vendor's formula string, example prompt, field-name list as written, or documentation sentence |
+| Which *kinds* of scene and which emotional beats recur across public short-drama structure discussion | Any actual drama's characters, plot, dialogue, title, scene list, or beat sheet |
+| Film-craft terminology that predates all of these models (shot sizes, camera moves, lighting ratios, trailer structure) | Any single glossary's phrasing or ordering |
+| Vendors' self-reported behavioural findings, used as evidence about a model | Vendors' self-reported *numbers*, which are unverified and stay out of the catalogue and product copy entirely |
 
 If a maintainer of either project believes this attribution is insufficient,
 or wants any resemblance removed, open an issue against this repository.

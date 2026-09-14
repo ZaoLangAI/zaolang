@@ -146,6 +146,22 @@ class PromptQuestionView(ApiModel):
     required: bool = False
 
 
+class AppliedFormatSkillView(ApiModel):
+    """A `format` skill the coach auto-attached this round — see
+    `app.domain.skill_library.service.apply_matching_format_skills`."""
+
+    id: str
+    title: str
+
+
+class ReferencedSkillView(ApiModel):
+    """A `drama` skill matched to this story and shown to the coach as
+    reference material — see `app.agents.skill_matcher`."""
+
+    id: str
+    title: str
+
+
 class PromptEnhanceResponse(ApiModel):
     prompt: str
     detail_level: Literal["sparse", "adequate", "detailed"]
@@ -154,6 +170,16 @@ class PromptEnhanceResponse(ApiModel):
     # The phrases this round actually added, so the panel can show what
     # changed without diffing two blocks of prose.
     additions: list[str] = Field(default_factory=list)
+    # `format`-category skills auto-attached because a diagnosed dimension
+    # came back missing/weak — video operations only, always empty for an
+    # image polish. Distinct from `additions`: these are library rows the
+    # author could otherwise have picked by hand, not model-authored phrases.
+    applied_format_skills: list[AppliedFormatSkillView] = Field(default_factory=list)
+    # `drama`-category skills the matcher found for this story and showed the
+    # coach. Unlike `applied_format_skills`, nothing here was appended to
+    # `prompt` — the coach read them and chose what to use, so the panel
+    # labels them as references rather than as additions.
+    referenced_skills: list[ReferencedSkillView] = Field(default_factory=list)
     # Scene plates only today: what the coach still needs from the author
     # before the description is safe to generate from. Empty for every other
     # asset kind, and empty once the author has answered.

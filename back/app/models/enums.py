@@ -773,6 +773,22 @@ class CreationSkillCategory(StrEnum):
     SCENE = "scene"
     LENS = "lens"
     STYLE = "style"
+    # Structural *how to write it* constraints rather than a content recipe:
+    # every entry is an appendable `prompt_suffix` phrase that stays true no
+    # matter what the clip is about (one camera move per clip, counted action
+    # beats, positive-only phrasing, ...). Kept separate from `LENS`/`STYLE`
+    # so the ~100 seeded `fmt-*` entries stay filterable on their own and
+    # don't bury the content recipes — see `docs/video-prompt-formats.md` for
+    # the boundary and `skill_library.catalog` for the entries themselves.
+    FORMAT = "format"
+    # A *content* recipe for one kind of dramatic beat — "how this scene is
+    # played and cut", not "how the sentence is written". Every entry names a
+    # situation (a hospital-bedside standoff, a wedding reversal) or an
+    # emotion (holding it in, snapping) in wording a plot description can
+    # actually point at, which is what makes it the one category
+    # `app.agents.skill_matcher` searches when it matches a user's story to
+    # reference skills — see `docs/video-drama-scenes.md`.
+    DRAMA = "drama"
     # The three "image creation" asset kinds (`ImageAssetKind`) each get their
     # own category once shared/sold as a `CreationSkill`, rather than the
     # flat `prompt`/`aspect_ratio`/... template shape every category above

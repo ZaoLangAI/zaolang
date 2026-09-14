@@ -10,10 +10,12 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.api.schemas.shortform import (
+    AppliedFormatSkillView,
     PromptDimensionView,
     PromptEnhanceRequest,
     PromptEnhanceResponse,
     PromptQuestionView,
+    ReferencedSkillView,
 )
 from app.domain import prompts
 from app.domain.errors import ProviderTemporaryFailure
@@ -61,6 +63,14 @@ def enhanced_response(session: Session, result: prompts.PromptEnhancement) -> Pr
             PromptDimensionView(key=d.key, status=d.status, hint=d.hint) for d in result.dimensions
         ],
         additions=result.additions,
+        applied_format_skills=[
+            AppliedFormatSkillView(id=skill.id, title=skill.title)
+            for skill in result.applied_format_skills
+        ],
+        referenced_skills=[
+            ReferencedSkillView(id=skill.id, title=skill.title)
+            for skill in result.referenced_skills
+        ],
         questions=question_views(result.questions),
         script_segment=result.script_segment,
     )
