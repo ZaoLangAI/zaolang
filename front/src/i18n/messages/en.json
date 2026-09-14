@@ -1885,6 +1885,9 @@
     "exportPrecheckBlankFrame": "This point in time is blank (no visible clip/caption/overlay)",
     "exportPrecheckClipOffCanvas": "The clip at this point is entirely outside the canvas",
     "exportPrecheckAcknowledge": "I understand the issues above and want to export anyway",
+    "exportAiLabel": "Show an “AI-generated” label on screen",
+    "exportAiLabelHint": "Shown in the top-right corner, as China's AI-generated content labelling rules require. The hidden label in the file's metadata is always written.",
+    "exportAiLabelText": "AI-generated",
     "startExport": "Start sequential export",
     "exportDone": "Export registered",
     "exportStage": {

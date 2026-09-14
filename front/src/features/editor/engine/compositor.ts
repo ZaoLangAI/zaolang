@@ -667,6 +667,47 @@ async function renderClipLayer(
   }
 }
 
+export function aiLabelFontSize(canvasHeight: number): number {
+  return Math.max(12, Math.round(canvasHeight * 0.028));
+}
+
+/**
+ * Where the visible "AI 生成" label sits: a pill in the top-right corner (the
+ * brand overlay defaults to the top-left), sized from the frame height so it
+ * reads the same at every export resolution and never leaves the frame.
+ */
+export function aiLabelRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  textWidth: number,
+): { x: number; y: number; width: number; height: number; paddingX: number } {
+  const fontSize = aiLabelFontSize(canvasHeight);
+  const paddingX = Math.round(fontSize * 0.6);
+  const margin = Math.round(Math.min(canvasWidth, canvasHeight) * 0.03);
+  const width = Math.min(textWidth + paddingX * 2, canvasWidth - margin * 2);
+  const height = Math.round(fontSize * 1.6);
+  return { x: canvasWidth - margin - width, y: margin, width, height, paddingX };
+}
+
+function drawAiLabel(
+  ctx: Canvas2DContext,
+  canvasWidth: number,
+  canvasHeight: number,
+  text: string,
+): void {
+  if (!text) return;
+  ctx.save();
+  ctx.font = `600 ${aiLabelFontSize(canvasHeight)}px sans-serif`;
+  const rect = aiLabelRect(canvasWidth, canvasHeight, ctx.measureText(text).width);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, rect.x + rect.paddingX, rect.y + rect.height / 2);
+  ctx.restore();
+}
+
 export interface ComposeFrameOptions {
   /**
    * Live playback: the active clips' `<video>` elements free-run at clip
@@ -674,6 +715,11 @@ export interface ComposeFrameOptions {
    * exact-seek-per-frame path that scrubbing and export rely on.
    */
   playing?: boolean;
+  /**
+   * Export-only visible "AI 生成" stamp (`ExportRenderOptions.aiLabel`),
+   * drawn last so no layer covers it.
+   */
+  aiLabel?: { text: string };
 }
 
 export async function composeFrame(
@@ -752,6 +798,10 @@ export async function composeFrame(
 
   if (layers.captions.length) {
     drawCaptions(ctx, canvasWidth, canvasHeight, layers.captions);
+  }
+
+  if (options.aiLabel) {
+    drawAiLabel(ctx, canvasWidth, canvasHeight, options.aiLabel.text);
   }
 
   target.drawImage(frame, 0, 0, canvasWidth, canvasHeight);

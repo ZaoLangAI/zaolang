@@ -314,6 +314,21 @@ def complete_export(
     variant = session.get(DeliveryVariant, export.variant_id)
     if variant is not None:
         state_machine.transition_variant(session, variant.id, DeliveryVariantStatus.SUCCEEDED)
+    # An exported cut is AI output too: it gets the same (unsigned) provenance
+    # claim a generated asset does, next to the AIGC tag the browser runner
+    # writes into the file's own metadata. One manifest per asset.
+    if media_service.provenance_for(session, asset.id) is None:
+        media_service.record_provenance(
+            session,
+            asset=asset,
+            generation_job_id=None,
+            details={
+                "zaolang.editor_export": {
+                    "export_id": export.id,
+                    "variant_id": export.variant_id,
+                }
+            },
+        )
     editor_service.append_operation_event(
         session,
         export.id,
@@ -451,11 +466,7 @@ def _source_unpublished_draft_id(
         job = session.get(GenerationJob, cut.source_job_id)
         if job is not None and job.user_id == user_id and job.draft_id:
             draft = session.get(Draft, job.draft_id)
-            if (
-                draft is not None
-                and draft.user_id == user_id
-                and draft.published_work_id is None
-            ):
+            if draft is not None and draft.user_id == user_id and draft.published_work_id is None:
                 return draft.id
     if not cut.source_asset_id:
         return None

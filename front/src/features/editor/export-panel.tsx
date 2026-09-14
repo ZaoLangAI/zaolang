@@ -69,6 +69,10 @@ export function ExportPanel({
   // but only surfaced a generic button `loading` spinner — no percent, no
   // stage. This mirrors that same data into the UI instead of discarding it.
   const [progress, setProgress] = useState<Pick<ExportProgress, 'percent' | 'stage'> | null>(null);
+  // The implicit (metadata) AI label is always written by the runner; this
+  // is the visible one. On by default — 《人工智能生成合成内容标识办法》 asks
+  // for an explicit label on synthetic video, so turning it off is a choice.
+  const [aiLabel, setAiLabel] = useState(true);
   const runner = useMemo(() => new SequentialExportRunner(), []);
   const controllerRef = useRef<AbortController | null>(null);
   const claimedExportIdRef = useRef<string | null>(null);
@@ -117,8 +121,15 @@ export function ExportPanel({
         caption_mode: 'burned' as const,
         max_duration_ticks: durationTicks,
       };
+      const renderOptions = aiLabel ? { aiLabel: { text: t('exportAiLabelText') } } : {};
       let blob: Blob | undefined;
-      for await (const step of runner.export(spec, document, assets, controller.signal)) {
+      for await (const step of runner.export(
+        spec,
+        document,
+        assets,
+        controller.signal,
+        renderOptions,
+      )) {
         await editorApi.heartbeatExport(claimed.id, step.percent, step.stage);
         setProgress({ percent: step.percent, stage: step.stage });
         blob = step.blob ?? blob;
@@ -210,6 +221,19 @@ export function ExportPanel({
           </label>
         ))}
       </fieldset>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={aiLabel}
+          disabled={disabled || busy}
+          onChange={(event) => setAiLabel(event.target.checked)}
+          className="mt-1"
+        />
+        <span>
+          {t('exportAiLabel')}
+          <span className="block text-xs text-muted">{t('exportAiLabelHint')}</span>
+        </span>
+      </label>
       <div className="flex flex-col gap-2">
         <p className="text-xs text-muted">{t('exportPrecheckTitle')}</p>
         <ExportPrecheckPanel document={document} assets={assets} samples={precheck.samples} />

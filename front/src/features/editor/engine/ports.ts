@@ -301,6 +301,17 @@ export interface EditorEngine {
   dispose(): Promise<void>;
 }
 
+/** Per-export rendering switches that are deliberately *not* part of the
+ * delivery variant, so they never change `VariantSpec` (nor the backend's
+ * `caption_mode`). */
+export interface ExportRenderOptions {
+  /** Stamps a visible "AI 生成" label on every frame — the explicit label of
+   * 《人工智能生成合成内容标识办法》. The implicit (metadata) label is always
+   * written regardless. The text comes from the caller: the engine does not
+   * import next-intl. */
+  aiLabel?: { text: string };
+}
+
 export interface RendererBackend {
   preflight(spec: VariantSpec): Promise<CapabilityReport>;
   export(
@@ -308,6 +319,7 @@ export interface RendererBackend {
     document: CanonicalDocument,
     assets: ResolvedAsset[],
     signal: AbortSignal,
+    options?: ExportRenderOptions,
   ): AsyncIterable<ExportProgress>;
 }
 

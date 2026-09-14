@@ -1885,6 +1885,9 @@
     "exportPrecheckBlankFrame": "该时间点画面为空白（没有可见片段/字幕/角标）",
     "exportPrecheckClipOffCanvas": "该时间点片段完全超出画布范围",
     "exportPrecheckAcknowledge": "我已知晓上述问题，仍然导出",
+    "exportAiLabel": "画面显示「AI 生成」标识",
+    "exportAiLabelHint": "按《人工智能生成合成内容标识办法》显示在画面右上角；文件元数据中的隐式标识始终写入。",
+    "exportAiLabelText": "AI 生成",
     "startExport": "开始顺序导出",
     "exportDone": "导出已登记",
     "exportStage": {

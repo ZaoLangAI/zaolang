@@ -1885,6 +1885,9 @@
     "exportPrecheckBlankFrame": "この時点の画面が空白です（表示できるクリップ/字幕/オーバーレイがありません）",
     "exportPrecheckClipOffCanvas": "この時点のクリップが完全にキャンバス外にあります",
     "exportPrecheckAcknowledge": "上記の問題を理解した上で、このまま書き出します",
+    "exportAiLabel": "画面に「AI生成」ラベルを表示",
+    "exportAiLabelHint": "中国の生成合成コンテンツ表示規則に基づき右上に表示します。ファイルのメタデータ内の暗黙的な表示は常に書き込まれます。",
+    "exportAiLabelText": "AI生成",
     "startExport": "順次書き出しを開始",
     "exportDone": "書き出しを登録しました",
     "exportStage": {
