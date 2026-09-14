@@ -32,6 +32,7 @@ ANALYSIS_TASKS: frozenset[str] = frozenset(
     {
         "app.workers.tasks.run_media_analysis",
         "app.workers.tasks.run_editor_transcription",
+        "app.workers.tasks.run_export_qa",
     }
 )
 

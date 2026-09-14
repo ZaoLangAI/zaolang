@@ -224,6 +224,8 @@ export interface EditorExport {
   output_asset_id: string | null;
   failure_code: string | null;
   failure_message: string | null;
+  /** Set by `completeExport`: the hint-only health check to poll with `getOperation`. */
+  qa_operation_id?: string | null;
 }
 
 export function listDramaSeries(params?: DramaSeriesListParams) {

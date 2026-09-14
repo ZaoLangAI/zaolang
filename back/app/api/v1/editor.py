@@ -1235,8 +1235,19 @@ def complete_export(
     export = export_service.complete_export(
         session, user_id=user.id, export_id=export_id, upload_session_id=payload.upload_session_id
     )
+    # Hint-only health check of the delivered file; the export is already
+    # SUCCEEDED and nothing it finds changes that.
+    qa = (
+        media_analysis.enqueue_export_qa(session, asset_id=export.output_asset_id)
+        if export.output_asset_id
+        else None
+    )
     session.commit()
-    return _export_response(export)
+    if qa is not None and qa.status == MediaAnalysisStatus.QUEUED:
+        celery_app.send_task("app.workers.tasks.run_export_qa", args=[qa.id])
+    return _export_response(export).model_copy(
+        update={"qa_operation_id": qa.id if qa is not None else None}
+    )
 
 
 @router.post("/editor-exports/{export_id}/fail", response_model=EditorExportResponse)
@@ -1420,7 +1431,13 @@ def get_operation(
         if analysis.status in {"succeeded", "degraded"}:
             asset = session.get(Asset, analysis.asset_id)
             if asset is not None and asset.owner_user_id == user.id:
-                result = {"transcript": analysis.transcript_json}
+                if analysis.analyzer == media_analysis.QA_ANALYZER:
+                    result = {
+                        "findings": analysis.findings_json,
+                        "loudness": analysis.audio_json,
+                    }
+                else:
+                    result = {"transcript": analysis.transcript_json}
         return EditorOperationResponse(
             id=analysis.id,
             kind="media_analysis",

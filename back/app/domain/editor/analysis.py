@@ -1,11 +1,16 @@
-"""ffprobe-backed media analysis, and ASR transcription, for editor sources."""
+"""ffprobe-backed media analysis, ASR transcription, and the post-export
+health check, for editor sources and exports."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
+import re
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -30,6 +35,20 @@ ANALYZER_VERSION = "8"
 # no schema change.
 ASR_ANALYZER = "whisper-asr"
 ASR_ANALYZER_VERSION = "1"
+
+# A third identity: a hint-only health check of a *finished* editor export —
+# black frames, a frozen picture, long silence, off-target loudness and
+# clipping. It runs after the export has already succeeded and never gates,
+# retries or changes it; the author just sees what a viewer would notice.
+QA_ANALYZER = "export-qa"
+QA_ANALYZER_VERSION = "1"
+QA_TARGET_LUFS = -14.0
+QA_LOUDNESS_TOLERANCE_LU = 3.0
+QA_PEAK_CEILING_DBFS = -1.0
+QA_MIN_BLACK_SECONDS = 0.5
+QA_MIN_FREEZE_SECONDS = 2.0
+QA_MIN_SILENCE_SECONDS = 2.0
+QA_FFMPEG_TIMEOUT_SECONDS = 300
 
 
 def probe_bytes(payload: bytes, mime_type: str) -> tuple[int | None, int | None, int | None]:
@@ -146,7 +165,9 @@ def run_analysis(session: Session, analysis_id: str) -> MediaAnalysis:
 def summary_for(session: Session, asset_id: str) -> dict[str, Any] | None:
     row = session.scalar(
         select(MediaAnalysis)
-        .where(MediaAnalysis.asset_id == asset_id)
+        # The export health check describes a delivered file, not an editor
+        # source — never let it stand in for the source's own analysis.
+        .where(MediaAnalysis.asset_id == asset_id, MediaAnalysis.analyzer != QA_ANALYZER)
         .order_by(MediaAnalysis.created_at.desc())
         .limit(1)
     )
@@ -162,6 +183,226 @@ def summary_for(session: Session, asset_id: str) -> dict[str, Any] | None:
         "analyzer": row.analyzer,
         "analyzer_version": row.analyzer_version,
     }
+
+
+def enqueue_export_qa(session: Session, *, asset_id: str) -> MediaAnalysis:
+    """Get-or-create the export's health-check row (deduped by
+    `uq_media_analyses_asset_analyzer`, like every other analyzer)."""
+    asset = session.get(Asset, asset_id)
+    if asset is None:
+        raise NotFound("素材不存在。")
+    existing = session.scalar(
+        select(MediaAnalysis).where(
+            MediaAnalysis.asset_id == asset_id,
+            MediaAnalysis.analyzer == QA_ANALYZER,
+            MediaAnalysis.analyzer_version == QA_ANALYZER_VERSION,
+        )
+    )
+    if existing is not None:
+        return existing
+    row = MediaAnalysis(
+        asset_id=asset_id,
+        analyzer=QA_ANALYZER,
+        analyzer_version=QA_ANALYZER_VERSION,
+        status=MediaAnalysisStatus.QUEUED,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+_NUM = r"(-?(?:inf|\d+(?:\.\d+)?))"
+
+
+def _spans(starts: list[str], ends: list[str], total: float | None) -> list[tuple[float, float]]:
+    """Pairs detector start/end lines into `(start, duration)`. A stretch
+    still open at end of stream (no end line) runs to the file's end."""
+    spans: list[tuple[float, float]] = []
+    for index, raw_start in enumerate(starts):
+        start = float(raw_start)
+        if index < len(ends):
+            end = float(ends[index])
+        elif total is not None:
+            end = total
+        else:
+            continue
+        if end > start:
+            spans.append((start, end - start))
+    return spans
+
+
+def parse_qa_output(stderr: str, *, duration_seconds: float | None = None) -> dict[str, Any]:
+    """The detector results in ffmpeg's log (`blackdetect`, `freezedetect`,
+    `silencedetect`, the `ebur128` summary). Pure, so it is testable
+    without running ffmpeg."""
+    black = [
+        (float(start), float(end) - float(start))
+        for start, end in re.findall(rf"black_start:{_NUM}\s+black_end:{_NUM}", stderr)
+    ]
+    freeze = _spans(
+        re.findall(rf"freeze_start:\s*{_NUM}", stderr),
+        re.findall(rf"freeze_end:\s*{_NUM}", stderr),
+        duration_seconds,
+    )
+    silence = _spans(
+        re.findall(rf"silence_start:\s*{_NUM}", stderr),
+        re.findall(rf"silence_end:\s*{_NUM}", stderr),
+        duration_seconds,
+    )
+    integrated = re.findall(rf"\bI:\s+{_NUM} LUFS", stderr)
+    peak = re.findall(rf"Peak:\s+{_NUM} dBFS", stderr)
+    return {
+        "black": black,
+        "freeze": freeze,
+        "silence": silence,
+        "integrated_lufs": float(integrated[-1]) if integrated else None,
+        "true_peak_dbfs": float(peak[-1]) if peak else None,
+    }
+
+
+def _finite(value: float | None) -> float | None:
+    return value if value is not None and math.isfinite(value) else None
+
+
+def qa_findings(parsed: dict[str, Any], *, has_audio: bool) -> list[dict[str, Any]]:
+    """Hint-only findings: `{code, severity, at_seconds, duration_seconds,
+    value}`, `severity` "warning" (a viewer will notice) or "info"."""
+    findings: list[dict[str, Any]] = []
+
+    def add(
+        code: str,
+        severity: str,
+        *,
+        at: float | None = None,
+        duration: float | None = None,
+        value: float | None = None,
+    ) -> None:
+        findings.append(
+            {
+                "code": code,
+                "severity": severity,
+                "at_seconds": None if at is None else round(at, 2),
+                "duration_seconds": None if duration is None else round(duration, 2),
+                "value": None if value is None else round(value, 1),
+            }
+        )
+
+    black = [span for span in parsed["black"] if span[1] >= QA_MIN_BLACK_SECONDS]
+    for start, duration in black:
+        add("black_frames", "warning", at=start, duration=duration)
+    for start, duration in parsed["freeze"]:
+        # A black stretch is also a "frozen" picture — report it once.
+        if duration < QA_MIN_FREEZE_SECONDS or any(b <= start < b + d for b, d in black):
+            continue
+        add("frozen_frames", "info", at=start, duration=duration)
+    if not has_audio:
+        add("no_audio", "info")
+        return findings
+    for start, duration in parsed["silence"]:
+        if duration >= QA_MIN_SILENCE_SECONDS:
+            add("long_silence", "info", at=start, duration=duration)
+    integrated = _finite(parsed["integrated_lufs"])
+    if integrated is not None and abs(integrated - QA_TARGET_LUFS) > QA_LOUDNESS_TOLERANCE_LU:
+        add("loudness_off_target", "info", value=integrated)
+    peak = _finite(parsed["true_peak_dbfs"])
+    if peak is not None and peak > QA_PEAK_CEILING_DBFS:
+        add("true_peak_clipping", "warning", value=peak)
+    return findings
+
+
+def _probe_file(path: Path) -> dict[str, Any]:
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            str(path),
+        ],
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    if proc.returncode != 0:
+        raise ValidationFailed("无法探测导出文件。")
+    data = json.loads(proc.stdout.decode() or "{}")
+    return data if isinstance(data, dict) else {}
+
+
+def run_export_qa(session: Session, analysis_id: str) -> MediaAnalysis:
+    """Runs ffprobe + one ffmpeg decode pass (detectors only, output
+    discarded) over the export and records `findings_json`. Missing ffmpeg is
+    `DEGRADED`, a decode error `FAILED` — neither touches the export."""
+    row = session.get(MediaAnalysis, analysis_id)
+    if row is None:
+        raise NotFound("成片体检不存在。")
+    asset = session.get(Asset, row.asset_id)
+    if asset is None:
+        row.status = MediaAnalysisStatus.FAILED
+        row.failure_message = "素材已删除。"
+        session.flush()
+        return row
+    row.status = MediaAnalysisStatus.RUNNING
+    session.flush()
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        row.status = MediaAnalysisStatus.DEGRADED
+        row.failure_message = "ffmpeg 不可用，已跳过成片体检。"
+        row.findings_json = []
+        session.flush()
+        return row
+    try:
+        payload = s3.get_object(asset.object_key)
+        # A file, not stdin: an MP4 whose index sits at the end can't be
+        # decoded from a pipe.
+        with tempfile.TemporaryDirectory() as workdir:
+            path = Path(workdir) / "export.mp4"
+            path.write_bytes(payload)
+            probe = _probe_file(path)
+            streams = probe.get("streams") or []
+            has_video = any(stream.get("codec_type") == "video" for stream in streams)
+            has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+            raw_duration = (probe.get("format") or {}).get("duration")
+            duration = float(raw_duration) if raw_duration else None
+            args = ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path)]
+            if has_video:
+                args += [
+                    "-vf",
+                    f"blackdetect=d={QA_MIN_BLACK_SECONDS}:pix_th=0.10,"
+                    f"freezedetect=d={QA_MIN_FREEZE_SECONDS}",
+                ]
+            if has_audio:
+                args += [
+                    "-af",
+                    f"silencedetect=n=-50dB:d={QA_MIN_SILENCE_SECONDS},"
+                    "ebur128=peak=true:framelog=verbose",
+                ]
+            args += ["-f", "null", "-"]
+            proc = subprocess.run(
+                args, capture_output=True, check=False, timeout=QA_FFMPEG_TIMEOUT_SECONDS
+            )
+        if proc.returncode != 0:
+            raise ValidationFailed("ffmpeg 无法解码导出文件。")
+        parsed = parse_qa_output(proc.stderr.decode(errors="replace"), duration_seconds=duration)
+        findings = qa_findings(parsed, has_audio=has_audio)
+        row.findings_json = findings
+        row.audio_json = {
+            "has_audio": has_audio,
+            "integrated_lufs": _finite(parsed["integrated_lufs"]),
+            "true_peak_dbfs": _finite(parsed["true_peak_dbfs"]),
+        }
+        row.duration_ticks = None if duration is None else int(duration * TICKS_PER_SECOND)
+        row.result_hash = hashlib.sha256(
+            json.dumps(findings, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        row.status = MediaAnalysisStatus.SUCCEEDED
+    except Exception as exc:
+        row.status = MediaAnalysisStatus.FAILED
+        row.failure_message = str(exc)[:500]
+    session.flush()
+    return row
 
 
 def enqueue_transcription(session: Session, *, asset_id: str) -> MediaAnalysis:

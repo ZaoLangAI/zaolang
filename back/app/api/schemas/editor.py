@@ -379,6 +379,9 @@ class EditorExportResponse(ApiModel):
     output_asset_id: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None
+    # Set on `POST .../complete`: the `man_` operation of the export's
+    # hint-only health check, pollable via `GET /v1/editor-operations/{id}`.
+    qa_operation_id: str | None = None
 
 
 class EpisodeExportResponse(ApiModel):

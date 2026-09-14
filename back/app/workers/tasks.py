@@ -555,6 +555,23 @@ def run_editor_transcription(analysis_id: str) -> str:
         return row.status
 
 
+@celery_app.task(name="app.workers.tasks.run_export_qa", **_SLOW)
+def run_export_qa(analysis_id: str) -> str:
+    """Hint-only health check of a finished editor export — a third
+    analyzer identity on the same `MediaAnalysis` table and queue."""
+    from app.domain.editor import analysis as media_analysis
+    from app.domain.errors import NotFound
+
+    with session_scope() as session:
+        try:
+            row = media_analysis.run_export_qa(session, analysis_id)
+        except NotFound as exc:
+            logger.warning("export qa task skipped: %s", exc)
+            return "missing"
+        session.commit()
+        return row.status
+
+
 @celery_app.task(name="app.workers.tasks.expire_editor_leases", **_QUICK)
 def expire_editor_leases() -> int:
     from sqlalchemy import update

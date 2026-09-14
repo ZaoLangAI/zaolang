@@ -21,6 +21,7 @@ import {
   type ResolvedAsset,
 } from './engine/ports';
 import { ExportPrecheckPanel } from './export-precheck-panel';
+import { ExportQaPanel } from './export-qa-panel';
 import { canvasOrientation, pickDefaultProfileKey, profileOrientationKey } from './export-profile';
 
 const PRECHECK_SAMPLE_COUNT = 5;
@@ -64,6 +65,8 @@ export function ExportPanel({
   }
   const [busy, setBusy] = useState(false);
   const [lastExportId, setLastExportId] = useState<string | null>(null);
+  // The server's hint-only health check of the last finished export.
+  const [qaOperationId, setQaOperationId] = useState<string | null>(null);
   // Walkthrough finding: the loop below already had `progress.percent`/
   // `progress.stage` in hand (sent to the backend as an export heartbeat)
   // but only surfaced a generic button `loading` spinner — no percent, no
@@ -103,6 +106,7 @@ export function ExportPanel({
   const run = async () => {
     if (!revisionId || picked.size === 0) return;
     setBusy(true);
+    setQaOperationId(null);
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
@@ -158,6 +162,7 @@ export function ExportPanel({
       await editorApi.heartbeatExport(claimed.id, 100, 'verifying');
       const done = await editorApi.completeExport(claimed.id, presigned.upload_session_id);
       setLastExportId(done.id);
+      setQaOperationId(done.qa_operation_id ?? null);
       notify(t('exportDone'), 'success');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -301,6 +306,7 @@ export function ExportPanel({
           </p>
         </div>
       ) : null}
+      {qaOperationId ? <ExportQaPanel operationId={qaOperationId} /> : null}
       {lastExportId ? (
         <Button variant="secondary" onClick={() => void bind()} disabled={busy}>
           {t('bindAndPublish')}
