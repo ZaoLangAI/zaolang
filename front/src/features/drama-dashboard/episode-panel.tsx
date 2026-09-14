@@ -38,6 +38,7 @@ import { DeleteExportDialog } from './delete-export-dialog';
 import { isEpisodeDeleteBlocked, isExportRecordDeletable, resumeEditorHref } from './episode-delete-gate';
 import { pascalCase } from './format';
 import { generatedVideoDetailHref, isGeneratedVideoCard } from './generated-video-href';
+import { ProductionBoard } from './production-board';
 import { PublishPanel } from './publish-panel';
 
 const EPISODE_KINDS = ['main', 'trailer', 'teaser', 'bts', 'recap', 'other'] as const;
@@ -232,6 +233,15 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [links]);
 
+  // The production board calls this when a notification says one of the
+  // episode's drafts finished (or failed) a generation.
+  const refreshDraft = useCallback((draftId: string) => {
+    void api
+      .get<Draft>(`/v1/drafts/${draftId}`)
+      .then((draft) => setDraftDetails((current) => ({ ...current, [draftId]: draft })))
+      .catch(() => undefined);
+  }, []);
+
   // Debounced auto-save: fires ~500ms after title/kind/status settle, and
   // never on the values a fresh load just seeded (guarded by the ref reset
   // inside `load`'s `.then`).
@@ -362,6 +372,10 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
     links.filter((link) => link.content_type === 'draft').map((link) => link.content_ref_id),
   );
   const scriptDoc = script?.script;
+  const linkedDrafts = links.flatMap((link) => {
+    const draft = link.content_type === 'draft' ? draftDetails[link.content_ref_id] : undefined;
+    return draft ? [draft] : [];
+  });
   const mainPrompt = script?.turns[0]?.user_message ?? '';
   const hasScriptContent = Boolean(
     scriptDoc &&
@@ -500,6 +514,16 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
               </div>
             )}
           </Link>
+
+          <ProductionBoard
+            script={scriptDoc ?? null}
+            hasScript={hasScriptContent}
+            drafts={linkedDrafts}
+            cutCount={cuts.length}
+            exportStatuses={exports.map((item) => item.status)}
+            published={Boolean(episode.canonical_work_id)}
+            onDraftUpdated={refreshDraft}
+          />
 
           <section>
             <SectionHeading
