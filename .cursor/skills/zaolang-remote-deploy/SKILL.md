@@ -27,7 +27,7 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 | --- | --- |
 | `infra/docker-compose.prod.yml` | postgres / redis / minio / minio-init / migrate / api / worker / poller / beat / web / nginx. Only nginx publishes a host port (`:80`); the API container listens on `8000` internally (`API_INTERNAL_URL=http://api:8000`, not the laptop's `3001`). Worker `-Q` mirrors `make dev-worker` (incl. `platform_distribution`, `video_analysis`), `--concurrency=${WORKER_CONCURRENCY:-4}` |
 | `infra/.env.prod.example` | placeholder template; real values live only on the server. Besides secrets: `COOKIE_SECURE=false` (HTTP-only box, flip on HTTPS), `WORKER_CONCURRENCY`, `REDIS_MAXMEMORY`, build-time-only `APT_MIRROR` / `PIP_INDEX_URL` |
-| `infra/nginx/prod.conf.template` | `/v1` `/mcp` health + MinIO `location /${MEDIA_BUCKET}/` (envsubst'd at container start; compose sets `MEDIA_BUCKET` from `S3_BUCKET`) + Next.js. Upstreams resolve per request through Docker DNS (`resolver 127.0.0.11` + `proxy_pass $api_upstream` / `$web_upstream` / `$minio_upstream`), so a recreated container is picked up without touching nginx |
+| `infra/nginx/prod.conf.template` | `/v1` `/mcp` health + MinIO `location /${MEDIA_BUCKET}/` (envsubst'd at container start; compose sets `MEDIA_BUCKET` from `S3_BUCKET`) + Next.js. Upstreams resolve per request through Docker DNS (`resolver 127.0.0.11` + `proxy_pass $api_upstream` / `$web_upstream` / `$minio_upstream`), so a recreated container is picked up without touching nginx. Every location forwards `Host $host` (unchanged — MinIO SigV4 covers it), `X-Real-IP`, `X-Forwarded-Proto`, and `X-Forwarded-For` **overwritten** with the TCP peer (`$remote_addr`): the API takes the first XFF element as the anonymous rate-limit key and logged IP, so each client gets its own bucket and cannot forge one |
 | `Makefile` `prod-up` / `prod-down` / `prod-logs` | remote compose wrappers |
 | `infra/scripts/backup.sh` | local `pg_dump` only — not the remote restore path |
 
@@ -83,6 +83,7 @@ docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod \
 - **New compose env var**: add it to `x-backend` `environment` in `docker-compose.prod.yml` **and** a placeholder in `.env.prod.example`. On the next update, append the key to the server `.env.prod` — do not rsync a replacement file.
 - **New Celery queue**: `back/app/workers/celery_app.py` + `Makefile` `dev-worker` `-Q` + this prod compose `worker` command + the admin health page. Miss the prod list and those jobs hang on the box.
 - **New nginx upstream / location**: `proxy_pass` through a lowercase `$<name>_upstream` variable set next to the others (URI-less — no path after the variable), plus a matching `proxy_redirect`. A literal `proxy_pass http://host:port` pins the IP from nginx's startup and 502s once that container is recreated.
+- **nginx `proxy_set_header` in a location**: avoid it — locations inherit the server-level forwarding set only if they set no header of their own. One that must (like `/v1/` `Connection`, `/` `Upgrade`/`Connection`) repeats all four forwarding lines (`Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`); otherwise that route's upstream sees nginx's IP (every anonymous caller shares one rate-limit bucket) or whatever XFF the client sent. Keep `X-Forwarded-For $remote_addr` while nginx is the public edge; `$proxy_add_x_forwarded_for` would put a client-chosen value first. A CDN/LB in front instead needs `set_real_ip_from` + `real_ip_header`, not appending.
 - **Second host**: copy the Host table; do not fork a second skill.
 
 ## Verify
@@ -98,6 +99,13 @@ A 502 for up to ~10s right after `prod-up` is nginx's DNS cache expiring. If `/h
 ```bash
 docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs --tail=20 nginx
 docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod exec nginx nginx -T | grep resolver
+```
+
+Client IP forwarding: the running config should show `X-Forwarded-For $remote_addr` three times (server block, `/v1/`, `/`) and no `$proxy_add_x_forwarded_for`. The nginx access log's first column should be public client IPs; if every line is the Docker bridge gateway (`172.x.0.1`), port 80 reaches nginx through `docker-proxy` instead of DNAT and all anonymous callers still share one rate-limit bucket.
+
+```bash
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod exec nginx nginx -T | grep X-Forwarded-For
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs --tail=20 nginx
 ```
 
 Then in the browser: consumer login, `/admin`, one work whose cover loads from COS (not a 404). Admin health: Postgres / Redis / Celery green. MinIO may still report green (container up) while business I/O uses COS.
