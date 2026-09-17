@@ -1,0 +1,17 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Helvetica Neue',Arial,sans-serif">
+  <rect width="1280" height="720" fill="#14171a"/>
+  <defs><radialGradient id="g3" cx="50%" cy="45%" r="75%"><stop offset="0%" stop-color="#152220"/><stop offset="100%" stop-color="#0e1013"/></radialGradient></defs>
+  <rect width="1280" height="720" fill="url(#g3)"/>
+  <rect width="1280" height="6" fill="#ff795b"/>
+  <rect x="500" y="70" width="280" height="580" rx="34" fill="#20262c" stroke="#3a4046" stroke-width="3"/>
+  <rect x="516" y="90" width="248" height="540" rx="18" fill="#181d21"/>
+  <circle cx="640" cy="270" r="46" fill="#f5f1eb"/>
+  <path d="M580 380 q60 -40 120 0 l0 90 l-120 0 z" fill="#f5f1eb"/>
+  <rect x="516" y="520" width="248" height="90" fill="#2f9e8f" opacity="0.28"/>
+  <rect x="516" y="520" width="248" height="90" fill="none" stroke="#2f9e8f" stroke-width="2.5" stroke-dasharray="6 6"/>
+  <g stroke="#2f9e8f" stroke-width="4" stroke-linecap="round">
+    <line x1="546" y1="548" x2="734" y2="548"/>
+    <line x1="546" y1="568" x2="700" y2="568"/>
+    <line x1="546" y1="588" x2="660" y2="588"/>
+  </g>
+</svg>
