@@ -1,0 +1,27 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#14171a"/>
+  <defs><radialGradient id="g4" cx="50%" cy="45%" r="75%"><stop offset="0%" stop-color="#1c1e20"/><stop offset="100%" stop-color="#0e1013"/></radialGradient></defs>
+  <rect width="1280" height="720" fill="url(#g4)"/>
+  <rect width="1280" height="6" fill="#ff795b"/>
+  <rect x="140" y="230" width="280" height="260" rx="20" fill="#20262c" stroke="#7a8088" stroke-width="2.5"/>
+  <rect x="500" y="230" width="280" height="260" rx="20" fill="#20262c" stroke="#7a8088" stroke-width="2.5"/>
+  <rect x="860" y="230" width="280" height="260" rx="20" fill="#20262c" stroke="#7a8088" stroke-width="2.5"/>
+  <g stroke="#f5f1eb" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M240 300 l40 -30 l40 30 l0 130 l-80 0 z"/>
+    <path d="M225 430 l14 18 l16 -22 l14 20"/>
+  </g>
+  <g stroke="#f5f1eb" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M600 300 l40 -30 l40 30 l0 130 l-80 0 z"/>
+    <path d="M585 430 l14 18 l16 -22 l14 20"/>
+  </g>
+  <g stroke="#f5f1eb" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M960 300 l40 -30 l40 30 l0 130 l-80 0 z"/>
+    <path d="M945 430 l14 18 l16 -22 l14 20"/>
+  </g>
+  <g stroke="#7a8088" stroke-width="6" stroke-linecap="round">
+    <line x1="440" y1="350" x2="480" y2="350"/>
+    <line x1="440" y1="375" x2="480" y2="375"/>
+    <line x1="800" y1="350" x2="840" y2="350"/>
+    <line x1="800" y1="375" x2="840" y2="375"/>
+  </g>
+</svg>
