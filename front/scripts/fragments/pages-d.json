@@ -9,6 +9,7 @@
       "reservedHint": "生成任务进行中占用，完成后按实耗结算",
       "packages": "积分包",
       "packagesHint": "一次购买，永久有效",
+      "packagesEmpty": "暂无可购买的积分包",
       "bonus": "赠送 {count}",
       "buy": "购买",
       "checkoutOpened": "已打开支付页面",
@@ -27,7 +28,8 @@
       "typeRefund": "退款",
       "typeAdjustment": "人工调账",
       "typeRoyaltyIn": "回流分成收入",
-      "typeRoyaltyOut": "回流分成支出"
+      "typeRoyaltyOut": "回流分成支出",
+      "backToProfile": "返回个人中心"
     },
     "notificationsPage": {
       "title": "通知中心",
@@ -37,11 +39,13 @@
       "empty": "还没有通知",
       "emptyHint": "有人二创你的作品或关注你时，这里会有提醒。",
       "typeRemix": "二创提醒",
+      "typeLike": "点赞提醒",
       "typeFollow": "新的关注者",
       "typeJob": "任务状态",
       "typeRoyalty": "回流分成",
       "typeModeration": "审核结果",
-      "typeSystem": "平台公告"
+      "typeSystem": "平台公告",
+      "backToProfile": "返回个人中心"
     },
     "learnPage": {
       "eyebrow": "ZAOLANG ACADEMY",
@@ -61,7 +65,8 @@
       "safetyEyebrow": "CREATOR SAFETY",
       "safetyTitle": "发布前必须知道的授权规则",
       "safetyBody": "默认仅展示：只有作者主动开启后，其他用户才能继续二创。来源、作者和许可快照会随创作链保留。",
-      "viewExample": "查看示例"
+      "viewExample": "查看示例",
+      "backToList": "返回学习"
     },
     "lineagePanel": {
       "title": "创作链",
@@ -91,6 +96,7 @@
       "reservedHint": "Held while a job runs, settled at actual cost when it finishes",
       "packages": "Credit packs",
       "packagesHint": "One purchase, no expiry",
+      "packagesEmpty": "No credit packs available right now",
       "bonus": "+{count} bonus",
       "buy": "Buy",
       "checkoutOpened": "Checkout opened",
@@ -109,7 +115,8 @@
       "typeRefund": "Refund",
       "typeAdjustment": "Manual adjustment",
       "typeRoyaltyIn": "Royalty received",
-      "typeRoyaltyOut": "Royalty paid"
+      "typeRoyaltyOut": "Royalty paid",
+      "backToProfile": "Back to profile"
     },
     "notificationsPage": {
       "title": "Notifications",
@@ -119,11 +126,13 @@
       "empty": "No notifications yet",
       "emptyHint": "You will hear from us when someone remixes your work or follows you.",
       "typeRemix": "Remix",
+      "typeLike": "Like",
       "typeFollow": "New follower",
       "typeJob": "Job update",
       "typeRoyalty": "Royalty",
       "typeModeration": "Moderation",
-      "typeSystem": "Announcement"
+      "typeSystem": "Announcement",
+      "backToProfile": "Back to profile"
     },
     "learnPage": {
       "eyebrow": "ZAOLANG ACADEMY",
@@ -143,7 +152,8 @@
       "safetyEyebrow": "CREATOR SAFETY",
       "safetyTitle": "The licensing rules to know before publishing",
       "safetyBody": "View only by default: nobody can remix your work until you open it. Source, author and licence snapshot travel with the lineage.",
-      "viewExample": "See an example"
+      "viewExample": "See an example",
+      "backToList": "Back to Learn"
     },
     "lineagePanel": {
       "title": "Lineage",
@@ -173,6 +183,7 @@
       "reservedHint": "ジョブ実行中は保留され、完了時に実費で精算されます",
       "packages": "クレジットパック",
       "packagesHint": "一度の購入で有効期限なし",
+      "packagesEmpty": "現在購入できるクレジットパックはありません",
       "bonus": "+{count} 特典",
       "buy": "購入",
       "checkoutOpened": "決済ページを開きました",
@@ -191,7 +202,8 @@
       "typeRefund": "返金",
       "typeAdjustment": "手動調整",
       "typeRoyaltyIn": "還元収入",
-      "typeRoyaltyOut": "還元支出"
+      "typeRoyaltyOut": "還元支出",
+      "backToProfile": "プロフィールに戻る"
     },
     "notificationsPage": {
       "title": "通知センター",
@@ -201,11 +213,13 @@
       "empty": "通知はまだありません",
       "emptyHint": "作品が二次創作されたり、フォローされたらお知らせします。",
       "typeRemix": "二次創作",
+      "typeLike": "いいね",
       "typeFollow": "新しいフォロワー",
       "typeJob": "ジョブ状況",
       "typeRoyalty": "還元",
       "typeModeration": "審査結果",
-      "typeSystem": "お知らせ"
+      "typeSystem": "お知らせ",
+      "backToProfile": "プロフィールに戻る"
     },
     "learnPage": {
       "eyebrow": "ZAOLANG ACADEMY",
@@ -225,7 +239,8 @@
       "safetyEyebrow": "CREATOR SAFETY",
       "safetyTitle": "公開前に知っておくライセンスの決まり",
       "safetyBody": "既定は閲覧のみ。作者が開放するまで誰も二次創作できません。出典・作者・ライセンススナップショットは創作チェーンとともに残ります。",
-      "viewExample": "例を見る"
+      "viewExample": "例を見る",
+      "backToList": "学習に戻る"
     },
     "lineagePanel": {
       "title": "創作チェーン",

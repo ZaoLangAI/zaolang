@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
@@ -8,12 +9,13 @@ import { useTheme } from '@/components/theme/theme-provider';
 import { Avatar } from '@/components/work/avatar';
 import { OptionGroup } from '@/components/studio/option-group';
 import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Switch, TextArea, TextInput } from '@/components/ui/field';
 import {
   IconBell,
   IconEye,
   IconGear,
+  IconGlobe,
   IconLock,
   IconMonitor,
   IconMoon,
@@ -22,14 +24,21 @@ import {
 import { ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { usePathname, useRouter } from '@/i18n/navigation';
-import { locales, regions, type Locale, type Region } from '@/i18n/routing';
+import { regionLocale, regions, type Region } from '@/i18n/routing';
 import { api } from '@/lib/api/client';
 import type { Me, ThemePreference } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
+import { beginLocaleTransition } from '@/lib/locale-transition';
 import { uploadFile } from '@/lib/upload';
 
-const SECTIONS = ['profile', 'privacy', 'notifications', 'display'] as const;
+import { PlatformConnect } from './platform-connect';
+
+const SECTIONS = ['profile', 'privacy', 'notifications', 'display', 'platforms'] as const;
 type Section = (typeof SECTIONS)[number];
+
+function isSection(value: string | null): value is Section {
+  return (SECTIONS as readonly string[]).includes(value ?? '');
+}
 
 /**
  * Account settings.
@@ -41,7 +50,6 @@ type Section = (typeof SECTIONS)[number];
 export function SettingsShell({ me }: { me: Me }) {
   const t = useTranslations('settingsPage');
   const tTheme = useTranslations('theme');
-  const tLocale = useTranslations('locale');
   const tRegion = useTranslations('region');
   const tActions = useTranslations('actions');
   const { notify } = useToast();
@@ -49,8 +57,12 @@ export function SettingsShell({ me }: { me: Me }) {
   const pathname = usePathname();
   const { refresh } = useSession();
   const { preference, setPreference, reduceMotion, setReduceMotion } = useTheme();
+  const searchParams = useSearchParams();
 
-  const [section, setSection] = useState<Section>('profile');
+  const [section, setSection] = useState<Section>(() => {
+    const requested = searchParams.get('section');
+    return isSection(requested) ? requested : 'profile';
+  });
   const [displayName, setDisplayName] = useState(me.profile?.display_name ?? '');
   const [bio, setBio] = useState(me.profile?.bio ?? '');
   const [location, setLocation] = useState(me.profile?.location ?? '');
@@ -67,12 +79,14 @@ export function SettingsShell({ me }: { me: Me }) {
     privacy: <IconLock className="size-4" />,
     notifications: <IconBell className="size-4" />,
     display: <IconEye className="size-4" />,
+    platforms: <IconGlobe className="size-4" />,
   };
   const labels: Record<Section, string> = {
     profile: t('navProfile'),
     privacy: t('navPrivacy'),
     notifications: t('navNotifications'),
     display: t('navDisplay'),
+    platforms: t('navPlatforms'),
   };
 
   const saveProfile = async (patch: Record<string, unknown>) => {
@@ -268,22 +282,14 @@ export function SettingsShell({ me }: { me: Me }) {
 
             <div>
               <OptionGroup
-                label={t('languageLabel')}
-                value={me.locale as Locale}
-                onChange={(next: Locale) => {
-                  void savePreferences({ locale: next });
-                  router.replace(pathname, { locale: next });
-                }}
-                options={locales.map((value) => ({ value, label: tLocale(value) }))}
-              />
-              <p className="mt-2 text-xs text-muted">{t('languageDesc')}</p>
-            </div>
-
-            <div>
-              <OptionGroup
                 label={t('regionLabel')}
                 value={me.region as Region}
-                onChange={(next: Region) => void savePreferences({ region: next })}
+                onChange={(next: Region) => {
+                  const locale = regionLocale[next];
+                  void savePreferences({ region: next, locale });
+                  beginLocaleTransition();
+                  router.replace(pathname, { locale });
+                }}
                 options={regions.map((value) => ({ value, label: tRegion(value) }))}
               />
               <p className="mt-2 text-xs text-muted">{t('regionDesc')}</p>
@@ -300,26 +306,21 @@ export function SettingsShell({ me }: { me: Me }) {
             />
           </Panel>
         ) : null}
+
+        {section === 'platforms' ? <PlatformConnect /> : null}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         title={t('deleteConfirmTitle')}
         description={t('deleteConfirmBody')}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-              {tActions('cancel')}
-            </Button>
-            <Button variant="danger" onClick={() => void requestData('delete')}>
-              {tActions('confirm')}
-            </Button>
-          </>
-        }
+        confirmLabel={tActions('confirm')}
+        cancelLabel={tActions('cancel')}
+        onConfirm={() => void requestData('delete')}
       >
         <p className="text-sm text-muted">{t('deleteAccountDesc')}</p>
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

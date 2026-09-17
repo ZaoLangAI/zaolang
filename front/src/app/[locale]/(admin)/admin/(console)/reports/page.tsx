@@ -1,19 +1,15 @@
-import { getTranslations } from 'next-intl/server';
+import { redirect } from 'next/navigation';
 
-import { ReportsConsole } from '@/components/admin/reports/reports-console';
-import { PageHeading } from '@/components/ui/primitives';
-
-export async function generateMetadata() {
-  const t = await getTranslations('adminReports');
-  return { title: t('title') };
-}
-
-export default async function AdminReportsPage() {
-  const t = await getTranslations('adminReports');
-  return (
-    <div className="flex flex-col gap-6">
-      <PageHeading title={t('title')} description={t('subtitle')} />
-      <ReportsConsole />
-    </div>
-  );
+/**
+ * The reports console merged into `/admin/moderation` as a tab (they act on
+ * the same works and share the queue's `open_report_count` signal) — this
+ * redirect keeps the old bookmarked/linked URL working.
+ */
+export default async function AdminReportsPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  redirect(`/${locale}/admin/moderation?tab=reports`);
 }

@@ -23,6 +23,14 @@ from tests.conftest import auth_header
 WEBHOOK_URL = "/v1/webhooks/payments/mock"
 
 
+def _confirm(client: TestClient, user: User, reference: str) -> object:
+    return client.post(
+        "/v1/credits/checkout/confirm",
+        json={"external_reference": reference},
+        headers=auth_header(user),
+    )
+
+
 @pytest.fixture
 def package(db: Session) -> CreditPackage:
     pkg = CreditPackage(
@@ -262,3 +270,104 @@ def test_the_ledger_shows_the_purchase(
     assert response.status_code == 200
     types = [item["type"] for item in response.json()["items"]]
     assert LedgerEntryType.PURCHASE.value in types
+
+
+def test_confirm_checkout_credits_the_account(
+    client: TestClient, db: Session, author: User, package: CreditPackage
+) -> None:
+    """The mock checkout page's own confirm step, standing in for a provider
+    redirect — the browser can never hold the webhook's HMAC secret."""
+    before = credits_service.get_or_create_account(db, author.id).available_balance
+    intent = _checkout(client, author, package)
+
+    response = _confirm(client, author, intent["external_reference"])
+    assert response.status_code == 200, response.text
+    assert response.json()["available_balance"] == before + package.credits + package.bonus_credits
+
+    after = credits_service.get_or_create_account(db, author.id).available_balance
+    assert after == before + package.credits + package.bonus_credits
+
+
+def test_confirm_checkout_is_idempotent(
+    client: TestClient, db: Session, author: User, package: CreditPackage
+) -> None:
+    """Double-clicking confirm, or the tab staying open after the webhook
+    already landed, must never double-credit."""
+    before = credits_service.get_or_create_account(db, author.id).available_balance
+    intent = _checkout(client, author, package)
+
+    for _ in range(3):
+        response = _confirm(client, author, intent["external_reference"])
+        assert response.status_code == 200, response.text
+
+    after = credits_service.get_or_create_account(db, author.id).available_balance
+    assert after == before + package.credits + package.bonus_credits
+
+
+def test_confirm_checkout_and_webhook_do_not_double_credit(
+    client: TestClient, db: Session, author: User, package: CreditPackage
+) -> None:
+    before = credits_service.get_or_create_account(db, author.id).available_balance
+    intent = _checkout(client, author, package)
+
+    assert _confirm(client, author, intent["external_reference"]).status_code == 200
+    assert _deliver(client, _succeeded(intent["external_reference"])).status_code == 200
+
+    after = credits_service.get_or_create_account(db, author.id).available_balance
+    assert after == before + package.credits + package.bonus_credits
+
+
+def test_confirm_checkout_for_someone_elses_intent_is_forbidden(
+    client: TestClient, db: Session, author: User, remixer: User, package: CreditPackage
+) -> None:
+    before = credits_service.get_or_create_account(db, author.id).available_balance
+    intent = _checkout(client, author, package)
+
+    response = _confirm(client, remixer, intent["external_reference"])
+    assert response.status_code == 403
+
+    assert credits_service.get_or_create_account(db, author.id).available_balance == before
+
+
+def test_confirm_checkout_for_an_unknown_reference_is_not_found(
+    client: TestClient, author: User
+) -> None:
+    response = _confirm(client, author, "pi_mock_does_not_exist")
+    assert response.status_code == 404
+
+
+def test_an_abandoned_checkout_never_credits_the_account(
+    client: TestClient, db: Session, author: User, package: CreditPackage
+) -> None:
+    """Opening the mock checkout page and simply closing it — never
+    confirming — must leave the balance untouched."""
+    before = credits_service.get_or_create_account(db, author.id).available_balance
+    _checkout(client, author, package)
+
+    after = credits_service.get_or_create_account(db, author.id).available_balance
+    assert after == before
+
+
+def test_get_checkout_intent_returns_the_amount_for_the_mock_page(
+    client: TestClient, author: User, package: CreditPackage
+) -> None:
+    intent = _checkout(client, author, package)
+
+    response = client.get(
+        f"/v1/credits/checkout/{intent['external_reference']}", headers=auth_header(author)
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["amount_minor"] == package.price_minor
+    assert body["credits"] == package.credits
+    assert body["status"] == "pending"
+
+
+def test_get_checkout_intent_for_someone_elses_intent_is_forbidden(
+    client: TestClient, author: User, remixer: User, package: CreditPackage
+) -> None:
+    intent = _checkout(client, author, package)
+    response = client.get(
+        f"/v1/credits/checkout/{intent['external_reference']}", headers=auth_header(remixer)
+    )
+    assert response.status_code == 403

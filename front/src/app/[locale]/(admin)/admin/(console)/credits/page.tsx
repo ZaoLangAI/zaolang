@@ -2,10 +2,12 @@ import { getLocale, getTranslations } from 'next-intl/server';
 
 import { DanglingReserves } from '@/components/admin/credits/dangling-reserves';
 import { LedgerConsole } from '@/components/admin/credits/ledger-console';
+import { RedemptionCodesPanel } from '@/components/admin/credits/redemption-codes-panel';
+import { RuntimeConfigDialog } from '@/components/admin/config/runtime-config-dialog';
 import { PageHeading, StatTile } from '@/components/ui/primitives';
 import type { Locale } from '@/i18n/routing';
 import { adminFetch } from '@/lib/api/admin-server';
-import type { Reconciliation } from '@/lib/api/admin-types';
+import type { ConfigValue, Reconciliation } from '@/lib/api/admin-types';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
 export async function generateMetadata() {
@@ -15,9 +17,15 @@ export async function generateMetadata() {
 
 export default async function AdminCreditsPage() {
   const t = await getTranslations('adminCredits');
+  const tConfig = await getTranslations('adminConfig');
   const locale = (await getLocale()) as Locale;
 
-  const report = await adminFetch<Reconciliation>('/v1/admin/credits/reconciliation');
+  const [report, pricing, royalty, marketplace] = await Promise.all([
+    adminFetch<Reconciliation>('/v1/admin/credits/reconciliation'),
+    adminFetch<ConfigValue>('/v1/admin/config/pricing'),
+    adminFetch<ConfigValue>('/v1/admin/config/royalty'),
+    adminFetch<ConfigValue>('/v1/admin/config/marketplace'),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -54,7 +62,19 @@ export default async function AdminCreditsPage() {
       </section>
 
       <DanglingReserves />
-      <LedgerConsole />
+      <RedemptionCodesPanel />
+      <LedgerConsole
+        configAction={
+          <RuntimeConfigDialog
+            title={tConfig('creditsConfiguration')}
+            items={[
+              { initial: pricing, kind: 'pricing', title: tConfig('pricingMatrix') },
+              { initial: royalty, kind: 'royalty', title: tConfig('royaltyRules') },
+              { initial: marketplace, kind: 'marketplace', title: tConfig('marketplaceRules') },
+            ]}
+          />
+        }
+      />
     </div>
   );
 }

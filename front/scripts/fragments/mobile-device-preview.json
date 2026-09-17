@@ -1,0 +1,59 @@
+{
+  "zh-CN": {
+    "devicePreview": {
+      "deviceMenu": "机型",
+      "noDevice": "原始尺寸",
+      "noDeviceHint": "不套机身，按视频自身比例播放。",
+      "safeArea": "安全区",
+      "platformChrome": "平台界面",
+      "screenSpec": "{width}×{height} 点 · {dpr}x",
+      "scale": "缩放 {percent}%",
+      "chromeTop": "顶部栏",
+      "chromeRight": "互动栏",
+      "chromeBottom": "文案区"
+    },
+    "remixPage": {
+      "adjustParams": "参数",
+      "adjustParamsHint": "改完回到预览即可提交。",
+      "paramsDone": "完成"
+    }
+  },
+  "en": {
+    "devicePreview": {
+      "deviceMenu": "Device",
+      "noDevice": "Original size",
+      "noDeviceHint": "No phone body; plays at the clip's own ratio.",
+      "safeArea": "Safe area",
+      "platformChrome": "Platform UI",
+      "screenSpec": "{width}×{height} pt · {dpr}x",
+      "scale": "Scale {percent}%",
+      "chromeTop": "Top bar",
+      "chromeRight": "Action rail",
+      "chromeBottom": "Caption area"
+    },
+    "remixPage": {
+      "adjustParams": "Settings",
+      "adjustParamsHint": "Adjust, then head back to the preview to submit.",
+      "paramsDone": "Done"
+    }
+  },
+  "ja": {
+    "devicePreview": {
+      "deviceMenu": "端末",
+      "noDevice": "元のサイズ",
+      "noDeviceHint": "端末枠なしで、動画本来の比率で再生します。",
+      "safeArea": "セーフエリア",
+      "platformChrome": "プラットフォーム UI",
+      "screenSpec": "{width}×{height} pt · {dpr}x",
+      "scale": "表示 {percent}%",
+      "chromeTop": "上部バー",
+      "chromeRight": "操作バー",
+      "chromeBottom": "キャプション領域"
+    },
+    "remixPage": {
+      "adjustParams": "設定",
+      "adjustParamsHint": "調整したらプレビューに戻って送信できます。",
+      "paramsDone": "完了"
+    }
+  }
+}

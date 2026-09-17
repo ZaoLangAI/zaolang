@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser
 from app.api.schemas.auth import PublicProfileResponse
 from app.api.schemas.common import Page
-from app.api.schemas.works import WorkSummary
-from app.api.v1.works import _summary
+from app.api.schemas.works import TrashWorkSummary, WorkSummary
+from app.api.v1.works import _summaries
 from app.domain.errors import NotFound
+from app.domain.publishing import service as publishing
 from app.models import Bookmark, Follow, Profile, Work, WorkVersion
 from app.models.enums import LifecycleStatus, Visibility
 from app.presenters import media_urls
@@ -36,7 +37,14 @@ def get_profile(handle: str, session: DbSession, viewer: OptionalUser) -> Public
         location=profile.location,
         avatar_url=media_urls.asset_url(session, profile.avatar_asset_id),
         cover_url=media_urls.asset_url(session, profile.cover_asset_id),
-        work_count=_count(session, Work, Work.owner_user_id == profile.user_id),
+        work_count=_count(
+            session,
+            Work,
+            and_(
+                Work.owner_user_id == profile.user_id,
+                Work.lifecycle_status.notin_([LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED]),
+            ),
+        ),
         follower_count=_count(session, Follow, Follow.followed_user_id == profile.user_id),
         following_count=_count(session, Follow, Follow.follower_user_id == profile.user_id),
         viewer_following=_viewer_follows(session, viewer, profile.user_id),
@@ -60,6 +68,7 @@ def profile_works(
         select(Work, WorkVersion)
         .join(WorkVersion, WorkVersion.id == Work.current_version_id)
         .where(Work.owner_user_id == profile.user_id)
+        .where(Work.lifecycle_status.notin_([LifecycleStatus.TOMBSTONE, LifecycleStatus.TRASHED]))
         .order_by(Work.published_at.desc().nullslast(), Work.id.desc())
         .limit(limit)
     )
@@ -73,7 +82,34 @@ def profile_works(
         )
 
     rows = session.execute(stmt).all()
-    return Page(items=[_summary(session, work, version, viewer) for work, version in rows])
+    return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
+
+
+@router.get("/me/trash", response_model=Page[TrashWorkSummary])
+def my_trash(
+    session: DbSession, viewer: CurrentUser, limit: int = Query(default=60, ge=1, le=60)
+) -> Page[TrashWorkSummary]:
+    rows = session.execute(
+        select(Work, WorkVersion)
+        .join(WorkVersion, WorkVersion.id == Work.current_version_id)
+        .where(
+            Work.owner_user_id == viewer.id,
+            Work.lifecycle_status == LifecycleStatus.TRASHED,
+        )
+        .order_by(Work.trashed_at.desc().nullslast(), Work.id.desc())
+        .limit(limit)
+    ).all()
+    pairs = [(work, version) for work, version in rows]
+    summaries = _summaries(session, pairs, viewer)
+    return Page(
+        items=[
+            TrashWorkSummary(
+                **summary.model_dump(),
+                referenced=publishing.work_is_referenced(session, work),
+            )
+            for (work, _version), summary in zip(pairs, summaries, strict=True)
+        ]
+    )
 
 
 @router.get("/me/bookmarks", response_model=Page[WorkSummary])
@@ -88,7 +124,7 @@ def my_bookmarks(
         .order_by(Bookmark.created_at.desc())
         .limit(limit)
     ).all()
-    return Page(items=[_summary(session, work, version, viewer) for work, version in rows])
+    return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
 
 
 def _count(session, model, condition) -> int:  # type: ignore[no-untyped-def]

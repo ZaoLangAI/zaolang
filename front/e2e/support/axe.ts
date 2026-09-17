@@ -30,11 +30,30 @@ export async function expectNoAxeViolations(page: Page, testInfo: TestInfo, labe
   expect(summary, `axe violations on ${label}`).toEqual([]);
 }
 
-/** Asserts nothing overflows horizontally, per the design breakpoints rule. */
-export async function expectNoHorizontalOverflow(page: Page) {
-  const overflow = await page.evaluate(() => {
+/**
+ * Asserts nothing overflows horizontally, per the design breakpoints rule.
+ *
+ * The document check alone is not enough: `body { overflow-x: hidden }` is in
+ * the base layer on purpose, and it hides exactly the defect this assertion is
+ * looking for. So the page's own containers are measured too — they are plain
+ * blocks, so their `scrollWidth` still reports a child that sticks out, while a
+ * deliberate sideways rail keeps its overflow inside its own scroll box and is
+ * correctly ignored.
+ */
+export async function expectNoHorizontalOverflow(page: Page, containers = ['main']) {
+  const overflow = await page.evaluate((selectors) => {
     const root = document.documentElement;
-    return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth };
-  });
+    const offenders: string[] = [];
+    for (const selector of selectors) {
+      for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+        if (element.scrollWidth > element.clientWidth) {
+          offenders.push(`${selector}: ${element.scrollWidth} > ${element.clientWidth}`);
+        }
+      }
+    }
+    return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, offenders };
+  }, containers);
+
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+  expect(overflow.offenders, 'containers wider than their box').toEqual([]);
 }

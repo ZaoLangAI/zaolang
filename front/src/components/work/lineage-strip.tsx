@@ -1,14 +1,19 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { LineageDialog } from '@/components/lineage/lineage-dialog';
 import { Avatar } from '@/components/work/avatar';
 import { IconArrowRight, IconChevronRight, IconTombstone } from '@/components/ui/icons';
 import type { Locale } from '@/i18n/routing';
 import type { AuthorSummary, LineageAncestor } from '@/lib/api/types';
 import { formatCount } from '@/lib/format';
+
+const LineageDialog = dynamic(
+  () => import('@/components/lineage/lineage-dialog').then((mod) => mod.LineageDialog),
+  { ssr: false },
+);
 
 /**
  * The compact lineage row from the design: ancestors as avatars, an arrow
@@ -56,7 +61,7 @@ export function LineageStrip({
         </button>
       </div>
 
-      <ol className="flex items-start gap-1 overflow-x-auto pb-1">
+      <ol tabIndex={0} className="flex items-start gap-1 overflow-x-auto pb-1">
         {shown.map((ancestor) => (
           <li key={ancestor.work_version_id} className="flex items-start gap-1">
             <Node
@@ -95,7 +100,7 @@ export function LineageStrip({
         ) : null}
       </ol>
 
-      <LineageDialog workId={workId} open={open} onClose={() => setOpen(false)} />
+      {open ? <LineageDialog workId={workId} open={open} onClose={() => setOpen(false)} /> : null}
     </section>
   );
 }

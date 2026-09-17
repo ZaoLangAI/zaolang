@@ -16,14 +16,17 @@ const TYPE_KEYS = {
   adjustment: 'typeAdjustment',
   royalty_in: 'typeRoyaltyIn',
   royalty_out: 'typeRoyaltyOut',
+  access_in: 'typeAccessIn',
+  access_out: 'typeAccessOut',
 } as const;
 
 /**
- * The append-only ledger, shown as it is stored.
+ * Consumer billing history from GET /v1/credits/ledger.
  *
- * Reserve and release rows are not hidden even though they net to zero: they
- * are the reason a balance can drop and come back, and hiding them would make
- * the arithmetic look wrong.
+ * The stored ledger is still append-only (reserve + capture/release). The
+ * consumer list folds a settled job onto one row: an open hold stays 预扣,
+ * a capture becomes 结算 at the actual charge, a release becomes 释放 at 0.
+ * Admin /v1/admin/credits/ledger still shows the raw pair.
  */
 export async function LedgerTable({ entries }: { entries: LedgerEntry[] }) {
   const t = await getTranslations('billingPage');

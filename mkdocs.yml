@@ -1,9 +1,8 @@
 site_name: 造浪 ZaoLang
 site_description: 全球 AI 二创共享平台的架构、运维与接口文档
-site_url: https://zaolangai.github.io/zaolang/
 repo_url: https://github.com/ZaoLangAI/zaolang
 repo_name: ZaoLangAI/zaolang
-copyright: AGPL-3.0-or-later · 源码即产品的一部分
+copyright: 内部专有 · 造浪
 
 docs_dir: docs
 site_dir: .site
@@ -74,7 +73,9 @@ nav:
   - 首页: index.md
   - 本地开发: local-development.md
   - 架构说明: architecture.md
+  - 短剧剪辑: editor.md
+  - 视频提示词格式: video-prompt-formats.md
+  - 短剧戏码与情绪: video-drama-scenes.md
   - 接口参考: api.md
   - 运维手册: ops-runbook.md
   - 工程与发布: ci-release.md
-  - 仓库设置清单: github-setup.md

@@ -52,13 +52,20 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         # Field paths are surfaced so the UI can attach messages inline instead
-        # of showing one generic banner.
-        fields = {
-            ".".join(str(part) for part in error["loc"][1:]): error["msg"] for error in exc.errors()
-        }
+        # of showing one generic banner. Model-level validators have an empty
+        # loc after stripping `body` — those land on `params` rather than `""`.
+        # The first readable field message is also the envelope `message`, so
+        # a banner that only reads `error.message` (studio / script batch)
+        # can tell *which* rule failed instead of "请求参数不合法。"
+        fields: dict[str, str] = {}
+        for error in exc.errors():
+            key = ".".join(str(part) for part in error["loc"][1:]) or "params"
+            message = str(error.get("msg") or "").removeprefix("Value error, ")
+            fields[key] = message
+        first = next(iter(fields.values()), "") or "请求参数不合法。"
         return JSONResponse(
             status_code=422,
-            content=error_body("VALIDATION_FAILED", "请求参数不合法。", details={"fields": fields}),
+            content=error_body("VALIDATION_FAILED", first, details={"fields": fields}),
         )
 
     @app.exception_handler(StarletteHTTPException)

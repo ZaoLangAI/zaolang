@@ -1,57 +1,48 @@
 ---
 name: zaolang-ci-release
-description: 造浪的工程交付链：GitHub Actions（backend.yml / frontend.yml / images.yml / release.yml / pages.yml）、pre-commit 本地门禁、GHCR 多架构镜像、release-please 版本自动化、MkDocs Material 文档站与 AGPL 合规要求。Use when changing CI workflows, pre-commit hooks, Dockerfiles, container publishing, release automation, the docs site, or repository/licence baseline files.
+description: Engineering delivery chain — local `make check` and pre-commit gates, local Docker images and one-command demo orchestration, manual version bumps, the MkDocs Material docs site, and the internal-proprietary licence baseline. Use when changing pre-commit hooks, Dockerfiles, the release compose file, version numbers, the docs site, or repository/licence baseline files.
 disable-model-invocation: true
 ---
 
-# CI、发布与文档站
+# Local Delivery, Images & Docs Site
 
-## 职责
+## Scope
 
-保证「能构建、能发布、能查文档」，以及 AGPL-3.0 的合规义务。
+Guarantee "it builds, it ships, it's documented." This repo is internal-proprietary software. It does not use GitHub Actions, GHCR, release-please, or GitHub Pages. **Single-host remote deploy (rsync, `infra/docker-compose.prod.yml`, migrate, optional DB overwrite) is `zaolang-remote-deploy` — do not duplicate that runbook here.**
 
-## 关键路径
+## Key Paths
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `.github/workflows/backend.yml` | `ruff` + `mypy` + `pytest`，service containers 起 pgvector/redis/minio，**强制 `LLM_MODE=stub`** |
-| `.github/workflows/frontend.yml` | `eslint` + `tsc --noEmit` + `next build`，Node 版本读 `front/.node-version` |
-| `.github/workflows/images.yml` | GHCR 多架构镜像（amd64/arm64）+ SBOM + provenance |
-| `.github/workflows/release.yml` | release-please |
-| `.github/workflows/pages.yml` | MkDocs 文档站部署 |
-| `.pre-commit-config.yaml` | 本地门禁：ruff / mypy / eslint / prettier / OpenAPI 漂移 |
-| `release-please-config.json` + `.release-please-manifest.json` | 版本策略与中文 changelog 分节 |
-| `mkdocs.yml`（`strict: true`）+ `docs/` | 文档站，内嵌 `docs/openapi.json` |
-| `back/Dockerfile`、`front/Dockerfile`、`infra/docker-compose.release.yml` | 生产镜像与一键体验编排 |
+| `Makefile` | the single gate entry point: `make check`; one-command demo: `make release-up` |
+| `.pre-commit-config.yaml` | local hooks: ruff / mypy / prettier / eslint / tsc / messages (i18n keys) / OpenAPI drift, plus the stock pre-commit-hooks (merge-conflict, yaml/json/toml, private-key, large-files ≤512kB) |
+| `front/package.json`'s `version` + `APP_VERSION` | bumped by hand at release time; `next.config.ts` exposes it as `NEXT_PUBLIC_APP_VERSION`, the backend reads `settings.app_version` and shows it in `/healthz` and the admin health cards |
+| `front/vitest.config.ts` + `src/**/*.test.ts(x)` | frontend unit tests, run via `npm test` in `front/` only — `make test-front` is typecheck + `next build` + bundle-size, and vitest is not part of `make check` |
+| `mkdocs.yml` (`strict: true`) + `docs/` | the docs site, embedding `docs/openapi.json` |
+| `back/Dockerfile`, `front/Dockerfile`, `infra/docker-compose.release.yml` | local production images and one-command demo orchestration |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **CI 只有 backend 与 frontend 两条必需检查**。E2E、无障碍、类型漂移检查**刻意不进 CI**（需要真实数据库与种子数据），改由本地 `make` 与 pre-commit 执行。想把它们塞进 CI 前，先确认这个权衡是否真的要翻。
-2. **CI 里 `LLM_MODE=stub` 不可放开**：测试必须确定性、不需要密钥、不产生费用。`@pytest.mark.live` 的冒烟测试永不进 CI。
-3. **两条流水线都带并发取消与路径过滤**，不要为了「更保险」去掉路径过滤，那会让每个文档改动都跑满 CI。
-4. **Conventional Commits 是硬要求**：release-please 靠它推导版本号与 CHANGELOG。提交信息乱写等于版本号乱跳。
-5. **版本号有两处**：release-please 通过 `extra-files` 同步 `front/package.json` 的 `version`；不要手改。
-6. **AGPL 第 13 条**：C 端页脚与后台「关于」必须提供源码仓库链接与构建版本号（`SOURCE_REPOSITORY_URL` / `APP_VERSION` 注入 `front/next.config.ts` 的 `env`）。**删掉页脚链接是许可证违规**，不是 UI 优化。
-7. **`mkdocs.yml` 是 `strict: true`**：死链与孤儿页会让构建失败。加文档要同时加进 `nav`。
-8. **`docs/openapi.json` 是导出物**：`make docs` / `make docs-build` 会从 `back/openapi.json` 拷贝，不要手改。
-9. **镜像发布策略**：main 推 `edge`，release tag 推语义化版本，都带 SBOM 与 provenance。
+1. **The only gate is `make check`.** E2E and accessibility suites need a real database and seed data — they're an extra local suite, not something to fold into `make check` "to be safe" (that would make every commit depend on a full seeded database).
+2. **The autouse fake-gateway fixture inside `make check` must not be bypassed**: tests must be deterministic, key-free, and cost-free. Production code has no stub/auto mode — only `back/tests/fake_llm_gateway.py`'s monkeypatch (via `conftest.py`) keeps the suite offline. `@pytest.mark.live` smoke tests never run inside `make check` (`-m "not live"`); `@pytest.mark.real_gateway_seams` tests still run, they just skip the fake to exercise the real client's own failover/circuit-breaker logic against a mocked transport.
+3. **The version number lives in two places**: at release time, bump `front/package.json`'s `version` and sync `APP_VERSION`. Don't update only one. `NEXT_PUBLIC_APP_VERSION` is injected at build time but no consumer page renders it — `(site)/layout.tsx` has only `TopBar` + `main`, no footer; the version is visible in admin health (`health-cards.tsx`) and `/healthz`.
+4. **Internal-proprietary, not open-source compliance.** This repo's software licence is internal-proprietary (root `LICENSE`). The consumer site has no footer and shows no version, source link or licence notice — **do not** add a source-repo link or an AGPL notice. Third-party NOTICE/LICENSE files (e.g. OpenCut's MIT notice) must not be removed.
+5. **`mkdocs.yml` is `strict: true`**: dead links and orphan pages fail the build. Adding a doc means adding it to `nav` too. `docs/performance-audit.md` currently sits outside `nav` (MkDocs only logs INFO for pages missing from `nav`, so strict mode doesn't catch it) — it's unreachable from the site; don't add more like it.
+6. **`docs/openapi.json` is a build artifact**: `make docs` / `make docs-build` copy it from `back/openapi.json` — never hand-edit it.
+7. **Docker images ship with ffmpeg/ffprobe**: the backend worker's `complete` and `media_analysis` steps depend on ffprobe. `back/Dockerfile` already installs it — don't strip it from the image.
+8. **Never reintroduce GitHub-hosted builds**: no new `.github/workflows`, no pushing to GHCR, no release-please, no GitHub Pages deployment. There is no root `.github/`; the only workflow file is vendored upstream (`third_party/opencut-classic/.github/workflows/bun-ci.yml`) and is not ours to wire up.
 
-## 改造切入点
+## Extension Points
 
-- **加一条 CI 检查**：先想清楚它是否需要数据库。需要 → 放本地门禁；不需要 → 挂在现有两条流水线里，不要新开 workflow（必需检查越多，PR 越难合）。
-- **加一个 pre-commit 钩子**：`.pre-commit-config.yaml` 加 hook，并确认 `make check` 里有等价命令——两者要一致，否则本地跑 `make check` 通过却被钩子拦住。
-- **改 Dockerfile**：`front` 依赖 `output: 'standalone'`（已在 `next.config.ts`）；`back` 用 conda 之外的 pip 安装以缩小镜像。改完在本地 `docker build` 两个架构中至少一个。
-- **加一页文档**：`docs/*.md` + `mkdocs.yml` 的 `nav`，然后 `make docs-build` 必须过。
+- **Add a check**: first decide whether it needs a database. If yes → a separate `make` target, not folded into `make check`. If no → wire it into the existing `make check` / pre-commit.
+- **Add a pre-commit hook**: add the hook to `.pre-commit-config.yaml` and confirm `make check` has an equivalent command — the two must match, or `make check` passing locally while the hook still blocks becomes a real annoyance.
+- **Change a Dockerfile**: `front` depends on `output: 'standalone'` (already set in `next.config.ts`); `back` installs via pip outside conda to keep the image small. Verify with a local `docker build` or `make release-up`.
+- **Add a docs page**: `docs/*.md` + `mkdocs.yml`'s `nav`, then `make docs-build` must pass.
 
-## 需要在 GitHub 网页端手动开启的项
-
-见 `docs/github-setup.md`：分支保护与必需状态检查（backend / frontend）、Actions 的 `packages: write`、Pages 来源设为 GitHub Actions。
-
-## 验证
+## Verify
 
 ```bash
-make check          # 与 CI 等价的本地全量门禁
-make docs-build     # strict 模式构建文档站
-cd back && docker build -t zaolang-back:local .
-cd front && docker build -t zaolang-front:local .
+make check          # the full local gate
+make docs-build      # strict-mode docs build
+make release-up      # build images locally and start the one-command demo orchestration
 ```

@@ -4,16 +4,33 @@ from __future__ import annotations
 
 import hashlib
 import io
+import shutil
+import subprocess
 
 import pytest
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.domain.errors import Conflict, Forbidden, ValidationFailed
+from app.domain.credits import service as credits_service
+from app.domain.errors import Conflict, Forbidden, LicenseNotRemixable, ValidationFailed
+from app.domain.jobs import service as jobs_service
 from app.domain.media import service as media_service
-from app.models import User
-from app.models.enums import ModerationStatus, Visibility
+from app.domain.skill_library import service as skill_library
+from app.models import Asset, User, Work, WorkVersion
+from app.models.base import new_id
+from app.models.enums import (
+    AssetRole,
+    CreationSkillCategory,
+    CreationSkillStatus,
+    CreationSkillVisibility,
+    MediaType,
+    ModerationStatus,
+    Operation,
+    QualityTier,
+    Visibility,
+)
 from app.storage import s3
+from tests.factories import make_work
 
 
 def _png(colour: tuple[int, int, int], size: tuple[int, int] = (64, 64)) -> bytes:
@@ -32,6 +49,207 @@ def _presign(session: Session, user: User, payload: bytes, purpose: str = "gener
         checksum_sha256=hashlib.sha256(payload).hexdigest(),
         purpose=purpose,
     )
+
+
+_REFERENCE_EXTENSION: dict[MediaType, str] = {
+    MediaType.VIDEO: "mp4",
+    MediaType.AUDIO: "mp3",
+    MediaType.IMAGE: "png",
+}
+_REFERENCE_MIME: dict[MediaType, str] = {
+    MediaType.VIDEO: "video/mp4",
+    MediaType.AUDIO: "audio/mpeg",
+    MediaType.IMAGE: "image/png",
+}
+
+
+def _reference_asset(session: Session, owner: User, media_type: MediaType) -> Asset:
+    extension = _REFERENCE_EXTENSION[media_type]
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.{extension}",
+        media_type=media_type,
+        mime_type=_REFERENCE_MIME[media_type],
+        size_bytes=128,
+        checksum_sha256="a" * 64,
+        role=AssetRole.GENERATION_REFERENCE,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+def test_generation_references_enforce_ownership_and_frame_media_type(
+    db: Session, author: User, admin: User
+) -> None:
+    another_users_image = _reference_asset(db, admin, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="不属于当前用户"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.TEXT_TO_VIDEO,
+            params={"reference_asset_ids": [another_users_image.id]},
+        )
+
+    video = _reference_asset(db, author, MediaType.VIDEO)
+    media_service.validate_generation_references(
+        db,
+        user_id=author.id,
+        operation=Operation.VIDEO_TO_VIDEO,
+        params={"reference_asset_ids": [video.id]},
+    )
+    with pytest.raises(ValidationFailed, match="首帧和尾帧必须是图片"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.IMAGE_TO_VIDEO,
+            params={
+                "video_options": {
+                    "reference_mode": "frame_images",
+                    "first_frame_asset_id": video.id,
+                }
+            },
+        )
+
+
+def test_a_published_skill_cover_is_a_usable_generation_reference(
+    db: Session, author: User, remixer: User
+) -> None:
+    """A marketplace image-asset recipe's public cover may ride as an
+    img2img reference for anyone who can use that skill — otherwise the
+    studio's `@` apply would 422 when hanging the demo still."""
+    cover = _reference_asset(db, author, MediaType.IMAGE)
+    cover.visibility = Visibility.PUBLIC_VIEW_ONLY
+    skill = skill_library.create(
+        db,
+        owner_user_id=author.id,
+        title="三视图设定板",
+        description="",
+        category=CreationSkillCategory.CHARACTER,
+        params_json={"prompt_suffix": "turnaround"},
+        cover_asset_id=cover.id,
+        applicable_operations=[Operation.TEXT_TO_IMAGE, Operation.IMAGE_TO_IMAGE],
+    )
+    skill.status = CreationSkillStatus.PUBLISHED
+    skill.visibility = CreationSkillVisibility.PUBLIC
+    db.flush()
+
+    media_service.validate_generation_references(
+        db,
+        user_id=remixer.id,
+        operation=Operation.IMAGE_TO_IMAGE,
+        params={"reference_asset_ids": [cover.id]},
+    )
+    refs = media_service.provider_references_for(db, user_id=remixer.id, asset_ids=[cover.id])
+    assert len(refs) == 1
+    assert refs[0].object_key == cover.object_key
+
+
+def test_video_analysis_requires_a_video_reference_within_the_duration_cap(
+    db: Session, author: User
+) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="必须是视频"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.VIDEO_ANALYSIS,
+            params={"reference_asset_ids": [image.id]},
+        )
+
+    short_clip = _reference_asset(db, author, MediaType.VIDEO)
+    media_service.validate_generation_references(
+        db,
+        user_id=author.id,
+        operation=Operation.VIDEO_ANALYSIS,
+        params={"reference_asset_ids": [short_clip.id]},
+    )
+
+
+def test_audio_generation_clone_reference_must_be_audio(db: Session, author: User) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="必须是音频"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.AUDIO_GENERATION,
+            params={"reference_asset_ids": [image.id]},
+        )
+
+    sample = _reference_asset(db, author, MediaType.AUDIO)
+    media_service.validate_generation_references(
+        db,
+        user_id=author.id,
+        operation=Operation.AUDIO_GENERATION,
+        params={"reference_asset_ids": [sample.id]},
+    )
+
+    long_clip = _reference_asset(db, author, MediaType.VIDEO)
+    long_clip.duration_ms = media_service.VIDEO_ANALYSIS_MAX_DURATION_MS + 1
+    db.flush()
+    with pytest.raises(ValidationFailed, match="不能超过 3 分钟"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.VIDEO_ANALYSIS,
+            params={"reference_asset_ids": [long_clip.id]},
+        )
+
+
+def test_music_generation_rejects_any_reference_asset(db: Session, author: User) -> None:
+    """No reference of any kind is legal for `music_generation` in v1 — this
+    is the ownership-lookup-layer counterpart to `api.schemas.jobs
+    .validate_generation_params`'s own shape check for the same rule."""
+    sample = _reference_asset(db, author, MediaType.AUDIO)
+    with pytest.raises(ValidationFailed, match="不支持参考素材"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.MUSIC_GENERATION,
+            params={"reference_asset_ids": [sample.id]},
+        )
+
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="不支持参考素材"):
+        media_service.validate_generation_references(
+            db,
+            user_id=author.id,
+            operation=Operation.MUSIC_GENERATION,
+            params={"reference_asset_ids": [image.id]},
+        )
+
+    # No reference at all is the only legal shape.
+    media_service.validate_generation_references(
+        db,
+        user_id=author.id,
+        operation=Operation.MUSIC_GENERATION,
+        params={},
+    )
+
+
+def test_provider_references_preserve_media_and_frame_roles(db: Session, author: User) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    video = _reference_asset(db, author, MediaType.VIDEO)
+    inputs = media_service.provider_references_for(
+        db, user_id=author.id, asset_ids=[image.id, video.id]
+    )
+    assert [(item.media_type, item.frame_type) for item in inputs] == [
+        ("image", None),
+        ("video", None),
+    ]
+
+    frames = media_service.provider_references_for(
+        db,
+        user_id=author.id,
+        asset_ids=[],
+        video_options={
+            "first_frame_asset_id": image.id,
+            "last_frame_asset_id": image.id,
+        },
+    )
+    assert [item.frame_type for item in frames] == ["first_frame", "last_frame"]
 
 
 def test_an_unsupported_type_is_refused_before_a_url_is_issued(db: Session, author: User) -> None:
@@ -59,6 +277,66 @@ def test_an_oversized_file_is_refused(db: Session, author: User) -> None:
             checksum_sha256="0" * 64,
             purpose="avatar",
         )
+
+
+def test_video_analysis_source_accepts_video_up_to_its_own_larger_limit(
+    db: Session, author: User
+) -> None:
+    """`video_analysis_source` needs its own, bigger ceiling than
+    `generation_reference` (32MB, sized for a still image) because a
+    3-minute reference clip routinely exceeds that."""
+    with pytest.raises(ValidationFailed, match="必须是视频"):
+        media_service.presign_upload(
+            db,
+            user_id=author.id,
+            filename="frame.png",
+            mime_type="image/png",
+            size_bytes=100,
+            checksum_sha256="0" * 64,
+            purpose="video_analysis_source",
+        )
+
+    generation_reference_limit = s3.MAX_UPLOAD_BYTES["generation_reference"]
+    presigned = media_service.presign_upload(
+        db,
+        user_id=author.id,
+        filename="clip.mp4",
+        mime_type="video/mp4",
+        size_bytes=generation_reference_limit + 1,
+        checksum_sha256="0" * 64,
+        purpose="video_analysis_source",
+    )
+    assert presigned.upload_session.object_key.startswith(
+        f"{s3.PURPOSE_PREFIXES['video_analysis_source']}/{author.id}/"
+    )
+
+
+def test_voice_sample_purpose_requires_audio(db: Session, author: User) -> None:
+    """`voice_sample` (a声音克隆参考样本) needs its own audio-only MIME gate,
+    same shape as `video_analysis_source`'s video-only one."""
+    with pytest.raises(ValidationFailed, match="必须是音频"):
+        media_service.presign_upload(
+            db,
+            user_id=author.id,
+            filename="frame.png",
+            mime_type="image/png",
+            size_bytes=100,
+            checksum_sha256="0" * 64,
+            purpose="voice_sample",
+        )
+
+    presigned = media_service.presign_upload(
+        db,
+        user_id=author.id,
+        filename="sample.mp3",
+        mime_type="audio/mpeg",
+        size_bytes=1024,
+        checksum_sha256="0" * 64,
+        purpose="voice_sample",
+    )
+    assert presigned.upload_session.object_key.startswith(
+        f"{s3.PURPOSE_PREFIXES['voice_sample']}/{author.id}/"
+    )
 
 
 def test_the_object_key_is_scoped_to_the_owner_and_purpose(db: Session, author: User) -> None:
@@ -291,4 +569,299 @@ def test_a_private_asset_is_invisible_to_a_stranger(
         media_service.signed_url_for(db, asset_id=asset.id, viewer_user_id=remixer.id)
 
     url = media_service.signed_url_for(db, asset_id=asset.id, viewer_user_id=author.id)
-    assert "X-Amz-Signature" in url
+    # MinIO/S3 signs with `X-Amz-Signature`; Tencent COS signs with its own
+    # `q-signature` — whichever backend `STORAGE_BACKEND` selects locally.
+    assert "X-Amz-Signature" in url or "q-signature=" in url
+    assert "response-content-disposition" not in url.lower()
+
+
+def test_signed_url_for_download_name_sets_content_disposition(db: Session, author: User) -> None:
+    asset = Asset(
+        owner_user_id=author.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=128,
+        checksum_sha256="b" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    db.add(asset)
+    db.flush()
+
+    filename = media_service.download_filename_for(asset)
+    assert filename == f"{asset.id}.mp4"
+
+    url = media_service.signed_url_for(
+        db, asset_id=asset.id, viewer_user_id=author.id, download_name=filename
+    )
+    lowered = url.lower()
+    assert "response-content-disposition" in lowered
+    assert "attachment" in lowered
+    assert asset.id in url
+
+
+def _remix_source_video(session: Session, owner: User) -> tuple[Asset, Work, WorkVersion]:
+    work, version = make_work(session, owner)
+    clip = Asset(
+        owner_user_id=owner.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=128,
+        checksum_sha256="c" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(clip)
+    session.flush()
+    version.primary_output_asset_id = clip.id
+    session.flush()
+    return clip, work, version
+
+
+def test_remix_source_video_is_a_legal_generation_reference(
+    db: Session, author: User, remixer: User, admin: User
+) -> None:
+    clip, _work, version = _remix_source_video(db, author)
+    media_service.validate_generation_references(
+        db,
+        user_id=remixer.id,
+        operation=Operation.VIDEO_TO_VIDEO.value,
+        params={"reference_asset_ids": [clip.id]},
+        source_work_version_id=version.id,
+    )
+
+    stranger = _reference_asset(db, admin, MediaType.VIDEO)
+    with pytest.raises(ValidationFailed, match="不属于当前用户"):
+        media_service.validate_generation_references(
+            db,
+            user_id=remixer.id,
+            operation=Operation.VIDEO_TO_VIDEO.value,
+            params={"reference_asset_ids": [stranger.id]},
+            source_work_version_id=version.id,
+        )
+
+    with pytest.raises(ValidationFailed, match="不属于当前用户"):
+        media_service.validate_generation_references(
+            db,
+            user_id=remixer.id,
+            operation=Operation.VIDEO_TO_VIDEO.value,
+            params={"reference_asset_ids": [clip.id]},
+        )
+
+
+def test_view_only_source_cannot_be_used_as_a_remix_reference(
+    db: Session, author: User, remixer: User
+) -> None:
+    clip, work, version = _remix_source_video(db, author)
+    work.visibility = Visibility.PUBLIC_VIEW_ONLY
+    db.flush()
+    with pytest.raises(LicenseNotRemixable):
+        media_service.validate_generation_references(
+            db,
+            user_id=remixer.id,
+            operation=Operation.VIDEO_TO_VIDEO.value,
+            params={"reference_asset_ids": [clip.id]},
+            source_work_version_id=version.id,
+        )
+
+
+def test_provider_references_keep_a_licensed_source_after_visibility_changes(
+    db: Session, author: User, remixer: User
+) -> None:
+    """The worker must not re-assert remixability — a mid-job visibility
+    change must not drop the clip the submit path already authorized."""
+    clip, work, version = _remix_source_video(db, author)
+    work.visibility = Visibility.PUBLIC_VIEW_ONLY
+    db.flush()
+    refs = media_service.provider_references_for(
+        db,
+        user_id=remixer.id,
+        asset_ids=[clip.id],
+        source_work_version_id=version.id,
+    )
+    assert [item.object_key for item in refs] == [clip.object_key]
+
+
+def _mp4(*, duration_seconds: float = 1.0, colour: str = "red") -> bytes:
+    """A tiny synthetic clip via `ffmpeg`'s own `lavfi` colour source — no
+    fixture file to keep in the repo, and it lets a test assert on the
+    actual decoded pixel colour of an extracted frame."""
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={colour}:s=32x32:d={duration_seconds}",
+            "-frames:v",
+            str(max(1, int(duration_seconds * 24))),
+            "-f",
+            "mp4",
+            "-movflags",
+            "frag_keyframe+empty_moov",
+            "pipe:1",
+        ],
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+    return proc.stdout
+
+
+def _video_asset(session: Session, owner: User, payload: bytes, *, duration_ms: int) -> Asset:
+    key = f"test/{new_id('obj')}.mp4"
+    s3.put_object(key, payload, content_type="video/mp4")
+    asset = Asset(
+        owner_user_id=owner.id,
+        object_key=key,
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=len(payload),
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
+        duration_ms=duration_ms,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_extract_video_frame_grabs_first_and_last_frames(db: Session, author: User) -> None:
+    """The script studio's "衔接上一镜头" continuity feature hinges on this:
+    the previous breakpoint's last frame becomes the next one's first-frame
+    reference. Uses two visibly different colours so a regression that
+    always returns the same frame (e.g. `position` silently ignored) fails
+    loudly rather than just "looking about right"."""
+    payload = _mp4(duration_seconds=1.0, colour="red")
+    video = _video_asset(db, author, payload, duration_ms=1000)
+
+    last_frame = media_service.extract_video_frame(
+        db, user_id=author.id, asset_id=video.id, position="last"
+    )
+    assert last_frame.media_type == MediaType.IMAGE
+    assert last_frame.mime_type == "image/jpeg"
+    assert last_frame.owner_user_id == author.id
+    assert last_frame.role == AssetRole.GENERATION_REFERENCE
+    assert last_frame.moderation_status == ModerationStatus.PENDING
+    assert last_frame.visibility == Visibility.PRIVATE
+    assert last_frame.width == 32 and last_frame.height == 32
+
+    first_frame = media_service.extract_video_frame(
+        db, user_id=author.id, asset_id=video.id, position="first"
+    )
+    assert first_frame.id != last_frame.id
+    # Both frames come from a constant-colour clip, so this only proves two
+    # independent extractions each produced a real, decodable image rather
+    # than reusing/aliasing bytes — colour-accuracy across codecs is out of
+    # scope for a unit test.
+    with Image.open(io.BytesIO(s3.get_object(first_frame.object_key))) as image:
+        assert image.size == (32, 32)
+
+
+def test_extract_video_frame_rejects_non_video_and_foreign_assets(
+    db: Session, author: User, admin: User
+) -> None:
+    image = _reference_asset(db, author, MediaType.IMAGE)
+    with pytest.raises(ValidationFailed, match="只能对视频素材"):
+        media_service.extract_video_frame(db, user_id=author.id, asset_id=image.id, position="last")
+
+    someone_elses_video = _reference_asset(db, admin, MediaType.VIDEO)
+    from app.domain.errors import NotFound
+
+    with pytest.raises(NotFound):
+        media_service.extract_video_frame(
+            db, user_id=author.id, asset_id=someone_elses_video.id, position="last"
+        )
+
+
+def test_extract_video_frame_rejects_an_unsupported_position(db: Session, author: User) -> None:
+    video = _reference_asset(db, author, MediaType.VIDEO)
+    with pytest.raises(ValidationFailed, match="不支持的截帧位置"):
+        media_service.extract_video_frame(
+            db, user_id=author.id, asset_id=video.id, position="middle"
+        )
+
+
+def test_extract_video_frame_degrades_clearly_without_ffmpeg(
+    db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"not a real video, but ffmpeg is mocked missing before it matters"
+    video = _video_asset(db, author, payload, duration_ms=4000)
+    monkeypatch.setattr(media_service.shutil, "which", lambda _name: None)
+    with pytest.raises(ValidationFailed, match="未安装 ffmpeg"):
+        media_service.extract_video_frame(db, user_id=author.id, asset_id=video.id, position="last")
+
+
+def test_submit_prepends_a_licensed_source_video_when_the_client_omits_it(
+    db: Session, author: User, remixer: User
+) -> None:
+    credits_service.grant(db, remixer.id, 5_000, idempotency_key=new_id("grant"))
+    db.flush()
+    clip, _work, version = _remix_source_video(db, author)
+    params = {
+        "prompt": "改成暴雨将至",
+        "duration_seconds": 8,
+        "aspect_ratio": "16:9",
+        "video_options": {"reference_mode": "input_references"},
+    }
+    result = jobs_service.submit(
+        db,
+        user_id=remixer.id,
+        operation=Operation.VIDEO_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        params=params,
+        idempotency_key=new_id("idk"),
+        source_work_version_id=version.id,
+    )
+    assert result.job.request_json["reference_asset_ids"] == [clip.id]
+
+
+def test_episode_preview_accepts_images_only_and_is_prefix_isolated(
+    db: Session, author: User
+) -> None:
+    with pytest.raises(ValidationFailed, match="必须是图片"):
+        media_service.presign_upload(
+            db,
+            user_id=author.id,
+            filename="clip.mp4",
+            mime_type="video/mp4",
+            size_bytes=100,
+            checksum_sha256="0" * 64,
+            purpose="episode_preview",
+        )
+
+    limit = s3.MAX_UPLOAD_BYTES["episode_preview"]
+    with pytest.raises(ValidationFailed):
+        media_service.presign_upload(
+            db,
+            user_id=author.id,
+            filename="huge.png",
+            mime_type="image/png",
+            size_bytes=limit + 1,
+            checksum_sha256="0" * 64,
+            purpose="episode_preview",
+        )
+
+    payload = _png((20, 40, 80))
+    presigned = media_service.presign_upload(
+        db,
+        user_id=author.id,
+        filename="thumb.png",
+        mime_type="image/png",
+        size_bytes=len(payload),
+        checksum_sha256=hashlib.sha256(payload).hexdigest(),
+        purpose="episode_preview",
+    )
+    key = presigned.upload_session.object_key
+    assert key.startswith(f"{s3.PURPOSE_PREFIXES['episode_preview']}/{author.id}/")
+    assert key.startswith("staging/episode-previews/")
+    assert s3.PURPOSE_PREFIXES["series_logo"] not in key

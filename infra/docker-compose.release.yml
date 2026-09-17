@@ -1,13 +1,15 @@
 name: zaolang-release
 
-# One-command trial run against published GHCR images: no local toolchain, no
-# build step. Pin ZAOLANG_VERSION to a release tag for a reproducible run; the
-# default `edge` follows main.
-#
-#   docker compose -f infra/docker-compose.release.yml up -d
+# One-command trial run that builds images from the local Dockerfiles.
+# `make release-up` is the entry point; it runs `up -d --build`.
 #
 # The secrets below are development defaults and must be replaced before this is
 # exposed to anything other than localhost.
+
+x-backend: &backend
+  build:
+    context: ../back
+  image: zaolang-back:local
 
 services:
   postgres:
@@ -26,7 +28,18 @@ services:
 
   redis:
     image: redis:8-alpine
-    command: ['redis-server', '--appendonly', 'yes']
+    # Without maxmemory the default policy is `noeviction` — once memory fills,
+    # every write (rate limiting, Celery enqueue, pubsub) starts erroring
+    # instead of gracefully evicting. `volatile-lru` only evicts keys that
+    # carry a TTL, so Celery's broker lists (no TTL) are never silently
+    # dropped under pressure.
+    command:
+      [
+        'redis-server',
+        '--appendonly', 'yes',
+        '--maxmemory', '${REDIS_MAXMEMORY:-256mb}',
+        '--maxmemory-policy', 'volatile-lru',
+      ]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -36,7 +49,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ['server', '/data', '--console-address', ':9001']
     environment:
       MINIO_ROOT_USER: zaolang
@@ -53,7 +66,7 @@ services:
       retries: 20
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
@@ -67,7 +80,7 @@ services:
 
   # Migrations run as their own unit so the API never races the schema.
   migrate:
-    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    <<: *backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,8 +88,9 @@ services:
       APP_ENV: production
       DATABASE_URL: postgresql+psycopg://zaolang:zaolang@postgres:5432/zaolang
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: change-me-before-exposing-this
-      ADMIN_JWT_SECRET: change-me-before-exposing-this-admin
+      # HS256 needs >= 32 bytes. Replace before exposing the stack.
+      JWT_SECRET: change-me-before-exposing-this-jwt-secret
+      ADMIN_JWT_SECRET: change-me-before-exposing-this-admin-jwt
       PAYMENT_WEBHOOK_SECRET: change-me-before-exposing-this-webhook
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
@@ -84,8 +98,10 @@ services:
       S3_BUCKET: zaolang-media
       S3_ACCESS_KEY: zaolang
       S3_SECRET_KEY: zaolang-secret
-      # No gateway key in a trial run, so agents stay on the deterministic stub.
-      LLM_MODE: ${LLM_MODE:-stub}
+      # No mode switch: the gateway always calls the real, admin-configured
+      # endpoint. A trial run with no `LLM_API_KEY` set can still boot, but
+      # every agent call fails until a real key/endpoint is provided (here or
+      # at /admin/models).
       LLM_BASE_URL: ${LLM_BASE_URL:-https://aihubmix.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
       CORS_ORIGINS: http://localhost:3000
@@ -93,7 +109,7 @@ services:
     restart: 'no'
 
   api:
-    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    <<: *backend
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -103,10 +119,10 @@ services:
         condition: service_healthy
     environment: *backend-env
     ports:
-      - '8000:8000'
+      - '3001:8000'
 
   worker:
-    image: ghcr.io/zaolangai/zaolang-back:${ZAOLANG_VERSION:-edge}
+    <<: *backend
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -116,12 +132,57 @@ services:
       - -A
       - app.workers.celery_app
       - worker
+      - -n
+      - zaolang-worker@%h
       - -Q
-      - moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile
+      - image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution,video_analysis
+      # See docker-compose.prod.yml's worker service for why this is pinned.
+      - --concurrency=${WORKER_CONCURRENCY:-4}
+      - --loglevel=info
+
+  # Dedicated to provider_task_polling so a busy render/quality-check queue
+  # never starves the tick that resumes suspended async video jobs — mirrors
+  # `make dev-poller`.
+  poller:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - worker
+      - -n
+      - zaolang-poller@%h
+      - -Q
+      - provider_task_polling
+      - --concurrency=1
+      - --loglevel=info
+
+  beat:
+    <<: *backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app
+      - beat
       - --loglevel=info
 
   web:
-    image: ghcr.io/zaolangai/zaolang-front:${ZAOLANG_VERSION:-edge}
+    build:
+      context: ../front
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+    image: zaolang-front:local
     depends_on:
       - api
     environment:

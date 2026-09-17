@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents.router import PROVIDER_CATALOG
+from app.agents.router import build_catalog
 from app.domain.jobs import service as jobs_service
 from app.models import Tag, Work, WorkVersion
 from app.models.enums import LifecycleStatus, Visibility
@@ -55,7 +55,7 @@ def list_provider_capabilities(session: Session) -> list[dict[str, Any]]:
             "operations": sorted(capability.operations),
             "tiers": sorted(capability.tiers),
         }
-        for capability in sorted(PROVIDER_CATALOG.values(), key=lambda c: c.name)
+        for capability in sorted(build_catalog(session).values(), key=lambda c: c.name)
     ]
 
 
@@ -75,6 +75,7 @@ def lookup_source_parameters(session: Session, work_version_id: str) -> dict[str
         work is None
         or work.lifecycle_status != LifecycleStatus.ACTIVE
         or work.visibility != Visibility.PUBLIC_REMIXABLE
+        or (work.access_credits or 0) > 0
     ):
         return {"found": False}
 
@@ -103,12 +104,58 @@ def suggest_tags(session: Session, keywords: list[str], limit: int = 8) -> list[
     ]
 
 
+def lookup_media_analysis(session: Session, asset_id: str) -> dict[str, Any]:
+    """Read-only media analysis summary for an asset the planner already saw."""
+    from app.domain.editor import analysis as media_analysis
+
+    summary = media_analysis.summary_for(session, asset_id)
+    return summary or {"found": False}
+
+
+def lookup_shortform_profile(session: Session, profile_key: str) -> dict[str, Any]:
+    """Returns a delivery profile's public spec. No secrets."""
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import ShortformConfig
+
+    cfg = config_service.get_typed(session, "shortform", ShortformConfig)
+    profile = cfg.profiles.get(profile_key)
+    if profile is None:
+        return {"found": False}
+    return {
+        "found": True,
+        "profile_key": profile_key,
+        "aspect_ratio": profile.aspect_ratio,
+        "width": profile.width,
+        "height": profile.height,
+        "min_duration_seconds": profile.min_duration_seconds,
+        "max_duration_seconds": profile.max_duration_seconds,
+    }
+
+
+def timeline_summary(session: Session, cut_id: str) -> dict[str, Any]:
+    """Normalized timeline summary. Does not include object keys or signed URLs."""
+    from app.domain.editor import document as docs
+    from app.domain.editor import service as editor_service
+    from app.models import EpisodeCut
+
+    cut_row = session.get(EpisodeCut, cut_id)
+    if cut_row is None:
+        return {"found": False}
+    head = editor_service.head_revision(session, cut_row)
+    if head is None:
+        return {"found": False}
+    return {"found": True, "summary": docs.timeline_summary(head.document_json)}
+
+
 # The complete set. Anything not listed here cannot be handed to an agent.
 TOOL_REGISTRY: dict[str, Callable[..., Any]] = {
     "price_operation": price_operation,
     "list_provider_capabilities": list_provider_capabilities,
     "lookup_source_parameters": lookup_source_parameters,
     "suggest_tags": suggest_tags,
+    "timeline_summary": timeline_summary,
+    "lookup_shortform_profile": lookup_shortform_profile,
+    "lookup_media_analysis": lookup_media_analysis,
 }
 
 # Which agent may use which tool. Safety gets nothing: a content judgement must
@@ -120,6 +167,18 @@ AGENT_TOOL_GRANTS: dict[str, frozenset[str]] = {
     ),
     "quality": frozenset(),
     "copy": frozenset({"suggest_tags"}),
+    # A cost/complexity judgement call, same reasoning as `safety`: it must
+    # not depend on anything a prompt could steer it into fetching.
+    "intent_router": frozenset(),
+    "editor_planner": frozenset(
+        {"timeline_summary", "lookup_shortform_profile", "lookup_media_analysis"}
+    ),
+    # Deliberately empty. The canvas planner is handed its whole context up
+    # front (`agent_service.upstream_context` builds the digest), so it has
+    # nothing to fetch — and pricing is computed server-side in `persist_run`
+    # via `quote_for`, so letting it reach `price_operation` would only give it
+    # a way to tell the user a cost the platform will not charge.
+    "canvas_planner": frozenset(),
 }
 
 

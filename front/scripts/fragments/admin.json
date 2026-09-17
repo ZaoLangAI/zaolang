@@ -19,8 +19,8 @@
       "groupPlatform": "平台与合规",
       "navHealth": "系统健康",
       "navJobs": "任务运维",
-      "navProviders": "供应商与路由",
-      "navAgents": "智能体运维",
+      "navProviders": "模型管理",
+      "navAgents": "智能体",
       "navModeration": "内容审核",
       "navReports": "举报与申诉",
       "navUsers": "用户与权限",
@@ -70,10 +70,8 @@
       "queueRate": "消费速率",
       "alembic": "Alembic 版本",
       "llmGateway": "LLM 网关",
-      "llmMode": "当前模式",
       "up": "正常",
       "down": "不可用",
-      "degraded": "降级",
       "latency": "延迟 {ms}ms",
       "dangling": "悬挂预扣",
       "danglingHint": "reserve 长期未 capture 或 release",
@@ -108,8 +106,8 @@
       "attempts": "供应商尝试"
     },
     "adminProviders": {
-      "title": "供应商与路由",
-      "subtitle": "成功率、延迟与有效成本统计，以及开关与权重。",
+      "title": "模型管理",
+      "subtitle": "管理通用模型与媒体模型的主用/备用端点；媒体端点可勾选多项生成能力并填写对应模型名。",
       "colProvider": "供应商",
       "colAttempts": "尝试数",
       "colSuccess": "成功率",
@@ -121,10 +119,14 @@
       "weightCost": "成本",
       "weightReliability": "可靠性",
       "enabled": "已启用",
-      "disabled": "已停用"
+      "disabled": "已停用",
+      "generationKind": "生成分类",
+      "generationKindHint": "编辑类模型必须已有视频素材才会进入视频创作候选；创造类可以从文本或静帧生成。",
+      "generationKindCreate": "创造类",
+      "generationKindEdit": "编辑类"
     },
     "adminAgents": {
-      "title": "智能体运维",
+      "title": "智能体",
       "subtitle": "AgentRun 检索、token 用量与降级次数。",
       "colAgent": "智能体",
       "colModel": "模型",
@@ -300,7 +302,7 @@
       "groupPlatform": "Platform and compliance",
       "navHealth": "System health",
       "navJobs": "Jobs",
-      "navProviders": "Providers and routing",
+      "navProviders": "Models",
       "navAgents": "Agents",
       "navModeration": "Moderation",
       "navReports": "Reports and appeals",
@@ -351,10 +353,8 @@
       "queueRate": "Throughput",
       "alembic": "Alembic revision",
       "llmGateway": "LLM gateway",
-      "llmMode": "Current mode",
       "up": "Up",
       "down": "Down",
-      "degraded": "Degraded",
       "latency": "{ms}ms",
       "dangling": "Dangling reservations",
       "danglingHint": "Reserved but never captured or released",
@@ -389,8 +389,8 @@
       "attempts": "Provider attempts"
     },
     "adminProviders": {
-      "title": "Providers and routing",
-      "subtitle": "Success rate, latency and effective cost, plus switches and weights.",
+      "title": "Model management",
+      "subtitle": "Manage primary and backup endpoints for general and media models; media endpoints can enable multiple generation capabilities with their model names.",
       "colProvider": "Provider",
       "colAttempts": "Attempts",
       "colSuccess": "Success rate",
@@ -402,7 +402,11 @@
       "weightCost": "Cost",
       "weightReliability": "Reliability",
       "enabled": "Enabled",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "generationKind": "Generation class",
+      "generationKindHint": "Edit-class models only enter video-creation routing when a video source is already attached. Create-class models can generate from text or a still.",
+      "generationKindCreate": "Create",
+      "generationKindEdit": "Edit"
     },
     "adminAgents": {
       "title": "Agents",
@@ -559,6 +563,14 @@
       "startsAt": "Starts",
       "endsAt": "Ends",
       "publish": "Publish"
+    }
+  },
+  "ja": {
+    "adminProviders": {
+      "generationKind": "生成クラス",
+      "generationKindHint": "編集クラスのモデルは、動画素材がある場合のみ動画生成の候補に入ります。創造クラスはテキストや静止画から生成できます。",
+      "generationKindCreate": "創造クラス",
+      "generationKindEdit": "編集クラス"
     }
   }
 }

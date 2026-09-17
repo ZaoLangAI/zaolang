@@ -1,0 +1,138 @@
+"""The catalogue an operator picks a new agent's role from.
+
+An agent is created by hand in the console, but its *role* is not free text:
+it is chosen from this list. Two reasons it stays a code-maintained
+directory rather than a table:
+
+* a role only does something if code invokes it — the built-in five are
+  invoked by their own workflow node types, and anything else needs the
+  generic `custom_agent` node — so "any string an operator types" would
+  produce agents that can never run;
+* every role here binds one LLM model (plus an optional backup); the
+  `operations` field is advisory capability metadata for the console, not
+  a media-endpoint picker.
+
+`category` decides which half of the console's create form applies only
+semantically — both categories bind an LLM the same way:
+
+* `judgment` — pass/fail (or classify/score) verdicts (`safety`, `planner`,
+  `quality`, `intent_router`);
+* `assist` — generate or polish content rather than hand down a verdict
+  (`copy` is the only one today).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+from app.models.enums import AgentName
+
+AgentCategory = Literal["judgment", "assist"]
+
+JUDGMENT: AgentCategory = "judgment"
+ASSIST: AgentCategory = "assist"
+
+
+@dataclass(frozen=True, slots=True)
+class RolePreset:
+    role: str
+    display_name: str
+    category: AgentCategory
+    description: str = ""
+    # Empty means general purpose: the agent is not tied to any single
+    # operation. Copied onto `AgentProfile.operations_json` when set.
+    operations: tuple[str, ...] = ()
+    # Which `SKILL_TEMPLATES` entry the console pre-selects. `None` means the
+    # role has no shipped starting prompt.
+    default_template_key: str | None = None
+    # Display order in the console's role dropdown.
+    sort_order: int = 0
+
+
+ROLE_PRESETS: tuple[RolePreset, ...] = (
+    RolePreset(
+        role=AgentName.SAFETY.value,
+        display_name="安全审核",
+        category=JUDGMENT,
+        description="内容安全一票否决，拒绝后不可被下游节点覆盖。",
+        default_template_key="safety-default",
+        sort_order=0,
+    ),
+    RolePreset(
+        role=AgentName.PLANNER.value,
+        display_name="任务规划",
+        category=JUDGMENT,
+        description="把用户意图拆解为可执行的生成计划。",
+        default_template_key="planner-default",
+        sort_order=1,
+    ),
+    RolePreset(
+        role=AgentName.QUALITY.value,
+        display_name="质量评估",
+        category=JUDGMENT,
+        description="评估生成结果是否达标、是否值得重试。",
+        default_template_key="quality-default",
+        sort_order=2,
+    ),
+    RolePreset(
+        role=AgentName.COPY.value,
+        display_name="文案生成",
+        category=ASSIST,
+        description="生成标题、简介与标签，或润色画面描述——辅助创作，不做通过/拒绝式判断。",
+        default_template_key="copy-suggest",
+        sort_order=3,
+    ),
+    RolePreset(
+        role=AgentName.INTENT_ROUTER.value,
+        display_name="意图理解路由",
+        category=JUDGMENT,
+        description="判断需求复杂度建议生成档位（只降不升），并在候选中选出本次生成路线。",
+        default_template_key="intent-router-classify",
+        sort_order=4,
+    ),
+    RolePreset(
+        role=AgentName.EDITOR_PLANNER.value,
+        display_name="短剧剪辑规划",
+        category=JUDGMENT,
+        description="根据规范化时间线摘要产出可执行的 EditCommand 列表，不发布、不改账本。",
+        default_template_key="editor-planner-default",
+        sort_order=5,
+    ),
+    RolePreset(
+        role=AgentName.CANVAS_PLANNER.value,
+        display_name="画布生成规划",
+        category=JUDGMENT,
+        description="读取画布上选中卡片与其上游卡片，规划要生成的图片/视频任务；只提交任务，不直连供应商。",
+        default_template_key="canvas-planner-default",
+        sort_order=6,
+    ),
+)
+
+_BY_ROLE: dict[str, RolePreset] = {preset.role: preset for preset in ROLE_PRESETS}
+
+# A role row that predates this catalogue (or one seeded by a future preset
+# that was later removed) still has to render somewhere in the console.
+FALLBACK_CATEGORY: AgentCategory = JUDGMENT
+
+
+def all_presets() -> tuple[RolePreset, ...]:
+    return tuple(sorted(ROLE_PRESETS, key=lambda preset: (preset.sort_order, preset.role)))
+
+
+def find(role: str) -> RolePreset | None:
+    return _BY_ROLE.get(role)
+
+
+def category_for(role: str) -> AgentCategory:
+    preset = _BY_ROLE.get(role)
+    return preset.category if preset is not None else FALLBACK_CATEGORY
+
+
+def operations_for(role: str) -> list[str]:
+    preset = _BY_ROLE.get(role)
+    return list(preset.operations) if preset is not None else []
+
+
+def known_roles() -> set[str]:
+    return set(_BY_ROLE)

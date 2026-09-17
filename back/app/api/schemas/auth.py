@@ -21,6 +21,10 @@ class RegisterRequest(ApiModel):
     # The platform is 18+; registration cannot proceed without an explicit
     # confirmation, and the timestamp is what the compliance record relies on.
     age_confirmed: bool = False
+    # Optional invite/promo code, redeemed in the same transaction as account
+    # creation: a code the user explicitly typed but that turns out invalid
+    # aborts registration rather than silently granting nothing.
+    invite_code: str | None = Field(default=None, max_length=32)
 
     @field_validator("password")
     @classmethod
@@ -58,6 +62,24 @@ class ProfileResponse(ApiModel):
     reduce_motion: bool = False
 
 
+class MeFeaturesResponse(ApiModel):
+    """The subset of `FeatureFlags` a consumer client needs to decide what to
+    show, independent of whether the underlying API 404s once clicked.
+
+    Evaluated per-user (percentage rollout included, see
+    `platform_config.service.is_enabled`) so two users can legitimately see
+    different values for the same flag during a staged rollout.
+    """
+
+    script_studio: bool
+    video_analysis: bool
+    web_editor: bool
+    video_generation: bool
+    drama_studio: bool
+    marketplace: bool
+    canvas_studio: bool
+
+
 class MeResponse(ApiModel):
     id: str
     email: EmailStr
@@ -70,6 +92,7 @@ class MeResponse(ApiModel):
     profile: ProfileResponse | None = None
     available_credits: int = 0
     reserved_credits: int = 0
+    features: MeFeaturesResponse
 
 
 class PreferencesRequest(ApiModel):

@@ -10,14 +10,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import ColumnElement, Select, and_, func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from app.domain.search import embeddings
 from app.models import Tag, Work, WorkEmbedding, WorkTag, WorkVersion
 from app.models.enums import LifecycleStatus, Visibility
 
 SortMode = Literal["recent", "popular", "remixed"]
+AccessFilter = Literal["free", "paid", "all"]
 
 KEYWORD_WEIGHT = 0.6
 VECTOR_WEIGHT = 0.4
@@ -46,18 +48,65 @@ def _visible_works() -> Select[tuple[Work, WorkVersion]]:
     )
 
 
+def _after_ranked(
+    column: InstrumentedAttribute[int], value: int, anchor_id: str
+) -> ColumnElement[bool]:
+    """Rows strictly after the anchor under `ORDER BY column DESC, id DESC`.
+
+    The id is part of the comparison because counts collide constantly: without
+    the tie-break a page boundary that lands inside a run of equal counts would
+    either repeat rows or skip them.
+    """
+    return or_(column < value, and_(column == value, Work.id < anchor_id))
+
+
+def _after_published(anchor: Work) -> ColumnElement[bool]:
+    """Same, for `ORDER BY published_at DESC NULLS LAST, id DESC`."""
+    if anchor.published_at is None:
+        # The anchor already sits in the trailing block of unpublished rows.
+        return and_(Work.published_at.is_(None), Work.id < anchor.id)
+    return or_(
+        Work.published_at.is_(None),
+        Work.published_at < anchor.published_at,
+        and_(Work.published_at == anchor.published_at, Work.id < anchor.id),
+    )
+
+
+def _apply_access_filter(
+    stmt: Select[tuple[Work, WorkVersion]], access: str | None
+) -> Select[tuple[Work, WorkVersion]]:
+    if access == "free":
+        return stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits == 0)
+    if access == "paid":
+        return stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE, Work.access_credits > 0)
+    return stmt
+
+
 def browse(
     session: Session,
     *,
     tag: str | None = None,
     remixable_only: bool = False,
+    access: str | None = None,
     sort: SortMode = "recent",
     cursor: str | None = None,
     limit: int = 24,
 ) -> list[SearchResult]:
+    # The cursor stays an opaque work id and the anchor row is looked up here,
+    # rather than encoding the sort key into the token: the client then cannot
+    # be desynchronised by a change of sort column.
+    anchor: Work | None = None
+    if cursor:
+        anchor = session.get(Work, cursor)
+        if anchor is None:
+            # We minted the token, so an unknown id means the row is gone.
+            # Falling back to page one would loop an infinite-scroll caller.
+            return []
+
     stmt = _visible_works()
     if remixable_only:
         stmt = stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE)
+    stmt = _apply_access_filter(stmt, access)
     if tag:
         stmt = stmt.join(WorkTag, WorkTag.work_id == Work.id).join(
             Tag, (Tag.id == WorkTag.tag_id) & (Tag.slug == tag)
@@ -65,12 +114,16 @@ def browse(
 
     if sort == "popular":
         stmt = stmt.order_by(Work.like_count.desc(), Work.id.desc())
+        if anchor:
+            stmt = stmt.where(_after_ranked(Work.like_count, anchor.like_count, anchor.id))
     elif sort == "remixed":
         stmt = stmt.order_by(Work.remix_count.desc(), Work.id.desc())
+        if anchor:
+            stmt = stmt.where(_after_ranked(Work.remix_count, anchor.remix_count, anchor.id))
     else:
         stmt = stmt.order_by(Work.published_at.desc().nullslast(), Work.id.desc())
-        if cursor:
-            stmt = stmt.where(Work.id < cursor)
+        if anchor:
+            stmt = stmt.where(_after_published(anchor))
 
     rows = session.execute(stmt.limit(limit)).all()
     return [
@@ -85,17 +138,22 @@ def search(
     query: str,
     semantic: bool = True,
     remixable_only: bool = False,
+    access: str | None = None,
     limit: int = 24,
 ) -> list[SearchResult]:
     text = query.strip()
     if not text:
-        return browse(session, remixable_only=remixable_only, limit=limit)
+        return browse(session, remixable_only=remixable_only, access=access, limit=limit)
 
-    keyword_hits = _keyword_search(session, text, remixable_only, limit * CANDIDATE_MULTIPLIER)
+    keyword_hits = _keyword_search(
+        session, text, remixable_only, limit * CANDIDATE_MULTIPLIER, access=access
+    )
     if not semantic:
         return keyword_hits[:limit]
 
-    vector_hits = _vector_search(session, text, remixable_only, limit * CANDIDATE_MULTIPLIER)
+    vector_hits = _vector_search(
+        session, text, remixable_only, limit * CANDIDATE_MULTIPLIER, access=access
+    )
 
     merged: dict[str, SearchResult] = {}
     for hit in keyword_hits:
@@ -122,17 +180,32 @@ def search(
 
 
 def _keyword_search(
-    session: Session, text: str, remixable_only: bool, limit: int
+    session: Session,
+    text: str,
+    remixable_only: bool,
+    limit: int,
+    *,
+    access: str | None = None,
 ) -> list[SearchResult]:
     pattern = f"%{text.lower()}%"
     stmt = _visible_works().where(
         or_(
             func.lower(WorkVersion.title).like(pattern),
-            func.lower(func.coalesce(WorkVersion.description, "")).like(pattern),
+            # Written as `IS NOT NULL AND lower(description) LIKE ...` rather
+            # than `lower(coalesce(description, '')) LIKE ...`: `text` is
+            # never empty here (the caller short-circuits to `browse()`
+            # first), so the two are equivalent, but this form matches the
+            # `lower(description)` GIN trigram index byte-for-byte —
+            # `coalesce(...)`'s bound parameter would not.
+            and_(
+                WorkVersion.description.is_not(None),
+                func.lower(WorkVersion.description).like(pattern),
+            ),
         )
     )
     if remixable_only:
         stmt = stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE)
+    stmt = _apply_access_filter(stmt, access)
 
     rows = session.execute(stmt.limit(limit)).all()
     results = []
@@ -145,7 +218,12 @@ def _keyword_search(
 
 
 def _vector_search(
-    session: Session, text: str, remixable_only: bool, limit: int
+    session: Session,
+    text: str,
+    remixable_only: bool,
+    limit: int,
+    *,
+    access: str | None = None,
 ) -> list[SearchResult]:
     vector = embeddings.embed(text)
     if not any(vector):
@@ -161,6 +239,7 @@ def _vector_search(
     )
     if remixable_only:
         stmt = stmt.where(Work.visibility == Visibility.PUBLIC_REMIXABLE)
+    stmt = _apply_access_filter(stmt, access)
 
     results = []
     for work, version, dist in session.execute(stmt).all():

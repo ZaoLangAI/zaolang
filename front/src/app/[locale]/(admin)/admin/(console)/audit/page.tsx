@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 
-import { AuditConsole } from '@/components/admin/audit/audit-console';
+import { LogCenterConsole } from '@/components/admin/audit/log-center-console';
 import { PageHeading } from '@/components/ui/primitives';
 
 export async function generateMetadata() {
@@ -13,7 +13,7 @@ export default async function AdminAuditPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeading title={t('title')} description={t('subtitle')} />
-      <AuditConsole />
+      <LogCenterConsole />
     </div>
   );
 }

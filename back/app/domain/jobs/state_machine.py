@@ -8,6 +8,7 @@ winner, and a terminal job can never be reopened by a late provider callback.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.models.enums import (
     CANCELLABLE_JOB_STATUSES,
     JOB_TRANSITIONS,
     JobEventType,
+    JobOrigin,
     JobStatus,
 )
 
@@ -33,6 +35,8 @@ def transition(
     failure_message: str | None = None,
     actual_credits: int | None = None,
     output_asset_id: str | None = None,
+    output_asset_ids: list[str] | None = None,
+    analysis_result_json: dict[str, Any] | None = None,
     now: dt.datetime | None = None,
 ) -> GenerationJob:
     """Moves a job to `target`, or raises if the move is illegal.
@@ -60,6 +64,10 @@ def transition(
         values["actual_credits"] = actual_credits
     if output_asset_id is not None:
         values["output_asset_id"] = output_asset_id
+    if output_asset_ids is not None:
+        values["output_asset_ids_json"] = output_asset_ids
+    if analysis_result_json is not None:
+        values["analysis_result_json"] = analysis_result_json
 
     matched = rows_affected(
         session,
@@ -80,6 +88,20 @@ def transition(
     job = session.get(GenerationJob, job_id)
     if job is None:  # pragma: no cover - the UPDATE just matched this row
         raise NotFound("任务不存在。")
+    if job.origin != JobOrigin.SANDBOX:
+        from app.domain.notifications import push as notifications
+
+        notifications.sync_job_notification(session, job)
+        if JobStatus(target).is_terminal:
+            # The single choke point every terminal write reaches — the
+            # pipeline, the async-polling worker, and `pipeline._fail`'s crash
+            # path all come through here, and the conditional UPDATE above has
+            # already guaranteed only the first one wins. Anything that has to
+            # react to a job finishing hangs off this rather than patching each
+            # caller. See `app/domain/jobs/completion.py`.
+            from app.domain.jobs.completion import on_job_terminal
+
+            on_job_terminal(session, job)
     return job
 
 
@@ -127,13 +149,16 @@ def append_event(
     progress: int = 0,
     internal_code: str | None = None,
     payload: dict[str, object] | None = None,
+    node_id: str | None = None,
     now: dt.datetime | None = None,
 ) -> JobEvent:
     """Appends the next event in the job's stream.
 
     `sequence` is derived from the current maximum and protected by a unique
     constraint, so a concurrent writer fails loudly rather than creating a hole
-    that would break SSE resumption.
+    that would break SSE resumption. `node_id` is the graph node that actually
+    emitted this event — callers outside a node (e.g. an async poll heartbeat)
+    pass the node they are resuming instead.
     """
     current_max = session.scalar(
         select(JobEvent.sequence)
@@ -150,6 +175,7 @@ def append_event(
         public_message=public_message,
         internal_code=internal_code,
         payload_json=payload or {},
+        node_id=node_id,
         created_at=now or utcnow(),
     )
     session.add(event)

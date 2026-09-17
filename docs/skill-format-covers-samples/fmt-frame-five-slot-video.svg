@@ -1,0 +1,27 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Helvetica Neue',Arial,sans-serif">
+  <rect width="1280" height="720" fill="#14171a"/>
+  <defs><radialGradient id="g1" cx="50%" cy="42%" r="75%"><stop offset="0%" stop-color="#1a1e22"/><stop offset="100%" stop-color="#0e1013"/></radialGradient></defs>
+  <rect width="1280" height="720" fill="url(#g1)"/>
+  <rect width="1280" height="6" fill="#ff795b"/>
+  <g stroke="#5b7a99" stroke-width="3" fill="none" opacity="0.9">
+    <path d="M330 340 l14 10 l-14 10"/>
+    <path d="M510 340 l14 10 l-14 10"/>
+    <path d="M690 340 l14 10 l-14 10"/>
+    <path d="M870 340 l14 10 l-14 10"/>
+  </g>
+  <rect x="130" y="240" width="180" height="200" rx="18" fill="#20262c" stroke="#5b7a99" stroke-width="2.5"/>
+  <circle cx="220" cy="320" r="34" fill="#f5f1eb"/>
+  <text x="220" y="410" text-anchor="middle" fill="#c9d3dc" font-size="22" font-weight="600">主体</text>
+  <rect x="330" y="240" width="180" height="200" rx="18" fill="#20262c" stroke="#5b7a99" stroke-width="2.5"/>
+  <path d="M380 320 h70 m-18 -18 l18 18 l-18 18" stroke="#f5f1eb" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="420" y="410" text-anchor="middle" fill="#c9d3dc" font-size="22" font-weight="600">动作</text>
+  <rect x="530" y="240" width="180" height="200" rx="18" fill="#20262c" stroke="#5b7a99" stroke-width="2.5"/>
+  <rect x="590" y="290" width="60" height="60" rx="8" fill="#f5f1eb"/>
+  <text x="620" y="410" text-anchor="middle" fill="#c9d3dc" font-size="22" font-weight="600">场景</text>
+  <rect x="730" y="240" width="180" height="200" rx="18" fill="none" stroke="#5b7a99" stroke-width="2.5" stroke-dasharray="8 7"/>
+  <path d="M790 300 l60 0 l0 40 l-60 0 z m0 -18 l0 18 m60 -18 l0 18 m-60 58 l0 -18 m60 18 l0 -18" stroke="#5b7a99" stroke-width="4" fill="none"/>
+  <text x="820" y="410" text-anchor="middle" fill="#8a9aa5" font-size="22" font-weight="600">镜头</text>
+  <rect x="930" y="240" width="180" height="200" rx="18" fill="none" stroke="#5b7a99" stroke-width="2.5" stroke-dasharray="8 7"/>
+  <path d="M1020 288 l26 34 l-26 34 l-26 -34 z" fill="none" stroke="#5b7a99" stroke-width="4"/>
+  <text x="1020" y="410" text-anchor="middle" fill="#8a9aa5" font-size="22" font-weight="600">光影</text>
+</svg>

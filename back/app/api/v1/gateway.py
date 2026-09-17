@@ -13,14 +13,11 @@ import datetime as dt
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
-from app.agents.router import PROVIDER_CATALOG
+from app.agents.router import build_catalog
 from app.api.deps import DbSession
 from app.api.schemas.common import ApiModel
-from app.config import get_settings
 from app.models import AgentRun, ProviderStat
 from app.models.enums import ProviderKind
-from app.platform_config import service as config_service
-from app.platform_config.schemas import ProviderConfig
 
 router = APIRouter(tags=["gateway"])
 
@@ -40,19 +37,12 @@ class GatewayStatusResponse(ApiModel):
     status: str
     """`healthy`, `degraded` or `down`."""
 
-    mode: str
     degraded_runs_24h: int
 
 
 @router.get("/gateway/status", response_model=GatewayStatusResponse)
 def gateway_status(session: DbSession) -> GatewayStatusResponse:
-    provider_config = config_service.get_typed(session, "providers", ProviderConfig)
-
-    enabled = [
-        capability
-        for name, capability in PROVIDER_CATALOG.items()
-        if (setting := provider_config.providers.get(name)) is not None and setting.enabled
-    ]
+    enabled = list(build_catalog(session).values())
 
     since = dt.datetime.now(dt.UTC) - DEGRADED_WINDOW
     degraded_runs = (
@@ -75,7 +65,6 @@ def gateway_status(session: DbSession) -> GatewayStatusResponse:
         available_routes=len(enabled),
         savings_percent=_savings_percent(session),
         status=status,
-        mode=get_settings().effective_llm_mode,
         degraded_runs_24h=int(degraded_runs),
     )
 
@@ -88,8 +77,8 @@ def _savings_percent(session: DbSession) -> int:
     """
     baseline_unit = max(
         (
-            c.unit_cost_minor
-            for c in PROVIDER_CATALOG.values()
+            c.unit_cost_micro_usd
+            for c in build_catalog(session).values()
             if c.kind == ProviderKind.COMMERCIAL_API
         ),
         default=0,
@@ -100,7 +89,7 @@ def _savings_percent(session: DbSession) -> int:
     row = session.execute(
         select(
             func.coalesce(func.sum(ProviderStat.attempts), 0),
-            func.coalesce(func.sum(ProviderStat.total_cost_minor), 0),
+            func.coalesce(func.sum(ProviderStat.total_cost_micro_usd), 0),
         )
     ).one()
     attempts, spent = int(row[0]), int(row[1])

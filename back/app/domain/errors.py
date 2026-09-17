@@ -74,6 +74,14 @@ class InsufficientCredits(DomainError):
     default_message = "积分不足，请先充值。"
 
 
+class AccessRequired(DomainError):
+    """The subject is remixable/usable, but this viewer has not unlocked it."""
+
+    code = "ACCESS_REQUIRED"
+    http_status = 402
+    default_message = "需要先用积分解锁。"
+
+
 class CreditsExceedBudget(DomainError):
     code = "CREDITS_EXCEED_BUDGET"
     http_status = 409
@@ -148,3 +156,79 @@ class AgeGateRequired(DomainError):
     code = "AGE_GATE_REQUIRED"
     http_status = 403
     default_message = "需要确认已满 18 周岁。"
+
+
+class RevisionConflict(DomainError):
+    code = "REVISION_CONFLICT"
+    http_status = 409
+    default_message = "时间线已被其他人更新，请基于最新修订重试。"
+
+
+class LeaseHeld(DomainError):
+    code = "LEASE_HELD"
+    http_status = 409
+    default_message = "该剪辑正在被其他会话编辑。"
+
+
+class BatchRolledBack(DomainError):
+    code = "BATCH_ROLLED_BACK"
+    http_status = 409
+    default_message = "命令批次已回滚，未改动时间线。"
+
+
+class OperationTerminal(DomainError):
+    code = "OPERATION_TERMINAL"
+    http_status = 409
+    default_message = "该操作已结束，不能再更新。"
+
+
+class BrowserRequired(DomainError):
+    code = "BROWSER_REQUIRED"
+    http_status = 409
+    default_message = "该导出必须由桌面 Chrome 或 Edge 认领执行。"
+
+
+class ScopeRequired(DomainError):
+    code = "SCOPE_REQUIRED"
+    http_status = 403
+    default_message = "缺少所需的 MCP 权限范围。"
+
+
+class ProjectForbidden(DomainError):
+    code = "PROJECT_FORBIDDEN"
+    http_status = 403
+    default_message = "没有该剧集的访问权限。"
+
+
+class PlatformNotConfigured(DomainError):
+    """That channel's own AppKey/AppSecret are still empty in `Settings`.
+
+    Raised as the very first check in every `PlatformClient` method, before
+    any `httpx` call is attempted — the organisation has not finished that
+    platform's business registration yet.
+    """
+
+    code = "PLATFORM_NOT_CONFIGURED"
+    http_status = 503
+    default_message = "该平台尚未配置，暂时无法使用。"
+
+
+class PlatformAccountNotLinked(DomainError):
+    code = "PLATFORM_ACCOUNT_NOT_LINKED"
+    http_status = 409
+    default_message = "尚未连接该平台账号。"
+
+
+class PlatformOAuthFailed(DomainError):
+    code = "PLATFORM_OAUTH_FAILED"
+    http_status = 502
+    default_message = "平台授权失败，请重试。"
+
+
+class PlatformPublishFailed(DomainError):
+    """Callers are expected to pass `platform_error_code=...` as a detail so
+    the failure is traceable without ever including the raw token."""
+
+    code = "PLATFORM_PUBLISH_FAILED"
+    http_status = 502
+    default_message = "发布失败，请稍后重试。"

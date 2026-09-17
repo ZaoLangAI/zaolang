@@ -9,13 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.domain.errors import Conflict, NotFound
+from app.domain.licensing import service as licensing
 from app.models import LineageEdge, Work, WorkVersion
 from app.models.base import utcnow
-from app.models.enums import LifecycleStatus
 
 MAX_TRAVERSAL_DEPTH = 24
 
@@ -122,14 +122,61 @@ def descendants(
     return collected
 
 
-def _node_for_version(session: Session, version_id: str, depth: int) -> LineageNode | None:
+def descendant_count(session: Session, version_id: str, limit: int = MAX_TRAVERSAL_DEPTH) -> int:
+    """Single-round-trip form of `len(descendants(...))` for callers that only
+    need the count (e.g. a work's detail-page badge).
+
+    `descendants()` walks the edge table one `IN` query per BFS level because
+    its callers need the `LineageEdge` rows themselves. A caller that only
+    wants a number shouldn't pay for materializing every intermediate ORM row
+    across up to `MAX_TRAVERSAL_DEPTH` round trips — a recursive CTE pushes
+    the same bounded breadth-first walk down to Postgres and returns one
+    integer. Safe without extra cycle guards: `child_work_version_id` carries
+    a unique constraint, so every version has at most one parent and the
+    graph is a forest, not a general DAG.
+    """
+    row = session.execute(
+        text(
+            """
+            WITH RECURSIVE descendant_versions AS (
+                SELECT child_work_version_id, 0 AS depth
+                FROM lineage_edges
+                WHERE parent_work_version_id = :version_id
+                UNION ALL
+                SELECT le.child_work_version_id, dv.depth + 1
+                FROM lineage_edges le
+                JOIN descendant_versions dv
+                    ON le.parent_work_version_id = dv.child_work_version_id
+                WHERE dv.depth + 1 < :limit
+            )
+            SELECT count(*) FROM descendant_versions
+            """
+        ),
+        {"version_id": version_id, "limit": limit},
+    ).scalar_one()
+    return int(row)
+
+
+def _node_for_version(
+    session: Session,
+    version_id: str,
+    depth: int,
+    *,
+    viewer_user_id: str | None,
+    viewer_is_staff: bool,
+) -> LineageNode | None:
     version = session.get(WorkVersion, version_id)
     if version is None:
         return None
     work = session.get(Work, version.work_id)
     if work is None:
         return None
-    is_tombstone = work.lifecycle_status != LifecycleStatus.ACTIVE
+    # A tombstoned/hidden node and a *private* one get the exact same
+    # treatment here: a public lineage graph must not use a descendant's own
+    # visibility change to leak a title or cover it no longer offers on the
+    # work's own detail page (`can_view` is the same gate that page uses).
+    # The owner (or staff) still sees their own private nodes in full.
+    is_tombstone = not licensing.can_view(work, viewer_user_id, viewer_is_staff)
     return LineageNode(
         work_version_id=version.id,
         work_id=work.id,
@@ -143,9 +190,18 @@ def _node_for_version(session: Session, version_id: str, depth: int) -> LineageN
     )
 
 
-def build_tree(session: Session, root_version_id: str, max_depth: int = 6) -> LineageNode:
+def build_tree(
+    session: Session,
+    root_version_id: str,
+    max_depth: int = 6,
+    *,
+    viewer_user_id: str | None = None,
+    viewer_is_staff: bool = False,
+) -> LineageNode:
     """Builds the downstream tree used by the lineage graph view."""
-    root = _node_for_version(session, root_version_id, 0)
+    root = _node_for_version(
+        session, root_version_id, 0, viewer_user_id=viewer_user_id, viewer_is_staff=viewer_is_staff
+    )
     if root is None:
         raise NotFound("作品版本不存在。")
 
@@ -162,7 +218,13 @@ def build_tree(session: Session, root_version_id: str, max_depth: int = 6) -> Li
             break
         next_frontier: list[str] = []
         for edge in edges:
-            child = _node_for_version(session, edge.child_work_version_id, depth + 1)
+            child = _node_for_version(
+                session,
+                edge.child_work_version_id,
+                depth + 1,
+                viewer_user_id=viewer_user_id,
+                viewer_is_staff=viewer_is_staff,
+            )
             if child is None:
                 continue
             child.author = dict(edge.parent_author_snapshot_json)

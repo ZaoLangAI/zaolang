@@ -160,6 +160,8 @@ def test_ledger_sum_matches_the_account_balance(db: Session, author: User) -> No
             LedgerEntryType.ADJUSTMENT,
             LedgerEntryType.ROYALTY_IN,
             LedgerEntryType.ROYALTY_OUT,
+            LedgerEntryType.ACCESS_IN,
+            LedgerEntryType.ACCESS_OUT,
         )
     )
     captured = -sum(e.amount for e in entries if e.type == LedgerEntryType.CAPTURE)
@@ -219,3 +221,71 @@ def test_optimistic_version_advances_on_each_mutation(db: Session, author: User)
     credits.grant(db, author.id, 10, idempotency_key="grant-2")
 
     assert credits.get_account(db, author.id).version == start + 2
+
+
+def _job_history(db: Session, user_id: str, job_id: str) -> list[credits.BillingLedgerRow]:
+    return [row for row in credits.list_billing_history(db, user_id) if row.job_id == job_id]
+
+
+def _stored_job_types(db: Session, user_id: str, job_id: str) -> set[str]:
+    account = credits.get_account(db, user_id)
+    return {
+        row.type
+        for row in db.scalars(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.account_id == account.id,
+                CreditLedgerEntry.job_id == job_id,
+            )
+        )
+    }
+
+
+def test_billing_history_keeps_an_open_reserve_as_a_hold(db: Session, author: User) -> None:
+    credits.grant(db, author.id, 100, idempotency_key="grant-1")
+    job = make_job(db, author)
+    reserved = credits.reserve(db, author.id, 40, job_id=job.id)
+
+    rows = _job_history(db, author.id, job.id)
+    assert len(rows) == 1
+    assert rows[0].id == reserved.entry.id
+    assert rows[0].type == LedgerEntryType.RESERVE
+    assert rows[0].amount == -40
+    assert _stored_job_types(db, author.id, job.id) == {LedgerEntryType.RESERVE.value}
+
+
+def test_billing_history_folds_a_capture_onto_the_reserve(db: Session, author: User) -> None:
+    credits.grant(db, author.id, 100, idempotency_key="grant-1")
+    job = make_job(db, author)
+    reserved = credits.reserve(db, author.id, 40, job_id=job.id)
+    credits.capture(db, author.id, job_id=job.id, actual_amount=25)
+
+    rows = _job_history(db, author.id, job.id)
+    assert len(rows) == 1
+    assert rows[0].id == reserved.entry.id
+    assert rows[0].type == LedgerEntryType.CAPTURE
+    assert rows[0].amount == -25
+    assert rows[0].balance_after == 75
+    assert rows[0].created_at == reserved.entry.created_at
+    assert _stored_job_types(db, author.id, job.id) == {
+        LedgerEntryType.RESERVE.value,
+        LedgerEntryType.CAPTURE.value,
+    }
+
+
+def test_billing_history_folds_a_release_as_zero_amount(db: Session, author: User) -> None:
+    credits.grant(db, author.id, 100, idempotency_key="grant-1")
+    job = make_job(db, author)
+    reserved = credits.reserve(db, author.id, 40, job_id=job.id)
+    credits.release(db, author.id, job_id=job.id, reason="provider_failed")
+
+    rows = _job_history(db, author.id, job.id)
+    assert len(rows) == 1
+    assert rows[0].id == reserved.entry.id
+    assert rows[0].type == LedgerEntryType.RELEASE
+    assert rows[0].amount == 0
+    assert rows[0].balance_after == 100
+    assert rows[0].reason == "provider_failed"
+    assert _stored_job_types(db, author.id, job.id) == {
+        LedgerEntryType.RESERVE.value,
+        LedgerEntryType.RELEASE.value,
+    }

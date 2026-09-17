@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import User
-from app.models.enums import Visibility
+from app.models import Asset, User
+from app.models.base import new_id
+from app.models.enums import AssetRole, MediaType, ModerationStatus, Visibility
 from tests.conftest import auth_header
 from tests.factories import make_work
 
@@ -88,6 +89,45 @@ def test_discovery_lists_only_public_active_works(
     assert private.id not in ids
 
 
+def test_work_list_includes_output_duration(
+    client: TestClient, db: Session, author: User
+) -> None:
+    clip, clip_version = make_work(db, author, title="有时长")
+    still, still_version = make_work(db, author, title="静帧")
+    video = Asset(
+        owner_user_id=author.id,
+        object_key=f"test/{new_id('obj')}.mp4",
+        media_type=MediaType.VIDEO,
+        mime_type="video/mp4",
+        size_bytes=2048,
+        checksum_sha256="c" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        duration_ms=12_000,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    image = Asset(
+        owner_user_id=author.id,
+        object_key=f"test/{new_id('obj')}.png",
+        media_type=MediaType.IMAGE,
+        mime_type="image/png",
+        size_bytes=512,
+        checksum_sha256="d" * 64,
+        role=AssetRole.GENERATION_OUTPUT,
+        moderation_status=ModerationStatus.APPROVED,
+        visibility=Visibility.PRIVATE,
+    )
+    db.add_all([video, image])
+    db.flush()
+    clip_version.primary_output_asset_id = video.id
+    still_version.primary_output_asset_id = image.id
+    db.commit()
+
+    by_id = {item["id"]: item for item in client.get("/v1/works").json()["items"]}
+    assert by_id[clip.id]["duration_ms"] == 12_000
+    assert by_id[still.id]["duration_ms"] is None
+
+
 def test_liking_is_idempotent(client: TestClient, db: Session, author: User, remixer: User) -> None:
     work, _ = make_work(db, author)
     db.commit()
@@ -155,3 +195,38 @@ def test_quote_is_returned_before_any_credits_move(
     assert quote.status_code == 200
     assert quote.json()["credits"] > 0
     assert before["available"] == after["available"]
+
+
+def test_generation_job_validation_exposes_the_specific_frame_conflict(
+    client: TestClient, author: User
+) -> None:
+    """A model-level first/last-frame clash used to land as
+    `message=请求参数不合法` plus `fields[""]` with a Pydantic `Value error,`
+    prefix — the studio banner and script-batch row only read `message`.
+    The envelope now carries the specific sentence, keyed on `params`."""
+    expected = "首尾帧不能与角色参考、场景参考同时使用。请取消首尾帧，或改回图片/视频参考。"
+    response = client.post(
+        "/v1/generation-jobs",
+        json={
+            "operation": "image_to_video",
+            "quality_tier": "standard",
+            "params": {
+                "prompt": "夜门",
+                "aspect_ratio": "16:9",
+                "duration_seconds": 8,
+                "character_ids": ["sk_char"],
+                "scene_ids": ["sk_scene"],
+                "video_options": {
+                    "resolution": "1080p",
+                    "reference_mode": "frame_images",
+                    "first_frame_asset_id": "ast_first",
+                },
+            },
+        },
+        headers=auth_header(author),
+    )
+    assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["message"] == expected
+    assert body["details"]["fields"]["params"] == expected

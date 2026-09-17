@@ -5,7 +5,12 @@ Each case mirrors a shape actually observed from the AIHubMix gateway.
 
 from __future__ import annotations
 
-from app.llm.normalize import extract_json, normalize_completion, strip_thinking
+from app.llm.normalize import (
+    extract_json,
+    normalize_completion,
+    reasoning_text_from_delta,
+    strip_thinking,
+)
 
 
 def test_think_block_is_removed() -> None:
@@ -33,6 +38,21 @@ def test_json_is_extracted_from_surrounding_prose() -> None:
     assert extract_json(text) == {"decision": "reject", "reason_code": "X"}
 
 
+def test_extract_json_skips_decoy_objects_when_keys_are_required() -> None:
+    """glm-5.3-flash thinking embeds the harness fallback before the payload."""
+    text = (
+        'If unsure default to {"answer":"$your_answer"}. '
+        'Then emit {"prompt": "黄昏海边的女孩", "detail_level": "sparse"}.'
+    )
+
+    assert extract_json(text) == {"answer": "$your_answer"}
+    assert extract_json(text, required_keys=("prompt", "detail_level")) == {
+        "prompt": "黄昏海边的女孩",
+        "detail_level": "sparse",
+    }
+    assert extract_json('{"answer":"$your_answer"}', required_keys=("prompt", "detail_level")) is None
+
+
 def test_braces_inside_strings_do_not_break_extraction() -> None:
     text = '{"note": "包含 } 和 { 的文本", "ok": true}'
 
@@ -46,7 +66,7 @@ def test_non_object_json_is_rejected() -> None:
 
 def test_clean_json_response_is_passed_through() -> None:
     raw = {
-        "model": "doubao-seed-2-1-pro",
+        "model": "test-llm",
         "choices": [{"message": {"content": '{"decision": "approve"}'}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": 120, "completion_tokens": 18},
     }
@@ -60,7 +80,7 @@ def test_clean_json_response_is_passed_through() -> None:
 
 def test_thinking_prefix_is_stripped_before_parsing() -> None:
     raw = {
-        "model": "kimi-k3",
+        "model": "test-llm",
         "choices": [
             {
                 "message": {"content": '<think>先分析</think>{"verdict": "pass"}'},
@@ -75,13 +95,13 @@ def test_thinking_prefix_is_stripped_before_parsing() -> None:
 
 
 def test_reasoning_only_response_is_recovered() -> None:
-    """`ling-3.0-flash-free` bills thinking against max_tokens.
+    """A reasoning model may bill thinking against max_tokens.
 
     With a small budget the content field is empty and the answer only exists
     in reasoning_details.
     """
     raw = {
-        "model": "ling-3.0-flash-free",
+        "model": "test-llm",
         "choices": [
             {
                 "message": {
@@ -103,7 +123,7 @@ def test_reasoning_only_response_is_recovered() -> None:
 
 def test_unparseable_json_is_flagged_rather_than_raising() -> None:
     raw = {
-        "model": "kimi-k3",
+        "model": "test-llm",
         "choices": [
             {"message": {"content": "抱歉，我无法给出结构化结果"}, "finish_reason": "stop"}
         ],
@@ -129,7 +149,7 @@ def test_sdk_style_object_is_accepted() -> None:
     class FakeCompletion:
         def model_dump(self) -> dict[str, object]:
             return {
-                "model": "kimi-k3",
+                "model": "test-llm",
                 "choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}],
                 "usage": {"prompt_tokens": 5, "completion_tokens": 3},
             }
@@ -137,4 +157,14 @@ def test_sdk_style_object_is_accepted() -> None:
     result = normalize_completion(FakeCompletion(), expect_json=True)
 
     assert result.data == {"ok": True}
-    assert result.model == "kimi-k3"
+    assert result.model == "test-llm"
+
+
+def test_reasoning_text_from_delta_reads_sdk_and_dict_shapes() -> None:
+    class FakeDelta:
+        def model_dump(self) -> dict[str, object]:
+            return {"reasoning_content": "从推理字段回收"}
+
+    assert reasoning_text_from_delta(FakeDelta()) == "从推理字段回收"
+    assert reasoning_text_from_delta({"reasoning": "另一形状"}) == "另一形状"
+    assert reasoning_text_from_delta(None) == ""

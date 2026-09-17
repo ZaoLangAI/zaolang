@@ -14,6 +14,7 @@ from fastapi import Request
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
+from app.api.request_utils import client_ip
 from app.domain.errors import ReasonRequired
 from app.models import AuditLog, User
 from app.models.base import utcnow
@@ -26,6 +27,7 @@ REASON_REQUIRED_ACTIONS = frozenset(
         "credit.adjust",
         "work.tombstone",
         "work.hide",
+        "appeal.decide",
         "user.suspend",
         "user.unsuspend",
         "user.grant_role",
@@ -66,7 +68,7 @@ def record(
         after_json=redact(after or {}),
         reason=(reason or "").strip() or None,
         request_id=get_request_id(),
-        ip_address=_client_ip(request),
+        ip_address=client_ip(request),
         user_agent=(request.headers.get("user-agent", "")[:255] if request else None),
         created_at=utcnow(),
     )
@@ -82,8 +84,10 @@ def search(
     action: str | None = None,
     target_type: str | None = None,
     target_id: str | None = None,
+    q: str | None = None,
     since: dt.datetime | None = None,
     until: dt.datetime | None = None,
+    before: dt.datetime | None = None,
     cursor: str | None = None,
     limit: int = 50,
 ) -> list[AuditLog]:
@@ -98,19 +102,24 @@ def search(
         stmt = stmt.where(AuditLog.target_type == target_type)
     if target_id:
         stmt = stmt.where(AuditLog.target_id == target_id)
+    if q:
+        # Mirrors what the Log Center actually displays (`action → target`),
+        # so a keyword search matches what an operator can see on screen —
+        # applied in SQL rather than to an already-truncated page of rows,
+        # or a match older than the most recent `limit` rows would never
+        # surface.
+        needle = f"%{q}%"
+        stmt = stmt.where(
+            AuditLog.action.ilike(needle)
+            | AuditLog.target_type.ilike(needle)
+            | AuditLog.target_id.ilike(needle)
+        )
     if since:
         stmt = stmt.where(AuditLog.created_at >= since)
     if until:
         stmt = stmt.where(AuditLog.created_at <= until)
+    if before:
+        stmt = stmt.where(AuditLog.created_at < before)
     if cursor:
         stmt = stmt.where(AuditLog.id < cursor)
     return list(session.scalars(stmt.limit(limit)))
-
-
-def _client_ip(request: Request | None) -> str | None:
-    if request is None:
-        return None
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
-    return request.client.host if request.client else None

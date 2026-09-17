@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -19,7 +20,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, id_column
-from app.models.enums import LicenseType, LifecycleStatus, Visibility
+from app.models.enums import (
+    DistributionChannel,
+    LicenseType,
+    LifecycleStatus,
+    PublicationStatus,
+    Visibility,
+)
 
 
 class Work(Base, TimestampMixin):
@@ -30,6 +37,13 @@ class Work(Base, TimestampMixin):
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
     current_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Set at publish time from the draft's params. Episode-number uniqueness
+    # within a series is enforced in the service layer, not a DB constraint,
+    # to sidestep the SQLite/Postgres partial-index syntax split.
+    series_id: Mapped[str | None] = mapped_column(
+        ForeignKey("series.id", ondelete="SET NULL"), nullable=True
+    )
+    episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     visibility: Mapped[str] = mapped_column(
         String(24), default=Visibility.PUBLIC_VIEW_ONLY, nullable=False
     )
@@ -41,20 +55,40 @@ class Work(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     tombstone_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set by `publishing.hide()`, cleared by `publishing.restore()` — unlike
+    # `tombstone_reason` this is meant to be transient, so an owner never sees
+    # a stale reason once the work is visible again.
+    hide_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Owner recycle bin. `visibility` is forced private while trashed;
+    # `visibility_before_trash` is restored by `publishing.untrash`.
+    trashed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    visibility_before_trash: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
     view_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     like_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     comment_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     remix_count: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # Integer credits to unlock remix. 0 = free. Only meaningful when
+    # visibility is `public_remixable`; viewing is never paywalled.
+    access_credits: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     versions: Mapped[list[WorkVersion]] = relationship(
         back_populates="work", foreign_keys="WorkVersion.work_id"
     )
 
     __table_args__ = (
+        CheckConstraint("access_credits >= 0", name="access_credits_non_negative"),
         Index("ix_works_owner_user_id", "owner_user_id"),
         Index("ix_works_visibility_lifecycle_status", "visibility", "lifecycle_status"),
         Index("ix_works_published_at", "published_at"),
+        Index("ix_works_series_id_episode_number", "series_id", "episode_number"),
+        # `browse(sort="popular"|"remixed")` orders by these and cursors
+        # through `(count, id)` pairs — both columns cover the sort and the
+        # keyset-pagination WHERE clause in one index.
+        Index("ix_works_like_count_id", "like_count", "id"),
+        Index("ix_works_remix_count_id", "remix_count", "id"),
     )
 
     @property
@@ -93,6 +127,7 @@ class WorkVersion(Base):
     immutable_created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     work: Mapped[Work] = relationship(back_populates="versions", foreign_keys=[work_id])
 
@@ -120,6 +155,11 @@ class LicenseSnapshot(Base):
         ForeignKey("work_versions.id", ondelete="RESTRICT"), nullable=False
     )
     captured_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Price and grant at the moment this remix was authorised. Historical
+    # audit only — later price changes never rewrite this. No FK: the grant
+    # row may outlive or predate the snapshot independently.
+    access_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    access_grant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (Index("ix_license_snapshots_source", "source_work_version_id"),)
 
@@ -158,6 +198,9 @@ class LineageEdge(Base):
     __table_args__ = (
         Index("ix_lineage_edges_parent", "parent_work_version_id"),
         Index("ix_lineage_edges_created_by", "created_by_user_id"),
+        # The admin statistics center's daily remix-count trend range-scans
+        # `created_at` with no other filter.
+        Index("ix_lineage_edges_created_at", "created_at"),
     )
 
 
@@ -182,14 +225,62 @@ class Draft(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     params_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     latest_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The version the draft currently applies (preview / publish output).
+    # Distinct from `latest_job_id` (last submit, used by retry notifications).
+    # A later successful job overwrites this; the author can also pin an
+    # older succeeded job until the next success. Plain string, not FK-checked
+    # (matching `latest_job_id`).
+    applied_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     output_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
     published_work_id: Mapped[str | None] = mapped_column(
         ForeignKey("works.id", ondelete="SET NULL"), nullable=True
     )
+    # HTTP accept vs worker finish. Null = not submitted; success is
+    # `published_work_id`, not a third status (see `DraftPublishStatus`).
+    publish_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    publish_params_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    publish_failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_cut_revision_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    delivery_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
-    __table_args__ = (Index("ix_drafts_user_id", "user_id"),)
+    __table_args__ = (
+        Index("ix_drafts_user_id", "user_id"),
+        Index("ix_drafts_publish_status", "publish_status"),
+    )
+
+
+class PublicationIntent(Base, TimestampMixin):
+    """One attempt to take a published work off-platform.
+
+    Recorded even when the user only downloads the file, so the export history
+    of a work is answerable without depending on a distribution channel that
+    does not exist yet. `external_post_id` and `submitted_at` stay null until a
+    real direct-publish integration fills them in.
+    """
+
+    __tablename__ = "publication_intents"
+
+    id: Mapped[str] = id_column("pub")
+    work_id: Mapped[str] = mapped_column(ForeignKey("works.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    channel: Mapped[str] = mapped_column(
+        String(32), default=DistributionChannel.MANUAL_DOWNLOAD, nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(24), default=PublicationStatus.DRAFT, nullable=False)
+    # Caption, hashtags, cover and schedule as submitted by the creator.
+    payload_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    external_post_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    submitted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivery_variant_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    editor_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    __table_args__ = (
+        Index("ix_publication_intents_work_id", "work_id"),
+        Index("ix_publication_intents_user_id_channel", "user_id", "channel"),
+    )
 
 
 class Like(Base, TimestampMixin):
@@ -223,6 +314,11 @@ class Collection(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    __table_args__ = (
+        # `list_collections` filters by owner and sorts by `created_at`.
+        Index("ix_collections_owner_user_id_created_at", "owner_user_id", "created_at"),
+    )
+
 
 class CollectionItem(Base, TimestampMixin):
     __tablename__ = "collection_items"
@@ -236,6 +332,10 @@ class CollectionItem(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("collection_id", "work_id", name="uq_collection_items_pair"),
+        # `_collection_response` filters by `collection_id` and orders by
+        # `position` — the unique constraint above only covers a
+        # `(collection_id, work_id)` lookup, not this sort.
+        Index("ix_collection_items_collection_id_position", "collection_id", "position"),
     )
 
 

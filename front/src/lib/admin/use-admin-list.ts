@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { DISPLAY_TIME_ZONE } from '@/i18n/routing';
 import { adminApi } from '@/lib/api/admin-client';
 import type { Page } from '@/lib/api/admin-types';
+import { isLocalDateTime, localDateTimeToIso } from '@/lib/format';
 
 export interface AdminList<T> {
   rows: T[];
@@ -11,6 +13,10 @@ export interface AdminList<T> {
   failed: boolean;
   filters: Record<string, string>;
   setFilter: (id: string, value: string) => void;
+  /** Replaces every filter at once — one request instead of the N a
+   * sequence of `setFilter` calls would produce. Backs a console's explicit
+   * "search" button, which submits a whole draft in one go. */
+  applyFilters: (next: Record<string, string>) => void;
   resetFilters: () => void;
   hasPrev: boolean;
   hasNext: boolean;
@@ -55,7 +61,11 @@ export function useAdminList<T>(
     let cancelled = false;
     void adminApi
       .get<Page<T>>(path, {
-        query: { ...JSON.parse(filterKey), cursor: cursor ?? undefined, limit: pageSize },
+        query: {
+          ...zonedFilterQuery(JSON.parse(filterKey) as Record<string, string>, DISPLAY_TIME_ZONE),
+          cursor: cursor ?? undefined,
+          limit: pageSize,
+        },
       })
       .then((body) => {
         if (cancelled) return;
@@ -83,6 +93,11 @@ export function useAdminList<T>(
     setFilters((current) => ({ ...current, [id]: value }));
   }, []);
 
+  const applyFilters = useCallback((next: Record<string, string>) => {
+    setCursors([null]);
+    setFilters(next);
+  }, []);
+
   const resetFilters = useCallback(() => {
     setCursors([null]);
     setFilters(initialFilters);
@@ -96,6 +111,7 @@ export function useAdminList<T>(
     failed: fresh?.failed ?? false,
     filters,
     setFilter,
+    applyFilters,
     resetFilters,
     hasPrev: cursors.length > 1,
     hasNext: fresh?.hasNext ?? false,
@@ -106,4 +122,16 @@ export function useAdminList<T>(
     prevPage: () => setCursors((stack) => (stack.length > 1 ? stack.slice(0, -1) : stack)),
     reload: () => setReloadToken((token) => token + 1),
   };
+}
+
+function zonedFilterQuery(
+  filters: Record<string, string>,
+  timeZone: string,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(filters).map(([key, value]) => [
+      key,
+      isLocalDateTime(value) ? localDateTimeToIso(value, timeZone) : value,
+    ]),
+  );
 }

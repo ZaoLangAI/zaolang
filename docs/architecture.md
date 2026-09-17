@@ -8,13 +8,15 @@ back/app/
 │  ├─ v1/          /v1 公开契约
 │  └─ v1/admin/    /v1/admin 独立命名空间，独立会话与限流
 ├─ domain/         领域服务：唯一允许写业务状态的地方
-│  ├─ credits/     预扣、结算、释放、回流分成
+│  ├─ credits/     预扣、结算、释放、回流分成、市场强制转账
 │  ├─ jobs/        任务状态机、报价、事件流
-│  ├─ licensing/   许可快照与二创权限
+│  ├─ licensing/   许可快照与二创权限（含积分解锁 Grant）
+│  ├─ access/      作品/技能买断授权与 AccessGrant
 │  ├─ lineage/     创作链边与墓碑
 │  ├─ media/       上传、指纹、溯源清单
 │  ├─ publishing/  发布事务、可见性、墓碑
 │  ├─ search/      向量与关键词混合检索
+│  ├─ editor/      短剧时间线、修订 CAS、租约、浏览器导出
 │  ├─ audit/       追加式审计
 │  └─ compliance/  数据导出与匿名化
 ├─ agents/         Safety / Planner / Quality / Copy / Router
@@ -23,7 +25,7 @@ back/app/
 ├─ providers/      生成供应商适配器（fake open / fake paid）
 ├─ llm/            OpenAI 兼容网关客户端、模式切换、响应规范化
 ├─ platform_config/ 运行时配置中心与 Feature Flag
-├─ workers/        Celery 任务与五个队列
+├─ workers/        Celery 任务（生成队列 + media_analysis + 租约/孤儿清理）
 ├─ models/         SQLAlchemy 模型
 ├─ security/       密码、JWT、权限
 └─ observability/  日志与 OpenTelemetry
@@ -80,19 +82,21 @@ flowchart TB
 
 ## LLM 网关响应规范化
 
-三个模型的输出形态完全不同，`app/llm/` 统一处理：
+不同上游模型的输出形态不同，`app/llm/` 统一处理：
 
-- `ling-3.0-flash-free` 是 reasoning 模型，推理 token 计入 `max_tokens`。给它按普通模型估算预算，会拿到空 `content` 加 `finish_reason=length`。
+- reasoning 模型的推理 token 计入 `max_tokens`。按普通模型估算预算，会拿到空 `content` 加 `finish_reason=length`。
 - 思考模型即使指定 `response_format={"type":"json_object"}`，仍可能在 JSON 前吐 `<think>...</think>`。
-- `doubao-seed-2-1-pro` 输出干净 JSON，所以安全判定绑给它。
+- 有的模型直接返回干净 JSON。
 
-规范化层做四件事：剥离思考块与 `reasoning_details`、从自由文本里定位并提取 JSON、解析失败先修复重试再降级、把模型 / token 用量 / 延迟 / 是否降级写进 `AgentRun`。
+模型 id **只**来自 `/admin/models` 的 `llm_providers` 与 `/admin/agents` 的 `AgentProfile` 绑定；代码不内置默认模型名。未绑定、没有可用端点，或网关调用全部失败，`complete()`/`stream_complete()` 一律立即抛 `ProviderTemporaryFailure`（503），不猜目录里的第一个名字，也不会静默返回假数据。
+
+规范化层做四件事：剥离思考块与 `reasoning_details`、从自由文本里定位并提取 JSON、解析失败先修复重试再降级、把模型 / token 用量 / 延迟 / 是否降级写进 `AgentRun`——这里的「降级」现在专指模型答复了但 JSON 解析失败，网关层面的失败已经在上一步抛出异常，不会走到这条记录路径。
 
 ## 前端结构
 
 ```text
 front/src/app/[locale]/
-├─ (site)/    C 端 12 个页面，沉浸式外壳
+├─ (site)/    C 端（含 /create/short 短剧管理与桌面剪辑），沉浸式外壳
 └─ (admin)/   后台控制台，独立 layout、独立登录、独立 API client
 ```
 

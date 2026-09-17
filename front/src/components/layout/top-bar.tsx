@@ -1,45 +1,33 @@
 'use client';
 
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 import { Brand } from '@/components/layout/brand';
+import { CreateMenu } from '@/components/layout/create-menu';
 import { PreferenceMenu } from '@/components/layout/preference-menu';
+import { SearchBox } from '@/components/layout/search-box';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import { Button } from '@/components/ui/button';
-import {
-  IconBell,
-  IconChevronDown,
-  IconClose,
-  IconMenu,
-  IconPlus,
-  IconSearch,
-  IconSparkle,
-  IconUser,
-} from '@/components/ui/icons';
-import { Link, usePathname, useRouter } from '@/i18n/navigation';
-import type { Locale } from '@/i18n/routing';
-import { api } from '@/lib/api/client';
+import { IconChevronDown, IconClose, IconMenu, IconUser } from '@/components/ui/icons';
+import { Link, usePathname } from '@/i18n/navigation';
 import { cn } from '@/lib/cn';
-import { formatCount } from '@/lib/format';
 
 const NAV = [
   { key: 'discover', href: '/discover' },
   { key: 'create', href: '/create' },
   { key: 'learn', href: '/learn' },
+  { key: 'skills', href: '/skills' },
   { key: 'collection', href: '/collection' },
 ] as const;
 
 export function TopBar() {
   const t = useTranslations();
-  const locale = useLocale() as Locale;
   const pathname = usePathname();
-  const router = useRouter();
   const { user, status, openLogin, signOut } = useSession();
 
-  const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
   const [menuPath, setMenuPath] = useState(pathname);
 
   // Navigating away closes the mobile menu. Adjusting during render rather
@@ -49,19 +37,6 @@ export function TopBar() {
     setMenuPath(pathname);
     setMobileOpen(false);
   }
-
-  useEffect(() => {
-    if (status !== 'authenticated') return;
-    void api
-      .get<{ count: number }>('/v1/notifications/unread-count')
-      .then((body) => setUnread(body.count))
-      .catch(() => undefined);
-  }, [status, pathname]);
-
-  const onSearch = (event: React.FormEvent) => {
-    event.preventDefault();
-    router.push(query.trim() ? `/discover?q=${encodeURIComponent(query.trim())}` : '/discover');
-  };
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur">
@@ -73,14 +48,14 @@ export function TopBar() {
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((value) => !value)}
         >
-          {mobileOpen ? <IconMenu className="size-5" /> : <IconMenu className="size-5" />}
+          {mobileOpen ? <IconClose className="size-5" /> : <IconMenu className="size-5" />}
         </button>
 
         <Brand />
 
         <nav
           aria-label={t('nav.mainNavigation')}
-          className="ml-2 hidden items-center gap-1 lg:flex"
+          className="ml-2 hidden shrink-0 items-center gap-1 lg:flex"
         >
           {NAV.map((item) => {
             const activeItem = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -90,7 +65,7 @@ export function TopBar() {
                 href={item.href}
                 aria-current={activeItem ? 'page' : undefined}
                 className={cn(
-                  'relative flex h-16 items-center px-3 text-sm font-medium transition-colors',
+                  'relative flex h-16 items-center whitespace-nowrap px-3 text-sm font-medium transition-colors',
                   activeItem ? 'text-primary' : 'text-muted hover:text-text',
                 )}
               >
@@ -106,65 +81,16 @@ export function TopBar() {
           })}
         </nav>
 
-        <form
-          role="search"
-          onSubmit={onSearch}
-          className="mx-auto hidden h-10 w-full max-w-md items-center gap-2 rounded-full border border-border bg-surface-soft px-4 md:flex"
-        >
-          <IconSearch className="size-4 shrink-0 text-muted" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('actions.search')}
-            aria-label={t('actions.search')}
-            className="w-full bg-transparent text-sm outline-none placeholder:text-muted"
-          />
-          <kbd
-            aria-hidden="true"
-            className="hidden rounded border border-border px-1.5 text-[11px] text-muted lg:block"
-          >
-            /
-          </kbd>
-        </form>
+        <SearchBox />
 
-        <div className="ml-auto flex items-center gap-2 md:ml-0">
-          <div className="hidden md:block">
+        <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
+          <div className="hidden shrink-0 md:block">
             <PreferenceMenu />
           </div>
 
-          {status === 'authenticated' && user ? (
-            <Link
-              href="/billing"
-              className="hidden h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-amber/35 bg-amber/12 px-2.5 text-xs font-semibold text-amber sm:inline-flex"
-            >
-              <IconSparkle className="size-4" />
-              <span className="tabular">
-                {t('credits.amount', { count: formatCount(user.available_credits, locale) })}
-              </span>
-            </Link>
-          ) : null}
+          <CreateMenu />
 
-          <Button
-            size="sm"
-            icon={<IconPlus className="size-4" />}
-            onClick={() => router.push('/create')}
-          >
-            <span className="hidden sm:inline">{t('actions.create')}</span>
-          </Button>
-
-          {status === 'authenticated' ? (
-            <Link
-              href="/notifications"
-              aria-label={t('nav.notifications')}
-              className="relative inline-flex size-9 items-center justify-center rounded-[var(--radius-sm)] text-muted hover:bg-surface-soft hover:text-text"
-            >
-              <IconBell className="size-5" />
-              {status === 'authenticated' && unread > 0 ? (
-                <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-primary ring-2 ring-bg" />
-              ) : null}
-            </Link>
-          ) : null}
+          {status === 'authenticated' ? <NotificationBell /> : null}
 
           {status === 'authenticated' && user ? (
             <UserMenu
@@ -172,11 +98,14 @@ export function TopBar() {
               onSignOut={() => void signOut()}
             />
           ) : status === 'anonymous' ? (
-            <Button variant="secondary" size="sm" onClick={openLogin}>
+            <Button variant="secondary" size="sm" className="shrink-0" onClick={openLogin}>
               {t('auth.signIn')}
             </Button>
           ) : (
-            <div className="size-9 animate-pulse rounded-full bg-skeleton" aria-hidden="true" />
+            <div
+              className="size-9 shrink-0 animate-pulse rounded-full bg-skeleton"
+              aria-hidden="true"
+            />
           )}
         </div>
       </div>
@@ -234,19 +163,21 @@ function UserMenu({ name, onSignOut }: { name: string; onSignOut: () => void }) 
   const items = [
     { href: '/profile', label: t('nav.profile') },
     { href: '/collection', label: t('nav.collection') },
+    { href: '/create/characters', label: t('nav.characterLibrary') },
+    { href: '/create/scenes', label: t('nav.sceneLibrary') },
     { href: '/billing', label: t('nav.billing') },
     { href: '/profile/settings', label: t('nav.settings') },
   ] as const;
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative shrink-0">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t('nav.userMenu')}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-soft p-1 pr-1.5 text-muted hover:text-text"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-surface-soft p-1 pr-1.5 text-muted hover:text-text"
       >
         <span className="inline-flex size-7 items-center justify-center rounded-full bg-surface-raised">
           <IconUser className="size-4" />

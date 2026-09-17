@@ -1,48 +1,49 @@
 ---
 name: zaolang-lineage-graph
-description: 造浪的创作链图谱前端：dagre 布局 + 自绘 SVG 的树状 DAG、双向溯源（从何而来 / 被谁继续创作）、墓碑节点、父子版本参数差异对比面板。Use when changing the lineage graph, its layout, tombstone rendering, node interaction, or the version parameter diff panel.
+description: Lineage-graph frontend — dagre-laid-out, hand-drawn SVG tree DAG, bidirectional tracing (ancestors / descendants), tombstone nodes, parent/child version parameter diff panel. Use when changing the lineage graph, its layout, tombstone rendering, node interaction, or the version parameter diff panel.
 disable-model-invocation: true
 ---
 
-# 创作链图谱
+# Lineage Graph
 
-## 职责
+## Scope
 
-一屏之内让人看懂「这个作品从哪来、被谁继续创作」。树状 DAG 与双向溯源（从何而来 / 被谁继续创作）是完整实现，不是可选增强。
+Make "where this work came from, and who remixed it further" understandable in one screen. The tree DAG with bidirectional tracing (ancestors / descendants) is a complete feature, not an optional enhancement.
 
-## 关键路径
+## Key Paths
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `front/src/components/lineage/lineage-graph.tsx` | dagre 布局 + 自绘 SVG，`NODE_WIDTH/HEIGHT`、`GraphNode.direction`（`ancestor` / `root` / `descendant`） |
-| `front/src/components/lineage/lineage-dialog.tsx` | 全屏查看容器 |
-| `front/src/components/lineage/version-diff-panel.tsx` | 父子版本参数差异 |
-| `front/src/components/work/lineage-strip.tsx` | 作品页里的紧凑入口 |
-| `back/app/domain/lineage/service.py` | `build_tree` / `ancestors` / `descendants`，数据来源 |
+| `front/src/components/lineage/lineage-graph.tsx` | dagre layout + hand-drawn SVG; `NODE_WIDTH/HEIGHT`, `GraphNode.direction` (`ancestor` / `root` / `descendant`) plus the independent `GraphNode.current` flag — `root` is the chain's origin (the oldest ancestor, or the focused work itself when it has none), `current: true` is the work the page is about |
+| `front/src/components/lineage/lineage-explorer.tsx` | `LineageExplorer` — fetches `GET /v1/works/{workId}/lineage` on demand, renders `LineageGraph` on top and, once one node is selected, its title + "open work" button + `VersionDiffPanel` underneath (always stacked, never side-by-side). Shared by `lineage-dialog.tsx` and the discover preview (`components/discover/inspiration-dialog.tsx`, `dynamic()`-imported) |
+| `front/src/components/lineage/lineage-dialog.tsx` | full-screen viewer container around `LineageExplorer` |
+| `front/src/components/lineage/version-diff-panel.tsx` | `VersionDiffPanel({ childVersionId })` — `GET /v1/work-versions/{childVersionId}/diff`, the selected version vs. its own parent |
+| `front/src/components/work/lineage-strip.tsx` | compact entry point on the work page |
+| `back/app/domain/lineage/service.py` | `build_tree` / `ancestors` / `descendants` — the data source |
 | `front/src/lib/api/types.ts` | `LineageNode` / `LineageResponse` |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **布局用 dagre 计算，渲染自绘 SVG**。不引图可视化库：节点必须消费与页面同一套主题令牌（见 `zaolang-theming`），canvas 方案既不跟主题也不可键盘访问。
-2. **双向同时展示**：祖先在一侧、后代在另一侧，当前作品是 `root` 且视觉上可辨。只画一个方向就退回成了「来源列表」，不是图谱。
-3. **墓碑节点必须显示为占位而不是消失**（`tombstone: true` + `IconTombstone`），并且不可点进详情。下游作品的来源不能凭空断掉——这是后端墓碑保留的前端另一半。
-4. **节点键盘可达**：Tab 能遍历、Enter/Space 能选中、焦点环可见。图谱是交互组件不是插图。
-5. **深度有上限**：后端 `build_tree` 默认 `max_depth=6`。前端不要自己递归展开到无限层，深链会打爆 SVG 与响应体。
-6. **参数 diff 只对比同一条边的父子两侧**，展示的是 `reusable_params_json` 的差异；缺字段与值变化要能区分（新增 / 删除 / 修改三态）。
-7. **图谱是只读视图**：从这里发起二创要走正常的 `assert_remixable` 授权路径，不要因为节点可见就假设可二创。
+1. **Layout is computed by dagre; rendering is hand-drawn SVG.** No graph-visualization library: nodes must consume the same theme tokens as the rest of the page (see `zaolang-theming`) — a canvas-based approach would follow neither theming nor keyboard access.
+2. **Both directions render simultaneously**: ancestors on one side, descendants on the other. Two nodes are visually distinct, for two different reasons: `direction === 'root'` is the chain's origin — `buildGraph` assigns it to the oldest ancestor (`index === 0`), and only to the focused work when `ancestors.length === 0` — and carries the `--amber` "original" badge; the focused work is `current: true` (`direction` `descendant` whenever it has ancestors) and carries the `--primary` "current work" badge, with `accented = selected || node.current || node.direction === 'root'` driving the stroke. Don't read `root` as "the work you are looking at". Rendering only one direction degrades this into a "source list," not a graph.
+3. **Tombstoned nodes must render as a placeholder, never disappear** (`tombstone: true` + `IconTombstone`), and must not be clickable into detail. A downstream work's provenance can't vanish — this is the frontend half of the backend's tombstone retention.
+4. **Nodes are keyboard-reachable**: Tab traverses them, Enter/Space selects, the focus ring is visible. The graph is an interactive component, not an illustration.
+5. **Depth is capped**: the backend's `build_tree` defaults to `max_depth=6`. Don't recursively expand further on the frontend — a long chain would blow up both the SVG and the response body.
+6. **The parameter diff only compares the two sides of a single edge** — it shows the diff of `reusable_params_json`. The edge is chosen by selecting **one** node: `LineageExplorer` passes that node's `work_version_id` as `VersionDiffPanel`'s `childVersionId`, and the backend resolves the parent side (`GET /v1/work-versions/{id}/diff`); there is no two-node selection. A root version has no parent, so a failed/empty lookup there renders `diffEmpty`, not an error. Missing fields vs. changed values must be distinguishable (added / removed / modified, three distinct states).
+7. **The graph is a read-only view**: remixing from here must still go through the normal `assert_remixable` authorization path — a node being visible doesn't imply it's remixable.
 
-## 改造切入点
+## Extension Points
 
-- **改布局**：调 dagre 的 `rankdir` / 间距常量与 `NODE_WIDTH` / `NODE_HEIGHT`；改完必须在三个视口下检查无横向溢出（视觉套件会查）。
-- **加节点信息**：先扩后端 `LineageNode`（`app/domain/lineage/service.py`）→ `make openapi` → 前端类型自动跟上 → 节点尺寸常量可能要一起调。
-- **加一种节点状态**（例如「审核中」）：`direction` 与 `tombstone` 之外新增字段，不要复用 `tombstone` 表达其他含义。
-- **性能**：节点数大时先在后端截断并给出「还有 N 个」的提示，不要在前端做虚拟化——这是图不是列表。
+- **Change the layout**: adjust dagre's `rankdir` / spacing constants and `NODE_WIDTH` / `NODE_HEIGHT`; after changing, verify no horizontal overflow at all three viewports (the visual suite checks this).
+- **Add node info**: extend the backend `LineageNode` first (`app/domain/lineage/service.py`) → `make openapi` → frontend types follow automatically → node-size constants may need adjusting too.
+- **Add a node state** (e.g. "under review"): add a new field alongside `direction` and `tombstone` — don't repurpose `tombstone` to mean something else.
+- **Performance**: when node counts get large, truncate on the backend and show an "N more" hint rather than virtualizing on the frontend — this is a graph, not a list.
 
-## 验证
+## Verify
 
 ```bash
 make test-front
 make test-a11y && make qa-visual
 ```
 
-手工路径：打开种子作品《潮汐之上》的作品页 → 图谱能看到二创《潮汐之上 · 夜行》与被墓碑的那条分支 → 点两个相邻版本，diff 面板给出参数差异。
+Manual path (`make seed` publishes no works — publish a work, remix it, and tombstone a second remix first, or use `tests/factories.make_work`): open the source work → the graph should show its remix and the tombstoned branch → click the remix's node → the panel below shows that version's parameter differences against its parent (`GET /v1/work-versions/{id}/diff`); clicking the origin node shows the empty-diff hint instead.

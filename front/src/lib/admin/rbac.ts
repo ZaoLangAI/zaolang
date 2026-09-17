@@ -32,9 +32,13 @@ export interface NavItem {
     | 'health'
     | 'jobs'
     | 'providers'
+    | 'routing'
     | 'agents'
+    | 'statistics'
     | 'moderation'
-    | 'reports'
+    | 'learnPosts'
+    | 'skillLibrary'
+    | 'styleGallery'
     | 'users'
     | 'credits'
     | 'config'
@@ -55,8 +59,15 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/admin', labelKey: 'navHealth', requires: 'viewer', icon: 'health' },
       { href: '/admin/jobs', labelKey: 'navJobs', requires: 'viewer', icon: 'jobs' },
-      { href: '/admin/providers', labelKey: 'navProviders', requires: 'viewer', icon: 'providers' },
+      { href: '/admin/models', labelKey: 'navProviders', requires: 'viewer', icon: 'providers' },
       { href: '/admin/agents', labelKey: 'navAgents', requires: 'viewer', icon: 'agents' },
+      { href: '/admin/routing', labelKey: 'navRouting', requires: 'viewer', icon: 'routing' },
+      {
+        href: '/admin/statistics',
+        labelKey: 'navStatistics',
+        requires: 'viewer',
+        icon: 'statistics',
+      },
     ],
   },
   {
@@ -68,7 +79,18 @@ export const NAV_GROUPS: NavGroup[] = [
         requires: 'reviewer',
         icon: 'moderation',
       },
-      { href: '/admin/reports', labelKey: 'navReports', requires: 'reviewer', icon: 'reports' },
+      {
+        href: '/admin/learn-posts',
+        labelKey: 'navLearnPosts',
+        requires: 'reviewer',
+        icon: 'learnPosts',
+      },
+      {
+        href: '/admin/skill-library',
+        labelKey: 'navSkillLibrary',
+        requires: 'reviewer',
+        icon: 'skillLibrary',
+      },
       { href: '/admin/users', labelKey: 'navUsers', requires: 'reviewer', icon: 'users' },
       { href: '/admin/credits', labelKey: 'navCredits', requires: 'viewer', icon: 'credits' },
     ],
@@ -77,6 +99,12 @@ export const NAV_GROUPS: NavGroup[] = [
     labelKey: 'groupPlatform',
     items: [
       { href: '/admin/config', labelKey: 'navConfig', requires: 'operator', icon: 'config' },
+      {
+        href: '/admin/style-gallery',
+        labelKey: 'navStyleGallery',
+        requires: 'operator',
+        icon: 'styleGallery',
+      },
       { href: '/admin/data', labelKey: 'navData', requires: 'operator', icon: 'data' },
       { href: '/admin/audit', labelKey: 'navAudit', requires: 'viewer', icon: 'audit' },
       {

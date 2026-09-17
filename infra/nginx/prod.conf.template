@@ -1,0 +1,85 @@
+# Single external entry point for the whole stack (only this container's
+# port 80 is published to the host). Everything else — api/web/minio/postgres/
+# redis — stays on the internal compose network.
+#
+# ${MEDIA_BUCKET} is substituted at container start by the nginx image's
+# built-in docker-entrypoint envsubst step (this file lives under
+# /etc/nginx/templates/, which is templated automatically); it must match
+# `S3_BUCKET` in infra/.env.prod or signed media URLs will 404 here.
+
+client_max_body_size 300m;
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Private, presigned MinIO objects. Host must be forwarded unchanged: the
+    # SigV4 signature (minted against `S3_PUBLIC_ENDPOINT_URL`) covers the Host
+    # header, so rewriting it here would invalidate every signed URL.
+    location /${MEDIA_BUCKET}/ {
+        proxy_pass http://minio:9000;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # The product API, mounted under /v1 (see back/app/main.py:API_PREFIX),
+    # plus the handful of routes registered without that prefix.
+    location /v1/ {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        # /v1/jobs/{id}/events is a long-lived SSE stream (see
+        # back/app/api/v1/jobs.py) — buffering would delay every event until
+        # nginx's buffer fills, and the default read timeout would cut the
+        # connection long before a slow generation job finishes.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+
+    location = /mcp {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+    }
+
+    location = /healthz {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+    }
+
+    location = /readyz {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+    }
+
+    location = /openapi.json {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+    }
+
+    location = /docs {
+        proxy_pass http://api:8000;
+        proxy_set_header Host $host;
+    }
+
+    # Everything else: the Next.js app (consumer + admin console share one
+    # project — see .cursor/skills/zaolang-overview/SKILL.md).
+    location / {
+        proxy_pass http://web:3000;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        # /admin RSC waits on /v1/admin/health (LLM + queue probes). The
+        # default 60s proxy timeout 504s that page before the probes finish.
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+    }
+}

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<!-- 占位域名，上生产前换成造浪的正式域名，并在该域名部署 apple-app-site-association 文件 -->
+		<string>applinks:zaolang.ai</string>
+	</array>
+	<!-- development：真机联调用开发证书推送；提交 App Store 前换成 production。 -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

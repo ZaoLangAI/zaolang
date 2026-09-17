@@ -1,5 +1,8 @@
 import { api } from '@/lib/api/client';
 import type { components } from '@/lib/api/schema';
+import { sha256Hex } from '@/lib/sha256';
+
+export { sha256Hex } from '@/lib/sha256';
 
 type Presign = components['schemas']['UploadPresignResponse'];
 export type Asset = components['schemas']['AssetResponse'];
@@ -13,7 +16,20 @@ export type Asset = components['schemas']['AssetResponse'];
  */
 export async function uploadFile(
   file: File,
-  purpose: 'generation_reference' | 'avatar' | 'profile_cover' | 'consent_evidence',
+  purpose:
+    | 'generation_reference'
+    | 'avatar'
+    | 'profile_cover'
+    | 'consent_evidence'
+    | 'learn_media'
+    | 'series_logo'
+    | 'episode_preview'
+    | 'video_analysis_source'
+    | 'editor_source'
+    | 'editor_export'
+    | 'caption'
+    | 'font'
+    | 'voice_sample',
 ): Promise<Asset> {
   const checksum = await sha256Hex(await file.arrayBuffer());
 
@@ -35,11 +51,4 @@ export async function uploadFile(
   return api.post<Asset>('/v1/uploads/complete', {
     upload_session_id: presigned.upload_session_id,
   });
-}
-
-async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
 }

@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zaolang.ai/schemas/edit-command-batch.json",
+  "title": "EditCommandBatch",
+  "description": "Canonical integer-tick edit batch. OpenCut types never appear here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "batch_id", "commands"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "batch_id": { "type": "string", "minLength": 1 },
+    "expected_revision_id": { "type": ["string", "null"] },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/EditCommand" }
+    }
+  },
+  "$defs": {
+    "ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991,
+      "description": "120000 ticks = 1 second"
+    },
+    "EditCommand": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "track_id", "asset_id", "at_ticks", "duration_ticks"],
+          "properties": {
+            "type": { "const": "insert_clip" },
+            "track_id": { "type": "string" },
+            "asset_id": { "type": "string" },
+            "at_ticks": { "$ref": "#/$defs/ticks" },
+            "duration_ticks": { "$ref": "#/$defs/ticks" },
+            "source_in_ticks": { "$ref": "#/$defs/ticks" },
+            "element_id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_ids"],
+          "properties": {
+            "type": { "const": "delete_elements" },
+            "element_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_ids", "delta_ticks"],
+          "properties": {
+            "type": { "const": "move_elements" },
+            "element_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "delta_ticks": { "type": "integer" },
+            "track_id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_ids"],
+          "properties": {
+            "type": { "const": "duplicate_elements" },
+            "element_ids": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "delta_ticks": { "type": "integer" },
+            "new_element_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_id", "start_ticks", "duration_ticks", "source_in_ticks", "source_out_ticks"],
+          "properties": {
+            "type": { "const": "trim_element" },
+            "element_id": { "type": "string" },
+            "start_ticks": { "$ref": "#/$defs/ticks" },
+            "duration_ticks": { "$ref": "#/$defs/ticks" },
+            "source_in_ticks": { "$ref": "#/$defs/ticks" },
+            "source_out_ticks": { "$ref": "#/$defs/ticks" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_id", "at_ticks"],
+          "properties": {
+            "type": { "const": "split_element" },
+            "element_id": { "type": "string" },
+            "at_ticks": { "$ref": "#/$defs/ticks" },
+            "new_element_id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_id", "volume_millipercent"],
+          "properties": {
+            "type": { "const": "set_clip_volume" },
+            "element_id": { "type": "string" },
+            "volume_millipercent": { "type": "integer", "minimum": 0, "maximum": 200000 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_id", "speed_millipercent"],
+          "properties": {
+            "type": { "const": "set_clip_speed" },
+            "element_id": { "type": "string" },
+            "speed_millipercent": { "type": "integer", "minimum": 25000, "maximum": 400000 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "track_id", "at_ticks", "duration_ticks", "text"],
+          "properties": {
+            "type": { "const": "insert_caption" },
+            "track_id": { "type": "string" },
+            "at_ticks": { "$ref": "#/$defs/ticks" },
+            "duration_ticks": { "$ref": "#/$defs/ticks" },
+            "text": { "type": "string", "minLength": 1 },
+            "caption_language": { "type": "string" },
+            "element_id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "element_id"],
+          "properties": {
+            "type": { "const": "update_caption" },
+            "element_id": { "type": "string" },
+            "text": { "type": "string" },
+            "at_ticks": { "$ref": "#/$defs/ticks" },
+            "duration_ticks": { "$ref": "#/$defs/ticks" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "width", "height"],
+          "properties": {
+            "type": { "const": "set_canvas" },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "fps_num": { "type": "integer", "minimum": 1 },
+            "fps_den": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "overlay"],
+          "properties": {
+            "type": { "const": "set_brand_overlay" },
+            "overlay": { "type": ["object", "null"] }
+          }
+        }
+      ]
+    }
+  }
+}

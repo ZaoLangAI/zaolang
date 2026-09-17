@@ -1,0 +1,23 @@
+{
+  "zh-CN": {
+    "a11y": {
+      "playbackError": "播放失败，请重试",
+      "retryPlayback": "重试播放",
+      "unmuteToHear": "点击取消静音以听到声音"
+    }
+  },
+  "en": {
+    "a11y": {
+      "playbackError": "Playback failed. Try again.",
+      "retryPlayback": "Retry playback",
+      "unmuteToHear": "Tap to unmute and hear sound"
+    }
+  },
+  "ja": {
+    "a11y": {
+      "playbackError": "再生に失敗しました。再試行してください。",
+      "retryPlayback": "再生を再試行",
+      "unmuteToHear": "タップしてミュートを解除し、音声を聞く"
+    }
+  }
+}

@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, select
 
-from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
+from app.api import idempotency
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey, OptionalUser, rate_limited
 from app.api.schemas.common import CountResponse, OkResponse, Page
 from app.api.schemas.works import (
+    AccessGrantView,
+    AccessUnlockResponse,
     AuthorSummary,
     LicenseInfo,
     LineageAncestor,
@@ -20,29 +23,42 @@ from app.api.schemas.works import (
     VersionDiffEntry,
     VersionDiffResponse,
     VisibilityUpdateRequest,
+    WorkAppealRequest,
+    WorkAppealView,
     WorkDetail,
     WorkStats,
     WorkSummary,
     WorkVersionSummary,
 )
-from app.domain.errors import Conflict, NotFound
+from app.domain.access import service as access_service
+from app.domain.errors import Conflict, Forbidden, NotFound
 from app.domain.licensing import service as licensing
 from app.domain.lineage import service as lineage_service
 from app.domain.publishing import service as publishing
 from app.domain.search import service as search_service
 from app.models import (
+    AccessGrant,
+    Asset,
     Bookmark,
     LicenseSnapshot,
     Like,
     LineageEdge,
     Profile,
+    ReportCase,
     Tag,
     User,
     Work,
+    WorkAppeal,
     WorkTag,
     WorkVersion,
 )
-from app.models.enums import ADMIN_ROLE_RANK, LifecycleStatus, Visibility
+from app.models.enums import (
+    ADMIN_ROLE_RANK,
+    AccessSubjectType,
+    AppealStatus,
+    LifecycleStatus,
+    Visibility,
+)
 from app.presenters import media_urls
 
 router = APIRouter(tags=["works"])
@@ -56,6 +72,7 @@ def list_works(
     q: str | None = Query(default=None, max_length=200),
     tag: str | None = Query(default=None, max_length=64),
     remixable: bool = False,
+    access: Literal["free", "paid", "all"] = "all",
     semantic: bool = True,
     sort: Literal["recent", "popular", "remixed"] = "recent",
     cursor: str | None = None,
@@ -63,18 +80,34 @@ def list_works(
 ) -> Page[WorkSummary]:
     if q:
         results = search_service.search(
-            session, query=q, semantic=semantic, remixable_only=remixable, limit=limit + 1
+            session,
+            query=q,
+            semantic=semantic,
+            remixable_only=remixable,
+            access=access,
+            limit=limit + 1,
         )
     else:
         results = search_service.browse(
-            session, tag=tag, remixable_only=remixable, sort=sort, cursor=cursor, limit=limit + 1
+            session,
+            tag=tag,
+            remixable_only=remixable,
+            access=access,
+            sort=sort,
+            cursor=cursor,
+            limit=limit + 1,
         )
 
     has_more = len(results) > limit
     page = results[:limit]
+
+    # Search ranks a candidate pool in memory, so there is no row to resume from;
+    # handing back a cursor there would just replay the same page. Only the
+    # browse feed is cursor-pageable.
+    resumable = has_more and bool(page) and not q
     return Page(
-        items=[_summary(session, r.work, r.version, viewer) for r in page],
-        next_cursor=page[-1].work.id if has_more and page else None,
+        items=_summaries(session, [(r.work, r.version) for r in page], viewer),
+        next_cursor=page[-1].work.id if resumable else None,
         has_more=has_more,
     )
 
@@ -94,7 +127,21 @@ def get_work(
     session.commit()
 
     summary = _summary(session, work, version, viewer)
-    can_remix = licensing.can_remix(work, viewer.id if viewer else None)
+    viewer_id = viewer.id if viewer else None
+    can_remix = licensing.can_remix(work, viewer_id, session)
+    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+
+    is_owner = viewer is not None and viewer.id == work.owner_user_id
+    latest_appeal = (
+        session.scalar(
+            select(WorkAppeal)
+            .where(WorkAppeal.work_id == work.id)
+            .order_by(WorkAppeal.created_at.desc())
+            .limit(1)
+        )
+        if is_owner
+        else None
+    )
 
     return WorkDetail(
         **summary.model_dump(),
@@ -102,12 +149,16 @@ def get_work(
         current_version=_version_summary(session, version),
         reusable_params=_reusable_params(version) if can_remix else None,
         license=_license_info(session, version),
-        ancestors=_ancestors(session, version.id),
-        descendant_count=len(lineage_service.descendants(session, version.id)),
+        ancestors=_ancestors(session, version.id, viewer_id, is_staff),
+        descendant_count=lineage_service.descendant_count(session, version.id),
         viewer_liked=_has_interaction(session, Like, viewer, work.id),
         viewer_bookmarked=_has_interaction(session, Bookmark, viewer, work.id),
         can_remix=can_remix,
-        remix_block_reason=None if can_remix else "该作品仅用于展示，作者未开放二创。",
+        remix_block_reason=licensing.remix_block_reason(
+            work, viewer.id if viewer else None, session
+        ),
+        hide_reason=work.hide_reason if is_owner else None,
+        appeal=_appeal_view(latest_appeal) if latest_appeal is not None else None,
     )
 
 
@@ -123,12 +174,16 @@ def get_lineage(
     Tombstoned nodes stay in the graph so the chain is never visibly broken.
     """
     _work, version = _load_visible(session, work_id, viewer)
-    tree = lineage_service.build_tree(session, version.id, max_depth=depth)
+    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    viewer_id = viewer.id if viewer else None
+    tree = lineage_service.build_tree(
+        session, version.id, max_depth=depth, viewer_user_id=viewer_id, viewer_is_staff=is_staff
+    )
     all_descendants = lineage_service.descendants(session, version.id)
 
     return LineageResponse(
         root=_lineage_node(session, tree),
-        ancestors=_ancestors(session, version.id),
+        ancestors=_ancestors(session, version.id, viewer_id, is_staff),
         total_descendants=len(all_descendants),
         truncated=len(all_descendants) > _count_nodes(tree) - 1,
     )
@@ -143,14 +198,22 @@ def similar(
 ) -> Page[WorkSummary]:
     _, version = _load_visible(session, work_id, viewer)
     results = search_service.similar_works(session, work_version_id=version.id, limit=limit)
-    return Page(items=[_summary(session, r.work, r.version, viewer) for r in results])
+    return Page(items=_summaries(session, [(r.work, r.version) for r in results], viewer))
 
 
 @router.get("/work-versions/{child_version_id}/diff", response_model=VersionDiffResponse)
-def version_diff(child_version_id: str, session: DbSession) -> VersionDiffResponse:
+def version_diff(
+    child_version_id: str, session: DbSession, viewer: OptionalUser
+) -> VersionDiffResponse:
     """Field-by-field comparison against the parent version.
 
-    Powers the "what changed" panel in the lineage graph.
+    Powers the "what changed" panel in the lineage graph. Both versions' own
+    works must be visible to the caller (same 404-shaped `assert_viewable` as
+    every other work read), and the field-level *values* only reveal once
+    `can_remix` holds for the child's work — the same gate the work detail's
+    own `reusable_params` uses. Without this, an unauthenticated caller could
+    read a paid or view-only work's prompt/seed straight off this endpoint
+    even though the detail page itself withholds them.
     """
     edge = lineage_service.get_parent_edge(session, child_version_id)
     if edge is None:
@@ -161,13 +224,25 @@ def version_diff(child_version_id: str, session: DbSession) -> VersionDiffRespon
     if parent is None or child is None:
         raise NotFound("版本不存在。")
 
-    parent_params = parent.reusable_params_json or {}
-    child_params = child.reusable_params_json or {}
+    parent_work = session.get(Work, parent.work_id)
+    child_work = session.get(Work, child.work_id)
+    if parent_work is None or child_work is None:
+        raise NotFound("版本不存在。")
+
+    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    viewer_id = viewer.id if viewer else None
+    licensing.assert_viewable(parent_work, viewer_id, is_staff)
+    licensing.assert_viewable(child_work, viewer_id, is_staff)
+
+    can_reveal = licensing.can_remix(child_work, viewer_id, session)
+
+    parent_params = (parent.reusable_params_json or {}) if can_reveal else {}
+    child_params = (child.reusable_params_json or {}) if can_reveal else {}
     entries = [
         VersionDiffEntry(
             field="title",
-            parent_value=parent.title,
-            child_value=child.title,
+            parent_value=parent.title if can_reveal else None,
+            child_value=child.title if can_reveal else None,
             changed=parent.title != child.title,
         )
     ]
@@ -230,18 +305,162 @@ def unbookmark(work_id: str, user: CurrentUser, session: DbSession) -> OkRespons
     return OkResponse()
 
 
+UNLOCK_WORK_ENDPOINT = "POST /v1/works/{work_id}/unlock"
+
+
+@router.post("/works/{work_id}/unlock", response_model=AccessUnlockResponse)
+def unlock_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    idempotency_key: IdempotencyKey,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> AccessUnlockResponse:
+    request_hash = idempotency.hash_request({"work_id": work_id})
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=UNLOCK_WORK_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            return AccessUnlockResponse.model_validate(replay.response_snapshot)
+
+    existing = access_service.get_grant(
+        session,
+        buyer_user_id=user.id,
+        subject_type=AccessSubjectType.WORK,
+        subject_id=work_id,
+    )
+    grant = access_service.unlock_work(session, buyer_user_id=user.id, work_id=work_id)
+    work = session.get(Work, work_id)
+    response = _unlock_response(
+        work_id=work_id,
+        access_credits=work.access_credits if work is not None else 0,
+        grant=grant,
+        already_held=existing is not None or grant is None,
+    )
+    if idempotency_key:
+        idempotency.remember(
+            session,
+            user_id=user.id,
+            endpoint=UNLOCK_WORK_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+            status_code=200,
+            response=response.model_dump(mode="json"),
+        )
+    session.commit()
+    return response
+
+
 @router.patch("/works/{work_id}/visibility", response_model=WorkSummary)
 def update_visibility(
-    work_id: str, payload: VisibilityUpdateRequest, user: CurrentUser, session: DbSession
+    work_id: str,
+    payload: VisibilityUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> WorkSummary:
     work = publishing.change_visibility(
-        session, user_id=user.id, work_id=work_id, visibility=payload.visibility
+        session,
+        user_id=user.id,
+        work_id=work_id,
+        visibility=payload.visibility,
+        access_credits=payload.access_credits,
     )
     session.commit()
     version = session.get(WorkVersion, work.current_version_id or "")
     if version is None:
         raise Conflict("作品没有可用版本。")
     return _summary(session, work, version, user)
+
+
+@router.delete("/works/{work_id}", status_code=204)
+def delete_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> None:
+    """Author-initiated removal: moves the work into the recycle bin.
+
+    Hard-delete (and tombstone-when-referenced) happens later via `/purge`.
+    """
+    publishing.trash(session, user_id=user.id, work_id=work_id)
+    session.commit()
+
+
+@router.post("/works/{work_id}/untrash", response_model=WorkSummary)
+def untrash_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> WorkSummary:
+    work = publishing.untrash(session, user_id=user.id, work_id=work_id)
+    session.commit()
+    version = session.get(WorkVersion, work.current_version_id or "")
+    if version is None:
+        raise Conflict("作品没有可用版本。")
+    return _summary(session, work, version, user)
+
+
+@router.delete("/works/{work_id}/purge", status_code=204)
+def purge_work(
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> Response:
+    publishing.purge(session, user_id=user.id, work_id=work_id)
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/works/{work_id}/appeal", response_model=WorkAppealView, status_code=201)
+def appeal_work(
+    work_id: str, payload: WorkAppealRequest, user: CurrentUser, session: DbSession
+) -> WorkAppealView:
+    """Owner disputes a hide decision. Tombstones are out of scope — they are
+    terminal, so `publishing.restore()` has nowhere to grant the appeal into.
+    """
+    work = session.get(Work, work_id)
+    if work is None:
+        raise NotFound("作品不存在。")
+    if work.owner_user_id != user.id:
+        raise Forbidden("不能为他人的作品申诉。")
+    if work.lifecycle_status != LifecycleStatus.HIDDEN:
+        raise Conflict("只有被隐藏的作品可以申诉。")
+
+    existing = session.scalar(
+        select(WorkAppeal).where(
+            WorkAppeal.work_id == work_id, WorkAppeal.status == AppealStatus.PENDING
+        )
+    )
+    if existing is not None:
+        raise Conflict("该作品已有待处理的申诉。")
+
+    # Best-effort, informational only — a moderation-queue-originated hide has
+    # no report at all, so this may legitimately stay unset.
+    source_report = session.scalar(
+        select(ReportCase)
+        .where(ReportCase.subject_type == "work", ReportCase.subject_id == work_id)
+        .order_by(ReportCase.created_at.desc())
+        .limit(1)
+    )
+
+    appeal = WorkAppeal(
+        work_id=work_id,
+        owner_user_id=user.id,
+        source_report_id=source_report.id if source_report is not None else None,
+        reason=payload.reason,
+    )
+    session.add(appeal)
+    session.commit()
+    return _appeal_view(appeal)
 
 
 @router.get("/tags", response_model=Page[TagResponse])
@@ -253,6 +472,18 @@ def list_tags(
 
 
 # --- projections ---------------------------------------------------------
+
+
+def _appeal_view(appeal: WorkAppeal) -> WorkAppealView:
+    return WorkAppealView(
+        id=appeal.id,
+        work_id=appeal.work_id,
+        status=appeal.status,
+        reason=appeal.reason,
+        decision_note=appeal.decision_note,
+        decided_at=appeal.decided_at,
+        created_at=appeal.created_at,
+    )
 
 
 def _load_visible(session, work_id: str, viewer: User | None) -> tuple[Work, WorkVersion]:  # type: ignore[no-untyped-def]
@@ -269,24 +500,77 @@ def _load_visible(session, work_id: str, viewer: User | None) -> tuple[Work, Wor
 
 
 def _summary(session, work: Work, version: WorkVersion, viewer: User | None) -> WorkSummary:  # type: ignore[no-untyped-def]
-    return WorkSummary(
-        id=work.id,
-        title=version.title,
-        visibility=Visibility(work.visibility),
-        lifecycle_status=LifecycleStatus(work.lifecycle_status),
-        cover_url=media_urls.asset_url(session, version.cover_asset_id),
-        media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
-        author=_author(session, work.owner_user_id),
-        stats=WorkStats(
-            view_count=work.view_count,
-            like_count=work.like_count,
-            comment_count=work.comment_count,
-            remix_count=work.remix_count,
-        ),
-        tags=_tags(session, work.id),
-        remixable=licensing.can_remix(work, viewer.id if viewer else None),
-        published_at=work.published_at,
+    return _summaries(session, [(work, version)], viewer)[0]
+
+
+def _summaries(  # type: ignore[no-untyped-def]
+    session,
+    pairs: list[tuple[Work, WorkVersion]],
+    viewer: User | None,
+) -> list[WorkSummary]:
+    """Batched `_summary`: one query per lookup kind for the whole page instead
+    of per row. `session.get` in `media_urls` already checks the identity map
+    before issuing SQL, so warming it with a single bulk `SELECT ... IN (...)`
+    is enough to make every later `asset_url`/`asset_size`/`media_type_of`
+    /`asset_duration_ms` call free — no change needed to those helpers or to
+    single-item callers.
+    """
+    if not pairs:
+        return []
+
+    owner_ids = {work.owner_user_id for work, _ in pairs}
+    profiles_by_owner = _profiles_by_user_id(session, owner_ids)
+
+    asset_ids = {
+        asset_id
+        for _, version in pairs
+        for asset_id in (version.cover_asset_id, version.primary_output_asset_id)
+        if asset_id
+    } | {
+        profile.avatar_asset_id for profile in profiles_by_owner.values() if profile.avatar_asset_id
+    }
+    if asset_ids:
+        session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+
+    work_ids = [work.id for work, _ in pairs]
+    tags_by_work = _tags_by_work_id(session, work_ids)
+
+    unlocked_by_work = access_service.viewer_unlocked_works_batch(
+        session, [work for work, _ in pairs], viewer.id if viewer else None
     )
+
+    summaries = []
+    for work, version in pairs:
+        cover_size = media_urls.asset_size(session, version.cover_asset_id)
+        summaries.append(
+            WorkSummary(
+                id=work.id,
+                title=version.title,
+                visibility=Visibility(work.visibility),
+                lifecycle_status=LifecycleStatus(work.lifecycle_status),
+                cover_url=media_urls.asset_url(session, version.cover_asset_id),
+                cover_width=cover_size[0] if cover_size else None,
+                cover_height=cover_size[1] if cover_size else None,
+                media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
+                duration_ms=media_urls.asset_duration_ms(session, version.primary_output_asset_id),
+                author=_author_view(
+                    session, work.owner_user_id, profiles_by_owner.get(work.owner_user_id)
+                ),
+                stats=WorkStats(
+                    view_count=work.view_count,
+                    like_count=work.like_count,
+                    comment_count=work.comment_count,
+                    remix_count=work.remix_count,
+                ),
+                tags=tags_by_work.get(work.id, []),
+                remixable=licensing.visibility_allows_remix(work)
+                or (viewer is not None and viewer.id == work.owner_user_id),
+                access_credits=work.access_credits,
+                viewer_unlocked=unlocked_by_work.get(work.id, False),
+                published_at=work.published_at,
+            )
+        )
+    return summaries
 
 
 def _version_summary(session, version: WorkVersion) -> WorkVersionSummary:  # type: ignore[no-untyped-def]
@@ -298,6 +582,7 @@ def _version_summary(session, version: WorkVersion) -> WorkVersionSummary:  # ty
         cover_url=media_urls.asset_url(session, version.cover_asset_id),
         media_url=media_urls.asset_url(session, version.primary_output_asset_id),
         media_type=media_urls.media_type_of(session, version.primary_output_asset_id),
+        output_asset_id=version.primary_output_asset_id,
         ai_generated=version.ai_generated,
         created_at=version.immutable_created_at,
     )
@@ -305,6 +590,10 @@ def _version_summary(session, version: WorkVersion) -> WorkVersionSummary:  # ty
 
 def _author(session, user_id: str) -> AuthorSummary:  # type: ignore[no-untyped-def]
     profile = session.scalar(select(Profile).where(Profile.user_id == user_id))
+    return _author_view(session, user_id, profile)
+
+
+def _author_view(session, user_id: str, profile: Profile | None) -> AuthorSummary:  # type: ignore[no-untyped-def]
     if profile is None:
         return AuthorSummary(user_id=user_id, display_name="未知作者", handle=user_id)
     return AuthorSummary(
@@ -315,6 +604,15 @@ def _author(session, user_id: str) -> AuthorSummary:  # type: ignore[no-untyped-
     )
 
 
+def _profiles_by_user_id(session, user_ids: set[str]) -> dict[str, Profile]:  # type: ignore[no-untyped-def]
+    if not user_ids:
+        return {}
+    return {
+        profile.user_id: profile
+        for profile in session.scalars(select(Profile).where(Profile.user_id.in_(user_ids)))
+    }
+
+
 def _tags(session, work_id: str) -> list[str]:  # type: ignore[no-untyped-def]
     return list(
         session.scalars(
@@ -322,6 +620,49 @@ def _tags(session, work_id: str) -> list[str]:  # type: ignore[no-untyped-def]
             .join(WorkTag, WorkTag.tag_id == Tag.id)
             .where(WorkTag.work_id == work_id)
         )
+    )
+
+
+def _tags_by_work_id(session, work_ids: list[str]) -> dict[str, list[str]]:  # type: ignore[no-untyped-def]
+    if not work_ids:
+        return {}
+    result: dict[str, list[str]] = {}
+    rows = session.execute(
+        select(WorkTag.work_id, Tag.slug)
+        .join(Tag, Tag.id == WorkTag.tag_id)
+        .where(WorkTag.work_id.in_(work_ids))
+    )
+    for work_id, slug in rows:
+        result.setdefault(work_id, []).append(slug)
+    return result
+
+
+def _unlock_response(
+    *,
+    work_id: str,
+    access_credits: int,
+    grant: AccessGrant | None,
+    already_held: bool,
+) -> AccessUnlockResponse:
+    return AccessUnlockResponse(
+        subject_type=AccessSubjectType.WORK.value,
+        subject_id=work_id,
+        access_credits=access_credits,
+        viewer_unlocked=True,
+        already_held=already_held,
+        grant=(
+            AccessGrantView(
+                id=grant.id,
+                subject_type=grant.subject_type,
+                subject_id=grant.subject_id,
+                price_credits=grant.price_credits,
+                platform_fee_credits=grant.platform_fee_credits,
+                seller_net_credits=grant.seller_net_credits,
+                created_at=grant.created_at,
+            )
+            if grant is not None
+            else None
+        ),
     )
 
 
@@ -351,15 +692,23 @@ def _license_info(session, version: WorkVersion) -> LicenseInfo | None:  # type:
     )
 
 
-def _ancestors(session, version_id: str) -> list[LineageAncestor]:  # type: ignore[no-untyped-def]
+def _ancestors(
+    session,  # type: ignore[no-untyped-def]
+    version_id: str,
+    viewer_user_id: str | None = None,
+    viewer_is_staff: bool = False,
+) -> list[LineageAncestor]:
     result: list[LineageAncestor] = []
     for depth, edge in enumerate(lineage_service.ancestors(session, version_id), start=1):
         parent = session.get(WorkVersion, edge.parent_work_version_id)
         if parent is None:
             continue
         parent_work = session.get(Work, parent.work_id)
-        is_tombstone = (
-            parent_work is not None and parent_work.lifecycle_status != LifecycleStatus.ACTIVE
+        # Same rule as the downstream tree (`lineage_service._node_for_version`):
+        # an ancestor that has since gone private masks the same way a
+        # tombstoned one does, unless the caller is its owner or staff.
+        is_tombstone = parent_work is None or not licensing.can_view(
+            parent_work, viewer_user_id, viewer_is_staff
         )
         snapshot = edge.parent_author_snapshot_json
         result.append(

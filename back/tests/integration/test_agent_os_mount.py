@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.main import create_app
@@ -18,6 +19,18 @@ def without_agent_os(monkeypatch):  # type: ignore[no-untyped-def]
     monkeypatch.setattr(get_settings(), "agent_os_enabled", False, raising=False)
 
 
+@pytest.fixture
+def with_llm_endpoint(committed_db: Session):  # type: ignore[no-untyped-def]
+    """Mounting reads endpoints from the database now, via a session that is
+    *not* the rolled-back `db` fixture — so this must commit for real."""
+    from tests.llm_catalog import bind_default_agents_to_catalog
+
+    bind_default_agents_to_catalog(
+        committed_db, model="test-llm", endpoint_id="agent-os-test-endpoint"
+    )
+    committed_db.commit()
+
+
 def _paths(app) -> set[str]:  # type: ignore[no-untyped-def]
     return set(app.openapi()["paths"])
 
@@ -31,7 +44,7 @@ def test_the_console_is_off_by_default(without_agent_os) -> None:
 
 
 def test_enabling_the_console_adds_routes_without_removing_any(
-    without_agent_os, with_agent_os
+    without_agent_os, with_agent_os, with_llm_endpoint
 ) -> None:
     baseline_settings = get_settings()
     baseline_settings.agent_os_enabled = False

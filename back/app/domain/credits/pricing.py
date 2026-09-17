@@ -17,6 +17,13 @@ DEFAULT_TIER_PRICING: dict[str, dict[str, int]] = {
         QualityTier.STANDARD: 12,
         QualityTier.CINEMATIC: 40,
     },
+    # Priced level with text-to-image: editing a reference image costs the
+    # provider about as much as generating one from scratch.
+    Operation.IMAGE_TO_IMAGE: {
+        QualityTier.PREVIEW: 4,
+        QualityTier.STANDARD: 12,
+        QualityTier.CINEMATIC: 40,
+    },
     Operation.TEXT_TO_VIDEO: {
         QualityTier.PREVIEW: 30,
         QualityTier.STANDARD: 90,
@@ -32,6 +39,35 @@ DEFAULT_TIER_PRICING: dict[str, dict[str, int]] = {
         QualityTier.STANDARD: 100,
         QualityTier.CINEMATIC: 280,
     },
+    # Much cheaper than any image/video operation: a TTS call is a single
+    # short synchronous request with no per-second video surcharge.
+    Operation.AUDIO_GENERATION: {
+        QualityTier.PREVIEW: 2,
+        QualityTier.STANDARD: 6,
+        QualityTier.CINEMATIC: 15,
+    },
+    # Tiers are analysis depth (summary/per-scene/per-shot), not render
+    # quality — see `Operation.VIDEO_ANALYSIS` in `app.models.enums`.
+    Operation.VIDEO_ANALYSIS: {
+        QualityTier.PREVIEW: 20,
+        QualityTier.STANDARD: 50,
+        QualityTier.CINEMATIC: 120,
+    },
+    # Priced above `AUDIO_GENERATION` (a single short TTS call) but below
+    # any video operation: a music/SFX render is one synchronous call like
+    # TTS, but the upstream vendor call itself costs more (fal's MiniMax
+    # Music 2.6 is $0.15/generation vs. TTS's fractions of a cent per
+    # 10k characters — see `app.providers.model_catalog`'s fal/DMXAPI
+    # music entries) and runs longer (~30-60s per MiniMax's own docs).
+    # Same flat per-tier shape as `AUDIO_GENERATION` — no per-second
+    # surcharge, since none of the adapted models take an explicit,
+    # billable duration control (see `fal_media.py`/`dmxapi_media.py`'s
+    # music builders).
+    Operation.MUSIC_GENERATION: {
+        QualityTier.PREVIEW: 10,
+        QualityTier.STANDARD: 25,
+        QualityTier.CINEMATIC: 60,
+    },
 }
 
 DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
@@ -39,6 +75,11 @@ DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
         QualityTier.PREVIEW: 8,
         QualityTier.STANDARD: 20,
         QualityTier.CINEMATIC: 45,
+    },
+    Operation.IMAGE_TO_IMAGE: {
+        QualityTier.PREVIEW: 10,
+        QualityTier.STANDARD: 25,
+        QualityTier.CINEMATIC: 50,
     },
     Operation.TEXT_TO_VIDEO: {
         QualityTier.PREVIEW: 45,
@@ -54,6 +95,21 @@ DEFAULT_ESTIMATED_SECONDS: dict[str, dict[str, int]] = {
         QualityTier.PREVIEW: 50,
         QualityTier.STANDARD: 130,
         QualityTier.CINEMATIC: 320,
+    },
+    Operation.AUDIO_GENERATION: {
+        QualityTier.PREVIEW: 5,
+        QualityTier.STANDARD: 12,
+        QualityTier.CINEMATIC: 25,
+    },
+    Operation.VIDEO_ANALYSIS: {
+        QualityTier.PREVIEW: 20,
+        QualityTier.STANDARD: 40,
+        QualityTier.CINEMATIC: 90,
+    },
+    Operation.MUSIC_GENERATION: {
+        QualityTier.PREVIEW: 20,
+        QualityTier.STANDARD: 35,
+        QualityTier.CINEMATIC: 60,
     },
 }
 
@@ -84,32 +140,51 @@ def quote(
     duration_seconds: int = 0,
     pricing: dict[str, dict[str, int]] | None = None,
     durations: dict[str, dict[str, int]] | None = None,
+    per_second_surcharge: dict[str, int] | None = None,
+    base_seconds: int | None = None,
+    output_count: int = 1,
 ) -> Quote:
     """Deterministic price for one job.
 
     The same inputs must always produce the same number: the quote is shown to
     the user before they commit, and the reservation is made against it.
+
+    `output_count` is only ever greater than 1 for a `character`-asset-kind
+    job whose `character_views` names more than one view (a "补全侧面/背面"
+    completion request) — see `app.domain.jobs.service.character_output_count`.
+    It multiplies the tier's base price directly rather than touching the
+    video duration surcharge, since only image jobs ever set it above 1.
     """
     table = pricing or DEFAULT_TIER_PRICING
     seconds_table = durations or DEFAULT_ESTIMATED_SECONDS
+    surcharge_table = per_second_surcharge or VIDEO_PER_SECOND_SURCHARGE
+    included_seconds = VIDEO_BASE_SECONDS if base_seconds is None else base_seconds
 
     tiers = table.get(operation)
     if tiers is None or quality_tier not in tiers:
         raise ValueError(f"未定价的组合: {operation}/{quality_tier}")
 
-    base = tiers[quality_tier]
-    breakdown = {"base": base}
-    total = base
+    unit_base = tiers[quality_tier]
+    breakdown = {"base": unit_base}
+    total = unit_base
+    if output_count > 1:
+        additional = unit_base * (output_count - 1)
+        breakdown["additional_outputs"] = additional
+        total += additional
 
-    if operation in VIDEO_OPERATIONS and duration_seconds > VIDEO_BASE_SECONDS:
-        extra_seconds = duration_seconds - VIDEO_BASE_SECONDS
-        surcharge = extra_seconds * VIDEO_PER_SECOND_SURCHARGE[quality_tier]
+    billable_seconds = 0
+    if operation in VIDEO_OPERATIONS and duration_seconds > included_seconds:
+        billable_seconds = duration_seconds - included_seconds
+        rate = surcharge_table.get(quality_tier)
+        if rate is None:
+            raise ValueError(f"缺少每秒加价: {quality_tier}")
+        surcharge = billable_seconds * rate
         breakdown["duration_surcharge"] = surcharge
         total += surcharge
 
     estimated = seconds_table.get(operation, {}).get(quality_tier, 30)
-    if operation in VIDEO_OPERATIONS and duration_seconds > VIDEO_BASE_SECONDS:
-        estimated += (duration_seconds - VIDEO_BASE_SECONDS) * 6
+    estimated += billable_seconds * 6
+    estimated *= max(output_count, 1)
 
     return Quote(credits=total, estimated_seconds=estimated, breakdown=breakdown)
 

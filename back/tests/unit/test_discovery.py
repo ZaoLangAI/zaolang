@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import math
 
 import pytest
@@ -241,6 +242,17 @@ def test_browsing_by_tag_filters_to_that_tag(db: Session, author: User) -> None:
 
     hits = search_service.browse(db, tag="sunrise")
     assert [h.version.title for h in hits] == ["海上日出"]
+
+
+def test_browsing_by_recency_puts_the_newest_first(db: Session, author: User) -> None:
+    older, _ = _publish_work(db, author, title="旧作")
+    newer, _ = _publish_work(db, author, title="新作")
+    older.published_at = utcnow() - dt.timedelta(days=2)
+    newer.published_at = utcnow()
+    db.flush()
+
+    hits = search_service.browse(db, sort="recent")
+    assert hits[0].version.title == "新作"
 
 
 def test_browsing_by_popularity_puts_the_most_liked_first(db: Session, author: User) -> None:

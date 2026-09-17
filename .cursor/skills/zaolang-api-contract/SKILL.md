@@ -1,56 +1,58 @@
 ---
 name: zaolang-api-contract
-description: 造浪 /v1 REST 契约与横切能力：邮箱密码鉴权（argon2 + JWT + refresh cookie）、统一错误信封与错误码、幂等中间件、分层限流、请求上下文与 OpenAPI 导出。Use when adding or changing an API endpoint, error code, authentication or authorization dependency, idempotency handling, rate limit bucket, or when the OpenAPI schema drifts.
+description: The /v1 REST contract and cross-cutting concerns — email/password auth (argon2 + JWT + refresh cookie), a unified error envelope and error codes, idempotency middleware, tiered rate limiting, request context, OpenAPI export. Use when adding or changing an API endpoint, error code, authentication or authorization dependency, idempotency handling, rate limit bucket, or when the OpenAPI schema drifts.
 disable-model-invocation: true
 ---
 
-# /v1 契约与横切能力
+# The /v1 Contract & Cross-Cutting Concerns
 
-## 职责
+## Scope
 
-`back/app/api/` 只做三件事：解析与校验输入、调用 `app/domain/*`、把领域异常翻译成统一错误信封。**业务规则不写在路由里**——路由里出现 if/else 判断业务条件，就是该下沉到 domain 的信号。
+`back/app/api/` does exactly three things: parse and validate input, call into `app/domain/*`, and translate domain exceptions into the unified error envelope. **Business rules do not live in routes** — an if/else on a business condition inside a route is a signal that logic belongs in the domain layer instead.
 
-## 关键路径
+## Key Paths
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `back/app/api/v1/*.py` | C 端路由：`auth` / `works` / `drafts` / `jobs` / `uploads` / `credits` / `community` / `profiles` / `privacy` / `gateway` |
-| `back/app/api/v1/admin/*.py` | 后台路由，独立命名空间，见 `zaolang-admin-console` |
-| `back/app/api/deps.py` | `CurrentUser` / `OptionalUser` / `AdminUser` / `IdempotencyKey` / `rate_limited(bucket)` / `require_admin_role(minimum)` |
-| `back/app/api/errors.py` | 统一错误信封与异常处理器注册 |
-| `back/app/domain/errors.py` | 全部 `DomainError` 子类，每个自带 `code` 与 `http_status` |
+| `back/app/api/v1/*.py` | consumer routes registered by `build_router()`: `auth` / `profiles` / `works` / `learning` / `skills` / `drafts` (`GET /drafts` is the work-library rail — `list_unpublished_work_drafts` is owner-scoped unpublished drafts, so another user's creations never appear while the author's own character/scene generations stay; drafts bound to a series the caller left as a collaborator are omitted from the list; `GET /drafts/{id}` / studio version history are unchanged; `POST /drafts/{id}/applied-version` `{job_id}` pins a succeeded visible job as `applied_job_id` + `output_asset_id` without moving `latest_job_id`; `DELETE /drafts/{id}/versions/{job_id}` stamps `draft_history_hidden_at` and is 204 — never hard-deletes the job) / `jobs` (`GET /generation-jobs?draft_id=` excludes hidden versions and raises that query's `limit` to 50) / `prompts` (`POST /generation/prompts/enhance` — `prompt` max 4096, optional `script_segment` — a typed `ScriptSegment` whose block union rejects `breakpoint` — so the clip studio can polish colour-block texts in place without adding/dropping/retyping blocks; the response may return `questions` and the next request answers them via `question_answers`, mirroring the job `input-request` shape) / `shortform` / `characters` / `scenes` / `gateway` / `uploads` (`GET /assets/{asset_id}?download=true` mints a `Content-Disposition` signed URL instead of an inline one — the only difference between playing an asset and saving it) / `credits` / `community` / `style_gallery` / `privacy` / `devices` / `editor` (also `POST /drama-episodes/{id}/preview:from-video` and `PATCH /episode-cuts/{cut_id}`) / `canvas` (twelve paths: `/v1/canvas-projects*` incl. `graph-ops` / `changes` / `events` / `agent-runs` / `workflow-runs`, `/v1/canvas-agent-runs/{id}` + `confirm` + `cancel`, `/v1/canvas-agent-tasks/{id}/restore-card`, and `/v1/drama-series/{id}/canvas` — see `zaolang-canvas`) / `scripts` (`POST /scripts/extract` is a JSON multipart extract, not SSE) / `distribution`; work/skill `POST .../unlock` and skill `PATCH .../pricing`; MCP lives at `POST /mcp` (its own `mcp` audience). There is no `/v1/series` route: `characters.py` only serves `/v1/characters` (the old `kind=cast` roster CRUD was removed with the single-clip studio, see `domain/characters/service.py`'s module docstring), and short drama lives at `/v1/drama-series` + `/v1/drama-episodes` in `editor.py`. Treat the directory listing and `back/app/main.py`'s `build_router()` registration as ground truth |
+| `back/app/api/v1/admin/*.py` | admin routes, a separate namespace — see `zaolang-admin-console` |
+| `back/app/api/deps.py` | `CurrentUser` / `OptionalUser` / `AdminUser` / `IdempotencyKey` / `rate_limited(bucket)` / `require_admin_role(minimum)`; `require_age_gate` (raises `AgeGateRequired`, 403 `AGE_GATE_REQUIRED`, when `age_gate_confirmed_at` is null — defined but not yet wired into any route; today the gate is enforced at registration via `age_confirmed`); cookie names `REFRESH_COOKIE_NAME = "zl_refresh"` (consumer refresh) and `ADMIN_COOKIE_NAME = "zl_admin_session"` (admin session, also accepted by `get_admin_user` in place of a bearer token) |
+| `back/app/api/errors.py` | the unified error envelope and exception-handler registration. Its `RequestValidationError` handler is not a passthrough: a model-level validator's `loc` is empty once `body` is stripped, so it lands under the key `params` rather than `""`; `"Value error, "` is stripped off each message; and the envelope `message` is the **first field message**, falling back to `请求参数不合法。` only when there are none — so a banner reading only `error.message` says which rule failed |
+| `back/app/domain/errors.py` | every `DomainError` subclass, each carrying its own `code` and `http_status`. Beyond the licensing pair (`ACCESS_REQUIRED` / `LICENSE_NOT_REMIXABLE`) the public codes include `REVISION_CONFLICT` and `LEASE_HELD` (409, editor optimistic concurrency), `BATCH_ROLLED_BACK` / `OPERATION_TERMINAL` / `BROWSER_REQUIRED` (409), `SCOPE_REQUIRED` / `PROJECT_FORBIDDEN` / `AGE_GATE_REQUIRED` (403), `PLATFORM_NOT_CONFIGURED` (503), `PLATFORM_ACCOUNT_NOT_LINKED` (409), `PLATFORM_OAUTH_FAILED` / `PLATFORM_PUBLISH_FAILED` (502) — grep the file before inventing a new one |
 | `back/app/api/idempotency.py` | `hash_request` / `find_replay` / `remember` |
-| `back/app/api/rate_limit.py` | `RULES` 桶定义与 Redis 滑窗实现 |
-| `back/app/api/middleware.py` | request_id、日志、CORS 相关装配 |
-| `back/app/security/tokens.py` / `passwords.py` | JWT 签发与校验、argon2 |
-| `back/app/scripts/export_openapi.py` → `back/openapi.json` → `front/src/lib/api/schema.d.ts` | 契约到前端类型的单向链条 |
+| `back/app/api/rate_limit.py` | `RULES` bucket definitions and the Redis sliding-window implementation |
+| `back/app/api/middleware.py` | only two middlewares: `CorrelationMiddleware` (honours/assigns `X-Request-Id`, echoes it plus a `Server-Timing` header) and `SecurityHeadersMiddleware` (nosniff / referrer-policy / `X-Frame-Options: DENY`, `no-store` for `/v1/assets`). CORS is not here — `CORSMiddleware` is added in `main.py`'s `create_app()` from `settings.cors_origins`, exposing `x-request-id` and `retry-after` |
+| `back/app/security/tokens.py` / `passwords.py` | JWT issuance and verification, argon2 |
+| `back/app/scripts/export_openapi.py` → `back/openapi.json` → `front/src/lib/api/schema.d.ts` | the one-way chain from contract to frontend types. `WorkVersionSummary` incrementally exposes `output_asset_id` (`WorkVersion.primary_output_asset_id`) so a remix studio can put the licensed source clip into `reference_asset_ids` — `media_url` remains the signed playback URL only. `DraftResponse.applied_job_id` is the currently applied generation; do not treat it as `latest_job_id` |
 
-## 不可破坏的不变量
+## Invariants
 
-1. **错误信封只有一种形状**：`{"error": {code, message, details, request_id}}`。新增失败情形要在 `domain/errors.py` 加 `DomainError` 子类（带 `code` 与 `http_status`），**不要直接 `raise HTTPException`**，否则前端的单一错误路径会破。
-2. **access token 在内存，refresh 在 httpOnly cookie**。不要把 access token 写进 localStorage 或返回到 cookie，也不要让 refresh token 出现在响应体里。
-3. **登录失败不可枚举**：未知邮箱、错误密码、已封禁账号返回同一个 401，不区分。改动登录响应前先读 `tests/integration/test_admin_security.py` 里的同名用例。
-4. **C 端 token 与后台 token audience 不同**：C 端 token 打 `/v1/admin/*` 必须 401，反之亦然。
-5. **幂等键作用域是 `(user_id, endpoint, key)`**，命中且 request hash 相同 → 回放存储的响应；hash 不同 → `IdempotencyConflict`（409）。所有创建型写接口（提交任务、发布、支付回调）都必须接幂等。
-6. **限流分层**，桶定义在 `RULES`：`public_read` 240/60s、`authenticated_write` 90/60s、`auth_attempt` 10/300s、`generation_submit` 12/60s、`upload_presign` 30/60s，后台另有 `admin_read` / `admin_write` / `admin_dangerous`。`RateLimited` 必须带 `Retry-After`。**改这些数字会影响 E2E**（见 `zaolang-testing-qa` 里为什么 E2E 复用会话）。
-7. **资源所有权在服务层校验**，不靠路由参数是否可猜。可见性与二创权限一律走 `app/domain/licensing/service.py`。
+1. **There is exactly one error-envelope shape**: `{"error": {code, message, details, request_id}}`. New failure cases get a `DomainError` subclass (with `code` and `http_status`) in `domain/errors.py` — **never `raise HTTPException` directly**, or the frontend's single error-handling path breaks.
+2. **The access token lives in memory; the refresh token lives in an httpOnly cookie.** Never write the access token to localStorage or return it in a cookie, and never let the refresh token appear in a response body.
+3. **Login failures are not enumerable**: an unknown email and a wrong password share one branch in `api/v1/auth.py`'s `login` and raise the identical `AuthRequired("邮箱或密码不正确。")`, so the two responses are byte-for-byte indistinguishable. A suspended (`is_active=False`) account is checked only *after* the password verifies and gets `AuthRequired("账号不可用，请联系支持。")` — same 401 status and `AUTH_REQUIRED` code, but a different message; that is deliberate (the caller already proved the password) and must not leak to the unknown/wrong branch. Before changing the login response, read `test_login_does_not_distinguish_unknown_email_from_wrong_password` in `tests/integration/test_api_contract.py` and the admin counterparts in `tests/integration/test_admin_security.py`.
+4. **Consumer and admin tokens use different audiences**: a consumer token against `/v1/admin/*` must 401, and vice versa.
+5. **Idempotency-key scope is `(user_id, endpoint, key)`**: a hit with a matching request hash replays the stored response; a hit with a different hash raises `IdempotencyConflict` (409). Every create-type write endpoint (submit a job, publish, a payment callback) must implement idempotency. `POST /v1/drafts/{id}/publish` returns **202** `{status: pending, draft_id, work_id: null}` after accepting the intent; the Work is created later by `run_draft_publish`. A second submit while `publish_status=pending` is `Conflict` (409) unless it is the same key replaying.
+6. **Rate limiting is tiered**, buckets defined in `RULES`: `public_read` 240/60s, `authenticated_write` 90/60s, `auth_attempt` 10/300s, `generation_submit` 12/60s, `upload_presign` 30/60s, `editor_write` 60/60s, `editor_export` 20/60s, `script_studio_write` 20/60s, `platform_publish` 20/60s, `series_collab_invite` 10/300s (as strict as a login attempt because it notifies a stranger), `mcp_tool` 60/60s; admin has its own `admin_read` 300/60s / `admin_write` 60/60s / `admin_dangerous` 10/300s. `RateLimited` must carry `Retry-After`. **The canvas surface (`api/v1/canvas.py`) currently declares no bucket at all**, including on the credit-spending `POST /canvas-agent-runs/{id}/confirm` — a known in-tree exception to the Extension Points rule below, not a precedent. **Changing these numbers affects E2E** (see `zaolang-testing-qa` for why E2E reuses sessions).
+7. **Resource ownership is checked at the service layer**, never inferred from whether a route param is guessable. Visibility and remix authorization always go through `app/domain/licensing/service.py`. An unpurchased paid unlock is `ACCESS_REQUIRED` (402); a work not open to remixing is `LICENSE_NOT_REMIXABLE` (409) — don't conflate the two.
+8. **There is no roster API.** `api/v1/characters.py` exposes only `/v1/characters` (CRUD + `/publish` + `/withdraw`) over `CreationSkill(category=CHARACTER)` rows; the former `/v1/series` `kind=cast` roster and its episode sub-routes were removed together with the single-clip studio, and every remaining `Series` is created with `kind=drama`. `Series` and `DramaEpisode`/`EpisodeContentLink` are managed exclusively by `api/v1/editor.py` (`/v1/drama-series/{id}`, `/v1/drama-series/{id}/episodes`, `/v1/drama-episodes/{id}` and its `content-links` / `set-canonical-work` / `cuts` / `exports` sub-routes) — don't resurrect a second route family for them. MCP uses only the `mcp` audience — never a consumer or admin token. See `zaolang-editor-drama`. Admin daily trends live at `/v1/admin/statistics/*` — see `zaolang-admin-statistics`.
+9. **A route returning a `StreamingResponse` directly must set `status_code` on the response itself, not the decorator.** `@router.post(..., status_code=202)` only applies when FastAPI auto-serializes a returned value; returning a `Response` subclass bypasses that entirely and the response's own default (200) wins instead. `/v1/scripts`'s SSE endpoints (`event: start`/`delta`/`thinking`/`complete`/`error` frames — `thinking` carries the model's live reasoning chunks and is best-effort per provider, and a bare comment line may precede the first frame as a heartbeat) learned this the hard way. A mid-stream failure can only be reported as an `event: error` frame, never an HTTP status — headers are already sent by the time a streamed turn can fail. See `zaolang-editor-drama` invariant #18 for the matching server-side session-handling rule.
 
-## 改造切入点
+## Extension Points
 
-**加一个端点**
+**Add an endpoint**
 
-1. 请求/响应模型进 `back/app/api/schemas/`，分页统一用 `common.Page`（游标分页）。
-2. 路由函数签名用 `deps.py` 的别名声明鉴权与限流：`user: CurrentUser, _: Annotated[None, Depends(rate_limited("authenticated_write"))]`。
-3. 业务逻辑调 `app/domain/*`，异常让它自己冒泡。
-4. 写集成测试进 `back/tests/integration/`，覆盖成功、未登录、越权、限流四条路径。
-5. `make openapi` 并**提交** `back/openapi.json` 与 `front/src/lib/api/schema.d.ts`——`make openapi-check` 就是拦漂移的。
+1. Put request/response models in `back/app/api/schemas/`; pagination is always `common.Page` (cursor-based).
+2. Declare auth and rate limiting in the route signature via `deps.py` aliases: `user: CurrentUser, _: Annotated[None, Depends(rate_limited("authenticated_write"))]`.
+3. Call into `app/domain/*` for business logic and let exceptions bubble.
+4. Add integration tests under `back/tests/integration/`, covering success, unauthenticated, unauthorized, and rate-limited paths.
+5. Run `make openapi` and **commit** both `back/openapi.json` and `front/src/lib/api/schema.d.ts` — `make openapi-check` is what catches drift.
 
-**改错误码**：错误码是对外契约，前端与文档都在引用。加新码优先，改名要同步 `front/src/lib/api/errors.ts` 与 `docs/api.md`。
+**Change an error code**: error codes are a public contract that the frontend and docs reference. Prefer adding a new code; if renaming, sync `front/src/lib/api/errors.ts` and `docs/api.md`.
 
-## 验证
+## Verify
 
 ```bash
-make test-back                      # tests/integration/test_api_contract.py 逐条比对 04 文档
+make test-back                      # tests/integration/test_api_contract.py: auth (register/age gate/login non-enumeration), error envelope + request_id, ownership/visibility, discovery, quote
 cd back && conda run -n zaolang pytest tests/integration/test_rate_limits.py -v
-make openapi-check                  # 类型没漂移
+make openapi-check                  # confirms no type drift
 ```

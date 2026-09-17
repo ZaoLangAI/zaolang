@@ -13,15 +13,21 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey
 from app.api.schemas.common import OkResponse, Page
 from app.api.schemas.jobs import (
+    CheckoutConfirmRequest,
+    CheckoutConfirmResponse,
+    CheckoutIntentResponse,
     CheckoutRequest,
     CheckoutResponse,
     CreditBalanceResponse,
     CreditPackageResponse,
     LedgerEntryResponse,
+    RedeemCodeRequest,
+    RedeemCodeResponse,
 )
 from app.config import get_settings
+from app.domain.credits import redemption
 from app.domain.credits import service as credits_service
-from app.domain.errors import Conflict, NotFound, ValidationFailed
+from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.models import CreditPackage, PaymentIntent, WebhookEvent
 from app.models.base import new_id, utcnow
 
@@ -48,7 +54,7 @@ def ledger(
 ) -> Page[LedgerEntryResponse]:
     credits_service.get_or_create_account(session, user.id)
     session.commit()
-    entries = credits_service.list_ledger(session, user.id, cursor=cursor, limit=limit + 1)
+    entries = credits_service.list_billing_history(session, user.id, cursor=cursor, limit=limit + 1)
     has_more = len(entries) > limit
     page = entries[:limit]
     return Page(
@@ -66,6 +72,17 @@ def packages(user: CurrentUser, session: DbSession) -> Page[CreditPackageRespons
         .order_by(CreditPackage.sort_order)
     )
     return Page(items=[CreditPackageResponse.model_validate(p) for p in rows])
+
+
+@router.post("/credits/redeem", response_model=RedeemCodeResponse)
+def redeem(payload: RedeemCodeRequest, user: CurrentUser, session: DbSession) -> RedeemCodeResponse:
+    """Cashes in an invite/promo code for its face-value credits."""
+    record = redemption.redeem(session, code=payload.code, user_id=user.id)
+    account = credits_service.get_or_create_account(session, user.id)
+    session.commit()
+    return RedeemCodeResponse(
+        credits_granted=record.credits, available_balance=account.available_balance
+    )
 
 
 @router.post("/credits/checkout", response_model=CheckoutResponse, status_code=201)
@@ -105,6 +122,89 @@ def checkout(
     session.add(intent)
     session.commit()
     return _checkout_response(intent)
+
+
+@router.get("/credits/checkout/{external_reference}", response_model=CheckoutIntentResponse)
+def get_checkout_intent(
+    external_reference: str, user: CurrentUser, session: DbSession
+) -> CheckoutIntentResponse:
+    """Feeds the mock checkout page the amount to display before confirming."""
+    intent = session.scalar(
+        select(PaymentIntent).where(PaymentIntent.external_reference == external_reference)
+    )
+    if intent is None:
+        raise NotFound("支付订单不存在。")
+    if intent.user_id != user.id:
+        raise Forbidden("无法查看他人的支付订单。")
+    package = session.get(CreditPackage, intent.package_id)
+    if package is None:
+        raise NotFound("套餐不存在。")
+    return CheckoutIntentResponse(
+        external_reference=intent.external_reference,
+        package_slug=package.slug,
+        credits=package.credits,
+        bonus_credits=package.bonus_credits,
+        amount_minor=intent.amount_minor,
+        currency=intent.currency,
+        status=intent.status,
+    )
+
+
+@router.post("/credits/checkout/confirm", response_model=CheckoutConfirmResponse)
+def confirm_checkout(
+    payload: CheckoutConfirmRequest,
+    user: CurrentUser,
+    session: DbSession,
+) -> CheckoutConfirmResponse:
+    """Settles a payment intent from the mock checkout page.
+
+    A real provider calls the webhook on its own; the mock provider has no
+    server to do that, and the browser must never hold `payment_webhook_secret`
+    to sign one itself. This is the client-confirmable equivalent, gated by
+    ownership of the intent and reusing the same `purchase` + `payment_reference`
+    idempotency as the webhook — a replayed confirm or a race with the webhook
+    can never double-credit.
+    """
+    intent = session.scalar(
+        select(PaymentIntent).where(PaymentIntent.external_reference == payload.external_reference)
+    )
+    if intent is None:
+        raise NotFound("支付订单不存在。")
+    if intent.user_id != user.id:
+        raise Forbidden("无法确认他人的支付订单。")
+
+    if intent.status != "succeeded":
+        package = session.get(CreditPackage, intent.package_id)
+        if package is None:
+            raise NotFound("套餐不存在。")
+        try:
+            credits_service.purchase(
+                session,
+                intent.user_id,
+                package.credits + package.bonus_credits,
+                payment_reference=intent.external_reference,
+                metadata={
+                    "package_slug": package.slug,
+                    "amount_minor": intent.amount_minor,
+                    "source": "checkout_confirm",
+                },
+            )
+        except Conflict:
+            # Already booked by a concurrent confirm or the webhook; `_apply`
+            # has already rolled back, so re-read rather than double-book.
+            intent = session.scalar(
+                select(PaymentIntent).where(
+                    PaymentIntent.external_reference == payload.external_reference
+                )
+            )
+        else:
+            intent.status = "succeeded"
+            intent.settled_at = utcnow()
+            session.commit()
+
+    account = credits_service.get_or_create_account(session, user.id)
+    session.commit()
+    return CheckoutConfirmResponse(status="succeeded", available_balance=account.available_balance)
 
 
 @router.post("/webhooks/payments/mock", response_model=OkResponse)

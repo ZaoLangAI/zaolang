@@ -3,7 +3,7 @@
 import { forwardRef } from 'react';
 
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/cn';
+import { cn, controlPress } from '@/lib/cn';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link';
 type Size = 'sm' | 'md' | 'lg';
@@ -14,7 +14,7 @@ const variants: Record<Variant, string> = {
   secondary:
     'bg-surface-soft text-text border border-border hover:bg-surface-raised hover:border-muted/40',
   ghost: 'text-muted hover:text-text hover:bg-surface-soft',
-  danger: 'bg-danger text-white hover:brightness-110',
+  danger: 'bg-danger text-on-danger hover:brightness-110',
   link: 'text-primary underline-offset-4 hover:underline px-0',
 };
 
@@ -58,7 +58,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       aria-busy={loading || undefined}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex select-none items-center justify-center font-medium transition-colors',
+        'inline-flex select-none items-center justify-center font-medium',
+        controlPress,
         'disabled:cursor-not-allowed disabled:opacity-70',
         variants[variant],
         sizes[size],
@@ -75,6 +76,59 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         </span>
       ) : null}
       {children}
+    </button>
+  );
+});
+
+const iconButtonSizes: Record<Size, string> = {
+  sm: 'size-9 rounded-[var(--radius-sm)]',
+  md: 'size-11 rounded-[var(--radius-sm)]',
+  lg: 'size-13 rounded-[var(--radius-md)]',
+};
+
+export interface IconButtonProps
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  variant?: Variant;
+  size?: Size;
+  loading?: boolean;
+  /** No visible text sits next to the icon, so this doubles as the
+   * accessible name and the hover tooltip. */
+  label: string;
+  children: React.ReactNode;
+}
+
+/**
+ * A square, icon-only button: a dense action row (e.g. an agent card's
+ * edit/debug/delete row) that would otherwise wrap across lines once every
+ * action carries its own text label.
+ *
+ * Kept separate from {@link Button} rather than an `iconOnly` flag on it —
+ * that component's padding and gap are tuned for icon-plus-text, which does
+ * not collapse cleanly to a centered square.
+ */
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { variant = 'ghost', size = 'sm', loading = false, label, className, children, disabled, type = 'button', ...rest },
+  ref,
+) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      aria-label={label}
+      title={label}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
+      className={cn(
+        'inline-flex shrink-0 select-none items-center justify-center',
+        controlPress,
+        'disabled:cursor-not-allowed disabled:opacity-70',
+        variants[variant],
+        iconButtonSizes[size],
+        className,
+      )}
+      {...rest}
+    >
+      {loading ? <Spinner /> : <span aria-hidden="true">{children}</span>}
     </button>
   );
 });

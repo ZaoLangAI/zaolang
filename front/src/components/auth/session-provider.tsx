@@ -50,6 +50,7 @@ export interface SignUpInput {
   region: string;
   locale: string;
   age_confirmed: boolean;
+  invite_code?: string;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);

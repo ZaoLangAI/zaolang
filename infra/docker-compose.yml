@@ -22,7 +22,18 @@ services:
   redis:
     image: redis:8-alpine
     container_name: zaolang-redis
-    command: ["redis-server", "--appendonly", "yes"]
+    # Without maxmemory the default policy is `noeviction` — once memory fills,
+    # every write (rate limiting, Celery enqueue, pubsub) starts erroring
+    # instead of gracefully evicting. `volatile-lru` only evicts keys that
+    # carry a TTL, so Celery's broker lists (no TTL) are never silently
+    # dropped under pressure.
+    command:
+      [
+        "redis-server",
+        "--appendonly", "yes",
+        "--maxmemory", "${REDIS_MAXMEMORY:-256mb}",
+        "--maxmemory-policy", "volatile-lru",
+      ]
     ports:
       - "${REDIS_PORT:-6380}:6379"
     volumes:
@@ -34,7 +45,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: zaolang-minio
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -52,7 +63,7 @@ services:
       retries: 20
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     container_name: zaolang-minio-init
     depends_on:
       minio:

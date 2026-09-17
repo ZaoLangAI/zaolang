@@ -68,6 +68,13 @@ export const IconBookmark = (p: IconProps) => (
   </Icon>
 );
 
+/** The bookmarked state of {@link IconBookmark} — filled rather than outlined. */
+export const IconBookmarkFilled = (p: IconProps) => (
+  <Icon {...p} fill="currentColor" stroke="none">
+    <path d="M6 4h12v16l-6-4-6 4Z" />
+  </Icon>
+);
+
 export const IconHeart = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 20s-7-4.4-7-9.3A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.7C19 15.6 12 20 12 20Z" />
@@ -77,6 +84,13 @@ export const IconHeart = (p: IconProps) => (
 export const IconPlay = (p: IconProps) => (
   <Icon {...p} fill="currentColor" stroke="none">
     <path d="M8 5.5v13l11-6.5Z" />
+  </Icon>
+);
+
+export const IconRefresh = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 11a8 8 0 0 0-14.9-4M4 4v5h5" />
+    <path d="M4 13a8 8 0 0 0 14.9 4M20 20v-5h-5" />
   </Icon>
 );
 
@@ -141,6 +155,13 @@ export const IconArrowLeft = (p: IconProps) => (
 export const IconArrowRight = (p: IconProps) => (
   <Icon {...p}>
     <path d="M5 12h14M13 6l6 6-6 6" />
+  </Icon>
+);
+
+/** An upward arrow: the send action in a chat composer. */
+export const IconArrowUp = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
   </Icon>
 );
 
@@ -255,10 +276,57 @@ export const IconVideo = (p: IconProps) => (
   </Icon>
 );
 
+/** A wide frame: the landscape half of the orientation picker. */
+export const IconLandscape = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2.5" y="6" width="19" height="12" rx="2" />
+  </Icon>
+);
+
+/** A tall frame: the portrait half of the orientation picker. */
+export const IconPortrait = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="6" y="2.5" width="12" height="19" rx="2" />
+  </Icon>
+);
+
+/** A phone held upright: the short-form entry point and its previews. */
+export const IconPhone = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+    <path d="M10.5 5h3M10.5 19h3" />
+  </Icon>
+);
+
 export const IconUpload = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 16V4.5M8 8.5 12 4.5l4 4" />
     <path d="M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+  </Icon>
+);
+
+export const IconDownload = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4.5V16M8 12l4 4 4-4" />
+    <path d="M4.5 15v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" />
+  </Icon>
+);
+
+/** A photo with a retouching wand: image-to-image editing. */
+export const IconWand = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="12" height="12" rx="2.5" />
+    <circle cx="8" cy="9" r="1.4" />
+    <path d="m4.5 14.5 3-3 2 2 1.5-1.5" />
+    <path d="M18 14v5M15.5 16.5h5M17 8l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" />
+  </Icon>
+);
+
+/** A microphone: audio/voice generation. */
+export const IconMic = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M6 11a6 6 0 0 0 12 0M12 17v3.5M9.5 20.5h5" />
   </Icon>
 );
 
@@ -289,6 +357,208 @@ export const IconBranch = (p: IconProps) => (
     <circle cx="7" cy="18" r="2.2" />
     <circle cx="17" cy="12" r="2.2" />
     <path d="M7 8.2v7.6M9.2 6h3.3a2.3 2.3 0 0 1 2.3 2.3v1.6M9.2 18h3.3a2.3 2.3 0 0 0 2.3-2.3v-1.5" />
+  </Icon>
+);
+
+export const IconChart = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20V10M10 20V4M16 20v-7M20 20H4" />
+  </Icon>
+);
+
+/** A pencil: editing text/content in place (e.g. a published prompt). */
+export const IconPencil = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20l1-4L15.5 5.5l3 3L8 19l-4 1Z" />
+    <path d="m13.5 7.5 3 3" />
+  </Icon>
+);
+
+/** A chat bubble: opening a conversational debug/test session. */
+export const IconMessage = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4.5 6.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H10l-4 3v-3h-.5a2 2 0 0 1-2-2Z" />
+  </Icon>
+);
+
+/** Conical flask — a connectivity probe against a live provider is an
+ * experiment on the real thing, not a settings action. */
+export const IconFlask = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 3h6M10 3v6.2L5.2 17.4A2 2 0 0 0 6.9 20.5h10.2a2 2 0 0 0 1.7-3.1L14 9.2V3" />
+    <path d="M7.6 15h8.8" />
+  </Icon>
+);
+
+/** A trash can: moves an item to the recycle bin — reversible. */
+export const IconTrash = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 7h14M10 7V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" />
+    <path d="M10 11v6M14 11v6" />
+  </Icon>
+);
+
+/** A trash can with the contents crossed out: purges permanently — irreversible.
+ * Deliberately distinct from {@link IconTrash} so the two severities never
+ * share a glyph. */
+export const IconTrashX = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 7h14M10 7V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" />
+    <path d="M9.5 10.5l5 6M14.5 10.5l-5 6" />
+  </Icon>
+);
+
+/** Three connected nodes: sharing/publishing something to others. */
+export const IconShare = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="18" cy="5" r="2.3" />
+    <circle cx="6" cy="12" r="2.3" />
+    <circle cx="18" cy="19" r="2.3" />
+    <path d="M8 10.8 16 6.3M8 13.2l8 4.5" />
+  </Icon>
+);
+
+export const IconScissors = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="6" cy="6" r="2.6" />
+    <circle cx="6" cy="18" r="2.6" />
+    <path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" />
+  </Icon>
+);
+
+export const IconSkipBack = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 5v14" />
+    <path d="M18 6 9 12l9 6z" />
+  </Icon>
+);
+
+export const IconSkipForward = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M18 5v14" />
+    <path d="M6 6l9 6-9 6z" />
+  </Icon>
+);
+
+export const IconStepBack = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15 6 9 12l6 6" />
+    <path d="M9 12h9" />
+  </Icon>
+);
+
+export const IconStepForward = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m9 6 6 6-6 6" />
+    <path d="M6 12h9" />
+  </Icon>
+);
+
+export const IconMagnet = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 4v8a6 6 0 0 0 12 0V4" />
+    <path d="M6 4h4v5H6M14 4h4v5h-4" />
+  </Icon>
+);
+
+export const IconFlag = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 21V4" />
+    <path d="M5 4h11l-1.5 3.5L16 11H5" />
+  </Icon>
+);
+
+export const IconAlignLeft = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 4v16" />
+    <rect x="7" y="7" width="13" height="4" rx="1" />
+    <rect x="7" y="13" width="8" height="4" rx="1" />
+  </Icon>
+);
+
+export const IconZoomIn = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.6-3.6M11 8v6M8 11h6" />
+  </Icon>
+);
+
+export const IconZoomOut = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.6-3.6M8 11h6" />
+  </Icon>
+);
+
+export const IconUndo = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10a6 6 0 0 1 0 12h-3" />
+  </Icon>
+);
+
+export const IconRedo = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H10a6 6 0 0 0 0 12h3" />
+  </Icon>
+);
+
+export const IconEyeOff = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+    <path d="M9.9 5.2A10.5 10.5 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.2 3.9M6.6 6.6C4 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.7 9.7 0 0 0 4.3-1" />
+  </Icon>
+);
+
+export const IconList = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 6h13M8 12h13M8 18h13" />
+    <path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" strokeWidth="2.4" />
+  </Icon>
+);
+
+export const IconQuestion = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7" />
+    <path d="M12 17h.01" strokeWidth="2.4" />
+  </Icon>
+);
+
+export const IconText = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 6V4h14v2M12 4v16M9 20h6" />
+  </Icon>
+);
+
+export const IconMusic = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 18V5l11-2v13" />
+    <circle cx="6.5" cy="18" r="2.5" />
+    <circle cx="17.5" cy="16" r="2.5" />
+  </Icon>
+);
+
+export const IconSticker = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7l-7 7H6a2 2 0 0 1-2-2z" />
+    <path d="M13 20v-5a2 2 0 0 1 2-2h5" />
+  </Icon>
+);
+
+export const IconRotate = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 12a8 8 0 1 1-2.3-5.7" />
+    <path d="M20 4v4h-4" />
+  </Icon>
+);
+
+export const IconResetValue = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 3-6.7" />
+    <path d="M3 4v5h5" />
   </Icon>
 );
 

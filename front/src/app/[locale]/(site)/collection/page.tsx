@@ -27,16 +27,12 @@ export default async function CollectionPage({
   const me = await serverFetchOrNull<Me>('/v1/auth/me', { authenticated: true });
   if (!me?.profile) return <SignInPrompt />;
 
-  const [works, drafts, bookmarks] = await Promise.all([
+  const [works, drafts] = await Promise.all([
     serverFetchOrNull<Page<WorkSummary>>(`/v1/profiles/${me.profile.handle}/works`, {
       authenticated: true,
       query: { limit: 60 },
     }),
     serverFetchOrNull<Page<Draft>>('/v1/drafts', { authenticated: true }),
-    serverFetchOrNull<Page<WorkSummary>>('/v1/me/bookmarks', {
-      authenticated: true,
-      query: { limit: 60 },
-    }),
   ]);
 
   const allWorks = works?.items ?? [];
@@ -71,7 +67,6 @@ export default async function CollectionPage({
         published={published}
         privateWorks={isPrivate}
         drafts={drafts?.items ?? []}
-        bookmarks={bookmarks?.items ?? []}
       />
     </div>
   );

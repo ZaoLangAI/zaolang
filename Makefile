@@ -28,9 +28,8 @@ setup-front: ## 安装前端依赖（fnm 管理 Node 版本）
 # --- infrastructure ------------------------------------------------------
 
 .PHONY: up
-up: ## 启动 postgres / redis / minio 容器
-	$(COMPOSE) up -d --wait postgres redis minio
-	$(COMPOSE) up minio-init
+up: ## 启动 postgres / redis 容器（本地默认对象存储走 COS，MinIO 不再默认拉起，需要时手动 `docker compose ... up -d minio`）
+	$(COMPOSE) up -d --wait postgres redis
 
 .PHONY: down
 down: ## 停止容器
@@ -45,6 +44,26 @@ reset: ## 销毁容器与数据卷后重建
 logs: ## 跟踪容器日志
 	$(COMPOSE) logs -f
 
+.PHONY: release-up
+release-up: ## 本地构建镜像并启动一键体验编排
+	docker compose -f infra/docker-compose.release.yml up -d --build
+
+# --- remote production deployment ----------------------------------------
+# Needs infra/.env.prod on the target host (see infra/.env.prod.example);
+# that file carries real secrets and is never committed.
+
+.PHONY: prod-up
+prod-up: ## 构建镜像并启动生产编排（需要 infra/.env.prod）
+	docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod up -d --build
+
+.PHONY: prod-down
+prod-down: ## 停止生产编排
+	docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod down
+
+.PHONY: prod-logs
+prod-logs: ## 跟踪生产编排日志
+	docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs -f
+
 # --- database ------------------------------------------------------------
 
 .PHONY: migrate
@@ -56,8 +75,8 @@ migration: ## 生成迁移，用法 make migration m="add table"
 	cd back && $(CONDA_RUN) alembic revision --autogenerate -m "$(m)"
 
 .PHONY: seed
-seed: ## 导入种子数据（会先清空业务表）
-	cd back && $(CONDA_RUN) python -m app.scripts.seed
+seed: ## 导入种子数据（可选 make seed ARGS=--reset）
+	cd back && $(CONDA_RUN) python -m app.scripts.seed $(ARGS)
 
 .PHONY: import-assets
 import-assets: ## 导入 assets-pack/manifest.json 描述的真实素材
@@ -76,28 +95,67 @@ restore: ## 从备份恢复，用法 make restore f=.backups/xxx.dump
 	./infra/scripts/restore.sh "$(f)" --confirm
 
 # --- development ---------------------------------------------------------
+# Ctrl+C 只能信号到当前进程组；conda / Next --reload 常会留下占着 3000/3001
+# 的孤儿进程。启动前与退出时按端口回收，避免下次 bind 失败。
+
+DEV_WEB_PORT ?= 3000
+DEV_API_PORT ?= 3001
+DEV_FREE_PORTS := ./infra/scripts/dev-free-ports.sh
+
+.PHONY: dev-free-ports
+dev-free-ports: ## 释放 3000/3001 及本仓库残留的 Celery 进程
+	@$(DEV_FREE_PORTS) --celery $(DEV_WEB_PORT) $(DEV_API_PORT)
 
 .PHONY: dev
-dev: ## 同时启动 API、Worker 与 Web
-	@trap 'kill 0' EXIT INT TERM; \
+dev: ## 同时启动 API、Worker、轮询 poller、Beat 与 Web
+	@$(DEV_FREE_PORTS) --celery $(DEV_WEB_PORT) $(DEV_API_PORT)
+	@cleanup() { \
+		trap '' INT TERM; \
+		trap - EXIT; \
+		kill 0 2>/dev/null || true; \
+		$(DEV_FREE_PORTS) --celery $(DEV_WEB_PORT) $(DEV_API_PORT); \
+	}; \
+	trap cleanup EXIT; \
+	trap 'cleanup; exit 130' INT; \
+	trap 'cleanup; exit 143' TERM; \
 	$(MAKE) dev-api & \
 	$(MAKE) dev-worker & \
+	$(MAKE) dev-poller & \
+	$(MAKE) dev-beat & \
 	$(MAKE) dev-web & \
 	wait
 
 .PHONY: dev-api
 dev-api: ## 启动 FastAPI（含 AgentOS）
-	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --port 8000
+	@$(DEV_FREE_PORTS) $(DEV_API_PORT)
+	cd back && $(CONDA_RUN) uvicorn app.main:app --reload --host localhost --port $(DEV_API_PORT) --timeout-graceful-shutdown 3
 
 .PHONY: dev-worker
-dev-worker: ## 启动 Celery worker（订阅全部队列）
+dev-worker: ## 启动 Celery worker（生成与质检队列，不含供应商轮询）
 	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
-		-Q moderation_short,image_generation,video_generation_long,quality_check,webhook_reconcile \
+		-n zaolang-worker@%h \
+		-Q image_generation,video_generation_long,audio_generation,quality_check,webhook_reconcile,media_analysis,platform_distribution,video_analysis \
 		--loglevel=info
+
+.PHONY: dev-poller
+dev-poller: ## 启动供应商异步轮询 worker（独占 provider_task_polling）
+	cd back && $(CONDA_RUN) celery -A app.workers.celery_app worker \
+		-n zaolang-poller@%h \
+		-Q provider_task_polling --concurrency=1 \
+		--loglevel=info
+
+.PHONY: dev-purge-queues
+dev-purge-queues: ## 清理 Redis 中失效的 Celery 消息与结果（保留有效排队与限流键）
+	cd back && $(CONDA_RUN) python -m app.scripts.purge_stale_celery --results $(ARGS)
+
+.PHONY: dev-beat
+dev-beat: ## 启动 Celery Beat（异步供应商轮询与超时回收）
+	cd back && $(CONDA_RUN) celery -A app.workers.celery_app beat --loglevel=info
 
 .PHONY: dev-web
 dev-web: ## 启动 Next.js
-	cd front && $(FNM_ENV) && npm run dev
+	@$(DEV_FREE_PORTS) $(DEV_WEB_PORT)
+	cd front && $(FNM_ENV) && npm run dev -- --hostname localhost
 
 # --- quality gates -------------------------------------------------------
 
@@ -132,16 +190,16 @@ typecheck: ## 类型检查
 test: test-back test-front ## 全部测试
 
 .PHONY: test-back
-test-back: ## 后端测试（强制 stub 模式保证确定性）
-	cd back && LLM_MODE=stub $(CONDA_RUN) pytest -m "not live" --cov=app --cov-report=term-missing
+test-back: ## 后端测试（假网关 fixture 保证确定性，见 tests/fake_llm_gateway.py）
+	cd back && $(CONDA_RUN) pytest -m "not live" --cov=app --cov-report=term-missing
 
 .PHONY: test-llm
-test-llm: ## LLM 网关连通性冒烟（需要真实密钥，不进 CI）
+test-llm: ## LLM 网关连通性冒烟（需要真实密钥，不进 make check）
 	cd back && $(CONDA_RUN) pytest -m live -v
 
 .PHONY: test-front
-test-front: ## 前端构建与类型检查
-	cd front && $(FNM_ENV) && npm run typecheck && npm run build
+test-front: ## 前端构建、类型检查与体积回归门禁
+	cd front && $(FNM_ENV) && npm run typecheck && npm run build && npm run check:bundle-size
 
 .PHONY: test-e2e
 test-e2e: ## Playwright 端到端测试
@@ -163,9 +221,17 @@ openapi: ## 导出 OpenAPI 并生成前端类型
 	cd front && $(FNM_ENV) && npm run gen:api
 
 .PHONY: openapi-check
-openapi-check: openapi ## 校验生成的类型未过期
-	@git diff --exit-code -- front/src/lib/api/schema.d.ts back/openapi.json \
-		|| (echo "OpenAPI 类型已漂移，请提交 make openapi 的结果" && exit 1)
+openapi-check: ## 校验生成的类型未过期
+# 比对「重新生成前 / 后」而不是比对 HEAD：工作区里本来就会有未提交的 API 改动，
+# 跟 HEAD 比会把「还没提交」误报成「没重新生成」。
+	@cp back/openapi.json .openapi-check.json
+	@cp front/src/lib/api/schema.d.ts .openapi-check.d.ts
+	@$(MAKE) --no-print-directory openapi >/dev/null
+	@diff -q .openapi-check.json back/openapi.json >/dev/null \
+		&& diff -q .openapi-check.d.ts front/src/lib/api/schema.d.ts >/dev/null \
+		|| (rm -f .openapi-check.json .openapi-check.d.ts; \
+			echo "OpenAPI 类型已漂移，请提交 make openapi 的结果" && exit 1)
+	@rm -f .openapi-check.json .openapi-check.d.ts
 
 .PHONY: docs
 docs: ## 本地预览文档站

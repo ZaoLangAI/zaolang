@@ -3,16 +3,11 @@
 import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import {
-  IconBell,
-  IconCheck,
-  IconHeart,
-  IconRemix,
-  IconShield,
-  IconSparkle,
-  IconUser,
-} from '@/components/ui/icons';
+  NOTIFICATIONS_CHANGED,
+  useNotificationCenter,
+} from '@/components/notifications/notification-center-provider';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link } from '@/i18n/navigation';
@@ -22,22 +17,14 @@ import type { Notification } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/format';
 
-const GROUPS = {
-  work_remixed: { key: 'typeRemix', icon: IconRemix },
-  work_liked: { key: 'typeRemix', icon: IconHeart },
-  new_follower: { key: 'typeFollow', icon: IconUser },
-  job_progress: { key: 'typeJob', icon: IconSparkle },
-  job_succeeded: { key: 'typeJob', icon: IconCheck },
-  job_failed: { key: 'typeJob', icon: IconSparkle },
-  royalty_received: { key: 'typeRoyalty', icon: IconSparkle },
-  moderation: { key: 'typeModeration', icon: IconShield },
-  system: { key: 'typeSystem', icon: IconBell },
-} as const;
+import { GROUPS, notificationText, notificationVisual, targetHref } from './notification-format';
 
 export function NotificationList({ initial }: { initial: Notification[] }) {
   const t = useTranslations('notificationsPage');
+  const tBody = useTranslations('notificationBody');
   const locale = useLocale() as Locale;
   const { notify } = useToast();
+  const { markAllRead } = useNotificationCenter();
 
   const [items, setItems] = useState(initial);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -48,10 +35,13 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
 
   const markAll = async () => {
     setBusy(true);
+    const previous = items;
+    setItems((current) => current.map((item) => ({ ...item, read: true })));
     try {
-      await api.post('/v1/notifications/read');
-      setItems((current) => current.map((item) => ({ ...item, read: true })));
+      await markAllRead();
       notify(t('allRead'), 'success');
+    } catch {
+      setItems(previous);
     } finally {
       setBusy(false);
     }
@@ -60,6 +50,7 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
   const markOne = async (id: string) => {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, read: true } : item)));
     await api.post('/v1/notifications/read', undefined, { query: { notification_id: id } });
+    window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
   };
 
   if (items.length === 0) {
@@ -109,7 +100,9 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
         <ul className="divide-y divide-border overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface">
           {shown.map((item) => {
             const group = GROUPS[item.type as keyof typeof GROUPS] ?? GROUPS.system;
-            const Icon = group.icon;
+            const visual = notificationVisual(item);
+            const Icon = visual.icon;
+            const Badge = visual.badge;
             const href = targetHref(item);
 
             return (
@@ -117,8 +110,18 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
                 key={item.id}
                 className={cn('flex gap-3 px-5 py-4', !item.read && 'bg-primary/4')}
               >
-                <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-surface-soft">
-                  <Icon className="size-4 text-muted" />
+                <span
+                  className={cn(
+                    'relative mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-surface-soft',
+                    visual.tone,
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {Badge ? (
+                    <span className="absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full bg-surface">
+                      <Badge className="size-2.5" />
+                    </span>
+                  ) : null}
                 </span>
 
                 <div className="min-w-0 flex-1">
@@ -131,9 +134,9 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
                       />
                     ) : null}
                   </p>
-                  <p className="mt-1 text-sm">{notificationText(item)}</p>
+                  <p className="mt-1 text-sm">{notificationText(item, tBody)}</p>
                   <p className="mt-1 text-xs text-muted">
-                    {formatRelative(item.created_at, locale)}
+                    {formatRelative(item.updated_at ?? item.created_at, locale)}
                   </p>
                 </div>
 
@@ -155,23 +158,4 @@ export function NotificationList({ initial }: { initial: Notification[] }) {
   );
 }
 
-/**
- * Notification bodies are stored as a key plus a payload rather than as
- * rendered text, so an existing notification is read in whatever language the
- * user has selected today.
- */
-function notificationText(item: Notification): string {
-  const payload = item.payload ?? {};
-  const parts = ['title', 'work_title', 'actor_name', 'message']
-    .map((field) => payload[field])
-    .filter((value): value is string => typeof value === 'string');
-  return parts[0] ?? item.title_key;
-}
-
-function targetHref(item: Notification): string | null {
-  if (!item.target_id) return null;
-  if (item.target_type === 'work') return `/work/${item.target_id}`;
-  if (item.target_type === 'generation_job') return `/jobs/${item.target_id}`;
-  if (item.target_type === 'user') return `/profile/${item.target_id}`;
-  return null;
-}
+export { NOTIFICATIONS_CHANGED } from '@/components/notifications/notification-center-provider';

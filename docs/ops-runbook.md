@@ -20,7 +20,7 @@
 **确认**
 
 ```bash
-curl -s localhost:8000/health | jq          # 服务自己的探针
+curl -s localhost:3001/healthz | jq         # 服务自己的探针
 docker compose --env-file infra/.env.example -f infra/docker-compose.yml ps
 make logs                                    # 跟容器日志
 ```
@@ -36,17 +36,19 @@ make logs                                    # 跟容器日志
 
 ## 2. 队列积压 { #queue-backlog }
 
-五个队列：`moderation_short`、`image_generation`、`video_generation_long`、`quality_check`、`webhook_reconcile`。
+六个队列：`image_generation`、`video_generation_long`、`audio_generation`、`quality_check`、`webhook_reconcile`、`media_analysis`。另有独占 poller 消费 `provider_task_polling`。`media_analysis` 跑剪辑源的 ffprobe；积压时剪辑页的分析会停在 degraded，导出 complete 仍要求 worker 镜像里有 ffprobe。
 
-**确认**：健康页的积压数与消费速率。积压高但速率为 0 → worker 没在消费；两者都高 → 容量不足。
+**确认**：健康页的积压数与消费速率；健康页 `async_provider_polling` 探针专门测"是否存在早已到期却没人认领的轮询任务"——积压为 0 不代表健康，Beat 完全没在跑时队列同样是空的，这个探针才是真正测到症状的信号。
 
 **处理**
 
 ```bash
-make dev-worker      # 本地：确认 -Q 列表包含全部五个队列
+make dev-worker      # 本地：确认 -Q 列表包含前五个生成/质检类队列
+make dev-poller       # 本地：独占 provider_task_polling，绝不能漏起
+make dev-beat        # 本地：异步轮询与超时回收必须有 Beat 调度
 ```
 
-worker 起来了但某个队列不动，先确认它有没有在 `-Q` 列表里——**新增队列忘了加进 `Makefile` 与部署参数**是最常见的原因。
+worker 起来了但某个队列不动，先确认它有没有在对应的 `-Q` 列表里——**新增队列忘了加进 `Makefile` 与 `infra/docker-compose.release.yml` 的部署命令**是最常见的原因。`provider_task_polling` 不动尤其要查 `make dev-poller` / 发布环境的 `poller` 服务是不是真的起了，而不是只看 `dev-worker`。
 
 **收尾**：积压回落；被拖到超时的任务走 [§3](#stuck-jobs)。
 
@@ -60,23 +62,25 @@ worker 起来了但某个队列不动，先确认它有没有在 `-Q` 列表里�
 
 - **卡死可重放** → `requeue`。复用原任务与原预扣，**不会二次扣费**。
 - **必须止损** → `terminate`（高危，需二次确认 + 理由）。它走状态机进入终态并释放预扣。
-- **供应商侧问题** → 去 `/admin/providers` 关掉该供应商或调低限额，让路由绕开它；这是配置操作，立即生效。
+- **供应商侧问题** → 去 `/admin/models` 关掉该供应商或调低限额，让路由绕开它；这是配置操作，立即生效。
 
 **收尾**：任务处于终态且 `finished_at` 有值；`/admin/credits` 的悬挂预扣少了一条；账本里这个任务恰好有一条 capture **或** 一条 release。
 
-## 4. LLM 网关降级 { #llm-degraded }
+## 4. LLM 网关不可用 { #llm-degraded }
 
-**发现**：健康页显示当前模式为 stub，或 `/admin/agents` 的降级次数上升。
+**发现**：健康页 `llm_reachable` 为 `false`，任务大量失败并带 `PROVIDER_TEMPORARY_FAILURE`，或 `/admin/agents` 里某个智能体的调用持续报错。
 
-**确认**：`/admin/agents` 按智能体看降级原因与延迟；`AgentRun` 记录了模型、token 用量、是否降级。
+网关只有一种真实调用行为：模型未绑定、没有可用端点，或网关调用全部失败，一律立即抛错，绝不会静默换成假数据。任务失败后交给 Celery 按既有重试策略重试，不是靠单次 agent 调用内部降级来兜底。
+
+**确认**：`/admin/agents` 按智能体看调用记录与延迟；`AgentRun` 记录了模型、token 用量、状态。`degraded=True` 现在只代表模型答复了但 JSON 解析失败——网关层面的失败会直接抛异常，不会写成一条「降级」记录。
 
 **处理**
 
-- 网关限流或超时：等待自动恢复。`LLM_MODE=auto` 下降级是**设计好的**保护，不是故障本身。
-- 某个模型持续失败：在 `/admin/config` 的 `agents` 段把该智能体切到别的模型（热生效，需理由）。免费模型 `ling-3.0-flash-free` 有配额不确定性，Copy Agent 优先切它。
-- 密钥失效：只改 `back/.env` 的 `LLM_API_KEY` 并重启 API。**不要**把密钥写进配置中心或任何会回显的地方。
+- 网关限流或超时：多端点配置下故障转移与熔断会自动生效，等待恢复；无需人工干预。
+- 某个模型持续失败：在 `/admin/models` 确认供应商目录里的模型 id，再到 `/admin/agents` 把该智能体绑到目录里已声明的另一个模型（热生效）。未绑定的智能体不会猜默认模型名，调用会立即报错。
+- 密钥失效：在 `/admin/models` 的专用模型端点表单中轮换密钥并执行连通性校验。通用配置 API 与 JSON 编辑器禁止读取 `llm_providers`；不要把密钥写入其他配置段。
 
-**收尾**：模式回到 `openai_compatible`；降级计数停止增长。
+**收尾**：健康页 `llm_reachable` 恢复 `true`；相关智能体的调用不再报错。
 
 ## 5. 积分对账不平
 
@@ -125,10 +129,31 @@ make restore f=.backups/xxx.dump  # 需要 --confirm，脚本内已带
 
 `/admin/announcements` 下发站内公告与维护公告。维护公告会在 C 端顶部醒目展示——发布前确认时间窗与文案，撤下也要走同一入口。
 
+## 11. 短剧剪辑租约、孤儿上传与导出失败 { #editor }
+
+**发现**：用户报「剪辑变只读」、导出停在 encoding、MinIO `staging/editor-export/` 堆积未 complete 对象；后台健康页 `media_analysis` 积压。
+
+**确认**
+
+- 租约：`editor_leases.expires_at` 与 `revoked_at`。Beat 每 60s 跑 `expire_editor_leases`。双标签抢租约时输家必须保持只读，不得覆盖 `head_revision_id`。
+- 修订冲突：API `409 REVISION_CONFLICT`。客户端应重新 GET cut 再带新的 `expected_revision_id`。
+- 孤儿上传：`expire_orphan_editor_uploads` 每 5 分钟删除过期且未 complete 的 `editor_source` / `editor_export` 会话并尝试删对象。
+- 导出预检失败：`EditorExport.failure_code`（`browser` / `webcodecs`）。不再因时长、像素或预估内存拒绝排队；编码按变体原分辨率（偶数像素）。`BufferTarget` 仍把整文件放在内存里，长片 / 高分辨率可能 OOM。历史行上的 `resolution` / `duration` / `memory` 码不再新产生。
+- 非法 AI plan：`edit_plans.status=failed` 且 `validation_json.ok=false`。不要手工改 `document_json`。
+- MCP 拒绝：错 audience 是 `UNAUTHENTICATED`；错 `project_id` 是 `PROJECT_FORBIDDEN`。consumer/admin JWT 不得打 `/mcp`。
+
+**处理**
+
+- 卡死的导出：`POST /v1/editor-exports/{id}/fail` 或 `cancel`，再 `retry`。
+- 开关：`drama_studio_enabled` / `web_editor_enabled` 关闭后相关 C 端接口 404。export/ai/mcp 依赖 web_editor。
+- 本地 worker：`make dev-worker` 的 `-Q` 必须包含 `media_analysis`。
+
+**收尾**：无过期未撤销租约；staging 前缀无超期对象；失败导出具有 `failure_code`。
+
 ## 附：本地重建一套干净环境
 
 ```bash
 make reset       # 销毁数据卷 → 重建 → 迁移 → 种子数据
 ```
 
-种子账号统一密码 `Zaolang2026`，含一个被封禁账号 `driftwood@zaolang.dev`、一个卡死任务、一条悬挂预扣、一条待审批数据请求与一次降级记录——本手册每一节都能在种子数据上演练一遍。
+种子账号统一密码 `Zaolang2026`，含一个被封禁账号 `driftwood@zaolang.dev`。`make seed` 只创建登录账号和系统默认值（Agent 节点/画像、默认工作流模板、Feature Flag），不再预置卡死任务、悬挂预扣、待审批数据请求或降级记录——本手册涉及这些现场的章节，需要先在本地真实跑出一个对应状态的任务/请求，再照着排查。

@@ -26,6 +26,13 @@ def get_engine() -> Engine:
         pool_pre_ping=True,
         pool_size=10,
         max_overflow=20,
+        # `pool_pre_ping` catches a dead connection before it is handed out,
+        # but a managed Postgres in front of a load balancer/proxy (PgBouncer,
+        # a cloud provider's connection terminator) can silently drop an idle
+        # connection at a fixed age. Recycling before that age is reached
+        # means the pool replaces it proactively instead of only reacting
+        # after `pool_pre_ping` already caught a stale one.
+        pool_recycle=1800,
         echo=os.getenv("SQL_ECHO") == "1",
     )
 

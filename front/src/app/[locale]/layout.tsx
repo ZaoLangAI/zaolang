@@ -5,14 +5,14 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import { AppProviders } from '@/components/app-providers';
-import { routing } from '@/i18n/routing';
+import { ThemeInitScript } from '@/components/theme/theme-init-script';
+import { DISPLAY_TIME_ZONE, routing } from '@/i18n/routing';
 import {
   MOTION_COOKIE,
   THEME_COOKIE,
   defaultTheme,
   isThemePreference,
   themeColor,
-  themeInitScript,
 } from '@/lib/theme';
 
 export function generateStaticParams() {
@@ -25,6 +25,9 @@ export const viewport: Viewport = {
   themeColor: themeColor.dark,
   width: 'device-width',
   initialScale: 1,
+  // Without `cover` the page stops at the notch and the safe-area insets all
+  // resolve to 0, which would make the bottom bars unreachable on iOS.
+  viewportFit: 'cover',
 };
 
 export async function generateMetadata({
@@ -70,11 +73,10 @@ export default async function LocaleLayout({
       data-reduced-motion={String(reduceMotion)}
       suppressHydrationWarning
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      </head>
+      <head />
       <body className="min-h-dvh antialiased">
-        <NextIntlClientProvider>
+        <ThemeInitScript />
+        <NextIntlClientProvider timeZone={DISPLAY_TIME_ZONE}>
           <AppProviders initialPreference={preference} initialReduceMotion={reduceMotion}>
             {children}
           </AppProviders>

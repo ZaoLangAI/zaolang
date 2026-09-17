@@ -1,6 +1,7 @@
 import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
+import { randomUuid } from '@/lib/random-id';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 /**
  * The access token is held in memory only.
@@ -39,6 +40,8 @@ export interface RequestOptions {
   /** Skip the refresh-and-retry dance, used by the auth calls themselves. */
   anonymous?: boolean;
   headers?: Record<string, string>;
+  /** Lets the request outlive a page unload (e.g. releasing a lease on tab close). */
+  keepalive?: boolean;
 }
 
 export function buildUrl(path: string, query?: RequestOptions['query']): string {
@@ -87,8 +90,11 @@ async function send(
   options: RequestOptions,
   token: string | null,
 ): Promise<Response> {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
-  if (options.body !== undefined) headers['content-type'] = 'application/json';
+  // Let the browser set the multipart boundary — a hand-written
+  // `content-type` would drop it and the server would reject the body.
+  if (options.body !== undefined && !isFormData) headers['content-type'] = 'application/json';
   if (options.idempotencyKey) headers['idempotency-key'] = options.idempotencyKey;
   if (token) headers.authorization = `Bearer ${token}`;
 
@@ -97,7 +103,13 @@ async function send(
     headers,
     credentials: 'include',
     signal: options.signal,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    keepalive: options.keepalive,
+    body:
+      options.body === undefined
+        ? undefined
+        : isFormData
+          ? (options.body as FormData)
+          : JSON.stringify(options.body),
   });
 }
 
@@ -137,5 +149,5 @@ export const api = {
 
 /** Idempotency keys must be stable per user intent, not per retry. */
 export function newIdempotencyKey(): string {
-  return globalThis.crypto.randomUUID();
+  return randomUuid();
 }

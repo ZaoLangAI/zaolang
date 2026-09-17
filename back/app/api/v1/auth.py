@@ -15,6 +15,7 @@ from app.api.deps import (
 )
 from app.api.schemas.auth import (
     LoginRequest,
+    MeFeaturesResponse,
     MeResponse,
     PreferencesRequest,
     ProfileResponse,
@@ -24,11 +25,13 @@ from app.api.schemas.auth import (
 )
 from app.api.schemas.common import OkResponse
 from app.config import get_settings
+from app.domain.credits import redemption
 from app.domain.credits import service as credits_service
 from app.domain.errors import AuthRequired, Conflict, ValidationFailed
+from app.domain.system_log import service as system_log
 from app.models import Profile, User
 from app.models.base import utcnow
-from app.models.enums import UserRole
+from app.models.enums import SystemLogSource, UserRole
 from app.platform_config import service as config_service
 from app.security.passwords import hash_password, needs_rehash, verify_password
 from app.security.tokens import REFRESH_AUDIENCE, decode_token, issue_consumer_tokens
@@ -75,6 +78,9 @@ def register(
         credits_service.SIGNUP_GRANT_CREDITS,
         idempotency_key=f"signup:{user.id}",
     )
+    if payload.invite_code:
+        # Bad code aborts the whole registration — nothing is committed yet.
+        redemption.redeem(session, code=payload.invite_code, user_id=user.id)
     session.commit()
 
     return _issue_session(user, response)
@@ -84,12 +90,20 @@ def register(
 def login(
     payload: LoginRequest, request: Request, response: Response, session: DbSession
 ) -> TokenResponse:
-    rate_limit.enforce("auth_attempt", client_identity(request, None))
+    identity = client_identity(request, None)
+    rate_limit.enforce("auth_attempt", identity)
 
     user = session.scalar(select(User).where(User.email == str(payload.email)))
     # The same message for both branches so the endpoint cannot be used to
     # enumerate registered addresses.
     if user is None or not verify_password(payload.password, user.password_hash):
+        system_log.emit(
+            source=SystemLogSource.AUTH,
+            event="login.failed",
+            message=f"{identity} 登录失败：邮箱或密码不正确。",
+            dedup_key=identity,
+            request=request,
+        )
         raise AuthRequired("邮箱或密码不正确。")
     if not user.is_active:
         raise AuthRequired("账号不可用，请联系支持。")
@@ -110,6 +124,8 @@ def refresh(request: Request, response: Response, session: DbSession) -> TokenRe
         raise AuthRequired("登录状态已失效，请重新登录。")
 
     claims = decode_token(cookie, audience=REFRESH_AUDIENCE)
+    if _is_session_revoked(claims.session_id):
+        raise AuthRequired("登录状态已失效，请重新登录。")
     user = session.get(User, claims.subject)
     if user is None or not user.is_active:
         raise AuthRequired("登录状态已失效，请重新登录。")
@@ -117,7 +133,19 @@ def refresh(request: Request, response: Response, session: DbSession) -> TokenRe
 
 
 @router.post("/logout", response_model=OkResponse)
-def logout(response: Response) -> OkResponse:
+def logout(request: Request, response: Response) -> OkResponse:
+    """Deleting the cookie alone left a copied/leaked refresh token valid for
+    up to 14 more days — this also kills the token by its `sid`, so a logout
+    the user actually asked for takes effect immediately, not just locally.
+    """
+    cookie = request.cookies.get(REFRESH_COOKIE_NAME)
+    if cookie:
+        try:
+            claims = decode_token(cookie, audience=REFRESH_AUDIENCE)
+        except AuthRequired:
+            claims = None
+        if claims is not None:
+            _revoke_session(claims.session_id, get_settings().refresh_token_ttl_seconds)
     response.delete_cookie(REFRESH_COOKIE_NAME, path="/")
     return OkResponse()
 
@@ -139,6 +167,25 @@ def me(user: CurrentUser, session: DbSession) -> MeResponse:
         profile=ProfileResponse.model_validate(profile) if profile else None,
         available_credits=account.available_balance,
         reserved_credits=account.reserved_balance,
+        features=_features_for(session, user.id),
+    )
+
+
+def _features_for(session: DbSession, user_id: str) -> MeFeaturesResponse:
+    """Consumer-facing view of `FeatureFlags`, so a Next.js page can hide or
+    disable an entry point instead of letting the user tap through to an API
+    404 (see `zaolang-platform-config`'s "off means 404/hidden" contract).
+    """
+    return MeFeaturesResponse(
+        script_studio=config_service.is_enabled(session, "script_studio_enabled", user_id=user_id),
+        video_analysis=config_service.is_enabled(
+            session, "video_analysis_enabled", user_id=user_id
+        ),
+        web_editor=config_service.is_enabled(session, "web_editor_enabled", user_id=user_id),
+        video_generation=config_service.is_enabled(session, "video_generation", user_id=user_id),
+        drama_studio=config_service.is_enabled(session, "drama_studio_enabled", user_id=user_id),
+        marketplace=config_service.is_enabled(session, "marketplace_enabled", user_id=user_id),
+        canvas_studio=config_service.is_enabled(session, "canvas_studio_enabled", user_id=user_id),
     )
 
 
@@ -186,6 +233,26 @@ def update_profile(
     return ProfileResponse.model_validate(profile)
 
 
+REVOKED_SESSION_KEY_PREFIX = "revoked_session:"
+
+
+def _revoke_session(session_id: str, ttl_seconds: int) -> None:
+    """A short-lived Redis marker, not a permanent blacklist — it only has to
+    outlive the refresh token it is blocking, so it self-expires on the same
+    schedule rather than growing forever."""
+    if not session_id:
+        return
+    rate_limit.get_redis().set(
+        f"{REVOKED_SESSION_KEY_PREFIX}{session_id}", "1", ex=max(ttl_seconds, 1)
+    )
+
+
+def _is_session_revoked(session_id: str) -> bool:
+    if not session_id:
+        return False
+    return bool(rate_limit.get_redis().exists(f"{REVOKED_SESSION_KEY_PREFIX}{session_id}"))
+
+
 def _issue_session(user: User, response: Response) -> TokenResponse:
     settings = get_settings()
     access, refresh_token, expires_at = issue_consumer_tokens(user.id, list(user.roles))
@@ -195,7 +262,7 @@ def _issue_session(user: User, response: Response) -> TokenResponse:
         max_age=settings.refresh_token_ttl_seconds,
         httponly=True,
         samesite="lax",
-        secure=settings.is_production,
+        secure=settings.cookie_secure,
         path="/",
     )
     return TokenResponse(access_token=access, expires_at=expires_at)

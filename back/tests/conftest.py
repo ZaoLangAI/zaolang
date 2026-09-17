@@ -10,10 +10,8 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 
-# Set before any app import so cached settings pick the test database and the
-# deterministic LLM stub.
+# Set before any app import so cached settings pick the test database.
 os.environ.setdefault("APP_ENV", "test")
-os.environ["LLM_MODE"] = "stub"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,10 +20,12 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_engine
+from app.llm import client as llm_client
 from app.models import Base, Profile, User
 from app.models.enums import UserRole
 from app.security.passwords import hash_password
 from app.security.tokens import issue_admin_token, issue_consumer_tokens
+from tests.fake_llm_gateway import fake_complete, fake_stream_complete
 
 
 @pytest.fixture(scope="session")
@@ -59,6 +59,45 @@ def db(engine: Engine) -> Iterator[Session]:
         connection.close()
 
 
+@pytest.fixture(autouse=True)
+def _fake_llm_gateway(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replaces the real gateway with `tests/fake_llm_gateway.py`'s
+    deterministic dispatch for every test — the offline default `LLM_MODE=stub`
+    used to provide before the `stub`/`auto` modes were removed from
+    production code.
+
+    Two kinds of test opt out and hit the real `app.llm.client.complete`/
+    `stream_complete`: `@pytest.mark.live` (an actual gateway call, see
+    `test_llm_live.py`) and `@pytest.mark.real_gateway_seams` (a unit test
+    that mocks `_call_gateway`/`_stream_gateway` itself to exercise
+    `complete()`/`stream_complete()`'s own failover, circuit-breaker and
+    error-surfacing logic — patching `complete` here would skip the very code
+    those tests are for).
+    """
+    if request.node.get_closest_marker("live") or request.node.get_closest_marker(
+        "real_gateway_seams"
+    ):
+        return
+    monkeypatch.setattr(llm_client, "complete", fake_complete)
+    monkeypatch.setattr(llm_client, "stream_complete", fake_stream_complete)
+
+
+@pytest.fixture
+def fake_media_catalog(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+    """Opt-in test routes plus a catalog-bound default agent.
+
+    Production never registers fake media providers. Default agents stay
+    unbound unless a test writes `llm_providers` and pins a model — this
+    fixture does both so pipeline tests can actually `route()`.
+    """
+    from app.agents import router
+    from tests.fake_provider_catalog import build_fake_catalog
+    from tests.llm_catalog import bind_default_agents_to_catalog
+
+    monkeypatch.setattr(router, "build_catalog", lambda session: build_fake_catalog())
+    bind_default_agents_to_catalog(db)
+
+
 def truncate_all(engine: Engine) -> None:
     """Empties every table. For tests that commit for real."""
     names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
@@ -87,12 +126,15 @@ def committed_db(engine: Engine) -> Iterator[Session]:
 
 @pytest.fixture(autouse=True)
 def _clear_redis_state() -> Iterator[None]:
-    """Drops cached config and rate-limit counters between tests.
+    """Drops cached config, rate-limit counters and LLM failover state between
+    tests.
 
-    Both live in Redis rather than Postgres, so rolling back the transaction
-    does not undo them. Without this, a test that disables a provider leaks
-    that setting into the next one, and a run of login tests exhausts the
-    shared `auth_attempt` budget partway through the file.
+    All three live in Redis rather than Postgres, so rolling back the
+    transaction does not undo them. Without this, a test that disables a
+    provider leaks that setting into the next one, a run of login tests
+    exhausts the shared `auth_attempt` budget partway through the file, and a
+    test that trips the LLM circuit breaker on a given endpoint id leaves it
+    open (with a real TTL) for whichever test reuses that id next.
     """
     from app.api.rate_limit import RULES, get_redis
     from app.platform_config import service as config_service
@@ -104,6 +146,12 @@ def _clear_redis_state() -> Iterator[None]:
         for bucket in RULES:
             for key in client.scan_iter(match=f"rl:{bucket}:*", count=500):
                 client.delete(key)
+        for key in client.scan_iter(match="llmfo:*", count=500):
+            client.delete(key)
+        for key in client.scan_iter(match="admin:llm-validate:*", count=500):
+            client.delete(key)
+        for key in client.scan_iter(match="revoked_session:*", count=500):
+            client.delete(key)
 
     flush()
     yield

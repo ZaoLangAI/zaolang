@@ -14,11 +14,14 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
 from app.models.enums import (
+    AppealStatus,
     DataRequestStatus,
     DataRequestType,
     ModerationStatus,
@@ -81,6 +84,45 @@ class ReportCase(Base, TimestampMixin):
     )
 
 
+class WorkAppeal(Base, TimestampMixin):
+    """A work owner disputing one specific hide decision.
+
+    Deliberately not a `ReportCase` status: a hide can originate from the
+    moderation queue with no report at all, and `ReportStatus`'s
+    upheld/dismissed polarity would mean the opposite of granted/denied here.
+    Scoped to `LifecycleStatus.HIDDEN` works only — a tombstone is terminal
+    and has no restore path to grant an appeal into.
+    """
+
+    __tablename__ = "work_appeals"
+
+    id: Mapped[str] = id_column("apl")
+    work_id: Mapped[str] = mapped_column(
+        ForeignKey("works.id", ondelete="RESTRICT"), nullable=False
+    )
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Best-effort link to the report (if any) that led to the hide — purely
+    # informational for a reviewer, not authoritative: a moderation-queue
+    # originated hide has no report at all.
+    source_report_id: Mapped[str | None] = mapped_column(
+        ForeignKey("report_cases.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default=AppealStatus.PENDING, nullable=False)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_work_appeals_status_created", "status", "created_at"),
+        Index("ix_work_appeals_work_id", "work_id"),
+    )
+
+
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
 
@@ -95,7 +137,38 @@ class Notification(Base, TimestampMixin):
     target_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_notifications_user_created", "user_id", "created_at"),
+        Index("ix_notifications_user_updated", "user_id", "updated_at"),
+        Index(
+            "uq_notifications_user_creation_target",
+            "user_id",
+            "target_type",
+            "target_id",
+            unique=True,
+            postgresql_where=text(
+                "target_type IN ('generation_job', 'editor_export') AND target_id IS NOT NULL"
+            ),
+        ),
+    )
+
+
+class Device(Base, TimestampMixin):
+    """APNs 设备令牌注册。一个用户可以有多台设备（手机+平板），一台设备重装 App 后
+    token 会变，靠 `token` 唯一约束 + upsert 语义去重，不靠设备 id。"""
+
+    __tablename__ = "devices"
+
+    id: Mapped[str] = id_column("dev")
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    push_token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    platform: Mapped[str] = mapped_column(String(16), default="ios", nullable=False)
+    locale: Mapped[str] = mapped_column(String(16), nullable=False)
+    last_seen_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_devices_user_id", "user_id"),)
 
 
 class PlatformConfig(Base):

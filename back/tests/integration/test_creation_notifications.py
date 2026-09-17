@@ -1,0 +1,207 @@
+"""Creation notifications upsert with the job / export they track."""
+
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.domain.credits import service as credits_service
+from app.domain.editor import exports as export_service
+from app.domain.editor import state_machine as editor_sm
+from app.domain.jobs import service as jobs_service
+from app.domain.jobs import state_machine as sm
+from app.models import DeliveryVariant, Notification, User
+from app.models.base import new_id
+from app.models.enums import (
+    DeliveryVariantStatus,
+    EditorExportStatus,
+    JobOrigin,
+    JobStatus,
+    NotificationType,
+    Operation,
+    QualityTier,
+)
+from tests.conftest import auth_header
+from tests.integration.test_editor import _enable_editor, _open_cut, _video_asset
+
+
+def _submit(db: Session, user: User, *, prompt: str = "海边的黄昏") -> object:
+    return jobs_service.submit(
+        db,
+        user_id=user.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": prompt, "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+    ).job
+
+
+def _job_notes(db: Session, user: User) -> list[Notification]:
+    return list(
+        db.scalars(
+            select(Notification).where(
+                Notification.user_id == user.id,
+                Notification.target_type == "generation_job",
+            )
+        )
+    )
+
+
+def test_submit_creates_one_progress_notification(db: Session, author: User) -> None:
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    job = _submit(db, author)
+    notes = _job_notes(db, author)
+    assert len(notes) == 1
+    note = notes[0]
+    assert note.type == NotificationType.JOB_PROGRESS
+    assert note.title_key == "notification.job_queued"
+    assert note.target_id == job.id
+    assert note.payload_json["operation"] == Operation.TEXT_TO_IMAGE
+    assert note.payload_json["status"] == JobStatus.CREATED
+    assert note.payload_json["prompt_excerpt"] == "海边的黄昏"
+    assert note.read_at is None
+
+
+def test_job_transitions_update_the_same_notification_row(db: Session, author: User) -> None:
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    job = _submit(db, author)
+    note_id = _job_notes(db, author)[0].id
+
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+    sm.transition(db, job.id, JobStatus.SUCCEEDED)
+
+    notes = _job_notes(db, author)
+    assert len(notes) == 1
+    note = notes[0]
+    assert note.id == note_id
+    assert note.type == NotificationType.JOB_SUCCEEDED
+    assert note.title_key == "notification.job_succeeded"
+    assert note.payload_json["status"] == JobStatus.SUCCEEDED
+    assert note.read_at is None
+
+
+def test_cancelled_and_expired_jobs_reuse_the_creation_row(db: Session, author: User) -> None:
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    cancelled = _submit(db, author, prompt="取消")
+    sm.transition(db, cancelled.id, JobStatus.CANCELLED)
+    cancel_note = db.scalar(
+        select(Notification).where(Notification.target_id == cancelled.id)
+    )
+    assert cancel_note is not None
+    assert cancel_note.type == NotificationType.JOB_CANCELLED
+    assert cancel_note.title_key == "notification.job_cancelled"
+
+    expired = _submit(db, author, prompt="超时")
+    sm.transition(db, expired.id, JobStatus.EXPIRED)
+    expire_note = db.scalar(select(Notification).where(Notification.target_id == expired.id))
+    assert expire_note is not None
+    assert expire_note.type == NotificationType.JOB_CANCELLED
+    assert expire_note.title_key == "notification.job_expired"
+
+
+def test_sandbox_jobs_never_write_consumer_notifications(db: Session, author: User) -> None:
+    job = jobs_service.submit(
+        db,
+        user_id=author.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={"prompt": "沙盒", "aspect_ratio": "16:9"},
+        idempotency_key=new_id("idk"),
+        origin=JobOrigin.SANDBOX,
+    ).job
+    sm.transition(db, job.id, JobStatus.QUEUED)
+    sm.transition(db, job.id, JobStatus.RUNNING)
+    sm.transition(db, job.id, JobStatus.SUCCEEDED)
+    assert _job_notes(db, author) == []
+
+
+def test_list_overlays_live_job_status(
+    client: TestClient, db: Session, author: User
+) -> None:
+    credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
+    job = _submit(db, author)
+    job.status = JobStatus.SUCCEEDED
+    db.flush()
+
+    body = client.get("/v1/notifications", headers=auth_header(author)).json()
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["type"] == NotificationType.JOB_SUCCEEDED
+    assert item["title_key"] == "notification.job_succeeded"
+    assert item["payload"]["status"] == JobStatus.SUCCEEDED
+    assert "updated_at" in item
+
+
+def test_export_queue_and_finish_share_one_notification(
+    client: TestClient, db: Session, author: User, admin: User
+) -> None:
+    _enable_editor(db, admin)
+    opened = _open_cut(client, author, _video_asset(db, author))
+    variant = DeliveryVariant(
+        cut_revision_id=opened["cut"]["head_revision_id"],
+        profile_key="douyin_9_16",
+        aspect_ratio="9:16",
+        width=1080,
+        height=1920,
+        spec_json={"profile_key": "douyin_9_16"},
+        spec_hash="n" * 64,
+        status=DeliveryVariantStatus.READY,
+    )
+    db.add(variant)
+    db.flush()
+
+    queued = export_service.queue_exports(db, user_id=author.id, variant_ids=[variant.id])
+    assert len(queued) == 1
+    export = queued[0]
+    first = db.scalar(
+        select(Notification).where(
+            Notification.user_id == author.id,
+            Notification.target_type == "editor_export",
+            Notification.target_id == export.id,
+        )
+    )
+    assert first is not None
+    assert first.type == NotificationType.JOB_PROGRESS
+    assert first.title_key == "notification.export_queued"
+    assert first.payload_json["operation"] == "drama_export"
+    assert first.payload_json["cut_id"] == opened["cut"]["id"]
+
+    editor_sm.transition_export(db, export.id, EditorExportStatus.CLAIMED)
+    editor_sm.transition_export(db, export.id, EditorExportStatus.ENCODING)
+    editor_sm.transition_export(db, export.id, EditorExportStatus.UPLOADING)
+    editor_sm.transition_export(db, export.id, EditorExportStatus.VERIFYING)
+    editor_sm.transition_export(db, export.id, EditorExportStatus.SUCCEEDED)
+
+    notes = list(
+        db.scalars(
+            select(Notification).where(
+                Notification.user_id == author.id,
+                Notification.target_type == "editor_export",
+            )
+        )
+    )
+    assert len(notes) == 1
+    assert notes[0].id == first.id
+    assert notes[0].type == NotificationType.JOB_SUCCEEDED
+    assert notes[0].title_key == "notification.export_succeeded"
+
+
+def test_following_payload_includes_the_follower_handle(
+    client: TestClient, db: Session, author: User, remixer: User
+) -> None:
+    response = client.post(f"/v1/users/{author.id}/follow", headers=auth_header(remixer))
+    assert response.status_code == 200
+    note = db.scalar(
+        select(Notification).where(
+            Notification.user_id == author.id,
+            Notification.type == NotificationType.NEW_FOLLOWER,
+        )
+    )
+    assert note is not None
+    assert note.payload_json["follower_handle"] == "remixer"
+    assert note.payload_json["follower_display_name"] == "二创者"
+
+    listed = client.get("/v1/notifications", headers=auth_header(author)).json()["items"][0]
+    assert listed["payload"]["follower_handle"] == "remixer"

@@ -1,20 +1,21 @@
 """Response normalisation for the OpenAI-compatible gateway.
 
-The three models behind the gateway behave differently, and every difference
-observed against the live endpoint is handled here rather than in each agent:
+Upstream models do not share one response shape, and every difference
+observed against a live endpoint is handled here rather than in each agent:
 
-* `ling-3.0-flash-free` is a reasoning model. Thinking tokens are billed against
-  `max_tokens`, so a small budget returns empty `content` with
-  `finish_reason=length` and the text only present in `reasoning_details`.
+* Reasoning models bill thinking against `max_tokens`, so a small budget
+  returns empty `content` with `finish_reason=length` and the text only
+  present in `reasoning_details`.
 * Thinking models emit `<think>...</think>` before the payload even when
   `response_format={"type": "json_object"}` is requested.
-* `doubao-seed-2-1-pro` returns clean JSON.
+* Some models return clean JSON with no extra wrapper.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -47,31 +48,47 @@ def strip_thinking(text: str) -> str:
     return cleaned.strip()
 
 
-def extract_json(text: str) -> dict[str, Any] | None:
+def extract_json(
+    text: str, *, required_keys: tuple[str, ...] | None = None
+) -> dict[str, Any] | None:
     """Finds a JSON object inside free-form model output.
 
-    Tries the whole string, then a fenced block, then the outermost balanced
-    braces. Returns None rather than raising so the caller can decide between
-    a repair round-trip and a fallback.
+    Tries the whole string, then a fenced block, then balanced braces.
+    When `required_keys` is set, skip objects that miss any of those keys
+    (glm-5.3-flash thinking often embeds a harness decoy like
+    `{"answer":"$your_answer"}` before the real payload). Returns None
+    rather than raising so the caller can decide between a repair
+    round-trip and a fallback.
     """
     candidate = text.strip()
     if not candidate:
         return None
 
-    parsed = _try_load(candidate)
+    parsed = _accept(_try_load(candidate), required_keys)
     if parsed is not None:
         return parsed
 
     fenced = FENCED_JSON.search(candidate)
     if fenced:
-        parsed = _try_load(fenced.group(1))
+        parsed = _accept(_try_load(fenced.group(1)), required_keys)
         if parsed is not None:
             return parsed
 
-    span = _outermost_object(candidate)
-    if span is not None:
-        return _try_load(span)
+    for span in _iter_objects(candidate):
+        parsed = _accept(_try_load(span), required_keys)
+        if parsed is not None:
+            return parsed
     return None
+
+
+def _accept(
+    parsed: dict[str, Any] | None, required_keys: tuple[str, ...] | None
+) -> dict[str, Any] | None:
+    if parsed is None:
+        return None
+    if required_keys and any(key not in parsed for key in required_keys):
+        return None
+    return parsed
 
 
 def _try_load(raw: str) -> dict[str, Any] | None:
@@ -82,11 +99,21 @@ def _try_load(raw: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _outermost_object(text: str) -> str | None:
-    """Scans for a balanced `{...}`, ignoring braces inside string literals."""
-    start = text.find("{")
-    if start == -1:
-        return None
+def _iter_objects(text: str) -> Iterator[str]:
+    """Yields each balanced `{...}` starting at successive opening braces."""
+    start = 0
+    while True:
+        index = text.find("{", start)
+        if index == -1:
+            return
+        span = _object_at(text, index)
+        if span is not None:
+            yield span
+        start = index + 1
+
+
+def _object_at(text: str, start: int) -> str | None:
+    """Scans for a balanced `{...}` from `start`, ignoring braces in strings."""
     depth = 0
     in_string = False
     escaped = False
@@ -111,6 +138,13 @@ def _outermost_object(text: str) -> str | None:
     return None
 
 
+def _outermost_object(text: str) -> str | None:
+    index = text.find("{")
+    if index == -1:
+        return None
+    return _object_at(text, index)
+
+
 def normalize_completion(raw: Any, *, expect_json: bool) -> NormalizedResponse:
     """Turns a chat completion into a predictable shape.
 
@@ -130,7 +164,7 @@ def normalize_completion(raw: Any, *, expect_json: bool) -> NormalizedResponse:
     if not content:
         # Reasoning-only response: the answer exists but never made it into
         # `content` because the budget ran out during thinking.
-        reasoning = _reasoning_text(message)
+        reasoning = reasoning_text(message)
         if reasoning:
             content = reasoning
             recovered = True
@@ -156,7 +190,7 @@ def normalize_completion(raw: Any, *, expect_json: bool) -> NormalizedResponse:
     )
 
 
-def _reasoning_text(message: dict[str, Any]) -> str:
+def reasoning_text(message: dict[str, Any]) -> str:
     """Collects reasoning text across the shapes the gateway returns."""
     direct = message.get("reasoning_content") or message.get("reasoning")
     if isinstance(direct, str) and direct.strip():
@@ -173,6 +207,30 @@ def _reasoning_text(message: dict[str, Any]) -> str:
         if joined:
             return joined
     return ""
+
+
+def reasoning_text_from_delta(delta: Any) -> str:
+    """Same shapes as `reasoning_text`, but from a stream `delta` object."""
+    if delta is None:
+        return ""
+    if isinstance(delta, dict):
+        return reasoning_text(delta)
+    payload: dict[str, Any] = {}
+    dumper = getattr(delta, "model_dump", None)
+    if callable(dumper):
+        try:
+            dumped = dumper()
+        except TypeError:
+            dumped = None
+        if isinstance(dumped, dict):
+            payload = dumped
+    if not payload:
+        payload = {
+            "reasoning_content": getattr(delta, "reasoning_content", None),
+            "reasoning": getattr(delta, "reasoning", None),
+            "reasoning_details": getattr(delta, "reasoning_details", None),
+        }
+    return reasoning_text(payload)
 
 
 def _to_dict(obj: Any) -> dict[str, Any]:

@@ -26,14 +26,19 @@ interface Command {
  * to a screen reader: the input keeps focus and `aria-activedescendant` moves
  * the virtual cursor, so arrow keys read out options without stealing focus.
  */
-export function CommandPalette() {
+export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
   const t = useTranslations('commandPalette');
   const tNav = useTranslations('nav');
+  const tShortform = useTranslations('shortform');
+  const tScript = useTranslations('scriptStudio');
+  const tCharacters = useTranslations('characters');
+  const tScenes = useTranslations('scenes');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { status, openLogin } = useSession();
+  const { requireAuth, user } = useSession();
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => openSignal > 0);
+  const [seenSignal, setSeenSignal] = useState(openSignal);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [works, setWorks] = useState<WorkSummary[]>([]);
@@ -48,6 +53,13 @@ export function CommandPalette() {
     setActive(0);
     setWorks([]);
   }, []);
+
+  // Host bumps this when a shortcut fires before the chunk finished loading.
+  // Adjust during render (same pattern as top-bar) to avoid set-state-in-effect.
+  if (openSignal !== seenSignal) {
+    setSeenSignal(openSignal);
+    if (openSignal > 0) setOpen(true);
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -115,25 +127,44 @@ export function CommandPalette() {
     const navigate: Command[] = [
       { id: 'discover', label: tNav('discover'), path: '/discover' },
       { id: 'create', label: tNav('create'), path: '/create' },
+      { id: 'create-short', label: tShortform('title'), path: '/create/short' },
+      { id: 'create-script', label: tScript('title'), path: '/create/script' },
+      { id: 'create-characters', label: tCharacters('eyebrow'), path: '/create/characters' },
+      { id: 'create-scenes', label: tScenes('eyebrow'), path: '/create/scenes' },
       { id: 'learn', label: tNav('learn'), path: '/learn' },
+      { id: 'learn-publish', label: tNav('learnPublish'), path: '/learn/publish' },
+      { id: 'skills', label: tNav('skills'), path: '/skills' },
       { id: 'collection', label: tNav('collection'), path: '/collection' },
       { id: 'profile', label: tNav('profile'), path: '/profile' },
       { id: 'billing', label: tNav('billing'), path: '/billing' },
       { id: 'notifications', label: tNav('notifications'), path: '/notifications' },
       { id: 'settings', label: tNav('settings'), path: '/profile/settings' },
-    ].map(({ id, label, path }) => ({
+    ]
+      // `false` (not just falsy/unknown) is the only signal worth acting
+      // on here — an anonymous visitor or a session still loading has no
+      // `user` yet, and hiding the entry for them would flicker it back in
+      // the moment login resolves.
+      .filter((entry) => entry.id !== 'create-script' || user?.features.script_studio !== false)
+      .map(({ id, label, path }) => ({
       id,
       group: t('groupNavigate'),
       label,
       run: () => {
-        // Protected destinations still need a session; opening the login
-        // dialog beats landing the user on an empty page.
         if (
-          status !== 'authenticated' &&
-          ['collection', 'profile', 'billing', 'notifications', 'settings'].includes(id)
+          [
+            'learn-publish',
+            'collection',
+            'profile',
+            'billing',
+            'notifications',
+            'settings',
+            'create-script',
+            'create-characters',
+            'create-scenes',
+          ].includes(id)
         ) {
           close();
-          openLogin();
+          requireAuth({ label, run: () => go(path) });
           return;
         }
         go(path);
@@ -165,7 +196,21 @@ export function CommandPalette() {
       : navigate;
 
     return [...search, ...filteredNavigate, ...workResults];
-  }, [close, go, openLogin, searchable, status, t, tNav, trimmed, works]);
+  }, [
+    close,
+    go,
+    requireAuth,
+    searchable,
+    t,
+    tCharacters,
+    tNav,
+    tScenes,
+    tScript,
+    tShortform,
+    trimmed,
+    user?.features,
+    works,
+  ]);
 
   if (!open) return null;
 

@@ -1,56 +1,70 @@
 ---
 name: zaolang-platform-config
-description: 造浪的运行时配置中心与 Feature Flag：七个配置段（pricing / routing_weights / providers / agents / royalty / feature_flags / moderation）的强类型 schema、版本化写入、Redis 缓存失效、审计与一键回滚。Use when adding a runtime-configurable setting, changing tier pricing or routing weights, adding a feature flag, rebinding an agent model, or debugging why a config change did not take effect.
+description: Runtime configuration — strongly-typed, versioned, audited, and rollback-capable schemas for pricing / royalty / feature_flags / shortform / llm_providers plus the three moderation-config categories (content, learning, skill). Use when adding or relocating runtime settings, changing pricing or flags, or debugging why a config change did not take effect.
 disable-model-invocation: true
 ---
 
-# 运行时配置中心与 Feature Flag
+# Runtime Config Center & Feature Flags
 
-## 职责
+## Scope
 
-凡是「上线后可能要调」的数值都不写死在代码里：档位定价、路由评分权重、供应商开关与限额、各智能体的模型绑定、回流分成规则、审核阈值、Feature Flag。全部存 `PlatformConfig`，后台可热改、可看 diff、可回滚，每次变更进 `AuditLog`。
+Runtime config is surfaced by business ownership: the config center's home page shows global feature flags and short-video specs directly; pricing/royalty/marketplace and the three moderation-rule categories only open via the "configure" button next to each business page's refresh control. Form fields use business-language labels — schema keys stay in tooltips, not as the visible label. Model endpoints are still versioned inside `llm_providers`, but reachable only through a dedicated masked API. Agent provider/model bindings live on `AgentProfile` and are not part of `PlatformConfig`. Per-endpoint timeout and concurrency are maintained on the model page — there's no separate global LLM-reliability section.
 
-## 关键路径
+## Key Paths
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `back/app/platform_config/schemas.py` | `CONFIG_SCHEMAS`（key → pydantic 类型）与 `DEFAULT_CONFIGS`（默认值） |
+| `back/app/platform_config/schemas.py` | `CONFIG_SCHEMAS` (key → pydantic type) and `DEFAULT_CONFIGS` (defaults) |
 | `back/app/platform_config/service.py` | `get_typed` / `get_raw` / `set_value` / `rollback` / `history` / `invalidate` / `is_enabled` |
-| `back/app/api/v1/admin/config.py` | 读接口 viewer 级、写接口与 rollback **admin 级** |
-| `front/src/components/admin/config/config-console.tsx` | 编辑器 + 版本历史 + JSON diff |
-| `front/src/components/admin/config/feature-flags-panel.tsx` | Flag 灰度开关 |
-| `front/src/components/admin/providers/routing-weights-panel.tsx` | 路由权重面板 |
+| `back/app/api/v1/admin/config.py` | reads require `viewer`; writes and rollback require **admin** |
+| `front/src/components/admin/config/runtime-config-panel.tsx` | the reusable form editor: business-language labels (schema keys only as tooltips), grouped feature-flag on/off cards (no rollout slider), reason field, and Advanced-collapsed JSON / diff / version; rollback stays in the history details |
+| `front/src/components/admin/models/llm-providers-panel.tsx` | model management: a flat primary/backup list plus per-endpoint primary/backup, with full CRUD. Vendor list prices can be typed in USD or CNY; CNY uses a form-local rate (default 7.2, never persisted) and integer micro-unit math, and the upsert still writes `*_micro_usd` only |
+| `back/app/providers/model_catalog.py` | `ModelCatalogEntry.price_items`: each known model's real billable line items, one per `(vendor, model)` record, sourced from that vendor's own actual resale channel and never shared between AiHubMix, DMXAPI, Metaso, and fal.ai for the same nominal upstream model (see invariant #9) |
+| `back/app/domain/costs/service.py` | turns a `LlmProviderEndpoint`'s typed pricing sections into what one call cost, in micro-USD; dispatches by `billing_profile` for a shape that isn't the default per-second/per-image/per-token one (Doubao Seedance's token formula) |
 
-七个 key：`pricing`、`routing_weights`、`providers`、`agents`、`royalty`、`feature_flags`、`moderation`。
+Nine keys: `pricing`, `royalty`, `marketplace`, `feature_flags`, `shortform`, `llm_providers`, `content_moderation`, `learning_moderation`, `skill_moderation`. `marketplace` governs unlock commission and price caps; `feature_flags.marketplace_enabled` is its master switch. The retired `providers`, `agents`, `moderation`, and `llm_reliability` keys are kept only as inert history — they can no longer be read or rolled back to.
 
-## 不可破坏的不变量
+Inside `llm_providers`, every endpoint declares exactly one `kind`: `general` (text and image/video understanding) or `media` (image/video/audio generation). A `general` endpoint with `"video"` in `input_modalities` derives the single capability `video_analysis` (the `capabilities` property; its `media_pricing` is reduced to just `video_analysis`) — so DashScope-protocol media here is analysis-only (video in, text out), not generation. Judgment-role and assist-role `AgentProfile`s manually pick a default provider endpoint, a compatible model, and an optional backup endpoint; a non-default agent without an explicit binding inherits its role's default agent. A `media` endpoint declares a single model id (`model`) plus input/output modalities and **`protocol`** (an HTTP-contract standard name, not a gateway provider name); its capability tags are derived by `capabilities_for_modalities`, and it enters `router.py`'s dynamic candidate catalogue for `intent_router`'s LLM-driven selection. Media endpoints have no primary/backup ordering or concurrency scheduling semantics. `protocol` lives in this JSON blob — it never touches SQLAlchemy or Alembic. An invalid CNY rate or price on the admin form is rejected — never coerced to zero or to the default 7.2.
 
-1. **读配置只走 `get_typed(session, key, Schema)`**，返回强类型对象。不要 `get_raw` 后直接下标取值，schema 校验是防止一次错误编辑把生产打挂的唯一屏障。
-2. **写入是版本化追加**：`set_value` 新增一条 `PlatformConfig` 版本、失效 Redis 缓存、写 `AuditLog`（含操作者、前后值摘要、理由）。绕过 service 直接 UPDATE 表 = 丢历史、丢审计、缓存不失效。
-3. **改配置必须带理由**，`rollback` 同样。后台高危操作走二次确认（见 `zaolang-admin-console`）。
-4. **密钥类字段永不回显**：接口与界面只返回掩码与连通性状态。新增敏感字段时同步 schema 的脱敏逻辑。
-5. **缓存失效不能靠 TTL 兜底**：`set_value` 与 `rollback` 都要 `invalidate(key)`。Redis 不可用时 service 退化为直读数据库（探测包在 `begin_nested` 里，不污染事务）。
-6. **默认值必须能让空库正常工作**：`DEFAULT_CONFIGS` 是 `get_typed` 在数据库无该 key 时的回退，测试与全新部署都依赖它。
-7. **路由权重四项 `quality/latency/cost/reliability` 的语义与顺序由网关实现固定**，只能调数值，不能改评分公式（改公式见 `zaolang-agent-gateway`）。
+`billing_profile` (a free-form string on `LlmProviderEndpoint`, copied from the picked catalog entry) is metadata for which cost-calculation shape applies — `app.domain.costs.service.SEEDANCE_TOKENS_BILLING_PROFILE` (`"seedance_tokens"`) is the one value the cost code actually branches on today, to bill `MediaPricing.token_video`'s per-million-token formula instead of `MediaPricing.video`'s per-second rate for the same `text_to_video`/`image_to_video`/`video_to_video` capabilities. Every other pricing-shape difference (Doubao Seedream's size-tiered image price, a free reference-image count, a text model's cached-input rate) is handled generically inside the per-section cost functions regardless of `billing_profile`. `MediaPricing.video_analysis` (`VideoAnalysisPricing.per_request_micro_usd`, a flat per-call price) is the fifth section; `media_call_cost_micro_usd` reaches it through the `section == "video_analysis"` branch via `pricing_section_for`.
 
-## 改造切入点
+Other `schemas.py` details worth knowing: `VIDEO_RESOLUTIONS` is the closed set of priceable video resolutions (`2K`, `768P`, `480p`/`720p`/`1080p`, `480P`/`720P`/`1080P`) — the mixed casing is literal, each vendor's API expects its own, and it must never be normalised. `LlmProviderEndpoint.output_budget(requested, prompt_tokens=, reasoning_model=)` computes the completion-token ask: a reasoning model with a declared `max_output_tokens` gets `requested + REASONING_THINKING_MARGIN_TOKENS` (4096) capped by the ceiling, and `expand_output_budget` is the one truncation retry (double, re-cap). `AgentModelBinding` is still defined in `schemas.py` but is dead: it is in no `CONFIG_SCHEMAS` entry and nothing imports it — agent bindings live on `AgentProfile`.
 
-**加一个配置项**
+## Invariants
 
-1. 在 `schemas.py` 对应 `ConfigSection` 加字段（**带默认值**，否则存量版本反序列化会炸）。
-2. 同步 `DEFAULT_CONFIGS` 里的同名段。
-3. 调用处改成读新字段，不要留 `getattr(cfg, "x", fallback)` 这种绕过类型的写法。
-4. 前端 `config-console.tsx` 靠 JSON 编辑器自动支持，无需改代码；有专用面板的（定价、权重、Flag）要同步面板。
-5. 写单元测试进 `back/tests/unit/test_platform_config.py`。
+1. **Reads only go through `get_typed(session, key, Schema)`**, returning a strongly-typed object. Never subscript `get_raw`'s result directly — schema validation is the only barrier stopping one bad edit from taking production down.
+2. **Writes are versioned appends**: `set_value` inserts a new `PlatformConfig` version (deactivating the previous one in the same transaction) and invalidates the Redis cache. The `AuditLog` row (actor, before/after, reason) is written by the admin HTTP handlers — `audit.record(...)` in `api/v1/admin/config.py`'s update/rollback routes and in `llm_providers.py` — not by the service itself, so a non-HTTP caller of `set_value` (seed, a script) leaves version history but no audit entry. Updating the table directly, bypassing the service, means losing history, losing the audit trail, and a stale cache.
+3. **Every config change requires a reason**, and so does `rollback`. High-risk admin operations require a second confirmation (see `zaolang-admin-console`).
+4. **Secret fields never enter the general config API**: `llm_providers`'s list/get/update/diff/history/rollback all reject it — only the dedicated model API returns masked values and connectivity status.
+5. **Cache invalidation never relies on TTL alone**: both `set_value` and `rollback` call `invalidate(key)`. If Redis is unavailable, the service falls back to reading the database directly: `_try_cache_get` / `_try_cache_set` / `invalidate` each swallow `redis.RedisError` (returning `None` / suppressing / logging a warning) and `get_raw` falls through to Postgres — no `begin_nested`, no savepoint; Redis is never touched inside the SQL transaction's error path.
+6. **Defaults must let an empty database work.** `DEFAULT_CONFIGS` is what `get_typed` falls back to when the key doesn't exist in the database yet — tests and fresh deployments both depend on it.
+7. **Never bring back a routing-score-weight config section.** Which provider wins is decided by `intent_router`'s LLM judgment (`zaolang-agent-gateway` invariant #1), not a tunable number — this module only owns the provider catalogue's hard switches: existence, enablement, and quota limits.
+8. **A `get_typed` validation failure falls back to the whole `DEFAULT_CONFIGS["llm_providers"]` (empty `endpoints`)** — one bad endpoint can wipe the entire routing catalogue. So `LlmProviderEndpoint.protocol` must be optional (`None`-able): when the field is missing, `_migrate_legacy_fields` infers it from capabilities via `infer_media_protocol` (video-generation-only → `minimax`, `video_analysis`-only → `dashscope`, else → `openai`). `kind=general` always clears `protocol`. An explicit admin upsert is validated strictly: an unimplemented protocol, or `minimax`+image/audio raise `ValidationFailed` (HTTP 422) — silent fallback is never allowed. `openai`+video is now a valid combination (the OpenAI Videos API contract, text-to-video scoped by whatever the target model's schema supports), not just image/audio. Existing endpoints with a cross-protocol mismatch are individually skipped (with a warning logged) inside `LlmProviderConfig`, rather than failing the whole config.
+9. **AiHubMix (USD, international channel), DMXAPI (CNY, domestic channel), and Metaso (CNY, its own MiniMax H3 list) never share one default price for the same nominal upstream model.** MiniMax H3 has a catalog entry under all three vendors, and Doubao Seedance 2.5 under AiHubMix and DMXAPI; each entry's `price_items` are sourced from that vendor's own actual channel — MiniMax's international PAYG page for AiHubMix, its domestic page for DMXAPI, and [秘塔 H3 价目](https://metaso.cn/minimax-h3) for Metaso. `test_model_catalog.py`'s `test_aihubmix_and_dmxapi_never_share_one_price_for_the_same_upstream_model` plus `test_minimax_h3_price_items_differ_across_all_three_vendors` are regression tests for exactly the mistake of collapsing these back into one shared number. fal.ai is a fourth vendor with its own MiniMax H3 Max list (`minimax/h3-max`, `protocol=fal`) priced from fal's post-promo card — that is a different upstream model from H3, so the three-vendor H3 difference tests stay as they are. A DMXAPI `price_item.default_micro_usd` is that upstream vendor's own domestic list price, not DMXAPI's real invoiced rate — DMXAPI resells at a markup plus 6% tax (`rmb.dmxapi.cn`'s own "厂商原价 / DMXAPI价格（含税6%）" columns), called out per item in `markup_note`. Metaso's figures are its own list (about 18% of MiniMax's domestic PAYG) and must **not** carry a `markup_note`. Every `price_items` entry must carry `pricing_doc_url`. `source_amount`/`markup_note`/`pricing_doc_url` are catalog-authoring metadata and regression-test fixtures only — the admin form no longer renders a "vendor page pricing reference" block or a pricing-source link when an operator picks a known model (removed alongside `knownModelPricingReference`/`knownModelPricingDocLink`); an operator verifying a price against the vendor's own page must look it up directly, not read it off `/admin/models`.
+10. **A catalog default only pre-fills a form field the first time an operator picks that model — it never overwrites a price already saved on an existing endpoint** just because the edit dialog reopened. Re-selecting the same model from the picker while editing *does* reapply the preset (same as it already does for protocol/modalities) — that is deliberate, opt-in interaction, not a silent background overwrite.
 
-**加一个新配置段**：`CONFIG_SCHEMAS` 与 `DEFAULT_CONFIGS` 各加一项即可，`all_keys()` 自动带出，后台列表自动出现。
+## Extension Points
 
-**加一个 Feature Flag**：`FeatureFlags` 加布尔字段 → 调用处 `is_enabled(session, "flag_name", user_id=...)`。灰度按 user_id 哈希，不要自己实现分流。
+**Add a config field**
 
-## 验证
+1. Add the field to the relevant `ConfigSection` in `schemas.py` (**with a default**, or deserializing an existing version breaks).
+2. Add the matching field to `DEFAULT_CONFIGS`.
+3. Update call sites to read the new field directly — never leave a type-bypassing `getattr(cfg, "x", fallback)`.
+4. Dedicated forms live in `runtime-config-panel.tsx` (feature flags, shortform, pricing, royalty, marketplace) and must get an explicit control — they are not schema-auto-rendered. The Advanced JSON editor can write any field after schema validation, but operators should not have to use it for a new product field. (`ShortformConfig` today is only `profiles: dict[str, ShortformProfile]` + `default_profile`; anything else you remember on it was never shipped.)
+5. Add a unit test to `back/tests/unit/test_platform_config.py`.
+
+**Add a new config section**: add an entry to both `CONFIG_SCHEMAS` and `DEFAULT_CONFIGS` — `all_keys()` picks it up automatically, and it appears in the admin list on its own.
+
+**Add a feature flag**: add a boolean field to `FeatureFlags` → check it at call sites with `is_enabled(session, "flag_name", user_id=...)`. The config-center form is on/off only. `is_enabled` still honors a stored `rollout_percentages` entry (stable user-id hash) if one is written via Advanced JSON — don't implement a second bucketing path. The eight creation-surface flags (`drama_studio_enabled` / `web_editor_enabled` / `variant_export_enabled` / `editor_ai_enabled` / `editor_mcp_enabled` / `script_studio_enabled` / `video_analysis_enabled` / `canvas_studio_enabled`) all default to false. The export/AI/MCP dependency on `web_editor_enabled` is not in the schema — it is enforced at the gate, `require_flag` in `domain/editor/flags.py`, which checks `FLAG_EDITOR` first for `FLAG_EXPORT`/`FLAG_AI`/`FLAG_MCP`. `script_studio_enabled` is deliberately independent of `drama_studio_enabled` (script writing ships ahead of the full editor); `video_analysis_enabled` gates the `/create` tool card and `POST /v1/generation-jobs` for `operation=video_analysis`. `canvas_studio_enabled` gates the whole infinite-canvas surface, and its gate raises `NotFound` rather than `Forbidden` (see `zaolang-canvas`). Local `make seed` (`_seed_editor_flags`) turns all eight on — never write that seed behavior into `DEFAULT_CONFIGS`. A new flag also needs a `FLAG_DESCRIPTIONS` label in `api/v1/admin/config.py` (`test_admin_ops_platform.py` asserts it matches `FEATURE_FLAG_NAMES`). See `zaolang-editor-drama`.
+
+**Add a known model to the provider picker**: add a `ModelCatalogEntry` to `model_catalog.py`'s `VENDOR_MODEL_CATALOG[vendor]`, with `price_items` sourced from that specific vendor's own actual channel (see invariant #9) — never copy another vendor's entry's numbers even for "the same" upstream model. Convert the vendor's own quoted unit to micro-USD with `_usd_micro_usd`/`_cny_micro_usd` (the latter at the same 7.2 CNY/USD rate the admin form defaults to) and record `source_amount`/`quoted_on`/`pricing_doc_url` verbatim — these three fields document where the number came from for the next editor of this file and for `test_model_catalog.py`, but are not surfaced anywhere in `/admin/models` (see invariant #9). Add coverage to `test_model_catalog.py` (every price item non-negative, a `markup_note` on every DMXAPI item, no `markup_note` on a Metaso item, and — if this is a model that also has an entry under another vendor — that the vendors' numbers differ). `GET /admin/llm-providers/catalog` picks the new entry up automatically; the admin form's `VendorModelPicker.applyModel` silently pre-fills the pricing fields from `price_items` by `key`/`dimension` (see `priceItemsToFormPatch` in `llm-providers-panel.tsx`) using the vocabulary `video_generation` / `video_input_material` / `video_extra_reference_image` / `image_generation` / `image_input_reference` / `token_video_no_ref` / `token_video_with_ref` / `llm_input_tokens` / `llm_output_tokens` / `llm_cached_input_tokens` — the operator sees only the resulting numbers in the normal price fields, never a separate reference block.
+
+**Add a fundamentally different billing shape** (not just a new dimension on an existing shape): add the new pricing section to `MediaPricing`/`TokenPricing` in `schemas.py` (optional, default `None`/`0`, dropped by the same capability-coverage rule as `video`/`image`/`audio` in `_media_model_and_modalities_are_coherent`), add the cost function to `costs/service.py`, and branch on a new `billing_profile` string constant inside `media_call_cost_micro_usd`/`llm_call_cost_micro_usd` — mirroring `SEEDANCE_TOKENS_BILLING_PROFILE`. Every existing caller must keep costing exactly as before when it doesn't set the new profile.
+
+## Verify
 
 ```bash
-cd back && conda run -n zaolang pytest tests/unit/test_platform_config.py tests/integration/test_admin_ops_platform.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_platform_config.py tests/unit/test_model_pricing.py tests/unit/test_model_catalog.py tests/integration/test_admin_ops_platform.py tests/integration/test_admin_llm_providers.py -v
 ```
 
-改完在后台 `/admin/config` 实操一遍：编辑 → 看 diff → 回滚 → 看 `/admin/audit` 里两条记录都带理由。
+After changing something, exercise it in admin at `/admin/config`: edit → view the diff → roll back → confirm both actions appear with their reasons in `/admin/audit` (Log Center).

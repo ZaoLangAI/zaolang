@@ -55,8 +55,18 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1024 } },
     },
     {
+      // Same scan at the phone breakpoint. Its own project rather than a
+      // viewport loop inside the spec, because the layout differs enough that a
+      // violation here has to be attributable to the narrow rendering.
+      name: 'a11y-mobile',
+      testMatch: /a11y\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } },
+    },
+    {
       name: 'visual-qa',
       testMatch: /visual\.spec\.ts/,
+      // The creation-chain pages need the saved consumer session.
+      dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
   ],

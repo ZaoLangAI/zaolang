@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -45,9 +47,89 @@ def test_video_duration_adds_a_surcharge() -> None:
     assert long.estimated_seconds > short.estimated_seconds
 
 
+def test_image_to_image_and_audio_generation_are_priced_without_a_duration_surcharge() -> None:
+    """Neither operation is in `VIDEO_OPERATIONS`, so a caller passing a
+    (meaningless) `duration_seconds` must not be charged a video surcharge."""
+    for operation in (Operation.IMAGE_TO_IMAGE, Operation.AUDIO_GENERATION):
+        priced = quote(operation=operation, quality_tier=QualityTier.STANDARD, duration_seconds=30)
+        assert "duration_surcharge" not in priced.breakdown
+        assert priced.credits == priced.breakdown["base"]
+
+
+def test_output_count_multiplies_the_base_price_not_the_video_surcharge() -> None:
+    """`output_count` only ever comes from a multi-view `character` job — an
+    image operation with no duration surcharge to worry about."""
+    single = quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    triple = quote(
+        operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD, output_count=3
+    )
+    assert triple.credits == single.credits * 3
+    assert triple.breakdown["additional_outputs"] == single.breakdown["base"] * 2
+    assert triple.estimated_seconds == single.estimated_seconds * 3
+
+
+def test_output_count_of_one_is_the_same_as_omitting_it() -> None:
+    omitted = quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD)
+    explicit = quote(
+        operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD, output_count=1
+    )
+    assert omitted == explicit
+    assert "additional_outputs" not in explicit.breakdown
+
+
 def test_unpriced_combination_is_rejected() -> None:
     with pytest.raises(ValueError, match="未定价"):
         quote(operation="unknown_op", quality_tier=QualityTier.STANDARD)
+
+
+def test_the_configured_surcharge_is_what_gets_charged(db: Session, admin: User) -> None:
+    """The per-second surcharge lives in the config centre, so an operator
+    raising it must change the next quote rather than only the stored JSON."""
+    from app.domain.jobs import service as jobs_service
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import DEFAULT_CONFIGS
+
+    before = jobs_service.quote_for(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        duration_seconds=10,
+    )
+
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    value["video_per_second_surcharge"]["standard"] = 40
+    config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
+
+    after = jobs_service.quote_for(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        duration_seconds=10,
+    )
+
+    surcharge_seconds = 10 - DEFAULT_CONFIGS["pricing"]["video_base_seconds"]
+    assert before.breakdown["duration_surcharge"] == surcharge_seconds * 12
+    assert after.breakdown["duration_surcharge"] == surcharge_seconds * 40
+    assert after.credits - before.credits == surcharge_seconds * (40 - 12)
+
+
+def test_the_included_duration_comes_from_config_too(db: Session, admin: User) -> None:
+    from app.domain.jobs import service as jobs_service
+    from app.platform_config import service as config_service
+    from app.platform_config.schemas import DEFAULT_CONFIGS
+
+    value = copy.deepcopy(DEFAULT_CONFIGS["pricing"])
+    value["video_base_seconds"] = 10
+    config_service.set_value(db, "pricing", value, actor_user_id=admin.id)
+
+    priced = jobs_service.quote_for(
+        db,
+        operation=Operation.TEXT_TO_VIDEO,
+        quality_tier=QualityTier.STANDARD,
+        duration_seconds=10,
+    )
+
+    assert "duration_surcharge" not in priced.breakdown
 
 
 def test_royalty_rate_decays_with_distance() -> None:

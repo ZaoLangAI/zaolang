@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
 
 from app.api.deps import DbSession
+from app.api.request_utils import as_utc
 from app.api.schemas.admin import (
     AnnouncementRequest,
     AnnouncementView,
@@ -36,23 +38,41 @@ from app.models import Announcement, Notification, PlatformConfig, User
 from app.models.base import utcnow
 from app.models.enums import NotificationType, UserStatus
 from app.platform_config import service as config_service
-from app.platform_config.schemas import CONFIG_SCHEMAS, DEFAULT_CONFIGS, FeatureFlags
+from app.platform_config.schemas import (
+    CONFIG_SCHEMAS,
+    DEFAULT_CONFIGS,
+    FEATURE_FLAG_NAMES,
+    FeatureFlags,
+)
 
 router = APIRouter(tags=["admin:config"])
 
 FLAG_DESCRIPTIONS = {
-    "semantic_search": "语义检索与相似作品推荐",
-    "style_presets": "风格预设库",
-    "royalties": "二创回流分成",
-    "command_palette": "Cmd+K 命令面板",
     "video_generation": "视频生成能力",
     "public_registration": "开放注册",
+    "drama_studio_enabled": "短剧工作室",
+    "web_editor_enabled": "桌面浏览器剪辑器",
+    "variant_export_enabled": "交付变体导出",
+    "editor_ai_enabled": "AI 剪辑方案",
+    "editor_mcp_enabled": "剪辑 Remote MCP",
+    "marketplace_enabled": "作品与技能积分解锁市场",
+    "script_studio_enabled": "文案创作工作室",
+    "video_analysis_enabled": "视频解析",
+    "canvas_studio_enabled": "无限画布创作台",
 }
+
+# The landing page deliberately owns only truly global settings. Domain
+# settings remain reachable by their explicit key from the business page
+# that owns them, but are not advertised here.
+CONFIG_CENTRE_KEYS = ("feature_flags", "shortform")
+# Model endpoints contain credentials and are only ever managed through the
+# masked, relation-aware `/llm-providers` API.
+GENERIC_CONFIG_KEYS = frozenset(set(CONFIG_SCHEMAS) - {"llm_providers"})
 
 
 @router.get("/config", response_model=Page[ConfigValueResponse])
 def list_config(session: DbSession, user: Viewer, _: AdminRead) -> Page[ConfigValueResponse]:
-    return Page(items=[_value_response(session, key) for key in config_service.all_keys()])
+    return Page(items=[_value_response(session, key) for key in CONFIG_CENTRE_KEYS])
 
 
 @router.get("/config/{key}", response_model=ConfigValueResponse)
@@ -175,9 +195,9 @@ def feature_flags(session: DbSession, user: Viewer, _: AdminRead) -> Page[Featur
             name=name,
             enabled=bool(getattr(flags, name)),
             rollout_percent=flags.rollout_percentages.get(name, 100),
-            description=FLAG_DESCRIPTIONS.get(name, ""),
+            description=FLAG_DESCRIPTIONS.get(name, name),
         )
-        for name in FLAG_DESCRIPTIONS
+        for name in FEATURE_FLAG_NAMES
     ]
     return Page(items=items)
 
@@ -191,6 +211,8 @@ def audit_logs(
     action: str | None = None,
     target_type: str | None = None,
     target_id: str | None = None,
+    created_after: dt.datetime | None = None,
+    created_before: dt.datetime | None = None,
     cursor: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> Page[AuditLogView]:
@@ -200,6 +222,8 @@ def audit_logs(
         action=action,
         target_type=target_type,
         target_id=target_id,
+        since=as_utc(created_after) if created_after else None,
+        until=as_utc(created_before) if created_before else None,
         cursor=cursor,
         limit=limit + 1,
     )
@@ -258,7 +282,7 @@ def list_announcements(session: DbSession, user: Viewer, _: AdminRead) -> Page[A
 
 
 def _assert_known(key: str) -> None:
-    if key not in CONFIG_SCHEMAS:
+    if key not in GENERIC_CONFIG_KEYS:
         raise NotFound(f"未知的配置键: {key}")
 
 

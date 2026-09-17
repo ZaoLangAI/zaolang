@@ -1,6 +1,6 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 
-import { IconBookmark, IconCheck, IconRemix } from '@/components/ui/icons';
+import { IconBookmarkFilled, IconCheck, IconRemix } from '@/components/ui/icons';
 import type { Locale } from '@/i18n/routing';
 import type { GenerationJob, WorkSummary } from '@/lib/api/types';
 import { formatRelative } from '@/lib/format';
@@ -52,7 +52,7 @@ export async function ActivityFeed({
     ...bookmarks.map((work) => ({
       key: `bookmark-${work.id}`,
       at: work.published_at ?? '',
-      icon: <IconBookmark className="size-3.5 text-muted" />,
+      icon: <IconBookmarkFilled className="size-3.5 text-muted" />,
       title: t('activityBookmarked', { title: work.title }),
     })),
     ...jobs.map((job) => ({

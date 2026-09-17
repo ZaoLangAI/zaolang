@@ -20,13 +20,27 @@
   --text: #f5f1eb;
   --text-muted: #9c9b99;
   --border: #293038;
+  --border-strong: #40484f;
   --primary: #ff795b;
   --primary-hover: #ff8d72;
   --on-primary: #1a0a05;
   --amber: #d9ad59;
   --success: #79d79a;
   --danger: #ef6d6d;
+  --on-danger: #1a0808;
   --focus: #ffd0c4;
+
+  /* Script block legend (文案创作): four content types, not status colours —
+     deliberately distinct hues from primary/amber/success/danger above, so
+     "this line is a warning" and "this line is a camera direction" never
+     read as the same signal. */
+  --script-scene: #6fa8e0;
+  --script-action: #c090e8;
+  --script-camera: #5cc9cf;
+  --script-dialogue: #e88ec0;
+  /* Not a content type — a structural cut marker, so it deliberately reads
+     as neutral/muted rather than joining the four saturated content hues. */
+  --script-breakpoint: #9a958c;
 
   /* Cinematic media sits on a dark page, so overlays only need to deepen it. */
   --poster-scrim: linear-gradient(180deg, rgb(8 11 13 / 0%) 38%, rgb(8 11 13 / 88%) 100%);
@@ -36,8 +50,8 @@
   --overlay: rgb(4 6 8 / 78%);
   --skeleton: rgb(255 255 255 / 6%);
   --track: rgb(255 255 255 / 14%);
-  --gateway-panel:
-    radial-gradient(120% 160% at 0% 0%, rgb(121 215 154 / 10%) 0%, transparent 55%), #0e1315;
+  --shortform-hero-panel:
+    radial-gradient(120% 160% at 100% 0%, rgb(217 173 89 / 14%) 0%, transparent 55%), #0e1315;
 }
 
 [data-theme='light'] {
@@ -50,6 +64,7 @@
   --text: #1a1714;
   --text-muted: #6b635b;
   --border: #ded5cb;
+  --border-strong: #b8ab9d;
   /* Darker than the dark theme's coral by necessity: this value has to clear
      4.5:1 both as text on the pale page and as a background under
      `--on-primary`, including behind the 12% tint used for selected chips. */
@@ -59,7 +74,17 @@
   --amber: #8a6410;
   --success: #1d7a44;
   --danger: #b4271f;
+  --on-danger: #fff6f3;
   --focus: #7a2a14;
+
+  /* Same four content-type hues as the dark block, darkened/saturated for
+     AA contrast on the pale page — same treatment as `--success`/`--danger`
+     above, not just the dark values lightened. */
+  --script-scene: #1d5f96;
+  --script-action: #7a3aa8;
+  --script-camera: #146b70;
+  --script-dialogue: #a8296e;
+  --script-breakpoint: #726b60;
 
   /* The same poster on a pale page needs a stronger scrim for legible captions. */
   --poster-scrim: linear-gradient(180deg, rgb(26 23 20 / 0%) 30%, rgb(26 23 20 / 82%) 100%);
@@ -69,8 +94,8 @@
   --overlay: rgb(26 23 20 / 45%);
   --skeleton: rgb(26 23 20 / 6%);
   --track: rgb(26 23 20 / 14%);
-  --gateway-panel:
-    radial-gradient(120% 160% at 0% 0%, rgb(29 122 68 / 8%) 0%, transparent 55%), #ffffff;
+  --shortform-hero-panel:
+    radial-gradient(120% 160% at 100% 0%, rgb(138 100 16 / 10%) 0%, transparent 55%), #ffffff;
 }
 
 @theme inline {
@@ -81,15 +106,23 @@
   --color-text: var(--text);
   --color-muted: var(--text-muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-on-primary: var(--on-primary);
   --color-amber: var(--amber);
   --color-success: var(--success);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
   --color-focus: var(--focus);
+  --color-script-scene: var(--script-scene);
+  --color-script-action: var(--script-action);
+  --color-script-camera: var(--script-camera);
+  --color-script-dialogue: var(--script-dialogue);
+  --color-script-breakpoint: var(--script-breakpoint);
   --color-skeleton: var(--skeleton);
   --color-track: var(--track);
+  --color-overlay: var(--overlay);
 
   --radius-sm: 10px;
   --radius-md: 16px;
@@ -101,6 +134,10 @@
   --font-sans:
     'Inter', 'Noto Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
+  /* `sm` is where the desktop shell starts, not where phones end. `xs` is the
+     one the phone layouts key off; the other four are unchanged because the
+     whole site is already built against them. */
+  --breakpoint-xs: 480px;
   --breakpoint-sm: 760px;
   --breakpoint-md: 1024px;
   --breakpoint-lg: 1180px;
@@ -126,6 +163,8 @@
     font-feature-settings: 'tnum' 1;
     /* Horizontal overflow is an explicit acceptance criterion. */
     overflow-x: hidden;
+    /* Faded out while a locale switch is navigating; see `[data-navigating]` below. */
+    transition: opacity 160ms ease;
   }
 
   :focus-visible {
@@ -163,8 +202,8 @@
     color: var(--amber);
   }
 
-  .gateway-panel {
-    background: var(--gateway-panel);
+  .shortform-hero-panel {
+    background: var(--shortform-hero-panel);
   }
 
   .poster-scrim::after {
@@ -185,6 +224,21 @@
     }
   }
 
+  /*
+   * The home indicator overlaps anything pinned to the bottom of the viewport.
+   * `.safe-b` pads a fixed bar out of its way; `.safe-mb` grows the in-flow
+   * spacer that keeps the bar from covering the end of the page. They are
+   * separate because padding on a `position: fixed` bar and margin on a static
+   * spacer are not interchangeable.
+   */
+  .safe-b {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-mb {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
   .no-scrollbar {
     scrollbar-width: none;
   }
@@ -192,6 +246,26 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+/*
+ * Theme switch crossfade, triggered from `theme-provider.tsx` via
+ * `document.startViewTransition`. Left at the browser default duration
+ * otherwise (250ms), which reads as sluggish next to the rest of the UI.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+/*
+ * Locale switch fade, driven by `lib/locale-transition.ts`: it flips this
+ * attribute right before the `[locale]`-prefixed navigation starts, and
+ * `NavigationFadeWatcher` clears it once the new page has mounted.
+ */
+html[data-navigating='true'] body {
+  opacity: 0.5;
 }
 
 @media (prefers-reduced-motion: reduce) {

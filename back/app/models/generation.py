@@ -16,10 +16,11 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin, id_column
-from app.models.enums import JobStatus, ProviderAttemptStatus, ProviderKind
+from app.models.enums import JobOrigin, JobStatus, ProviderAttemptStatus, ProviderKind
 
 
 class Workflow(Base, TimestampMixin):
@@ -57,6 +58,54 @@ class WorkflowVersion(Base, TimestampMixin):
     )
 
 
+class GenerationWorkflowTemplate(Base, TimestampMixin):
+    """One versioned, admin-configurable generation graph for one `Operation`.
+
+    Append-only like `AgentSkill`: publishing never edits a row in place, it
+    appends a new version and flips `is_active`, so a job that already pinned
+    an earlier version via `GenerationJob.workflow_template_id` keeps
+    executing exactly the graph it started with, even if an operator
+    publishes a new one while it is running.
+    """
+
+    __tablename__ = "generation_workflow_templates"
+
+    id: Mapped[str] = id_column("gwt")
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    # `None` = "generic", the only value that existed before this column did.
+    # Only `text_to_image`/`image_to_image` currently seed anything else —
+    # see `ImageAssetKind`. Kept on this table (not folded into `operation`)
+    # because every other operation has exactly one purpose and gets no
+    # value here at all.
+    asset_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    # {"nodes": [{"id","type","config","position"}],
+    #  "edges": [{"id","from","from_port","to","kind"}]}
+    graph_json: Mapped[dict[str, Any]] = mapped_column(nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "operation",
+            "asset_kind",
+            "version",
+            name="uq_generation_workflow_templates_op_kind_version",
+        ),
+        Index(
+            "ix_generation_workflow_templates_operation_kind_active",
+            "operation",
+            "asset_kind",
+            "is_active",
+        ),
+    )
+
+
 class GenerationJob(Base, TimestampMixin):
     __tablename__ = "generation_jobs"
 
@@ -74,6 +123,11 @@ class GenerationJob(Base, TimestampMixin):
     request_json: Mapped[dict[str, Any]] = mapped_column(nullable=False)
     quality_tier: Mapped[str] = mapped_column(String(24), nullable=False)
     status: Mapped[str] = mapped_column(String(24), default=JobStatus.CREATED, nullable=False)
+    # `user` is a C-end request; `sandbox` is an operator try-it from the
+    # workflow editor. Existing rows predate the column and are C-end jobs.
+    origin: Mapped[str] = mapped_column(
+        String(24), default=JobOrigin.USER, server_default=JobOrigin.USER.value, nullable=False
+    )
 
     quoted_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     reserved_credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -81,6 +135,16 @@ class GenerationJob(Base, TimestampMixin):
     max_credits: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    # The active `GenerationWorkflowTemplate` at submission time, pinned so a
+    # later publish cannot change the behaviour of a job already in flight.
+    # Nullable so rows created before this column existed keep resolving via
+    # `WorkflowRunner`'s operation-based fallback lookup.
+    workflow_template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("generation_workflow_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    # Unpublished canvas graph for a sandbox try-it. When set, the pipeline
+    # walks this snapshot instead of pinning (or mutating) the live template.
+    graph_override_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     selected_route_summary_json: Mapped[dict[str, Any]] = mapped_column(
         default=dict, nullable=False
     )
@@ -90,7 +154,33 @@ class GenerationJob(Base, TimestampMixin):
     output_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
+    # Every asset this job produced, in generation order — `output_asset_id`
+    # above stays the first entry (or the job's only one) for every existing
+    # single-output caller. Only ever more than one entry for an
+    # `asset_kind=character` job whose `character_views` named more than one
+    # view (see `app.workflows.nodes.execute_asset_output_advance`); `None`
+    # for a row from before this column existed. Plain JSON, not FK-checked,
+    # matching `routing_trace_json`'s style for a list column on this table.
+    output_asset_ids_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     output_work_version_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Which character/scene skill `app.workflows.nodes.execute_asset_output_link`
+    # actually attached this job's output to — the target the client passed
+    # in, or the id of a skill it auto-created. Plain string, not FK-checked
+    # (matching `output_work_version_id`'s style), and set at most one of the
+    # two per job since `asset_kind` is never both at once. `None` for every
+    # non-`CHARACTER`/`SCENE` job and for a row from before this column
+    # existed. Lets a client (the script studio's "返回文案创作" jump-back)
+    # learn which card a succeeded job landed on without re-deriving it.
+    linked_character_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    linked_scene_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    # `operation == video_analysis`'s own output shape: a structured
+    # camera-movement/scene/style breakdown (see `VideoAnalysisResult` in
+    # `app.api.schemas.jobs`) rather than a media `Asset` — this job never
+    # populates `output_asset_id`/`output_asset_ids_json` at all. Kept as a
+    # separate nullable column rather than overloading either of those, since
+    # every other operation's reader already assumes an asset id there.
+    analysis_result_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     estimated_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -101,11 +191,27 @@ class GenerationJob(Base, TimestampMixin):
     started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     retry_of_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Set only by `POST /generation-jobs/{id}/promote`: the succeeded preview
+    # job this one was upgraded from. Kept distinct from `retry_of_job_id`
+    # (a resubmission after failure at the same tier) so cost/funnel analytics
+    # can tell "retried after failure" apart from "promoted from a preview".
+    promoted_from_job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Soft-hide from a draft's version-history strip. The job, ledger, events
+    # and assets stay — a version delete is a history tombstone, not a
+    # hard delete. `None` means the job still appears when listed by
+    # `draft_id`.
+    draft_history_hidden_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_generation_jobs_idempotency"),
         Index("ix_generation_jobs_user_id_status", "user_id", "status"),
         Index("ix_generation_jobs_status_created_at", "status", "created_at"),
+        # `(status, created_at)` above cannot serve a range scan that filters
+        # on `created_at` alone (not its leading column) — the admin job list
+        # default view and the daily-stats aggregation both do exactly that.
+        Index("ix_generation_jobs_created_at", "created_at"),
     )
 
 
@@ -127,12 +233,21 @@ class JobEvent(Base):
     public_message: Mapped[str] = mapped_column(Text, nullable=False)
     # Searchable code for support; safe to show alongside the friendly message.
     internal_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The graph node that actually emitted this event. Nullable for events
+    # predating this column and for the few emitters outside a node (e.g.
+    # async polling's heartbeat, which passes the suspended node's own id).
+    # Not a foreign key: nodes are graph-config entries, not rows.
+    node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        # The unique constraint below already creates a `(job_id, sequence)`
+        # B-tree in Postgres — the same leading columns in the same order as
+        # a separate `Index` would give. A second explicit index here would
+        # serve no query the constraint's own index cannot, and would only
+        # cost every insert an extra write.
         UniqueConstraint("job_id", "sequence", name="uq_job_events_job_sequence"),
-        Index("ix_job_events_job_id_sequence", "job_id", "sequence"),
     )
 
 
@@ -154,6 +269,11 @@ class ProviderAttempt(Base):
         String(24), default=ProviderAttemptStatus.SUBMITTED, nullable=False
     )
     cost_minor: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # What the vendor charged us, snapshotted from the endpoint's configured
+    # price at call time. In micro-USD because `cost_minor` (whole cents)
+    # rounds a $0.00286 image down to nothing. 0 means the endpoint declared
+    # no price — unknown, not free.
+    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Redacted before persistence: no keys, no signed URLs, no payment data.
@@ -163,6 +283,9 @@ class ProviderAttempt(Base):
     __table_args__ = (
         UniqueConstraint("job_id", "attempt_number", name="uq_provider_attempts_job_attempt"),
         Index("ix_provider_attempts_provider_status", "provider", "status"),
+        # The statistics center's daily-trend queries filter on `created_at`
+        # alone, with no other column that could serve as a leading index key.
+        Index("ix_provider_attempts_created_at", "created_at"),
     )
 
 
@@ -183,6 +306,7 @@ class ProviderStat(Base, TimestampMixin):
     successes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_latency_ms: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     total_cost_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    total_cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
     __table_args__ = (
         UniqueConstraint(
@@ -193,7 +317,12 @@ class ProviderStat(Base, TimestampMixin):
 
 class AgentRun(Base):
     """One agent invocation. Records the model actually used, token spend and
-    whether the call degraded to the deterministic stub."""
+    whether the call degraded (output that failed to parse as JSON, rather
+    than a call that fabricated a response — that path no longer exists).
+
+    `mode` is a historical column from when the gateway had a selectable
+    `openai_compatible`/`stub`/`auto` mode; every new row now records the
+    same constant (`app.agents.base.GATEWAY_MODE`)."""
 
     __tablename__ = "agent_runs"
 
@@ -205,6 +334,15 @@ class AgentRun(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     agent_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Which agent and prompt slot actually served this call. Nullable
+    # because a run predating agent profiles has neither, and not a foreign
+    # key so deleting an agent never erases the record of what it did.
+    agent_profile_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    prompt_slot: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # The graph node whose executor made this call, stamped by
+    # `WorkflowRunner._tag_agent_run_node` right after the executor returns.
+    # Null for calls outside a workflow run (e.g. a direct admin preview).
+    node_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
     model: Mapped[str | None] = mapped_column(String(120), nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False)
@@ -212,12 +350,32 @@ class AgentRun(Base):
     degrade_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Token spend priced against the serving endpoint's configured rate at
+    # call time, in micro-USD. Snapshotted rather than derived at query time
+    # so a later price change does not rewrite what last month cost.
+    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Which `llm_providers` config entry actually served this call, or the
+    # literal "legacy" when the failover pool was empty. Not a foreign key:
+    # endpoints are config entries, not rows, and can be renamed or removed.
+    endpoint_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The system + user prompts actually sent. Nullable for runs recorded
+    # before this column existed; new rows always write both keys.
+    input_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     output_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    # The model's reasoning trace for this call, aligned with
+    # `EpisodeScriptTurn.thinking_text`. Empty-string default for runs
+    # recorded before this column existed. Never written into `output_json`
+    # so JSON replay stays a structured payload.
+    thinking_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
         Index("ix_agent_runs_job_id", "job_id"),
         Index("ix_agent_runs_agent_name_created_at", "agent_name", "created_at"),
+        # Several statistics/observability queries range-scan `created_at`
+        # without filtering by `agent_name` first, which the composite index
+        # above cannot serve.
+        Index("ix_agent_runs_created_at", "created_at"),
     )

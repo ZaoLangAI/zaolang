@@ -22,6 +22,9 @@ export const STATE_FILES = {
   reviewer: 'e2e/.auth/reviewer.json',
   operator: 'e2e/.auth/operator.json',
   consumer: 'e2e/.auth/consumer.json',
+  /** The seeded author — the account that actually owns the demo drama
+   * series, which `consumer` (a remixer) does not. */
+  author: 'e2e/.auth/author.json',
 } as const;
 
 /**

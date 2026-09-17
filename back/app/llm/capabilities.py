@@ -1,16 +1,11 @@
 """Per-model parameter capabilities, learned at runtime.
 
 The gateway fronts many upstream providers and they do not accept the same
-request parameters. Two constraints confirmed against the live endpoint:
-
-* `ling-3.0-flash-free` rejects `response_format` ("does not support feature:
-  structured-outputs").
-* `kimi-k3` rejects any temperature other than 1.
-
-Hardcoding a table would rot as the roster changes, so instead the client
-inspects the 400 it gets back, disables the offending parameter for that model
-and retries. The result is cached per process, so the cost is one wasted call
-per model per worker lifetime.
+request parameters. Some reject `response_format`; others only accept a
+single temperature. Hardcoding a per-name table would rot as the roster
+changes, so instead the client inspects the 400 it gets back, disables the
+offending parameter for that model id and retries. The result is cached per
+process, so the cost is one wasted call per model per worker lifetime.
 """
 
 from __future__ import annotations

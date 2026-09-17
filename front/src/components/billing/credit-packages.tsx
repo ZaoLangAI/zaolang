@@ -51,7 +51,7 @@ export function CreditPackages({
     <section>
       <SectionHeading title={t('packages')} description={t('packagesHint')} />
       {packages.length === 0 ? (
-        <EmptyState title={t('ledgerEmpty')} />
+        <EmptyState title={t('packagesEmpty')} />
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {packages.map((pack) => (

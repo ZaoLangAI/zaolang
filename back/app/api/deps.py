@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from app.api import rate_limit
 from app.db import get_db
 from app.domain.errors import AgeGateRequired, AuthRequired, Forbidden
+from app.domain.system_log import service as system_log
 from app.models import User
-from app.models.enums import ADMIN_ROLE_RANK, UserStatus
+from app.models.enums import ADMIN_ROLE_RANK, SystemLogSource, UserStatus
 from app.observability.context import set_user_id
 from app.security.tokens import ADMIN_AUDIENCE, CONSUMER_AUDIENCE, decode_token
 
@@ -96,6 +97,14 @@ def get_admin_user(
     claims = decode_token(token, audience=ADMIN_AUDIENCE)
     user = _load_active_user(session, claims.subject)
     if not any(role in ADMIN_ROLE_RANK for role in user.roles):
+        system_log.emit(
+            source=SystemLogSource.PERMISSION,
+            event="admin_action.forbidden",
+            message=f"用户 {user.id} 的后台会话已失去全部后台角色。",
+            dedup_key=f"user:{user.id}",
+            user_id=user.id,
+            request=request,
+        )
         raise Forbidden("没有后台访问权限。")
     set_user_id(user.id)
     request.state.admin_user = user
@@ -110,9 +119,19 @@ def require_admin_role(minimum: str):  # type: ignore[no-untyped-def]
     """
     required_rank = ADMIN_ROLE_RANK[minimum]
 
-    def _dependency(user: Annotated[User, Depends(get_admin_user)]) -> User:
+    def _dependency(request: Request, user: Annotated[User, Depends(get_admin_user)]) -> User:
         actual = max((ADMIN_ROLE_RANK.get(role, 0) for role in user.roles), default=0)
         if actual < required_rank:
+            system_log.emit(
+                source=SystemLogSource.PERMISSION,
+                event="admin_action.forbidden",
+                message=(
+                    f"用户 {user.id} 权限不足（需要 {minimum} 及以上）访问 {request.url.path}。"
+                ),
+                dedup_key=f"user:{user.id}:{request.url.path}",
+                user_id=user.id,
+                request=request,
+            )
             raise Forbidden(f"该操作需要 {minimum} 及以上权限。")
         return user
 

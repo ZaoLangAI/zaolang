@@ -60,12 +60,12 @@ export function WorkRail({ works }: { works: WorkSummary[] }) {
         ref={trackRef}
         className="no-scrollbar -mx-1 flex snap-x snap-mandatory gap-4 overflow-x-auto px-1 pb-1"
       >
-        {works.map((work, index) => (
+        {works.map((work) => (
           <li
             key={work.id}
             className="w-[68%] shrink-0 snap-start sm:w-[42%] md:w-[31%] lg:w-[19%]"
           >
-            <WorkCard work={work} priority={index < 3} />
+            <WorkCard work={work} />
           </li>
         ))}
       </ul>

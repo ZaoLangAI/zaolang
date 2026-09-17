@@ -75,6 +75,7 @@ class UploadSession(Base, TimestampMixin):
     asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
+    bound_export_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     __table_args__ = (Index("ix_upload_sessions_user_id", "user_id"),)
 

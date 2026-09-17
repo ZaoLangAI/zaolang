@@ -17,10 +17,11 @@ from app.api.schemas.auth import AdminLoginRequest
 from app.api.schemas.common import OkResponse
 from app.config import get_settings
 from app.domain.audit import service as audit
-from app.domain.errors import AuthRequired, Forbidden
+from app.domain.errors import AuthRequired
+from app.domain.system_log import service as system_log
 from app.models import User
 from app.models.base import utcnow
-from app.models.enums import ADMIN_ROLE_RANK
+from app.models.enums import ADMIN_ROLE_RANK, SystemLogSource
 from app.security.passwords import verify_password
 from app.security.tokens import issue_admin_token
 
@@ -31,19 +32,36 @@ router = APIRouter(tags=["admin:auth"])
 def login(
     payload: AdminLoginRequest, request: Request, response: Response, session: DbSession
 ) -> AdminSessionResponse:
-    rate_limit.enforce("auth_attempt", f"admin:{client_identity(request, None)}")
+    identity = f"admin:{client_identity(request, None)}"
+    rate_limit.enforce("auth_attempt", identity)
 
     user = session.scalar(select(User).where(User.email == str(payload.email)))
     if user is None or not verify_password(payload.password, user.password_hash):
+        system_log.emit(
+            source=SystemLogSource.AUTH,
+            event="admin_login.failed",
+            message=f"{identity} 后台登录失败：邮箱或密码不正确。",
+            dedup_key=identity,
+            request=request,
+        )
         raise AuthRequired("邮箱或密码不正确。")
     if not user.is_active:
         raise AuthRequired("账号不可用。")
 
     roles = [role for role in user.roles if role in ADMIN_ROLE_RANK]
     if not roles:
-        # Same wording as a bad password: the response must not reveal that the
-        # account exists but lacks console access.
-        raise Forbidden("没有后台访问权限。")
+        system_log.emit(
+            source=SystemLogSource.PERMISSION,
+            event="admin_login.forbidden",
+            message=f"{identity} 账号 {user.id} 无后台访问权限。",
+            dedup_key=identity,
+            user_id=user.id,
+            request=request,
+        )
+        # Same status, code and wording as a bad password: the response must not
+        # let a caller who already knows this account's password distinguish
+        # "wrong password" from "valid password, no console role" by status code.
+        raise AuthRequired("邮箱或密码不正确。")
 
     token, expires_at = issue_admin_token(user.id, list(user.roles))
     settings = get_settings()
@@ -53,7 +71,7 @@ def login(
         max_age=settings.admin_token_ttl_seconds,
         httponly=True,
         samesite="strict",
-        secure=settings.is_production,
+        secure=settings.cookie_secure,
         path="/",
     )
     user.last_login_at = utcnow()
@@ -67,7 +85,7 @@ def login(
     )
     session.commit()
 
-    return _session_response(user, token, expires_at)
+    return _session_response(user, expires_at)
 
 
 @router.post("/auth/logout", response_model=OkResponse)
@@ -77,18 +95,16 @@ def logout(response: Response) -> OkResponse:
 
 
 @router.get("/auth/me", response_model=AdminSessionResponse)
-def me(user: AdminUser, request: Request) -> AdminSessionResponse:
+def me(user: AdminUser) -> AdminSessionResponse:
     """Re-reads the session so the console can render RBAC-aware navigation."""
-    token = request.cookies.get(ADMIN_COOKIE_NAME, "")
     _, expires_at = issue_admin_token(user.id, list(user.roles))
-    return _session_response(user, token, expires_at)
+    return _session_response(user, expires_at)
 
 
-def _session_response(user: User, token: str, expires_at) -> AdminSessionResponse:  # type: ignore[no-untyped-def]
+def _session_response(user: User, expires_at) -> AdminSessionResponse:  # type: ignore[no-untyped-def]
     roles = [role for role in user.roles if role in ADMIN_ROLE_RANK]
     max_role = max(roles, key=lambda r: ADMIN_ROLE_RANK[r], default="viewer")
     return AdminSessionResponse(
-        access_token=token,
         expires_at=expires_at,
         user_id=user.id,
         email=user.email,

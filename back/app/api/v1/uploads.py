@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
+from app.api.schemas.common import Page
 from app.api.schemas.jobs import (
     AssetResponse,
+    ExtractFrameRequest,
     ProvenanceResponse,
     UploadCompleteRequest,
     UploadPresignRequest,
@@ -17,10 +19,24 @@ from app.api.schemas.jobs import (
 from app.domain.errors import NotFound
 from app.domain.media import service as media_service
 from app.models import Asset
-from app.models.enums import ADMIN_ROLE_RANK, AssetRole, MediaType
+from app.models.enums import AssetRole, MediaType
 from app.presenters import media_urls
 
 router = APIRouter(tags=["assets"])
+
+
+@router.get("/assets:mine", response_model=Page[AssetResponse])
+def list_my_media(
+    user: CurrentUser,
+    session: DbSession,
+    media_type: MediaType | None = None,
+    limit: int = Query(default=40, ge=1, le=100),
+) -> Page[AssetResponse]:
+    """Lists the caller's own generated/uploaded media, for the editor's media library."""
+    assets = media_service.list_owned_media(
+        session, user_id=user.id, media_type=media_type, limit=limit
+    )
+    return Page(items=[_asset_response(session, asset, viewer_id=user.id) for asset in assets])
 
 
 @router.post("/uploads/presign", response_model=UploadPresignResponse)
@@ -67,31 +83,64 @@ def complete(
 
 
 @router.get("/assets/{asset_id}", response_model=AssetResponse)
-def get_asset(asset_id: str, session: DbSession, viewer: OptionalUser) -> AssetResponse:
+def get_asset(
+    asset_id: str,
+    session: DbSession,
+    viewer: OptionalUser,
+    download: bool = Query(default=False),
+) -> AssetResponse:
+    """Returns the asset after an access check.
+
+    `download=true` mints `url` with `Content-Disposition: attachment` so the
+    browser saves the object. The default playback URL is left unsigned for
+    disposition so a `<video>` / `<img>` src is not forced to download.
+    """
     asset = session.get(Asset, asset_id)
     if asset is None:
         raise NotFound("素材不存在。")
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    # `viewer` only ever proves a *consumer*-audience session (`OptionalUser`
+    # decodes with `CONSUMER_AUDIENCE`) — `viewer.roles` can still list an
+    # admin role for staff who are simply browsing the consumer site as
+    # themselves, and that must not double as the separate, admin-audience
+    # "staff" grant this signer checks. A private asset's own owner is the
+    # only consumer-side caller this endpoint ever authorizes; staff access
+    # belongs behind an admin-only endpoint, not this one.
     # Raises 404 rather than 403 for private assets, so the endpoint cannot be
     # used to probe for existence.
     media_service.signed_url_for(
         session,
         asset_id=asset_id,
         viewer_user_id=viewer.id if viewer else None,
-        viewer_is_staff=is_staff,
     )
-    return _asset_response(session, asset, viewer_id=viewer.id if viewer else None)
+    return _asset_response(
+        session, asset, viewer_id=viewer.id if viewer else None, download=download
+    )
+
+
+@router.post("/assets/{asset_id}/frame", response_model=AssetResponse, status_code=201)
+def extract_frame(
+    asset_id: str, payload: ExtractFrameRequest, user: CurrentUser, session: DbSession
+) -> AssetResponse:
+    """Grabs the first/last frame of the caller's own video asset as a new
+    private image asset — used to auto-fill `first_frame_asset_id` when
+    generating a video that should pick up visually where an earlier one
+    (e.g. a previous script breakpoint's clip) left off."""
+    frame_asset = media_service.extract_video_frame(
+        session, user_id=user.id, asset_id=asset_id, position=payload.position
+    )
+    session.commit()
+    return _asset_response(session, frame_asset, viewer_id=user.id)
 
 
 @router.get("/assets/{asset_id}/provenance", response_model=ProvenanceResponse)
 def asset_provenance(asset_id: str, session: DbSession, viewer: OptionalUser) -> ProvenanceResponse:
     """Returns the AI disclosure claim attached to a generated asset."""
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    # See `get_asset`'s own note: a consumer-audience session's roles must
+    # never grant the staff bypass here either.
     media_service.signed_url_for(
         session,
         asset_id=asset_id,
         viewer_user_id=viewer.id if viewer else None,
-        viewer_is_staff=is_staff,
     )
     manifest = media_service.provenance_for(session, asset_id)
     if manifest is None:
@@ -104,7 +153,10 @@ def asset_provenance(asset_id: str, session: DbSession, viewer: OptionalUser) ->
     )
 
 
-def _asset_response(session, asset: Asset, *, viewer_id: str | None) -> AssetResponse:  # type: ignore[no-untyped-def]
+def _asset_response(  # type: ignore[no-untyped-def]
+    session, asset: Asset, *, viewer_id: str | None, download: bool = False
+) -> AssetResponse:
+    download_name = media_service.download_filename_for(asset) if download else None
     return AssetResponse(
         id=asset.id,
         media_type=MediaType(asset.media_type),
@@ -113,7 +165,7 @@ def _asset_response(session, asset: Asset, *, viewer_id: str | None) -> AssetRes
         width=asset.width,
         height=asset.height,
         duration_ms=asset.duration_ms,
-        url=media_urls.asset_url(session, asset.id),
+        url=media_urls.asset_url(session, asset.id, download_name=download_name),
         moderation_status=asset.moderation_status,
         is_prototype=asset.is_prototype,
         ai_generated=asset.role == AssetRole.GENERATION_OUTPUT,

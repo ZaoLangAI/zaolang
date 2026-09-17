@@ -9,11 +9,33 @@ import { ApiError, type ApiErrorBody } from '@/lib/api/errors';
  * It shares no token store with `lib/api/client`, and it never retries on 401.
  * A console session that has expired must land the operator back on the console
  * login page, not silently continue with a consumer credential.
+ *
+ * The session itself is entirely the httpOnly `zl_admin_session` cookie,
+ * always sent via `credentials: 'include'` below (`get_admin_user` only
+ * falls back to a bearer header for non-browser tooling). This in-memory
+ * slot exists only for the couple of SSE call sites that pass a bearer
+ * header explicitly (`use-admin-job-stream.ts`, the agent debug chat) —
+ * nothing sets it anymore (`AdminSessionResponse` has no `access_token` to
+ * feed it; see `AdminSessionProvider`'s own note), so it now always reads
+ * back `null` and those call sites fall through to the cookie alone, same
+ * as every other console request.
  */
 let adminToken: string | null = null;
 
+const ADMIN_LOGIN_PATH = '/v1/admin/auth/login';
+
 export function setAdminToken(token: string | null): void {
   adminToken = token;
+}
+
+export function getAdminToken(): string | null {
+  return adminToken;
+}
+
+/** Full navigation so the console layout re-reads the cookie from scratch. */
+function redirectToAdminLogin(): void {
+  setAdminToken(null);
+  window.location.assign(`${window.location.pathname.split('/admin')[0]}/admin/login`);
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -43,7 +65,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const payload = text ? (JSON.parse(text) as unknown) : undefined;
 
   if (!response.ok) {
-    throw new ApiError(response.status, payload as ApiErrorBody | undefined, response.statusText);
+    const error = new ApiError(
+      response.status,
+      payload as ApiErrorBody | undefined,
+      response.statusText,
+    );
+    // Wrong password is also 401; kicking the login form would hide the error.
+    if (error.isAuthRequired && path !== ADMIN_LOGIN_PATH) {
+      redirectToAdminLogin();
+    }
+    throw error;
   }
   return payload as T;
 }
@@ -55,6 +86,8 @@ export const adminApi = {
     request<T>(path, { ...options, method: 'POST', body }),
   put: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...options, method: 'PUT', body }),
+  patch: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'PATCH', body }),
   delete: <T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...options, method: 'DELETE' }),
 };

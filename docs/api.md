@@ -1,14 +1,15 @@
 # 接口参考
 
-下面的文档由后端 `make openapi` 导出的 `openapi.json` 直接渲染，因此不会和运行中的 API 漂移。本地也可以直接开 <http://localhost:8000/docs>。
+下面的文档由后端 `make openapi` 导出的 `openapi.json` 直接渲染，因此不会和运行中的 API 漂移。本地也可以直接开 <http://localhost:3001/docs>。
 
 ## 约定
 
 - **鉴权**：`Authorization: Bearer <access_token>`。refresh token 走 httpOnly cookie，前端拿不到也就无法被 XSS 偷走。
-- **后台命名空间**：`/v1/admin/*` 只认 audience 为 `admin` 的 token，存在独立 cookie `zl_admin_session` 里。
+- **MCP**：`POST /mcp` 只认 audience 为 `mcp` 的独立 JWT（`MCP_JWT_SECRET`），拒绝 C 端与后台 token。没有发布工具。
 - **幂等**：所有产生副作用的 POST 接受 `Idempotency-Key`。同键重放返回首次结果；同键不同 body 返回 `409 IDEMPOTENCY_CONFLICT`。
 - **分页**：游标分页（`cursor` + `next_cursor` + `has_more`），不用 offset。运维列表在被读的同时也在被写，offset 会漏行或重复行。
 - **金额**：全部是整数。积分是整数个，货币是最小货币单位（分）。浮点数不参与账务计算。
+- **积分解锁**：公开可二创作品与已发布技能可标 `access_credits`。未解锁时写接口返回 `402 ACCESS_REQUIRED`（`details` 带 `subject_type` / `subject_id` / `access_credits`），与仅展示、未开放二创的 `LICENSE_NOT_REMIXABLE` 分开。解锁走 `POST /v1/works/{id}/unlock` 与 `POST /v1/skills/{id}/unlock`，账本记 `access_out` / `access_in`，不复用回流分成。
 - **限流**：超限返回 `429` 并带 `Retry-After` 头。C 端与后台是两套独立的分层桶。
 
 ## 统一错误结构
@@ -17,8 +18,8 @@
 {
   "error": {
     "code": "VALIDATION_FAILED",
-    "message": "请求参数不合法。",
-    "details": { "fields": { "reason": "String should have at least 4 characters" } },
+    "message": "首尾帧不能与角色参考、场景参考同时使用。请取消首尾帧，或改回图片/视频参考。",
+    "details": { "fields": { "params": "首尾帧不能与角色参考、场景参考同时使用。请取消首尾帧，或改回图片/视频参考。" } },
     "request_id": "req_05809e3652d04fe8318000c8"
   }
 }

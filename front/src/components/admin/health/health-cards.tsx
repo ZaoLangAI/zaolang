@@ -77,24 +77,9 @@ export async function HealthCards({
           <div className="rounded-[var(--radius-md)] border border-border bg-surface p-4">
             <h2 className="text-sm font-semibold">{t('llmGateway')}</h2>
             <p className="mt-2 flex items-center gap-2 text-xs">
-              <Badge
-                tone={
-                  health.llm_reachable === null
-                    ? 'neutral'
-                    : health.llm_reachable
-                      ? 'success'
-                      : 'danger'
-                }
-              >
-                {health.llm_reachable === null
-                  ? t('degraded')
-                  : health.llm_reachable
-                    ? t('up')
-                    : t('down')}
+              <Badge tone={health.llm_reachable ? 'success' : 'danger'}>
+                {health.llm_reachable ? t('up') : t('down')}
               </Badge>
-              <span className="text-muted">
-                {t('llmMode')}: <span className="font-mono">{health.llm_mode}</span>
-              </span>
             </p>
             <p className="mt-3 text-xs text-muted">
               {t('alembic')}:{' '}
@@ -122,7 +107,7 @@ export async function HealthCards({
             label={t('pendingModeration')}
           />
         </Link>
-        <Link href="/admin/reports" className="hover:bg-surface-soft">
+        <Link href="/admin/moderation?tab=reports" className="hover:bg-surface-soft">
           <StatTile value={formatNumber(openReports, locale)} label={t('openReports')} />
         </Link>
       </section>

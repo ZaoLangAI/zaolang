@@ -4,12 +4,30 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
+import { UnlockDialog } from '@/components/marketplace/unlock-dialog';
+import { AddToCollectionDialog } from '@/components/work/add-to-collection-dialog';
+import { AppealDialog } from '@/components/work/appeal-dialog';
 import { Avatar } from '@/components/work/avatar';
+import { DeleteWorkDialog } from '@/components/work/delete-work-dialog';
 import { LineageStrip } from '@/components/work/lineage-strip';
+import { PurgeWorkDialog } from '@/components/work/purge-work-dialog';
+import { ReportDialog } from '@/components/work/report-dialog';
 import { ReusableParamsList } from '@/components/work/reusable-params';
+import { DownloadAssetButton } from '@/components/media/download-asset-button';
 import { Button } from '@/components/ui/button';
-import { IconBookmark, IconHeart, IconRemix, IconSparkle } from '@/components/ui/icons';
-import { Badge } from '@/components/ui/primitives';
+import {
+  IconAlert,
+  IconBookmark,
+  IconBookmarkFilled,
+  IconGrid,
+  IconHeart,
+  IconRefresh,
+  IconRemix,
+  IconSparkle,
+  IconTrash,
+  IconTrashX,
+} from '@/components/ui/icons';
+import { Badge, ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { Link, useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -27,21 +45,47 @@ import { formatCount, formatDate } from '@/lib/format';
 export function WorkInfoPanel({
   work,
   compact = false,
+  onBookmarkedChange,
 }: {
   work: WorkDetail;
   /** Discover's hero panel trims the sections a detail page shows in full. */
   compact?: boolean;
+  /**
+   * The hero carousel unmounts cards once they rotate out of view, which
+   * would otherwise reset `bookmarked` back to the server snapshot next time
+   * this work rotates in. Letting the carousel mirror each toggle lets it
+   * feed the current value back in through `work.viewer_bookmarked` on the
+   * next mount.
+   */
+  onBookmarkedChange?: (bookmarked: boolean) => void;
 }) {
   const t = useTranslations('work');
   const tPage = useTranslations('workPage');
+  const tLibrary = useTranslations('collectionPage');
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const { requireAuth } = useSession();
+  const { user, requireAuth } = useSession();
   const { notify } = useToast();
 
   const [liked, setLiked] = useState(work.viewer_liked);
   const [likes, setLikes] = useState(work.stats.like_count);
   const [bookmarked, setBookmarked] = useState(work.viewer_bookmarked);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [appealOpen, setAppealOpen] = useState(false);
+  const [appealStatus, setAppealStatus] = useState(work.appeal?.status ?? null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+
+  const isOwner = user !== null && user.id === work.author.user_id;
+  const isHidden = work.lifecycle_status === 'hidden';
+  const isTrashed = work.lifecycle_status === 'trashed';
+  const canTrash = isOwner && !compact && (work.lifecycle_status === 'active' || isHidden);
+  const videoAssetId = work.current_version?.output_asset_id ?? null;
+  const isVideo = (work.media_type ?? work.current_version?.media_type) === 'video';
+  const canDownload = !compact && isVideo && Boolean(videoAssetId);
 
   const toggleLike = () =>
     requireAuth({
@@ -68,16 +112,29 @@ export function WorkInfoPanel({
       run: async () => {
         const next = !bookmarked;
         setBookmarked(next);
+        onBookmarkedChange?.(next);
         try {
           if (next) await api.post(`/v1/works/${work.id}/bookmark`);
           else await api.delete(`/v1/works/${work.id}/bookmark`);
         } catch {
           setBookmarked(!next);
+          onBookmarkedChange?.(!next);
         }
       },
     });
 
+  const openReport = () => requireAuth({ label: t('report'), run: () => setReportOpen(true) });
+
+  const openAddToCollection = () =>
+    requireAuth({ label: tPage('addToCollection'), run: () => setCollectionOpen(true) });
+
+  const needsUnlock = work.remix_block_reason === 'needs_unlock';
+
   const startRemix = () => {
+    if (needsUnlock) {
+      requireAuth({ label: t('unlockThis'), run: () => setUnlockOpen(true) });
+      return;
+    }
     if (!work.can_remix) {
       notify(tPage('remixBlocked'), 'error');
       return;
@@ -87,17 +144,85 @@ export function WorkInfoPanel({
 
   const isOriginal = work.ancestors === undefined || work.ancestors.length === 0;
 
+  const restoreWork = async () => {
+    setRestoreBusy(true);
+    try {
+      await api.post(`/v1/works/${work.id}/untrash`);
+      notify(tLibrary('restoreWorkDone'), 'success');
+      router.refresh();
+    } catch {
+      notify(tLibrary('restoreWorkFailed'), 'error');
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5">
+      {!compact && isTrashed && isOwner ? (
+        <ErrorNotice
+          title={t('trashed')}
+          detail={t('trashedHint')}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<IconRefresh className="size-4" />}
+                loading={restoreBusy}
+                onClick={() => void restoreWork()}
+              >
+                {tLibrary('restoreWork')}
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                icon={<IconTrashX className="size-4" />}
+                onClick={() => setPurgeOpen(true)}
+              >
+                {tLibrary('purgeWork')}
+              </Button>
+            </div>
+          }
+        />
+      ) : null}
+
+      {!compact && isHidden && isOwner ? (
+        <ErrorNotice
+          title={appealStatus === 'denied' ? tPage('appealDenied') : tPage('appealBanner')}
+          detail={
+            appealStatus === 'pending'
+              ? tPage('appealPending')
+              : appealStatus === 'denied' && work.appeal?.decision_note
+                ? tPage('appealDeniedNote', { note: work.appeal.decision_note })
+                : work.hide_reason
+                  ? tPage('appealBannerReason', { reason: work.hide_reason })
+                  : undefined
+          }
+          action={
+            appealStatus === 'pending' ? undefined : (
+              <Button size="sm" variant="secondary" onClick={() => setAppealOpen(true)}>
+                {tPage('appealButton')}
+              </Button>
+            )
+          }
+        />
+      ) : null}
+
       <div className="flex items-start justify-between gap-3">
         <Badge tone={isOriginal ? 'neutral' : 'amber'}>
           {isOriginal ? t('original') : t('remix')}
         </Badge>
-        {work.license ? (
-          <Badge tone="amber" icon={<IconSparkle className="size-3.5" />}>
-            {work.license.attribution_text || work.license.license_type}
-          </Badge>
-        ) : null}
+        <span className="flex flex-wrap items-center justify-end gap-1.5">
+          {work.access_credits > 0 ? (
+            <Badge tone="primary">{t('paidBadge', { credits: work.access_credits })}</Badge>
+          ) : null}
+          {work.license ? (
+            <Badge tone="amber" icon={<IconSparkle className="size-3.5" />}>
+              {work.license.attribution_text || work.license.license_type}
+            </Badge>
+          ) : null}
+        </span>
       </div>
 
       <div>
@@ -146,7 +271,10 @@ export function WorkInfoPanel({
         descendantCount={work.descendant_count}
       />
 
-      {work.reusable_params ? (
+      {/* Discover's hero panel is a teaser, not a remix workbench — the
+          reusable-params breakdown belongs on the work page, where a reader
+          has already committed to this piece. */}
+      {work.reusable_params && !compact ? (
         <ReusableParamsList params={work.reusable_params} version={work.current_version} />
       ) : null}
 
@@ -156,19 +284,36 @@ export function WorkInfoPanel({
           className="flex-1"
           icon={<IconRemix className="size-5" />}
           onClick={startRemix}
-          disabled={!work.can_remix}
+          disabled={!work.can_remix && !needsUnlock}
         >
-          {work.can_remix ? t('remixThis') : t('notRemixable')}
+          {needsUnlock
+            ? tPage('unlockCta')
+            : work.can_remix
+              ? t('remixThis')
+              : t('notRemixable')}
         </Button>
         <Button
           size="lg"
           variant="secondary"
-          icon={<IconBookmark className="size-5" />}
+          icon={
+            bookmarked ? (
+              <IconBookmarkFilled className="size-5" />
+            ) : (
+              <IconBookmark className="size-5" />
+            )
+          }
           aria-pressed={bookmarked}
           onClick={toggleBookmark}
         >
           {bookmarked ? t('bookmarked') : t('bookmark')}
         </Button>
+        <Button
+          size="lg"
+          variant="secondary"
+          icon={<IconGrid className="size-5" />}
+          onClick={openAddToCollection}
+          aria-label={tPage('addToCollection')}
+        />
       </div>
 
       {compact ? null : (
@@ -183,12 +328,80 @@ export function WorkInfoPanel({
           >
             {liked ? t('liked') : t('like')}
           </Button>
-          <p className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+          {canDownload && videoAssetId ? (
+            <DownloadAssetButton
+              assetId={videoAssetId}
+              label={t('download')}
+              failedMessage={t('downloadFailed')}
+              variant="ghost"
+            />
+          ) : null}
+          {canTrash ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<IconTrash className="size-4" />}
+              onClick={() => setTrashOpen(true)}
+            >
+              {tLibrary('deleteWork')}
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<IconAlert className="size-4" />}
+            onClick={openReport}
+            className="ml-auto"
+          >
+            {t('report')}
+          </Button>
+          <p className="flex items-center gap-1.5 text-xs text-muted">
             <IconSparkle className="size-3.5 text-amber" />
             {t('aiGenerated')}
           </p>
         </div>
       )}
+
+      <UnlockDialog
+        open={unlockOpen}
+        onClose={() => setUnlockOpen(false)}
+        path={`/v1/works/${work.id}/unlock`}
+        credits={work.access_credits}
+        title={t('unlockThis')}
+        confirm={t('unlockConfirm', { credits: work.access_credits })}
+        onUnlocked={() => router.push(`/remix/${work.id}`)}
+      />
+      <ReportDialog workId={work.id} open={reportOpen} onClose={() => setReportOpen(false)} />
+      <AppealDialog
+        workId={work.id}
+        open={appealOpen}
+        onClose={() => setAppealOpen(false)}
+        onSubmitted={() => setAppealStatus('pending')}
+      />
+      <AddToCollectionDialog
+        workId={work.id}
+        open={collectionOpen}
+        onClose={() => setCollectionOpen(false)}
+      />
+      <DeleteWorkDialog
+        workId={work.id}
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onDeleted={() => {
+          setTrashOpen(false);
+          router.replace('/collection?tab=trash');
+        }}
+      />
+      <PurgeWorkDialog
+        workId={work.id}
+        referenced={work.descendant_count > 0}
+        open={purgeOpen}
+        onClose={() => setPurgeOpen(false)}
+        onPurged={() => {
+          setPurgeOpen(false);
+          router.replace('/collection');
+        }}
+      />
     </div>
   );
 }

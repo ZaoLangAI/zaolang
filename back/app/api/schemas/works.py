@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
-from app.models.enums import LicenseType, LifecycleStatus, MediaType, Visibility
+from app.models.enums import (
+    DraftPublishStatus,
+    LicenseType,
+    LifecycleStatus,
+    MediaType,
+    Visibility,
+)
 
 
 class AuthorSummary(ApiModel):
@@ -33,6 +39,9 @@ class WorkVersionSummary(ApiModel):
     cover_url: str | None = None
     media_url: str | None = None
     media_type: MediaType | None = None
+    # The version's primary output. A remix studio submits this as a
+    # generation reference; `media_url` is only the signed playback URL.
+    output_asset_id: str | None = None
     ai_generated: bool = True
     created_at: dt.datetime
 
@@ -45,12 +54,26 @@ class WorkSummary(ApiModel):
     visibility: Visibility
     lifecycle_status: LifecycleStatus
     cover_url: str | None = None
+    # Intrinsic size of the cover, so a card can reserve the right box before
+    # the image loads. Null when the asset never recorded its dimensions.
+    cover_width: int | None = None
+    cover_height: int | None = None
     media_type: MediaType | None = None
+    # Primary output duration, when the asset recorded one. Images stay null.
+    duration_ms: int | None = None
     author: AuthorSummary
     stats: WorkStats
     tags: list[str] = Field(default_factory=list)
     remixable: bool = False
+    access_credits: int = 0
+    viewer_unlocked: bool = True
     published_at: dt.datetime | None = None
+
+
+class TrashWorkSummary(WorkSummary):
+    """Owner recycle-bin card. `referenced` chooses the purge confirmation copy."""
+
+    referenced: bool = False
 
 
 class ReusableParams(ApiModel):
@@ -85,6 +108,23 @@ class LineageAncestor(ApiModel):
     cover_url: str | None = None
 
 
+class WorkAppealRequest(ApiModel):
+    reason: str = Field(min_length=4, max_length=2000)
+
+
+class WorkAppealView(ApiModel):
+    """Consumer-facing — always "my own appeal", so it omits `owner_user_id`
+    and `decided_by_user_id`."""
+
+    id: str
+    work_id: str
+    status: str
+    reason: str
+    decision_note: str | None = None
+    decided_at: dt.datetime | None = None
+    created_at: dt.datetime
+
+
 class WorkDetail(WorkSummary):
     description: str | None = None
     current_version: WorkVersionSummary | None = None
@@ -96,6 +136,11 @@ class WorkDetail(WorkSummary):
     viewer_bookmarked: bool = False
     can_remix: bool = False
     remix_block_reason: str | None = None
+    # Owner-only, like the viewer_* fields above: populated only when the
+    # requester is the work's owner, so a hidden work's reason and any
+    # in-flight appeal never leak to other viewers.
+    hide_reason: str | None = None
+    appeal: WorkAppealView | None = None
 
 
 class LineageNodeResponse(ApiModel):
@@ -145,10 +190,21 @@ class DraftResponse(ApiModel):
     params: dict[str, Any] = Field(default_factory=dict)
     license: LicenseInfo | None = None
     latest_job_id: str | None = None
+    applied_job_id: str | None = None
     output_asset_id: str | None = None
     output_url: str | None = None
+    output_media_type: MediaType | None = None
+    duration_ms: int | None = None
+    width: int | None = None
+    height: int | None = None
     published_work_id: str | None = None
+    publish_status: DraftPublishStatus | None = None
+    publish_failure_message: str | None = None
     created_at: dt.datetime
+
+
+class AppliedVersionRequest(ApiModel):
+    job_id: str = Field(min_length=1, max_length=40)
 
 
 class PublishRequest(ApiModel):
@@ -160,21 +216,46 @@ class PublishRequest(ApiModel):
     # Publishing requires an explicit statement that added material is cleared.
     rights_confirmed: bool = False
     ai_disclosure_confirmed: bool = False
+    access_credits: int = Field(default=0, ge=0)
 
 
 class PublishResponse(ApiModel):
-    work_id: str
-    work_version_id: str
-    visibility: Visibility
-    lineage_edge_id: str | None = None
-    royalties_paid: list[dict[str, Any]] = Field(default_factory=list)
+    status: Literal["pending"] = "pending"
+    draft_id: str
+    work_id: str | None = None
 
 
 class VisibilityUpdateRequest(ApiModel):
     visibility: Visibility
+    access_credits: int | None = Field(default=None, ge=0)
+
+
+class AccessGrantView(ApiModel):
+    id: str
+    subject_type: str
+    subject_id: str
+    price_credits: int
+    platform_fee_credits: int
+    seller_net_credits: int
+    created_at: dt.datetime
+
+
+class AccessUnlockResponse(ApiModel):
+    subject_type: str
+    subject_id: str
+    access_credits: int
+    viewer_unlocked: bool = True
+    already_held: bool = False
+    grant: AccessGrantView | None = None
 
 
 class CollectionCreateRequest(ApiModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    is_public: bool = True
+
+
+class CollectionUpdateRequest(ApiModel):
     name: str = Field(min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=500)
     is_public: bool = True
