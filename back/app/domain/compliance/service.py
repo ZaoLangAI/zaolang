@@ -16,6 +16,7 @@ import secrets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.domain.consent import service as consent_service
 from app.domain.errors import NotFound
 from app.models import (
     Asset,
@@ -152,6 +153,10 @@ def anonymise_user(session: Session, user_id: str, *, actor_user_id: str | None 
         work.visibility = Visibility.PRIVATE
         work.tombstoned_at = utcnow()
         work.tombstone_reason = "user_deleted"
+
+    # A deleted account's voice/likeness consents must not keep authorising
+    # generation — neither the ones it declared nor those covering its assets.
+    consent_service.revoke_all_for_user(session, user_id=user_id)
 
     session.flush()
     logger.info("user %s anonymised by %s", user_id, actor_user_id or "system")

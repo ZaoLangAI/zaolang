@@ -762,6 +762,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/drafts/{draft_id}/keyframe-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Keyframe
+         * @description Confirms (or withdraws) a storyboard keyframe version as its
+         *     segment's video first frame — see `publishing.confirm_keyframe`.
+         */
+        post: operations["confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/drafts/{draft_id}/versions/{job_id}": {
         parameters: {
             query?: never;
@@ -793,6 +814,28 @@ export interface paths {
          * @description Price preview. Must be shown before any credits are committed.
          */
         post: operations["quote_v1_generation_jobs_quote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/generation-jobs/quote:batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quote Batch
+         * @description A whole batch priced before anything is committed: each line through
+         *     the same `quote_for` a submit uses, summed — plus what the balance and
+         *     the user's own monthly cap still allow.
+         */
+        post: operations["quote_batch_v1_generation_jobs_quote_batch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1399,6 +1442,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/assets/{asset_id}/consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Consents
+         * @description The caller's consent declarations for one of their own assets.
+         */
+        get: operations["list_consents_v1_assets__asset_id__consents_get"];
+        put?: never;
+        /**
+         * Declare Consent
+         * @description Declares that the real person whose voice or likeness `asset_id`
+         *     carries consented to its use as generation input — required before a
+         *     voice-clone sample or a real-person reference can be submitted.
+         */
+        post: operations["declare_consent_v1_assets__asset_id__consents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/asset-consents/{consent_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Consent
+         * @description Withdraws a consent; the asset can no longer feed a new generation job.
+         */
+        post: operations["revoke_consent_v1_asset_consents__consent_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/credits/balance": {
         parameters: {
             query?: never;
@@ -1409,6 +1498,26 @@ export interface paths {
         /** Balance */
         get: operations["balance_v1_credits_balance_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/credits/spend-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Spend Limit
+         * @description The user's own monthly cap on generation spend (`null` removes it).
+         */
+        put: operations["set_spend_limit_v1_credits_spend_limit_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2170,6 +2279,23 @@ export interface paths {
         put?: never;
         /** Create Cut From Job */
         post: operations["create_cut_from_job_v1_episode_cuts_from_job_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/episode-cuts:assemble": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assemble Cut From Script */
+        post: operations["assemble_cut_from_script_v1_episode_cuts_assemble_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6033,6 +6159,11 @@ export interface components {
              * @default false
              */
             ai_generated: boolean;
+            /**
+             * Depicts Real Person
+             * @default false
+             */
+            depicts_real_person: boolean;
         };
         /**
          * AsyncProviderTaskView
@@ -6176,6 +6307,63 @@ export interface components {
              * @enum {string}
              */
             kind: "database" | "objects";
+        };
+        /**
+         * BatchQuoteItem
+         * @description One line of a batch: `count` identical jobs.
+         */
+        BatchQuoteItem: {
+            operation: components["schemas"]["Operation"];
+            quality_tier: components["schemas"]["QualityTier"];
+            /**
+             * Duration Seconds
+             * @default 0
+             */
+            duration_seconds: number;
+            /** @default general */
+            asset_kind: components["schemas"]["ImageAssetKind"];
+            /** Character Views */
+            character_views?: components["schemas"]["CharacterViewAngle"][] | null;
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+        };
+        /** BatchQuoteLine */
+        BatchQuoteLine: {
+            /** Unit Credits */
+            unit_credits: number;
+            /** Count */
+            count: number;
+            /** Credits */
+            credits: number;
+            /** Estimated Seconds */
+            estimated_seconds: number;
+        };
+        /** BatchQuoteRequest */
+        BatchQuoteRequest: {
+            /** Items */
+            items: components["schemas"]["BatchQuoteItem"][];
+        };
+        /**
+         * BatchQuoteResponse
+         * @description A batch priced line by line with the same `quote_for` a submit uses
+         *     — an exact sum, never a range (credits-billing invariant #4).
+         */
+        BatchQuoteResponse: {
+            /** Items */
+            items: components["schemas"]["BatchQuoteLine"][];
+            /** Total Credits */
+            total_credits: number;
+            /** Available Credits */
+            available_credits: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
+            /** Within Spend Limit */
+            within_spend_limit: boolean;
+            /** Sufficient */
+            sufficient: boolean;
         };
         /** BindEditorExportRequest */
         BindEditorExportRequest: {
@@ -6662,6 +6850,8 @@ export interface components {
             reference_asset_ids?: string[];
             /** Voice Description */
             voice_description?: string | null;
+            /** Preset Voice */
+            preset_voice?: string | null;
         };
         /** CharacterPublishRequest */
         CharacterPublishRequest: {
@@ -6731,6 +6921,8 @@ export interface components {
             action_clips?: components["schemas"]["CharacterActionClip"][];
             /** Voice Description */
             voice_description?: string | null;
+            /** Preset Voice */
+            preset_voice?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -6751,6 +6943,8 @@ export interface components {
             reference_asset_ids?: string[] | null;
             /** Voice Description */
             voice_description?: string | null;
+            /** Preset Voice */
+            preset_voice?: string | null;
         };
         /**
          * CharacterViewAngle
@@ -6992,6 +7186,54 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * ConsentDeclareRequest
+         * @description The uploader declares that the real person whose voice or likeness the
+         *     asset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`
+         *     is an optional `consent_evidence` upload an operator can verify against.
+         */
+        ConsentDeclareRequest: {
+            /**
+             * Consent Type
+             * @enum {string}
+             */
+            consent_type: "voice" | "portrait";
+            /** Subject Reference */
+            subject_reference: string;
+            /** Evidence Asset Id */
+            evidence_asset_id?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** ConsentResponse */
+        ConsentResponse: {
+            /** Id */
+            id: string;
+            /** Asset Id */
+            asset_id: string;
+            /** Consent Type */
+            consent_type: string;
+            /** Subject Reference */
+            subject_reference: string;
+            /** Status */
+            status: string;
+            /** Has Evidence */
+            has_evidence: boolean;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ConsentRevokeRequest */
+        ConsentRevokeRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /** ContentDailyPoint */
         ContentDailyPoint: {
@@ -7305,6 +7547,20 @@ export interface components {
              * @default CREDIT
              */
             currency: string;
+            /** Monthly Spend Limit */
+            monthly_spend_limit?: number | null;
+            /**
+             * Period
+             * @default
+             */
+            period: string;
+            /**
+             * Period Spent
+             * @default 0
+             */
+            period_spent: number;
+            /** Period Remaining */
+            period_remaining?: number | null;
         };
         /** CreditFlowDailyPoint */
         CreditFlowDailyPoint: {
@@ -7392,6 +7648,40 @@ export interface components {
             currency: string;
             /** Region */
             region: string;
+        };
+        /**
+         * CutAssembleRequest
+         * @description Script → rough cut. `ordered_keys` only narrows which breakpoints
+         *     are assembled; the order always comes from the episode's own script.
+         */
+        CutAssembleRequest: {
+            /** Episode Id */
+            episode_id: string;
+            /** Ordered Keys */
+            ordered_keys?: string[] | null;
+            /**
+             * Include Audio
+             * @default true
+             */
+            include_audio: boolean;
+        };
+        /** CutAssembleResponse */
+        CutAssembleResponse: {
+            cut: components["schemas"]["EpisodeCutResponse"];
+            /** Skipped */
+            skipped?: components["schemas"]["CutAssembleSkip"][];
+        };
+        /**
+         * CutAssembleSkip
+         * @description A breakpoint (`{heading}#{n}`) or dialogue line (`{heading}#L{n}`)
+         *     left out of the rough cut. `reason`: `no_output` (not generated yet),
+         *     `unknown_duration`, or `not_owned`.
+         */
+        CutAssembleSkip: {
+            /** Key */
+            key: string;
+            /** Reason */
+            reason: string;
         };
         /** CutCreateRequest */
         CutCreateRequest: {
@@ -7961,6 +8251,8 @@ export interface components {
             failure_code?: string | null;
             /** Failure Message */
             failure_message?: string | null;
+            /** Qa Operation Id */
+            qa_operation_id?: string | null;
         };
         /** EditorOperationResponse */
         EditorOperationResponse: {
@@ -8656,6 +8948,15 @@ export interface components {
             window_days: number;
             /** Points */
             points?: components["schemas"]["JobsDailyPoint"][];
+        };
+        /**
+         * KeyframeConfirmationRequest
+         * @description Confirms one version of a storyboard keyframe draft as its segment's
+         *     video first frame; `null` withdraws the confirmation.
+         */
+        KeyframeConfirmationRequest: {
+            /** Job Id */
+            job_id?: string | null;
         };
         /** LearnPostAdminView */
         LearnPostAdminView: {
@@ -11191,6 +11492,8 @@ export interface components {
             character?: string | null;
             /** Text */
             text: string;
+            /** Emotion */
+            emotion?: ("happy" | "sad" | "angry" | "fear" | "surprise" | "calm") | null;
         };
         /** ScriptCharacter */
         ScriptCharacter: {
@@ -11249,6 +11552,8 @@ export interface components {
             script: components["schemas"]["ScriptDocument"];
             /** Turns */
             turns: components["schemas"]["ScriptTurnSummary"][];
+            /** Lint */
+            lint?: components["schemas"]["ScriptLintIssue"][];
             /**
              * Source Idea
              * @default
@@ -11310,6 +11615,34 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
+        };
+        /**
+         * ScriptLintIssue
+         * @description One deterministic lint finding (`app.domain.script_writing.lint`) — a
+         *     suggestion shown beside the script, never a blocker.
+         */
+        ScriptLintIssue: {
+            /** Code */
+            code: string;
+            /** Severity */
+            severity: string;
+            /** Message */
+            message: string;
+            /** Scene Index */
+            scene_index?: number | null;
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /** Block Index */
+            block_index?: number | null;
+            /** Breakpoint Key */
+            breakpoint_key?: string | null;
+            /** Dimension */
+            dimension?: string | null;
+            /** Suggested Skills */
+            suggested_skills?: string[];
         };
         /**
          * ScriptRetryRequest
@@ -11679,6 +12012,14 @@ export interface components {
             /** Asset Kind */
             asset_kind?: ("character" | "scene" | "cover" | "copy") | null;
         };
+        /**
+         * SpendLimitRequest
+         * @description `null` removes the cap.
+         */
+        SpendLimitRequest: {
+            /** Monthly Spend Limit */
+            monthly_spend_limit?: number | null;
+        };
         /** StorageUsageResponse */
         StorageUsageResponse: {
             /** Bucket */
@@ -12027,6 +12368,11 @@ export interface components {
             checksum_sha256: string;
             /** Purpose */
             purpose: string;
+            /**
+             * Depicts Real Person
+             * @default false
+             */
+            depicts_real_person: boolean;
         };
         /** UploadPresignResponse */
         UploadPresignResponse: {
@@ -14348,6 +14694,43 @@ export interface operations {
             };
         };
     };
+    confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyframeConfirmationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     hide_draft_version_v1_drafts__draft_id__versions__job_id__delete: {
         parameters: {
             query?: never;
@@ -14402,6 +14785,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuoteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quote_batch_v1_generation_jobs_quote_batch_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchQuoteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -15671,6 +16089,113 @@ export interface operations {
             };
         };
     };
+    list_consents_v1_assets__asset_id__consents_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_consent_v1_assets__asset_id__consents_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentDeclareRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_consent_v1_asset_consents__consent_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                consent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     balance_v1_credits_balance_get: {
         parameters: {
             query?: never;
@@ -15681,6 +16206,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditBalanceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_spend_limit_v1_credits_spend_limit_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpendLimitRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -17495,6 +18055,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EpisodeCutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    assemble_cut_from_script_v1_episode_cuts_assemble_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CutAssembleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CutAssembleResponse"];
                 };
             };
             /** @description Validation Error */

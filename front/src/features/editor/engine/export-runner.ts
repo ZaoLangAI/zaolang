@@ -1,16 +1,43 @@
-import { composeFrame, MediaPool, resolveAudioLayers } from './compositor';
+import type { MetadataTags } from 'mediabunny';
+
+import { composeFrame, layerVolumeAt, MediaPool, resolveAudioLayers } from './compositor';
+import { normalizeAudioBuffer } from './loudness';
 import {
   TICKS_PER_SECOND,
   type CanonicalDocument,
   type CapabilityReport,
   type ExportProgress,
+  type ExportRenderOptions,
   type RendererBackend,
   type ResolvedAsset,
+  type TimelineElement,
   type VariantSpec,
 } from './ports';
 
 const AUDIO_SAMPLE_RATE = 48_000;
 const AUDIO_CHANNELS = 2;
+const VOLUME_CURVE_STEPS = 32;
+
+/**
+ * An element's gain sampled evenly across `[startTicks, endTicks]`, for
+ * `AudioParam.setValueCurveAtTime`. Segments are cut at every volume
+ * keyframe, so within one the value only moves along that keyframe's easing
+ * — the curve follows it exactly instead of holding the segment's first
+ * value (which turned every fade into a step).
+ */
+export function volumeCurve(
+  element: TimelineElement,
+  startTicks: number,
+  endTicks: number,
+  steps = VOLUME_CURVE_STEPS,
+): Float32Array {
+  const curve = new Float32Array(Math.max(2, steps));
+  for (let index = 0; index < curve.length; index += 1) {
+    const atTicks = startTicks + ((endTicks - startTicks) * index) / (curve.length - 1);
+    curve[index] = layerVolumeAt(element, atTicks);
+  }
+  return curve;
+}
 
 function evenPixel(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
@@ -19,6 +46,32 @@ function evenPixel(value: number): number {
 /** Round a delivery spec to even pixels for H.264, without downscaling. */
 export function fitExportCanvas(width: number, height: number): { width: number; height: number } {
   return { width: evenPixel(width), height: evenPixel(height) };
+}
+
+export const AIGC_CONTENT_PRODUCER = 'zaolang';
+
+/**
+ * The implicit "AI-generated" label written into every exported MP4
+ * (《人工智能生成合成内容标识办法》): the standard `AIGC` JSON in the comment
+ * tag, plus a human-readable description. Pure, so the exact tags are
+ * testable without encoding a file. The visible label is the separate,
+ * optional `ExportRenderOptions.aiLabel`.
+ */
+export function aigcMetadataTags(exportedAt: Date): MetadataTags {
+  const aigc = {
+    Label: '1',
+    ContentProducer: AIGC_CONTENT_PRODUCER,
+    ProduceID: '',
+    ReservedCode1: '',
+    ContentPropagator: '',
+    PropagateID: '',
+    ReservedCode2: '',
+  };
+  return {
+    comment: `AIGC ${JSON.stringify(aigc)}`,
+    description: 'AI-generated content (AI 生成内容)',
+    date: exportedAt,
+  };
 }
 
 function documentHasAudibleContent(document: CanonicalDocument): boolean {
@@ -93,6 +146,9 @@ async function renderMixedAudio(
 
   const maxTicks = Math.round(seconds * TICKS_PER_SECOND);
   const breakpoints = audioBreakpoints(document, maxTicks);
+  const elementsById = new Map(
+    document.tracks.flatMap((track) => track.elements.map((element) => [element.id, element] as const)),
+  );
   let scheduled = false;
   for (let index = 0; index < breakpoints.length - 1; index += 1) {
     const start = breakpoints[index] ?? 0;
@@ -107,7 +163,16 @@ async function renderMixedAudio(
       );
       if (durationSeconds <= 0) continue;
       const gain = offline.createGain();
-      gain.gain.value = layer.volume;
+      const element = elementsById.get(layer.element_id);
+      if (element && (element.animations.channels.volume?.points.length ?? 0) > 1) {
+        gain.gain.setValueCurveAtTime(
+          volumeCurve(element, start, end),
+          start / TICKS_PER_SECOND,
+          (end - start) / TICKS_PER_SECOND,
+        );
+      } else {
+        gain.gain.value = layer.volume;
+      }
       gain.connect(offline.destination);
       const node = offline.createBufferSource();
       node.buffer = buffer;
@@ -145,6 +210,7 @@ export class SequentialExportRunner implements RendererBackend {
     document: CanonicalDocument,
     assets: ResolvedAsset[],
     signal: AbortSignal,
+    options: ExportRenderOptions = {},
   ): AsyncIterable<ExportProgress> {
     const report = await this.preflight(spec);
     if (!report.ok) {
@@ -175,6 +241,9 @@ export class SequentialExportRunner implements RendererBackend {
       format: new Mp4OutputFormat(),
       target,
     });
+    // The implicit AI label, written into the file itself on every export;
+    // tags can only be set before `start()`.
+    output.setMetadataTags(aigcMetadataTags(new Date()));
     const source = new CanvasSource(canvas, { codec: 'avc', bitrate: QUALITY_MEDIUM });
     output.addVideoTrack(source, { frameRate: fps });
     // `addAudioTrack` can only be called before `output.start()`, but the
@@ -196,7 +265,9 @@ export class SequentialExportRunner implements RendererBackend {
           throw new DOMException('Aborted', 'AbortError');
         }
         const atTicks = Math.round((index / fps) * TICKS_PER_SECOND);
-        await composeFrame(ctx, canvas.width, canvas.height, document, atTicks, assets, pool);
+        await composeFrame(ctx, canvas.width, canvas.height, document, atTicks, assets, pool, {
+          aiLabel: options.aiLabel,
+        });
         await source.add(index / fps, 1 / fps);
         if (index % 15 === 0) {
           yield {
@@ -214,7 +285,11 @@ export class SequentialExportRunner implements RendererBackend {
     if (audioSource) {
       yield { percent: 98, stage: 'encoding', message: 'audio' };
       const mixed = await renderMixedAudio(document, seconds, assets);
-      if (mixed) await audioSource.add(mixed);
+      if (mixed) {
+        // Mastering on the finished mix only; the preview plays it as-is.
+        if (options.normalizeLoudness) normalizeAudioBuffer(mixed);
+        await audioSource.add(mixed);
+      }
       audioSource.close();
     }
 

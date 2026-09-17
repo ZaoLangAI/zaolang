@@ -43,10 +43,22 @@ class CreditAccount(Base, TimestampMixin):
     # Optimistic lock. Every mutation bumps it inside a conditional UPDATE, so
     # two concurrent reserves cannot both read the same balance and succeed.
     version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # The user's own cap on credits reserved for generation per UTC calendar
+    # month (null = no cap). `period_spent` is what was reserved during
+    # `spend_period` ("YYYY-MM"), net of what that same month released or
+    # returned; a reserve in a new month starts it from zero.
+    monthly_spend_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    spend_period: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    period_spent: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
     __table_args__ = (
         CheckConstraint("available_balance >= 0", name="available_balance_non_negative"),
         CheckConstraint("reserved_balance >= 0", name="reserved_balance_non_negative"),
+        CheckConstraint("period_spent >= 0", name="period_spent_non_negative"),
+        CheckConstraint(
+            "monthly_spend_limit IS NULL OR monthly_spend_limit > 0",
+            name="monthly_spend_limit_positive",
+        ),
     )
 
 

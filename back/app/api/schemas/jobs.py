@@ -219,7 +219,9 @@ def validate_generation_params(
         if len(references) > AUDIO_CLONE_MAX_REFERENCES:
             raise ValueError("音频生成最多只能提供 1 段声音克隆参考音频。")
         voice = extras.get("voice")
-        has_valid_voice = isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        has_valid_voice = (
+            isinstance(voice, str) and 0 < len(voice.strip()) <= AUDIO_VOICE_MAX_LENGTH
+        )
         # A clone reference stands in for a named voice — the reference audio
         # itself carries the identity, so `voice` becomes optional once one
         # is attached (some clone models still take an optional style/voice
@@ -240,9 +242,7 @@ def validate_generation_params(
             audio_style == "sfx"
             and duration_seconds
             and not (
-                MUSIC_SFX_MIN_DURATION_SECONDS
-                <= duration_seconds
-                <= MUSIC_SFX_MAX_DURATION_SECONDS
+                MUSIC_SFX_MIN_DURATION_SECONDS <= duration_seconds <= MUSIC_SFX_MAX_DURATION_SECONDS
             )
         ):
             raise ValueError(
@@ -450,6 +450,36 @@ class QuoteResponse(ApiModel):
     estimated_seconds: int
     breakdown: dict[str, int]
     available_credits: int
+    sufficient: bool
+
+
+class BatchQuoteItem(QuoteRequest):
+    """One line of a batch: `count` identical jobs."""
+
+    count: int = Field(default=1, ge=1, le=500)
+
+
+class BatchQuoteRequest(ApiModel):
+    items: list[BatchQuoteItem] = Field(min_length=1, max_length=50)
+
+
+class BatchQuoteLine(ApiModel):
+    unit_credits: int
+    count: int
+    credits: int
+    estimated_seconds: int
+
+
+class BatchQuoteResponse(ApiModel):
+    """A batch priced line by line with the same `quote_for` a submit uses
+    — an exact sum, never a range (credits-billing invariant #4)."""
+
+    items: list[BatchQuoteLine]
+    total_credits: int
+    available_credits: int
+    # What the user's own monthly cap still allows; null = no cap.
+    period_remaining: int | None = None
+    within_spend_limit: bool
     sufficient: bool
 
 
@@ -721,6 +751,10 @@ class UploadPresignRequest(ApiModel):
             r"|editor_export|caption|font|voice_sample)$"
         )
     )
+    # The uploader's own declaration that an image/video shows a real person —
+    # such a reference then needs a portrait consent (`POST
+    # /v1/assets/{asset_id}/consents`) before a generation job may use it.
+    depicts_real_person: bool = False
 
 
 class UploadPresignResponse(ApiModel):
@@ -754,6 +788,7 @@ class AssetResponse(ApiModel):
     moderation_status: str
     is_prototype: bool = False
     ai_generated: bool = False
+    depicts_real_person: bool = False
 
 
 class ProvenanceResponse(ApiModel):
@@ -769,10 +804,48 @@ class ProvenanceResponse(ApiModel):
     signed: bool = False
 
 
+class ConsentDeclareRequest(ApiModel):
+    """The uploader declares that the real person whose voice or likeness the
+    asset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`
+    is an optional `consent_evidence` upload an operator can verify against."""
+
+    consent_type: Literal["voice", "portrait"]
+    subject_reference: str = Field(min_length=1, max_length=255)
+    evidence_asset_id: str | None = None
+    expires_at: dt.datetime | None = None
+
+
+class ConsentRevokeRequest(ApiModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ConsentResponse(ApiModel):
+    id: str
+    asset_id: str
+    consent_type: str
+    subject_reference: str
+    status: str
+    has_evidence: bool
+    expires_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+    created_at: dt.datetime
+
+
 class CreditBalanceResponse(ApiModel):
     available: int
     reserved: int
     currency: str = "CREDIT"
+    # The user's own cap on generation spend per UTC month; null = no cap.
+    monthly_spend_limit: int | None = None
+    period: str = ""
+    period_spent: int = 0
+    period_remaining: int | None = None
+
+
+class SpendLimitRequest(ApiModel):
+    """`null` removes the cap."""
+
+    monthly_spend_limit: int | None = Field(default=None, ge=1, le=100_000_000)
 
 
 class LedgerEntryResponse(ApiModel):

@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
+
+ScriptEmotion = Literal["happy", "sad", "angry", "fear", "surprise", "calm"]
 
 
 class ScriptBlock(ApiModel):
     type: str
     character: str | None = None
     text: str
+    # Dialogue delivery for dubbing (`copywriter.SCRIPT_EMOTIONS`); null on
+    # every other block type and on a line said plainly.
+    emotion: ScriptEmotion | None = None
 
 
 class ScriptScene(ApiModel):
@@ -131,6 +137,23 @@ class ScriptSummaryResponse(ApiModel):
     updated_at: dt.datetime
 
 
+class ScriptLintIssue(ApiModel):
+    """One deterministic lint finding (`app.domain.script_writing.lint`) — a
+    suggestion shown beside the script, never a blocker."""
+
+    code: str
+    severity: str  # "warning" | "info"
+    message: str
+    scene_index: int | None = None
+    heading: str = ""
+    block_index: int | None = None
+    breakpoint_key: str | None = None
+    dimension: str | None = None
+    # Titles of the `format` skills that fix this dimension, which the author
+    # can `@` into the next revision turn.
+    suggested_skills: list[str] = Field(default_factory=list)
+
+
 class ScriptDetailResponse(ApiModel):
     episode_id: str
     series_id: str
@@ -138,6 +161,7 @@ class ScriptDetailResponse(ApiModel):
     status: str
     script: ScriptDocument
     turns: list[ScriptTurnSummary]
+    lint: list[ScriptLintIssue] = Field(default_factory=list)
     # The author's first-draft prompt, so the empty-shell page can retry
     # without asking them to re-type it. Empty when this episode predates
     # persistence *and* no nearby `script_draft` AgentRun could be recovered.

@@ -253,9 +253,11 @@ export function indexBreakpointVideos(
   // below) or an image batch item, none of which should ever bind onto a
   // breakpoint's video chip. Drafts from before `operation` was stored in
   // `params` (none left in practice, but harmless to keep) fall through.
+  // `image_to_video` is a segment generated from its confirmed storyboard
+  // keyframe (`indexBreakpointKeyframes`) — still that segment's video.
   const videoDrafts = drafts.filter((draft) => {
     const operation = stringParam(draft.params, 'operation');
-    return !operation || operation === 'text_to_video';
+    return !operation || operation === 'text_to_video' || operation === 'image_to_video';
   });
 
   for (const draft of videoDrafts) {
@@ -308,4 +310,61 @@ export function dubbedDialogueKeys(drafts: Draft[]): Set<string> {
     if (key) keys.add(key);
   }
   return keys;
+}
+
+/** `{heading}#K{ordinal}` — a segment's storyboard keyframe draft. Same
+ * `link_breakpoint_key` slot as its video (`{heading}#{ordinal}`) and its
+ * voice lines (`{heading}#L{blockIndex}`), in a shape neither can collide with. */
+export function keyframeKey(segmentKey: string): string {
+  const hash = segmentKey.lastIndexOf('#');
+  return `${segmentKey.slice(0, hash)}#K${segmentKey.slice(hash + 1)}`;
+}
+
+export interface KeyframeBinding {
+  draftId: string;
+  /** The draft's current (applied) version — what 「确认」 pins. */
+  appliedJobId: string | null;
+  outputAssetId: string | null;
+  outputUrl: string | null;
+  /** The author confirmed exactly this version as the segment's first frame. */
+  confirmed: boolean;
+}
+
+/**
+ * Episode-linked `text_to_image` keyframe drafts, keyed by their *segment*
+ * key. Confirmed means `params.keyframe_confirmed_job_id` names the draft's
+ * current applied version: a regenerate moves the applied version on and so
+ * un-confirms it by construction — a first frame is never used without the
+ * author having looked at that exact image.
+ */
+export function indexBreakpointKeyframes(drafts: Draft[]): Record<string, KeyframeBinding> {
+  const byKey: Record<string, KeyframeBinding> = {};
+  for (const draft of drafts) {
+    if (stringParam(draft.params, 'operation') !== 'text_to_image') continue;
+    const match = /^(.*)#K(\d+)$/.exec(stringParam(draft.params, 'link_breakpoint_key') ?? '');
+    if (!match) continue;
+    const appliedJobId = draft.applied_job_id ?? null;
+    const confirmedJobId = stringParam(draft.params, 'keyframe_confirmed_job_id');
+    byKey[breakpointKey(match[1] ?? '', Number(match[2]))] = {
+      draftId: draft.id,
+      appliedJobId,
+      outputAssetId: draft.output_asset_id ?? null,
+      outputUrl: draft.output_url ?? null,
+      confirmed: Boolean(
+        confirmedJobId && confirmedJobId === appliedJobId && draft.output_asset_id,
+      ),
+    };
+  }
+  return byKey;
+}
+
+/** Segment key → confirmed keyframe asset, for `pendingVideos`' first frames. */
+export function confirmedFirstFrames(
+  keyframes: Record<string, KeyframeBinding>,
+): Record<string, string> {
+  const frames: Record<string, string> = {};
+  for (const [key, binding] of Object.entries(keyframes)) {
+    if (binding.confirmed && binding.outputAssetId) frames[key] = binding.outputAssetId;
+  }
+  return frames;
 }

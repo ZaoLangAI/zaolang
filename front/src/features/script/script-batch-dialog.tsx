@@ -16,6 +16,7 @@ import type { BatchKind, BatchParams, BatchQuote } from './use-script-batch';
 import {
   DEFAULT_AUDIO_PARAMS,
   DEFAULT_CHARACTER_PARAMS,
+  DEFAULT_KEYFRAME_PARAMS,
   DEFAULT_SCENE_PARAMS,
   DEFAULT_VIDEO_PARAMS,
   quoteForBatch,
@@ -33,6 +34,8 @@ const ZERO_QUOTE: BatchQuote = {
   totalCredits: 0,
   count: 0,
   availableCredits: 0,
+  periodRemaining: null,
+  withinSpendLimit: true,
   sufficient: true,
 };
 
@@ -40,7 +43,18 @@ function defaultsFor(kind: BatchKind): BatchParams {
   if (kind === 'characters') return DEFAULT_CHARACTER_PARAMS;
   if (kind === 'scenes') return DEFAULT_SCENE_PARAMS;
   if (kind === 'audio') return DEFAULT_AUDIO_PARAMS;
+  if (kind === 'keyframes') return DEFAULT_KEYFRAME_PARAMS;
   return DEFAULT_VIDEO_PARAMS;
+}
+
+function initialParams(
+  kind: BatchKind,
+  defaultVoiceBySpeaker: Record<string, string> | undefined,
+): BatchParams {
+  const base = defaultsFor(kind);
+  return kind === 'audio' && defaultVoiceBySpeaker
+    ? { ...base, voiceByCharacter: { ...defaultVoiceBySpeaker } }
+    : base;
 }
 
 function aspectsFor(kind: BatchKind): string[] {
@@ -55,6 +69,9 @@ export function ScriptBatchDialog({
   skipLinked,
   skipUnreferenced,
   existingRefByLabel,
+  speakers,
+  defaultVoiceBySpeaker,
+  framedCount,
   onClose,
   onConfirm,
 }: {
@@ -64,6 +81,12 @@ export function ScriptBatchDialog({
   skipUnreferenced: number;
   /** Script character name → library card id. Those rows default to skip. */
   existingRefByLabel?: Record<string, string>;
+  /** Audio only: the distinct speakers of the pending lines — each can get its own voice. */
+  speakers?: string[];
+  /** Audio only: a speaker's preset voice from their linked character card. */
+  defaultVoiceBySpeaker?: Record<string, string>;
+  /** Videos only: segments that start from a confirmed keyframe (priced as `image_to_video`). */
+  framedCount?: number;
   onClose: () => void;
   onConfirm: (params: BatchParams, quote: BatchQuote, skippedLabels: string[]) => void;
 }) {
@@ -73,7 +96,9 @@ export function ScriptBatchDialog({
   // it under `scriptStudio` — same "音色"/"选择生成语音使用的音色。" strings.
   const tAudio = useTranslations('remixPage');
   const locale = useLocale() as Locale;
-  const [params, setParams] = useState<BatchParams>(() => defaultsFor(kind ?? 'characters'));
+  const [params, setParams] = useState<BatchParams>(() =>
+    initialParams(kind ?? 'characters', defaultVoiceBySpeaker),
+  );
   const [quote, setQuote] = useState<BatchQuote | null>(null);
   const [quoteFailed, setQuoteFailed] = useState(false);
   const [quoting, setQuoting] = useState(false);
@@ -99,7 +124,7 @@ export function ScriptBatchDialog({
     setQuote(null);
     setQuoteFailed(false);
     setExtraSkip(new Set());
-    if (kind) setParams(defaultsFor(kind));
+    if (kind) setParams(initialParams(kind, defaultVoiceBySpeaker));
   }
 
   useEffect(() => {
@@ -112,7 +137,7 @@ export function ScriptBatchDialog({
     }
     let cancelled = false;
     setQuoting(true);
-    void quoteForBatch(kind, params, generateCount)
+    void quoteForBatch(kind, params, generateCount, framedCount ?? 0)
       .then((next) => {
         if (cancelled) return;
         setQuote(next);
@@ -129,7 +154,7 @@ export function ScriptBatchDialog({
     return () => {
       cancelled = true;
     };
-  }, [kind, generateCount, params]);
+  }, [kind, generateCount, params, framedCount]);
 
   // "自动选择" (no forced model in the batch runner) — the same union
   // fallback `AudioGenerationStudio` shows before picking a model.
@@ -153,9 +178,11 @@ export function ScriptBatchDialog({
       ? t('batchConfirmCharactersTitle')
       : kind === 'scenes'
         ? t('batchConfirmScenesTitle')
-        : kind === 'audio'
-          ? t('batchConfirmAudioTitle')
-          : t('batchConfirmVideosTitle');
+        : kind === 'keyframes'
+          ? t('batchConfirmKeyframesTitle')
+          : kind === 'audio'
+            ? t('batchConfirmAudioTitle')
+            : t('batchConfirmVideosTitle');
 
   const canSubmit =
     Boolean(quote?.sufficient) && !quoting && !quoteFailed && labels.length > 0;
@@ -225,15 +252,45 @@ export function ScriptBatchDialog({
                 }
               />
             ) : (
-              <Select
-                label={tAudio('voice')}
-                hint={tAudio('voiceHint')}
-                value={params.voice ?? audioVoices[0]}
-                options={audioVoices.map((value) => ({ value, label: value }))}
-                onChange={(event) =>
-                  setParams((current) => ({ ...current, voice: event.target.value }))
-                }
-              />
+              <>
+                <Select
+                  label={tAudio('voice')}
+                  hint={tAudio('voiceHint')}
+                  value={params.voice ?? audioVoices[0]}
+                  options={audioVoices.map((value) => ({ value, label: value }))}
+                  onChange={(event) =>
+                    setParams((current) => ({ ...current, voice: event.target.value }))
+                  }
+                />
+                {(speakers ?? []).map((speaker) => {
+                  const chosen = params.voiceByCharacter?.[speaker] ?? '';
+                  // A card's preset may come from a model not in the current
+                  // roster union — keep it selectable rather than blank.
+                  const voices =
+                    chosen && !audioVoices.includes(chosen) ? [chosen, ...audioVoices] : audioVoices;
+                  return (
+                    <Select
+                      key={speaker}
+                      label={speaker}
+                      value={chosen}
+                      options={[
+                        { value: '', label: t('batchVoiceUseDefault') },
+                        ...voices.map((value) => ({ value, label: value })),
+                      ]}
+                      onChange={(event) =>
+                        setParams((current) => ({
+                          ...current,
+                          voiceByCharacter: {
+                            ...current.voiceByCharacter,
+                            [speaker]: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  );
+                })}
+                <p className="text-xs text-muted sm:col-span-2">{t('batchVoiceByCharacterHint')}</p>
+              </>
             )}
             {kind === 'videos' ? (
               <>
@@ -274,7 +331,15 @@ export function ScriptBatchDialog({
           </div>
         ) : null}
         {quoteFailed ? <ErrorNotice title={t('batchQuoteFailed')} /> : null}
-        {quote && !quote.sufficient ? <ErrorNotice title={t('batchInsufficient')} /> : null}
+        {quote && !quote.sufficient ? (
+          <ErrorNotice
+            title={
+              quote.withinSpendLimit
+                ? t('batchInsufficient')
+                : t('batchSpendLimit', { remaining: formatCount(quote.periodRemaining ?? 0, locale) })
+            }
+          />
+        ) : null}
         {quote && generateCount > 0 ? (
           <p className="text-sm text-amber">
             {tCredits('amount', { count: formatCount(quote.totalCredits, locale) })}

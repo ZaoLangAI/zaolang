@@ -21,6 +21,9 @@ class CharacterCreateRequest(ApiModel):
     description: str | None = Field(default=None, max_length=2000)
     reference_asset_ids: list[str] = Field(default_factory=list, max_length=4)
     voice_description: str | None = Field(default=None, max_length=500)
+    # The TTS voice id this character is dubbed with by default (a name from
+    # an audio model's `voices` roster) — `AUDIO_VOICE_MAX_LENGTH`.
+    preset_voice: str | None = Field(default=None, max_length=60)
 
 
 class CharacterUpdateRequest(ApiModel):
@@ -28,6 +31,8 @@ class CharacterUpdateRequest(ApiModel):
     description: str | None = Field(default=None, max_length=2000)
     reference_asset_ids: list[str] | None = Field(default=None, max_length=4)
     voice_description: str | None = Field(default=None, max_length=500)
+    # `None` leaves it unchanged; `""` clears it.
+    preset_voice: str | None = Field(default=None, max_length=60)
 
 
 class CharacterReferenceAssetUpdateRequest(ApiModel):
@@ -71,6 +76,7 @@ class CharacterResponse(Timestamped):
     # a future *image* generation's `reference_asset_ids`.
     action_clips: list[CharacterActionClip] = Field(default_factory=list)
     voice_description: str | None = None
+    preset_voice: str | None = None
     status: CreationSkillStatus = CreationSkillStatus.DRAFT
     visibility: CreationSkillVisibility = CreationSkillVisibility.PRIVATE
     access_credits: int = 0

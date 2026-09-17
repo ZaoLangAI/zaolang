@@ -353,6 +353,9 @@ class MediaAnalysis(Base, TimestampMixin):
     audio_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
     duration_ticks: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # `export-qa` only: hint-only findings about a finished export
+    # (`analysis.qa_findings`); `[]` for every other analyzer.
+    findings_json: Mapped[list[Any]] = mapped_column(default=list, nullable=False)
     failure_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (

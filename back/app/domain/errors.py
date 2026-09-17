@@ -82,6 +82,15 @@ class AccessRequired(DomainError):
     default_message = "需要先用积分解锁。"
 
 
+class SpendLimitExceeded(DomainError):
+    """Over the monthly spend cap the user set for themselves
+    (`CreditAccount.monthly_spend_limit`) — they may have the credits."""
+
+    code = "SPEND_LIMIT_EXCEEDED"
+    http_status = 402
+    default_message = "超出你设置的本月消费上限。"
+
+
 class CreditsExceedBudget(DomainError):
     code = "CREDITS_EXCEED_BUDGET"
     http_status = 409

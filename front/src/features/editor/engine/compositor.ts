@@ -6,6 +6,7 @@
  */
 
 import { resolveNumberAtTime } from './animation';
+import { type CaptionLayout, layoutCaptionLines } from './caption-layout';
 import { applyClipEffects } from './effects';
 import {
   TICKS_PER_SECOND,
@@ -159,16 +160,31 @@ export function activeVideoLayer(
   return activeVideoLayers(document, atTicks)[0];
 }
 
+/** `volume_millipercent` and the `volume` keyframe channel both go up to
+ * 200% (`PROPERTY_RANGES`), so a quiet line can be boosted, not only cut. */
+export const MAX_LAYER_VOLUME = 2;
+
+/** An element's gain (0–2) at `atTicks`: its `volume` channel, else its
+ * static volume. Preview and export both read it through the layers below. */
+export function layerVolumeAt(element: TimelineElement, atTicks: number): number {
+  const resolved = resolveNumberAtTime(
+    element.animations,
+    'volume',
+    atTicks,
+    element.volume_millipercent,
+  );
+  return Math.min(MAX_LAYER_VOLUME, Math.max(0, resolved / 100_000));
+}
+
 function buildClipLayer(element: TimelineElement, atTicks: number, weight: number): ActiveClipLayer | null {
   if (!element.asset_id) return null;
   const animations = element.animations;
   const baseOpacity = resolveNumberAtTime(animations, 'opacity', atTicks, 100_000) / 100_000;
-  const resolvedVolume = resolveNumberAtTime(animations, 'volume', atTicks, element.volume_millipercent);
   return {
     asset_id: element.asset_id,
     element_id: element.id,
     sourceSeconds: elementSourceSeconds(element, atTicks),
-    volume: Math.min(1, Math.max(0, resolvedVolume / 100_000)),
+    volume: layerVolumeAt(element, atTicks),
     effects: element.effects,
     mask: element.mask,
     opacity: Math.min(1, Math.max(0, baseOpacity * weight)),
@@ -223,18 +239,12 @@ function toAudioLayer(
   trackId: string,
   atTicks: number,
 ): ActiveAudioLayer {
-  const resolvedVolume = resolveNumberAtTime(
-    element.animations,
-    'volume',
-    atTicks,
-    element.volume_millipercent,
-  );
   return {
     asset_id: element.asset_id as string,
     element_id: element.id,
     track_id: trackId,
     sourceSeconds: elementSourceSeconds(element, atTicks),
-    volume: Math.min(1, Math.max(0, resolvedVolume / 100_000)),
+    volume: layerVolumeAt(element, atTicks),
     speedFactor: Math.max(element.speed_millipercent, 1) / 100_000,
   };
 }
@@ -535,31 +545,81 @@ function drawClipTransformed(
   ctx.restore();
 }
 
+// Export draws the same caption every frame for seconds at a time; laying it
+// out once per (text, size, width) keeps `measureText` off the hot path.
+const captionLayoutCache = new Map<string, CaptionLayout>();
+const CAPTION_LAYOUT_CACHE_LIMIT = 256;
+
+function captionLayout(
+  ctx: Canvas2DContext,
+  text: string,
+  baseFontSize: number,
+  maxWidth: number,
+  maxLines: number,
+): CaptionLayout {
+  const key = `${baseFontSize}|${Math.round(maxWidth)}|${maxLines}|${text}`;
+  const cached = captionLayoutCache.get(key);
+  if (cached) return cached;
+  const layout = layoutCaptionLines(
+    text,
+    maxWidth,
+    (value, scale) => {
+      ctx.font = `600 ${Math.round(baseFontSize * scale)}px sans-serif`;
+      return ctx.measureText(value).width;
+    },
+    maxLines,
+  );
+  if (captionLayoutCache.size >= CAPTION_LAYOUT_CACHE_LIMIT) captionLayoutCache.clear();
+  captionLayoutCache.set(key, layout);
+  return layout;
+}
+
+/**
+ * Bottom-anchored caption block: wrapped to at most two lines (more only
+ * when several captions show at once), shrunk then ellipsized rather than
+ * ever running off the frame — see `caption-layout.ts`. The last line keeps
+ * its old 0.88h position so single-line captions sit exactly where they did.
+ */
 function drawCaptions(
   ctx: Canvas2DContext,
   canvasWidth: number,
   canvasHeight: number,
   captions: string[],
 ): void {
-  const text = captions.join(' ');
-  if (!text) return;
-  const fontSize = Math.max(14, Math.round(canvasHeight * 0.045));
+  const paragraphs = captions.map((caption) => caption.trim()).filter(Boolean);
+  if (paragraphs.length === 0) return;
+  const baseFontSize = Math.max(14, Math.round(canvasHeight * 0.045));
+  const paddingX = 16;
+  const maxWidth = canvasWidth * 0.9 - paddingX * 2;
+  const layout = captionLayout(
+    ctx,
+    paragraphs.join('\n'),
+    baseFontSize,
+    maxWidth,
+    Math.max(2, paragraphs.length),
+  );
+  if (layout.lines.length === 0) return;
+
+  const fontSize = Math.round(baseFontSize * layout.fontScale);
   ctx.font = `600 ${fontSize}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const y = canvasHeight * 0.88;
-  const metrics = ctx.measureText(text);
-  const paddingX = 16;
+  const lineHeight = fontSize * 1.3;
   const boxHeight = fontSize * 1.6;
+  const lastY = canvasHeight * 0.88;
+  const firstY = lastY - (layout.lines.length - 1) * lineHeight;
+  const widest = Math.max(...layout.lines.map((line) => ctx.measureText(line).width));
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.fillRect(
-    canvasWidth / 2 - metrics.width / 2 - paddingX,
-    y - boxHeight / 2,
-    metrics.width + paddingX * 2,
-    boxHeight,
+    canvasWidth / 2 - widest / 2 - paddingX,
+    firstY - boxHeight / 2,
+    widest + paddingX * 2,
+    lastY - firstY + boxHeight,
   );
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, canvasWidth / 2, y);
+  layout.lines.forEach((line, index) => {
+    ctx.fillText(line, canvasWidth / 2, firstY + index * lineHeight);
+  });
 }
 
 /**
@@ -667,6 +727,47 @@ async function renderClipLayer(
   }
 }
 
+export function aiLabelFontSize(canvasHeight: number): number {
+  return Math.max(12, Math.round(canvasHeight * 0.028));
+}
+
+/**
+ * Where the visible "AI 生成" label sits: a pill in the top-right corner (the
+ * brand overlay defaults to the top-left), sized from the frame height so it
+ * reads the same at every export resolution and never leaves the frame.
+ */
+export function aiLabelRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  textWidth: number,
+): { x: number; y: number; width: number; height: number; paddingX: number } {
+  const fontSize = aiLabelFontSize(canvasHeight);
+  const paddingX = Math.round(fontSize * 0.6);
+  const margin = Math.round(Math.min(canvasWidth, canvasHeight) * 0.03);
+  const width = Math.min(textWidth + paddingX * 2, canvasWidth - margin * 2);
+  const height = Math.round(fontSize * 1.6);
+  return { x: canvasWidth - margin - width, y: margin, width, height, paddingX };
+}
+
+function drawAiLabel(
+  ctx: Canvas2DContext,
+  canvasWidth: number,
+  canvasHeight: number,
+  text: string,
+): void {
+  if (!text) return;
+  ctx.save();
+  ctx.font = `600 ${aiLabelFontSize(canvasHeight)}px sans-serif`;
+  const rect = aiLabelRect(canvasWidth, canvasHeight, ctx.measureText(text).width);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, rect.x + rect.paddingX, rect.y + rect.height / 2);
+  ctx.restore();
+}
+
 export interface ComposeFrameOptions {
   /**
    * Live playback: the active clips' `<video>` elements free-run at clip
@@ -674,6 +775,11 @@ export interface ComposeFrameOptions {
    * exact-seek-per-frame path that scrubbing and export rely on.
    */
   playing?: boolean;
+  /**
+   * Export-only visible "AI 生成" stamp (`ExportRenderOptions.aiLabel`),
+   * drawn last so no layer covers it.
+   */
+  aiLabel?: { text: string };
 }
 
 export async function composeFrame(
@@ -752,6 +858,10 @@ export async function composeFrame(
 
   if (layers.captions.length) {
     drawCaptions(ctx, canvasWidth, canvasHeight, layers.captions);
+  }
+
+  if (options.aiLabel) {
+    drawAiLabel(ctx, canvasWidth, canvasHeight, options.aiLabel.text);
   }
 
   target.drawImage(frame, 0, 0, canvasWidth, canvasHeight);

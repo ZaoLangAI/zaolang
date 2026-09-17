@@ -13,6 +13,19 @@ from collections.abc import Iterator
 # Set before any app import so cached settings pick the test database.
 os.environ.setdefault("APP_ENV", "test")
 
+# Tests must never reach a real object store. `back/.env` is read here too and
+# may point `STORAGE_BACKEND` at Tencent COS with real credentials; environment
+# variables win over the dotenv file, so pin MinIO on localhost and blank every
+# COS setting before any app import caches `get_settings()`. The autouse
+# `_memory_storage` fixture below then swaps even MinIO for an in-process store.
+os.environ["STORAGE_BACKEND"] = "minio"
+os.environ["S3_ENDPOINT_URL"] = "http://localhost:9000"
+os.environ["S3_PUBLIC_ENDPOINT_URL"] = "http://localhost:9000"
+os.environ["COS_SECRET_ID"] = ""
+os.environ["COS_SECRET_KEY"] = ""
+os.environ["COS_BUCKET"] = ""
+os.environ["COS_PUBLIC_ENDPOINT_URL"] = ""
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
@@ -25,7 +38,46 @@ from app.models import Base, Profile, User
 from app.models.enums import UserRole
 from app.security.passwords import hash_password
 from app.security.tokens import issue_admin_token, issue_consumer_tokens
+from app.storage import s3
+from tests import network_guard
 from tests.fake_llm_gateway import fake_complete, fake_stream_complete
+from tests.memory_storage import MemoryStorageBackend
+
+
+@pytest.fixture(autouse=True)
+def _block_outbound_network(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only loopback (Postgres, Redis, in-process servers) is reachable.
+
+    A test that would otherwise call a real LLM gateway, media provider or
+    object store fails like an offline machine instead of spending money or
+    writing to production storage. `@pytest.mark.live` tests opt out — they
+    are the ones that are meant to go online (`make test-llm`).
+    """
+    if request.node.get_closest_marker("live"):
+        return
+    network_guard.install(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def _memory_storage(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[MemoryStorageBackend | None]:
+    """A fresh in-process object store per test, behind `app.storage.s3`.
+
+    `s3` imports `get_backend` by name, so that is the reference to patch
+    (patching `app.storage.factory.get_backend` would not reach it). Tests that
+    still patch individual `s3` functions (e.g. `presign_get`) keep working on
+    top of this. `@pytest.mark.real_storage` opts out and talks to the MinIO
+    pinned above.
+    """
+    if request.node.get_closest_marker("real_storage"):
+        yield None
+        return
+    backend = MemoryStorageBackend()
+    monkeypatch.setattr(s3, "get_backend", lambda: backend)
+    yield backend
 
 
 @pytest.fixture(scope="session")
@@ -147,6 +199,8 @@ def _clear_redis_state() -> Iterator[None]:
             for key in client.scan_iter(match=f"rl:{bucket}:*", count=500):
                 client.delete(key)
         for key in client.scan_iter(match="llmfo:*", count=500):
+            client.delete(key)
+        for key in client.scan_iter(match="mediafo:*", count=500):
             client.delete(key)
         for key in client.scan_iter(match="admin:llm-validate:*", count=500):
             client.delete(key)

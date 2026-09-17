@@ -23,11 +23,13 @@ import {
   IconVideo,
   IconVolume,
   IconVolumeOff,
+  IconWave,
 } from '@/components/ui/icons';
 import { cn } from '@/lib/cn';
 
 import type { EditorActions } from '../actions';
 import { newTrackId } from '../engine/canonical';
+import { buildDuckingCommands } from '../engine/ducking';
 import {
   TICKS_PER_SECOND,
   type CanonicalDocument,
@@ -970,6 +972,12 @@ export function Timeline({
             const isAddable = track.kind === 'video' || track.kind === 'audio';
             const isOnlyOfKind = (trackCountByKind[track.kind] ?? 0) <= 1;
             const contents = laneContents.get(track.id) ?? [];
+            // Only offered on an audio track that has clips and actually
+            // overlaps speech on another track — otherwise there's nothing to duck.
+            const duckingPlan =
+              track.kind === 'audio' && track.elements.length > 0
+                ? buildDuckingCommands(tracks, track.id)
+                : null;
             return (
               <div key={track.id} className="flex" style={{ height: ROW_HEIGHT, paddingBottom: ROW_GAP }}>
                 <div
@@ -1014,6 +1022,18 @@ export function Timeline({
                           <IconVolume className="size-3.5" />
                         )}
                       </button>
+                      {duckingPlan && duckingPlan.commands.length > 0 ? (
+                        <button
+                          type="button"
+                          title={t('duckingHint')}
+                          aria-label={t('duckingGenerate')}
+                          disabled={disabled}
+                          onClick={() => onCommand(duckingPlan.commands)}
+                          className="inline-flex size-6 items-center justify-center rounded-[var(--radius-sm)] text-muted hover:bg-surface disabled:opacity-40"
+                        >
+                          <IconWave className="size-3.5" />
+                        </button>
+                      ) : null}
                       {!isOnlyOfKind && track.elements.length === 0 ? (
                         <button
                           type="button"

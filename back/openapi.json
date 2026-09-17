@@ -3184,6 +3184,75 @@
         }
       }
     },
+    "/v1/drafts/{draft_id}/keyframe-confirmation": {
+      "post": {
+        "tags": [
+          "drafts"
+        ],
+        "summary": "Confirm Keyframe",
+        "description": "Confirms (or withdraws) a storyboard keyframe version as its\nsegment's video first frame — see `publishing.confirm_keyframe`.",
+        "operationId": "confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyframeConfirmationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/drafts/{draft_id}/versions/{job_id}": {
       "delete": {
         "tags": [
@@ -3287,6 +3356,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/QuoteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/generation-jobs/quote:batch": {
+      "post": {
+        "tags": [
+          "generation"
+        ],
+        "summary": "Quote Batch",
+        "description": "A whole batch priced before anything is committed: each line through\nthe same `quote_for` a submit uses, summed — plus what the balance and\nthe user's own monthly cap still allow.",
+        "operationId": "quote_batch_v1_generation_jobs_quote_batch_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchQuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchQuoteResponse"
                 }
               }
             }
@@ -5640,6 +5769,205 @@
         }
       }
     },
+    "/v1/assets/{asset_id}/consents": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "List Consents",
+        "description": "The caller's consent declarations for one of their own assets.",
+        "operationId": "list_consents_v1_assets__asset_id__consents_get",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConsentResponse"
+                  },
+                  "title": "Response List Consents V1 Assets  Asset Id  Consents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Declare Consent",
+        "description": "Declares that the real person whose voice or likeness `asset_id`\ncarries consented to its use as generation input — required before a\nvoice-clone sample or a real-person reference can be submitted.",
+        "operationId": "declare_consent_v1_assets__asset_id__consents_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Asset Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentDeclareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/asset-consents/{consent_id}/revoke": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Revoke Consent",
+        "description": "Withdraws a consent; the asset can no longer feed a new generation job.",
+        "operationId": "revoke_consent_v1_asset_consents__consent_id__revoke_post",
+        "parameters": [
+          {
+            "name": "consent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Consent Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentRevokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/credits/balance": {
       "get": {
         "tags": [
@@ -5665,6 +5993,66 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditBalanceResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/credits/spend-limit": {
+      "put": {
+        "tags": [
+          "credits"
+        ],
+        "summary": "Set Spend Limit",
+        "description": "The user's own monthly cap on generation spend (`null` removes it).",
+        "operationId": "set_spend_limit_v1_credits_spend_limit_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpendLimitRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8926,6 +9314,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EpisodeCutResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/episode-cuts:assemble": {
+      "post": {
+        "tags": [
+          "editor"
+        ],
+        "summary": "Assemble Cut From Script",
+        "operationId": "assemble_cut_from_script_v1_episode_cuts_assemble_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CutAssembleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CutAssembleResponse"
                 }
               }
             }
@@ -22611,6 +23058,11 @@
             "type": "boolean",
             "title": "Ai Generated",
             "default": false
+          },
+          "depicts_real_person": {
+            "type": "boolean",
+            "title": "Depicts Real Person",
+            "default": false
           }
         },
         "type": "object",
@@ -22972,6 +23424,150 @@
           "reason"
         ],
         "title": "BackupTriggerRequest"
+      },
+      "BatchQuoteItem": {
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/Operation"
+          },
+          "quality_tier": {
+            "$ref": "#/components/schemas/QualityTier"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Duration Seconds",
+            "default": 0
+          },
+          "asset_kind": {
+            "$ref": "#/components/schemas/ImageAssetKind",
+            "default": "general"
+          },
+          "character_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CharacterViewAngle"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Views"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation",
+          "quality_tier"
+        ],
+        "title": "BatchQuoteItem",
+        "description": "One line of a batch: `count` identical jobs."
+      },
+      "BatchQuoteLine": {
+        "properties": {
+          "unit_credits": {
+            "type": "integer",
+            "title": "Unit Credits"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "credits": {
+            "type": "integer",
+            "title": "Credits"
+          },
+          "estimated_seconds": {
+            "type": "integer",
+            "title": "Estimated Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit_credits",
+          "count",
+          "credits",
+          "estimated_seconds"
+        ],
+        "title": "BatchQuoteLine"
+      },
+      "BatchQuoteRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteItem"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchQuoteRequest"
+      },
+      "BatchQuoteResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchQuoteLine"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total_credits": {
+            "type": "integer",
+            "title": "Total Credits"
+          },
+          "available_credits": {
+            "type": "integer",
+            "title": "Available Credits"
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
+          },
+          "within_spend_limit": {
+            "type": "boolean",
+            "title": "Within Spend Limit"
+          },
+          "sufficient": {
+            "type": "boolean",
+            "title": "Sufficient"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total_credits",
+          "available_credits",
+          "within_spend_limit",
+          "sufficient"
+        ],
+        "title": "BatchQuoteResponse",
+        "description": "A batch priced line by line with the same `quote_for` a submit uses\n— an exact sum, never a range (credits-billing invariant #4)."
       },
       "BindEditorExportRequest": {
         "properties": {
@@ -24071,6 +24667,18 @@
               }
             ],
             "title": "Voice Description"
+          },
+          "preset_voice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Voice"
           }
         },
         "type": "object",
@@ -24266,6 +24874,17 @@
             ],
             "title": "Voice Description"
           },
+          "preset_voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Voice"
+          },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
             "default": "draft"
@@ -24342,6 +24961,18 @@
               }
             ],
             "title": "Voice Description"
+          },
+          "preset_voice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset Voice"
           }
         },
         "type": "object",
@@ -24918,6 +25549,140 @@
           "created_at"
         ],
         "title": "ConfigVersionView"
+      },
+      "ConsentDeclareRequest": {
+        "properties": {
+          "consent_type": {
+            "type": "string",
+            "enum": [
+              "voice",
+              "portrait"
+            ],
+            "title": "Consent Type"
+          },
+          "subject_reference": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Subject Reference"
+          },
+          "evidence_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Asset Id"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "consent_type",
+          "subject_reference"
+        ],
+        "title": "ConsentDeclareRequest",
+        "description": "The uploader declares that the real person whose voice or likeness the\nasset carries consented to its use (深度合成管理规定 §14). `evidence_asset_id`\nis an optional `consent_evidence` upload an operator can verify against."
+      },
+      "ConsentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "asset_id": {
+            "type": "string",
+            "title": "Asset Id"
+          },
+          "consent_type": {
+            "type": "string",
+            "title": "Consent Type"
+          },
+          "subject_reference": {
+            "type": "string",
+            "title": "Subject Reference"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "has_evidence": {
+            "type": "boolean",
+            "title": "Has Evidence"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "asset_id",
+          "consent_type",
+          "subject_reference",
+          "status",
+          "has_evidence",
+          "created_at"
+        ],
+        "title": "ConsentResponse"
+      },
+      "ConsentRevokeRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "title": "ConsentRevokeRequest"
       },
       "ContentDailyPoint": {
         "properties": {
@@ -25581,6 +26346,38 @@
             "type": "string",
             "title": "Currency",
             "default": "CREDIT"
+          },
+          "monthly_spend_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Spend Limit"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period",
+            "default": ""
+          },
+          "period_spent": {
+            "type": "integer",
+            "title": "Period Spent",
+            "default": 0
+          },
+          "period_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Remaining"
           }
         },
         "type": "object",
@@ -25722,6 +26519,78 @@
           "region"
         ],
         "title": "CreditPackageResponse"
+      },
+      "CutAssembleRequest": {
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "title": "Episode Id"
+          },
+          "ordered_keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordered Keys"
+          },
+          "include_audio": {
+            "type": "boolean",
+            "title": "Include Audio",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "episode_id"
+        ],
+        "title": "CutAssembleRequest",
+        "description": "Script → rough cut. `ordered_keys` only narrows which breakpoints\nare assembled; the order always comes from the episode's own script."
+      },
+      "CutAssembleResponse": {
+        "properties": {
+          "cut": {
+            "$ref": "#/components/schemas/EpisodeCutResponse"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/CutAssembleSkip"
+            },
+            "type": "array",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cut"
+        ],
+        "title": "CutAssembleResponse"
+      },
+      "CutAssembleSkip": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "reason"
+        ],
+        "title": "CutAssembleSkip",
+        "description": "A breakpoint (`{heading}#{n}`) or dialogue line (`{heading}#L{n}`)\nleft out of the rough cut. `reason`: `no_output` (not generated yet),\n`unknown_duration`, or `not_owned`."
       },
       "CutCreateRequest": {
         "properties": {
@@ -27293,6 +28162,17 @@
               }
             ],
             "title": "Failure Message"
+          },
+          "qa_operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qa Operation Id"
           }
         },
         "type": "object",
@@ -29094,6 +29974,26 @@
           "window_days"
         ],
         "title": "JobsTimeseriesView"
+      },
+      "KeyframeConfirmationRequest": {
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "title": "KeyframeConfirmationRequest",
+        "description": "Confirms one version of a storyboard keyframe draft as its segment's\nvideo first frame; `null` withdraws the confirmation."
       },
       "LearnPostAdminView": {
         "properties": {
@@ -35627,6 +36527,25 @@
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "happy",
+                  "sad",
+                  "angry",
+                  "fear",
+                  "surprise",
+                  "calm"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
           }
         },
         "type": "object",
@@ -35771,6 +36690,13 @@
             "type": "array",
             "title": "Turns"
           },
+          "lint": {
+            "items": {
+              "$ref": "#/components/schemas/ScriptLintIssue"
+            },
+            "type": "array",
+            "title": "Lint"
+          },
           "source_idea": {
             "type": "string",
             "title": "Source Idea",
@@ -35898,6 +36824,86 @@
         "type": "object",
         "title": "ScriptLinksUpdateRequest",
         "description": "A structural edit, not a content revision — never goes through the\nLLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched\nby `name`/`heading` against the episode's current `script_json` rather\nthan by index, since either list can be reordered by a revision turn\nthat runs concurrently with a link update landing."
+      },
+      "ScriptLintIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "scene_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Index"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading",
+            "default": ""
+          },
+          "block_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Index"
+          },
+          "breakpoint_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakpoint Key"
+          },
+          "dimension": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimension"
+          },
+          "suggested_skills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggested Skills"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ScriptLintIssue",
+        "description": "One deterministic lint finding (`app.domain.script_writing.lint`) — a\nsuggestion shown beside the script, never a blocker."
       },
       "ScriptRetryRequest": {
         "properties": {
@@ -36764,6 +37770,26 @@
         "title": "SkillTemplateView",
         "description": "A starting prompt the skill editor can load.\n\nLoading one only fills the form: publishing stays a separate confirmed\naction, because the published text is what decides whether content gets\nrejected or a retry spends credits."
       },
+      "SpendLimitRequest": {
+        "properties": {
+          "monthly_spend_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monthly Spend Limit"
+          }
+        },
+        "type": "object",
+        "title": "SpendLimitRequest",
+        "description": "`null` removes the cap."
+      },
       "StorageUsageResponse": {
         "properties": {
           "bucket": {
@@ -37567,6 +38593,11 @@
             "type": "string",
             "pattern": "^(generation_reference|avatar|profile_cover|consent_evidence|learn_media|style_gallery_cover|series_logo|episode_preview|video_analysis_source|editor_source|editor_export|caption|font|voice_sample)$",
             "title": "Purpose"
+          },
+          "depicts_real_person": {
+            "type": "boolean",
+            "title": "Depicts Real Person",
+            "default": false
           }
         },
         "type": "object",

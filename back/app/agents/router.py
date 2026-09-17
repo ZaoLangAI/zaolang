@@ -35,6 +35,7 @@ from app.agents import intent_router
 from app.domain.costs import service as costs_service
 from app.models import Asset, ProviderStat
 from app.models.enums import MediaGenerationKind, MediaType, Operation
+from app.providers import media_breaker
 from app.providers.base import ProviderCapability, adapt_resolution_tier
 from app.providers.media_endpoints import dynamic_capabilities
 
@@ -185,6 +186,14 @@ def route(
             candidate.filter_reason = "previously_failed_this_job"
             candidates.append(candidate)
             continue
+        if media_breaker.is_open(name):
+            # Cross-job breaker (`app.providers.media_breaker`): this route is
+            # failing for everyone right now. A hard filter like the rest of
+            # this loop — never a score, and never shown to the selector.
+            candidate.eligible = False
+            candidate.filter_reason = "provider_circuit_open"
+            candidates.append(candidate)
+            continue
 
         stat = stats.get(name)
         success_rate = _success_rate(stat)
@@ -274,9 +283,7 @@ def route(
     )
 
 
-def _request_has_video_source(
-    session: Session, operation: str, params: Mapping[str, Any]
-) -> bool:
+def _request_has_video_source(session: Session, operation: str, params: Mapping[str, Any]) -> bool:
     """Whether this request already carries a video the edit-class models can use.
 
     `video_to_video` is itself the "has a source clip" operation (submit
@@ -462,6 +469,7 @@ def record_attempt_outcome(
     latency_ms: int,
     cost_minor: int,
     cost_micro_usd: int = 0,
+    failure_code: str | None = None,
 ) -> None:
     """Feeds real outcomes back into the statistics the router reads.
 
@@ -488,3 +496,6 @@ def record_attempt_outcome(
     stat.total_cost_minor += cost_minor
     stat.total_cost_micro_usd += cost_micro_usd
     session.flush()
+    # The same outcome feeds the cross-job breaker, which (unlike the slow
+    # `success_rate` above) takes a route out of rotation within seconds.
+    media_breaker.record_outcome(provider, success=succeeded, failure_code=failure_code)

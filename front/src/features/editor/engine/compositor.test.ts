@@ -68,10 +68,10 @@ describe('resolveFrame — clip resolution', () => {
     expect(layers.clip!.sourceSeconds).toBeCloseTo(6, 5);
   });
 
-  it('clamps volume into 0..1 from millipercent', () => {
+  it('clamps volume into 0..2 (the canonical 0–200%) from millipercent', () => {
     const document = documentWithClip({ volume_millipercent: 250_000 });
     const layers = resolveFrame(document, 0);
-    expect(layers.clip!.volume).toBe(1);
+    expect(layers.clip!.volume).toBe(2);
   });
 
   it('resolves volume from a keyframed channel instead of the static value when present', () => {

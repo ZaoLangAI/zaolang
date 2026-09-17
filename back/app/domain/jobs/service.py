@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domain.characters import service as characters_service
+from app.domain.consent import service as consent_service
 from app.domain.credits import service as credits_service
 from app.domain.credits.pricing import Quote
 from app.domain.credits.pricing import quote as compute_quote
@@ -25,6 +26,7 @@ from app.domain.errors import (
     IdempotencyConflict,
     InsufficientCredits,
     NotFound,
+    SpendLimitExceeded,
 )
 from app.domain.jobs import state_machine as sm
 from app.domain.media import service as media_service
@@ -207,7 +209,9 @@ def submit(
 
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
-    characters_service.apply_character_refs(session, user_id=user_id, params=params)
+    characters_service.apply_character_refs(
+        session, user_id=user_id, params=params, operation=operation
+    )
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
     media_service.attach_licensed_source_video(
         session, params=params, source_work_version_id=source_work_version_id
@@ -219,6 +223,10 @@ def submit(
         params=params,
         source_work_version_id=source_work_version_id,
     )
+    # A voice-clone sample or a real-person reference needs that person's
+    # consent (深度合成管理规定 §14). Checked before quoting, like the
+    # ownership check above, so a missing consent never reserves credits.
+    consent_service.assert_reference_consents(session, operation=operation, params=params)
     shortform_service.assert_params_consistent(session, params)
 
     priced = quote_for(
@@ -245,6 +253,15 @@ def submit(
                 f"需要 {priced.credits} 积分，当前可用 {account.available_balance}。",
                 required=priced.credits,
                 available=account.available_balance,
+            )
+        # Checked before the job row exists so an over-cap submit costs
+        # nothing; `reserve` enforces the same cap again inside its UPDATE.
+        remaining = credits_service.remaining_monthly_spend(account)
+        if remaining is not None and remaining < priced.credits:
+            raise SpendLimitExceeded(
+                f"需要 {priced.credits} 积分，本月消费上限还剩 {remaining}。",
+                required=priced.credits,
+                remaining=remaining,
             )
 
     # Pinned now, not resolved lazily at run time: a template published while

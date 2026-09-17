@@ -105,7 +105,12 @@ def presign_upload(
     size_bytes: int,
     checksum_sha256: str,
     purpose: str,
+    depicts_real_person: bool = False,
 ) -> PresignedUpload:
+    """`depicts_real_person` is the uploader's own declaration that an image
+    or video shows a real person; it rides on the upload session and lands on
+    the `Asset`, where `consent.assert_reference_consents` then requires a
+    portrait consent before the asset may feed a generation job."""
     settings = get_settings()
 
     extension = s3.ALLOWED_UPLOAD_MIME_TYPES.get(mime_type)
@@ -146,6 +151,8 @@ def presign_upload(
         declared_size_bytes=size_bytes,
         declared_checksum_sha256=checksum_sha256,
         expires_at=expires_at,
+        # Only an image or video can show a person; ignored for anything else.
+        depicts_real_person=depicts_real_person and mime_type.startswith(("image/", "video/")),
     )
     session.add(upload_session)
     session.flush()
@@ -217,6 +224,7 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
         duration_ms=duration_ms,
         moderation_status=ModerationStatus.PENDING,
         visibility=Visibility.PRIVATE,
+        depicts_real_person=upload.depicts_real_person,
     )
     session.add(asset)
     session.flush()
@@ -383,8 +391,9 @@ def validate_generation_references(
 
     Asset ids are user input.  Resolving them later in a worker without this
     ownership check would let a guessed private id become a signed provider
-    URL, even though the object itself never becomes public.     The exceptions are a remix-licensed source version's primary output,
-    and a published marketplace skill's public cover (so an image-asset
+    URL, even though the object itself never becomes public. The exceptions
+    are a remix-licensed source version's primary output, and a published
+    marketplace skill's public cover (so an image-asset
     recipe can ride as an img2img reference without cloning the still).
     """
 
@@ -593,6 +602,9 @@ def extract_video_frame(session: Session, *, user_id: str, asset_id: str, positi
         height=height,
         moderation_status=ModerationStatus.PENDING,
         visibility=Visibility.PRIVATE,
+        # A frame of a real person still shows that person. It inherits the
+        # flag but not the consent — see `app.domain.consent.service`.
+        depicts_real_person=source.depicts_real_person,
     )
     session.add(frame_asset)
     session.flush()
@@ -859,9 +871,7 @@ def _is_shared(session: Session, asset_id: str, except_work_id: str) -> bool:
     if profile is not None:
         return True
 
-    series_logo = session.scalar(
-        select(Series.id).where(Series.logo_asset_id == asset_id).limit(1)
-    )
+    series_logo = session.scalar(select(Series.id).where(Series.logo_asset_id == asset_id).limit(1))
     if series_logo is not None:
         return True
 

@@ -13,6 +13,7 @@ from app.api.schemas.works import (
     AppliedVersionRequest,
     DraftCreateRequest,
     DraftResponse,
+    KeyframeConfirmationRequest,
     LicenseInfo,
     PublishRequest,
     PublishResponse,
@@ -138,6 +139,26 @@ def apply_draft_version(
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> DraftResponse:
     draft = publishing.apply_draft_version(
+        session, user_id=user.id, draft_id=draft_id, job_id=payload.job_id
+    )
+    session.commit()
+    return _response(session, draft)
+
+
+@router.post(
+    "/{draft_id}/keyframe-confirmation",
+    response_model=DraftResponse,
+)
+def confirm_keyframe(
+    draft_id: str,
+    payload: KeyframeConfirmationRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> DraftResponse:
+    """Confirms (or withdraws) a storyboard keyframe version as its
+    segment's video first frame — see `publishing.confirm_keyframe`."""
+    draft = publishing.confirm_keyframe(
         session, user_id=user.id, draft_id=draft_id, job_id=payload.job_id
     )
     session.commit()

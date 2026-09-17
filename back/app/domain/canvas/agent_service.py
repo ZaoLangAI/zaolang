@@ -43,6 +43,7 @@ from app.domain.errors import (
     CreditsExceedBudget,
     InsufficientCredits,
     NotFound,
+    SpendLimitExceeded,
     ValidationFailed,
 )
 from app.domain.jobs import service as jobs_service
@@ -101,6 +102,7 @@ DEFAULT_VIDEO_SECONDS = 5
 # `Conflict` raised after an internal `session.rollback()` — must propagate.
 SKIPPABLE = (
     InsufficientCredits,
+    SpendLimitExceeded,
     CreditsExceedBudget,
     ValidationFailed,
     AssetRightsRequired,

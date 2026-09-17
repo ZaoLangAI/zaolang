@@ -40,5 +40,6 @@ asyncio_mode = "auto"
 markers = [
   "live: hits the real LLM gateway; requires LLM_API_KEY and is excluded from CI",
   "real_gateway_seams: exercises app.llm.client.complete/stream_complete's own failover/error logic against a mocked transport, so the autouse fake-gateway fixture must not intercept it",
+  "real_storage: opts out of the autouse in-memory object store and talks to the MinIO pinned in tests/conftest.py (COS is always disabled under tests)",
 ]
 filterwarnings = ["ignore::DeprecationWarning"]
