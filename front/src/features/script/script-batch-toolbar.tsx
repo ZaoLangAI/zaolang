@@ -11,8 +11,6 @@ export function ScriptBatchToolbar({
   characterCount,
   characterPendingCount,
   sceneCount,
-  keyframeCount,
-  onOpenKeyframes,
   videoCount,
   videoDisabled,
   audioCount,
@@ -30,9 +28,6 @@ export function ScriptBatchToolbar({
   /** Unlinked characters, including library same-name rows the dialog will auto-link. */
   characterPendingCount: number;
   sceneCount: number;
-  /** Segments with no video yet — what the keyframe board shows. */
-  keyframeCount: number;
-  onOpenKeyframes: () => void;
   videoCount: number;
   videoDisabled: boolean;
   /** Dialogue lines with no dubbed `audio_generation` draft yet — see `pendingDialogueLines`. */
@@ -75,16 +70,6 @@ export function ScriptBatchToolbar({
           onClick={() => onOpen('scenes')}
         >
           {t('batchGenerateScenes', { count: sceneCount })}
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<IconImage className="size-3.5" />}
-          disabled={disabled || keyframeCount === 0}
-          title={keyframeCount === 0 ? t('batchNothingPending') : t('batchKeyframesHint')}
-          onClick={onOpenKeyframes}
-        >
-          {t('batchKeyframes', { count: keyframeCount })}
         </Button>
         <Button
           size="sm"

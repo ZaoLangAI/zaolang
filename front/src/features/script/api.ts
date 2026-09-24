@@ -1,12 +1,5 @@
 import { api } from '@/lib/api/client';
-import type { Draft } from '@/lib/api/types';
 import { streamPost as streamAgentPost } from '@/lib/sse-post';
-
-/** Confirms one version of a storyboard keyframe draft as its segment's
- * video first frame; `jobId: null` withdraws it. */
-export function confirmKeyframe(draftId: string, jobId: string | null) {
-  return api.post<Draft>(`/v1/drafts/${draftId}/keyframe-confirmation`, { job_id: jobId });
-}
 
 export type ScriptBlockType = 'scene' | 'action' | 'camera' | 'dialogue' | 'breakpoint';
 

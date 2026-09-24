@@ -3184,75 +3184,6 @@
         }
       }
     },
-    "/v1/drafts/{draft_id}/keyframe-confirmation": {
-      "post": {
-        "tags": [
-          "drafts"
-        ],
-        "summary": "Confirm Keyframe",
-        "description": "Confirms (or withdraws) a storyboard keyframe version as its\nsegment's video first frame — see `publishing.confirm_keyframe`.",
-        "operationId": "confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post",
-        "parameters": [
-          {
-            "name": "draft_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Draft Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KeyframeConfirmationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DraftResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/drafts/{draft_id}/versions/{job_id}": {
       "delete": {
         "tags": [
@@ -29974,26 +29905,6 @@
           "window_days"
         ],
         "title": "JobsTimeseriesView"
-      },
-      "KeyframeConfirmationRequest": {
-        "properties": {
-          "job_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 40,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Job Id"
-          }
-        },
-        "type": "object",
-        "title": "KeyframeConfirmationRequest",
-        "description": "Confirms one version of a storyboard keyframe draft as its segment's\nvideo first frame; `null` withdraws the confirmation."
       },
       "LearnPostAdminView": {
         "properties": {

@@ -16,7 +16,6 @@ import type { BatchKind, BatchParams, BatchQuote } from './use-script-batch';
 import {
   DEFAULT_AUDIO_PARAMS,
   DEFAULT_CHARACTER_PARAMS,
-  DEFAULT_KEYFRAME_PARAMS,
   DEFAULT_SCENE_PARAMS,
   DEFAULT_VIDEO_PARAMS,
   quoteForBatch,
@@ -43,7 +42,6 @@ function defaultsFor(kind: BatchKind): BatchParams {
   if (kind === 'characters') return DEFAULT_CHARACTER_PARAMS;
   if (kind === 'scenes') return DEFAULT_SCENE_PARAMS;
   if (kind === 'audio') return DEFAULT_AUDIO_PARAMS;
-  if (kind === 'keyframes') return DEFAULT_KEYFRAME_PARAMS;
   return DEFAULT_VIDEO_PARAMS;
 }
 
@@ -71,7 +69,6 @@ export function ScriptBatchDialog({
   existingRefByLabel,
   speakers,
   defaultVoiceBySpeaker,
-  framedCount,
   onClose,
   onConfirm,
 }: {
@@ -85,8 +82,6 @@ export function ScriptBatchDialog({
   speakers?: string[];
   /** Audio only: a speaker's preset voice from their linked character card. */
   defaultVoiceBySpeaker?: Record<string, string>;
-  /** Videos only: segments that start from a confirmed keyframe (priced as `image_to_video`). */
-  framedCount?: number;
   onClose: () => void;
   onConfirm: (params: BatchParams, quote: BatchQuote, skippedLabels: string[]) => void;
 }) {
@@ -137,7 +132,7 @@ export function ScriptBatchDialog({
     }
     let cancelled = false;
     setQuoting(true);
-    void quoteForBatch(kind, params, generateCount, framedCount ?? 0)
+    void quoteForBatch(kind, params, generateCount)
       .then((next) => {
         if (cancelled) return;
         setQuote(next);
@@ -154,7 +149,7 @@ export function ScriptBatchDialog({
     return () => {
       cancelled = true;
     };
-  }, [kind, generateCount, params, framedCount]);
+  }, [kind, generateCount, params]);
 
   // "自动选择" (no forced model in the batch runner) — the same union
   // fallback `AudioGenerationStudio` shows before picking a model.
@@ -178,11 +173,9 @@ export function ScriptBatchDialog({
       ? t('batchConfirmCharactersTitle')
       : kind === 'scenes'
         ? t('batchConfirmScenesTitle')
-        : kind === 'keyframes'
-          ? t('batchConfirmKeyframesTitle')
-          : kind === 'audio'
-            ? t('batchConfirmAudioTitle')
-            : t('batchConfirmVideosTitle');
+        : kind === 'audio'
+          ? t('batchConfirmAudioTitle')
+          : t('batchConfirmVideosTitle');
 
   const canSubmit =
     Boolean(quote?.sufficient) && !quoting && !quoteFailed && labels.length > 0;
