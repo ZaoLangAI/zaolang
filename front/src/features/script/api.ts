@@ -1,3 +1,4 @@
+import type { BlockingState } from '@/features/blocking/types';
 import { api } from '@/lib/api/client';
 import { streamPost as streamAgentPost } from '@/lib/sse-post';
 
@@ -44,6 +45,9 @@ export interface ScriptTurnSummary {
    * Rendered as a collapsed-by-default disclosure, never inside the
    * right-side script view. */
   thinking: string;
+  /** `script` for a 文案创作 turn, `blocking` for one sent from the 白膜
+   * studio (which may have rewritten the script as well). */
+  origin?: 'script' | 'blocking' | string;
 }
 
 export interface ScriptSummary {
@@ -67,6 +71,8 @@ export interface ScriptDetail {
   source_referenced_skill_ids: string[];
   /** Latest failed-generation excerpt for this episode, if any. */
   last_error: string | null;
+  /** The 白膜 blockout head; `null` while the blocking studio flag is off. */
+  blocking?: BlockingState | null;
   created_at: string;
   updated_at: string;
 }

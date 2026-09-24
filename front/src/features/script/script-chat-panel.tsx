@@ -52,15 +52,30 @@ export function ScriptChatPanel({
   liveText,
   liveThinking,
   streamError,
+  allowSkillMentions = true,
+  placeholder,
+  emptyHint,
+  liveLabel,
+  liveBodyPlaceholder,
 }: {
   turns: ScriptTurnSummary[];
   selectedTurnId: string | null;
-  onSelectTurn: (turnId: string) => void;
+  /** Omit to render each turn's summary as plain text rather than a
+   * "view this version" button (the 白膜 studio has no per-turn script view). */
+  onSelectTurn?: (turnId: string) => void;
   onSend: (message: string, referencedSkillIds: string[]) => void;
   streaming: boolean;
   liveText: string;
   liveThinking: string;
   streamError: string | null;
+  /** `@`-mentioning a skill as a style guide — off where the backend turn
+   * takes no skill references (the 白膜 studio). */
+  allowSkillMentions?: boolean;
+  placeholder?: string;
+  emptyHint?: string;
+  /** Heading of the in-flight bubble; the 白膜 studio names the phase. */
+  liveLabel?: string;
+  liveBodyPlaceholder?: string;
 }) {
   const t = useTranslations('scriptStudio');
   const { skills, requestReference, unlockDialog } = useSkillReferences();
@@ -120,6 +135,7 @@ export function ScriptChatPanel({
   const filteredSkills = mention ? filterMentionSkills(skills, mention.query) : [];
 
   const refreshMention = (value: string, caret: number) => {
+    if (!allowSkillMentions) return;
     const trigger = detectMentionTrigger(value, caret);
     if (!trigger) {
       dismissedMentionStartRef.current = null;
@@ -254,7 +270,9 @@ export function ScriptChatPanel({
         className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-[var(--radius-sm)] border border-border bg-surface p-3"
       >
         {turns.length === 0 && !streaming ? (
-          <p className="m-auto max-w-xs text-center text-xs text-muted">{t('chatEmpty')}</p>
+          <p className="m-auto max-w-xs text-center text-xs text-muted">
+            {emptyHint ?? t('chatEmpty')}
+          </p>
         ) : null}
 
         {turns.map((turn) => (
@@ -280,21 +298,24 @@ export function ScriptChatPanel({
                 </button>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => onSelectTurn(turn.id)}
-              className={cn(
-                'max-w-[85%] rounded-[var(--radius-sm)] border px-3 py-2 text-left text-sm transition-colors',
-                turn.id === selectedTurnId
-                  ? 'border-primary/40 bg-primary/10 text-text'
-                  : 'border-border bg-surface-soft text-text hover:border-border-strong',
-              )}
-            >
-              <p className="mb-1 text-[11px] font-medium text-muted">
-                {t('turnLabel', { count: turn.turn_no })}
-              </p>
-              <p className="whitespace-pre-wrap break-words">{turn.summary}</p>
-            </button>
+            {onSelectTurn ? (
+              <button
+                type="button"
+                onClick={() => onSelectTurn(turn.id)}
+                className={cn(
+                  'max-w-[85%] rounded-[var(--radius-sm)] border px-3 py-2 text-left text-sm transition-colors',
+                  turn.id === selectedTurnId
+                    ? 'border-primary/40 bg-primary/10 text-text'
+                    : 'border-border bg-surface-soft text-text hover:border-border-strong',
+                )}
+              >
+                <TurnSummaryBody turn={turn} />
+              </button>
+            ) : (
+              <div className="max-w-[85%] rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-sm text-text">
+                <TurnSummaryBody turn={turn} />
+              </div>
+            )}
             {/* A native `<details>`, keyed by `turn.id` — its open/closed
                 state lives in the DOM node itself, so a turn the user
                 expands to read never fights with a different turn that
@@ -306,9 +327,10 @@ export function ScriptChatPanel({
         {streaming ? (
           <li className="flex max-w-[85%] flex-col gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2 text-sm text-muted">
             <div>
-              <p className="mb-1 text-[11px] font-medium">{t('generating')}</p>
+              <p className="mb-1 text-[11px] font-medium">{liveLabel ?? t('generating')}</p>
               <p className="whitespace-pre-wrap break-words">
-                {streamingPreviewText(liveText, t('scriptGeneratingBody')) || '…'}
+                {streamingPreviewText(liveText, liveBodyPlaceholder ?? t('scriptGeneratingBody')) ||
+                  '…'}
               </p>
             </div>
             <LiveThinking
@@ -339,7 +361,7 @@ export function ScriptChatPanel({
         <textarea
           ref={textareaRef}
           aria-label={t('composerLabel')}
-          placeholder={t('revisePlaceholder')}
+          placeholder={placeholder ?? t('revisePlaceholder')}
           value={message}
           maxLength={MESSAGE_MAX_LENGTH}
           disabled={streaming}
@@ -360,7 +382,7 @@ export function ScriptChatPanel({
           {streaming ? <Spinner className="text-on-primary" /> : <IconArrowUp className="size-4" />}
         </button>
 
-        {mention ? (
+        {mention && allowSkillMentions ? (
           <SkillMentionMenu
             skills={filteredSkills}
             selectedIds={referencedSkillIds}
@@ -378,5 +400,22 @@ export function ScriptChatPanel({
 
       {unlockDialog}
     </div>
+  );
+}
+
+function TurnSummaryBody({ turn }: { turn: ScriptTurnSummary }) {
+  const t = useTranslations('scriptStudio');
+  return (
+    <>
+      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted">
+        {t('turnLabel', { count: turn.turn_no })}
+        {turn.origin === 'blocking' ? (
+          <span className="rounded-full border border-border px-1.5 text-[10px] text-script-camera">
+            {t('turnOriginBlocking')}
+          </span>
+        ) : null}
+      </p>
+      <p className="whitespace-pre-wrap break-words">{turn.summary}</p>
+    </>
   );
 }

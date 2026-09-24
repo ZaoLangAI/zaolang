@@ -336,7 +336,7 @@ def _copy_stream_blocking_derive(payload: dict[str, Any]) -> str:
                     "primitive": "box",
                     "label": "柜台",
                     "color_role": "furniture",
-                    "position": [0, 0.5, -1.5],
+                    "position": [0, 0, -1.5],
                     "rotation_y_deg": 0,
                     "scale": [2.4, 1.0, 0.6],
                 }
