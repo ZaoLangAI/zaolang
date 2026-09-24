@@ -8230,8 +8230,6 @@ export interface components {
             failure_code?: string | null;
             /** Failure Message */
             failure_message?: string | null;
-            /** Qa Operation Id */
-            qa_operation_id?: string | null;
         };
         /** EditorOperationResponse */
         EditorOperationResponse: {

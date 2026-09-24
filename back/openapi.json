@@ -28093,17 +28093,6 @@
               }
             ],
             "title": "Failure Message"
-          },
-          "qa_operation_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qa Operation Id"
           }
         },
         "type": "object",
