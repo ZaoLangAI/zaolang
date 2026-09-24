@@ -34,6 +34,7 @@ from sqlalchemy import func, select
 
 from app.api import idempotency
 from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
+from app.api.schemas.blocking import BlockingState
 from app.api.schemas.script import (
     ScriptContentUpdateRequest,
     ScriptCreateRequest,
@@ -48,6 +49,7 @@ from app.api.schemas.script import (
     ScriptTurnSummary,
 )
 from app.db import session_scope
+from app.domain.blocking import service as blocking_service
 from app.domain.errors import DomainError, ValidationFailed
 from app.domain.script_writing import extract as script_extract
 from app.domain.script_writing import service as script_writing_service
@@ -221,6 +223,7 @@ def _turn_summary(turn: EpisodeScriptTurn) -> ScriptTurnSummary:
         referenced_skill_ids=list(turn.referenced_skill_ids_json or []),
         created_at=turn.created_at,
         thinking=turn.thinking_text or "",
+        origin=turn.origin or "script",
     )
 
 
@@ -415,6 +418,11 @@ def get_script(
         session, user_id=user.id, episode_id=episode_id
     )
     last_error = script_writing_service.script_last_error(session, episode_id=episode.id)
+    blocking = (
+        BlockingState.model_validate(blocking_service.get_state(session, episode=episode))
+        if blocking_service.is_enabled(session, user_id=user.id)
+        else None
+    )
     # Persist a historical empty-shell backfill (`source_idea` recovered
     # from a nearby AgentRun) so the next retry can omit the idea body.
     # A clean read is a no-op commit.
@@ -429,6 +437,7 @@ def get_script(
         source_idea=episode.source_idea or "",
         source_referenced_skill_ids=list(episode.source_referenced_skill_ids_json or []),
         last_error=last_error,
+        blocking=blocking,
         created_at=episode.created_at,
         updated_at=episode.updated_at,
     )

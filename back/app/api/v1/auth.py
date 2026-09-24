@@ -25,6 +25,7 @@ from app.api.schemas.auth import (
 )
 from app.api.schemas.common import OkResponse
 from app.config import get_settings
+from app.domain.blocking import service as blocking_service
 from app.domain.credits import redemption
 from app.domain.credits import service as credits_service
 from app.domain.errors import AuthRequired, Conflict, ValidationFailed
@@ -186,6 +187,7 @@ def _features_for(session: DbSession, user_id: str) -> MeFeaturesResponse:
         drama_studio=config_service.is_enabled(session, "drama_studio_enabled", user_id=user_id),
         marketplace=config_service.is_enabled(session, "marketplace_enabled", user_id=user_id),
         canvas_studio=config_service.is_enabled(session, "canvas_studio_enabled", user_id=user_id),
+        blocking_studio=blocking_service.is_enabled(session, user_id=user_id),
     )
 
 

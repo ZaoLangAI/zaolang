@@ -466,6 +466,10 @@
       "marketplace_enabled": {
         "title": "积分解锁市场",
         "description": "作品与技能的付费解锁。"
+      },
+      "blocking_studio_enabled": {
+        "title": "白膜预演工作台",
+        "description": "文案创作内的 3D 白膜预演与参考视频生成，需同时开启文案创作工作室。"
       }
     },
     "profiles": {

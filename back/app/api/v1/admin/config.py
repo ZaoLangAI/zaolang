@@ -59,6 +59,7 @@ FLAG_DESCRIPTIONS = {
     "script_studio_enabled": "文案创作工作室",
     "video_analysis_enabled": "视频解析",
     "canvas_studio_enabled": "无限画布创作台",
+    "blocking_studio_enabled": "白膜预演工作台",
 }
 
 # The landing page deliberately owns only truly global settings. Domain

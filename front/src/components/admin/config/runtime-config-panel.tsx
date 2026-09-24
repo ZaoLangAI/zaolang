@@ -30,7 +30,12 @@ type Draft = Record<string, any>;
 const FLAG_GROUPS = [
   {
     id: 'creation',
-    flags: ['video_generation', 'script_studio_enabled', 'video_analysis_enabled'],
+    flags: [
+      'video_generation',
+      'script_studio_enabled',
+      'blocking_studio_enabled',
+      'video_analysis_enabled',
+    ],
   },
   {
     id: 'drama',

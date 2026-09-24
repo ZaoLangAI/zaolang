@@ -466,6 +466,10 @@
       "marketplace_enabled": {
         "title": "Credit unlock marketplace",
         "description": "Paid unlocks for works and skills."
+      },
+      "blocking_studio_enabled": {
+        "title": "Blockout studio",
+        "description": "3D blockout previs inside script writing, used as a reference video for generation. Requires the script studio."
       }
     },
     "profiles": {

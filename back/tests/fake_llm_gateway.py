@@ -205,6 +205,8 @@ def _dispatch_stream(agent_name: str, messages: list[dict[str, Any]]) -> str:
             return _copy_stream_script_revise(payload)
         if isinstance(payload, dict) and "idea" in payload:
             return _copy_stream_script_draft(payload)
+        if isinstance(payload, dict) and payload.get("blocking_request"):
+            return _copy_stream_blocking_derive(payload)
     data = _dispatch(agent_name, prompt)
     return json.dumps(data, ensure_ascii=False)
 
@@ -293,6 +295,101 @@ def _copy_stream_script_revise(payload: dict[str, Any]) -> str:
     )
     summary = f"已根据你的意见修改剧本（fake:{digest}）。"
     return f"{summary}\n```json\n{json.dumps(script, ensure_ascii=False)}\n```"
+
+
+# Words that make the fake `blocking_route` send a 白膜 message through the
+# script revision as well — standing in for the real model's judgement of
+# "does this change dialogue/plot, or only staging".
+BLOCKING_SCRIPT_MARKERS = ("台词", "剧情", "对白", "新增一场")
+
+
+def _copy_blocking_route(payload: dict[str, Any]) -> dict[str, Any]:
+    message = str(payload.get("blocking_route") or "")
+    touches = any(marker in message for marker in BLOCKING_SCRIPT_MARKERS)
+    return {
+        "touches_script": touches,
+        "script_instruction": message if touches else "",
+        "blocking_instruction": "" if touches else message,
+    }
+
+
+def _copy_stream_blocking_derive(payload: dict[str, Any]) -> str:
+    """Mirrors `blocking_director.BLOCKING_DERIVE_SYSTEM_PROMPT`: one set per
+    heading with a counter and a door mark, every character on stage, one
+    walk beat and a push-in per segment. When a previous blockout exists it
+    answers with only the `changed_keys` segments, exercising the
+    sanitizer's "complete from the previous version" path."""
+    script = payload.get("script") or {}
+    names = [str(c.get("name") or "") for c in script.get("characters") or []]
+    cast = [{"id": f"c{i + 1}", "name": name, "height_m": 1.7} for i, name in enumerate(names)]
+    segments_in = payload.get("segments") or []
+    headings = list(dict.fromkeys(str(s.get("heading") or "") for s in segments_in))
+    sets = [
+        {
+            "heading": heading,
+            "ground": "floor",
+            "width_m": 8,
+            "depth_m": 6,
+            "props": [
+                {
+                    "id": "counter",
+                    "primitive": "box",
+                    "label": "柜台",
+                    "color_role": "furniture",
+                    "position": [0, 0.5, -1.5],
+                    "rotation_y_deg": 0,
+                    "scale": [2.4, 1.0, 0.6],
+                }
+            ],
+            "anchors": [
+                {"id": "door", "label": "门口", "x": 3, "z": 2},
+                {"id": "counter_back", "label": "柜台后", "x": 0, "z": -2.2},
+            ],
+        }
+        for heading in headings
+    ]
+    changed = set(payload.get("changed_keys") or [])
+    has_previous = payload.get("previous_blocking") is not None
+    instruction = str(payload.get("instruction") or "")
+    preset = "orbit_cw" if "环绕" in instruction else "push_in"
+    segments = []
+    for segment in segments_in:
+        key = str(segment.get("key") or "")
+        if has_previous and key not in changed and not instruction:
+            continue
+        start = {
+            member["id"]: {
+                "at": "counter_back" if i == 0 else [1.2 * i, 0],
+                "face": "camera",
+                "action": "stand",
+            }
+            for i, member in enumerate(cast)
+        }
+        beats = (
+            [{"cast_id": cast[0]["id"], "t0": 0.5, "t1": 3.0, "action": "walk", "to": "door"}]
+            if cast
+            else []
+        )
+        segments.append(
+            {
+                "key": key,
+                "duration_s": int(segment.get("suggested_duration_s") or 6),
+                "start": start,
+                "beats": beats,
+                "shot": {
+                    "size": "medium_close",
+                    "lens_mm": 50,
+                    "height": "eye",
+                    "side": "front",
+                    "subject": cast[0]["id"] if cast else None,
+                    "move": {"preset": preset, "intensity": 0.4, "ease": "in_out"},
+                },
+            }
+        )
+    blocking = {"aspect_ratio": "9:16", "sets": sets, "cast": cast, "segments": segments}
+    digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()[:6]
+    summary = f"已搭好白膜：{len(sets)} 个场景、{len(segments)} 个分镜段（fake:{digest}）。"
+    return f"{summary}\n```json\n{json.dumps(blocking, ensure_ascii=False)}\n```"
 
 
 def _dispatch(agent_name: str, prompt: str) -> dict[str, Any]:
@@ -535,6 +632,8 @@ def _copy(prompt: str) -> dict[str, Any]:
     except (TypeError, ValueError):
         payload = {}
     if isinstance(payload, dict):
+        if "blocking_route" in payload:
+            return _copy_blocking_route(payload)
         if "max_length" in payload:
             return _copy_enhance(payload)
         if "locale" in payload:

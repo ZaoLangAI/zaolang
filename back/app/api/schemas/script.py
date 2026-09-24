@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 from pydantic import Field
 
+from app.api.schemas.blocking import BlockingState
 from app.api.schemas.common import ApiModel
+from app.domain.blocking.vocabulary import BlockingAspectRatio
 
 
 class ScriptBlock(ApiModel):
@@ -120,6 +123,9 @@ class ScriptTurnSummary(ApiModel):
     # one) — rendered as a collapsed-by-default "思考" disclosure under the
     # turn's summary bubble, never inside the right-side script view.
     thinking: str = ""
+    # `script` for a 文案创作 chat turn, `blocking` for one sent from the 白膜
+    # studio (which may have rewritten the script as well).
+    origin: str = "script"
 
 
 class ScriptSummaryResponse(ApiModel):
@@ -146,6 +152,9 @@ class ScriptDetailResponse(ApiModel):
     # Latest failed-generation excerpt from the episode's script notification,
     # so a refresh still shows why the first draft did not land.
     last_error: str | None = None
+    # The 白膜 blockout's head state; `None` while `blocking_studio_enabled`
+    # is off for this user.
+    blocking: BlockingState | None = None
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -162,3 +171,24 @@ class ScriptExtractResponse(ApiModel):
     text: str
     char_count: int
     truncated: bool
+
+
+class BlockingTurnRequest(ApiModel):
+    message: str = Field(min_length=1, max_length=2000)
+    # Same meaning as `ScriptTurnRequest.current_script`.
+    current_script: ScriptDocument | None = None
+
+
+class BlockingPatchRequest(ApiModel):
+    """A manual 白膜 edit — the browser's whole document, re-validated by
+    `app.domain.blocking.sanitize.sanitize_blocking(mode="manual")`."""
+
+    document: dict[str, Any]
+    base_version_no: int = Field(ge=0)
+
+
+class BlockingSettingsRequest(ApiModel):
+    # `None` clears the target back to "derive from the script".
+    target_duration_seconds: int | None = Field(default=None, ge=1, le=1800)
+    aspect_ratio: BlockingAspectRatio | None = None
+    base_version_no: int = Field(ge=0)

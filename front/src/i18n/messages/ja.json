@@ -466,6 +466,10 @@
       "marketplace_enabled": {
         "title": "クレジット解除マーケット",
         "description": "作品とスキルの有料解除。"
+      },
+      "blocking_studio_enabled": {
+        "title": "ブロックアウトスタジオ",
+        "description": "脚本作成内の 3D ブロックアウト（プリビズ）と参照動画生成。脚本スタジオの有効化が必要です。"
       }
     },
     "profiles": {

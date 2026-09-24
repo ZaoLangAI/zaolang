@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import base as agent_base
 from app.agents import (
+    blocking_director,
     copywriter,
     editor_planner,
     intent_router,
@@ -1120,6 +1121,8 @@ def test_every_prompt_slot_is_reachable_from_some_agent_call() -> None:
             copywriter.SCRIPT_DRAFT_SLOT,
             copywriter.SCRIPT_REVISE_SLOT,
             skill_matcher.SKILL_MATCH_SLOT,
+            blocking_director.BLOCKING_ROUTE_SLOT,
+            blocking_director.BLOCKING_DERIVE_SLOT,
         },
         AgentName.INTENT_ROUTER.value: {
             intent_router.CLASSIFY_SLOT,

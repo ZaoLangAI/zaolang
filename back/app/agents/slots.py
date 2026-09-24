@@ -68,6 +68,16 @@ PROMPT_SLOTS: dict[str, tuple[PromptSlot, ...]] = {
         PromptSlot("script_draft", "剧本创作", "根据创意生成分场剧本，含场景、动作、运镜与对话。"),
         PromptSlot("script_revise", "剧本修改", "根据修改意见更新剧本，并给出本次修改摘要。"),
         PromptSlot(
+            "blocking_route",
+            "白膜调度判定",
+            "判断白膜工作台的一条修改意见是否同时需要修改剧本，并拆分为剧本与白膜两条指令。",
+        ),
+        PromptSlot(
+            "blocking_derive",
+            "白膜预演",
+            "把分场剧本搭成白膜预演：几何体场景、人偶走位与预设运镜，按目标总时长分配分镜段时长。",
+        ),
+        PromptSlot(
             "skill_match",
             "剧情技能匹配",
             "从戏码与情绪技能清单里挑出与这段剧情最相关的几条，供剧本创作与提示词润色参考。",

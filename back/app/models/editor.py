@@ -78,6 +78,16 @@ class DramaEpisode(Base, TimestampMixin):
     preview_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
     )
+    # The author's intended runtime for the whole episode — what the 白膜
+    # blockout fits its per-segment durations to. Null means "derive it from
+    # the script" (`app.domain.blocking.segments.default_target_duration`).
+    target_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The head 白膜 blockout document (`app.domain.blocking`); empty until
+    # the first build. Same head/history split as `script_json` ↔
+    # `EpisodeScriptTurn`: `EpisodeBlockingVersion` keeps every version.
+    blocking_json: Mapped[dict[str, Any]] = mapped_column(
+        default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -193,10 +203,53 @@ class EpisodeScriptTurn(Base, TimestampMixin):
     # `parse_ok=False` early return): there is no turn row for it to attach
     # to, and thinking is not kept anywhere else on that path either.
     thinking_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Which surface the turn was sent from: `script` (文案创作's own chat) or
+    # `blocking` (the 白膜 studio, whose turns may rewrite the script too).
+    origin: Mapped[str] = mapped_column(
+        String(16), default="script", server_default="script", nullable=False
+    )
 
     __table_args__ = (
         UniqueConstraint("episode_id", "turn_no", name="uq_episode_script_turns_episode_turn"),
         Index("ix_episode_script_turns_episode_id", "episode_id"),
+    )
+
+
+class EpisodeBlockingVersion(Base, TimestampMixin):
+    """One saved 白膜 blockout version. `DramaEpisode.blocking_json` is the
+    head; this table is the history, like `EpisodeScriptTurn` for scripts.
+
+    Append-only with one exception: consecutive `manual` saves by the same
+    user within a short window coalesce into the latest `manual` row (see
+    `app.domain.blocking.service.patch_manual`), so dragging a prop around
+    does not mint a version per mouse-up.
+    """
+
+    __tablename__ = "episode_blocking_versions"
+
+    id: Mapped[str] = id_column("ebv")
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("drama_episodes.id", ondelete="CASCADE"), nullable=False
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    # `llm_turn` | `rebuild` | `manual` — see `app.domain.blocking.vocabulary`.
+    origin: Mapped[str] = mapped_column(String(16), nullable=False)
+    turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("episode_script_turns.id", ondelete="SET NULL"), nullable=True
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    blocking_json: Mapped[dict[str, Any]] = mapped_column(default=dict, nullable=False)
+    script_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    agent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "episode_id", "version_no", name="uq_episode_blocking_versions_episode_version"
+        ),
+        Index("ix_episode_blocking_versions_episode_id", "episode_id"),
     )
 
 
