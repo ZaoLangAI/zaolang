@@ -261,44 +261,6 @@ def apply_draft_version(
     return draft
 
 
-KEYFRAME_CONFIRMED_PARAM = "keyframe_confirmed_job_id"
-
-
-def _is_keyframe_draft(params: dict[str, Any]) -> bool:
-    """A script-studio storyboard keyframe: a `text_to_image` draft linked to
-    a segment as `{heading}#K{ordinal}`."""
-    key = str(params.get("link_breakpoint_key") or "")
-    tail = key.rsplit("#", 1)[-1] if "#" in key else ""
-    return params.get("operation") == "text_to_image" and tail[:1] == "K" and tail[1:].isdigit()
-
-
-def confirm_keyframe(
-    session: Session, *, user_id: str, draft_id: str, job_id: str | None
-) -> Draft:
-    """The author's explicit OK on one version of a storyboard keyframe as
-    its segment's video first frame (or, with `job_id=None`, withdrawing it).
-
-    Confirming also pins that version as applied, so the confirmed image is
-    the draft's output. The client treats the keyframe as confirmed only
-    while `params.keyframe_confirmed_job_id` still equals `applied_job_id` —
-    a later regenerate moves the applied version on and so un-confirms it.
-    """
-    draft = _owned_draft(session, user_id=user_id, draft_id=draft_id)
-    if not _is_keyframe_draft(dict(draft.params_json or {})):
-        raise ValidationFailed("只有分镜关键帧草稿可以确认为首帧。")
-    if job_id is not None:
-        draft = apply_draft_version(session, user_id=user_id, draft_id=draft_id, job_id=job_id)
-    # Copy-then-reassign: an in-place JSON mutation would not be flushed.
-    params = dict(draft.params_json or {})
-    if job_id is None:
-        params.pop(KEYFRAME_CONFIRMED_PARAM, None)
-    else:
-        params[KEYFRAME_CONFIRMED_PARAM] = job_id
-    draft.params_json = params
-    session.flush()
-    return draft
-
-
 def hide_draft_version(session: Session, *, user_id: str, draft_id: str, job_id: str) -> Draft:
     """Removes a job from the draft's version-history strip.
 

@@ -9,7 +9,6 @@ import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import * as editorApi from '@/features/editor/api';
-import { assembleCutFromScript } from '@/features/editor/from-job';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
@@ -23,31 +22,20 @@ import {
   boundVideoCount,
   existingLibraryMatches,
   hasLinkedReference,
-  keyframeTask,
   libraryCharacterByName,
   linkedCharacterCount,
   linkedSceneCount,
   pendingCharacters,
   pendingDialogueLines,
-  pendingKeyframes,
   pendingScenes,
   pendingVideos,
   unreferencedVideoKeys,
 } from './batch-plan';
 import { clearCreateStream, startRetry, useCreateStream } from './create-stream-store';
-import { KeyframeBoardDialog } from './keyframe-board-dialog';
 import { ScriptBatchDialog } from './script-batch-dialog';
 import { ScriptBatchToolbar } from './script-batch-toolbar';
-import { ScriptLintPanel } from './script-lint-panel';
 import { ScriptChatPanel } from './script-chat-panel';
-import {
-  confirmedFirstFrames,
-  dubbedDialogueKeys,
-  indexBreakpointKeyframes,
-  indexBreakpointVideos,
-  orderedBreakpointKeys,
-  type KeyframeBinding,
-} from './script-breakpoint';
+import { dubbedDialogueKeys, indexBreakpointVideos } from './script-breakpoint';
 import { ScriptDocumentView } from './script-document-view';
 import { useScriptTurnStream } from './use-script-turn-stream';
 import {
@@ -279,37 +267,6 @@ export function ScriptEditor({
     [linkedDrafts, viewedScript, detail?.script],
   );
   const dubbedKeys = useMemo(() => dubbedDialogueKeys(linkedDrafts), [linkedDrafts]);
-  const keyframes = useMemo(() => indexBreakpointKeyframes(linkedDrafts), [linkedDrafts]);
-  const [keyframeBoardOpen, setKeyframeBoardOpen] = useState(false);
-  const [keyframeBusyKey, setKeyframeBusyKey] = useState<string | null>(null);
-  // The author's explicit OK on the exact image a video will start from.
-  const setKeyframeConfirmed = async (key: string, binding: KeyframeBinding, confirm: boolean) => {
-    setKeyframeBusyKey(key);
-    try {
-      await scriptApi.confirmKeyframe(binding.draftId, confirm ? binding.appliedJobId : null);
-      refreshLinkedDrafts();
-    } catch (error) {
-      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
-    } finally {
-      setKeyframeBusyKey(null);
-    }
-  };
-
-  // Stays set on success: the page is navigating to the editor.
-  const [assembling, setAssembling] = useState(false);
-  const assembleRoughCut = async () => {
-    setAssembling(true);
-    try {
-      const result = await assembleCutFromScript(episodeId);
-      if (result.skipped.length > 0) {
-        notify(t('batchAssembleSkipped', { count: result.skipped.length }), 'info');
-      }
-      router.push(`/studio-editor/${result.cut.id}`);
-    } catch (error) {
-      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
-      setAssembling(false);
-    }
-  };
 
   const batch = useScriptBatch({
     episodeId,
@@ -498,12 +455,6 @@ export function ScriptEditor({
   const inflightScenes = inFlightIds(batch.items, 'scene');
   const inflightVideos = inFlightIds(batch.items, 'video');
   const inflightAudios = inFlightIds(batch.items, 'audio');
-  const inflightKeyframes = inFlightIds(batch.items, 'keyframe');
-  // Segments whose video draft already has an output — what 一键粗剪 can lay
-  // down (the server also falls back to a draft's latest succeeded job).
-  const assembleCount = orderedBreakpointKeys(currentScript).filter(
-    (key) => videoBindings[key]?.outputAssetId,
-  ).length;
   const characterQueue = pendingCharacters(currentScript, inflightCharacters);
   const libraryItems = characterLibrary.data ?? [];
   const libraryByName = libraryCharacterByName(libraryItems);
@@ -519,30 +470,9 @@ export function ScriptEditor({
     characterMatches.map((match) => [match.name, match.refId]),
   );
   const sceneQueue = pendingScenes(currentScript, inflightScenes);
-  // Confirmed storyboard keyframes become first frames; a segment with one
-  // can be generated even without a character/scene ref.
-  const firstFrames = confirmedFirstFrames(keyframes);
-  const videoQueue = pendingVideos(currentScript, videoBindings, inflightVideos, firstFrames);
-  const videoDisabled =
-    !hasLinkedReference(currentScript) && Object.keys(firstFrames).length === 0;
-  const keyframeQueue = pendingKeyframes(currentScript, videoBindings, keyframes, inflightKeyframes);
-  const keyframeSegments = orderedBreakpointKeys(currentScript)
-    .filter((key) => !(key in videoBindings))
-    .map((key) => ({ key, heading: key.slice(0, key.lastIndexOf('#')) }));
+  const videoQueue = pendingVideos(currentScript, videoBindings, inflightVideos);
+  const videoDisabled = !hasLinkedReference(currentScript);
   const audioQueue = pendingDialogueLines(currentScript, dubbedKeys, inflightAudios);
-  // Batch dubbing offers a voice per speaker, seeded from the speaker's
-  // linked character card (by `character_ref_id`, else by the same name).
-  const audioSpeakers = [
-    ...new Set(audioQueue.flatMap((line) => (line.character ? [line.character] : []))),
-  ];
-  const defaultVoiceBySpeaker: Record<string, string> = {};
-  for (const speaker of audioSpeakers) {
-    const refId = currentScript.characters.find((item) => item.name === speaker)?.character_ref_id;
-    const card =
-      (refId ? libraryItems.find((item) => item.id === refId) : undefined) ??
-      libraryByName.get(speaker.trim());
-    if (card?.preset_voice) defaultVoiceBySpeaker[speaker] = card.preset_voice;
-  }
   const batchProgress =
     batch.items.length === 0
       ? null
@@ -590,7 +520,6 @@ export function ScriptEditor({
       params,
       unitCredits: quote.unitCredits,
       scenes: kind === 'scenes' ? sceneQueue : undefined,
-      keyframes: kind === 'keyframes' ? keyframeQueue : undefined,
       videos: kind === 'videos' ? videoQueue : undefined,
       audios: kind === 'audio' ? audioQueue : undefined,
       document: currentScript,
@@ -602,8 +531,6 @@ export function ScriptEditor({
       ? characterQueue.map((item) => item.name)
       : batchKind === 'scenes'
         ? sceneQueue.map((item) => item.heading)
-        : batchKind === 'keyframes'
-          ? keyframeQueue.map((item) => item.heading)
         : batchKind === 'videos'
           ? videoQueue.map((item) => item.heading)
           : batchKind === 'audio'
@@ -618,9 +545,7 @@ export function ScriptEditor({
           ? boundVideoCount(currentScript, videoBindings)
           : 0;
   const dialogSkipUnreferenced =
-    batchKind === 'videos'
-      ? unreferencedVideoKeys(currentScript, videoBindings, firstFrames).length
-      : 0;
+    batchKind === 'videos' ? unreferencedVideoKeys(currentScript, videoBindings).length : 0;
 
   // Both columns share this exact height at the desktop breakpoint —
   // `100dvh` minus everything the page stacks above the grid (top bar,
@@ -662,12 +587,7 @@ export function ScriptEditor({
             sceneCount={sceneQueue.length}
             videoCount={videoQueue.length}
             videoDisabled={videoDisabled}
-            keyframeCount={keyframeSegments.length}
-            onOpenKeyframes={() => setKeyframeBoardOpen(true)}
             audioCount={audioQueue.length}
-            assembleCount={assembleCount}
-            assembling={assembling}
-            onAssemble={() => void assembleRoughCut()}
             disabled={documentStreaming}
             running={batch.running}
             paused={batch.paused}
@@ -676,7 +596,6 @@ export function ScriptEditor({
             onResume={() => void batch.resumeQueue()}
           />
         ) : null}
-        {isViewingLatest && !documentStreaming ? <ScriptLintPanel issues={detail.lint} /> : null}
         {documentStreaming ? (
           <ScriptDocumentLoading label={t('generating')} hint={t('scriptGeneratingBody')} />
         ) : (
@@ -704,35 +623,8 @@ export function ScriptEditor({
       skipLinked={dialogSkipLinked}
       skipUnreferenced={dialogSkipUnreferenced}
       existingRefByLabel={batchKind === 'characters' ? existingRefByLabel : undefined}
-      speakers={batchKind === 'audio' ? audioSpeakers : undefined}
-      defaultVoiceBySpeaker={batchKind === 'audio' ? defaultVoiceBySpeaker : undefined}
-      framedCount={
-        batchKind === 'videos'
-          ? videoQueue.filter((video) => video.firstFrameAssetId).length
-          : undefined
-      }
       onClose={() => setBatchKind(null)}
       onConfirm={confirmBatch}
-    />
-    <KeyframeBoardDialog
-      open={keyframeBoardOpen}
-      onClose={() => setKeyframeBoardOpen(false)}
-      segments={keyframeSegments}
-      keyframes={keyframes}
-      itemFor={(key) => batch.itemByKey('keyframe', key)}
-      pendingCount={keyframeQueue.length}
-      busyKey={keyframeBusyKey}
-      running={batch.running}
-      onGenerateAll={() => {
-        setKeyframeBoardOpen(false);
-        setBatchKind('keyframes');
-      }}
-      onConfirm={(key, binding) => void setKeyframeConfirmed(key, binding, true)}
-      onUnconfirm={(key, binding) => void setKeyframeConfirmed(key, binding, false)}
-      onRegenerate={(key, binding) => {
-        const task = keyframeTask(currentScript, key, binding.draftId);
-        if (task) void batch.regenerateKeyframe(task);
-      }}
     />
     </>
   );

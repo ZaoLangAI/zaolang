@@ -18,9 +18,6 @@ from app.api.schemas.editor import (
     CollaborationInviteResponse,
     CollaboratorInviteRequest,
     CollaboratorResponse,
-    CutAssembleRequest,
-    CutAssembleResponse,
-    CutAssembleSkip,
     CutCreateRequest,
     CutFromJobRequest,
     CutRevisionResponse,
@@ -791,30 +788,6 @@ def create_cut_from_job(
         _enqueue_media_analysis(analysis_id)
     return _cut_response(session, cut)
 
-
-@router.post("/episode-cuts:assemble", response_model=CutAssembleResponse)
-def assemble_cut_from_script(
-    payload: CutAssembleRequest,
-    user: CurrentUser,
-    session: DbSession,
-    _: Annotated[None, Depends(rate_limited("editor_write"))],
-) -> CutAssembleResponse:
-    # No idempotency key needed: element ids are derived from script keys,
-    # so a repeat click with unchanged outputs lands on the same revision.
-    cut, _revision, skipped = editor_service.assemble_cut_from_script(
-        session,
-        user_id=user.id,
-        episode_id=payload.episode_id,
-        ordered_keys=payload.ordered_keys,
-        include_audio=payload.include_audio,
-    )
-    session.commit()
-    return CutAssembleResponse(
-        cut=_cut_response(session, cut),
-        skipped=[CutAssembleSkip(**item) for item in skipped],
-    )
-
-
 @router.post(
     "/drama-episodes/{episode_id}/cuts",
     response_model=EpisodeCutResponse,
@@ -1235,19 +1208,8 @@ def complete_export(
     export = export_service.complete_export(
         session, user_id=user.id, export_id=export_id, upload_session_id=payload.upload_session_id
     )
-    # Hint-only health check of the delivered file; the export is already
-    # SUCCEEDED and nothing it finds changes that.
-    qa = (
-        media_analysis.enqueue_export_qa(session, asset_id=export.output_asset_id)
-        if export.output_asset_id
-        else None
-    )
     session.commit()
-    if qa is not None and qa.status == MediaAnalysisStatus.QUEUED:
-        celery_app.send_task("app.workers.tasks.run_export_qa", args=[qa.id])
-    return _export_response(export).model_copy(
-        update={"qa_operation_id": qa.id if qa is not None else None}
-    )
+    return _export_response(export)
 
 
 @router.post("/editor-exports/{export_id}/fail", response_model=EditorExportResponse)
@@ -1431,13 +1393,7 @@ def get_operation(
         if analysis.status in {"succeeded", "degraded"}:
             asset = session.get(Asset, analysis.asset_id)
             if asset is not None and asset.owner_user_id == user.id:
-                if analysis.analyzer == media_analysis.QA_ANALYZER:
-                    result = {
-                        "findings": analysis.findings_json,
-                        "loudness": analysis.audio_json,
-                    }
-                else:
-                    result = {"transcript": analysis.transcript_json}
+                result = {"transcript": analysis.transcript_json}
         return EditorOperationResponse(
             id=analysis.id,
             kind="media_analysis",

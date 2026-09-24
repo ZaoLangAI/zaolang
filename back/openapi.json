@@ -3184,75 +3184,6 @@
         }
       }
     },
-    "/v1/drafts/{draft_id}/keyframe-confirmation": {
-      "post": {
-        "tags": [
-          "drafts"
-        ],
-        "summary": "Confirm Keyframe",
-        "description": "Confirms (or withdraws) a storyboard keyframe version as its\nsegment's video first frame — see `publishing.confirm_keyframe`.",
-        "operationId": "confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post",
-        "parameters": [
-          {
-            "name": "draft_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Draft Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KeyframeConfirmationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DraftResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/drafts/{draft_id}/versions/{job_id}": {
       "delete": {
         "tags": [
@@ -9314,65 +9245,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EpisodeCutResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/episode-cuts:assemble": {
-      "post": {
-        "tags": [
-          "editor"
-        ],
-        "summary": "Assemble Cut From Script",
-        "operationId": "assemble_cut_from_script_v1_episode_cuts_assemble_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CutAssembleRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CutAssembleResponse"
                 }
               }
             }
@@ -24667,18 +24539,6 @@
               }
             ],
             "title": "Voice Description"
-          },
-          "preset_voice": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 60
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preset Voice"
           }
         },
         "type": "object",
@@ -24874,17 +24734,6 @@
             ],
             "title": "Voice Description"
           },
-          "preset_voice": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preset Voice"
-          },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
             "default": "draft"
@@ -24961,18 +24810,6 @@
               }
             ],
             "title": "Voice Description"
-          },
-          "preset_voice": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 60
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preset Voice"
           }
         },
         "type": "object",
@@ -26519,78 +26356,6 @@
           "region"
         ],
         "title": "CreditPackageResponse"
-      },
-      "CutAssembleRequest": {
-        "properties": {
-          "episode_id": {
-            "type": "string",
-            "title": "Episode Id"
-          },
-          "ordered_keys": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array",
-                "maxItems": 500
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ordered Keys"
-          },
-          "include_audio": {
-            "type": "boolean",
-            "title": "Include Audio",
-            "default": true
-          }
-        },
-        "type": "object",
-        "required": [
-          "episode_id"
-        ],
-        "title": "CutAssembleRequest",
-        "description": "Script → rough cut. `ordered_keys` only narrows which breakpoints\nare assembled; the order always comes from the episode's own script."
-      },
-      "CutAssembleResponse": {
-        "properties": {
-          "cut": {
-            "$ref": "#/components/schemas/EpisodeCutResponse"
-          },
-          "skipped": {
-            "items": {
-              "$ref": "#/components/schemas/CutAssembleSkip"
-            },
-            "type": "array",
-            "title": "Skipped"
-          }
-        },
-        "type": "object",
-        "required": [
-          "cut"
-        ],
-        "title": "CutAssembleResponse"
-      },
-      "CutAssembleSkip": {
-        "properties": {
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
-          "reason": {
-            "type": "string",
-            "title": "Reason"
-          }
-        },
-        "type": "object",
-        "required": [
-          "key",
-          "reason"
-        ],
-        "title": "CutAssembleSkip",
-        "description": "A breakpoint (`{heading}#{n}`) or dialogue line (`{heading}#L{n}`)\nleft out of the rough cut. `reason`: `no_output` (not generated yet),\n`unknown_duration`, or `not_owned`."
       },
       "CutCreateRequest": {
         "properties": {
@@ -28162,17 +27927,6 @@
               }
             ],
             "title": "Failure Message"
-          },
-          "qa_operation_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qa Operation Id"
           }
         },
         "type": "object",
@@ -29974,26 +29728,6 @@
           "window_days"
         ],
         "title": "JobsTimeseriesView"
-      },
-      "KeyframeConfirmationRequest": {
-        "properties": {
-          "job_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 40,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Job Id"
-          }
-        },
-        "type": "object",
-        "title": "KeyframeConfirmationRequest",
-        "description": "Confirms one version of a storyboard keyframe draft as its segment's\nvideo first frame; `null` withdraws the confirmation."
       },
       "LearnPostAdminView": {
         "properties": {
@@ -36527,25 +36261,6 @@
           "text": {
             "type": "string",
             "title": "Text"
-          },
-          "emotion": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "happy",
-                  "sad",
-                  "angry",
-                  "fear",
-                  "surprise",
-                  "calm"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Emotion"
           }
         },
         "type": "object",
@@ -36690,13 +36405,6 @@
             "type": "array",
             "title": "Turns"
           },
-          "lint": {
-            "items": {
-              "$ref": "#/components/schemas/ScriptLintIssue"
-            },
-            "type": "array",
-            "title": "Lint"
-          },
           "source_idea": {
             "type": "string",
             "title": "Source Idea",
@@ -36824,86 +36532,6 @@
         "type": "object",
         "title": "ScriptLinksUpdateRequest",
         "description": "A structural edit, not a content revision — never goes through the\nLLM turn machinery (no `AgentRun`, no new `EpisodeScriptTurn`). Matched\nby `name`/`heading` against the episode's current `script_json` rather\nthan by index, since either list can be reordered by a revision turn\nthat runs concurrently with a link update landing."
-      },
-      "ScriptLintIssue": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "severity": {
-            "type": "string",
-            "title": "Severity"
-          },
-          "message": {
-            "type": "string",
-            "title": "Message"
-          },
-          "scene_index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scene Index"
-          },
-          "heading": {
-            "type": "string",
-            "title": "Heading",
-            "default": ""
-          },
-          "block_index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Block Index"
-          },
-          "breakpoint_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Breakpoint Key"
-          },
-          "dimension": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dimension"
-          },
-          "suggested_skills": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Suggested Skills"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "severity",
-          "message"
-        ],
-        "title": "ScriptLintIssue",
-        "description": "One deterministic lint finding (`app.domain.script_writing.lint`) — a\nsuggestion shown beside the script, never a blocker."
       },
       "ScriptRetryRequest": {
         "properties": {

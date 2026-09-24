@@ -1,4 +1,4 @@
-import type { ScriptCharacter, ScriptDocument, ScriptEmotion, ScriptScene } from './api';
+import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import {
   locateBreakpoint,
   orderedBreakpointKeys,
@@ -14,21 +14,6 @@ export interface PendingVideo {
   characterIds: string[];
   sceneId: string | null;
   prompt: string;
-  /** The segment's confirmed storyboard keyframe: the video starts from it
-   * (`image_to_video`, frame mode) instead of from reference images. */
-  firstFrameAssetId?: string | null;
-}
-
-/** A segment's storyboard keyframe to generate (or regenerate into `draftId`). */
-export interface PendingKeyframe {
-  /** The segment key, `{heading}#{ordinal}` — its draft is `keyframeKey(key)`. */
-  key: string;
-  heading: string;
-  blockIndex: number;
-  characterIds: string[];
-  sceneId: string | null;
-  prompt: string;
-  draftId: string | null;
 }
 
 /** One dialogue line the batch runner can dub, in script order — the unit
@@ -40,42 +25,7 @@ export interface PendingAudio {
   heading: string;
   blockIndex: number;
   character: string | null;
-  /** What gets spoken — a leading 「（冷笑）」-style direction is removed. */
   text: string;
-  /** The block's own `emotion`, else one read from that direction. Optional
-   * only because batches persisted before this field lack it. */
-  emotion?: ScriptEmotion | null;
-}
-
-// Checked in order: a sneer or wry smile is not "happy", so it is claimed
-// (with no emotion) before the plain 笑 rule can.
-const DIRECTION_EMOTIONS: ReadonlyArray<readonly [RegExp, ScriptEmotion | null]> = [
-  [/冷笑|苦笑|讥|嘲|讽/, null],
-  [/哭|哽咽|难过|伤心|悲|委屈/, 'sad'],
-  [/怒|吼|生气|咬牙|厉声/, 'angry'],
-  [/害怕|恐|颤抖|发抖|慌/, 'fear'],
-  [/惊讶|诧异|震惊|愣住/, 'surprise'],
-  [/笑|开心|高兴|兴奋|欢快/, 'happy'],
-  [/平静|淡淡|冷静/, 'calm'],
-];
-
-/**
- * Splits a leading stage direction off a dialogue line — 「（冷笑）你也配？」
- * → line 「你也配？」, direction 「冷笑」 — so TTS never reads the direction
- * aloud, and maps the direction onto the closed emotion set when it can.
- * A line that is nothing but a parenthetical is left whole.
- */
-export function parseDialogueDirection(text: string): {
-  line: string;
-  direction: string | null;
-  emotion: ScriptEmotion | null;
-} {
-  const match = /^\s*[（(]([^（）()]{1,12})[）)]\s*/.exec(text);
-  const line = match ? text.slice(match[0].length).trim() : '';
-  if (!match || !line) return { line: text.trim(), direction: null, emotion: null };
-  const direction = (match[1] ?? '').trim();
-  const emotion = DIRECTION_EMOTIONS.find(([pattern]) => pattern.test(direction))?.[1] ?? null;
-  return { line, direction, emotion };
 }
 
 /** `{heading}#L{blockIndex}` — stable because `blockIndex` never shifts for
@@ -165,24 +115,16 @@ function segmentHasRefs(
   return refs.characterIds.length > 0 || Boolean(refs.sceneId);
 }
 
-/** Unbound segments the runner can generate: ones with a character/scene
- * ref, and — even without one — ones with a confirmed keyframe
- * (`firstFrames`, segment key → asset id), which then carries identity. */
 export function pendingVideos(
   document: ScriptDocument,
   bindings: Record<string, BreakpointVideoBinding>,
   inFlightKeys: ReadonlySet<string> = new Set(),
-  firstFrames: Readonly<Record<string, string>> = {},
 ): PendingVideo[] {
   const pending: PendingVideo[] = [];
   for (const key of orderedBreakpointKeys(document)) {
     if (key in bindings || inFlightKeys.has(key)) continue;
     const located = locateBreakpoint(document, key);
-    if (!located) continue;
-    const firstFrameAssetId = firstFrames[key] ?? null;
-    if (!firstFrameAssetId && !segmentHasRefs(document, located.scene, located.blockIndex)) {
-      continue;
-    }
+    if (!located || !segmentHasRefs(document, located.scene, located.blockIndex)) continue;
     const refs = resolveBreakpointRefs(document, located.scene, located.blockIndex);
     pending.push({
       key,
@@ -191,48 +133,9 @@ export function pendingVideos(
       characterIds: refs.characterIds,
       sceneId: refs.sceneId,
       prompt: breakpointSegmentPrompt(located.scene, located.blockIndex),
-      firstFrameAssetId,
     });
   }
   return pending;
-}
-
-const KEYFRAME_PROMPT_SUFFIX =
-  '电影感分镜关键帧：只画这一段开头的一个画面，构图清晰，人物与场景和参考图一致，画面里不要出现文字。';
-
-/** One segment's keyframe task, or null for an unknown key. */
-export function keyframeTask(
-  document: ScriptDocument,
-  key: string,
-  draftId: string | null = null,
-): PendingKeyframe | null {
-  const located = locateBreakpoint(document, key);
-  if (!located) return null;
-  const refs = resolveBreakpointRefs(document, located.scene, located.blockIndex);
-  return {
-    key,
-    heading: located.scene.heading,
-    blockIndex: located.blockIndex,
-    characterIds: refs.characterIds,
-    sceneId: refs.sceneId,
-    prompt: `${breakpointSegmentPrompt(located.scene, located.blockIndex)}\n${KEYFRAME_PROMPT_SUFFIX}`,
-    draftId,
-  };
-}
-
-/** Segments with no video and no keyframe draft yet, in shoot order. */
-export function pendingKeyframes(
-  document: ScriptDocument,
-  videoBindings: Record<string, BreakpointVideoBinding>,
-  keyframes: Record<string, unknown>,
-  inFlightKeys: ReadonlySet<string> = new Set(),
-): PendingKeyframe[] {
-  return orderedBreakpointKeys(document)
-    .filter((key) => !(key in videoBindings) && !(key in keyframes) && !inFlightKeys.has(key))
-    .flatMap((key) => {
-      const task = keyframeTask(document, key);
-      return task ? [task] : [];
-    });
 }
 
 export function boundVideoCount(
@@ -246,11 +149,10 @@ export function boundVideoCount(
 export function unreferencedVideoKeys(
   document: ScriptDocument,
   bindings: Record<string, BreakpointVideoBinding>,
-  firstFrames: Readonly<Record<string, string>> = {},
 ): string[] {
   const keys: string[] = [];
   for (const key of orderedBreakpointKeys(document)) {
-    if (key in bindings || key in firstFrames) continue;
+    if (key in bindings) continue;
     const located = locateBreakpoint(document, key);
     if (!located || segmentHasRefs(document, located.scene, located.blockIndex)) continue;
     keys.push(key);
@@ -277,15 +179,12 @@ export function pendingDialogueLines(
       if (block.type !== 'dialogue' || !block.text.trim()) return;
       const key = dialogueLineKey(scene.heading, blockIndex);
       if (dubbedKeys.has(key) || inFlightKeys.has(key)) return;
-      const spoken = parseDialogueDirection(block.text);
-      const emotion = block.emotion ?? spoken.emotion;
       pending.push({
         key,
         heading: scene.heading,
         blockIndex,
         character: block.character,
-        text: spoken.line,
-        ...(emotion ? { emotion } : {}),
+        text: block.text.trim(),
       });
     });
   }

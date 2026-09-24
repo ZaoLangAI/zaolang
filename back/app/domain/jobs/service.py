@@ -209,9 +209,7 @@ def submit(
 
     # Before quoting: a spec mismatch, or an unowned character, must not cost
     # the user a reservation.
-    characters_service.apply_character_refs(
-        session, user_id=user_id, params=params, operation=operation
-    )
+    characters_service.apply_character_refs(session, user_id=user_id, params=params)
     scenes_service.apply_scene_refs(session, user_id=user_id, params=params)
     media_service.attach_licensed_source_video(
         session, params=params, source_work_version_id=source_work_version_id

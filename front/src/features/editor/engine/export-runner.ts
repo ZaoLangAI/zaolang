@@ -1,7 +1,6 @@
 import type { MetadataTags } from 'mediabunny';
 
 import { composeFrame, layerVolumeAt, MediaPool, resolveAudioLayers } from './compositor';
-import { normalizeAudioBuffer } from './loudness';
 import {
   TICKS_PER_SECOND,
   type CanonicalDocument,
@@ -285,11 +284,7 @@ export class SequentialExportRunner implements RendererBackend {
     if (audioSource) {
       yield { percent: 98, stage: 'encoding', message: 'audio' };
       const mixed = await renderMixedAudio(document, seconds, assets);
-      if (mixed) {
-        // Mastering on the finished mix only; the preview plays it as-is.
-        if (options.normalizeLoudness) normalizeAudioBuffer(mixed);
-        await audioSource.add(mixed);
-      }
+      if (mixed) await audioSource.add(mixed);
       audioSource.close();
     }
 

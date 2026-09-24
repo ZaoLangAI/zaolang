@@ -762,27 +762,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/drafts/{draft_id}/keyframe-confirmation": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Confirm Keyframe
-         * @description Confirms (or withdraws) a storyboard keyframe version as its
-         *     segment's video first frame — see `publishing.confirm_keyframe`.
-         */
-        post: operations["confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/drafts/{draft_id}/versions/{job_id}": {
         parameters: {
             query?: never;
@@ -2279,23 +2258,6 @@ export interface paths {
         put?: never;
         /** Create Cut From Job */
         post: operations["create_cut_from_job_v1_episode_cuts_from_job_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/episode-cuts:assemble": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Assemble Cut From Script */
-        post: operations["assemble_cut_from_script_v1_episode_cuts_assemble_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6850,8 +6812,6 @@ export interface components {
             reference_asset_ids?: string[];
             /** Voice Description */
             voice_description?: string | null;
-            /** Preset Voice */
-            preset_voice?: string | null;
         };
         /** CharacterPublishRequest */
         CharacterPublishRequest: {
@@ -6921,8 +6881,6 @@ export interface components {
             action_clips?: components["schemas"]["CharacterActionClip"][];
             /** Voice Description */
             voice_description?: string | null;
-            /** Preset Voice */
-            preset_voice?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -6943,8 +6901,6 @@ export interface components {
             reference_asset_ids?: string[] | null;
             /** Voice Description */
             voice_description?: string | null;
-            /** Preset Voice */
-            preset_voice?: string | null;
         };
         /**
          * CharacterViewAngle
@@ -7649,40 +7605,6 @@ export interface components {
             /** Region */
             region: string;
         };
-        /**
-         * CutAssembleRequest
-         * @description Script → rough cut. `ordered_keys` only narrows which breakpoints
-         *     are assembled; the order always comes from the episode's own script.
-         */
-        CutAssembleRequest: {
-            /** Episode Id */
-            episode_id: string;
-            /** Ordered Keys */
-            ordered_keys?: string[] | null;
-            /**
-             * Include Audio
-             * @default true
-             */
-            include_audio: boolean;
-        };
-        /** CutAssembleResponse */
-        CutAssembleResponse: {
-            cut: components["schemas"]["EpisodeCutResponse"];
-            /** Skipped */
-            skipped?: components["schemas"]["CutAssembleSkip"][];
-        };
-        /**
-         * CutAssembleSkip
-         * @description A breakpoint (`{heading}#{n}`) or dialogue line (`{heading}#L{n}`)
-         *     left out of the rough cut. `reason`: `no_output` (not generated yet),
-         *     `unknown_duration`, or `not_owned`.
-         */
-        CutAssembleSkip: {
-            /** Key */
-            key: string;
-            /** Reason */
-            reason: string;
-        };
         /** CutCreateRequest */
         CutCreateRequest: {
             /** Asset Id */
@@ -8251,8 +8173,6 @@ export interface components {
             failure_code?: string | null;
             /** Failure Message */
             failure_message?: string | null;
-            /** Qa Operation Id */
-            qa_operation_id?: string | null;
         };
         /** EditorOperationResponse */
         EditorOperationResponse: {
@@ -8948,15 +8868,6 @@ export interface components {
             window_days: number;
             /** Points */
             points?: components["schemas"]["JobsDailyPoint"][];
-        };
-        /**
-         * KeyframeConfirmationRequest
-         * @description Confirms one version of a storyboard keyframe draft as its segment's
-         *     video first frame; `null` withdraws the confirmation.
-         */
-        KeyframeConfirmationRequest: {
-            /** Job Id */
-            job_id?: string | null;
         };
         /** LearnPostAdminView */
         LearnPostAdminView: {
@@ -11492,8 +11403,6 @@ export interface components {
             character?: string | null;
             /** Text */
             text: string;
-            /** Emotion */
-            emotion?: ("happy" | "sad" | "angry" | "fear" | "surprise" | "calm") | null;
         };
         /** ScriptCharacter */
         ScriptCharacter: {
@@ -11552,8 +11461,6 @@ export interface components {
             script: components["schemas"]["ScriptDocument"];
             /** Turns */
             turns: components["schemas"]["ScriptTurnSummary"][];
-            /** Lint */
-            lint?: components["schemas"]["ScriptLintIssue"][];
             /**
              * Source Idea
              * @default
@@ -11615,34 +11522,6 @@ export interface components {
             characters?: components["schemas"]["ScriptCharacterLinkUpdate"][];
             /** Scenes */
             scenes?: components["schemas"]["ScriptSceneLinkUpdate"][];
-        };
-        /**
-         * ScriptLintIssue
-         * @description One deterministic lint finding (`app.domain.script_writing.lint`) — a
-         *     suggestion shown beside the script, never a blocker.
-         */
-        ScriptLintIssue: {
-            /** Code */
-            code: string;
-            /** Severity */
-            severity: string;
-            /** Message */
-            message: string;
-            /** Scene Index */
-            scene_index?: number | null;
-            /**
-             * Heading
-             * @default
-             */
-            heading: string;
-            /** Block Index */
-            block_index?: number | null;
-            /** Breakpoint Key */
-            breakpoint_key?: string | null;
-            /** Dimension */
-            dimension?: string | null;
-            /** Suggested Skills */
-            suggested_skills?: string[];
         };
         /**
          * ScriptRetryRequest
@@ -14671,43 +14550,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AppliedVersionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DraftResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    confirm_keyframe_v1_drafts__draft_id__keyframe_confirmation_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                draft_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["KeyframeConfirmationRequest"];
             };
         };
         responses: {
@@ -18055,41 +17897,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EpisodeCutResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    assemble_cut_from_script_v1_episode_cuts_assemble_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CutAssembleRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CutAssembleResponse"];
                 };
             };
             /** @description Validation Error */

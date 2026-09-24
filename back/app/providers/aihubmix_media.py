@@ -27,7 +27,6 @@ from PIL import Image, UnidentifiedImageError
 from app.config import get_settings
 from app.llm.normalize import extract_json, strip_thinking
 from app.models.enums import Operation
-from app.providers import tts_direction
 from app.providers.base import (
     GenerationProvider,
     GenerationRequest,
@@ -506,19 +505,15 @@ class AiHubMixMediaProvider(GenerationProvider):
 
     def _submit_audio(self, request: GenerationRequest, started: float) -> GenerationResult:
         voice = request.extra.get("voice", "alloy")
-        body: dict[str, Any] = {
-            "model": self._model,
-            "input": request.prompt,
-            "voice": voice,
-            "response_format": "mp3",
-        }
-        instructions = tts_direction.instructions_for(self._model, request.extra.get("emotion"))
-        if instructions:
-            body["instructions"] = instructions
         with self._client() as client:
             response = client.post(
                 media_request_path(self._creds.base_url, "/v1/audio/speech"),
-                json=body,
+                json={
+                    "model": self._model,
+                    "input": request.prompt,
+                    "voice": voice,
+                    "response_format": "mp3",
+                },
             )
             response.raise_for_status()
             audio_bytes = response.content

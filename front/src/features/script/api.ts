@@ -1,24 +1,12 @@
 import { api } from '@/lib/api/client';
-import type { Draft } from '@/lib/api/types';
 import { streamPost as streamAgentPost } from '@/lib/sse-post';
 
-/** Confirms one version of a storyboard keyframe draft as its segment's
- * video first frame; `jobId: null` withdraws it. */
-export function confirmKeyframe(draftId: string, jobId: string | null) {
-  return api.post<Draft>(`/v1/drafts/${draftId}/keyframe-confirmation`, { job_id: jobId });
-}
-
 export type ScriptBlockType = 'scene' | 'action' | 'camera' | 'dialogue' | 'breakpoint';
-
-/** A dialogue line's delivery for dubbing — the backend's closed
- * `copywriter.SCRIPT_EMOTIONS`. Absent/null means said plainly. */
-export type ScriptEmotion = 'happy' | 'sad' | 'angry' | 'fear' | 'surprise' | 'calm';
 
 export interface ScriptBlock {
   type: ScriptBlockType;
   character: string | null;
   text: string;
-  emotion?: ScriptEmotion | null;
 }
 
 export interface ScriptScene {
@@ -67,22 +55,6 @@ export interface ScriptSummary {
   updated_at: string;
 }
 
-/** One deterministic lint finding (`app/domain/script_writing/lint.py`) — a
- * suggestion beside the script, never a blocker. `message` is written by the
- * backend in the script's own language. */
-export interface ScriptLintIssue {
-  code: string;
-  severity: 'warning' | 'info';
-  message: string;
-  scene_index: number | null;
-  heading: string;
-  block_index: number | null;
-  breakpoint_key: string | null;
-  dimension: string | null;
-  /** Titles of `format` skills that fix this dimension — `@`-able next turn. */
-  suggested_skills: string[];
-}
-
 export interface ScriptDetail {
   episode_id: string;
   series_id: string;
@@ -90,8 +62,6 @@ export interface ScriptDetail {
   status: string;
   script: ScriptDocument;
   turns: ScriptTurnSummary[];
-  /** Lint of the latest saved script (not of an older turn snapshot). */
-  lint: ScriptLintIssue[];
   /** Author's first-draft prompt, so an empty shell can be retried without re-typing. */
   source_idea: string;
   source_referenced_skill_ids: string[];

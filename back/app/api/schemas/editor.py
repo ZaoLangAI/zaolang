@@ -174,15 +174,6 @@ class CutFromJobRequest(ApiModel):
     title: str | None = Field(default=None, max_length=200)
 
 
-class CutAssembleRequest(ApiModel):
-    """Script → rough cut. `ordered_keys` only narrows which breakpoints
-    are assembled; the order always comes from the episode's own script."""
-
-    episode_id: str
-    ordered_keys: list[str] | None = Field(default=None, max_length=500)
-    include_audio: bool = True
-
-
 class TimelineSummaryResponse(ApiModel):
     schema_version: int
     canvas: dict[str, Any]
@@ -235,20 +226,6 @@ class EpisodeCutResponse(ApiModel):
     source_url: str | None = None
     lease_held: bool = False
     head: CutRevisionResponse | None = None
-
-
-class CutAssembleSkip(ApiModel):
-    """A breakpoint (`{heading}#{n}`) or dialogue line (`{heading}#L{n}`)
-    left out of the rough cut. `reason`: `no_output` (not generated yet),
-    `unknown_duration`, or `not_owned`."""
-
-    key: str
-    reason: str
-
-
-class CutAssembleResponse(ApiModel):
-    cut: EpisodeCutResponse
-    skipped: list[CutAssembleSkip] = Field(default_factory=list)
 
 
 class CutRevisionSummaryResponse(ApiModel):
@@ -379,9 +356,6 @@ class EditorExportResponse(ApiModel):
     output_asset_id: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None
-    # Set on `POST .../complete`: the `man_` operation of the export's
-    # hint-only health check, pollable via `GET /v1/editor-operations/{id}`.
-    qa_operation_id: str | None = None
 
 
 class EpisodeExportResponse(ApiModel):

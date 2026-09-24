@@ -41,7 +41,6 @@ from app.api.schemas.script import (
     ScriptDocument,
     ScriptExtractResponse,
     ScriptLinksUpdateRequest,
-    ScriptLintIssue,
     ScriptRetryRequest,
     ScriptSummaryResponse,
     ScriptTurnRequest,
@@ -51,11 +50,9 @@ from app.api.schemas.script import (
 from app.db import session_scope
 from app.domain.errors import DomainError, ValidationFailed
 from app.domain.script_writing import extract as script_extract
-from app.domain.script_writing import lint as script_lint
 from app.domain.script_writing import service as script_writing_service
-from app.domain.skill_library import service as skill_library_service
 from app.llm.client import StreamChunk
-from app.models import EpisodeScriptTurn, Series
+from app.models import EpisodeScriptTurn
 
 router = APIRouter(tags=["scripts"])
 
@@ -422,19 +419,6 @@ def get_script(
     # from a nearby AgentRun) so the next retry can omit the idea body.
     # A clean read is a no-op commit.
     session.commit()
-    series = session.get(Series, episode.series_id)
-    vertical = script_lint.is_vertical_delivery(series.target_platforms_json if series else None)
-    lint = [
-        ScriptLintIssue(
-            **issue.as_dict(),
-            suggested_skills=(
-                skill_library_service.format_skill_titles(issue.dimension)[:2]
-                if issue.dimension
-                else []
-            ),
-        )
-        for issue in script_lint.lint_script(episode.script_json or {}, vertical=vertical)
-    ]
     return ScriptDetailResponse(
         episode_id=episode.id,
         series_id=episode.series_id,
@@ -442,7 +426,6 @@ def get_script(
         status=episode.status,
         script=ScriptDocument.model_validate(episode.script_json or {}),
         turns=[_turn_summary(turn) for turn in turns],
-        lint=lint,
         source_idea=episode.source_idea or "",
         source_referenced_skill_ids=list(episode.source_referenced_skill_ids_json or []),
         last_error=last_error,

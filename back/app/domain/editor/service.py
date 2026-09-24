@@ -17,16 +17,14 @@ from app.domain.editor import commands as command_codec
 from app.domain.editor import document as docs
 from app.domain.editor import flags as editor_flags
 from app.domain.editor import leases as lease_service
-from app.domain.editor.time import MAX_COMMANDS_PER_BATCH, TICKS_PER_SECOND, ticks_from_ms
+from app.domain.editor.time import ticks_from_ms
 from app.domain.errors import (
     Conflict,
     Forbidden,
-    LeaseHeld,
     NotFound,
     RevisionConflict,
     ValidationFailed,
 )
-from app.domain.script_writing import breakpoints as script_breakpoints
 from app.models import (
     Asset,
     CutRevision,
@@ -61,7 +59,6 @@ from app.models.enums import (
     EpisodeKind,
     JobStatus,
     MediaType,
-    Operation,
     SeriesGenre,
     SeriesKind,
     SeriesStatus,
@@ -1111,18 +1108,14 @@ def _cut_for_source_job(session: Session, *, user_id: str, job_id: str) -> Episo
     return _owned_cut(session, user_id=user_id, cut_id=cut.id)
 
 
-def _full_cut_named(session: Session, *, episode_id: str, name: str) -> EpisodeCut | None:
+def _default_full_cut(session: Session, *, episode_id: str) -> EpisodeCut | None:
     return session.scalars(
         select(EpisodeCut).where(
             EpisodeCut.episode_id == episode_id,
             EpisodeCut.kind == EpisodeCutKind.FULL,
-            EpisodeCut.name == name,
+            EpisodeCut.name == DEFAULT_CUT_NAME,
         )
     ).first()
-
-
-def _default_full_cut(session: Session, *, episode_id: str) -> EpisodeCut | None:
-    return _full_cut_named(session, episode_id=episode_id, name=DEFAULT_CUT_NAME)
 
 
 def _clear_stale_link_episode_id(
@@ -1321,257 +1314,6 @@ def create_cut_from_asset(
     cut.status = EpisodeCutStatus.EDITING
     session.flush()
     return cut, revision
-
-
-# The script → rough-cut timeline lives in its own cut so a re-assemble never
-# overwrites the user's hand-edited 主剪辑; the (episode, kind, name) unique
-# constraint makes a second click reuse it.
-ASSEMBLED_CUT_NAME = "粗剪"
-_VIDEO_DRAFT_OPERATIONS = frozenset({"", Operation.TEXT_TO_VIDEO, Operation.IMAGE_TO_VIDEO})
-# A dialogue line with no dubbed clip still gets a caption, timed at a
-# comfortable Chinese reading pace.
-_CAPTION_CHARS_PER_SECOND = 4
-_MIN_CAPTION_TICKS = TICKS_PER_SECOND * 3 // 2
-
-
-def _assembly_asset(
-    session: Session, *, drafts: list[Draft], user_id: str, media_type: str
-) -> tuple[Asset | None, str]:
-    """The newest usable output among the drafts bound to one key: the
-    draft's applied output, else its latest succeeded, non-hidden job.
-    Returns `(None, reason)` for the newest draft when none is usable."""
-    first_reason = ""
-    for draft in drafts:
-        asset_id = draft.output_asset_id or session.scalar(
-            select(GenerationJob.output_asset_id)
-            .where(
-                GenerationJob.draft_id == draft.id,
-                GenerationJob.status == JobStatus.SUCCEEDED,
-                GenerationJob.output_asset_id.is_not(None),
-                GenerationJob.draft_history_hidden_at.is_(None),
-            )
-            .order_by(GenerationJob.finished_at.desc().nulls_last())
-            .limit(1)
-        )
-        asset = session.get(Asset, asset_id) if asset_id else None
-        if asset is None or asset.media_type != media_type:
-            reason = "no_output"
-        elif asset.owner_user_id != user_id:
-            reason = "not_owned"
-        elif not asset.duration_ms or asset.duration_ms <= 0:
-            # `ticks_from_ms` would silently call it one second.
-            reason = "unknown_duration"
-        else:
-            return asset, ""
-        first_reason = first_reason or reason
-    return None, first_reason or "no_output"
-
-
-def _assembly_element_id(track_id: str, key: str) -> str:
-    """Deterministic, so assembling the same script and outputs twice hashes
-    to the same revision (`_persist_revision` dedupes by content hash)."""
-    digest = hashlib.sha256(f"{track_id}:{key}".encode()).hexdigest()[:24]
-    return f"el_asm{digest}"
-
-
-def _estimated_caption_ticks(text: str) -> int:
-    chars = len(text.strip())
-    return max(_MIN_CAPTION_TICKS, -(-chars * TICKS_PER_SECOND // _CAPTION_CHARS_PER_SECOND))
-
-
-def _assembled_cut(session: Session, *, episode_id: str, source_asset_id: str) -> EpisodeCut:
-    """Get or create the episode's 粗剪 cut, row-locked for this transaction
-    the same way `apply_commands` locks before computing the next head."""
-    cut = _full_cut_named(session, episode_id=episode_id, name=ASSEMBLED_CUT_NAME)
-    if cut is None:
-        created = EpisodeCut(
-            episode_id=episode_id,
-            kind=EpisodeCutKind.FULL,
-            name=ASSEMBLED_CUT_NAME,
-            status=EpisodeCutStatus.DRAFT,
-            source_asset_id=source_asset_id,
-        )
-        try:
-            with session.begin_nested():
-                session.add(created)
-                session.flush()
-            return created
-        except IntegrityError as error:
-            if "uq_episode_cuts_episode_kind_name" not in str(getattr(error, "orig", error)):
-                raise
-        cut = _full_cut_named(session, episode_id=episode_id, name=ASSEMBLED_CUT_NAME)
-        if cut is None:
-            raise Conflict("粗剪创建冲突，请重试。")
-    return session.get(EpisodeCut, cut.id, with_for_update=True, populate_existing=True) or cut
-
-
-def assemble_cut_from_script(
-    session: Session,
-    *,
-    user_id: str,
-    episode_id: str,
-    ordered_keys: list[str] | None = None,
-    include_audio: bool = True,
-) -> tuple[EpisodeCut, CutRevision, list[dict[str, str]]]:
-    """Lay the episode's generated breakpoint videos end to end on
-    `trk_video` in script order, each dubbed dialogue line on `trk_audio`
-    from its segment's start, and every dialogue line as a caption. Writes
-    one revision onto the episode's 粗剪 cut. Breakpoints and lines whose
-    output is missing, unowned or of unknown length are skipped and
-    reported rather than failing the whole assemble."""
-    editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
-    episode = _owned_episode(session, user_id=user_id, episode_id=episode_id)
-    script = episode.script_json or {}
-    scenes = list(script.get("scenes") or [])
-    segments = script_breakpoints.ordered_segments(script)
-    if ordered_keys is not None:
-        wanted = set(ordered_keys)
-        segments = [segment for segment in segments if segment.key in wanted]
-    if not segments:
-        raise ValidationFailed("剧本还没有可剪辑的分段。")
-
-    video_drafts: dict[str, list[Draft]] = {}
-    audio_drafts: dict[str, list[Draft]] = {}
-    drafts = session.scalars(
-        select(Draft)
-        .where(
-            Draft.user_id == user_id,
-            Draft.params_json.contains({"link_episode_id": episode.id}),
-        )
-        .order_by(Draft.created_at.desc())
-    )
-    for draft in drafts:
-        params = draft.params_json or {}
-        key = params.get("link_breakpoint_key")
-        if not isinstance(key, str) or not key:
-            continue
-        operation = str(params.get("operation") or "")
-        if operation == Operation.AUDIO_GENERATION:
-            audio_drafts.setdefault(key, []).append(draft)
-        elif operation in _VIDEO_DRAFT_OPERATIONS:
-            video_drafts.setdefault(key, []).append(draft)
-
-    commands: list[dict[str, Any]] = []
-    asset_ids: set[str] = set()
-    skipped: list[dict[str, str]] = []
-    canvas: tuple[int, int] | None = None
-    first_video_id = ""
-    video_end = 0
-    line_end = 0
-    for segment in segments:
-        video, reason = _assembly_asset(
-            session,
-            drafts=video_drafts.get(segment.key, []),
-            user_id=user_id,
-            media_type=MediaType.VIDEO,
-        )
-        if video is None:
-            skipped.append({"key": segment.key, "reason": reason})
-            continue
-        if canvas is None:
-            canvas = (video.width or 1080, video.height or 1920)
-            first_video_id = video.id
-        segment_start = video_end
-        duration = ticks_from_ms(video.duration_ms)
-        commands.append(
-            {
-                "type": "insert_clip",
-                "track_id": "trk_video",
-                "asset_id": video.id,
-                "at_ticks": segment_start,
-                "duration_ticks": duration,
-                "source_in_ticks": 0,
-                "element_id": _assembly_element_id("trk_video", segment.key),
-            }
-        )
-        asset_ids.add(video.id)
-        video_end = segment_start + duration
-
-        scene = scenes[segment.scene_index]
-        blocks = script_breakpoints.scene_blocks(scene)
-        # Lines never overlap: a long line pushes the next one (even the next
-        # segment's first) later rather than stacking two voices.
-        line_start = max(segment_start, line_end)
-        for block_index in range(segment.start, segment.end):
-            block = blocks[block_index]
-            text = str(block.get("text") or "").strip()
-            if block.get("type") != "dialogue" or not text:
-                continue
-            line_key = script_breakpoints.dialogue_line_key(segment.heading, block_index)
-            line_duration = 0
-            if include_audio and line_key in audio_drafts:
-                audio, reason = _assembly_asset(
-                    session,
-                    drafts=audio_drafts[line_key],
-                    user_id=user_id,
-                    media_type=MediaType.AUDIO,
-                )
-                if audio is None:
-                    skipped.append({"key": line_key, "reason": reason})
-                else:
-                    line_duration = ticks_from_ms(audio.duration_ms)
-                    commands.append(
-                        {
-                            "type": "insert_clip",
-                            "track_id": "trk_audio",
-                            "asset_id": audio.id,
-                            "at_ticks": line_start,
-                            "duration_ticks": line_duration,
-                            "source_in_ticks": 0,
-                            "element_id": _assembly_element_id("trk_audio", line_key),
-                        }
-                    )
-                    asset_ids.add(audio.id)
-            line_duration = line_duration or _estimated_caption_ticks(text)
-            commands.append(
-                {
-                    "type": "insert_caption",
-                    "track_id": "trk_caption",
-                    "at_ticks": line_start,
-                    "duration_ticks": line_duration,
-                    "text": text,
-                    "element_id": _assembly_element_id("trk_caption", line_key),
-                }
-            )
-            line_start += line_duration
-        line_end = line_start
-
-    if canvas is None:
-        raise ValidationFailed("还没有已生成的分段视频，先生成视频再粗剪。")
-    _assert_assets_owned(session, user_id=user_id, asset_ids=asset_ids)
-    document = docs.empty_document(width=canvas[0], height=canvas[1])
-    applied: list[dict[str, Any]] = []
-    for offset in range(0, len(commands), MAX_COMMANDS_PER_BATCH):
-        batch = command_codec.validate_batch(
-            {
-                "schema_version": 1,
-                "batch_id": new_id("bat"),
-                "expected_revision_id": None,
-                "commands": commands[offset : offset + MAX_COMMANDS_PER_BATCH],
-            }
-        )
-        document = command_codec.apply_batch(document, batch["commands"], known_assets=asset_ids)
-        applied.extend(batch["commands"])
-
-    cut = _assembled_cut(session, episode_id=episode.id, source_asset_id=first_video_id)
-    # An open editor tab would keep writing against the old head; make the
-    # user close it first instead of pulling the timeline out from under it.
-    if lease_service.peek_active(session, cut.id) is not None:
-        raise LeaseHeld("粗剪正在编辑器中打开，请先关闭后再重新粗剪。")
-    head = session.get(CutRevision, cut.head_revision_id) if cut.head_revision_id else None
-    revision = _persist_revision(
-        session,
-        cut=cut,
-        parent=head,
-        document=document,
-        bindings=_bindings_from_document(document),
-        user_id=user_id,
-        command_summary={"source": "assemble_script", "commands": applied, "skipped": skipped},
-    )
-    cut.head_revision_id = revision.id
-    cut.status = EpisodeCutStatus.EDITING
-    session.flush()
-    return cut, revision, skipped
 
 
 def rename_cut(session: Session, *, user_id: str, cut_id: str, name: str) -> EpisodeCut:

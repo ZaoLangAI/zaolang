@@ -21,7 +21,6 @@ import {
   type ResolvedAsset,
 } from './engine/ports';
 import { ExportPrecheckPanel } from './export-precheck-panel';
-import { ExportQaPanel } from './export-qa-panel';
 import { canvasOrientation, pickDefaultProfileKey, profileOrientationKey } from './export-profile';
 
 const PRECHECK_SAMPLE_COUNT = 5;
@@ -65,8 +64,6 @@ export function ExportPanel({
   }
   const [busy, setBusy] = useState(false);
   const [lastExportId, setLastExportId] = useState<string | null>(null);
-  // The server's hint-only health check of the last finished export.
-  const [qaOperationId, setQaOperationId] = useState<string | null>(null);
   // Walkthrough finding: the loop below already had `progress.percent`/
   // `progress.stage` in hand (sent to the backend as an export heartbeat)
   // but only surfaced a generic button `loading` spinner — no percent, no
@@ -76,7 +73,6 @@ export function ExportPanel({
   // is the visible one. On by default — 《人工智能生成合成内容标识办法》 asks
   // for an explicit label on synthetic video, so turning it off is a choice.
   const [aiLabel, setAiLabel] = useState(true);
-  const [normalizeLoudness, setNormalizeLoudness] = useState(true);
   const runner = useMemo(() => new SequentialExportRunner(), []);
   const controllerRef = useRef<AbortController | null>(null);
   const claimedExportIdRef = useRef<string | null>(null);
@@ -106,7 +102,6 @@ export function ExportPanel({
   const run = async () => {
     if (!revisionId || picked.size === 0) return;
     setBusy(true);
-    setQaOperationId(null);
     const controller = new AbortController();
     controllerRef.current = controller;
     try {
@@ -126,10 +121,7 @@ export function ExportPanel({
         caption_mode: 'burned' as const,
         max_duration_ticks: durationTicks,
       };
-      const renderOptions = {
-        ...(aiLabel ? { aiLabel: { text: t('exportAiLabelText') } } : {}),
-        normalizeLoudness,
-      };
+      const renderOptions = aiLabel ? { aiLabel: { text: t('exportAiLabelText') } } : {};
       let blob: Blob | undefined;
       for await (const step of runner.export(
         spec,
@@ -162,7 +154,6 @@ export function ExportPanel({
       await editorApi.heartbeatExport(claimed.id, 100, 'verifying');
       const done = await editorApi.completeExport(claimed.id, presigned.upload_session_id);
       setLastExportId(done.id);
-      setQaOperationId(done.qa_operation_id ?? null);
       notify(t('exportDone'), 'success');
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -243,19 +234,6 @@ export function ExportPanel({
           <span className="block text-xs text-muted">{t('exportAiLabelHint')}</span>
         </span>
       </label>
-      <label className="flex items-start gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={normalizeLoudness}
-          disabled={disabled || busy}
-          onChange={(event) => setNormalizeLoudness(event.target.checked)}
-          className="mt-1"
-        />
-        <span>
-          {t('exportNormalizeLoudness')}
-          <span className="block text-xs text-muted">{t('exportNormalizeLoudnessHint')}</span>
-        </span>
-      </label>
       <div className="flex flex-col gap-2">
         <p className="text-xs text-muted">{t('exportPrecheckTitle')}</p>
         <ExportPrecheckPanel document={document} assets={assets} samples={precheck.samples} />
@@ -306,7 +284,6 @@ export function ExportPanel({
           </p>
         </div>
       ) : null}
-      {qaOperationId ? <ExportQaPanel operationId={qaOperationId} /> : null}
       {lastExportId ? (
         <Button variant="secondary" onClick={() => void bind()} disabled={busy}>
           {t('bindAndPublish')}

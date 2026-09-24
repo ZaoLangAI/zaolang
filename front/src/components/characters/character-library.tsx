@@ -13,7 +13,7 @@ import { VideoFirstFrame } from '@/components/media/video-first-frame';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
-import { Select, TextArea, TextInput } from '@/components/ui/field';
+import { TextArea, TextInput } from '@/components/ui/field';
 import {
   IconClose,
   IconImage,
@@ -41,7 +41,6 @@ import {
 } from '@/lib/creation-skill-status';
 import { useMinWidth } from '@/lib/use-media-query';
 import { uploadFile } from '@/lib/upload';
-import { unionVoices, useGenerationModels } from '@/lib/use-generation-models';
 
 // Status badges reuse `CREATION_SKILL_STATUS_*` — a character is a
 // `CreationSkillCategory.CHARACTER` skill under the hood.
@@ -50,8 +49,6 @@ interface CharacterForm {
   name: string;
   description: string;
   voiceDescription: string;
-  /** TTS voice id the script studio's batch dubbing uses for this character; '' = none. */
-  presetVoice: string;
   reference: ExistingAssetPick | null;
 }
 
@@ -59,7 +56,6 @@ const EMPTY_FORM: CharacterForm = {
   name: '',
   description: '',
   voiceDescription: '',
-  presetVoice: '',
   reference: null,
 };
 
@@ -83,7 +79,6 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
   const tActions = useTranslations('actions');
   const tStates = useTranslations('states');
   const tMedia = useTranslations('media');
-  const presetVoices = unionVoices(useGenerationModels('audio_generation'));
   const { notify } = useToast();
   const router = useRouter();
 
@@ -129,7 +124,6 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       name: character.name,
       description: character.description ?? '',
       voiceDescription: character.voice_description ?? '',
-      presetVoice: character.preset_voice ?? '',
       reference: sheet ? { id: sheet.asset_id, url: sheet.url ?? '' } : null,
     });
     setFormError(null);
@@ -190,8 +184,6 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         description: form.description.trim() || null,
         reference_asset_ids: form.reference ? [form.reference.id] : [],
         voice_description: form.voiceDescription.trim() || null,
-        // '' clears it on edit (the API treats `null` as "unchanged").
-        preset_voice: form.presetVoice,
       };
       let saved = editing
         ? await api.patch<Character>(`/v1/characters/${editing.id}`, payload)
@@ -336,19 +328,6 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
         onChange={(event) =>
           setForm((current) => ({ ...current, voiceDescription: event.target.value }))
         }
-      />
-      <Select
-        label={t('presetVoiceLabel')}
-        hint={t('presetVoiceHint')}
-        value={form.presetVoice}
-        options={[
-          { value: '', label: t('presetVoiceNone') },
-          ...(form.presetVoice && !presetVoices.includes(form.presetVoice)
-            ? [form.presetVoice, ...presetVoices]
-            : presetVoices
-          ).map((value) => ({ value, label: value })),
-        ]}
-        onChange={(event) => setForm((current) => ({ ...current, presetVoice: event.target.value }))}
       />
       <div>
         <p className="text-sm font-medium text-text">{t('sheetLabel')}</p>

@@ -207,13 +207,6 @@ class AppliedVersionRequest(ApiModel):
     job_id: str = Field(min_length=1, max_length=40)
 
 
-class KeyframeConfirmationRequest(ApiModel):
-    """Confirms one version of a storyboard keyframe draft as its segment's
-    video first frame; `null` withdraws the confirmation."""
-
-    job_id: str | None = Field(default=None, min_length=1, max_length=40)
-
-
 class PublishRequest(ApiModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
