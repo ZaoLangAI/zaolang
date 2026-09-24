@@ -2264,23 +2264,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/episode-cuts:assemble": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Assemble Cut From Script */
-        post: operations["assemble_cut_from_script_v1_episode_cuts_assemble_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/drama-episodes/{episode_id}/cuts": {
         parameters: {
             query?: never;
@@ -7621,40 +7604,6 @@ export interface components {
             currency: string;
             /** Region */
             region: string;
-        };
-        /**
-         * CutAssembleRequest
-         * @description Script → rough cut. `ordered_keys` only narrows which breakpoints
-         *     are assembled; the order always comes from the episode's own script.
-         */
-        CutAssembleRequest: {
-            /** Episode Id */
-            episode_id: string;
-            /** Ordered Keys */
-            ordered_keys?: string[] | null;
-            /**
-             * Include Audio
-             * @default true
-             */
-            include_audio: boolean;
-        };
-        /** CutAssembleResponse */
-        CutAssembleResponse: {
-            cut: components["schemas"]["EpisodeCutResponse"];
-            /** Skipped */
-            skipped?: components["schemas"]["CutAssembleSkip"][];
-        };
-        /**
-         * CutAssembleSkip
-         * @description A breakpoint (`{heading}#{n}`) or dialogue line (`{heading}#L{n}`)
-         *     left out of the rough cut. `reason`: `no_output` (not generated yet),
-         *     `unknown_duration`, or `not_owned`.
-         */
-        CutAssembleSkip: {
-            /** Key */
-            key: string;
-            /** Reason */
-            reason: string;
         };
         /** CutCreateRequest */
         CutCreateRequest: {
@@ -17978,41 +17927,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EpisodeCutResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    assemble_cut_from_script_v1_episode_cuts_assemble_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CutAssembleRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CutAssembleResponse"];
                 };
             };
             /** @description Validation Error */

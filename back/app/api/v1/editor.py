@@ -18,9 +18,6 @@ from app.api.schemas.editor import (
     CollaborationInviteResponse,
     CollaboratorInviteRequest,
     CollaboratorResponse,
-    CutAssembleRequest,
-    CutAssembleResponse,
-    CutAssembleSkip,
     CutCreateRequest,
     CutFromJobRequest,
     CutRevisionResponse,
@@ -790,30 +787,6 @@ def create_cut_from_job(
     if analysis_id:
         _enqueue_media_analysis(analysis_id)
     return _cut_response(session, cut)
-
-
-@router.post("/episode-cuts:assemble", response_model=CutAssembleResponse)
-def assemble_cut_from_script(
-    payload: CutAssembleRequest,
-    user: CurrentUser,
-    session: DbSession,
-    _: Annotated[None, Depends(rate_limited("editor_write"))],
-) -> CutAssembleResponse:
-    # No idempotency key needed: element ids are derived from script keys,
-    # so a repeat click with unchanged outputs lands on the same revision.
-    cut, _revision, skipped = editor_service.assemble_cut_from_script(
-        session,
-        user_id=user.id,
-        episode_id=payload.episode_id,
-        ordered_keys=payload.ordered_keys,
-        include_audio=payload.include_audio,
-    )
-    session.commit()
-    return CutAssembleResponse(
-        cut=_cut_response(session, cut),
-        skipped=[CutAssembleSkip(**item) for item in skipped],
-    )
-
 
 @router.post(
     "/drama-episodes/{episode_id}/cuts",

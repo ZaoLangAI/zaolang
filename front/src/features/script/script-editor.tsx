@@ -9,7 +9,6 @@ import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import * as editorApi from '@/features/editor/api';
-import { assembleCutFromScript } from '@/features/editor/from-job';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 import { api } from '@/lib/api/client';
 import { isApiError } from '@/lib/api/errors';
@@ -37,11 +36,7 @@ import { ScriptBatchDialog } from './script-batch-dialog';
 import { ScriptBatchToolbar } from './script-batch-toolbar';
 import { ScriptLintPanel } from './script-lint-panel';
 import { ScriptChatPanel } from './script-chat-panel';
-import {
-  dubbedDialogueKeys,
-  indexBreakpointVideos,
-  orderedBreakpointKeys,
-} from './script-breakpoint';
+import { dubbedDialogueKeys, indexBreakpointVideos } from './script-breakpoint';
 import { ScriptDocumentView } from './script-document-view';
 import { useScriptTurnStream } from './use-script-turn-stream';
 import {
@@ -274,22 +269,6 @@ export function ScriptEditor({
   );
   const dubbedKeys = useMemo(() => dubbedDialogueKeys(linkedDrafts), [linkedDrafts]);
 
-  // Stays set on success: the page is navigating to the editor.
-  const [assembling, setAssembling] = useState(false);
-  const assembleRoughCut = async () => {
-    setAssembling(true);
-    try {
-      const result = await assembleCutFromScript(episodeId);
-      if (result.skipped.length > 0) {
-        notify(t('batchAssembleSkipped', { count: result.skipped.length }), 'info');
-      }
-      router.push(`/studio-editor/${result.cut.id}`);
-    } catch (error) {
-      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
-      setAssembling(false);
-    }
-  };
-
   const batch = useScriptBatch({
     episodeId,
     videoBindings,
@@ -477,11 +456,6 @@ export function ScriptEditor({
   const inflightScenes = inFlightIds(batch.items, 'scene');
   const inflightVideos = inFlightIds(batch.items, 'video');
   const inflightAudios = inFlightIds(batch.items, 'audio');
-  // Segments whose video draft already has an output — what 一键粗剪 can lay
-  // down (the server also falls back to a draft's latest succeeded job).
-  const assembleCount = orderedBreakpointKeys(currentScript).filter(
-    (key) => videoBindings[key]?.outputAssetId,
-  ).length;
   const characterQueue = pendingCharacters(currentScript, inflightCharacters);
   const libraryItems = characterLibrary.data ?? [];
   const libraryByName = libraryCharacterByName(libraryItems);
@@ -615,9 +589,6 @@ export function ScriptEditor({
             videoCount={videoQueue.length}
             videoDisabled={videoDisabled}
             audioCount={audioQueue.length}
-            assembleCount={assembleCount}
-            assembling={assembling}
-            onAssemble={() => void assembleRoughCut()}
             disabled={documentStreaming}
             running={batch.running}
             paused={batch.paused}
