@@ -6,6 +6,8 @@ import { Spinner } from '@/components/ui/spinner';
 
 import { ASPECT_WIDTH_OVER_HEIGHT } from './compiler/camera';
 import type { FrameState } from './compiler/compile';
+import type { BlockingEdit } from './edits';
+import type { BlockingEditor, EditorSelection, GizmoMode } from './engine/editor';
 import type { BlockingPlayer, CastLabel, ViewMode } from './engine/player';
 import type { AspectRatio, BlockingDocument } from './types';
 
@@ -24,6 +26,11 @@ export function BlockingViewport({
   aspect,
   view,
   onPlayer,
+  editable,
+  gizmoMode,
+  onEdit,
+  onSelect,
+  onEditor,
   loadingLabel,
   errorLabel,
   children,
@@ -33,6 +40,12 @@ export function BlockingViewport({
   aspect: AspectRatio;
   view: ViewMode;
   onPlayer: (player: BlockingPlayer | null) => void;
+  /** Drag editing is live only in the free view. */
+  editable: boolean;
+  gizmoMode: GizmoMode;
+  onEdit: (edit: BlockingEdit) => void;
+  onSelect: (selection: EditorSelection) => void;
+  onEditor?: (editor: BlockingEditor | null) => void;
   loadingLabel: string;
   errorLabel: string;
   /** Overlays drawn over the frame (empty state, streaming progress). */
@@ -42,28 +55,39 @@ export function BlockingViewport({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const labelRef = useRef<HTMLDivElement | null>(null);
   const [player, setPlayer] = useState<BlockingPlayer | null>(null);
+  const [editor, setEditor] = useState<BlockingEditor | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [frame, setFrame] = useState({ width: 0, height: 0 });
 
   const onPlayerRef = useRef(onPlayer);
+  const handlersRef = useRef({ onEdit, onSelect, onEditor });
   useEffect(() => {
     onPlayerRef.current = onPlayer;
-  }, [onPlayer]);
+    handlersRef.current = { onEdit, onSelect, onEditor };
+  }, [onPlayer, onEdit, onSelect, onEditor]);
 
   useEffect(() => {
     let cancelled = false;
     let instance: BlockingPlayer | null = null;
-    void import('./engine/player')
-      .then(({ BlockingPlayer: Player }) => {
-        if (cancelled || !canvasRef.current || !labelRef.current) return;
+    let editorInstance: BlockingEditor | null = null;
+    void Promise.all([import('./engine/player'), import('./engine/editor')])
+      .then(([{ BlockingPlayer: Player }, { BlockingEditor: Editor }]) => {
+        const canvas = canvasRef.current;
+        if (cancelled || !canvas || !labelRef.current) return;
         instance = new Player({
-          canvas: canvasRef.current,
+          canvas,
           interactive: true,
           labelLayer: labelRef.current,
           pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
         });
+        editorInstance = new Editor(instance, canvas, {
+          onEdit: (edit) => handlersRef.current.onEdit(edit),
+          onSelect: (selection) => handlersRef.current.onSelect(selection),
+        });
         setPlayer(instance);
+        setEditor(editorInstance);
         onPlayerRef.current(instance);
+        handlersRef.current.onEditor?.(editorInstance);
         setStatus('ready');
       })
       .catch(() => {
@@ -72,6 +96,8 @@ export function BlockingViewport({
     return () => {
       cancelled = true;
       onPlayerRef.current(null);
+      handlersRef.current.onEditor?.(null);
+      editorInstance?.dispose();
       instance?.dispose();
     };
   }, []);
@@ -107,6 +133,14 @@ export function BlockingViewport({
   useEffect(() => {
     player?.setView(view);
   }, [player, view]);
+
+  useEffect(() => {
+    editor?.setEnabled(editable && view === 'free');
+  }, [editor, editable, view]);
+
+  useEffect(() => {
+    editor?.setMode(gizmoMode);
+  }, [editor, gizmoMode]);
 
   return (
     <div ref={areaRef} className="relative flex min-h-0 flex-1 items-center justify-center">

@@ -125,7 +125,35 @@
         "orange": "橙色",
         "cyan": "青色",
         "pink": "粉色"
-      }
+      },
+      "conflictReloaded": "白膜已在其他地方更新，已为你载入最新版本。",
+      "selectedCamera": "机位",
+      "gizmoLabel": "编辑方式",
+      "gizmo": {
+        "translate": "移动",
+        "rotate": "旋转",
+        "scale": "缩放"
+      },
+      "selected": "已选中：{name}",
+      "editHint": "点击道具、人偶或机位进行拖拽调整，结果自动保存。",
+      "captureView": "设为本段机位",
+      "saveStatus": {
+        "pending": "待保存",
+        "saving": "保存中…",
+        "saved": "已保存",
+        "error": "保存失败"
+      },
+      "shotPicker": "本段镜头",
+      "shotSize": "景别",
+      "shotMove": "运镜",
+      "shotIntensity": "幅度",
+      "shotLens": "焦段",
+      "shotHeight": "机位高度",
+      "shotSide": "方位",
+      "shotSubject": "主体",
+      "shotSubjectGroup": "全体",
+      "shotEase": "节奏",
+      "clearManualCamera": "清除手动机位，恢复预设运镜"
     },
     "scriptStudio": {
       "turnOriginBlocking": "白膜",
@@ -260,7 +288,35 @@
         "orange": "orange",
         "cyan": "cyan",
         "pink": "pink"
-      }
+      },
+      "conflictReloaded": "The blockout was updated elsewhere; the latest version is loaded.",
+      "selectedCamera": "Camera",
+      "gizmoLabel": "Edit mode",
+      "gizmo": {
+        "translate": "Move",
+        "rotate": "Rotate",
+        "scale": "Scale"
+      },
+      "selected": "Selected: {name}",
+      "editHint": "Click a prop, a mannequin or the camera to drag it. Changes save automatically.",
+      "captureView": "Use this view as the camera",
+      "saveStatus": {
+        "pending": "Unsaved",
+        "saving": "Saving…",
+        "saved": "Saved",
+        "error": "Save failed"
+      },
+      "shotPicker": "Shot for this segment",
+      "shotSize": "Size",
+      "shotMove": "Move",
+      "shotIntensity": "Intensity",
+      "shotLens": "Lens",
+      "shotHeight": "Height",
+      "shotSide": "Angle",
+      "shotSubject": "Subject",
+      "shotSubjectGroup": "Everyone",
+      "shotEase": "Pacing",
+      "clearManualCamera": "Clear manual camera and use the preset move"
     },
     "scriptStudio": {
       "turnOriginBlocking": "Blockout",
@@ -395,7 +451,35 @@
         "orange": "オレンジ",
         "cyan": "シアン",
         "pink": "ピンク"
-      }
+      },
+      "conflictReloaded": "ブロックアウトが他の場所で更新されたため、最新版を読み込みました。",
+      "selectedCamera": "カメラ",
+      "gizmoLabel": "編集モード",
+      "gizmo": {
+        "translate": "移動",
+        "rotate": "回転",
+        "scale": "拡大縮小"
+      },
+      "selected": "選択中：{name}",
+      "editHint": "小道具・マネキン・カメラをクリックしてドラッグ。変更は自動保存されます。",
+      "captureView": "この視点をカメラにする",
+      "saveStatus": {
+        "pending": "未保存",
+        "saving": "保存中…",
+        "saved": "保存済み",
+        "error": "保存に失敗しました"
+      },
+      "shotPicker": "このセグメントのショット",
+      "shotSize": "サイズ",
+      "shotMove": "カメラワーク",
+      "shotIntensity": "強さ",
+      "shotLens": "レンズ",
+      "shotHeight": "高さ",
+      "shotSide": "アングル",
+      "shotSubject": "被写体",
+      "shotSubjectGroup": "全員",
+      "shotEase": "テンポ",
+      "clearManualCamera": "手動カメラを解除してプリセットに戻す"
     },
     "scriptStudio": {
       "turnOriginBlocking": "ブロックアウト",

@@ -1490,7 +1490,35 @@
       "orange": "orange",
       "cyan": "cyan",
       "pink": "pink"
-    }
+    },
+    "conflictReloaded": "The blockout was updated elsewhere; the latest version is loaded.",
+    "selectedCamera": "Camera",
+    "gizmoLabel": "Edit mode",
+    "gizmo": {
+      "translate": "Move",
+      "rotate": "Rotate",
+      "scale": "Scale"
+    },
+    "selected": "Selected: {name}",
+    "editHint": "Click a prop, a mannequin or the camera to drag it. Changes save automatically.",
+    "captureView": "Use this view as the camera",
+    "saveStatus": {
+      "pending": "Unsaved",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "error": "Save failed"
+    },
+    "shotPicker": "Shot for this segment",
+    "shotSize": "Size",
+    "shotMove": "Move",
+    "shotIntensity": "Intensity",
+    "shotLens": "Lens",
+    "shotHeight": "Height",
+    "shotSide": "Angle",
+    "shotSubject": "Subject",
+    "shotSubjectGroup": "Everyone",
+    "shotEase": "Pacing",
+    "clearManualCamera": "Clear manual camera and use the preset move"
   },
   "brand": {
     "name": "ZaoLang",

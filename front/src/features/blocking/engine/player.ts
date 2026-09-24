@@ -54,13 +54,15 @@ export class BlockingPlayer {
 
   private readonly interactive: boolean;
   private readonly labelRenderer: CSS2DRenderer | null = null;
-  private readonly controls: OrbitControls | null = null;
+  /** Free-view orbit; the drag editor disables it while a gizmo is held. */
+  readonly controls: OrbitControls | null = null;
   private readonly cameraHelper: THREE.CameraHelper;
   private stages = new Map<string, StageGroup>();
   private mannequins = new Map<string, { mannequin: Mannequin; label: CSS2DObject | null }>();
   private labels: Record<string, CastLabel> = {};
   private activeSetId: string | null = null;
   private listeners = new Set<TimeListener>();
+  private rebuildListeners = new Set<() => void>();
   private frameHandle = 0;
   private lastTick = 0;
   private width = 1;
@@ -129,6 +131,7 @@ export class BlockingPlayer {
     this.rebuildScene();
     this.time = Math.min(this.time, this.timeline.duration);
     this.renderAt(this.time);
+    for (const listener of this.rebuildListeners) listener();
   }
 
   private rebuildScene(): void {
@@ -160,6 +163,9 @@ export class BlockingPlayer {
         height: member.height_m,
       });
       mannequin.root.visible = false;
+      mannequin.root.traverse((child) => {
+        child.userData.castId = member.id;
+      });
       this.scene.add(mannequin.root);
       let label: CSS2DObject | null = null;
       if (this.labelRenderer) {
@@ -226,7 +232,7 @@ export class BlockingPlayer {
     }
     if (this.controls) this.controls.enabled = view === 'free';
     this.cameraHelper.visible = view === 'free';
-    this.requestRender();
+    this.resume();
   }
 
   setGuides(visible: boolean): void {
@@ -248,6 +254,13 @@ export class BlockingPlayer {
     return () => this.listeners.delete(listener);
   }
 
+  /** Called after every scene rebuild (a new document) — the drag editor
+   * re-attaches its gizmo to the rebuilt object. */
+  onRebuild(listener: () => void): () => void {
+    this.rebuildListeners.add(listener);
+    return () => this.rebuildListeners.delete(listener);
+  }
+
   play(): void {
     if (!this.timeline || this.timeline.duration <= 0) return;
     if (this.time >= this.timeline.duration - 1e-3) this.time = 0;
@@ -267,6 +280,13 @@ export class BlockingPlayer {
     this.renderAt(this.time);
   }
 
+  /** (Re)starts the frame loop — it runs while playing or while the free
+   * view's orbit is live, and stops on its own otherwise. */
+  resume(): void {
+    this.lastTick = performance.now();
+    this.loop();
+  }
+
   private loop = (): void => {
     if (this.disposed) return;
     cancelAnimationFrame(this.frameHandle);
@@ -280,7 +300,10 @@ export class BlockingPlayer {
     }
     this.lastTick = now;
     this.controls?.update();
-    this.renderAt(this.time);
+    // Paused, only redraw: re-applying the frame would snap a prop or
+    // mannequin the drag editor is holding back to its document position.
+    if (this.playing) this.renderAt(this.time);
+    else this.draw();
     if (this.playing || this.controls?.enabled) {
       this.frameHandle = requestAnimationFrame(this.loop);
     }
@@ -349,7 +372,7 @@ export class BlockingPlayer {
     this.cameraHelper.update();
   }
 
-  private draw(): void {
+  draw(): void {
     if (this.disposed) return;
     const camera = this.view === 'free' ? this.freeCamera : this.directorCamera;
     this.renderer.render(this.scene, camera);
@@ -383,6 +406,7 @@ export class BlockingPlayer {
     this.rebuildScene();
     this.cameraHelper.dispose();
     this.listeners.clear();
+    this.rebuildListeners.clear();
     this.renderer.dispose();
     // Hand the WebGL context back immediately — browsers cap live contexts,
     // same reasoning as `features/canvas/panorama-viewer.tsx`.

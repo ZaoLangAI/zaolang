@@ -11,6 +11,7 @@ import type { Timeline } from './compiler/compile';
 import type { BlockingPlayer, ViewMode } from './engine/player';
 import { castColor } from './palette';
 import type { BlockingDocument, BlockingSegment } from './types';
+import type { SaveStatus } from './use-blocking-save';
 import { CAMERA_MOVES, SHOT_SIZES } from './vocabulary';
 
 export function formatClock(seconds: number): string {
@@ -29,6 +30,7 @@ export function TransportBar({
   onLabelsChange,
   onOpenSettings,
   disabled,
+  saveStatus = 'idle',
 }: {
   player: BlockingPlayer | null;
   duration: number;
@@ -38,6 +40,7 @@ export function TransportBar({
   onLabelsChange: (visible: boolean) => void;
   onOpenSettings: () => void;
   disabled: boolean;
+  saveStatus?: SaveStatus;
 }) {
   const t = useTranslations('blockingStudio');
   const { time, playing } = usePlayerClock(player);
@@ -55,6 +58,14 @@ export function TransportBar({
       <span className="min-w-28 font-mono text-sm tabular-nums text-muted" aria-live="off">
         {formatClock(time)} / {formatClock(duration)}
       </span>
+      {saveStatus !== 'idle' ? (
+        <span
+          role="status"
+          className={cn('text-xs', saveStatus === 'error' ? 'text-danger' : 'text-muted')}
+        >
+          {t(`saveStatus.${saveStatus}`)}
+        </span>
+      ) : null}
       <div
         role="radiogroup"
         aria-label={t('viewLabel')}

@@ -1,13 +1,14 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { IconWand } from '@/components/ui/icons';
 import { EmptyState } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
+import * as scriptApi from '@/features/script/api';
 import type { ScriptDetail } from '@/features/script/api';
 import { ScriptChatPanel } from '@/features/script/script-chat-panel';
 import { extractStreamingSummary } from '@/features/script/stream-preview';
@@ -21,9 +22,13 @@ import { SegmentInspector, SegmentScrubber, StaleBanner, TransportBar } from './
 import { BlockingSettingsDialog } from './blocking-settings-dialog';
 import { BlockingViewport } from './blocking-viewport';
 import { compileBlocking } from './compiler/compile';
+import { applyEdit, type BlockingEdit } from './edits';
+import type { BlockingEditor, EditorSelection, GizmoMode } from './engine/editor';
 import type { BlockingPlayer, CastLabel, ViewMode } from './engine/player';
 import { castColor } from './palette';
 import type { AspectRatio, BlockingState } from './types';
+import { ShotPicker } from './shot-picker';
+import { useBlockingSave } from './use-blocking-save';
 import { useBlockingStream } from './use-blocking-stream';
 
 const EMPTY_STATE: BlockingState = {
@@ -67,8 +72,51 @@ export function BlockingStudio({
   const [labelsVisible, setLabelsVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
+  const [selection, setSelection] = useState<EditorSelection>(null);
+  const editorRef = useRef<BlockingEditor | null>(null);
   const stream = useBlockingStream();
   const characters = useResource<Character[]>('/v1/characters');
+
+  const reload = useCallback(async () => {
+    try {
+      const next = await scriptApi.getScript(episodeId);
+      setDetail(next);
+      setState(next.blocking ?? EMPTY_STATE);
+    } catch (error) {
+      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
+    }
+  }, [episodeId, notify, t]);
+
+  const save = useBlockingSave({
+    episodeId,
+    versionNo: state.version_no,
+    onSaved: useCallback((next: BlockingState) => setState(next), []),
+    onConflict: useCallback(() => {
+      notify(t('conflictReloaded'), 'error');
+      void reload();
+    }, [notify, reload, t]),
+    onError: useCallback((message: string) => notify(message, 'error'), [notify]),
+  });
+
+  // The latest state for event handlers — an edit must apply on top of the
+  // previous edit even before React has re-rendered with it.
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  const { schedule } = save;
+  const edit = useCallback(
+    (change: BlockingEdit) => {
+      const current = stateRef.current;
+      if (!current.document) return;
+      const next = { ...current, document: applyEdit(current.document, change) };
+      stateRef.current = next;
+      setState(next);
+      schedule(next.document);
+    },
+    [schedule],
+  );
 
   const document = state.document ?? null;
   const aspect: AspectRatio = document?.aspect_ratio ?? '9:16';
@@ -157,6 +205,18 @@ export function BlockingStudio({
     }
   };
 
+  const selectionLabel = (current: EditorSelection): string | null => {
+    if (!current || !document) return null;
+    if (current.kind === 'camera') return t('selectedCamera');
+    if (current.kind === 'cast') {
+      return document.cast?.find((member) => member.id === current.castId)?.name ?? null;
+    }
+    const prop = document.sets
+      ?.find((set) => set.id === current.setId)
+      ?.props?.find((item) => item.id === current.propId);
+    return prop ? prop.label || prop.id : null;
+  };
+
   const phaseLabel = (phase: BlockingPhase | null) =>
     phase ? t(`phase.${phase}`) : t('phase.route');
   const busy = stream.streaming;
@@ -185,9 +245,28 @@ export function BlockingStudio({
             aspect={aspect}
             view={view}
             onPlayer={setPlayer}
+            editable={Boolean(document) && !busy}
+            gizmoMode={gizmoMode}
+            onEdit={edit}
+            onSelect={setSelection}
+            onEditor={(instance) => {
+              editorRef.current = instance;
+            }}
             loadingLabel={t('loadingEngine')}
             errorLabel={t('engineError')}
           >
+            {view === 'free' && document && !busy ? (
+              <EditToolbar
+                mode={gizmoMode}
+                onModeChange={setGizmoMode}
+                selection={selection}
+                selectionLabel={selectionLabel(selection)}
+                onCapture={() => {
+                  const change = editorRef.current?.captureFreeView();
+                  if (change) edit(change);
+                }}
+              />
+            ) : null}
             {!document && !busy ? (
               <div className="absolute inset-0 grid place-items-center bg-surface/85 p-6">
                 <div className="flex max-w-sm flex-col items-center gap-3 text-center">
@@ -226,6 +305,7 @@ export function BlockingStudio({
             }}
             onOpenSettings={() => setSettingsOpen(true)}
             disabled={!document || busy}
+            saveStatus={save.status}
           />
           <SegmentScrubber
             player={player}
@@ -234,6 +314,7 @@ export function BlockingStudio({
             disabled={busy}
           />
           <SegmentInspector player={player} document={document} />
+          <ShotPicker player={player} document={document} disabled={busy} onEdit={edit} />
         </section>
 
         <aside className={`flex min-h-[28rem] flex-col ${PANEL_HEIGHT}`}>
@@ -265,5 +346,55 @@ export function BlockingStudio({
         />
       ) : null}
     </>
+  );
+}
+
+function EditToolbar({
+  mode,
+  onModeChange,
+  selection,
+  selectionLabel,
+  onCapture,
+}: {
+  mode: GizmoMode;
+  onModeChange: (mode: GizmoMode) => void;
+  selection: EditorSelection;
+  selectionLabel: string | null;
+  onCapture: () => void;
+}) {
+  const t = useTranslations('blockingStudio');
+  const modes: GizmoMode[] =
+    selection?.kind === 'camera'
+      ? ['translate']
+      : selection?.kind === 'cast'
+        ? ['translate', 'rotate']
+        : ['translate', 'rotate', 'scale'];
+  return (
+    <div className="absolute inset-x-2 top-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface/90 p-1.5 text-xs shadow-card">
+      <div role="radiogroup" aria-label={t('gizmoLabel')} className="flex gap-1">
+        {modes.map((option) => (
+          <button
+            key={option}
+            type="button"
+            role="radio"
+            aria-checked={mode === option}
+            onClick={() => onModeChange(option)}
+            className={
+              mode === option
+                ? 'h-8 rounded-[calc(var(--radius-sm)-2px)] bg-primary/15 px-2.5 font-medium text-text'
+                : 'h-8 rounded-[calc(var(--radius-sm)-2px)] px-2.5 text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-focus'
+            }
+          >
+            {t(`gizmo.${option}`)}
+          </button>
+        ))}
+      </div>
+      <span className="min-w-0 flex-1 truncate text-muted">
+        {selectionLabel ? t('selected', { name: selectionLabel }) : t('editHint')}
+      </span>
+      <Button size="sm" variant="secondary" onClick={onCapture}>
+        {t('captureView')}
+      </Button>
+    </div>
   );
 }
