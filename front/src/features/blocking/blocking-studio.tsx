@@ -4,7 +4,8 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { IconWand } from '@/components/ui/icons';
+import { IconVideo, IconWand } from '@/components/ui/icons';
+import { Link } from '@/i18n/navigation';
 import { EmptyState } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -27,7 +28,10 @@ import type { BlockingEditor, EditorSelection, GizmoMode } from './engine/editor
 import type { BlockingPlayer, CastLabel, ViewMode } from './engine/player';
 import { castColor } from './palette';
 import type { AspectRatio, BlockingState } from './types';
+import { BlockingVideoDialog } from './blocking-video-dialog';
 import { ShotPicker } from './shot-picker';
+import { useBlockingVideo, type SegmentVideoItem } from './use-blocking-video';
+import { planSegmentVideos } from './video-plan';
 import { useBlockingSave } from './use-blocking-save';
 import { useBlockingStream } from './use-blocking-stream';
 
@@ -76,6 +80,8 @@ export function BlockingStudio({
   const [selection, setSelection] = useState<EditorSelection>(null);
   const editorRef = useRef<BlockingEditor | null>(null);
   const stream = useBlockingStream();
+  const video = useBlockingVideo(episodeId);
+  const [videoKeys, setVideoKeys] = useState<string[] | null>(null);
   const characters = useResource<Character[]>('/v1/characters');
 
   const reload = useCallback(async () => {
@@ -171,9 +177,8 @@ export function BlockingStudio({
 
   const sendTurn = (message: string) => {
     player?.pause();
-    void stream.run(
-      { kind: 'turn', episodeId, message, currentScript: detail.script },
-      (result) => applyComplete(result, message),
+    void stream.run({ kind: 'turn', episodeId, message, currentScript: detail.script }, (result) =>
+      applyComplete(result, message),
     );
   };
 
@@ -215,6 +220,19 @@ export function BlockingStudio({
       ?.find((set) => set.id === current.setId)
       ?.props?.find((item) => item.id === current.propId);
     return prop ? prop.label || prop.id : null;
+  };
+
+  const videoPlans = useMemo(
+    () => (document && videoKeys ? planSegmentVideos(document, detail.script, videoKeys) : []),
+    [document, detail.script, videoKeys],
+  );
+  const openVideo = (scope: 'segment' | 'all') => {
+    if (!document) return;
+    const keys =
+      scope === 'all'
+        ? (document.segments ?? []).map((segment) => segment.key)
+        : [player?.lastFrame?.segment.key].filter((key): key is string => Boolean(key));
+    if (keys.length > 0) setVideoKeys(keys);
   };
 
   const phaseLabel = (phase: BlockingPhase | null) =>
@@ -315,6 +333,17 @@ export function BlockingStudio({
           />
           <SegmentInspector player={player} document={document} />
           <ShotPicker player={player} document={document} disabled={busy} onEdit={edit} />
+          {document ? (
+            <VideoActions
+              episodeId={episodeId}
+              disabled={busy || video.running}
+              stale={state.stale}
+              items={video.items}
+              running={video.running}
+              onGenerate={openVideo}
+              onCancel={video.cancel}
+            />
+          ) : null}
         </section>
 
         <aside className={`flex min-h-[28rem] flex-col ${PANEL_HEIGHT}`}>
@@ -334,6 +363,17 @@ export function BlockingStudio({
           />
         </aside>
       </div>
+      {videoKeys && document ? (
+        <BlockingVideoDialog
+          plans={videoPlans}
+          onClose={() => setVideoKeys(null)}
+          onConfirm={(params, unitCredits) => {
+            setVideoKeys(null);
+            player?.pause();
+            void video.start(document, videoPlans, params, unitCredits);
+          }}
+        />
+      ) : null}
       {settingsOpen ? (
         <BlockingSettingsDialog
           open
@@ -395,6 +435,79 @@ function EditToolbar({
       <Button size="sm" variant="secondary" onClick={onCapture}>
         {t('captureView')}
       </Button>
+    </div>
+  );
+}
+
+function VideoActions({
+  episodeId,
+  disabled,
+  stale,
+  items,
+  running,
+  onGenerate,
+  onCancel,
+}: {
+  episodeId: string;
+  disabled: boolean;
+  stale: boolean;
+  items: SegmentVideoItem[];
+  running: boolean;
+  onGenerate: (scope: 'segment' | 'all') => void;
+  onCancel: () => void;
+}) {
+  const t = useTranslations('blockingStudio');
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          icon={<IconVideo className="size-4" />}
+          disabled={disabled}
+          onClick={() => onGenerate('segment')}
+        >
+          {t('videoSegment')}
+        </Button>
+        <Button size="sm" variant="secondary" disabled={disabled} onClick={() => onGenerate('all')}>
+          {t('videoAll')}
+        </Button>
+        {running ? (
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            {t('videoStop')}
+          </Button>
+        ) : null}
+        <span className="text-xs text-muted">{stale ? t('videoStaleHint') : t('videoHint')}</span>
+      </div>
+      {items.length > 0 ? (
+        <ul className="flex max-h-28 flex-col gap-1 overflow-y-auto text-xs" aria-live="polite">
+          {items.map((item) => (
+            <li key={item.key} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-text">{item.key}</span>
+              <span className={item.status === 'failed' ? 'text-danger' : 'text-muted'}>
+                {item.status === 'rendering'
+                  ? t('videoStatus.rendering', { percent: Math.round(item.progress * 100) })
+                  : t(`videoStatus.${item.status}`)}
+              </span>
+              {item.status === 'succeeded' && item.draftId ? (
+                <Link
+                  className="text-primary hover:underline"
+                  href={`/create/script/${episodeId}/clip?${new URLSearchParams({
+                    key: item.key,
+                    draftId: item.draftId,
+                  }).toString()}`}
+                >
+                  {t('videoOpen')}
+                </Link>
+              ) : null}
+              {item.status === 'failed' && item.error ? (
+                <span className="max-w-48 truncate text-danger" title={item.error}>
+                  {item.error}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

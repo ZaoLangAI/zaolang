@@ -56,7 +56,11 @@ export function rebuildBlocking(episodeId: string, signal?: AbortSignal) {
 }
 
 /** A manual edit (drag, preset pick). 409s when `baseVersionNo` is stale. */
-export function patchBlocking(episodeId: string, document: BlockingDocument, baseVersionNo: number) {
+export function patchBlocking(
+  episodeId: string,
+  document: BlockingDocument,
+  baseVersionNo: number,
+) {
   return api.patch<BlockingState>(`/v1/scripts/${episodeId}/blocking`, {
     document,
     base_version_no: baseVersionNo,

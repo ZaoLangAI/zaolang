@@ -173,10 +173,7 @@ function handheld(pose: CameraPose, t: number, intensity: number, seedKey: strin
   const amplitude = 0.015 + 0.05 * intensity;
   const right = cameraRight(pose);
   const jitter = add(scale(right, wave(0) * amplitude), scale(UP, wave(1) * amplitude * 0.7));
-  const aimJitter = add(
-    scale(right, wave(2) * amplitude * 1.5),
-    scale(UP, wave(1) * amplitude),
-  );
+  const aimJitter = add(scale(right, wave(2) * amplitude * 1.5), scale(UP, wave(1) * amplitude));
   return {
     position: add(pose.position, jitter),
     target: add(pose.target, aimJitter),

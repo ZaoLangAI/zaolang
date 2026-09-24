@@ -39851,6 +39851,18 @@
               }
             ],
             "title": "Last Frame Asset Id"
+          },
+          "reference_video_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "motion_guide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Video Role"
           }
         },
         "type": "object",

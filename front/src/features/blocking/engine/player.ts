@@ -226,7 +226,12 @@ export class BlockingPlayer {
       const from = pose
         ? new THREE.Vector3(...pose.position).sub(target).setLength(FREE_VIEW_DISTANCE)
         : new THREE.Vector3(6, 5, 8);
-      this.freeCamera.position.copy(target.clone().add(from).add(new THREE.Vector3(0, 2.5, 0)));
+      this.freeCamera.position.copy(
+        target
+          .clone()
+          .add(from)
+          .add(new THREE.Vector3(0, 2.5, 0)),
+      );
       this.controls?.target.copy(target);
       this.controls?.update();
     }

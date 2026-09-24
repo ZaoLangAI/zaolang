@@ -65,7 +65,10 @@ function buildStairs(material: THREE.Material): THREE.Group {
   return group;
 }
 
-export function buildProp(prop: BlockingProp, materials: Map<string, THREE.Material>): THREE.Object3D {
+export function buildProp(
+  prop: BlockingProp,
+  materials: Map<string, THREE.Material>,
+): THREE.Object3D {
   const key = prop.color_role;
   let material = materials.get(key);
   if (!material) {
@@ -148,7 +151,11 @@ export function buildStage(set: BlockingSet): StageGroup {
   owned.push(grid.geometry, grid.material as THREE.Material);
 
   const anchorGeometry = new THREE.RingGeometry(0.16, 0.22, 24).rotateX(-Math.PI / 2);
-  const anchorMaterial = new THREE.MeshBasicMaterial({ color: ANCHOR_MARK, transparent: true, opacity: 0.8 });
+  const anchorMaterial = new THREE.MeshBasicMaterial({
+    color: ANCHOR_MARK,
+    transparent: true,
+    opacity: 0.8,
+  });
   owned.push(anchorGeometry, anchorMaterial);
   for (const anchor of set.anchors ?? []) {
     const mark = new THREE.Mesh(anchorGeometry, anchorMaterial);

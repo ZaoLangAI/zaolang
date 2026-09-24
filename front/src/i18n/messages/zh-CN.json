@@ -1518,7 +1518,27 @@
     "shotSubject": "主体",
     "shotSubjectGroup": "全体",
     "shotEase": "节奏",
-    "clearManualCamera": "清除手动机位，恢复预设运镜"
+    "clearManualCamera": "清除手动机位，恢复预设运镜",
+    "videoSegment": "用本段白膜生成视频",
+    "videoAll": "全部分镜段生成视频",
+    "videoStop": "停止",
+    "videoHint": "白膜会渲染成参考视频，和角色图、场景图一起用于生成。",
+    "videoStaleHint": "文案有修改，建议先按新文案重建白膜。",
+    "videoDialogTitle": "按白膜生成 {count} 段视频",
+    "videoDialogHint": "每段白膜会在浏览器中渲染成参考视频并上传，只用于生成，不会公开。",
+    "videoConfirm": "开始生成",
+    "quoting": "正在估算积分…",
+    "videoUnlinked": "{names} 还没有关联角色图，外貌只能依据文案描述。",
+    "videoOpen": "查看",
+    "videoStatus": {
+      "queued": "排队中",
+      "rendering": "渲染白膜 {percent}%",
+      "uploading": "上传中",
+      "submitting": "提交中",
+      "running": "生成中",
+      "succeeded": "已完成",
+      "failed": "失败"
+    }
   },
   "brand": {
     "name": "造浪",

@@ -326,6 +326,16 @@ def _request_constraint_failure(
     if capability.aspect_ratios is not None and aspect_ratio not in capability.aspect_ratios:
         return "aspect_ratio_not_supported"
     video_options = params.get("video_options")
+    if isinstance(video_options, Mapping) and video_options.get("reference_video_role") == (
+        "motion_guide"
+    ):
+        # A 白膜 blockout clip is guidance, not the output: it must reach a
+        # reference-to-video model, never an edit model that would restyle
+        # the grey mannequins themselves.
+        if capability.generation_kind == MediaGenerationKind.EDIT:
+            return "edit_model_not_for_motion_guide"
+        if not capability.accepts_video_reference:
+            return "video_reference_not_supported"
     if isinstance(video_options, Mapping):
         raw_resolution = video_options.get("resolution")
         reference_mode = str(video_options.get("reference_mode") or "input_references")

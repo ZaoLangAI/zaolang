@@ -335,6 +335,12 @@ class ProviderCapability:
     # stance `reference_modes`/`aspect_ratios` take elsewhere in this
     # class) — `_request_constraint_failure` only filters when this is set.
     music_styles: frozenset[str] | None = None
+    # Whether this model takes a *video* among its multimodal references
+    # (MiniMax H3 / Seedance 2.5 / wan3.0 "reference-to-video"). Only
+    # consulted for a `reference_video_role="motion_guide"` request — a 白膜
+    # blockout clip must reach a model that reads it as guidance, never one
+    # that silently drops it or (an edit model) restyles it as the output.
+    accepts_video_reference: bool = False
 
 
 def probe_audio_duration_ms(payload: bytes, mime_type: str) -> int | None:

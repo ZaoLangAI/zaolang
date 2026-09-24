@@ -1,11 +1,4 @@
-import type {
-  CameraHeight,
-  CameraMove,
-  CameraSide,
-  CastAction,
-  MoveEase,
-  ShotSize,
-} from './types';
+import type { CameraHeight, CameraMove, CameraSide, CastAction, MoveEase, ShotSize } from './types';
 
 /**
  * The closed preset vocabulary, keyed exhaustively over the generated unions:

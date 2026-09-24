@@ -12891,6 +12891,8 @@ export interface components {
             first_frame_asset_id?: string | null;
             /** Last Frame Asset Id */
             last_frame_asset_id?: string | null;
+            /** Reference Video Role */
+            reference_video_role?: "motion_guide" | null;
         };
         /**
          * VideoPricingPayload

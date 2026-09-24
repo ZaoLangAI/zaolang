@@ -217,7 +217,7 @@ function isActiveStatus(status: BatchItemStatus): boolean {
   return status === 'queued' || status === 'submitting' || status === 'running';
 }
 
-async function submitJob(input: {
+export async function submitJob(input: {
   operation: Operation;
   qualityTier: QualityTier;
   prompt: string;
@@ -235,7 +235,11 @@ async function submitJob(input: {
     resolution?: '480p' | '720p' | '1080p' | '2K';
     reference_mode: 'input_references' | 'frame_images';
     first_frame_asset_id?: string | null;
+    /** A 白膜 render among `referenceAssetIds` — see
+     * `VideoGenerationOptions.reference_video_role`. */
+    reference_video_role?: 'motion_guide' | null;
   };
+  referenceAssetIds?: string[];
   linkEpisodeId?: string;
   linkBreakpointKey?: string;
   extra?: Record<string, unknown>;
@@ -270,7 +274,7 @@ async function submitJob(input: {
         prompt: input.prompt,
         aspect_ratio: input.aspectRatio,
         duration_seconds: input.durationSeconds,
-        reference_asset_ids: [],
+        reference_asset_ids: input.referenceAssetIds ?? [],
         video_options: input.videoOptions,
         character_ids: input.characterIds ?? [],
         scene_ids: input.sceneIds ?? [],
@@ -292,7 +296,7 @@ async function submitJob(input: {
   );
 }
 
-async function pollJob(jobId: string, signal: AbortSignal): Promise<GenerationJob> {
+export async function pollJob(jobId: string, signal: AbortSignal): Promise<GenerationJob> {
   while (!signal.aborted) {
     const job = await api.get<GenerationJob>(`/v1/generation-jobs/${jobId}`);
     if (TERMINAL.has(job.status)) return job;

@@ -199,6 +199,9 @@ def dynamic_capabilities(session: Session) -> dict[str, ProviderCapability]:
                 ),
                 generation_kind=endpoint.generation_kind,
                 music_styles=_music_styles_for(endpoint.protocol, endpoint.model, tag),
+                accepts_video_reference=_accepts_video_reference(
+                    endpoint.protocol, endpoint.model, video_profile
+                ),
                 provider_factory=_factory(
                     endpoint_id=endpoint_id,
                     capability_tag=tag,
@@ -233,6 +236,33 @@ def _reference_modes_for(
         modes = getattr(video_profile, "reference_modes", None)
         return modes or None
     return None
+
+
+def _accepts_video_reference(
+    protocol: str | None,
+    model: str,
+    video_profile: NativeVideoModelProfile
+    | DmxApiVideoModelProfile
+    | MinimaxV2VideoModelProfile
+    | FalVideoModelProfile
+    | None,
+) -> bool:
+    """True only for a profiled model whose `input_references` shape carries
+    video items to the vendor as references: DMXAPI/MiniMax v2/fal H3,
+    Seedance 2.5 and wan3.0 (`reference_video` role / `reference_video_urls`),
+    and AiHubMix's native `minimax-h3` (`video_url` input references). A
+    model that *requires* a video (H3 regeneration) is an edit, not a
+    guided generation, and an unprofiled model is unknown — both stay out."""
+    if video_profile is None:
+        return False
+    if protocol == "minimax":
+        return model.strip().lower() == MINIMAX_H3_MODEL
+    if protocol in {"dmxapi", "minimax_v2", "fal"}:
+        if getattr(video_profile, "requires_video_reference", False):
+            return False
+        modes = getattr(video_profile, "reference_modes", None) or frozenset()
+        return "input_references" in modes
+    return False
 
 
 def _music_styles_for(protocol: str | None, model: str, tag: str) -> frozenset[str] | None:

@@ -53,8 +53,7 @@ interface GestureSpan {
 }
 
 type YawState =
-  | { kind: 'fixed'; deg: number }
-  | { kind: 'target'; target: string; fallback: number };
+  { kind: 'fixed'; deg: number } | { kind: 'target'; target: string; fallback: number };
 
 interface YawEvent {
   t: number;

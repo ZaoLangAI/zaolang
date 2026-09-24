@@ -33,7 +33,9 @@ export default async function BlockingStudioPage({
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 py-6 sm:px-6">
       <GoBackLink fallbackHref={backHref}>{t('backToScript')}</GoBackLink>
-      <PageHeading title={detail?.title ? t('titleWithScript', { title: detail.title }) : t('title')} />
+      <PageHeading
+        title={detail?.title ? t('titleWithScript', { title: detail.title }) : t('title')}
+      />
       {unavailable ? (
         <EmptyState title={t('unavailableTitle')} description={t('unavailableHint')} />
       ) : noScript ? (

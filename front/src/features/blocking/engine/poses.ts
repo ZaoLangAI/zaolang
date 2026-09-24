@@ -42,10 +42,9 @@ export interface Pose {
 const zero = (): Euler3 => [0, 0, 0];
 
 function pose(partial: Partial<Record<JointName, Euler3>>, extra: Partial<Pose> = {}): Pose {
-  const joints = Object.fromEntries(JOINTS.map((name) => [name, partial[name] ?? zero()])) as Record<
-    JointName,
-    Euler3
-  >;
+  const joints = Object.fromEntries(
+    JOINTS.map((name) => [name, partial[name] ?? zero()]),
+  ) as Record<JointName, Euler3>;
   return { hipsDrop: 0, bodyPitch: 0, ...extra, joints };
 }
 

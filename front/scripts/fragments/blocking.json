@@ -153,7 +153,27 @@
       "shotSubject": "主体",
       "shotSubjectGroup": "全体",
       "shotEase": "节奏",
-      "clearManualCamera": "清除手动机位，恢复预设运镜"
+      "clearManualCamera": "清除手动机位，恢复预设运镜",
+      "videoSegment": "用本段白膜生成视频",
+      "videoAll": "全部分镜段生成视频",
+      "videoStop": "停止",
+      "videoHint": "白膜会渲染成参考视频，和角色图、场景图一起用于生成。",
+      "videoStaleHint": "文案有修改，建议先按新文案重建白膜。",
+      "videoDialogTitle": "按白膜生成 {count} 段视频",
+      "videoDialogHint": "每段白膜会在浏览器中渲染成参考视频并上传，只用于生成，不会公开。",
+      "videoConfirm": "开始生成",
+      "quoting": "正在估算积分…",
+      "videoUnlinked": "{names} 还没有关联角色图，外貌只能依据文案描述。",
+      "videoOpen": "查看",
+      "videoStatus": {
+        "queued": "排队中",
+        "rendering": "渲染白膜 {percent}%",
+        "uploading": "上传中",
+        "submitting": "提交中",
+        "running": "生成中",
+        "succeeded": "已完成",
+        "failed": "失败"
+      }
     },
     "scriptStudio": {
       "turnOriginBlocking": "白膜",
@@ -316,7 +336,27 @@
       "shotSubject": "Subject",
       "shotSubjectGroup": "Everyone",
       "shotEase": "Pacing",
-      "clearManualCamera": "Clear manual camera and use the preset move"
+      "clearManualCamera": "Clear manual camera and use the preset move",
+      "videoSegment": "Generate this segment",
+      "videoAll": "Generate all segments",
+      "videoStop": "Stop",
+      "videoHint": "The blockout is rendered as a reference video and used with the character and scene images.",
+      "videoStaleHint": "The script changed; rebuild the blockout first.",
+      "videoDialogTitle": "Generate {count} segments from the blockout",
+      "videoDialogHint": "Each segment is rendered in your browser and uploaded as a private reference used only for generation.",
+      "videoConfirm": "Start",
+      "quoting": "Estimating credits…",
+      "videoUnlinked": "{names} have no linked character image; their look comes from the script only.",
+      "videoOpen": "Open",
+      "videoStatus": {
+        "queued": "Queued",
+        "rendering": "Rendering {percent}%",
+        "uploading": "Uploading",
+        "submitting": "Submitting",
+        "running": "Generating",
+        "succeeded": "Done",
+        "failed": "Failed"
+      }
     },
     "scriptStudio": {
       "turnOriginBlocking": "Blockout",
@@ -479,7 +519,27 @@
       "shotSubject": "被写体",
       "shotSubjectGroup": "全員",
       "shotEase": "テンポ",
-      "clearManualCamera": "手動カメラを解除してプリセットに戻す"
+      "clearManualCamera": "手動カメラを解除してプリセットに戻す",
+      "videoSegment": "このセグメントを生成",
+      "videoAll": "全セグメントを生成",
+      "videoStop": "停止",
+      "videoHint": "ブロックアウトを参照動画としてレンダリングし、キャラクター画像・シーン画像と一緒に生成に使います。",
+      "videoStaleHint": "脚本が変更されています。先にブロックアウトを再構築してください。",
+      "videoDialogTitle": "ブロックアウトから {count} セグメントを生成",
+      "videoDialogHint": "各セグメントはブラウザでレンダリングされ、生成専用の非公開参照としてアップロードされます。",
+      "videoConfirm": "生成を開始",
+      "quoting": "クレジットを見積もり中…",
+      "videoUnlinked": "{names} にはキャラクター画像が紐づいていないため、外見は脚本の記述のみに基づきます。",
+      "videoOpen": "開く",
+      "videoStatus": {
+        "queued": "待機中",
+        "rendering": "レンダリング {percent}%",
+        "uploading": "アップロード中",
+        "submitting": "送信中",
+        "running": "生成中",
+        "succeeded": "完了",
+        "failed": "失敗"
+      }
     },
     "scriptStudio": {
       "turnOriginBlocking": "ブロックアウト",

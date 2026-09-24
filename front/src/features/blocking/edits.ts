@@ -1,9 +1,4 @@
-import type {
-  BlockingCameraOverride,
-  BlockingDocument,
-  BlockingShot,
-  Vec3,
-} from './types';
+import type { BlockingCameraOverride, BlockingDocument, BlockingShot, Vec3 } from './types';
 
 /**
  * Manual 白膜 edits as pure document transforms. The drag editor and the

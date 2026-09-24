@@ -3,7 +3,14 @@
 import { useTranslations } from 'next-intl';
 
 import { Button, IconButton } from '@/components/ui/button';
-import { IconEye, IconEyeOff, IconGear, IconPause, IconPlay, IconRefresh } from '@/components/ui/icons';
+import {
+  IconEye,
+  IconEyeOff,
+  IconGear,
+  IconPause,
+  IconPlay,
+  IconRefresh,
+} from '@/components/ui/icons';
 import { cn } from '@/lib/cn';
 
 import { usePlayerClock } from './blocking-viewport';

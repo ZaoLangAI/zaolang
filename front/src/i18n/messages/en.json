@@ -1518,7 +1518,27 @@
     "shotSubject": "Subject",
     "shotSubjectGroup": "Everyone",
     "shotEase": "Pacing",
-    "clearManualCamera": "Clear manual camera and use the preset move"
+    "clearManualCamera": "Clear manual camera and use the preset move",
+    "videoSegment": "Generate this segment",
+    "videoAll": "Generate all segments",
+    "videoStop": "Stop",
+    "videoHint": "The blockout is rendered as a reference video and used with the character and scene images.",
+    "videoStaleHint": "The script changed; rebuild the blockout first.",
+    "videoDialogTitle": "Generate {count} segments from the blockout",
+    "videoDialogHint": "Each segment is rendered in your browser and uploaded as a private reference used only for generation.",
+    "videoConfirm": "Start",
+    "quoting": "Estimating credits…",
+    "videoUnlinked": "{names} have no linked character image; their look comes from the script only.",
+    "videoOpen": "Open",
+    "videoStatus": {
+      "queued": "Queued",
+      "rendering": "Rendering {percent}%",
+      "uploading": "Uploading",
+      "submitting": "Submitting",
+      "running": "Generating",
+      "succeeded": "Done",
+      "failed": "Failed"
+    }
   },
   "brand": {
     "name": "ZaoLang",

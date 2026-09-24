@@ -1518,7 +1518,27 @@
     "shotSubject": "被写体",
     "shotSubjectGroup": "全員",
     "shotEase": "テンポ",
-    "clearManualCamera": "手動カメラを解除してプリセットに戻す"
+    "clearManualCamera": "手動カメラを解除してプリセットに戻す",
+    "videoSegment": "このセグメントを生成",
+    "videoAll": "全セグメントを生成",
+    "videoStop": "停止",
+    "videoHint": "ブロックアウトを参照動画としてレンダリングし、キャラクター画像・シーン画像と一緒に生成に使います。",
+    "videoStaleHint": "脚本が変更されています。先にブロックアウトを再構築してください。",
+    "videoDialogTitle": "ブロックアウトから {count} セグメントを生成",
+    "videoDialogHint": "各セグメントはブラウザでレンダリングされ、生成専用の非公開参照としてアップロードされます。",
+    "videoConfirm": "生成を開始",
+    "quoting": "クレジットを見積もり中…",
+    "videoUnlinked": "{names} にはキャラクター画像が紐づいていないため、外見は脚本の記述のみに基づきます。",
+    "videoOpen": "開く",
+    "videoStatus": {
+      "queued": "待機中",
+      "rendering": "レンダリング {percent}%",
+      "uploading": "アップロード中",
+      "submitting": "送信中",
+      "running": "生成中",
+      "succeeded": "完了",
+      "failed": "失敗"
+    }
   },
   "brand": {
     "name": "造浪",

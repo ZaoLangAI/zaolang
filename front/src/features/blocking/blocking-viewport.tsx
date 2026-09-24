@@ -110,9 +110,10 @@ export function BlockingViewport({
     const fit = () => {
       const { width, height } = area.getBoundingClientRect();
       if (width <= 0 || height <= 0) return;
-      const fitted = width / height > ratio
-        ? { width: height * ratio, height }
-        : { width, height: width / ratio };
+      const fitted =
+        width / height > ratio
+          ? { width: height * ratio, height }
+          : { width, height: width / ratio };
       setFrame({ width: Math.floor(fitted.width), height: Math.floor(fitted.height) });
     };
     // A ResizeObserver reports the initial size on `observe`, so no

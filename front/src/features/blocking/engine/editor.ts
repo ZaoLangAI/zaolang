@@ -181,7 +181,8 @@ export class BlockingEditor {
     );
     this.raycaster.setFromCamera(pointer, this.player.freeCamera);
     const candidates: THREE.Object3D[] = [this.cameraProxy];
-    for (const root of this.player.mannequinRoots().values()) if (root.visible) candidates.push(root);
+    for (const root of this.player.mannequinRoots().values())
+      if (root.visible) candidates.push(root);
     const setId = this.player.lastFrame?.segment.set.id;
     const stage = setId ? this.player.stageFor(setId) : undefined;
     if (stage && setId) candidates.push(...stage.props.values());
@@ -189,7 +190,8 @@ export class BlockingEditor {
       let node: THREE.Object3D | null = hit.object;
       while (node) {
         if (node.userData.camera) return { kind: 'camera' };
-        if (typeof node.userData.castId === 'string') return { kind: 'cast', castId: node.userData.castId };
+        if (typeof node.userData.castId === 'string')
+          return { kind: 'cast', castId: node.userData.castId };
         if (typeof node.userData.propId === 'string' && setId) {
           return { kind: 'prop', setId, propId: node.userData.propId };
         }
