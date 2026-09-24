@@ -39,7 +39,6 @@ from app.models.enums import (
     CreationSkillStatus,
     CreationSkillVisibility,
     MediaType,
-    Operation,
 )
 from app.presenters import media_urls
 
@@ -98,11 +97,6 @@ class CharacterView:
     @property
     def voice_description(self) -> str | None:
         return _payload(self.skill).get("voice_description") or None
-
-    @property
-    def preset_voice(self) -> str | None:
-        """The TTS voice id this character is dubbed with by default."""
-        return _payload(self.skill).get("preset_voice") or None
 
     @property
     def reference_assets(self) -> list[dict[str, Any]]:
@@ -304,7 +298,6 @@ def create_character(
     description: str | None,
     reference_asset_ids: list[str],
     voice_description: str | None,
-    preset_voice: str | None = None,
 ) -> CharacterView:
     title = _require_unique_character_name(session, user_id=user_id, name=name)
     refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
@@ -319,7 +312,6 @@ def create_character(
             CHARACTER_PARAMS_KEY: {
                 "description": clean_description,
                 "voice_description": (voice_description or "").strip() or None,
-                "preset_voice": (preset_voice or "").strip() or None,
                 "reference_assets": _entries_from_flat_ids(refs),
             }
         },
@@ -355,7 +347,6 @@ def update_character(
     description: str | None = None,
     reference_asset_ids: list[str] | None = None,
     voice_description: str | None = None,
-    preset_voice: str | None = None,
 ) -> CharacterView:
     skill = _owned_character_skill(session, user_id=user_id, character_id=character_id)
     payload = _payload(skill)
@@ -369,8 +360,6 @@ def update_character(
         skill.description = _short_description(clean)
     if voice_description is not None:
         payload["voice_description"] = voice_description.strip() or None
-    if preset_voice is not None:
-        payload["preset_voice"] = preset_voice.strip() or None
     if reference_asset_ids is not None:
         refs = _validate_reference_assets(session, user_id=user_id, asset_ids=reference_asset_ids)
         payload["reference_assets"] = _entries_from_flat_ids(refs)
@@ -584,24 +573,13 @@ def admin_portrait_consent_at(skill: CreationSkill) -> str | None:
 # ---- Generation + publish wiring ----------------------------------------
 
 
-def apply_character_refs(
-    session: Session,
-    *,
-    user_id: str,
-    params: dict[str, Any],
-    operation: str | None = None,
-) -> None:
+def apply_character_refs(session: Session, *, user_id: str, params: dict[str, Any]) -> None:
     """Merges the selected cast's reference images and voice hints into job params.
 
     Called right before a job is priced and persisted (`jobs/service.py`), so
     the merged `reference_asset_ids` becomes part of what the pipeline
     actually forwards to the provider. Explicitly-uploaded reference images
     keep their slots; character references fill whatever room is left.
-
-    An `audio_generation` job takes the cast's voice instead: its only
-    reference slot is a voice-clone sample, so character *images* are never
-    merged into it, and the first character with a `preset_voice` fills
-    `extra.voice` when the caller sent none.
     """
     character_ids = params.get("character_ids") or []
     if not character_ids:
@@ -617,28 +595,21 @@ def apply_character_refs(
         for cid in character_ids
     ]
 
-    is_audio = operation == Operation.AUDIO_GENERATION
-    if not is_audio:
-        merged_refs = list(params.get("reference_asset_ids") or [])
-        for character in characters:
-            for asset_id in character.reference_asset_ids:
-                if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:
-                    merged_refs.append(asset_id)
-        params["reference_asset_ids"] = merged_refs
+    merged_refs = list(params.get("reference_asset_ids") or [])
+    for character in characters:
+        for asset_id in character.reference_asset_ids:
+            if asset_id not in merged_refs and len(merged_refs) < MAX_JOB_REFERENCE_ASSETS:
+                merged_refs.append(asset_id)
+    params["reference_asset_ids"] = merged_refs
 
     extra = dict(params.get("extra") or {})
-    if is_audio and not extra.get("voice"):
-        preset = next((c.preset_voice for c in characters if c.preset_voice), None)
-        if preset:
-            extra["voice"] = preset
     extra["character_voice_profiles"] = [
         {
             "character_id": character.id,
             "name": character.name,
             "voice_description": character.voice_description,
-            "preset_voice": character.preset_voice,
         }
         for character in characters
-        if character.voice_description or character.preset_voice
+        if character.voice_description
     ]
     params["extra"] = extra

@@ -1,4 +1,4 @@
-import type { ScriptCharacter, ScriptDocument, ScriptEmotion, ScriptScene } from './api';
+import type { ScriptCharacter, ScriptDocument, ScriptScene } from './api';
 import {
   locateBreakpoint,
   orderedBreakpointKeys,
@@ -25,42 +25,7 @@ export interface PendingAudio {
   heading: string;
   blockIndex: number;
   character: string | null;
-  /** What gets spoken — a leading 「（冷笑）」-style direction is removed. */
   text: string;
-  /** The block's own `emotion`, else one read from that direction. Optional
-   * only because batches persisted before this field lack it. */
-  emotion?: ScriptEmotion | null;
-}
-
-// Checked in order: a sneer or wry smile is not "happy", so it is claimed
-// (with no emotion) before the plain 笑 rule can.
-const DIRECTION_EMOTIONS: ReadonlyArray<readonly [RegExp, ScriptEmotion | null]> = [
-  [/冷笑|苦笑|讥|嘲|讽/, null],
-  [/哭|哽咽|难过|伤心|悲|委屈/, 'sad'],
-  [/怒|吼|生气|咬牙|厉声/, 'angry'],
-  [/害怕|恐|颤抖|发抖|慌/, 'fear'],
-  [/惊讶|诧异|震惊|愣住/, 'surprise'],
-  [/笑|开心|高兴|兴奋|欢快/, 'happy'],
-  [/平静|淡淡|冷静/, 'calm'],
-];
-
-/**
- * Splits a leading stage direction off a dialogue line — 「（冷笑）你也配？」
- * → line 「你也配？」, direction 「冷笑」 — so TTS never reads the direction
- * aloud, and maps the direction onto the closed emotion set when it can.
- * A line that is nothing but a parenthetical is left whole.
- */
-export function parseDialogueDirection(text: string): {
-  line: string;
-  direction: string | null;
-  emotion: ScriptEmotion | null;
-} {
-  const match = /^\s*[（(]([^（）()]{1,12})[）)]\s*/.exec(text);
-  const line = match ? text.slice(match[0].length).trim() : '';
-  if (!match || !line) return { line: text.trim(), direction: null, emotion: null };
-  const direction = (match[1] ?? '').trim();
-  const emotion = DIRECTION_EMOTIONS.find(([pattern]) => pattern.test(direction))?.[1] ?? null;
-  return { line, direction, emotion };
 }
 
 /** `{heading}#L{blockIndex}` — stable because `blockIndex` never shifts for
@@ -214,15 +179,12 @@ export function pendingDialogueLines(
       if (block.type !== 'dialogue' || !block.text.trim()) return;
       const key = dialogueLineKey(scene.heading, blockIndex);
       if (dubbedKeys.has(key) || inFlightKeys.has(key)) return;
-      const spoken = parseDialogueDirection(block.text);
-      const emotion = block.emotion ?? spoken.emotion;
       pending.push({
         key,
         heading: scene.heading,
         blockIndex,
         character: block.character,
-        text: spoken.line,
-        ...(emotion ? { emotion } : {}),
+        text: block.text.trim(),
       });
     });
   }

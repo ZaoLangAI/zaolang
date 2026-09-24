@@ -47,9 +47,6 @@ export interface BatchParams {
   /** Only meaningful for `kind: 'audio'` — the voice every dubbed line in
    * this batch is submitted with (see `PendingAudio`/`runAudio`). */
   voice?: string;
-  /** Audio only: script speaker name → voice, overriding `voice` for that
-   * speaker's lines. Seeded from each linked character card's preset voice. */
-  voiceByCharacter?: Record<string, string>;
 }
 
 export const DEFAULT_CHARACTER_PARAMS: BatchParams = {
@@ -622,7 +619,6 @@ export function useScriptBatch({
       if (signal.aborted) return 'aborted' as const;
       try {
         const existing = itemsRef.current.find((row) => row.kind === 'audio' && row.id === item.id);
-        const speakerVoice = audio.character ? params.voiceByCharacter?.[audio.character] : undefined;
         const job = await submitJob({
           operation: 'audio_generation',
           qualityTier: params.qualityTier,
@@ -633,12 +629,7 @@ export function useScriptBatch({
           draftId: existing?.draftId,
           linkEpisodeId: episodeId,
           linkBreakpointKey: audio.key,
-          // `emotion` is a closed, optional provider hint (`tts_direction.py`);
-          // a model that takes no direction just voices the line plainly.
-          extra: {
-            voice: speakerVoice || params.voice || FALLBACK_VOICES[0],
-            ...(audio.emotion ? { emotion: audio.emotion } : {}),
-          },
+          extra: { voice: params.voice || FALLBACK_VOICES[0] },
           maxCredits: unitCredits,
         });
         patchItem('audio', item.id, {

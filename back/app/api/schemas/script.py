@@ -3,22 +3,16 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Literal
 
 from pydantic import Field
 
 from app.api.schemas.common import ApiModel
-
-ScriptEmotion = Literal["happy", "sad", "angry", "fear", "surprise", "calm"]
 
 
 class ScriptBlock(ApiModel):
     type: str
     character: str | None = None
     text: str
-    # Dialogue delivery for dubbing (`copywriter.SCRIPT_EMOTIONS`); null on
-    # every other block type and on a line said plainly.
-    emotion: ScriptEmotion | None = None
 
 
 class ScriptScene(ApiModel):

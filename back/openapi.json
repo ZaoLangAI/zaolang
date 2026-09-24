@@ -24598,18 +24598,6 @@
               }
             ],
             "title": "Voice Description"
-          },
-          "preset_voice": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 60
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preset Voice"
           }
         },
         "type": "object",
@@ -24805,17 +24793,6 @@
             ],
             "title": "Voice Description"
           },
-          "preset_voice": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preset Voice"
-          },
           "status": {
             "$ref": "#/components/schemas/CreationSkillStatus",
             "default": "draft"
@@ -24892,18 +24869,6 @@
               }
             ],
             "title": "Voice Description"
-          },
-          "preset_voice": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 60
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Preset Voice"
           }
         },
         "type": "object",
@@ -36427,25 +36392,6 @@
           "text": {
             "type": "string",
             "title": "Text"
-          },
-          "emotion": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "happy",
-                  "sad",
-                  "angry",
-                  "fear",
-                  "surprise",
-                  "calm"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Emotion"
           }
         },
         "type": "object",

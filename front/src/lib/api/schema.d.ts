@@ -6829,8 +6829,6 @@ export interface components {
             reference_asset_ids?: string[];
             /** Voice Description */
             voice_description?: string | null;
-            /** Preset Voice */
-            preset_voice?: string | null;
         };
         /** CharacterPublishRequest */
         CharacterPublishRequest: {
@@ -6900,8 +6898,6 @@ export interface components {
             action_clips?: components["schemas"]["CharacterActionClip"][];
             /** Voice Description */
             voice_description?: string | null;
-            /** Preset Voice */
-            preset_voice?: string | null;
             /** @default draft */
             status: components["schemas"]["CreationSkillStatus"];
             /** @default private */
@@ -6922,8 +6918,6 @@ export interface components {
             reference_asset_ids?: string[] | null;
             /** Voice Description */
             voice_description?: string | null;
-            /** Preset Voice */
-            preset_voice?: string | null;
         };
         /**
          * CharacterViewAngle
@@ -11460,8 +11454,6 @@ export interface components {
             character?: string | null;
             /** Text */
             text: string;
-            /** Emotion */
-            emotion?: ("happy" | "sad" | "angry" | "fear" | "surprise" | "calm") | null;
         };
         /** ScriptCharacter */
         ScriptCharacter: {

@@ -45,16 +45,6 @@ function defaultsFor(kind: BatchKind): BatchParams {
   return DEFAULT_VIDEO_PARAMS;
 }
 
-function initialParams(
-  kind: BatchKind,
-  defaultVoiceBySpeaker: Record<string, string> | undefined,
-): BatchParams {
-  const base = defaultsFor(kind);
-  return kind === 'audio' && defaultVoiceBySpeaker
-    ? { ...base, voiceByCharacter: { ...defaultVoiceBySpeaker } }
-    : base;
-}
-
 function aspectsFor(kind: BatchKind): string[] {
   if (kind === 'characters') return CHARACTER_ASPECTS;
   if (kind === 'scenes') return SCENE_ASPECTS;
@@ -67,8 +57,6 @@ export function ScriptBatchDialog({
   skipLinked,
   skipUnreferenced,
   existingRefByLabel,
-  speakers,
-  defaultVoiceBySpeaker,
   onClose,
   onConfirm,
 }: {
@@ -78,10 +66,6 @@ export function ScriptBatchDialog({
   skipUnreferenced: number;
   /** Script character name → library card id. Those rows default to skip. */
   existingRefByLabel?: Record<string, string>;
-  /** Audio only: the distinct speakers of the pending lines — each can get its own voice. */
-  speakers?: string[];
-  /** Audio only: a speaker's preset voice from their linked character card. */
-  defaultVoiceBySpeaker?: Record<string, string>;
   onClose: () => void;
   onConfirm: (params: BatchParams, quote: BatchQuote, skippedLabels: string[]) => void;
 }) {
@@ -91,9 +75,7 @@ export function ScriptBatchDialog({
   // it under `scriptStudio` — same "音色"/"选择生成语音使用的音色。" strings.
   const tAudio = useTranslations('remixPage');
   const locale = useLocale() as Locale;
-  const [params, setParams] = useState<BatchParams>(() =>
-    initialParams(kind ?? 'characters', defaultVoiceBySpeaker),
-  );
+  const [params, setParams] = useState<BatchParams>(() => defaultsFor(kind ?? 'characters'));
   const [quote, setQuote] = useState<BatchQuote | null>(null);
   const [quoteFailed, setQuoteFailed] = useState(false);
   const [quoting, setQuoting] = useState(false);
@@ -119,7 +101,7 @@ export function ScriptBatchDialog({
     setQuote(null);
     setQuoteFailed(false);
     setExtraSkip(new Set());
-    if (kind) setParams(initialParams(kind, defaultVoiceBySpeaker));
+    if (kind) setParams(defaultsFor(kind));
   }
 
   useEffect(() => {
@@ -245,45 +227,15 @@ export function ScriptBatchDialog({
                 }
               />
             ) : (
-              <>
-                <Select
-                  label={tAudio('voice')}
-                  hint={tAudio('voiceHint')}
-                  value={params.voice ?? audioVoices[0]}
-                  options={audioVoices.map((value) => ({ value, label: value }))}
-                  onChange={(event) =>
-                    setParams((current) => ({ ...current, voice: event.target.value }))
-                  }
-                />
-                {(speakers ?? []).map((speaker) => {
-                  const chosen = params.voiceByCharacter?.[speaker] ?? '';
-                  // A card's preset may come from a model not in the current
-                  // roster union — keep it selectable rather than blank.
-                  const voices =
-                    chosen && !audioVoices.includes(chosen) ? [chosen, ...audioVoices] : audioVoices;
-                  return (
-                    <Select
-                      key={speaker}
-                      label={speaker}
-                      value={chosen}
-                      options={[
-                        { value: '', label: t('batchVoiceUseDefault') },
-                        ...voices.map((value) => ({ value, label: value })),
-                      ]}
-                      onChange={(event) =>
-                        setParams((current) => ({
-                          ...current,
-                          voiceByCharacter: {
-                            ...current.voiceByCharacter,
-                            [speaker]: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  );
-                })}
-                <p className="text-xs text-muted sm:col-span-2">{t('batchVoiceByCharacterHint')}</p>
-              </>
+              <Select
+                label={tAudio('voice')}
+                hint={tAudio('voiceHint')}
+                value={params.voice ?? audioVoices[0]}
+                options={audioVoices.map((value) => ({ value, label: value }))}
+                onChange={(event) =>
+                  setParams((current) => ({ ...current, voice: event.target.value }))
+                }
+              />
             )}
             {kind === 'videos' ? (
               <>

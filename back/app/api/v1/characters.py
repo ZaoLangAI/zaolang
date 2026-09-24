@@ -37,7 +37,6 @@ def create_character(
         description=payload.description,
         reference_asset_ids=payload.reference_asset_ids,
         voice_description=payload.voice_description,
-        preset_voice=payload.preset_voice,
     )
     session.commit()
     return _character_response(session, character)
@@ -82,7 +81,6 @@ def update_character(
         description=payload.description,
         reference_asset_ids=payload.reference_asset_ids,
         voice_description=payload.voice_description,
-        preset_voice=payload.preset_voice,
     )
     session.commit()
     return _character_response(session, character)
@@ -196,7 +194,6 @@ def _character_response(session: Session, character: characters.CharacterView) -
             if entry.get("asset_id")
         ],
         voice_description=character.voice_description,
-        preset_voice=character.preset_voice,
         status=character.status,
         visibility=character.visibility,
         access_credits=character.access_credits,

@@ -500,19 +500,6 @@ export function ScriptEditor({
   const videoQueue = pendingVideos(currentScript, videoBindings, inflightVideos);
   const videoDisabled = !hasLinkedReference(currentScript);
   const audioQueue = pendingDialogueLines(currentScript, dubbedKeys, inflightAudios);
-  // Batch dubbing offers a voice per speaker, seeded from the speaker's
-  // linked character card (by `character_ref_id`, else by the same name).
-  const audioSpeakers = [
-    ...new Set(audioQueue.flatMap((line) => (line.character ? [line.character] : []))),
-  ];
-  const defaultVoiceBySpeaker: Record<string, string> = {};
-  for (const speaker of audioSpeakers) {
-    const refId = currentScript.characters.find((item) => item.name === speaker)?.character_ref_id;
-    const card =
-      (refId ? libraryItems.find((item) => item.id === refId) : undefined) ??
-      libraryByName.get(speaker.trim());
-    if (card?.preset_voice) defaultVoiceBySpeaker[speaker] = card.preset_voice;
-  }
   const batchProgress =
     batch.items.length === 0
       ? null
@@ -667,8 +654,6 @@ export function ScriptEditor({
       skipLinked={dialogSkipLinked}
       skipUnreferenced={dialogSkipUnreferenced}
       existingRefByLabel={batchKind === 'characters' ? existingRefByLabel : undefined}
-      speakers={batchKind === 'audio' ? audioSpeakers : undefined}
-      defaultVoiceBySpeaker={batchKind === 'audio' ? defaultVoiceBySpeaker : undefined}
       onClose={() => setBatchKind(null)}
       onConfirm={confirmBatch}
     />
