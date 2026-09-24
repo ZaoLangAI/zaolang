@@ -31,11 +31,12 @@ export async function renderSegmentToMp4(
   segmentKey: string,
   options: { signal?: AbortSignal; onProgress?: (progress: RenderProgress) => void } = {},
 ): Promise<Blob> {
-  const [{ BlockingPlayer }, mediabunny] = await Promise.all([
-    import('../engine/player'),
-    import('mediabunny'),
-  ]);
-  const { BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_MEDIUM } = mediabunny;
+  // Destructured straight off `await import(...)`, like `export-runner.ts`:
+  // holding the module namespace in a variable (e.g. through `Promise.all`)
+  // stops the bundler tree-shaking mediabunny and more than doubles its chunk.
+  const { BlockingPlayer } = await import('../engine/player');
+  const { BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_MEDIUM } =
+    await import('mediabunny');
   const size = EXPORT_SIZE[document.aspect_ratio];
   const canvas = window.document.createElement('canvas');
   canvas.width = size.width;
