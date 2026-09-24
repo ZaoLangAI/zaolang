@@ -73,7 +73,6 @@ export function ExportPanel({
   // is the visible one. On by default — 《人工智能生成合成内容标识办法》 asks
   // for an explicit label on synthetic video, so turning it off is a choice.
   const [aiLabel, setAiLabel] = useState(true);
-  const [normalizeLoudness, setNormalizeLoudness] = useState(true);
   const runner = useMemo(() => new SequentialExportRunner(), []);
   const controllerRef = useRef<AbortController | null>(null);
   const claimedExportIdRef = useRef<string | null>(null);
@@ -122,10 +121,7 @@ export function ExportPanel({
         caption_mode: 'burned' as const,
         max_duration_ticks: durationTicks,
       };
-      const renderOptions = {
-        ...(aiLabel ? { aiLabel: { text: t('exportAiLabelText') } } : {}),
-        normalizeLoudness,
-      };
+      const renderOptions = aiLabel ? { aiLabel: { text: t('exportAiLabelText') } } : {};
       let blob: Blob | undefined;
       for await (const step of runner.export(
         spec,
@@ -236,19 +232,6 @@ export function ExportPanel({
         <span>
           {t('exportAiLabel')}
           <span className="block text-xs text-muted">{t('exportAiLabelHint')}</span>
-        </span>
-      </label>
-      <label className="flex items-start gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={normalizeLoudness}
-          disabled={disabled || busy}
-          onChange={(event) => setNormalizeLoudness(event.target.checked)}
-          className="mt-1"
-        />
-        <span>
-          {t('exportNormalizeLoudness')}
-          <span className="block text-xs text-muted">{t('exportNormalizeLoudnessHint')}</span>
         </span>
       </label>
       <div className="flex flex-col gap-2">
