@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.licensing import service as licensing
+from app.domain.media.conform import conform_reference_video
 from app.models import (
     Asset,
     ContentFingerprint,
@@ -200,12 +201,30 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
         s3.delete_object(upload.object_key)
         raise ValidationFailed("文件校验和与申请时不一致。")
 
-    width, height, media_type = _probe(payload, upload.mime_type)
+    object_key = upload.object_key
+    mime_type = upload.mime_type
+    size_bytes = head["size_bytes"]
+    if upload.purpose == "generation_reference" and mime_type.startswith("video/"):
+        conformed = conform_reference_video(payload)
+        if conformed is not None:
+            # Stored beside the original under an `.mp4` name (some providers
+            # read the type off the URL), then the original goes. The session
+            # keeps the declared key/checksum: those described what was signed.
+            object_key = f"{upload.object_key.rsplit('.', 1)[0]}.mp4"
+            s3.put_object(object_key, conformed.payload, content_type=conformed.mime_type)
+            if object_key != upload.object_key:
+                s3.delete_object(upload.object_key)
+            payload = conformed.payload
+            mime_type = conformed.mime_type
+            size_bytes = len(payload)
+            actual_checksum = hashlib.sha256(payload).hexdigest()
+
+    width, height, media_type = _probe(payload, mime_type)
     duration_ms = None
     if media_type in {MediaType.VIDEO, MediaType.AUDIO}:
         from app.domain.editor.analysis import probe_bytes
 
-        probed_w, probed_h, duration_ms = probe_bytes(payload, upload.mime_type)
+        probed_w, probed_h, duration_ms = probe_bytes(payload, mime_type)
         width = width or probed_w
         height = height or probed_h
         if upload.purpose == "editor_export" and duration_ms is None and shutil.which("ffprobe"):
@@ -213,10 +232,10 @@ def complete_upload(session: Session, *, user_id: str, upload_session_id: str) -
 
     asset = Asset(
         owner_user_id=user_id,
-        object_key=upload.object_key,
+        object_key=object_key,
         media_type=media_type,
-        mime_type=upload.mime_type,
-        size_bytes=head["size_bytes"],
+        mime_type=mime_type,
+        size_bytes=size_bytes,
         checksum_sha256=actual_checksum,
         role=PURPOSE_TO_ROLE[upload.purpose],
         width=width,
