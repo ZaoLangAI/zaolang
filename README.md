@@ -103,7 +103,7 @@ docs/         文档站源码与运维手册
 
 ### 许可
 
-内部专有软件，见 [LICENSE](LICENSE)。未经授权不得复制、分发或对外提供。第三方组件（如 OpenCut）保留其原有开源声明。
+Apache License 2.0，见 [LICENSE](LICENSE)。第三方组件（如 OpenCut）保留其原有开源声明。
 
 ---
 

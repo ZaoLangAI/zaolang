@@ -165,7 +165,7 @@ Plan, price, confirm. A run rests at `awaiting_confirm` with a quote attached, a
 
 ## Licence
 
-This directory is **entirely first-party**. An earlier revision adapted three files from `tigerowo/infinite-canvas` (AGPL-3.0); all three were independently rewritten or removed, because the repo root `LICENSE` is internal-proprietary and AGPL §13 would have obliged the whole service to offer its source. See `zaolang-ci-release` invariant 4 — **do not** reintroduce AGPL-derived code or add an AGPL notice here.
+This directory is **entirely first-party**. An earlier revision adapted three files from `tigerowo/infinite-canvas` (AGPL-3.0); all three were independently rewritten or removed, because the repo root `LICENSE` is Apache-2.0 and AGPL §13's network-copyleft is incompatible with it. See `zaolang-ci-release` invariant 4 — **do not** reintroduce AGPL-derived code or add an AGPL notice here.
 
 ## Verify
 

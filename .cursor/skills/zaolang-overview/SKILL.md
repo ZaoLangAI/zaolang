@@ -5,7 +5,7 @@ description: The ZaoLang repository's master index and routing table — front/b
 
 # ZaoLang — Repository Overview
 
-A global AI co-creation sharing platform. **Read this routing table first, then explicitly load the matching module skill** — don't guess and edit blind. This repo's invariants concentrate in three places — the credit ledger, the job state machine, and licensing/lineage — and breaking one won't show up in a type check. The software licence is internal-proprietary (see root `LICENSE`); that's a separate thing from a work's license snapshot / lineage inside the product domain.
+A global AI co-creation sharing platform. **Read this routing table first, then explicitly load the matching module skill** — don't guess and edit blind. This repo's invariants concentrate in three places — the credit ledger, the job state machine, and licensing/lineage — and breaking one won't show up in a type check. The software licence is Apache-2.0 (see root `LICENSE`); that's a separate thing from a work's license snapshot / lineage inside the product domain.
 
 ## Repository Layout
 

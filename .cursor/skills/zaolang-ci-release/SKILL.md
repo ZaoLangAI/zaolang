@@ -1,6 +1,6 @@
 ---
 name: zaolang-ci-release
-description: Engineering delivery chain — local `make check` and pre-commit gates, local Docker images and one-command demo orchestration, manual version bumps, the MkDocs Material docs site, and the internal-proprietary licence baseline. Use when changing pre-commit hooks, Dockerfiles, the release compose file, version numbers, the docs site, or repository/licence baseline files.
+description: Engineering delivery chain — local `make check` and pre-commit gates, local Docker images and one-command demo orchestration, manual version bumps, the MkDocs Material docs site, and the Apache-2.0 licence baseline. Use when changing pre-commit hooks, Dockerfiles, the release compose file, version numbers, the docs site, or repository/licence baseline files.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Scope
 
-Guarantee "it builds, it ships, it's documented." This repo is internal-proprietary software. It does not use GitHub Actions, GHCR, release-please, or GitHub Pages. **Single-host remote deploy (rsync, `infra/docker-compose.prod.yml`, migrate, optional DB overwrite) is `zaolang-remote-deploy` — do not duplicate that runbook here.**
+Guarantee "it builds, it ships, it's documented." This repo is open-source under Apache-2.0. It does not use GitHub Actions, GHCR, release-please, or GitHub Pages. **Single-host remote deploy (rsync, `infra/docker-compose.prod.yml`, migrate, optional DB overwrite) is `zaolang-remote-deploy` — do not duplicate that runbook here.**
 
 ## Key Paths
 
@@ -26,7 +26,7 @@ Guarantee "it builds, it ships, it's documented." This repo is internal-propriet
 1. **The only gate is `make check`.** E2E and accessibility suites need a real database and seed data — they're an extra local suite, not something to fold into `make check` "to be safe" (that would make every commit depend on a full seeded database).
 2. **The autouse fake-gateway fixture inside `make check` must not be bypassed**: tests must be deterministic, key-free, and cost-free. Production code has no stub/auto mode — only `back/tests/fake_llm_gateway.py`'s monkeypatch (via `conftest.py`) keeps the suite offline. `@pytest.mark.live` smoke tests never run inside `make check` (`-m "not live"`); `@pytest.mark.real_gateway_seams` tests still run, they just skip the fake to exercise the real client's own failover/circuit-breaker logic against a mocked transport.
 3. **The version number lives in two places**: at release time, bump `front/package.json`'s `version` and sync `APP_VERSION`. Don't update only one. `NEXT_PUBLIC_APP_VERSION` is injected at build time but no consumer page renders it — `(site)/layout.tsx` has only `TopBar` + `main`, no footer; the version is visible in admin health (`health-cards.tsx`) and `/healthz`.
-4. **Internal-proprietary, not open-source compliance.** This repo's software licence is internal-proprietary (root `LICENSE`). The consumer site has no footer and shows no version, source link or licence notice — **do not** add a source-repo link or an AGPL notice. Third-party NOTICE/LICENSE files (e.g. OpenCut's MIT notice) must not be removed.
+4. **Apache-2.0, not internal-proprietary.** This repo's software licence is Apache-2.0 (root `LICENSE`). The consumer site still has no footer and shows no version or licence notice — that's a product-UI choice, not a licence-compliance requirement, so don't add one to the running app without the operator asking. Third-party NOTICE/LICENSE files (e.g. OpenCut's MIT notice) must not be removed, and any Apache-2.0 `NOTICE` file added at the repo root must ship unmodified with distributions.
 5. **`mkdocs.yml` is `strict: true`**: dead links and orphan pages fail the build. Adding a doc means adding it to `nav` too. `docs/performance-audit.md` currently sits outside `nav` (MkDocs only logs INFO for pages missing from `nav`, so strict mode doesn't catch it) — it's unreachable from the site; don't add more like it.
 6. **`docs/openapi.json` is a build artifact**: `make docs` / `make docs-build` copy it from `back/openapi.json` — never hand-edit it.
 7. **Docker images ship with ffmpeg/ffprobe**: the backend worker's `complete` and `media_analysis` steps depend on ffprobe. `back/Dockerfile` already installs it — don't strip it from the image.
