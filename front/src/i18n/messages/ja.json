@@ -1552,7 +1552,8 @@
       "cut": "カット",
       "continuous": "連続カメラワーク"
     },
-    "videoEmpty": "生成した動画はここと、脚本の該当セグメントに表示されます。"
+    "videoEmpty": "生成した動画はここと、脚本の該当セグメントに表示されます。",
+    "videoBrowserUnsupported": "このブラウザでは参照動画をレンダリングできません。最新の Chrome、Edge、Safari をお使いください。"
   },
   "brand": {
     "name": "造浪",

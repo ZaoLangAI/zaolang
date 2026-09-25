@@ -1552,7 +1552,8 @@
       "cut": "Cut",
       "continuous": "Continuous move"
     },
-    "videoEmpty": "Generated videos appear here and on the matching script segment."
+    "videoEmpty": "Generated videos appear here and on the matching script segment.",
+    "videoBrowserUnsupported": "This browser cannot render the reference video. Use a current Chrome, Edge or Safari."
   },
   "brand": {
     "name": "ZaoLang",

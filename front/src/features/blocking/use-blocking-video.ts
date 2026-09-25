@@ -7,7 +7,11 @@ import { isApiError } from '@/lib/api/errors';
 import type { QualityTier } from '@/lib/api/types';
 import { uploadFile } from '@/lib/upload';
 
-import { renderSegmentToMp4, segmentClipName } from './export/render-segment';
+import {
+  BrowserCannotEncodeError,
+  renderSegmentClip,
+  segmentClipName,
+} from './export/render-segment';
 import type { BlockingDocument } from './types';
 import type { SegmentVideoPlan } from './video-plan';
 
@@ -25,14 +29,18 @@ export interface SegmentVideoItem {
   error?: string;
 }
 
+/** `SegmentVideoItem.error` when this browser can neither encode nor
+ * record video; the panel shows a translated explanation instead. */
+export const BROWSER_CANNOT_ENCODE = 'browser_cannot_encode_video';
+
 export interface SegmentVideoParams {
   qualityTier: QualityTier;
   resolution: '480p' | '720p' | '1080p' | '2K';
 }
 
 /**
- * 白膜 → video, one segment at a time: render the segment's blockout to an
- * MP4 in the browser, upload it as a private generation reference, then
+ * 白膜 → video, one segment at a time: render the segment's blockout to a
+ * clip in the browser (MP4, or WebM where only recording is available), upload it as a private generation reference, then
  * submit a `text_to_video` job with that clip as the *motion guide* plus the
  * cast's character assets and the scene asset as appearance references.
  *
@@ -77,13 +85,15 @@ export function useBlockingVideo(episodeId: string) {
         if (signal.aborted) break;
         try {
           patch(plan.key, { status: 'rendering', progress: 0 });
-          const clip = await renderSegmentToMp4(document, plan.key, {
+          const clip = await renderSegmentClip(document, plan.key, {
             signal,
             onProgress: ({ fraction }) => patch(plan.key, { progress: fraction }),
           });
           patch(plan.key, { status: 'uploading', progress: 1 });
           const asset = await uploadFile(
-            new File([clip], segmentClipName(plan.key), { type: 'video/mp4' }),
+            new File([clip.blob], segmentClipName(plan.key, clip.extension), {
+              type: clip.mimeType,
+            }),
             'generation_reference',
           );
           patch(plan.key, { status: 'submitting' });
@@ -129,9 +139,11 @@ export function useBlockingVideo(episodeId: string) {
             status: 'failed',
             error: isApiError(error)
               ? error.message
-              : error instanceof Error
-                ? error.message
-                : 'failed',
+              : error instanceof BrowserCannotEncodeError
+                ? BROWSER_CANNOT_ENCODE
+                : error instanceof Error
+                  ? error.message
+                  : 'failed',
           });
           break;
         }
