@@ -35,10 +35,35 @@ const MIN_TRAVEL_METERS = 0.05;
 interface Move {
   t0: number;
   t1: number;
-  from: Vec3;
-  to: Vec3;
+  /** Planned route, both ends included — straight unless something is in
+   * the way (`obstacles.ts::WalkGrid.plan`). */
+  points: Vec3[];
+  /** Cumulative length at each point. */
+  cumulative: number[];
   distanceBefore: number;
   length: number;
+}
+
+/** Plans a walk; the default walks straight. */
+export type PathPlanner = (from: Vec3, to: Vec3, t0: number, t1: number) => Vec3[];
+
+const straight: PathPlanner = (from, to) => [from, to];
+/** How far ahead along the route a walker looks — turns start before the
+ * corner instead of snapping at it. */
+const LOOK_AHEAD_METERS = 0.45;
+
+function pointAlong(move: Move, distance: number): Vec3 {
+  const d = clamp(distance, 0, move.length);
+  for (let i = 1; i < move.points.length; i += 1) {
+    const end = move.cumulative[i]!;
+    if (d <= end || i === move.points.length - 1) {
+      const start = move.cumulative[i - 1]!;
+      const span = end - start;
+      const u = span > 1e-9 ? (d - start) / span : 1;
+      return lerpVec(move.points[i - 1]!, move.points[i]!, clamp(u, 0, 1));
+    }
+  }
+  return move.points.at(-1)!;
 }
 
 interface BaseEvent {
@@ -53,7 +78,9 @@ interface GestureSpan {
 }
 
 type YawState =
-  { kind: 'fixed'; deg: number } | { kind: 'target'; target: string; fallback: number };
+  | { kind: 'fixed'; deg: number }
+  | { kind: 'target'; target: string; fallback: number }
+  | { kind: 'travel'; move: number; fallback: number };
 
 interface YawEvent {
   t: number;
@@ -102,9 +129,14 @@ export class CastTrack {
   private readonly gestures: GestureSpan[] = [];
   private readonly yawEvents: YawEvent[] = [];
 
-  constructor(start: BlockingStartEntry, beats: BlockingBeat[]) {
+  constructor(
+    start: BlockingStartEntry,
+    beats: BlockingBeat[],
+    planner: PathPlanner = straight,
+    origin?: Vec3,
+  ) {
     this.id = start.cast_id;
-    this.origin = markPosition(start.at);
+    this.origin = origin ?? markPosition(start.at);
 
     const startBase: BaseAction = PERSISTENT_BASES.has(start.action)
       ? (start.action as BaseAction)
@@ -133,35 +165,45 @@ export class CastTrack {
       const moving = target !== null && travel > MIN_TRAVEL_METERS;
 
       if (moving && target) {
+        const points = planner(position, target, beat.t0, beat.t1);
+        const cumulative = [0];
+        for (let i = 1; i < points.length; i += 1) {
+          const a = points[i - 1]!;
+          const b = points[i]!;
+          cumulative.push(cumulative[i - 1]! + Math.hypot(b[0] - a[0], b[2] - a[2]));
+        }
+        const length = cumulative.at(-1)!;
+        const arrival = points.at(-1)!;
         this.moves.push({
           t0: beat.t0,
           t1: beat.t1,
-          from: position,
-          to: target,
+          points,
+          cumulative,
           distanceBefore: distance,
-          length: travel,
+          length,
         });
         const locomotion: BaseAction = beat.action === 'run' ? 'run' : 'walk';
         this.baseEvents.push({ t: beat.t0, base: locomotion });
-        const heading = yawTowards(position, target) ?? 0;
+        const lastLegStart = points.length >= 2 ? points.at(-2)! : position;
+        const heading = yawTowards(lastLegStart, arrival) ?? yawTowards(position, arrival) ?? 0;
         this.yawEvents.push({
           t: beat.t0,
-          state: { kind: 'fixed', deg: heading },
+          state: { kind: 'travel', move: this.moves.length - 1, fallback: heading },
           blend: TRAVEL_TURN_SECONDS,
         });
         // Arriving somewhere ends in the persistent pose the beat named
         // (`sit` at the chair), else back to standing.
         base = PERSISTENT_BASES.has(beat.action) ? (beat.action as BaseAction) : 'stand';
         this.baseEvents.push({ t: beat.t1, base });
-        if (beat.face) {
-          this.yawEvents.push({
-            t: beat.t1,
-            state: facingState(beat.face, heading),
-            blend: FACE_TURN_SECONDS,
-          });
-        }
-        distance += travel;
-        position = target;
+        // On arrival the walker keeps their last heading, or turns to what
+        // the beat says to face.
+        this.yawEvents.push({
+          t: beat.t1,
+          state: beat.face ? facingState(beat.face, heading) : { kind: 'fixed', deg: heading },
+          blend: beat.face ? FACE_TURN_SECONDS : 0,
+        });
+        distance += length;
+        position = arrival;
       } else {
         if (PERSISTENT_BASES.has(beat.action)) {
           base = beat.action as BaseAction;
@@ -196,11 +238,18 @@ export class CastTrack {
       if (t < move.t0) return position;
       if (t <= move.t1) {
         const u = move.t1 > move.t0 ? (t - move.t0) / (move.t1 - move.t0) : 1;
-        return lerpVec(move.from, move.to, moveProgress(u));
+        return pointAlong(move, moveProgress(u) * move.length);
       }
-      position = move.to;
+      position = move.points.at(-1)!;
     }
     return position;
+  }
+
+  /** Travelled distance along move `index` at time `t`. */
+  private along(index: number, t: number): number {
+    const move = this.moves[index]!;
+    const u = move.t1 > move.t0 ? (t - move.t0) / (move.t1 - move.t0) : 1;
+    return moveProgress(clamp(u, 0, 1)) * move.length;
   }
 
   private travel(t: number): { distance: number; speed: number } {
@@ -250,6 +299,11 @@ export class CastTrack {
 
   private yawOf(state: YawState, t: number, at: Vec3, resolve: TargetResolver): number {
     if (state.kind === 'fixed') return state.deg;
+    if (state.kind === 'travel') {
+      const move = this.moves[state.move]!;
+      const ahead = pointAlong(move, this.along(state.move, t) + LOOK_AHEAD_METERS);
+      return yawTowards(at, ahead) ?? state.fallback;
+    }
     const target = resolve(state.target, t);
     if (!target) return state.fallback;
     return yawTowards(at, target) ?? state.fallback;
@@ -293,7 +347,7 @@ export class CastTrack {
    * set starts from its own `start`, but tools (e.g. the picker's preview)
    * want this. */
   endPosition(): Vec3 {
-    return this.moves.at(-1)?.to ?? this.origin;
+    return this.moves.at(-1)?.points.at(-1) ?? this.origin;
   }
 }
 

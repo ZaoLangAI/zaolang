@@ -52,6 +52,9 @@ CameraMove = Literal[
     "handheld",
 ]
 MoveEase = Literal["linear", "in_out"]
+# How a shot begins relative to the one before it inside the same segment:
+# a hard `cut`, or a `continuous` camera move from the previous framing.
+ShotTransition = Literal["cut", "continuous"]
 BlockingOrigin = Literal["llm_turn", "rebuild", "manual"]
 
 ASPECT_RATIOS: tuple[str, ...] = get_args(BlockingAspectRatio)
@@ -64,6 +67,7 @@ CAMERA_HEIGHTS: tuple[str, ...] = get_args(CameraHeight)
 CAMERA_SIDES: tuple[str, ...] = get_args(CameraSide)
 CAMERA_MOVES: tuple[str, ...] = get_args(CameraMove)
 MOVE_EASES: tuple[str, ...] = get_args(MoveEase)
+SHOT_TRANSITIONS: tuple[str, ...] = get_args(ShotTransition)
 
 # Chinese glosses the `blocking_derive` prompt pairs with each token, so the
 # model maps the script's own camera language (「缓慢推近」) onto a preset
@@ -143,6 +147,10 @@ MAX_ANCHORS_PER_SET = 24
 MAX_CAST = 8
 MAX_SEGMENTS = 120
 MAX_BEATS_PER_SEGMENT = 16
+# A segment is one generated clip, but the camera may change inside it —
+# one shot per script `camera` block, typically.
+MAX_SHOTS_PER_SEGMENT = 6
+MIN_SHOT_SECONDS = 1.0
 MAX_ID_LEN = 24
 MAX_LABEL_LEN = 20
 STAGE_MIN_METERS = 4.0

@@ -19,18 +19,30 @@ export async function* streamPost(
   const token = options?.getToken
     ? await options.getToken()
     : (getAccessToken() ?? (await refreshAccessToken()));
-  const response = await fetch(buildUrl(path), {
-    method: 'POST',
-    headers: {
-      accept: 'text/event-stream',
-      'content-type': 'application/json',
-      'idempotency-key': newIdempotencyKey(),
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    credentials: 'include',
-    body: JSON.stringify(body),
-    signal,
-  });
+  // One key for the logical request, so the retry below is recognised as
+  // the same turn rather than a second one.
+  const idempotencyKey = newIdempotencyKey();
+  const open = (bearer: string | null) =>
+    fetch(buildUrl(path), {
+      method: 'POST',
+      headers: {
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+        'idempotency-key': idempotencyKey,
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify(body),
+      signal,
+    });
+  let response = await open(token);
+  // An access token that expired while the page sat open is routine, not a
+  // logout — same single refresh-and-retry `apiRequest` does. A 401 always
+  // arrives before any event is streamed, so retrying cannot duplicate one.
+  if (response.status === 401 && !options?.getToken) {
+    const fresh = await refreshAccessToken();
+    if (fresh) response = await open(fresh);
+  }
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => '');
     let parsed: ApiErrorBody | undefined;

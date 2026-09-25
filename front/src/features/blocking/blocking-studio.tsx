@@ -4,10 +4,10 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { IconVideo, IconWand } from '@/components/ui/icons';
-import { Link } from '@/i18n/navigation';
-import { EmptyState } from '@/components/ui/primitives';
+import { IconMessage, IconVideo, IconWand } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
+import { Link } from '@/i18n/navigation';
+import { cn } from '@/lib/cn';
 import { useToast } from '@/components/ui/toast';
 import * as scriptApi from '@/features/script/api';
 import type { ScriptDetail } from '@/features/script/api';
@@ -19,7 +19,7 @@ import { useResource } from '@/lib/use-resource';
 
 import * as blockingApi from './api';
 import type { BlockingPhase, BlockingTurnCompleteEvent } from './api';
-import { SegmentInspector, SegmentScrubber, StaleBanner, TransportBar } from './blocking-controls';
+import { SegmentScrubber, StaleBanner, TransportBar } from './blocking-controls';
 import { BlockingSettingsDialog } from './blocking-settings-dialog';
 import { BlockingViewport } from './blocking-viewport';
 import { compileBlocking } from './compiler/compile';
@@ -29,7 +29,7 @@ import type { BlockingPlayer, CastLabel, ViewMode } from './engine/player';
 import { castColor } from './palette';
 import type { AspectRatio, BlockingState } from './types';
 import { BlockingVideoDialog } from './blocking-video-dialog';
-import { ShotPicker } from './shot-picker';
+import { ShotPanel } from './shot-panel';
 import { useBlockingVideo, type SegmentVideoItem } from './use-blocking-video';
 import { planSegmentVideos } from './video-plan';
 import { useBlockingSave } from './use-blocking-save';
@@ -53,12 +53,17 @@ function characterImage(character: Character | undefined): string | null {
   return front?.url ?? assets.find((asset) => asset.url)?.url ?? null;
 }
 
+type PanelTab = 'chat' | 'shots' | 'video';
+
 /**
- * The 纯白膜创作 workspace: the live 3D blockout on the left two-thirds (with
- * transport, a segment scrubber and the playing segment's shot), and the
- * same conversational panel as 文案创作 on the right. A message here can
- * rewrite the script *and* re-stage the blockout in one turn; the script
- * page sees these turns in its own history (tagged 白膜).
+ * The 纯白膜创作 workspace. Desktop: the live 3D blockout fills the left
+ * column (viewport, one slim transport row, the scrubber) and a tabbed side
+ * panel holds the chat (对话), the playing segment's shots (镜头) and video
+ * generation (生成) — nothing is stacked under the viewport to squeeze it.
+ * Phones: the same pieces stacked, viewport first.
+ *
+ * A chat message can rewrite the script *and* re-stage the blockout in one
+ * turn; the script page sees these turns in its own history (tagged 白膜).
  */
 export function BlockingStudio({
   episodeId,
@@ -78,6 +83,7 @@ export function BlockingStudio({
   const [savingSettings, setSavingSettings] = useState(false);
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>('translate');
   const [selection, setSelection] = useState<EditorSelection>(null);
+  const [tab, setTab] = useState<PanelTab>('chat');
   const editorRef = useRef<BlockingEditor | null>(null);
   const stream = useBlockingStream();
   const video = useBlockingVideo(episodeId);
@@ -238,17 +244,22 @@ export function BlockingStudio({
   const phaseLabel = (phase: BlockingPhase | null) =>
     phase ? t(`phase.${phase}`) : t('phase.route');
   const busy = stream.streaming;
-  const PANEL_HEIGHT = 'md:h-[max(34rem,calc(100dvh-13rem))]';
+  const videoRunning = video.items.filter(
+    (item) => item.status !== 'succeeded' && item.status !== 'failed',
+  ).length;
+
+  const tabs: { id: PanelTab; label: string; badge?: number }[] = [
+    { id: 'chat', label: t('tabChat') },
+    { id: 'shots', label: t('tabShots') },
+    { id: 'video', label: t('tabVideo'), badge: videoRunning || undefined },
+  ];
 
   return (
     <>
-      <div className="md:hidden">
-        <EmptyState title={t('gateTitle')} description={t('gateHint')} />
-      </div>
-      <div className="hidden gap-4 md:grid lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,25rem)] lg:gap-4">
         <section
           aria-label={t('viewportLabel')}
-          className={`flex min-h-[32rem] flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-3 ${PANEL_HEIGHT}`}
+          className="flex h-[62dvh] min-h-[22rem] min-w-0 flex-col gap-2 lg:h-auto lg:min-h-0"
         >
           {state.stale && document ? (
             <StaleBanner
@@ -331,36 +342,87 @@ export function BlockingStudio({
             staleKeys={staleKeys}
             disabled={busy}
           />
-          <SegmentInspector player={player} document={document} />
-          <ShotPicker player={player} document={document} disabled={busy} onEdit={edit} />
-          {document ? (
-            <VideoActions
-              episodeId={episodeId}
-              disabled={busy || video.running}
-              stale={state.stale}
-              items={video.items}
-              running={video.running}
-              onGenerate={openVideo}
-              onCancel={video.cancel}
-            />
-          ) : null}
         </section>
 
-        <aside className={`flex min-h-[28rem] flex-col ${PANEL_HEIGHT}`}>
-          <ScriptChatPanel
-            turns={detail.turns}
-            selectedTurnId={null}
-            onSend={(message) => sendTurn(message)}
-            streaming={busy}
-            liveText={stream.liveText}
-            liveThinking={stream.liveThinking}
-            streamError={stream.error}
-            allowSkillMentions={false}
-            placeholder={t('placeholder')}
-            emptyHint={t('chatEmpty')}
-            liveLabel={phaseLabel(stream.phase)}
-            liveBodyPlaceholder={t('bodyPlaceholder')}
-          />
+        <aside className="flex h-[75dvh] min-h-[26rem] min-w-0 flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface lg:h-auto lg:min-h-0">
+          <div
+            role="tablist"
+            aria-label={t('panelLabel')}
+            className="flex shrink-0 border-b border-border"
+          >
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                id={`blocking-tab-${item.id}`}
+                aria-selected={tab === item.id}
+                aria-controls={`blocking-panel-${item.id}`}
+                onClick={() => setTab(item.id)}
+                className={cn(
+                  'relative flex h-11 flex-1 items-center justify-center gap-1.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+                  tab === item.id ? 'text-text' : 'text-muted hover:text-text',
+                )}
+              >
+                {item.label}
+                {item.badge ? (
+                  <span className="rounded-full bg-primary px-1.5 text-[10px] leading-4 text-on-primary">
+                    {item.badge}
+                  </span>
+                ) : null}
+                {tab === item.id ? (
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-primary"
+                  />
+                ) : null}
+              </button>
+            ))}
+          </div>
+          <div
+            role="tabpanel"
+            id={`blocking-panel-${tab}`}
+            aria-labelledby={`blocking-tab-${tab}`}
+            className={cn(
+              'min-h-0 flex-1 p-3',
+              tab === 'chat' ? 'flex flex-col' : 'overflow-y-auto',
+            )}
+          >
+            {tab === 'chat' ? (
+              <ScriptChatPanel
+                turns={detail.turns}
+                selectedTurnId={null}
+                onSend={(message) => sendTurn(message)}
+                streaming={busy}
+                liveText={stream.liveText}
+                liveThinking={stream.liveThinking}
+                streamError={stream.error}
+                allowSkillMentions={false}
+                placeholder={t('placeholder')}
+                emptyHint={t('chatEmpty')}
+                liveLabel={phaseLabel(stream.phase)}
+                liveBodyPlaceholder={t('bodyPlaceholder')}
+              />
+            ) : null}
+            {tab === 'shots' ? (
+              <ShotPanel player={player} document={document} disabled={busy} onEdit={edit} />
+            ) : null}
+            {tab === 'video' ? (
+              document ? (
+                <VideoActions
+                  episodeId={episodeId}
+                  disabled={busy || video.running}
+                  stale={state.stale}
+                  items={video.items}
+                  running={video.running}
+                  onGenerate={openVideo}
+                  onCancel={video.cancel}
+                />
+              ) : (
+                <p className="text-sm text-muted">{t('emptyHint')}</p>
+              )
+            ) : null}
+          </div>
         </aside>
       </div>
       {videoKeys && document ? (
@@ -410,7 +472,7 @@ function EditToolbar({
         ? ['translate', 'rotate']
         : ['translate', 'rotate', 'scale'];
   return (
-    <div className="absolute inset-x-2 top-2 flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface/90 p-1.5 text-xs shadow-card">
+    <div className="absolute left-2 top-2 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-border bg-surface/90 p-1.5 text-xs shadow-card">
       <div role="radiogroup" aria-label={t('gizmoLabel')} className="flex gap-1">
         {modes.map((option) => (
           <button
@@ -419,17 +481,18 @@ function EditToolbar({
             role="radio"
             aria-checked={mode === option}
             onClick={() => onModeChange(option)}
-            className={
+            className={cn(
+              'h-8 rounded-[calc(var(--radius-sm)-2px)] px-2.5 focus-visible:outline-2 focus-visible:outline-focus',
               mode === option
-                ? 'h-8 rounded-[calc(var(--radius-sm)-2px)] bg-primary/15 px-2.5 font-medium text-text'
-                : 'h-8 rounded-[calc(var(--radius-sm)-2px)] px-2.5 text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-focus'
-            }
+                ? 'bg-primary/15 font-medium text-text'
+                : 'text-muted hover:text-text',
+            )}
           >
             {t(`gizmo.${option}`)}
           </button>
         ))}
       </div>
-      <span className="min-w-0 flex-1 truncate text-muted">
+      <span className="hidden min-w-0 max-w-56 truncate text-muted sm:inline">
         {selectionLabel ? t('selected', { name: selectionLabel }) : t('editHint')}
       </span>
       <Button size="sm" variant="secondary" onClick={onCapture}>
@@ -458,56 +521,63 @@ function VideoActions({
 }) {
   const t = useTranslations('blockingStudio');
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted">{stale ? t('videoStaleHint') : t('videoHint')}</p>
+      <div className="grid gap-2">
         <Button
-          size="sm"
           icon={<IconVideo className="size-4" />}
           disabled={disabled}
           onClick={() => onGenerate('segment')}
         >
           {t('videoSegment')}
         </Button>
-        <Button size="sm" variant="secondary" disabled={disabled} onClick={() => onGenerate('all')}>
+        <Button variant="secondary" disabled={disabled} onClick={() => onGenerate('all')}>
           {t('videoAll')}
         </Button>
         {running ? (
-          <Button size="sm" variant="ghost" onClick={onCancel}>
+          <Button variant="ghost" onClick={onCancel}>
             {t('videoStop')}
           </Button>
         ) : null}
-        <span className="text-xs text-muted">{stale ? t('videoStaleHint') : t('videoHint')}</span>
       </div>
       {items.length > 0 ? (
-        <ul className="flex max-h-28 flex-col gap-1 overflow-y-auto text-xs" aria-live="polite">
+        <ul className="flex flex-col gap-2 text-sm" aria-live="polite">
           {items.map((item) => (
-            <li key={item.key} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-text">{item.key}</span>
-              <span className={item.status === 'failed' ? 'text-danger' : 'text-muted'}>
+            <li
+              key={item.key}
+              className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2"
+            >
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-text">{item.key}</span>
+                {item.status === 'succeeded' && item.draftId ? (
+                  <Link
+                    className="shrink-0 text-primary hover:underline"
+                    href={`/create/script/${episodeId}/clip?${new URLSearchParams({
+                      key: item.key,
+                      draftId: item.draftId,
+                    }).toString()}`}
+                  >
+                    {t('videoOpen')}
+                  </Link>
+                ) : null}
+              </div>
+              <span
+                className={cn('text-xs', item.status === 'failed' ? 'text-danger' : 'text-muted')}
+              >
                 {item.status === 'rendering'
                   ? t('videoStatus.rendering', { percent: Math.round(item.progress * 100) })
                   : t(`videoStatus.${item.status}`)}
+                {item.status === 'failed' && item.error ? ` · ${item.error}` : ''}
               </span>
-              {item.status === 'succeeded' && item.draftId ? (
-                <Link
-                  className="text-primary hover:underline"
-                  href={`/create/script/${episodeId}/clip?${new URLSearchParams({
-                    key: item.key,
-                    draftId: item.draftId,
-                  }).toString()}`}
-                >
-                  {t('videoOpen')}
-                </Link>
-              ) : null}
-              {item.status === 'failed' && item.error ? (
-                <span className="max-w-48 truncate text-danger" title={item.error}>
-                  {item.error}
-                </span>
-              ) : null}
             </li>
           ))}
         </ul>
-      ) : null}
+      ) : (
+        <p className="flex items-center gap-2 text-xs text-muted">
+          <IconMessage className="size-4" />
+          {t('videoEmpty')}
+        </p>
+      )}
     </div>
   );
 }

@@ -1538,7 +1538,21 @@
       "running": "生成中",
       "succeeded": "完了",
       "failed": "失敗"
-    }
+    },
+    "tabChat": "チャット",
+    "tabShots": "ショット",
+    "tabVideo": "生成",
+    "panelLabel": "ブロックアウトパネル",
+    "shotPanelEmpty": "再生またはタイムラインを動かすと、そのセグメントのショットが表示されます。",
+    "shotList": "このセグメントのショット",
+    "shotAdd": "ここにショットを追加",
+    "shotRemove": "ショットを削除",
+    "shotTransition": "前のショットからのつなぎ",
+    "transition": {
+      "cut": "カット",
+      "continuous": "連続カメラワーク"
+    },
+    "videoEmpty": "生成した動画はここと、脚本の該当セグメントに表示されます。"
   },
   "brand": {
     "name": "造浪",

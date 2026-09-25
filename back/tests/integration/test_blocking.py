@@ -128,7 +128,11 @@ def test_staging_only_turn_keeps_the_script_and_records_a_blocking_turn(
     assert complete["script_changed"] is False
     assert complete["script"] == draft["script"]
     assert complete["blocking"]["version_no"] == 2
-    moves = {s["shot"]["move"]["preset"] for s in complete["blocking"]["document"]["segments"]}
+    moves = {
+        shot["move"]["preset"]
+        for s in complete["blocking"]["document"]["segments"]
+        for shot in s["shots"]
+    }
     assert moves == {"orbit_cw"}
 
     turn = db.get(EpisodeScriptTurn, complete["turn_id"])

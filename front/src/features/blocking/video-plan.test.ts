@@ -27,6 +27,8 @@ const script: ScriptDocument = {
 };
 
 const shot = {
+  t0: 0,
+  transition: 'cut' as const,
   size: 'medium' as const,
   lens_mm: 35,
   height: 'eye' as const,
@@ -62,7 +64,7 @@ const document: BlockingDocument = {
         },
       ],
       beats: [],
-      shot,
+      shots: [shot],
       camera_override: null,
     },
     {
@@ -86,7 +88,7 @@ const document: BlockingDocument = {
         },
       ],
       beats: [],
-      shot,
+      shots: [shot],
       camera_override: null,
     },
   ],

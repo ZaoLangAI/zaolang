@@ -6595,7 +6595,8 @@ export interface components {
             start?: components["schemas"]["BlockingStartEntry"][];
             /** Beats */
             beats?: components["schemas"]["BlockingBeat"][];
-            shot: components["schemas"]["BlockingShot"];
+            /** Shots */
+            shots: components["schemas"]["BlockingShot"][];
             camera_override?: components["schemas"]["BlockingCameraOverride"] | null;
         };
         /** BlockingSet */
@@ -6629,6 +6630,17 @@ export interface components {
         };
         /** BlockingShot */
         BlockingShot: {
+            /**
+             * T0
+             * @default 0
+             */
+            t0: number;
+            /**
+             * Transition
+             * @default cut
+             * @enum {string}
+             */
+            transition: "cut" | "continuous";
             /**
              * Size
              * @enum {string}

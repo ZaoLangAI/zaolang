@@ -24273,8 +24273,13 @@
             "type": "array",
             "title": "Beats"
           },
-          "shot": {
-            "$ref": "#/components/schemas/BlockingShot"
+          "shots": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingShot"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Shots"
           },
           "camera_override": {
             "anyOf": [
@@ -24294,7 +24299,7 @@
           "set_id",
           "source_hash",
           "duration_s",
-          "shot"
+          "shots"
         ],
         "title": "BlockingSegment"
       },
@@ -24398,6 +24403,20 @@
       },
       "BlockingShot": {
         "properties": {
+          "t0": {
+            "type": "number",
+            "title": "T0",
+            "default": 0.0
+          },
+          "transition": {
+            "type": "string",
+            "enum": [
+              "cut",
+              "continuous"
+            ],
+            "title": "Transition",
+            "default": "cut"
+          },
           "size": {
             "type": "string",
             "enum": [

@@ -1538,7 +1538,21 @@
       "running": "生成中",
       "succeeded": "已完成",
       "failed": "失败"
-    }
+    },
+    "tabChat": "对话",
+    "tabShots": "镜头",
+    "tabVideo": "生成",
+    "panelLabel": "白膜面板",
+    "shotPanelEmpty": "播放或拖动时间轴到某一段，这里会显示这一段的镜头。",
+    "shotList": "本段镜头",
+    "shotAdd": "在此处加镜头",
+    "shotRemove": "删除此镜头",
+    "shotTransition": "与上一镜头的衔接",
+    "transition": {
+      "cut": "切换",
+      "continuous": "连续运镜"
+    },
+    "videoEmpty": "生成的视频会出现在这里，也会挂到文案对应的分镜段上。"
   },
   "brand": {
     "name": "造浪",
