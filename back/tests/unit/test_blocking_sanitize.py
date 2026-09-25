@@ -76,15 +76,17 @@ def _reply() -> dict[str, Any]:
                     {"cast_id": "林夏", "t0": 1, "t1": 4, "action": "walk", "to": [0, -2]},
                     {"cast_id": "ghost", "t0": 1, "t1": 2, "action": "wave"},
                 ],
-                "shot": {
-                    "size": "close",
-                    "lens_mm": 85,
-                    "height": "eye",
-                    "side": "ots_left",
-                    "subject": "lin",
-                    "over": "chen",
-                    "move": {"preset": "push_in", "intensity": 0.3, "ease": "in_out"},
-                },
+                "shots": [
+                    {
+                        "size": "close",
+                        "lens_mm": 85,
+                        "height": "eye",
+                        "side": "ots_left",
+                        "subject": "lin",
+                        "over": "chen",
+                        "move": {"preset": "push_in", "intensity": 0.3, "ease": "in_out"},
+                    }
+                ],
             }
         ],
     }
@@ -117,7 +119,7 @@ def test_references_resolve_by_id_or_name_and_unknown_cast_is_dropped() -> None:
 def test_over_the_shoulder_needs_an_on_set_over_character() -> None:
     # `chen` is not in this segment's `start`, so the OTS falls back to front.
     doc = sanitize_blocking(_reply(), script=_script(), target_duration_s=None).document
-    shot = doc["segments"][0]["shot"]
+    shot = doc["segments"][0]["shots"][0]
     assert shot["side"] == "front"
     assert shot["over"] is None
 
@@ -127,7 +129,7 @@ def test_missing_segments_get_default_staging_from_the_script() -> None:
     second = doc["segments"][1]
     # "陈默推门进来" mentions 陈默, so the default staging puts him on set.
     assert [e["cast_id"] for e in second["start"]] == ["chen"]
-    assert second["shot"]["move"]["preset"] == "static"
+    assert second["shots"][0]["move"]["preset"] == "static"
 
 
 def test_numbers_and_vocabulary_are_clamped() -> None:
@@ -135,14 +137,14 @@ def test_numbers_and_vocabulary_are_clamped() -> None:
     reply["sets"][0]["width_m"] = 999
     reply["sets"][0]["props"][0]["position"] = [100, -5, 0]
     reply["sets"][0]["props"][0]["primitive"] = "teapot"
-    reply["segments"][0]["shot"]["lens_mm"] = 1000
-    reply["segments"][0]["shot"]["move"]["preset"] = "dolly_zoom"
+    reply["segments"][0]["shots"][0]["lens_mm"] = 1000
+    reply["segments"][0]["shots"][0]["move"]["preset"] = "dolly_zoom"
     doc = sanitize_blocking(reply, script=_script(), target_duration_s=None).document
     set_ = doc["sets"][0]
     assert set_["width_m"] == 60.0
     assert set_["props"][0]["primitive"] == "box"
     assert set_["props"][0]["position"] == [30.0, 0.0, 0.0]
-    shot = doc["segments"][0]["shot"]
+    shot = doc["segments"][0]["shots"][0]
     assert shot["lens_mm"] == 135
     assert shot["move"]["preset"] == "static"
 
@@ -205,7 +207,7 @@ def test_camera_override_survives_only_when_the_shot_is_unchanged() -> None:
     assert same_shot["segments"][0]["camera_override"] is not None
 
     reshot = deepcopy(_reply()["segments"][0])
-    reshot["shot"]["size"] = "wide"
+    reshot["shots"][0]["size"] = "wide"
     changed = sanitize_blocking(
         {"segments": [reshot]}, script=_script(), target_duration_s=None, previous=kept
     ).document
@@ -252,7 +254,7 @@ def test_heading_rename_keeps_the_set_and_segment_positionally() -> None:
     assert moved["sets"][0]["heading"] == "便利店 - 深夜"
     assert moved["sets"][0]["props"] == doc["sets"][0]["props"]
     assert moved["segments"][0]["key"] == "便利店 - 深夜#0"
-    assert moved["segments"][0]["shot"] == doc["segments"][0]["shot"]
+    assert moved["segments"][0]["shots"][0] == doc["segments"][0]["shots"][0]
 
 
 def test_garbage_input_still_yields_a_complete_document() -> None:
@@ -260,3 +262,121 @@ def test_garbage_input_still_yields_a_complete_document() -> None:
     assert len(doc["segments"]) == 3
     assert sum(s["duration_s"] for s in doc["segments"]) == 30
     assert doc["aspect_ratio"] == "9:16"
+
+
+def _script_with_camera(*camera_texts: str) -> dict[str, Any]:
+    script = _script()
+    blocks: list[dict[str, Any]] = []
+    for text in camera_texts:
+        blocks.append({"type": "camera", "character": None, "text": text})
+        blocks.append({"type": "dialogue", "character": "林夏", "text": "这里有一句不短的台词。"})
+    script["scenes"][1]["blocks"] = blocks
+    return script
+
+
+def test_script_camera_blocks_become_one_shot_each() -> None:
+    script = _script_with_camera("特写，缓慢向前推。", "近景，缓慢向右摇。")
+    # The model answered one static shot; the script asks for two moves.
+    reply = {"segments": [{"key": "天台 - 夜#0", "duration_s": 12, "shots": [{"size": "wide"}]}]}
+    doc = sanitize_blocking(reply, script=script, target_duration_s=None).document
+    shots = doc["segments"][2]["shots"]
+    assert [(s["size"], s["move"]["preset"]) for s in shots] == [
+        ("close", "push_in"),
+        ("close", "pan_right"),
+    ]
+    assert shots[0]["t0"] == 0.0
+    assert 0 < shots[1]["t0"] < doc["segments"][2]["duration_s"]
+    assert shots[0]["move"]["intensity"] == 0.3
+    assert shots[1]["transition"] == "continuous"
+
+
+def test_a_misread_camera_move_is_corrected_from_the_script() -> None:
+    script = _script_with_camera("全景，缓慢向上抬升。")
+    reply = {
+        "segments": [
+            {
+                "key": "天台 - 夜#0",
+                "shots": [{"size": "wide", "move": {"preset": "static"}, "height": "low"}],
+            }
+        ]
+    }
+    doc = sanitize_blocking(reply, script=script, target_duration_s=None).document
+    shot = doc["segments"][2]["shots"][0]
+    assert (shot["size"], shot["move"]["preset"]) == ("full", "crane_up")
+    # What the script does not state stays the model's.
+    assert shot["height"] == "low"
+
+
+def test_manual_saves_are_not_reconciled() -> None:
+    script = _script_with_camera("全景，缓慢向上抬升。")
+    first = sanitize_blocking({}, script=script, target_duration_s=None).document
+    edited = deepcopy(first)
+    edited["segments"][2]["shots"][0]["move"]["preset"] = "orbit_cw"
+    kept = sanitize_blocking(
+        edited, script=script, target_duration_s=None, previous=first, mode="manual"
+    ).document
+    assert kept["segments"][2]["shots"][0]["move"]["preset"] == "orbit_cw"
+
+
+def test_vendor_spellings_are_normalized() -> None:
+    reply = _reply()
+    reply["segments"][0]["shots"] = [
+        {"size": "MCU", "move": "dolly in", "height": "低机位仰拍", "side": "Frontal"},
+        {"t0": "3", "size": "中景", "move": {"preset": "缓慢推近"}, "transition": "continuous"},
+    ]
+    reply["segments"][0]["beats"][0]["action"] = "Walking"
+    doc = sanitize_blocking(reply, script=_script(), target_duration_s=None).document
+    shots = doc["segments"][0]["shots"]
+    assert [(s["size"], s["move"]["preset"], s["height"], s["side"]) for s in shots] == [
+        ("medium_close", "push_in", "low", "front"),
+        ("medium", "push_in", "eye", "front"),
+    ]
+    assert shots[1]["t0"] > 0
+    assert doc["segments"][0]["beats"][0]["action"] == "walk"
+
+
+def test_legacy_single_shot_documents_still_load() -> None:
+    reply = _reply()
+    reply["segments"][0]["shot"] = reply["segments"][0].pop("shots")[0]
+    doc = sanitize_blocking(reply, script=_script(), target_duration_s=None).document
+    assert doc["segments"][0]["shots"][0]["size"] == "close"
+
+
+def test_gestures_never_carry_a_destination() -> None:
+    reply = _reply()
+    reply["segments"][0]["beats"] = [
+        {"cast_id": "lin", "t0": 0, "t1": 2, "action": "talk", "to": [2, 2]},
+        {"cast_id": "lin", "t0": 2, "t1": 4, "action": "sit", "to": [0, -2]},
+    ]
+    doc = sanitize_blocking(reply, script=_script(), target_duration_s=None).document
+    beats = doc["segments"][0]["beats"]
+    assert beats[0]["to"] is None
+    assert beats[1]["to"] == {"anchor": None, "x": 0.0, "z": -2.0}
+
+
+def test_shot_times_are_ordered_spaced_and_capped() -> None:
+    reply = _reply()
+    reply["segments"][0]["shots"] = [
+        {"t0": 4, "size": "close"},
+        {"t0": 0.2, "size": "wide"},
+        {"t0": 4.5, "size": "medium"},
+        {"t0": 5.9, "size": "full"},
+    ]
+    doc = sanitize_blocking(reply, script=_script(), target_duration_s=None).document
+    shots = doc["segments"][0]["shots"]
+    assert shots[0]["t0"] == 0.0
+    assert [s["size"] for s in shots] == ["wide", "close"]
+
+
+def test_reconcile_keys_spare_a_camera_change_asked_for_in_words() -> None:
+    script = _script_with_camera("全景，缓慢向上抬升。")
+    first = sanitize_blocking({}, script=script, target_duration_s=None).document
+    asked = {"segments": [{"key": "天台 - 夜#0", "shots": [{"move": {"preset": "orbit_cw"}}]}]}
+    staging_only = sanitize_blocking(
+        asked, script=script, target_duration_s=None, previous=first, reconcile_keys=set()
+    ).document
+    assert staging_only["segments"][2]["shots"][0]["move"]["preset"] == "orbit_cw"
+    rebuilt = sanitize_blocking(
+        asked, script=script, target_duration_s=None, previous=first
+    ).document
+    assert rebuilt["segments"][2]["shots"][0]["move"]["preset"] == "crane_up"

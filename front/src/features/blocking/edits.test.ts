@@ -46,15 +46,19 @@ const document: BlockingDocument = {
         },
       ],
       beats: [],
-      shot: {
-        size: 'medium',
-        lens_mm: 35,
-        height: 'eye',
-        side: 'front',
-        subject: 'lin',
-        over: null,
-        move: { preset: 'static', intensity: 0.5, ease: 'in_out' },
-      },
+      shots: [
+        {
+          t0: 0,
+          transition: 'cut',
+          size: 'medium',
+          lens_mm: 35,
+          height: 'eye',
+          side: 'front',
+          subject: 'lin',
+          over: null,
+          move: { preset: 'static', intensity: 0.5, ease: 'in_out' },
+        },
+      ],
       camera_override: {
         start: { position: [0, 1.6, 4], target: [0, 1, 0], fov: 40 },
         end: null,
@@ -110,9 +114,10 @@ describe('applyEdit', () => {
     const next = applyEdit(document, {
       kind: 'shot',
       segmentKey: '场#0',
-      shot: { ...document.segments![0]!.shot, size: 'close' },
+      index: 0,
+      shot: { ...document.segments![0]!.shots[0]!, size: 'close' },
     });
-    expect(next.segments?.[0]?.shot.size).toBe('close');
+    expect(next.segments?.[0]?.shots[0]?.size).toBe('close');
     expect(next.segments?.[0]?.camera_override).toBeNull();
   });
 
@@ -129,5 +134,23 @@ describe('applyEdit', () => {
     expect(normalizeDeg(270)).toBe(-90);
     expect(normalizeDeg(-190)).toBe(170);
     expect(normalizeDeg(180)).toBe(180);
+  });
+});
+
+describe('shot list edits', () => {
+  it('splits the playing shot at the playhead and removes shots down to one', () => {
+    const split = applyEdit(document, { kind: 'split-shot', segmentKey: '场#0', at: 2.5 });
+    const shots = split.segments![0]!.shots;
+    expect(shots.map((shot) => shot.t0)).toEqual([0, 2.5]);
+    expect(shots[1]!.transition).toBe('cut');
+
+    // Too close to an existing cut: ignored.
+    const tooClose = applyEdit(split, { kind: 'split-shot', segmentKey: '场#0', at: 2.9 });
+    expect(tooClose.segments![0]!.shots).toHaveLength(2);
+
+    const removed = applyEdit(split, { kind: 'remove-shot', segmentKey: '场#0', index: 0 });
+    expect(removed.segments![0]!.shots.map((shot) => shot.t0)).toEqual([0]);
+    const last = applyEdit(removed, { kind: 'remove-shot', segmentKey: '场#0', index: 0 });
+    expect(last.segments![0]!.shots).toHaveLength(1);
   });
 });

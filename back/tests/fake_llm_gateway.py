@@ -376,14 +376,17 @@ def _copy_stream_blocking_derive(payload: dict[str, Any]) -> str:
                 "duration_s": int(segment.get("suggested_duration_s") or 6),
                 "start": start,
                 "beats": beats,
-                "shot": {
-                    "size": "medium_close",
-                    "lens_mm": 50,
-                    "height": "eye",
-                    "side": "front",
-                    "subject": cast[0]["id"] if cast else None,
-                    "move": {"preset": preset, "intensity": 0.4, "ease": "in_out"},
-                },
+                "shots": [
+                    {
+                        "t0": 0,
+                        "size": "medium_close",
+                        "lens_mm": 50,
+                        "height": "eye",
+                        "side": "front",
+                        "subject": cast[0]["id"] if cast else None,
+                        "move": {"preset": preset, "intensity": 0.4, "ease": "in_out"},
+                    }
+                ],
             }
         )
     blocking = {"aspect_ratio": "9:16", "sets": sets, "cast": cast, "segments": segments}

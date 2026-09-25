@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from app.domain.blocking import vocabulary as v
+from app.domain.blocking.camera_language import CameraCue, normalize_token, parse_camera_text
 from app.domain.blocking.segments import (
     ScriptSegment,
     default_target_duration,
@@ -42,6 +43,7 @@ _HASH16 = re.compile(r"^[0-9a-f]{16}$")
 _DEFAULT_STAGE = 10.0
 _CAST_SPACING = 1.2
 _FACING_TARGET_CAMERA = "camera"
+_IN_PLACE_ACTIONS = frozenset({"talk", "point", "wave", "hug", "fight", "turn"})
 
 
 @dataclass(slots=True)
@@ -66,9 +68,12 @@ def _num(raw: Any, default: float, lo: float, hi: float) -> float:
     return round(min(max(value, lo), hi), 3)
 
 
-def _choice(raw: Any, allowed: tuple[str, ...], default: str) -> str:
-    value = str(raw or "").strip()
-    return value if value in allowed else default
+def _choice(raw: Any, allowed: tuple[str, ...], default: str, kind: str = "") -> str:
+    """The documented token, tolerating the Chinese label, film-school
+    shorthand and spelling variants different vendors' models produce
+    (`camera_language.normalize_token`)."""
+    token = normalize_token(raw, allowed, kind)
+    return token if token is not None else default
 
 
 def _label(raw: Any) -> str:
@@ -366,6 +371,8 @@ def _default_start(cast_ids: list[str]) -> list[dict[str, Any]]:
 
 def _default_shot(cast_ids: list[str]) -> dict[str, Any]:
     return {
+        "t0": 0.0,
+        "transition": "cut",
         "size": "medium" if len(cast_ids) <= 2 else "full",
         "lens_mm": 35,
         "height": "eye",
@@ -377,36 +384,159 @@ def _default_shot(cast_ids: list[str]) -> dict[str, Any]:
 
 
 def _sanitize_shot(
-    raw: Any, *, cast_ids: set[str], anchors: set[str], aliases: dict[str, str], fallback: dict
+    raw: Any,
+    *,
+    cast_ids: set[str],
+    anchors: set[str],
+    aliases: dict[str, str],
+    fallback: dict,
+    time_scale: float = 1.0,
+    duration: float = 0.0,
 ) -> dict[str, Any]:
     if not isinstance(raw, dict):
-        return fallback
+        return dict(fallback)
     subject_raw = str(raw.get("subject") or "").strip()
     subject = aliases.get(subject_raw, subject_raw)
     if subject not in cast_ids and subject not in anchors:
         subject = fallback.get("subject")
     over_raw = str(raw.get("over") or "").strip()
     over = aliases.get(over_raw, over_raw)
-    side = _choice(raw.get("side"), v.CAMERA_SIDES, "front")
+    side = _choice(raw.get("side"), v.CAMERA_SIDES, "front", "side")
     if over not in cast_ids or over == subject:
         over = None
     if side.startswith("ots") and over is None:
         side = "front"
-    move = raw.get("move") if isinstance(raw.get("move"), dict) else {}
-    lens_raw = raw.get("lens_mm")
+    # `move` should be an object, but a bare preset string (or the preset at
+    # the shot's top level) is common enough across vendors to accept.
+    raw_move = raw.get("move")
+    move: dict[str, Any] = (
+        raw_move
+        if isinstance(raw_move, dict)
+        else {"preset": raw_move, "intensity": raw.get("intensity"), "ease": raw.get("ease")}
+    )
+    preset = move.get("preset", raw.get("preset"))
+    lens_raw = raw.get("lens_mm", raw.get("lens"))
+    t0 = _num(raw.get("t0", raw.get("start")), 0.0, 0.0, 120.0) * time_scale
     return {
-        "size": _choice(raw.get("size"), v.SHOT_SIZES, fallback["size"]),
+        "t0": round(min(t0, duration) if duration else t0, 2),
+        "transition": _choice(raw.get("transition"), v.SHOT_TRANSITIONS, "cut"),
+        "size": _choice(raw.get("size"), v.SHOT_SIZES, fallback["size"], "size"),
         "lens_mm": int(_num(lens_raw, fallback["lens_mm"], v.LENS_MIN_MM, v.LENS_MAX_MM)),
-        "height": _choice(raw.get("height"), v.CAMERA_HEIGHTS, "eye"),
+        "height": _choice(raw.get("height"), v.CAMERA_HEIGHTS, "eye", "height"),
         "side": side,
         "subject": subject,
         "over": over,
         "move": {
-            "preset": _choice(move.get("preset"), v.CAMERA_MOVES, "static"),
+            "preset": _choice(preset, v.CAMERA_MOVES, "static", "move"),
             "intensity": _num(move.get("intensity"), 0.5, 0.0, 1.0),
             "ease": _choice(move.get("ease"), v.MOVE_EASES, "in_out"),
         },
     }
+
+
+def _normalize_shot_times(shots: list[dict[str, Any]], duration: float) -> list[dict[str, Any]]:
+    """Time order, first shot at 0, every shot at least `MIN_SHOT_SECONDS`
+    long, at most `MAX_SHOTS_PER_SEGMENT`."""
+    ordered = sorted(shots, key=lambda shot: shot["t0"])
+    kept: list[dict[str, Any]] = []
+    for shot in ordered:
+        if not kept:
+            kept.append({**shot, "t0": 0.0})
+            continue
+        if shot["t0"] - kept[-1]["t0"] < v.MIN_SHOT_SECONDS:
+            continue
+        if duration - shot["t0"] < v.MIN_SHOT_SECONDS:
+            continue
+        kept.append(shot)
+    return kept[: v.MAX_SHOTS_PER_SEGMENT]
+
+
+def _raw_shots(raw: dict[str, Any]) -> list[Any]:
+    shots = raw.get("shots")
+    if isinstance(shots, list) and shots:
+        return shots
+    legacy = raw.get("shot")
+    if isinstance(legacy, list):
+        return legacy
+    return [legacy] if isinstance(legacy, dict) else []
+
+
+def _block_weights(blocks: tuple[dict[str, Any], ...]) -> list[float]:
+    """Rough screen time per block — where in the clip a camera block lands."""
+    weights = []
+    for block in blocks:
+        kind = block.get("type")
+        text = str(block.get("text") or "")
+        if kind == "dialogue":
+            weights.append(max(1.0, len(text) / 3.5))
+        elif kind == "action":
+            weights.append(3.0)
+        else:
+            weights.append(0.0)
+    return weights
+
+
+def camera_cues(segment: ScriptSegment) -> list[tuple[float, CameraCue]]:
+    """Each non-empty script camera block with the fraction (0–1) of the
+    segment at which it takes effect."""
+    weights = _block_weights(segment.blocks)
+    total = sum(weights) or 1.0
+    cues: list[tuple[float, CameraCue]] = []
+    elapsed = 0.0
+    for block, weight in zip(segment.blocks, weights, strict=True):
+        if block.get("type") == "camera":
+            cue = parse_camera_text(str(block.get("text") or ""))
+            if not cue.empty:
+                cues.append((elapsed / total, cue))
+        elapsed += weight
+    return cues
+
+
+def _reconcile_with_script(
+    shots: list[dict[str, Any]], segment: ScriptSegment, duration: float
+) -> list[dict[str, Any]]:
+    """The script's camera blocks are authoritative for shot size and move:
+    one shot per camera block, in order, whatever the model answered. The
+    model still owns subject, angle, height, lens and exact timing when it
+    produced a matching shot — this only corrects what the script states.
+    """
+    cues = camera_cues(segment)
+    if not cues:
+        return shots
+    reconciled: list[dict[str, Any]] = []
+    for index, (fraction, cue) in enumerate(cues):
+        base = dict(shots[index] if index < len(shots) else shots[-1])
+        base["move"] = dict(base["move"])
+        if index >= len(shots) or index == 0:
+            base["t0"] = 0.0 if index == 0 else round(fraction * duration * 2) / 2
+        if cue.size:
+            base["size"] = cue.size
+        if cue.preset:
+            if base["move"]["preset"] != cue.preset:
+                base["move"]["intensity"] = cue.intensity
+            base["move"]["preset"] = cue.preset
+        if index > 0:
+            previous = reconciled[-1]
+            base["transition"] = "cut" if base["size"] != previous["size"] else "continuous"
+        reconciled.append(base)
+    return reconciled
+
+
+def _shot_signature(shots: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    """What "the model left the camera alone" compares — the grammar, not
+    timing jitter."""
+    return [
+        (
+            shot["size"],
+            shot["lens_mm"],
+            shot["height"],
+            shot["side"],
+            shot["subject"],
+            shot["over"],
+            shot["move"]["preset"],
+        )
+        for shot in shots
+    ]
 
 
 def _camera_pose(raw: Any) -> dict[str, Any] | None:
@@ -440,6 +570,7 @@ def _sanitize_segment(
     cast: list[dict[str, Any]],
     aliases: dict[str, str],
     duration: float,
+    reconcile: bool = False,
 ) -> dict[str, Any]:
     cast_ids = {c["id"] for c in cast}
     anchors = {a["id"]: a for a in set_["anchors"]}
@@ -469,7 +600,7 @@ def _sanitize_segment(
                     item.get("face", item.get("facing")), targets=targets, aliases=aliases
                 )
                 or {"target": _FACING_TARGET_CAMERA, "deg": 0.0},
-                "action": _choice(item.get("action"), v.CAST_ACTIONS, "stand"),
+                "action": _choice(item.get("action"), v.CAST_ACTIONS, "stand", "action"),
             }
         )
     if not start:
@@ -489,12 +620,17 @@ def _sanitize_segment(
             t1 = min(duration, t0 + 1.0)
         if t1 <= t0:
             continue
+        action = _choice(item.get("action"), v.CAST_ACTIONS, "stand", "action")
         beat: dict[str, Any] = {
             "cast_id": cast_id,
             "t0": round(t0, 2),
             "t1": round(t1, 2),
-            "action": _choice(item.get("action"), v.CAST_ACTIONS, "stand"),
-            "to": _mark(item.get("to"), anchors=anchors, set_=set_),
+            "action": action,
+            # A gesture happens where the person stands; models routinely
+            # attach a `to` to every beat, which would turn「说话」into a walk.
+            "to": None
+            if action in _IN_PLACE_ACTIONS
+            else _mark(item.get("to"), anchors=anchors, set_=set_),
             "face": _facing(item.get("face", item.get("facing")), targets=targets, aliases=aliases),
         }
         beats.append(beat)
@@ -515,6 +651,21 @@ def _sanitize_segment(
 
     placed_ids = [entry["cast_id"] for entry in start]
     fallback_shot = _default_shot(placed_ids)
+    shots = [
+        _sanitize_shot(
+            item,
+            cast_ids=set(placed_ids),
+            anchors=set(anchors),
+            aliases=aliases,
+            fallback=fallback_shot,
+            time_scale=scale,
+            duration=duration,
+        )
+        for item in _raw_shots(raw)[: v.MAX_SHOTS_PER_SEGMENT * 2]
+    ] or [dict(fallback_shot)]
+    shots = _normalize_shot_times(shots, duration)
+    if reconcile:
+        shots = _normalize_shot_times(_reconcile_with_script(shots, segment, duration), duration)
     return {
         "key": segment.key,
         "heading": segment.heading,
@@ -523,13 +674,7 @@ def _sanitize_segment(
         "duration_s": duration,
         "start": start,
         "beats": trimmed,
-        "shot": _sanitize_shot(
-            raw.get("shot"),
-            cast_ids=set(placed_ids),
-            anchors=set(anchors),
-            aliases=aliases,
-            fallback=fallback_shot,
-        ),
+        "shots": shots,
         "camera_override": None,
     }
 
@@ -606,6 +751,7 @@ def sanitize_blocking(
     target_duration_s: int | None,
     previous: dict[str, Any] | None = None,
     mode: SanitizeMode = "llm",
+    reconcile_keys: set[str] | None = None,
 ) -> SanitizeResult:
     """Returns a complete, bounded document aligned with `script`.
 
@@ -614,6 +760,12 @@ def sanitize_blocking(
     `previous` only when the model left that segment's shot untouched.
     `mode="manual"`: `raw` is the browser's own full document — its
     overrides are kept and its hashes are trusted as echoes.
+
+    Freshly staged segments have their shots reconciled with the script's
+    camera blocks (`_reconcile_with_script`). `reconcile_keys` narrows that
+    to the given keys — a staging-only chat turn passes just the segments
+    whose script changed, so a camera change the author asked for in words
+    is not overwritten by the script's older camera text.
     """
     raw = raw if isinstance(raw, dict) else {}
     previous = previous if isinstance(previous, dict) and previous.get("segments") else None
@@ -664,6 +816,10 @@ def sanitize_blocking(
             cast=cast,
             aliases=aliases,
             duration=float(duration),
+            # Freshly staged segments follow the script's camera blocks; a
+            # manual edit or a carried-over segment keeps what it has.
+            reconcile=(origin == "default" or (mode == "llm" and origin == "raw"))
+            and (reconcile_keys is None or segment.key in reconcile_keys),
         )
         staged["duration_s"] = int(duration)
         fresh_hash = staged["source_hash"]
@@ -680,14 +836,18 @@ def sanitize_blocking(
         elif origin == "raw" and previous is not None:
             before = prev_by_key.get(segment.key)
             if before is not None and before.get("camera_override"):
-                before_shot = _sanitize_shot(
-                    before.get("shot"),
-                    cast_ids={e["cast_id"] for e in staged["start"]},
-                    anchors={a["id"] for a in set_["anchors"]},
-                    aliases=aliases,
-                    fallback=staged["shot"],
-                )
-                if before_shot == staged["shot"]:
+                before_shots = [
+                    _sanitize_shot(
+                        item,
+                        cast_ids={e["cast_id"] for e in staged["start"]},
+                        anchors={a["id"] for a in set_["anchors"]},
+                        aliases=aliases,
+                        fallback=staged["shots"][0],
+                        duration=float(duration),
+                    )
+                    for item in _raw_shots(before)
+                ]
+                if _shot_signature(before_shots) == _shot_signature(staged["shots"]):
                     override = _sanitize_override(before.get("camera_override"))
         staged["camera_override"] = override
         segments.append(staged)

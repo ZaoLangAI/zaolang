@@ -200,6 +200,9 @@ def stream_blocking_turn(
 ) -> Iterator[StreamChunk | PhaseMarker]:
     script = prep.current_script
     script_changed = False
+    # Staging-only turn → only script-changed segments follow the script's
+    # camera text; otherwise every freshly staged segment does.
+    reconcile_all = True
     summaries: list[str] = []
     thinking: list[str] = []
     degraded = False
@@ -233,8 +236,10 @@ def stream_blocking_turn(
                     summaries.append(script_outcome.summary)
                 if script_outcome.thinking:
                     thinking.append(script_outcome.thinking)
-            elif not instruction:
-                instruction = prep.message
+            else:
+                reconcile_all = False
+                if not instruction:
+                    instruction = prep.message
 
         yield PhaseMarker("blocking")
         previous = prep.previous_blocking
@@ -279,6 +284,7 @@ def stream_blocking_turn(
                 target_duration_s=episode.target_duration_seconds,
                 previous=prep.previous_blocking,
                 mode="llm",
+                reconcile_keys=None if reconcile_all or not previous else set(changed_keys),
             )
             summary = "\n".join(summaries)[: copywriter.MAX_SUMMARY_LEN * 2]
             thinking_text = "\n\n".join(thinking)[: copywriter.MAX_THINKING_LEN]

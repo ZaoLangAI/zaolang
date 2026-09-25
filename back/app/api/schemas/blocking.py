@@ -24,6 +24,7 @@ from app.domain.blocking.vocabulary import (
     MoveEase,
     Primitive,
     ShotSize,
+    ShotTransition,
 )
 
 
@@ -97,6 +98,9 @@ class BlockingCameraMove(ApiModel):
 
 
 class BlockingShot(ApiModel):
+    # Seconds into the segment where this shot starts; the first is 0.
+    t0: float = 0.0
+    transition: ShotTransition = "cut"
     size: ShotSize
     lens_mm: int
     height: CameraHeight
@@ -125,7 +129,8 @@ class BlockingSegment(ApiModel):
     duration_s: int
     start: list[BlockingStartEntry] = Field(default_factory=list)
     beats: list[BlockingBeat] = Field(default_factory=list)
-    shot: BlockingShot
+    # In time order, first at t0=0; a manual `camera_override` replaces all.
+    shots: list[BlockingShot] = Field(min_length=1)
     camera_override: BlockingCameraOverride | None = None
 
 

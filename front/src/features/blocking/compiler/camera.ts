@@ -23,6 +23,7 @@ import {
   smoothstep,
   sub,
 } from './math';
+import { lineOfSightClear, pointInsideSolid, type Obstacle } from './obstacles';
 
 /**
  * Shot grammar → camera pose. `frameShot` places the camera for a shot's
@@ -39,6 +40,48 @@ export const ASPECT_WIDTH_OVER_HEIGHT: Record<AspectRatio, number> = {
   '1:1': 1,
   '9:16': 9 / 16,
 };
+
+export interface FrameRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where the delivered frame sits inside a viewport of `width`×`height`:
+ * the largest rect of the document's aspect that fits, less a small margin
+ * so the matte around it stays visible. The viewport renders the director
+ * camera across the *whole* canvas (a wider field of view) and dims what
+ * falls outside this rect, so the author sees the frame at full size plus
+ * what is just off it — the exporter renders exactly the rect.
+ */
+export function frameRectFor(
+  width: number,
+  height: number,
+  aspect: AspectRatio,
+  margin = 0.92,
+): FrameRect {
+  const ratio = ASPECT_WIDTH_OVER_HEIGHT[aspect];
+  const fitted =
+    width / height > ratio ? { width: height * ratio, height } : { width, height: width / ratio };
+  const frameWidth = fitted.width * margin;
+  const frameHeight = fitted.height * margin;
+  return {
+    x: (width - frameWidth) / 2,
+    y: (height - frameHeight) / 2,
+    width: frameWidth,
+    height: frameHeight,
+  };
+}
+
+/** The vertical field of view that shows the frame's `fov` inside
+ * `frameHeight` pixels of a `viewportHeight`-pixel canvas. */
+export function widenedFov(fov: number, frameHeight: number, viewportHeight: number): number {
+  if (frameHeight <= 0 || viewportHeight <= frameHeight) return fov;
+  const half = Math.tan((fov * DEG) / 2) * (viewportHeight / frameHeight);
+  return (2 * Math.atan(half)) / DEG;
+}
 
 export function fovFromLens(lensMm: number, aspect: AspectRatio): number {
   return (2 * Math.atan(SENSOR_VERTICAL_MM[aspect] / (2 * lensMm))) / DEG;
@@ -89,11 +132,14 @@ const UP: Vec3 = [0, 1, 0];
 const MIN_CAMERA_Y = 0.12;
 
 export interface ShotSubject {
-  /** Ground position at local time `t`. */
+  /** Ground position at segment-local time `t`. */
   position: (t: number) => Vec3;
   height: number;
-  /** Facing at the start of the segment, degrees. */
+  /** Facing at the start of the shot, degrees. */
   yaw: number;
+  /** A person who moves: the lens follows them (pan/tilt, or a full follow).
+   * False for an anchor or a group centroid. */
+  tracked?: boolean;
 }
 
 export interface ShotContext {
@@ -105,6 +151,11 @@ export interface ShotContext {
    * widens to hold them all. */
   groupWidth: number;
   seedKey: string;
+  /** Segment-local time this shot starts at; `sampleShot`'s `t` is
+   * relative to it. */
+  start?: number;
+  /** Solid set geometry the lens must see past. */
+  obstacles?: Obstacle[];
 }
 
 function sideYaw(shot: BlockingShot, subjectYaw: number): number {
@@ -123,13 +174,14 @@ function sideYaw(shot: BlockingShot, subjectYaw: number): number {
 export function frameShot(shot: BlockingShot, ctx: ShotContext): CameraPose {
   const fov = fovFromLens(shot.lens_mm, ctx.aspect);
   const subject = ctx.subject;
-  const ground = subject.position(0);
+  const start = ctx.start ?? 0;
+  const ground = subject.position(start);
   const target: Vec3 = [ground[0], subject.height * AIM_HEIGHT[shot.size], ground[2]];
 
   if ((shot.side === 'ots_left' || shot.side === 'ots_right') && ctx.over) {
     // Far enough behind the foreground shoulder that it frames one edge of
     // the shot instead of filling it; tighter sizes creep in a little.
-    const overAt = ctx.over.position(0);
+    const overAt = ctx.over.position(start);
     const toSubject = normalize([ground[0] - overAt[0], 0, ground[2] - overAt[2]]);
     const shoulderSide = rotateY(toSubject, (shot.side === 'ots_left' ? 90 : -90) * DEG);
     const behind = OTS_BEHIND_METERS[shot.size];
@@ -164,6 +216,79 @@ function cameraRight(pose: CameraPose): Vec3 {
   return Math.hypot(right[0], right[2]) > 1e-6 ? normalize(right) : [1, 0, 0];
 }
 
+/** Where the lens aims on the subject at segment time `t`, averaged over a
+ * short window so a walk's bob and a turn do not jitter the frame. */
+export function subjectAim(ctx: ShotContext, aimHeight: number, t: number, window = 0.4): Vec3 {
+  const samples = [-1, -0.5, 0, 0.5, 1].map((k) => ctx.subject.position(t + k * window));
+  const x = samples.reduce((sum, p) => sum + p[0], 0) / samples.length;
+  const z = samples.reduce((sum, p) => sum + p[2], 0) / samples.length;
+  return [x, aimHeight, z];
+}
+
+/**
+ * Backs the camera away along its arm until every point is at least
+ * `minDepth` in front of it — so a subject who walks during a static or
+ * panning shot never passes beside or behind the lens. The lens pans to
+ * keep them framed (`sampleShot`); this keeps that pan possible.
+ */
+export function keepAhead(pose: CameraPose, points: Vec3[], minDepth = 1.4): CameraPose {
+  if (points.length === 0) return pose;
+  const arm = sub(pose.position, pose.target);
+  const reach = Math.hypot(arm[0], arm[1], arm[2]);
+  if (reach < 1e-6) return pose;
+  const direction = scale(arm, 1 / reach);
+  // Depth of a point along the camera's (horizontal) view axis.
+  const depthAt = (position: Vec3, point: Vec3) => {
+    const v = sub(point, position);
+    return -(v[0] * direction[0] + v[2] * direction[2]);
+  };
+  let position = pose.position;
+  for (let step = 1; step <= 40; step += 1) {
+    if (points.every((point) => depthAt(position, point) >= minDepth)) break;
+    position = add(pose.target, scale(arm, 1 + step * 0.1));
+  }
+  return { ...pose, position };
+}
+
+/**
+ * Moves a camera that cannot see its subject — a wall or a prop in the way,
+ * or the lens sitting inside something — to the nearest pose that can:
+ * swing around the subject first, then come closer. `times` are the
+ * segment-local moments the view must be clear at (start, middle, end).
+ */
+export function avoidOcclusion(
+  pose: CameraPose,
+  ctx: ShotContext,
+  aimAt: (t: number) => Vec3,
+  times: number[],
+): CameraPose {
+  const obstacles = ctx.obstacles ?? [];
+  if (obstacles.length === 0) return pose;
+  const score = (position: Vec3) =>
+    pointInsideSolid(obstacles, position)
+      ? -1
+      : times.filter((t) => lineOfSightClear(obstacles, position, aimAt(t))).length;
+  const full = times.length;
+  let best = pose;
+  let bestScore = score(pose.position);
+  if (bestScore === full) return pose;
+  const arm = sub(pose.position, pose.target);
+  for (const reach of [1, 0.8, 0.62, 0.48]) {
+    for (const degrees of [0, 25, -25, 50, -50, 80, -80, 115, -115, 150, -150, 180]) {
+      if (reach === 1 && degrees === 0) continue;
+      const position = add(pose.target, rotateY(scale(arm, reach), degrees * DEG));
+      position[1] = Math.max(position[1], MIN_CAMERA_Y);
+      const candidate = score(position);
+      if (candidate > bestScore) {
+        best = { ...pose, position };
+        bestScore = candidate;
+        if (candidate === full) return best;
+      }
+    }
+  }
+  return best;
+}
+
 function handheld(pose: CameraPose, t: number, intensity: number, seedKey: string): CameraPose {
   const random = mulberry32(hashString(seedKey));
   const phases = Array.from({ length: 6 }, () => random() * Math.PI * 2);
@@ -188,6 +313,30 @@ function handheld(pose: CameraPose, t: number, intensity: number, seedKey: strin
  * out of frame by its end.
  */
 export function sampleShot(
+  shot: BlockingShot,
+  base: CameraPose,
+  ctx: ShotContext,
+  t: number,
+  duration: number,
+): CameraPose {
+  const moved = applyMove(shot, base, ctx, t, duration);
+  if (moveTracks(shot) && ctx.subject.tracked) {
+    // Keep a moving subject in frame: the lens pans/tilts with them while
+    // the camera body does whatever the preset says.
+    const start = ctx.start ?? 0;
+    const height = base.target[1];
+    const drift = sub(subjectAim(ctx, height, start + t), subjectAim(ctx, height, start));
+    return { ...moved, target: add(moved.target, drift) };
+  }
+  return moved;
+}
+
+/** `follow` already carries the whole camera with the subject. */
+function moveTracks(shot: BlockingShot): boolean {
+  return shot.move.preset !== 'follow';
+}
+
+function applyMove(
   shot: BlockingShot,
   base: CameraPose,
   ctx: ShotContext,
@@ -242,8 +391,9 @@ export function sampleShot(
       return { ...base, position, target: add(base.target, [0, lift * 0.3, 0]) };
     }
     case 'follow': {
-      const start = ctx.subject.position(0);
-      const now = ctx.subject.position(t);
+      const origin = ctx.start ?? 0;
+      const start = subjectAim(ctx, 0, origin);
+      const now = subjectAim(ctx, 0, origin + t);
       const delta = sub(now, start);
       return { ...base, position: add(base.position, delta), target: add(base.target, delta) };
     }

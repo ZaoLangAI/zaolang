@@ -25,7 +25,15 @@ export type BlockingEdit =
       yawDeg: number | null;
     }
   | { kind: 'camera-override'; segmentKey: string; override: BlockingCameraOverride | null }
-  | { kind: 'shot'; segmentKey: string; shot: BlockingShot };
+  /** Replace shot `index` of a segment. */
+  | { kind: 'shot'; segmentKey: string; index: number; shot: BlockingShot }
+  /** Start a new shot at `at` seconds into the segment, copying the one
+   * playing there (the author then changes what should differ). */
+  | { kind: 'split-shot'; segmentKey: string; at: number }
+  | { kind: 'remove-shot'; segmentKey: string; index: number };
+
+/** Shortest shot the backend keeps (`vocabulary.MIN_SHOT_SECONDS`). */
+export const MIN_SHOT_SECONDS = 1;
 
 const round = (value: number) => Math.round(value * 1000) / 1000;
 const roundVec = (value: Vec3): Vec3 => [round(value[0]), round(value[1]), round(value[2])];
@@ -86,17 +94,52 @@ export function applyEdit(document: BlockingDocument, edit: BlockingEdit): Block
         ),
       };
     case 'shot':
-      // Picking shot grammar hands the camera back to it: a manual camera
-      // would otherwise silently keep overriding the preset just chosen.
+    case 'split-shot':
+    case 'remove-shot':
+      // Touching the shot grammar hands the camera back to it: a manual
+      // camera would otherwise silently keep overriding what was just chosen.
       return {
         ...document,
         segments: (document.segments ?? []).map((segment) =>
           segment.key !== edit.segmentKey
             ? segment
-            : { ...segment, shot: edit.shot, camera_override: null },
+            : {
+                ...segment,
+                shots: editShots(segment.shots ?? [], segment.duration_s, edit),
+                camera_override: null,
+              },
         ),
       };
   }
+}
+
+function editShots(
+  shots: BlockingShot[],
+  duration: number,
+  edit: Extract<BlockingEdit, { kind: 'shot' | 'split-shot' | 'remove-shot' }>,
+): BlockingShot[] {
+  if (edit.kind === 'shot') {
+    return shots.map((shot, index) =>
+      index === edit.index ? { ...edit.shot, t0: index === 0 ? 0 : shot.t0 } : shot,
+    );
+  }
+  if (edit.kind === 'remove-shot') {
+    if (shots.length <= 1) return shots;
+    const next = shots.filter((_, index) => index !== edit.index);
+    return next.map((shot, index) => (index === 0 ? { ...shot, t0: 0 } : shot));
+  }
+  const at = round(edit.at);
+  let playing = 0;
+  shots.forEach((shot, index) => {
+    if (shot.t0 <= at) playing = index;
+  });
+  const current = shots[playing];
+  const nextStart = shots[playing + 1]?.t0 ?? duration;
+  if (!current || at - current.t0 < MIN_SHOT_SECONDS || nextStart - at < MIN_SHOT_SECONDS) {
+    return shots;
+  }
+  const inserted: BlockingShot = { ...current, t0: at, transition: 'cut' };
+  return [...shots.slice(0, playing + 1), inserted, ...shots.slice(playing + 1)];
 }
 
 export function normalizeDeg(deg: number): number {

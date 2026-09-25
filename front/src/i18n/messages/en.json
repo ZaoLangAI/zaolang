@@ -1538,7 +1538,21 @@
       "running": "Generating",
       "succeeded": "Done",
       "failed": "Failed"
-    }
+    },
+    "tabChat": "Chat",
+    "tabShots": "Shots",
+    "tabVideo": "Generate",
+    "panelLabel": "Blockout panel",
+    "shotPanelEmpty": "Play or scrub to a segment to see its shots here.",
+    "shotList": "Shots in this segment",
+    "shotAdd": "Add shot here",
+    "shotRemove": "Delete shot",
+    "shotTransition": "From the previous shot",
+    "transition": {
+      "cut": "Cut",
+      "continuous": "Continuous move"
+    },
+    "videoEmpty": "Generated videos appear here and on the matching script segment."
   },
   "brand": {
     "name": "ZaoLang",

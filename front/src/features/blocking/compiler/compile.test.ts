@@ -4,9 +4,12 @@ import type { BlockingDocument, BlockingSegment, BlockingShot } from '../types';
 import { CAMERA_MOVES, keysOf } from '../vocabulary';
 import { fovFromLens, frameShot } from './camera';
 import { compileBlocking } from './compile';
+import { measureTimeline } from './quality';
 import { angleDelta, length, sub } from './math';
 
 const shot = (overrides: Partial<BlockingShot> = {}): BlockingShot => ({
+  t0: 0,
+  transition: 'cut',
   size: 'medium',
   lens_mm: 35,
   height: 'eye',
@@ -48,7 +51,7 @@ const segment = (overrides: Partial<BlockingSegment> = {}): BlockingSegment => (
     },
     { cast_id: 'chen', t0: 2, t1: 4, action: 'talk', to: null, face: null },
   ],
-  shot: shot(),
+  shots: [shot()],
   camera_override: null,
   ...overrides,
 });
@@ -116,7 +119,7 @@ describe('compileBlocking', () => {
 
   it('samples identically every time (the export depends on it)', () => {
     const doc = documentWith([
-      segment({ shot: shot({ move: { preset: 'handheld', intensity: 0.8, ease: 'linear' } }) }),
+      segment({ shots: [shot({ move: { preset: 'handheld', intensity: 0.8, ease: 'linear' } })] }),
     ]);
     const a = compileBlocking(doc).sample(2.37)!;
     const b = compileBlocking(doc).sample(2.37)!;
@@ -126,7 +129,9 @@ describe('compileBlocking', () => {
 
   it.each(keysOf(CAMERA_MOVES))('plays %s without leaving the set', (preset) => {
     const timeline = compileBlocking(
-      documentWith([segment({ shot: shot({ move: { preset, intensity: 1, ease: 'in_out' } }) })]),
+      documentWith([
+        segment({ shots: [shot({ move: { preset, intensity: 1, ease: 'in_out' } })] }),
+      ]),
     );
     for (const t of [0, 3, 6]) {
       const camera = timeline.sample(t)!.camera;
@@ -139,7 +144,12 @@ describe('compileBlocking', () => {
   it('pushes in toward the subject and pulls out away from it', () => {
     const distanceAt = (preset: 'push_in' | 'pull_out', t: number) => {
       const timeline = compileBlocking(
-        documentWith([segment({ shot: shot({ move: { preset, intensity: 1, ease: 'linear' } }) })]),
+        documentWith([
+          segment({
+            beats: [],
+            shots: [shot({ move: { preset, intensity: 1, ease: 'linear' } })],
+          }),
+        ]),
       );
       const camera = timeline.sample(t)!.camera;
       return length(sub(camera.target, camera.position));
@@ -181,5 +191,154 @@ describe('frameShot', () => {
 
   it('turns the sensor upright for vertical video', () => {
     expect(fovFromLens(35, '9:16')).toBeGreaterThan(fovFromLens(35, '16:9'));
+  });
+});
+
+describe('staging repairs', () => {
+  const walled = (segments: BlockingSegment[]): BlockingDocument => {
+    const doc = documentWith(segments);
+    doc.sets![0]!.props = [
+      {
+        id: 'desk',
+        primitive: 'box',
+        label: '桌',
+        color_role: 'furniture',
+        position: [0, 0, -1],
+        rotation_y_deg: 0,
+        scale: [2, 0.8, 0.8],
+      },
+    ];
+    return doc;
+  };
+
+  it('switches shots at their start times and glides into a continuous one', () => {
+    const timeline = compileBlocking(
+      documentWith([
+        segment({
+          shots: [
+            shot({ size: 'wide' }),
+            shot({ t0: 3, size: 'close', transition: 'cut' }),
+            shot({ t0: 4.5, size: 'close', transition: 'continuous', side: 'left' }),
+          ],
+        }),
+      ]),
+    );
+    expect(timeline.sample(1)!.shot?.index).toBe(0);
+    expect(timeline.sample(3.2)!.shot?.index).toBe(1);
+    const distance = (t: number) => {
+      const camera = timeline.sample(t)!.camera;
+      return length(sub(camera.target, camera.position));
+    };
+    expect(distance(3.2)).toBeLessThan(distance(1));
+    // The continuous shot starts where the close-up left off, not at its own
+    // framing — no jump at the boundary.
+    const before = timeline.sample(4.49)!.camera.position;
+    const after = timeline.sample(4.51)!.camera.position;
+    expect(length(sub(after, before))).toBeLessThan(0.2);
+  });
+
+  it('keeps a walking subject in frame even on a static camera', () => {
+    const walker = segment({
+      start: [
+        {
+          cast_id: 'lin',
+          at: { anchor: null, x: -2.5, z: 0 },
+          face: { target: null, deg: 90 },
+          action: 'stand',
+        },
+      ],
+      beats: [
+        {
+          cast_id: 'lin',
+          t0: 0.5,
+          t1: 5.5,
+          action: 'walk',
+          to: { anchor: null, x: 2.5, z: 1 },
+          face: null,
+        },
+      ],
+      shots: [shot({ size: 'medium_close', subject: 'lin', side: 'front' })],
+    });
+    const [quality] = measureTimeline(compileBlocking(documentWith([walker])));
+    expect(quality!.framedRatio).toBeGreaterThan(0.9);
+  });
+
+  it('walks around furniture instead of through it', () => {
+    const crossing = segment({
+      start: [
+        {
+          cast_id: 'lin',
+          at: { anchor: null, x: 0, z: -2.5 },
+          face: { target: null, deg: 0 },
+          action: 'stand',
+        },
+      ],
+      beats: [
+        {
+          cast_id: 'lin',
+          t0: 0,
+          t1: 5,
+          action: 'walk',
+          to: { anchor: null, x: 0, z: 0.8 },
+          face: null,
+        },
+      ],
+    });
+    const timeline = compileBlocking(walled([crossing]));
+    const [quality] = measureTimeline(timeline);
+    expect(quality!.propPenetrationFrames).toBe(0);
+    // It still gets there.
+    const end = timeline.sample(5.9)!.cast[0]!.position;
+    expect(Math.hypot(end[0], end[2] - 0.8)).toBeLessThan(0.5);
+  });
+
+  it('spreads people placed on the same mark and keeps walkers apart', () => {
+    const crowded = segment({
+      start: [
+        {
+          cast_id: 'lin',
+          at: { anchor: null, x: 0, z: 0 },
+          face: { target: null, deg: 0 },
+          action: 'stand',
+        },
+        {
+          cast_id: 'chen',
+          at: { anchor: null, x: 0.1, z: 0 },
+          face: { target: null, deg: 0 },
+          action: 'stand',
+        },
+      ],
+      beats: [
+        {
+          cast_id: 'chen',
+          t0: 1,
+          t1: 4,
+          action: 'walk',
+          to: { anchor: null, x: 0, z: 0 },
+          face: null,
+        },
+      ],
+    });
+    const [quality] = measureTimeline(compileBlocking(documentWith([crowded])));
+    expect(quality!.minCastDistance).toBeGreaterThan(0.5);
+  });
+
+  it('moves a camera that a wall would block', () => {
+    const doc = documentWith([segment({ shots: [shot({ subject: 'lin', side: 'front' })] })]);
+    // A wall right between the subject and where a front camera goes.
+    doc.sets![0]!.props = [
+      {
+        id: 'wall',
+        primitive: 'plane',
+        label: '墙',
+        color_role: 'wall',
+        position: [0, 0, 1.2],
+        rotation_y_deg: 0,
+        scale: [3, 3, 1],
+      },
+    ];
+    const [quality] = measureTimeline(compileBlocking(doc));
+    expect(quality!.occludedRatio).toBe(0);
+    expect(quality!.framedRatio).toBeGreaterThan(0.9);
   });
 });

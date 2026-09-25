@@ -3,7 +3,12 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 import { compileBlocking, type FrameState, type Timeline } from '../compiler/compile';
-import { ASPECT_WIDTH_OVER_HEIGHT } from '../compiler/camera';
+import {
+  ASPECT_WIDTH_OVER_HEIGHT,
+  frameRectFor,
+  widenedFov,
+  type FrameRect,
+} from '../compiler/camera';
 import { DEG } from '../compiler/math';
 import { STUDIO_BACKGROUND, castColor } from '../palette';
 import type { BlockingDocument, CameraPose } from '../types';
@@ -49,6 +54,9 @@ export class BlockingPlayer {
   readonly scene = new THREE.Scene();
   readonly directorCamera = new THREE.PerspectiveCamera(40, 16 / 9, 0.05, 400);
   readonly freeCamera = new THREE.PerspectiveCamera(50, 16 / 9, 0.05, 400);
+  /** The director camera exactly as delivered (true aspect and fov) — what
+   * the free view's frustum helper draws and what the drag editor reads. */
+  readonly frameCamera = new THREE.PerspectiveCamera(40, 16 / 9, 0.05, 400);
   timeline: Timeline | null = null;
   document: BlockingDocument | null = null;
 
@@ -68,6 +76,9 @@ export class BlockingPlayer {
   private width = 1;
   private height = 1;
   private showGuides: boolean;
+  /** Interactive viewports fill the canvas and matte the frame; exports
+   * render the frame edge to edge. */
+  private readonly matte: boolean;
   private showLabels: boolean;
   private disposed = false;
 
@@ -80,6 +91,7 @@ export class BlockingPlayer {
     this.interactive = options.interactive;
     this.showGuides = options.interactive;
     this.showLabels = Boolean(options.labelLayer);
+    this.matte = options.interactive;
     this.renderer = new THREE.WebGLRenderer({
       canvas: options.canvas,
       antialias: true,
@@ -107,7 +119,7 @@ export class BlockingPlayer {
     sun.shadow.bias = -0.0005;
     this.scene.add(sun);
 
-    this.cameraHelper = new THREE.CameraHelper(this.directorCamera);
+    this.cameraHelper = new THREE.CameraHelper(this.frameCamera);
     this.cameraHelper.visible = false;
     this.scene.add(this.cameraHelper);
 
@@ -212,6 +224,7 @@ export class BlockingPlayer {
     this.labelRenderer?.setSize(this.width, this.height);
     this.freeCamera.aspect = this.width / this.height;
     this.freeCamera.updateProjectionMatrix();
+    if (this.lastFrame) this.applyCamera(this.lastFrame.camera);
     this.requestRender();
   }
 
@@ -364,16 +377,33 @@ export class BlockingPlayer {
     this.applyCamera(frame.camera);
   }
 
+  /** Where the delivered frame sits on the canvas, in CSS pixels. */
+  frameRect(): FrameRect {
+    if (!this.matte || !this.timeline) {
+      return { x: 0, y: 0, width: this.width, height: this.height };
+    }
+    return frameRectFor(this.width, this.height, this.timeline.aspect);
+  }
+
   private applyCamera(pose: CameraPose): void {
     const aspect = this.timeline ? ASPECT_WIDTH_OVER_HEIGHT[this.timeline.aspect] : 16 / 9;
-    const camera = this.directorCamera;
-    camera.position.set(...pose.position);
-    camera.fov = pose.fov;
-    camera.aspect = aspect;
-    camera.up.set(0, 1, 0);
-    camera.lookAt(new THREE.Vector3(...pose.target));
-    camera.updateProjectionMatrix();
-    camera.updateMatrixWorld();
+    const target = new THREE.Vector3(...pose.target);
+    for (const camera of [this.frameCamera, this.directorCamera]) {
+      camera.position.set(...pose.position);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(target);
+    }
+    this.frameCamera.fov = pose.fov;
+    this.frameCamera.aspect = aspect;
+    const rect = this.frameRect();
+    this.directorCamera.fov = this.matte
+      ? widenedFov(pose.fov, rect.height, this.height)
+      : pose.fov;
+    this.directorCamera.aspect = this.matte ? this.width / this.height : aspect;
+    for (const camera of [this.frameCamera, this.directorCamera]) {
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+    }
     this.cameraHelper.update();
   }
 
