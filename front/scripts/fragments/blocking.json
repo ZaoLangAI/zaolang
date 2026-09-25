@@ -187,7 +187,8 @@
         "cut": "切换",
         "continuous": "连续运镜"
       },
-      "videoEmpty": "生成的视频会出现在这里，也会挂到文案对应的分镜段上。"
+      "videoEmpty": "生成的视频会出现在这里，也会挂到文案对应的分镜段上。",
+      "videoBrowserUnsupported": "当前浏览器无法渲染参考视频，请使用最新版 Chrome、Edge 或 Safari。"
     },
     "scriptStudio": {
       "turnOriginBlocking": "白膜",
@@ -384,7 +385,8 @@
         "cut": "Cut",
         "continuous": "Continuous move"
       },
-      "videoEmpty": "Generated videos appear here and on the matching script segment."
+      "videoEmpty": "Generated videos appear here and on the matching script segment.",
+      "videoBrowserUnsupported": "This browser cannot render the reference video. Use a current Chrome, Edge or Safari."
     },
     "scriptStudio": {
       "turnOriginBlocking": "Blockout",
@@ -581,7 +583,8 @@
         "cut": "カット",
         "continuous": "連続カメラワーク"
       },
-      "videoEmpty": "生成した動画はここと、脚本の該当セグメントに表示されます。"
+      "videoEmpty": "生成した動画はここと、脚本の該当セグメントに表示されます。",
+      "videoBrowserUnsupported": "このブラウザでは参照動画をレンダリングできません。最新の Chrome、Edge、Safari をお使いください。"
     },
     "scriptStudio": {
       "turnOriginBlocking": "ブロックアウト",

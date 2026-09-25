@@ -30,7 +30,11 @@ import { castColor } from './palette';
 import type { AspectRatio, BlockingState } from './types';
 import { BlockingVideoDialog } from './blocking-video-dialog';
 import { ShotPanel } from './shot-panel';
-import { useBlockingVideo, type SegmentVideoItem } from './use-blocking-video';
+import {
+  BROWSER_CANNOT_ENCODE,
+  useBlockingVideo,
+  type SegmentVideoItem,
+} from './use-blocking-video';
 import { planSegmentVideos } from './video-plan';
 import { useBlockingSave } from './use-blocking-save';
 import { useBlockingStream } from './use-blocking-stream';
@@ -567,7 +571,9 @@ function VideoActions({
                 {item.status === 'rendering'
                   ? t('videoStatus.rendering', { percent: Math.round(item.progress * 100) })
                   : t(`videoStatus.${item.status}`)}
-                {item.status === 'failed' && item.error ? ` · ${item.error}` : ''}
+                {item.status === 'failed' && item.error
+                  ? ` · ${item.error === BROWSER_CANNOT_ENCODE ? t('videoBrowserUnsupported') : item.error}`
+                  : ''}
               </span>
             </li>
           ))}

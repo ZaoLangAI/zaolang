@@ -1552,7 +1552,8 @@
       "cut": "切换",
       "continuous": "连续运镜"
     },
-    "videoEmpty": "生成的视频会出现在这里，也会挂到文案对应的分镜段上。"
+    "videoEmpty": "生成的视频会出现在这里，也会挂到文案对应的分镜段上。",
+    "videoBrowserUnsupported": "当前浏览器无法渲染参考视频，请使用最新版 Chrome、Edge 或 Safari。"
   },
   "brand": {
     "name": "造浪",
