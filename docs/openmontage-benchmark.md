@@ -233,14 +233,11 @@ OpenMontage 唯一的 GUI 是只读 Backlot 看板（FastAPI + watchfiles → SS
 
 ## 6. 已核实的风险与 skill 漂移
 
-### 6.1 声音克隆 / 肖像授权无强制
+### 6.1 声音克隆 / 肖像授权无强制（当日已修复）
 
-- `back/app/providers/fal_media.py` 的 `build_voice_clone_body` 直接签名提交第一条音频参考，不查任何授权。
-- `back/app/domain/media/service.py` 的音频参考校验只看"是音频"，所有权只看"本人上传"，用户可上传任何人的声音。
-- `front/src/components/studio/audio-generation-studio.tsx` 的 `rightsConfirmed` 只控制按钮可用，不发给后端。
-- `AssetConsent` 只在 `back/app/scripts/import_assets_pack.py` 写入，业务代码从不读取；`ConsentType.VOICE` 未被使用。
-- 肖像：仅在分享角色到技能库时记录 `portrait_consent_at` 时间戳；真人照片作参考图或首帧时不做任何检查。
-- 依据：《互联网信息服务深度合成管理规定》第十四条（编辑他人人脸、人声须取得单独同意）。
+首次审计时，声音克隆与真人肖像参考缺少服务端强制的授权校验：`AssetConsent` 记录已定义但业务链路从未读取，理论上可以为任意音频/肖像素材发起生成而不触发同意检查。依据：《互联网信息服务深度合成管理规定》第十四条（编辑他人人脸、人声须取得单独同意）。
+
+修复：`app/domain/consent/service.py` 新增服务端强制校验，声纹样本或标记 `depicts_real_person` 的参考图在提交生成任务时会被拒绝，直到存在对应类型的有效 `AssetConsent`。详见 `zaolang-compliance-audit` 不变量 #9。本节仅保留结论供追溯，不再列出具体触发路径。
 
 ### 6.2 导出文件无 AI 生成标识
 
