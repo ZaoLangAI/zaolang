@@ -20,6 +20,7 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 | Compose | `infra/docker-compose.prod.yml` + `infra/.env.prod` (server-only, gitignored) |
 | Entry | `make prod-up` → `docker compose … up -d --build` |
 | Public | HTTP `:80` only (`PUBLIC_HOST=124.223.45.115`) |
+| SSH | key auth; the operator's key is usually `~/.ssh/zaolang_prod_ed25519`, which is **not** wired into `~/.ssh/config` — pass it explicitly (`ssh -i ~/.ssh/zaolang_prod_ed25519 -o IdentitiesOnly=yes`, and the same via `rsync -e`). Still confirm auth with the operator first |
 
 ## Key Paths
 
@@ -37,23 +38,41 @@ The one production box. Local gates and `make release-up` stay in `zaolang-ci-re
 2. **`push_local` (overwrite the remote DB from the laptop) is high-risk and only runs when the operator names it.** Backup the remote DB first; stop `api` / `worker` / `poller` / `beat`; `pg_restore --clean --if-exists --no-owner --no-privileges` into the compose Postgres; Redis `FLUSHDB`; then migrate and `prod-up`. Local role `zaolang` ≠ remote password — `--no-owner` is required. Refresh tokens signed with the laptop `JWT_SECRET` will not match the server; users re-login.
 3. **Never seed in production.** `python -m app.scripts.seed` raises when `APP_ENV=production`. The admin HTTP seed is also refused. Do not `down -v`. When the operator names a catalogue backfill, run `python -m app.scripts.ensure_catalog` inside the `api` container — additive `CreationSkill` / `LearnPost` rows (and shipped covers) only; an existing `zaolang_studio` password is never rotated.
 4. **`make restore` / `infra/scripts/restore.sh` must not target the remote box** — the script refuses a URL containing `prod` and defaults to laptop `:5433`. Remote restore is `docker compose exec -T postgres pg_restore …`.
-5. **Never overwrite `infra/.env.prod` with rsync.** Exclude `.git`, `node_modules`, `.next`, `__pycache__`, `back/.env`, `front/.env.local`, and `infra/.env.prod`. Append new keys; do not rotate JWT / Postgres / MinIO secrets on an update.
+5. **Never overwrite `infra/.env.prod` with rsync.** Exclude `.git`, `node_modules`, `.next`, `__pycache__`, `back/.env`, `front/.env.local`, and `infra/.env.prod` — plus `.claude` (local agent worktrees, whole repo copies) and `.hypothesis` (test cache). Append new keys; do not rotate JWT / Postgres / MinIO secrets on an update.
 6. **`object_key` rows and `STORAGE_BACKEND` must agree.** On the host prefer `STORAGE_BACKEND=tencent_cos` against the same bucket as the laptop (append `COS_*` to the server's `.env.prod`); the committed `infra/.env.prod.example` and the compose default (`${STORAGE_BACKEND:-minio}`) still say `minio` — do not assume the template matches the box, read the server file. MinIO can stay running unused. nginx `/${MEDIA_BUCKET}/` only proxies MinIO path-style signed URLs — COS objects are fetched from `*.myqcloud.com`.
 7. **Do not put a date diary or a fixed-incident write-up in this skill.** Keep constraints that still apply.
+8. **Deploy what is pushed.** Sync from a clean checkout of the branch being deployed (normally `dev` after its merge is pushed), so the box runs a commit that exists on `origin`. `git status` must be empty before the rsync.
+9. **Feature flags on the box change only when the operator names them.** Without an admin login, flip one through the same config service the console uses, inside the `api` container (see "Feature flag without the console"); it writes a `PlatformConfig` history row and busts the Redis config cache, so no restart is needed.
 
 ## Default update (code + migrate)
 
 ```bash
-# Probe: repo present, compose ps, disk, SELECT version_num FROM alembic_version
-rsync -az --delete \
-  --exclude='.git' --exclude='node_modules' --exclude='.next' \
-  --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' \
-  --exclude='.backups' --exclude='back/.env' --exclude='front/.env.local' \
-  --exclude='infra/.env.prod' --exclude='.pytest_cache' --exclude='.mypy_cache' \
-  --exclude='.ruff_cache' \
-  ./ ubuntu@124.223.45.115:/home/ubuntu/zaolang/
-# on the server, from /home/ubuntu/zaolang:
-make prod-up
+SSH='ssh -i ~/.ssh/zaolang_prod_ed25519 -o IdentitiesOnly=yes'
+C='docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod'
+
+# 0. Local: on the branch being deployed, clean, pushed
+git status --short && git log --oneline -1
+
+# 1. Probe (read-only): services, disk, current Alembic revision
+$SSH ubuntu@124.223.45.115 "cd /home/ubuntu/zaolang && df -h / | tail -1 && $C ps \
+  && $C exec -T postgres sh -c 'psql -U \$POSTGRES_USER -d \$POSTGRES_DB -tAc \"select version_num from alembic_version\"'"
+# The remote revision should be the down_revision of the first new migration.
+
+# 2. Dry run — expect zero `*deleting` lines; read the transfer list
+RSYNC_EXCLUDES=(--exclude='.git' --exclude='node_modules' --exclude='.next' \
+  --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' --exclude='.backups' \
+  --exclude='back/.env' --exclude='front/.env.local' --exclude='infra/.env.prod' \
+  --exclude='.pytest_cache' --exclude='.mypy_cache' --exclude='.ruff_cache' \
+  --exclude='.claude' --exclude='.hypothesis')
+rsync -azn --delete --itemize-changes -e "$SSH" "${RSYNC_EXCLUDES[@]}" \
+  ./ ubuntu@124.223.45.115:/home/ubuntu/zaolang/ | grep -E '^\*deleting|^<f'
+
+# 3. Sync for real
+rsync -az --delete -e "$SSH" "${RSYNC_EXCLUDES[@]}" ./ ubuntu@124.223.45.115:/home/ubuntu/zaolang/
+
+# 4. Rebuild + migrate (the `migrate` service runs to Alembic head before api/worker start).
+#    Several minutes (the Next build) — run it in the background, keep the SSH alive.
+$SSH -o ServerAliveInterval=30 ubuntu@124.223.45.115 'cd /home/ubuntu/zaolang && make prod-up'
 ```
 
 `make prod-up` recreates `api` / `web` / the Celery services (new container IPs) but leaves `nginx` running. That is fine: nginx re-resolves `api` / `web` / `minio` through Docker DNS (`valid=10s`), so it reaches the new containers within ~10s without a restart.
@@ -63,6 +82,25 @@ If the rsync changed `infra/nginx/prod.conf.template` itself, `up -d` still leav
 ```bash
 docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod restart nginx
 ```
+
+## Feature flag without the console (only when named)
+
+Read first, then change exactly the named flag and keep every other value (`blocking_studio_enabled` below as the example; a surface flag may also need its parent, e.g. `script_studio_enabled`):
+
+```bash
+$C exec -T api python -c "
+from app.db import session_scope
+from app.platform_config import service as cs
+from app.platform_config.schemas import FeatureFlags
+with session_scope() as s:
+    value = cs.get_typed(s, 'feature_flags', FeatureFlags).model_dump(mode='json')
+    print({k: v for k, v in value.items() if k.endswith('_enabled')}, value['rollout_percentages'])
+    value['blocking_studio_enabled'] = True
+    cs.set_value(s, 'feature_flags', value, actor_user_id=None, note='<why, per operator>')
+"
+```
+
+Read it back afterwards. The Redis config cache is busted on write (30s TTL is the fallback), so API processes see it without a restart.
 
 ## Catalogue backfill (only when named)
 
@@ -91,7 +129,11 @@ docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.prod \
 ```bash
 curl -sS http://124.223.45.115/healthz
 curl -sS http://124.223.45.115/readyz
-# on the server: alembic_version == laptop `alembic heads`
+# on the server (from /home/ubuntu/zaolang, `C` as in Default update):
+docker inspect -f '{{.State.ExitCode}}' zaolang-prod-migrate-1   # 0
+$C logs --tail=5 migrate                                          # "Running upgrade <old> -> <new>"
+$C exec -T postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -tAc "select version_num from alembic_version"'
+# == laptop `alembic heads`; then `$C ps` — every service (healthy)
 ```
 
 A 502 for up to ~10s right after `prod-up` is nginx's DNS cache expiring. If `/healthz` keeps returning 502 while `docker compose ps` shows `api` healthy, nginx is dialing a stale upstream (error log: `connect() failed (111: Connection refused) while connecting to upstream`). Check that the running config has the resolver; if it doesn't, the template on the box predates runtime resolution or nginx was never restarted after it changed — restart nginx as above.
