@@ -16,9 +16,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 # (`Settings._reject_default_secrets_in_production`) can check every signing
 # secret against exactly what a fresh checkout ships without duplicating the
 # strings themselves.
-_DEFAULT_JWT_SECRET = "k9Yxvz5CCVmGk9OKwnnBF6VfsWs5VS8r21kmQZ9DSsc"
-_DEFAULT_ADMIN_JWT_SECRET = "dbTYs3wmf9v5Hc6ZJwLivNUAA0t1NpX4b_eLZX53G5E"
-_DEFAULT_MCP_JWT_SECRET = "m8Kq2nR4vX7pL1sD9wC6hB3tY0zF5jA2uE8iQ4oN7gM"
+_DEFAULT_JWT_SECRET = "dev-only-change-me-jwt-secret-please-rotate"
+_DEFAULT_ADMIN_JWT_SECRET = "dev-only-change-me-admin-jwt-secret-rotate"
+_DEFAULT_MCP_JWT_SECRET = "dev-only-change-me-mcp-jwt-secret-please-rotate"
 _DEFAULT_PAYMENT_WEBHOOK_SECRET = "dev-only-change-me-webhook"
 
 
