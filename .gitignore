@@ -6,6 +6,11 @@
 *.key
 !**/*.key.example
 
+# Real prod host/IP/SSH details for the single remote box — local-only,
+# never published. Keep working locally; do not re-track or rename around
+# this rule.
+.cursor/skills/zaolang-remote-deploy/
+
 # --- python ---
 __pycache__/
 *.py[cod]
