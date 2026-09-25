@@ -3169,6 +3169,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/scripts/{episode_id}/blocking/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Blocking Turn */
+        post: operations["create_blocking_turn_v1_scripts__episode_id__blocking_turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking:rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rebuild Blocking
+         * @description The first build, and the stale banner's "rebuild from the new
+         *     script". Stages from the persisted script; no chat turn is written.
+         */
+        post: operations["rebuild_blocking_v1_scripts__episode_id__blocking_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Blocking */
+        patch: operations["patch_blocking_v1_scripts__episode_id__blocking_patch"];
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Blocking Settings */
+        patch: operations["update_blocking_settings_v1_scripts__episode_id__blocking_settings_patch"];
+        trace?: never;
+    };
+    "/v1/scripts/{episode_id}/blocking/versions/{version_no}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Blocking Version */
+        get: operations["get_blocking_version_v1_scripts__episode_id__blocking_versions__version_no__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/platform-accounts/config-status": {
         parameters: {
             query?: never;
@@ -6336,6 +6425,287 @@ export interface components {
              * @default false
              */
             confirmed: boolean;
+        };
+        /** BlockingAnchor */
+        BlockingAnchor: {
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** X */
+            x: number;
+            /** Z */
+            z: number;
+        };
+        /** BlockingBeat */
+        BlockingBeat: {
+            /** Cast Id */
+            cast_id: string;
+            /** T0 */
+            t0: number;
+            /** T1 */
+            t1: number;
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "stand" | "sit" | "walk" | "run" | "turn" | "point" | "talk" | "wave" | "kneel" | "fall" | "pickup" | "hug" | "fight";
+            to?: components["schemas"]["BlockingMark"] | null;
+            face?: components["schemas"]["BlockingFacing"] | null;
+        };
+        /** BlockingCameraMove */
+        BlockingCameraMove: {
+            /**
+             * Preset
+             * @enum {string}
+             */
+            preset: "static" | "push_in" | "pull_out" | "pan_left" | "pan_right" | "tilt_up" | "tilt_down" | "truck_left" | "truck_right" | "follow" | "orbit_cw" | "orbit_ccw" | "crane_up" | "crane_down" | "handheld";
+            /** Intensity */
+            intensity: number;
+            /**
+             * Ease
+             * @enum {string}
+             */
+            ease: "linear" | "in_out";
+        };
+        /** BlockingCameraOverride */
+        BlockingCameraOverride: {
+            start: components["schemas"]["BlockingCameraPose"];
+            end?: components["schemas"]["BlockingCameraPose"] | null;
+        };
+        /** BlockingCameraPose */
+        BlockingCameraPose: {
+            /** Position */
+            position: number[];
+            /** Target */
+            target: number[];
+            /** Fov */
+            fov: number;
+        };
+        /** BlockingCastMember */
+        BlockingCastMember: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Character Ref Id */
+            character_ref_id?: string | null;
+            /** Color Index */
+            color_index: number;
+            /** Height M */
+            height_m: number;
+        };
+        /** BlockingDocument */
+        BlockingDocument: {
+            /** Version */
+            version: number;
+            /** Script Hash */
+            script_hash: string;
+            /** Target Duration S */
+            target_duration_s: number;
+            /**
+             * Aspect Ratio
+             * @enum {string}
+             */
+            aspect_ratio: "9:16" | "16:9" | "1:1";
+            /** Sets */
+            sets?: components["schemas"]["BlockingSet"][];
+            /** Cast */
+            cast?: components["schemas"]["BlockingCastMember"][];
+            /** Segments */
+            segments?: components["schemas"]["BlockingSegment"][];
+        };
+        /** BlockingFacing */
+        BlockingFacing: {
+            /** Target */
+            target?: string | null;
+            /**
+             * Deg
+             * @default 0
+             */
+            deg: number;
+        };
+        /** BlockingMark */
+        BlockingMark: {
+            /** Anchor */
+            anchor?: string | null;
+            /** X */
+            x: number;
+            /** Z */
+            z: number;
+        };
+        /**
+         * BlockingPatchRequest
+         * @description A manual 白膜 edit — the browser's whole document, re-validated by
+         *     `app.domain.blocking.sanitize.sanitize_blocking(mode="manual")`.
+         */
+        BlockingPatchRequest: {
+            /** Document */
+            document: {
+                [key: string]: unknown;
+            };
+            /** Base Version No */
+            base_version_no: number;
+        };
+        /** BlockingProp */
+        BlockingProp: {
+            /** Id */
+            id: string;
+            /**
+             * Primitive
+             * @enum {string}
+             */
+            primitive: "box" | "plane" | "cylinder" | "sphere" | "cone" | "capsule" | "torus" | "stairs";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Color Role
+             * @enum {string}
+             */
+            color_role: "wall" | "floor" | "furniture" | "door" | "window" | "vehicle" | "nature" | "accent";
+            /** Position */
+            position: number[];
+            /**
+             * Rotation Y Deg
+             * @default 0
+             */
+            rotation_y_deg: number;
+            /** Scale */
+            scale: number[];
+        };
+        /** BlockingSegment */
+        BlockingSegment: {
+            /** Key */
+            key: string;
+            /** Heading */
+            heading: string;
+            /** Set Id */
+            set_id: string;
+            /** Source Hash */
+            source_hash: string;
+            /** Duration S */
+            duration_s: number;
+            /** Start */
+            start?: components["schemas"]["BlockingStartEntry"][];
+            /** Beats */
+            beats?: components["schemas"]["BlockingBeat"][];
+            shot: components["schemas"]["BlockingShot"];
+            camera_override?: components["schemas"]["BlockingCameraOverride"] | null;
+        };
+        /** BlockingSet */
+        BlockingSet: {
+            /** Id */
+            id: string;
+            /** Heading */
+            heading: string;
+            /**
+             * Ground
+             * @enum {string}
+             */
+            ground: "floor" | "street" | "grass" | "sand" | "water" | "void";
+            /** Width M */
+            width_m: number;
+            /** Depth M */
+            depth_m: number;
+            /** Props */
+            props?: components["schemas"]["BlockingProp"][];
+            /** Anchors */
+            anchors?: components["schemas"]["BlockingAnchor"][];
+        };
+        /** BlockingSettingsRequest */
+        BlockingSettingsRequest: {
+            /** Target Duration Seconds */
+            target_duration_seconds?: number | null;
+            /** Aspect Ratio */
+            aspect_ratio?: ("9:16" | "16:9" | "1:1") | null;
+            /** Base Version No */
+            base_version_no: number;
+        };
+        /** BlockingShot */
+        BlockingShot: {
+            /**
+             * Size
+             * @enum {string}
+             */
+            size: "extreme_wide" | "wide" | "full" | "medium" | "medium_close" | "close" | "extreme_close";
+            /** Lens Mm */
+            lens_mm: number;
+            /**
+             * Height
+             * @enum {string}
+             */
+            height: "ground" | "low" | "eye" | "high" | "overhead";
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "front" | "left" | "right" | "back" | "ots_left" | "ots_right";
+            /** Subject */
+            subject?: string | null;
+            /** Over */
+            over?: string | null;
+            move: components["schemas"]["BlockingCameraMove"];
+        };
+        /** BlockingStartEntry */
+        BlockingStartEntry: {
+            /** Cast Id */
+            cast_id: string;
+            at: components["schemas"]["BlockingMark"];
+            face: components["schemas"]["BlockingFacing"];
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "stand" | "sit" | "walk" | "run" | "turn" | "point" | "talk" | "wave" | "kneel" | "fall" | "pickup" | "hug" | "fight";
+        };
+        /** BlockingState */
+        BlockingState: {
+            document?: components["schemas"]["BlockingDocument"] | null;
+            /**
+             * Version No
+             * @default 0
+             */
+            version_no: number;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Stale Segment Keys */
+            stale_segment_keys?: string[];
+            /** Duration Warning */
+            duration_warning?: string | null;
+            /** Target Duration Seconds */
+            target_duration_seconds?: number | null;
+            /**
+             * Default Target Duration Seconds
+             * @default 0
+             */
+            default_target_duration_seconds: number;
+        };
+        /** BlockingTurnRequest */
+        BlockingTurnRequest: {
+            /** Message */
+            message: string;
+            current_script?: components["schemas"]["ScriptDocument"] | null;
+        };
+        /** BlockingVersionResponse */
+        BlockingVersionResponse: {
+            /** Version No */
+            version_no: number;
+            /** Origin */
+            origin: string;
+            /** Summary */
+            summary: string;
+            /** Turn Id */
+            turn_id?: string | null;
+            document: components["schemas"]["BlockingDocument"];
         };
         /** Body_extract_script_source_v1_scripts_extract_post */
         Body_extract_script_source_v1_scripts_extract_post: {
@@ -9525,6 +9895,11 @@ export interface components {
             marketplace: boolean;
             /** Canvas Studio */
             canvas_studio: boolean;
+            /**
+             * Blocking Studio
+             * @default false
+             */
+            blocking_studio: boolean;
         };
         /** MeResponse */
         MeResponse: {
@@ -11470,6 +11845,7 @@ export interface components {
             source_referenced_skill_ids?: string[];
             /** Last Error */
             last_error?: string | null;
+            blocking?: components["schemas"]["BlockingState"] | null;
             /**
              * Created At
              * Format: date-time
@@ -11647,6 +12023,11 @@ export interface components {
              * @default
              */
             thinking: string;
+            /**
+             * Origin
+             * @default script
+             */
+            origin: string;
         };
         /** SeedRequest */
         SeedRequest: {
@@ -12510,6 +12891,8 @@ export interface components {
             first_frame_asset_id?: string | null;
             /** Last Frame Asset Id */
             last_frame_asset_id?: string | null;
+            /** Reference Video Role */
+            reference_video_role?: "motion_guide" | null;
         };
         /**
          * VideoPricingPayload
@@ -19885,6 +20268,186 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_blocking_turn_v1_scripts__episode_id__blocking_turns_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockingTurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rebuild_blocking_v1_scripts__episode_id__blocking_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_blocking_v1_scripts__episode_id__blocking_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockingPatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_blocking_settings_v1_scripts__episode_id__blocking_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockingSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_blocking_version_v1_scripts__episode_id__blocking_versions__version_no__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                episode_id: string;
+                version_no: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlockingVersionResponse"];
                 };
             };
             /** @description Validation Error */

@@ -644,6 +644,7 @@ def _seed_editor_flags(session: Session) -> None:
         and current.script_studio_enabled
         and current.video_analysis_enabled
         and current.canvas_studio_enabled
+        and current.blocking_studio_enabled
     ):
         return
     value = current.model_dump(mode="json")
@@ -657,6 +658,7 @@ def _seed_editor_flags(session: Session) -> None:
             "script_studio_enabled": True,
             "video_analysis_enabled": True,
             "canvas_studio_enabled": True,
+            "blocking_studio_enabled": True,
         }
     )
     config_service.set_value(

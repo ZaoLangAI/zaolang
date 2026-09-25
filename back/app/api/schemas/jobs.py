@@ -121,6 +121,12 @@ class VideoGenerationOptions(ApiModel):
     reference_mode: Literal["input_references", "frame_images"] = "input_references"
     first_frame_asset_id: str | None = Field(default=None, max_length=40)
     last_frame_asset_id: str | None = Field(default=None, max_length=40)
+    # `motion_guide`: the one video among `reference_asset_ids` is a 白膜
+    # blockout render — camera, blocking and timing to follow, not footage
+    # to reproduce. Routes only to reference-to-video models and prepends a
+    # fixed directive (`app.domain.media.reference_roles`). `None` keeps a
+    # video reference's ordinary meaning.
+    reference_video_role: Literal["motion_guide"] | None = None
 
 
 def apply_sandbox_generation_defaults(
@@ -205,6 +211,13 @@ def validate_generation_params(
                 raise ValueError("首尾帧模式必须使用 image_to_video 操作。")
         elif video_options.first_frame_asset_id or video_options.last_frame_asset_id:
             raise ValueError("普通参考素材模式不能传入首帧或尾帧。")
+        if video_options.reference_video_role == "motion_guide":
+            if video_options.reference_mode != "input_references":
+                raise ValueError("白膜参考视频不能与首尾帧同时使用。")
+            if operation != Operation.TEXT_TO_VIDEO:
+                raise ValueError("白膜参考视频仅适用于 text_to_video。")
+            if not references:
+                raise ValueError("白膜参考视频模式必须提供参考视频。")
     has_frame_input = bool(video_options and video_options.first_frame_asset_id)
     if operation == Operation.IMAGE_TO_VIDEO and not references and not has_frame_input:
         raise ValueError("图生视频必须提供参考图。")

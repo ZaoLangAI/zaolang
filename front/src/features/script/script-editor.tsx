@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { TextArea } from '@/components/ui/field';
+import { IconVideo } from '@/components/ui/icons';
 import { EmptyState, ErrorNotice, Skeleton } from '@/components/ui/primitives';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -559,6 +560,21 @@ export function ScriptEditor({
 
   return (
     <>
+    {detail.blocking ? (
+      <div className="-mt-2 flex flex-wrap items-center justify-end gap-3">
+        <p className="text-xs text-muted">{t('openBlockingHint')}</p>
+        <Link
+          href={`/create/script/${episodeId}/blocking`}
+          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 text-sm font-medium text-text transition-colors hover:border-border-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-focus"
+        >
+          <IconVideo className="size-4" />
+          {t('openBlocking')}
+          {detail.blocking.stale ? (
+            <span className="size-1.5 rounded-full bg-amber" aria-label={t('blockingStale')} />
+          ) : null}
+        </Link>
+      </div>
+    ) : null}
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.3fr)]">
       <div className={`flex min-h-[50vh] flex-col ${WORKSPACE_HEIGHT}`}>
         <ScriptChatPanel

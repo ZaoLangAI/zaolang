@@ -48,6 +48,7 @@ Backend layering: `api/v1` (the HTTP contract) → `domain/*` (where invariants 
 | Single-host remote deploy or update (rsync, prod compose, migrate, optional local-DB overwrite) | `zaolang-remote-deploy` |
 | Writing tests, running E2E, accessibility and visual QA | `zaolang-testing-qa` |
 | The drama timeline, EditCommand, leases, browser export, editor_planner, Remote MCP, conversational script writing (文案创作) | `zaolang-editor-drama` |
+| The 白膜 blockout studio: blocking document/sanitizer, blocking agent slots, the 3D player and drag editor, motion-guide reference videos | `zaolang-blocking-studio` |
 
 For a change spanning modules, load in dependency order: `data-model` → `domain/*` → `api-contract` → frontend.
 

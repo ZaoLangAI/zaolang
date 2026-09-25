@@ -189,6 +189,11 @@ class FeatureFlags(ConfigSection):
     # parallel creation surface, not part of the timeline editor, and a free
     # sandbox canvas touches no drama series at all.
     canvas_studio_enabled: bool = False
+    # Gates the 白膜 (3D blockout) studio inside script writing: its entry
+    # button on the script page, `/create/script/{id}/blocking`, and the
+    # `/v1/scripts/{id}/blocking*` routes. Only meaningful while
+    # `script_studio_enabled` is also on — the studio is a surface of it.
+    blocking_studio_enabled: bool = False
     # Rollout percentage keyed by flag name, evaluated per user id hash.
     rollout_percentages: dict[str, int] = Field(default_factory=dict)
 
@@ -1095,6 +1100,7 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "marketplace_enabled": True,
         "script_studio_enabled": False,
         "video_analysis_enabled": False,
+        "blocking_studio_enabled": False,
         "rollout_percentages": {},
     },
     "content_moderation": {"blocked_keywords": []},

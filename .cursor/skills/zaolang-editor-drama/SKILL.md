@@ -12,6 +12,8 @@ Both the product surface and the editing engine live in this repo. The only thin
 
 A drama `Series` now has a **second** creative surface beside the timeline: `GET /v1/drama-series/{series_id}/canvas` resolves-or-creates that series' infinite canvas, which reads the same `Series`/`DramaEpisode` rows through its own routes and its own concurrency model. Anything about the canvas itself — its tables, `/graph-ops`, the change stream, its Agent — is `zaolang-canvas`, not here.
 
+A script episode also has a **3D blockout** surface, `/create/script/{id}/blocking`, whose turns are `EpisodeScriptTurn(origin="blocking")` rows in the same history and whose document lives in `DramaEpisode.blocking_json` — everything about it is `zaolang-blocking-studio`.
+
 ## Key Paths
 
 | Path | Contents |

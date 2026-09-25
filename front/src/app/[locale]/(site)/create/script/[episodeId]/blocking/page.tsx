@@ -1,0 +1,48 @@
+import { getTranslations } from 'next-intl/server';
+
+import { GoBackLink } from '@/components/ui/go-back-link';
+import { EmptyState, PageHeading } from '@/components/ui/primitives';
+import { BlockingStudio } from '@/features/blocking/blocking-studio';
+import type { ScriptDetail } from '@/features/script/api';
+import { parseScriptEpisodeId } from '@/features/script/script-breakpoint';
+import { serverFetchOrNull } from '@/lib/api/server';
+
+export async function generateMetadata() {
+  const t = await getTranslations('blockingStudio');
+  return { title: t('title'), description: t('subtitle') };
+}
+
+export default async function BlockingStudioPage({
+  params,
+}: {
+  params: Promise<{ episodeId: string }>;
+}) {
+  const t = await getTranslations('blockingStudio');
+  const { episodeId: rawEpisodeId } = await params;
+  const episodeId = parseScriptEpisodeId(rawEpisodeId);
+  const backHref = episodeId ? `/create/script/${episodeId}` : '/create/script';
+  const detail = episodeId
+    ? await serverFetchOrNull<ScriptDetail>(`/v1/scripts/${episodeId}`, { authenticated: true })
+    : null;
+
+  // `blocking` is `null` whenever `blocking_studio_enabled` is off for this
+  // user — the same "off means hidden" contract as the API's 404s.
+  const unavailable = !episodeId || !detail || !detail.blocking;
+  const noScript = !unavailable && detail.turns.length === 0;
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-4 py-6 sm:px-6">
+      <GoBackLink fallbackHref={backHref}>{t('backToScript')}</GoBackLink>
+      <PageHeading
+        title={detail?.title ? t('titleWithScript', { title: detail.title }) : t('title')}
+      />
+      {unavailable ? (
+        <EmptyState title={t('unavailableTitle')} description={t('unavailableHint')} />
+      ) : noScript ? (
+        <EmptyState title={t('noScriptTitle')} description={t('noScriptHint')} />
+      ) : (
+        <BlockingStudio episodeId={episodeId} initial={detail} />
+      )}
+    </div>
+  );
+}

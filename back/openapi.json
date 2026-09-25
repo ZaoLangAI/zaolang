@@ -12938,6 +12938,364 @@
         }
       }
     },
+    "/v1/scripts/{episode_id}/blocking/turns": {
+      "post": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Create Blocking Turn",
+        "operationId": "create_blocking_turn_v1_scripts__episode_id__blocking_turns_post",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockingTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking:rebuild": {
+      "post": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Rebuild Blocking",
+        "description": "The first build, and the stale banner's \"rebuild from the new\nscript\". Stages from the persisted script; no chat turn is written.",
+        "operationId": "rebuild_blocking_v1_scripts__episode_id__blocking_rebuild_post",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking": {
+      "patch": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Patch Blocking",
+        "operationId": "patch_blocking_v1_scripts__episode_id__blocking_patch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockingPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockingState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking/settings": {
+      "patch": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Update Blocking Settings",
+        "operationId": "update_blocking_settings_v1_scripts__episode_id__blocking_settings_patch",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockingSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockingState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scripts/{episode_id}/blocking/versions/{version_no}": {
+      "get": {
+        "tags": [
+          "blocking"
+        ],
+        "summary": "Get Blocking Version",
+        "operationId": "get_blocking_version_v1_scripts__episode_id__blocking_versions__version_no__get",
+        "parameters": [
+          {
+            "name": "episode_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Episode Id"
+            }
+          },
+          {
+            "name": "version_no",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version No"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockingVersionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/platform-accounts/config-status": {
       "get": {
         "tags": [
@@ -23459,6 +23817,827 @@
         ],
         "title": "BindEditorExportRequest"
       },
+      "BlockingAnchor": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "z": {
+            "type": "number",
+            "title": "Z"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "x",
+          "z"
+        ],
+        "title": "BlockingAnchor"
+      },
+      "BlockingBeat": {
+        "properties": {
+          "cast_id": {
+            "type": "string",
+            "title": "Cast Id"
+          },
+          "t0": {
+            "type": "number",
+            "title": "T0"
+          },
+          "t1": {
+            "type": "number",
+            "title": "T1"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "stand",
+              "sit",
+              "walk",
+              "run",
+              "turn",
+              "point",
+              "talk",
+              "wave",
+              "kneel",
+              "fall",
+              "pickup",
+              "hug",
+              "fight"
+            ],
+            "title": "Action"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingMark"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "face": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingFacing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "cast_id",
+          "t0",
+          "t1",
+          "action"
+        ],
+        "title": "BlockingBeat"
+      },
+      "BlockingCameraMove": {
+        "properties": {
+          "preset": {
+            "type": "string",
+            "enum": [
+              "static",
+              "push_in",
+              "pull_out",
+              "pan_left",
+              "pan_right",
+              "tilt_up",
+              "tilt_down",
+              "truck_left",
+              "truck_right",
+              "follow",
+              "orbit_cw",
+              "orbit_ccw",
+              "crane_up",
+              "crane_down",
+              "handheld"
+            ],
+            "title": "Preset"
+          },
+          "intensity": {
+            "type": "number",
+            "title": "Intensity"
+          },
+          "ease": {
+            "type": "string",
+            "enum": [
+              "linear",
+              "in_out"
+            ],
+            "title": "Ease"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preset",
+          "intensity",
+          "ease"
+        ],
+        "title": "BlockingCameraMove"
+      },
+      "BlockingCameraOverride": {
+        "properties": {
+          "start": {
+            "$ref": "#/components/schemas/BlockingCameraPose"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingCameraPose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "start"
+        ],
+        "title": "BlockingCameraOverride"
+      },
+      "BlockingCameraPose": {
+        "properties": {
+          "position": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Position"
+          },
+          "target": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Target"
+          },
+          "fov": {
+            "type": "number",
+            "title": "Fov"
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "target",
+          "fov"
+        ],
+        "title": "BlockingCameraPose"
+      },
+      "BlockingCastMember": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "character_ref_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Ref Id"
+          },
+          "color_index": {
+            "type": "integer",
+            "title": "Color Index"
+          },
+          "height_m": {
+            "type": "number",
+            "title": "Height M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "color_index",
+          "height_m"
+        ],
+        "title": "BlockingCastMember"
+      },
+      "BlockingDocument": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "script_hash": {
+            "type": "string",
+            "title": "Script Hash"
+          },
+          "target_duration_s": {
+            "type": "integer",
+            "title": "Target Duration S"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "9:16",
+              "16:9",
+              "1:1"
+            ],
+            "title": "Aspect Ratio"
+          },
+          "sets": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingSet"
+            },
+            "type": "array",
+            "title": "Sets"
+          },
+          "cast": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingCastMember"
+            },
+            "type": "array",
+            "title": "Cast"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingSegment"
+            },
+            "type": "array",
+            "title": "Segments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "script_hash",
+          "target_duration_s",
+          "aspect_ratio"
+        ],
+        "title": "BlockingDocument"
+      },
+      "BlockingFacing": {
+        "properties": {
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "deg": {
+            "type": "number",
+            "title": "Deg",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "BlockingFacing"
+      },
+      "BlockingMark": {
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "z": {
+            "type": "number",
+            "title": "Z"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x",
+          "z"
+        ],
+        "title": "BlockingMark"
+      },
+      "BlockingPatchRequest": {
+        "properties": {
+          "document": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Document"
+          },
+          "base_version_no": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Version No"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document",
+          "base_version_no"
+        ],
+        "title": "BlockingPatchRequest",
+        "description": "A manual 白膜 edit — the browser's whole document, re-validated by\n`app.domain.blocking.sanitize.sanitize_blocking(mode=\"manual\")`."
+      },
+      "BlockingProp": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "primitive": {
+            "type": "string",
+            "enum": [
+              "box",
+              "plane",
+              "cylinder",
+              "sphere",
+              "cone",
+              "capsule",
+              "torus",
+              "stairs"
+            ],
+            "title": "Primitive"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "default": ""
+          },
+          "color_role": {
+            "type": "string",
+            "enum": [
+              "wall",
+              "floor",
+              "furniture",
+              "door",
+              "window",
+              "vehicle",
+              "nature",
+              "accent"
+            ],
+            "title": "Color Role"
+          },
+          "position": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Position"
+          },
+          "rotation_y_deg": {
+            "type": "number",
+            "title": "Rotation Y Deg",
+            "default": 0.0
+          },
+          "scale": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Scale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "primitive",
+          "color_role",
+          "position",
+          "scale"
+        ],
+        "title": "BlockingProp"
+      },
+      "BlockingSegment": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "set_id": {
+            "type": "string",
+            "title": "Set Id"
+          },
+          "source_hash": {
+            "type": "string",
+            "title": "Source Hash"
+          },
+          "duration_s": {
+            "type": "integer",
+            "title": "Duration S"
+          },
+          "start": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingStartEntry"
+            },
+            "type": "array",
+            "title": "Start"
+          },
+          "beats": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingBeat"
+            },
+            "type": "array",
+            "title": "Beats"
+          },
+          "shot": {
+            "$ref": "#/components/schemas/BlockingShot"
+          },
+          "camera_override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingCameraOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "heading",
+          "set_id",
+          "source_hash",
+          "duration_s",
+          "shot"
+        ],
+        "title": "BlockingSegment"
+      },
+      "BlockingSet": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "ground": {
+            "type": "string",
+            "enum": [
+              "floor",
+              "street",
+              "grass",
+              "sand",
+              "water",
+              "void"
+            ],
+            "title": "Ground"
+          },
+          "width_m": {
+            "type": "number",
+            "title": "Width M"
+          },
+          "depth_m": {
+            "type": "number",
+            "title": "Depth M"
+          },
+          "props": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingProp"
+            },
+            "type": "array",
+            "title": "Props"
+          },
+          "anchors": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingAnchor"
+            },
+            "type": "array",
+            "title": "Anchors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "heading",
+          "ground",
+          "width_m",
+          "depth_m"
+        ],
+        "title": "BlockingSet"
+      },
+      "BlockingSettingsRequest": {
+        "properties": {
+          "target_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1800.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Seconds"
+          },
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "9:16",
+                  "16:9",
+                  "1:1"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "base_version_no": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Base Version No"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_version_no"
+        ],
+        "title": "BlockingSettingsRequest"
+      },
+      "BlockingShot": {
+        "properties": {
+          "size": {
+            "type": "string",
+            "enum": [
+              "extreme_wide",
+              "wide",
+              "full",
+              "medium",
+              "medium_close",
+              "close",
+              "extreme_close"
+            ],
+            "title": "Size"
+          },
+          "lens_mm": {
+            "type": "integer",
+            "title": "Lens Mm"
+          },
+          "height": {
+            "type": "string",
+            "enum": [
+              "ground",
+              "low",
+              "eye",
+              "high",
+              "overhead"
+            ],
+            "title": "Height"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "front",
+              "left",
+              "right",
+              "back",
+              "ots_left",
+              "ots_right"
+            ],
+            "title": "Side"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          },
+          "over": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Over"
+          },
+          "move": {
+            "$ref": "#/components/schemas/BlockingCameraMove"
+          }
+        },
+        "type": "object",
+        "required": [
+          "size",
+          "lens_mm",
+          "height",
+          "side",
+          "move"
+        ],
+        "title": "BlockingShot"
+      },
+      "BlockingStartEntry": {
+        "properties": {
+          "cast_id": {
+            "type": "string",
+            "title": "Cast Id"
+          },
+          "at": {
+            "$ref": "#/components/schemas/BlockingMark"
+          },
+          "face": {
+            "$ref": "#/components/schemas/BlockingFacing"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "stand",
+              "sit",
+              "walk",
+              "run",
+              "turn",
+              "point",
+              "talk",
+              "wave",
+              "kneel",
+              "fall",
+              "pickup",
+              "hug",
+              "fight"
+            ],
+            "title": "Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cast_id",
+          "at",
+          "face",
+          "action"
+        ],
+        "title": "BlockingStartEntry"
+      },
+      "BlockingState": {
+        "properties": {
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version_no": {
+            "type": "integer",
+            "title": "Version No",
+            "default": 0
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "stale_segment_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stale Segment Keys"
+          },
+          "duration_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Warning"
+          },
+          "target_duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Duration Seconds"
+          },
+          "default_target_duration_seconds": {
+            "type": "integer",
+            "title": "Default Target Duration Seconds",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "BlockingState"
+      },
+      "BlockingTurnRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "current_script": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScriptDocument"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "BlockingTurnRequest"
+      },
+      "BlockingVersionResponse": {
+        "properties": {
+          "version_no": {
+            "type": "integer",
+            "title": "Version No"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          },
+          "document": {
+            "$ref": "#/components/schemas/BlockingDocument"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_no",
+          "origin",
+          "summary",
+          "document"
+        ],
+        "title": "BlockingVersionResponse"
+      },
       "Body_extract_script_source_v1_scripts_extract_post": {
         "properties": {
           "file": {
@@ -31328,6 +32507,11 @@
           "canvas_studio": {
             "type": "boolean",
             "title": "Canvas Studio"
+          },
+          "blocking_studio": {
+            "type": "boolean",
+            "title": "Blocking Studio",
+            "default": false
           }
         },
         "type": "object",
@@ -36428,6 +37612,16 @@
             ],
             "title": "Last Error"
           },
+          "blocking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockingState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -36808,6 +38002,11 @@
             "type": "string",
             "title": "Thinking",
             "default": ""
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin",
+            "default": "script"
           }
         },
         "type": "object",
@@ -38652,6 +39851,18 @@
               }
             ],
             "title": "Last Frame Asset Id"
+          },
+          "reference_video_role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "motion_guide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Video Role"
           }
         },
         "type": "object",

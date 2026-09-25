@@ -78,6 +78,7 @@ class MeFeaturesResponse(ApiModel):
     drama_studio: bool
     marketplace: bool
     canvas_studio: bool
+    blocking_studio: bool = False
 
 
 class MeResponse(ApiModel):

@@ -28,6 +28,7 @@ from app.domain.errors import NotFound, ValidationFailed
 from app.domain.jobs import service as jobs_service
 from app.domain.jobs import state_machine as sm
 from app.domain.jobs.cancellation import honor_user_cancel
+from app.domain.media import reference_roles
 from app.domain.media import service as media_service
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.scenes import service as scenes_service
@@ -1420,6 +1421,17 @@ def _clarify_answer_text(plan: dict[str, Any]) -> str:
 
 
 def _plan_enhancements(ctx: WorkflowContext) -> tuple[str, str | None]:
+    """The prompt actually sent: the planner's suggestions folded in (see
+    `_planned_prompt`), then any reference-role directive — e.g. telling the
+    model a 白膜 motion-guide clip is staging to follow, not footage to copy
+    (`app.domain.media.reference_roles`)."""
+    prompt, negative_prompt = _planned_prompt(ctx)
+    return reference_roles.apply_reference_roles(
+        prompt, negative_prompt, ctx.params.get("video_options")
+    )
+
+
+def _planned_prompt(ctx: WorkflowContext) -> tuple[str, str | None]:
     """Folds the planning node's suggestions into what actually gets sent.
 
     Reads the `PLAN_STATE_KEY` convention key regardless of what

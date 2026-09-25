@@ -451,6 +451,13 @@ def validate_generation_references(
                 "视频生成参考素材仅支持图片或视频。",
                 fields={"params.reference_asset_ids": "仅支持图片或视频"},
             )
+        if video_options.get("reference_video_role") == "motion_guide":
+            videos = [a for a in ordinary_ids if by_id[a].media_type == MediaType.VIDEO]
+            if len(videos) != 1:
+                raise ValidationFailed(
+                    "白膜参考模式必须恰好包含一段参考视频。",
+                    fields={"params.reference_asset_ids": "需要恰好一段参考视频"},
+                )
     elif operation == Operation.AUDIO_GENERATION.value:
         # The one reference `audio_generation` ever takes is a voice-clone
         # sample — count-capped to 1 in `validate_generation_params`

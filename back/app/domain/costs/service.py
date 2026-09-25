@@ -407,15 +407,24 @@ def estimate_media_request_cost_micro_usd(
     duration = int(params.get("duration_seconds") or 0) or NOMINAL_VIDEO_SECONDS
     prompt_characters = len(str(params.get("prompt") or "")) or NOMINAL_AUDIO_CHARACTERS
     reference_images = int(params.get("reference_image_count") or 0)
+    # A 白膜 motion guide is rendered at exactly the clip's own length, so
+    # here — unlike an arbitrary attached clip — the reference video's
+    # duration *is* known, and per-second/token models bill it too.
+    motion_guide = (
+        isinstance(video_options, Mapping)
+        and video_options.get("reference_video_role") == "motion_guide"
+    )
     return media_call_cost_micro_usd(
         pricing,
         capability=capability,
         billing_profile=billing_profile,
         resolution=resolution,
         duration_seconds=duration,
+        input_material_seconds=duration if motion_guide else 0,
         prompt_characters=prompt_characters,
         input_images=reference_images,
         reference_images=reference_images,
+        has_video_reference=motion_guide,
     )
 
 
