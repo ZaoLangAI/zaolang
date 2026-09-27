@@ -51,9 +51,9 @@ const FUN_CAPTION_COUNT = 2;
 /**
  * The image studio's preview-area result — replaces the standalone
  * `/jobs/[jobId]` page for `text_to_image`/`image_to_image` so a generation
- * never navigates the user away from the studio (see `zaolang-frontend-ui`
- * invariant #16, extended by this feature: "image creation" now also never
- * leaves the studio to show progress or the result).
+ * never navigates the user away from the studio (see the
+ * `zaolang-frontend-ui` skill on image/video creation never navigating to
+ * `/jobs/[jobId]`).
  *
  * Deliberately a smaller surface than `job-progress.tsx`: no event log
  * sidebar, no multi-view character breakdown, no "enter editor" (images

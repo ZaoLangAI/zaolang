@@ -20,10 +20,10 @@ import { PanoramaViewer, type PanoramaHandle } from './panorama-viewer';
  *
  * Why a still and a sentence, and not camera data: nothing this platform
  * routes to accepts a camera position. The video models take a prompt, a first
- * and last frame, and reference media — nothing else (see
- * `zaolang-agent-gateway` reference invariant #14/#18). So a framed view has to
- * leave here as a picture and as prompt text, which is exactly what upstream's
- * own director does.
+ * and last frame, and reference media — nothing else (see the
+ * `zaolang-agent-gateway` providers reference, AiHubMix and DMXAPI). So a
+ * framed view has to leave here as a picture and as prompt text, which is
+ * exactly what upstream's own director does.
  *
  * The panorama is uploaded, not generated: `_IMAGE_SIZE_BY_ASPECT` has no 2:1
  * entry and silently returns a square, so text-to-panorama would quietly hand

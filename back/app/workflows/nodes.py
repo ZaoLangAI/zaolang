@@ -1445,7 +1445,8 @@ def _planned_prompt(ctx: WorkflowContext) -> tuple[str, str | None]:
     folded its own `asset_kind`/`character_view`-scoped guidance straight
     into `ctx.prompt` earlier in this exact pass. The generic `planning`
     node's plan is blind to that context — same reason its `clarify` sub-step
-    is disabled for these kinds (see `zaolang-generation-jobs` invariant #21)
+    is disabled for these kinds (see the `zaolang-generation-jobs` skill's
+    asset-pipeline reference on the planning node's clarify slot)
     — and, for a multi-view `CHARACTER` job, it runs exactly once *before*
     the per-view loop even starts, already describing every remaining view
     at once. Folding it in here on every loop pass would leak the other

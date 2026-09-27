@@ -1,5 +1,5 @@
-"""`app.domain.prompts.enhance`: the dimension-by-dimension diagnosis shared by
-the shortform studio and the generation studio's own polish button."""
+"""`app.domain.prompts.enhance`: the dimension-by-dimension diagnosis behind
+the studios' "AI 润色" button."""
 
 from __future__ import annotations
 
@@ -411,7 +411,7 @@ def test_general_enhance_and_suggest_route_to_the_copy_request_bucket(
 
 
 def test_the_prompt_context_asset_kind_reaches_the_copy_agent(db: Session, author: User) -> None:
-    """`domain.prompts.enhance` is the layer both studios call through — this
+    """`domain.prompts.enhance` is the domain-level polish contract — this
     confirms `PromptContext.asset_kind` actually reaches `enhance_prompt`
     rather than being dropped along the way."""
     specific = agent_skills_service.create_profile(

@@ -1,12 +1,5 @@
-"""Short-video delivery spec catalogue.
-
-The compliance-check, prompt/enhance, prompt/clarify and standalone
-publications routes that used to live here belonged to the old single-clip
-`ShortformStudio` (`/create/short/studio`), which has been replaced by the
-`kind=drama` series management module — see `.cursor/skills/zaolang-editor-drama`.
-Publishing a work now only ever happens through the standard eight-step
-`/publish/[draftId]` form plus `app.domain.distribution.service.publish_fanout`.
-"""
+"""Short-video delivery spec catalogue: the export profiles (`ShortformProfile`)
+the drama editor renders delivery variants against."""
 
 from __future__ import annotations
 

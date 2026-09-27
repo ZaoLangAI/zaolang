@@ -77,10 +77,11 @@ celery_app.conf.update(
     # Redis's default (~3600s) combined with `task_acks_late=True` means a
     # task that legitimately runs longer than an hour gets silently
     # re-delivered to another worker mid-flight — a duplicate execution, not
-    # a retry. Every task below sets its own hard `time_limit`; this only
-    # needs to clear the largest of them (900s, `run_video_analysis`/
-    # `run_media_analysis`) with real headroom for worker restarts and
-    # broker hiccups.
+    # a retry. Every task sets its own hard `time_limit`; this only needs to
+    # clear the largest of them (960s, `_IMAGE_GENERATION_CAP` in `tasks.py`,
+    # the multi-view `run_generation` ceiling `image_generation_time_limits`
+    # applies per call) with real headroom for worker restarts and broker
+    # hiccups.
     broker_transport_options={"visibility_timeout": 1800},
     task_routes={
         "app.workers.tasks.run_generation": {"queue": "image_generation"},

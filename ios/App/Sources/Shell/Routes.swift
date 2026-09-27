@@ -19,7 +19,7 @@ enum LearnRoute: Hashable {
     case profile(handle: String)
 }
 
-/// 工作台的入参：一个界面两种形态，靠 case 区分，不拆成两个 View（`roadmap.md` D3/D4 约束）。
+/// 工作台的入参：一个界面两种形态，靠 case 区分，不拆成两个 View（`zaolang-ios-client` skill 路线图「D3/D4 工作台形态」约束）。
 enum StudioMode: Hashable {
     case new(operation: Operation, initialPrompt: String?)
     case remix(sourceWorkID: String)

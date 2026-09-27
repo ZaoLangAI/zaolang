@@ -2,7 +2,7 @@ import Observation
 import ZaolangKit
 
 /// 发布页：验收要点是"两个确认框未勾时按钮不可点、默认可见性是 `public_view_only`"
-/// （`roadmap.md` M3 验收清单），这两条都在 `canPublish`/`visibility` 初值上体现。
+/// （`zaolang-ios-client` skill 路线图「M3 创作」里程碑的发布验收），这两条都在 `canPublish`/`visibility` 初值上体现。
 @MainActor
 @Observable
 final class PublishViewModel {

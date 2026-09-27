@@ -84,8 +84,8 @@ const VIDEO_ASSET_KINDS = [
 // here is a subset of the backend's per-model `NativeVideoModelProfile` —
 // widest is MiniMax H3's ten ratios; a narrower-profiled native model (e.g.
 // `wan2.7-videoedit`) is simply hard-filtered out of routing if a value
-// outside its own profile is submitted (see `zaolang-frontend-ui` invariant
-// #10).
+// outside its own profile is submitted (see the `zaolang-frontend-ui` skill's
+// studios reference on provider-safe video params).
 const LANDSCAPE_ASPECTS = ['16:9', '4:3', '21:9', '3:2'] as const;
 const PORTRAIT_ASPECTS = ['9:16', '3:4', '2:3', '9:21'] as const;
 // A third orientation, not a member of either bucket above: the provider
@@ -161,7 +161,8 @@ export function VideoGenerationStudio({
    * Pre-fills the asset-kind picker below — the character library's
    * "生成动作视频" button deep-links here the same way the script studio's
    * image jump-out pre-fills `ImageGenerationStudio`'s `initialAssetKind`
-   * (see `zaolang-frontend-ui` invariant #16).
+   * (see the `zaolang-frontend-ui` skill's studios reference on the jump-out
+   * convention).
    */
   initialVideoAssetKind?: VideoAssetKind;
   initialTargetCharacterId?: string;

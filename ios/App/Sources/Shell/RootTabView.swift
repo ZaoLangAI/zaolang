@@ -237,7 +237,7 @@ struct RootTabView: View {
     }
 
     /// 二创统一入口：不管从哪个 Tab 的作品详情点"二创"，都切到创作 Tab 并把工作台压进
-    /// 创作栈——`roadmap.md` 里"二创只有一份表单状态"的约束意味着它只能属于一个栈。
+    /// 创作栈——`zaolang-ios-client` skill 路线图「D3/D4 工作台形态」里"二创只有一份表单状态"的约束意味着它只能属于一个栈。
     private func startRemix(sourceWorkID: String) {
         router.selectTab(.create)
         router.createPath.append(CreateRoute.studio(.remix(sourceWorkID: sourceWorkID)))

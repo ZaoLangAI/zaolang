@@ -1202,7 +1202,8 @@ def display_name_for_model(model: str) -> str | None:
     Unlike `catalog_entry`, this searches every vendor's list and matches
     case-insensitively: the same nominal model is sometimes typed with
     different casing per vendor (e.g. AiHubMix's `minimax-h3` vs. DMXAPI's
-    `MiniMax-H3` — see `zaolang-platform-config` invariant #9), and the C-end
+    `MiniMax-H3` — see the `zaolang-platform-config` skill on per-vendor
+    pricing), and the C-end
     picker has no vendor context at all, only the bare model string a
     `ProviderCapability.model_or_workflow` carries. Returns `None` when no
     catalog entry matches, so the caller can fall back to the raw string

@@ -1593,8 +1593,9 @@ def _carry_over_links(previous: dict[str, Any], updated: dict[str, Any]) -> None
     """Re-attaches `character_ref_id`/`ref_id` links from the pre-turn script
     onto the post-turn one, matched by name/heading.
 
-    A revision turn always returns the *entire* document (invariant #16 in
-    `zaolang-editor-drama`), but the model is never told these link fields
+    A revision turn always returns the *entire* document (`script_json` is
+    always the latest turn's script — see the `zaolang-editor-drama` skill's
+    script-writing reference), but the model is never told these link fields
     exist, so its own JSON output naturally omits them — without this, every
     single revision turn would silently unlink every character/scene the
     user had already connected to a reusable asset. Matching by name/heading

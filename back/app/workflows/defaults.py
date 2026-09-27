@@ -144,9 +144,8 @@ def _build_graph(session: Session, *, with_asset_nodes: bool) -> dict[str, Any]:
             # (e.g. just a character's name, see `character-library.tsx`'s
             # "补全侧面/背面") as missing scene/action/shot info and asks for
             # exactly the things a character/scene/cover asset must NOT have
-            # (see `planner._ASSET_KIND_BRIEF`). Suspending here also can't be
-            # recovered from in the image studio, which never renders
-            # `AwaitingInputPanel` (see `zaolang-frontend-ui` invariant #18).
+            # (see `planner._ASSET_KIND_BRIEF`; the `zaolang-generation-jobs`
+            # skill's asset-pipeline reference records this default).
             # For the same "no context" reason, this node's own `plan()`
             # call still runs (unchanged cost/progress/checkpoint) but its
             # `prompt_enhancements`/`negative_prompt_suggestions` are never

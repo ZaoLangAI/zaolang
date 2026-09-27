@@ -6400,7 +6400,8 @@ export interface components {
         /**
          * BatchQuoteResponse
          * @description A batch priced line by line with the same `quote_for` a submit uses
-         *     — an exact sum, never a range (credits-billing invariant #4).
+         *     — an exact sum, never a range (see the `zaolang-credits-billing` skill on
+         *     batch quotes).
          */
         BatchQuoteResponse: {
             /** Items */

@@ -450,8 +450,9 @@ def _hydrate_skills(
     script writing was given) plus the `character_ref_id` / scene `ref_id`
     values the script document itself carries after linking.
 
-    These are `CreationSkill` ids, not foreign keys (see `zaolang-data-model`
-    invariant #9), so an id with no surviving row is simply skipped.
+    These are `CreationSkill` ids, not foreign keys (characters and scenes are
+    `CreationSkill` rows — see the `zaolang-data-model` skill), so an id
+    with no surviving row is simply skipped.
     """
     skill_ids: list[str] = []
     seen: set[str] = set()

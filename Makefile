@@ -174,7 +174,7 @@ messages: ## 校验三语文案键一致且代码引用的键都存在
 .PHONY: lint
 lint: ## 静态检查
 	cd back && $(CONDA_RUN) ruff check . && $(CONDA_RUN) ruff format --check .
-	cd front && $(FNM_ENV) && npm run lint
+	cd front && $(FNM_ENV) && npm run lint && npm run format:check
 
 .PHONY: format
 format: ## 自动格式化

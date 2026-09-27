@@ -52,7 +52,9 @@ _FAST_RETRY_OPERATIONS = frozenset(
 )
 
 # The three codes `aihubmix_media.py`/`dmxapi_media.py` use to classify a
-# genuine upstream failure (see `zaolang-agent-gateway` invariant #1).
+# genuine upstream failure (see the `zaolang-agent-gateway` providers
+# reference on classifying poll errors, and `zaolang-generation-jobs` on fast
+# retry).
 # Deliberately excludes `MISSING_REFERENCE` (a user-input problem no provider
 # switch fixes), `PROVIDER_TIMEOUT` (sandbox-only synchronous-poll timeout),
 # and `QUALITY_REJECTED` (the provider produced something; quality rejected

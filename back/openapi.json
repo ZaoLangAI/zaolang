@@ -23797,7 +23797,7 @@
           "sufficient"
         ],
         "title": "BatchQuoteResponse",
-        "description": "A batch priced line by line with the same `quote_for` a submit uses\n— an exact sum, never a range (credits-billing invariant #4)."
+        "description": "A batch priced line by line with the same `quote_for` a submit uses\n— an exact sum, never a range (see the `zaolang-credits-billing` skill on\nbatch quotes)."
       },
       "BindEditorExportRequest": {
         "properties": {

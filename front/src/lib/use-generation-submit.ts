@@ -78,8 +78,9 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   targetCharacterId?: string | null;
   /** The scene this output auto-attaches to. Unset with `assetKind: 'scene'`/
    * `videoAssetKind: 'scene_video'` auto-creates a brand-new scene skill
-   * instead (parity with the character path above — see
-   * `zaolang-generation-jobs` invariant 15). */
+   * instead (parity with the character path above — see the
+   * `zaolang-generation-jobs` skill's asset-pipeline reference, write-back).
+   */
   targetSceneId?: string | null;
   /**
    * Overrides the planner's own guessed name when auto-creating a new
@@ -260,7 +261,7 @@ export function useGenerationSubmit(
    * any client-side timeout) leaves the server's outcome unknown, and
    * re-minting a key on retry would let that lost request *and* the retry
    * both reserve credits. The key is only cleared once a job id actually
-   * comes back — see `zaolang-credits-billing` invariant 5.
+   * comes back — see the `zaolang-frontend-ui` skill on idempotency keys.
    */
   const pendingIdempotencyKey = useRef<string | null>(null);
 
