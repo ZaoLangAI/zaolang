@@ -13,7 +13,11 @@ import { IconCheck, IconCopy, IconLock } from '@/components/ui/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { useRouter } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
-import type { CreationSkillCategory, CreationSkillDetail, CreationSkillSummary } from '@/lib/api/types';
+import type {
+  CreationSkillCategory,
+  CreationSkillDetail,
+  CreationSkillSummary,
+} from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatCount } from '@/lib/format';
 import { creationStudioHref } from '@/lib/skill-mention';
@@ -48,7 +52,10 @@ const IMAGE_ASSET_CATEGORIES = new Set<CreationSkillCategory>([
   'cover_asset',
 ]);
 
-const PARAM_LABEL_KEY: Record<string, 'paramPromptLabel' | 'paramPromptSuffixLabel' | 'paramAspectRatioLabel'> = {
+const PARAM_LABEL_KEY: Record<
+  string,
+  'paramPromptLabel' | 'paramPromptSuffixLabel' | 'paramAspectRatioLabel'
+> = {
   prompt: 'paramPromptLabel',
   prompt_suffix: 'paramPromptSuffixLabel',
   aspect_ratio: 'paramAspectRatioLabel',
@@ -155,7 +162,9 @@ export function SkillDetailDialog({
               <DetailActions
                 skill={skill}
                 locked={locked}
-                onUnlock={() => requireAuth({ label: skill.title, run: () => setPendingUnlock(true) })}
+                onUnlock={() =>
+                  requireAuth({ label: skill.title, run: () => setPendingUnlock(true) })
+                }
                 onApply={() => requireAuth({ label: skill.title, run: applyAndEnterStudio })}
               />
             </div>
@@ -180,7 +189,6 @@ export function SkillDetailDialog({
           if (skill) onUnlocked(skill.id);
         }}
       />
-
     </>
   );
 }
@@ -312,4 +320,3 @@ function CopyIconButton({ value }: { value: string }) {
     </button>
   );
 }
-

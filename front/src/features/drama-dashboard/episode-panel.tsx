@@ -35,7 +35,11 @@ import { AnalyticsPanel } from './analytics-panel';
 import { DeleteEpisodeDialog } from './delete-episode-dialog';
 import { EpisodePreviewThumb } from './episode-preview-thumb';
 import { DeleteExportDialog } from './delete-export-dialog';
-import { isEpisodeDeleteBlocked, isExportRecordDeletable, resumeEditorHref } from './episode-delete-gate';
+import {
+  isEpisodeDeleteBlocked,
+  isExportRecordDeletable,
+  resumeEditorHref,
+} from './episode-delete-gate';
 import { pascalCase } from './format';
 import { generatedVideoDetailHref, isGeneratedVideoCard } from './generated-video-href';
 import { PublishPanel } from './publish-panel';
@@ -255,7 +259,8 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
         .then((updated) => {
           setEpisode(updated);
           setJustSaved(true);
-          if (savedIndicatorTimeoutRef.current) window.clearTimeout(savedIndicatorTimeoutRef.current);
+          if (savedIndicatorTimeoutRef.current)
+            window.clearTimeout(savedIndicatorTimeoutRef.current);
           savedIndicatorTimeoutRef.current = window.setTimeout(() => setJustSaved(false), 2000);
         })
         .catch((error: unknown) => {
@@ -281,7 +286,9 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
       return;
     }
     const assetId =
-      link.content_type === 'draft' ? (draftDetails[link.content_ref_id]?.output_asset_id ?? null) : null;
+      link.content_type === 'draft'
+        ? (draftDetails[link.content_ref_id]?.output_asset_id ?? null)
+        : null;
     if (!assetId) {
       notify(t('enterEditorNoAsset'), 'error');
       return;
@@ -365,11 +372,11 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
   const mainPrompt = script?.turns[0]?.user_message ?? '';
   const hasScriptContent = Boolean(
     scriptDoc &&
-      ((script?.turns.length ?? 0) > 0 ||
-        scriptDoc.title ||
-        scriptDoc.logline ||
-        scriptDoc.characters.length > 0 ||
-        scriptDoc.scenes.length > 0),
+    ((script?.turns.length ?? 0) > 0 ||
+      scriptDoc.title ||
+      scriptDoc.logline ||
+      scriptDoc.characters.length > 0 ||
+      scriptDoc.scenes.length > 0),
   );
   // `script` fetched fine but has no turns yet: either its first draft is
   // still streaming (in this tab or another) or failed outright — either
@@ -389,9 +396,7 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
           if (link.content_type !== 'draft') return false;
           const draft = draftDetails[link.content_ref_id];
           return (
-            Boolean(draft) &&
-            !draft?.published_work_id &&
-            draft?.output_asset_id === sourceAssetId
+            Boolean(draft) && !draft?.published_work_id && draft?.output_asset_id === sourceAssetId
           );
         })?.content_ref_id;
   const resumeHref = resumeEditorHref(cuts, bindableDraftId);
@@ -405,13 +410,11 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
           <section className="flex flex-col gap-4 rounded-[var(--radius-md)] border border-border bg-surface p-4">
             <SectionHeading
               title={t('episodeMetaTitle')}
-              action={justSaved ? <span className="text-xs text-muted">{tActions('saved')}</span> : null}
+              action={
+                justSaved ? <span className="text-xs text-muted">{tActions('saved')}</span> : null
+              }
             />
-            <EpisodePreviewThumb
-              episode={episode}
-              layout="stack"
-              onUpdated={setEpisode}
-            />
+            <EpisodePreviewThumb episode={episode} layout="stack" onUpdated={setEpisode} />
             <TextInput
               label={t('episodeTitleFieldLabel')}
               value={title}
@@ -482,9 +485,13 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
                   </span>
                   <span className="inline-flex items-center gap-1.5">
                     <IconClock className="size-3.5" />
-                    {t('scriptSummaryCreatedAt', { time: formatRelative(script.created_at, locale) })}
+                    {t('scriptSummaryCreatedAt', {
+                      time: formatRelative(script.created_at, locale),
+                    })}
                     {' · '}
-                    {t('scriptSummaryUpdatedAt', { time: formatRelative(script.updated_at, locale) })}
+                    {t('scriptSummaryUpdatedAt', {
+                      time: formatRelative(script.updated_at, locale),
+                    })}
                   </span>
                 </div>
               </>
@@ -617,7 +624,15 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
                       <span className="truncate text-sm">
                         {item.profile_key} · {item.width}×{item.height} · {item.format}
                       </span>
-                      <Badge tone={item.status === 'succeeded' ? 'success' : item.status === 'failed' ? 'danger' : 'neutral'}>
+                      <Badge
+                        tone={
+                          item.status === 'succeeded'
+                            ? 'success'
+                            : item.status === 'failed'
+                              ? 'danger'
+                              : 'neutral'
+                        }
+                      >
                         {t(`exportStatus${pascalCase(item.status)}`)}
                       </Badge>
                     </div>
@@ -635,7 +650,12 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
                       {item.is_canonical ? (
                         <>
                           <Badge tone="success">{t('finalCutCurrentBadge')}</Badge>
-                          <Button size="sm" variant="ghost" loading={clearingCanonical} onClick={clearFinalCut}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            loading={clearingCanonical}
+                            onClick={clearFinalCut}
+                          >
                             {t('canonicalWorkClear')}
                           </Button>
                         </>
@@ -684,7 +704,10 @@ export function EpisodePanel({ episodeId }: { episodeId: string }) {
 
           {episode.canonical_work_id && viewerRole !== 'collaborator' ? (
             <section>
-              <SectionHeading title={t('connectPublishTitle')} description={t('connectPublishHint')} />
+              <SectionHeading
+                title={t('connectPublishTitle')}
+                description={t('connectPublishHint')}
+              />
               <p className="mb-3 text-xs text-muted">
                 {t('connectPublishSettingsHint')}{' '}
                 <Link

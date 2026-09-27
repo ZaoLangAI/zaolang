@@ -55,13 +55,18 @@ export function computeAnchors(
 
   if (entryNodes.length > 0) {
     const minX = Math.min(...entryNodes.map((node) => node.position.x));
-    const avgY =
-      entryNodes.reduce((sum, node) => sum + node.position.y, 0) / entryNodes.length;
+    const avgY = entryNodes.reduce((sum, node) => sum + node.position.y, 0) / entryNodes.length;
     anchorNodes.push({
       id: START_ANCHOR_ID,
       type: ANCHOR_NODE_TYPE,
       position: { x: minX - 200, y: avgY + 16 },
-      data: { nodeType: '', config: {}, spec: undefined, label: labels.start, [ANCHOR_KIND_FIELD]: 'start' },
+      data: {
+        nodeType: '',
+        config: {},
+        spec: undefined,
+        label: labels.start,
+        [ANCHOR_KIND_FIELD]: 'start',
+      },
       ...shared,
     });
     for (const node of entryNodes) {
@@ -84,7 +89,13 @@ export function computeAnchors(
       id: END_ANCHOR_ID,
       type: ANCHOR_NODE_TYPE,
       position: { x: maxX + 300, y: avgY + 16 },
-      data: { nodeType: '', config: {}, spec: undefined, label: labels.end, [ANCHOR_KIND_FIELD]: 'end' },
+      data: {
+        nodeType: '',
+        config: {},
+        spec: undefined,
+        label: labels.end,
+        [ANCHOR_KIND_FIELD]: 'end',
+      },
       ...shared,
     });
     for (const node of terminalNodes) {

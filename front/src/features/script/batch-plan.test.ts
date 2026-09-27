@@ -17,10 +17,7 @@ import {
 } from './batch-plan';
 import type { BreakpointVideoBinding } from './script-breakpoint';
 
-const scene = (
-  heading: string,
-  overrides: Partial<ScriptScene> = {},
-): ScriptScene => ({
+const scene = (heading: string, overrides: Partial<ScriptScene> = {}): ScriptScene => ({
   heading,
   ref_id: null,
   blocks: [
@@ -137,10 +134,7 @@ describe('pendingVideos', () => {
   it('skips bound keys, in-flight keys, and segments with no refs', () => {
     const doc = document({
       characters: [{ name: '苏晴', traits: '', character_ref_id: null }],
-      scenes: [
-        scene('公寓客厅', { ref_id: 'sk_apt' }),
-        scene('走廊'),
-      ],
+      scenes: [scene('公寓客厅', { ref_id: 'sk_apt' }), scene('走廊')],
     });
     const pending = pendingVideos(doc, { '公寓客厅#0': bound() });
     expect(pending.map((item) => item.key)).toEqual([]);

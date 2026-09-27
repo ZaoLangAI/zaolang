@@ -44,7 +44,11 @@ export function sampleTicks(durationTicks: number, sampleCount: number): number[
  * overlaps the canvas at all (a keyframed pan/zoom that drifted the picture
  * fully off-frame, or a scale of 0).
  */
-function isClipOffCanvas(clip: ActiveClipLayer, canvasWidth: number, canvasHeight: number): boolean {
+function isClipOffCanvas(
+  clip: ActiveClipLayer,
+  canvasWidth: number,
+  canvasHeight: number,
+): boolean {
   const scale = clip.transform.scaleMillipercent / 100_000;
   if (scale <= 0) return true;
   const xOffsetPx = (clip.transform.xMilli / 1000) * canvasWidth;

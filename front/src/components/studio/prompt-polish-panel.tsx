@@ -188,12 +188,20 @@ export function PromptPolishPanel({
               ))}
             </div>
           ) : null}
-          <LiveThinking thinking={thinking} label={t('thinkingLive')} className="max-h-32 overflow-y-auto" />
+          <LiveThinking
+            thinking={thinking}
+            label={t('thinkingLive')}
+            className="max-h-32 overflow-y-auto"
+          />
         </div>
       ) : null}
 
       {pending && suggestion && thinking ? (
-        <LiveThinking thinking={thinking} label={t('thinkingLive')} className="max-h-24 overflow-y-auto" />
+        <LiveThinking
+          thinking={thinking}
+          label={t('thinkingLive')}
+          className="max-h-24 overflow-y-auto"
+        />
       ) : null}
 
       {suggestion ? (
@@ -277,9 +285,13 @@ export function PromptPolishPanel({
                       dimension.status === 'ok' && 'bg-success',
                     )}
                   />
-                  <span className="w-14 shrink-0 font-medium">{t(`dimension.${dimension.key}`)}</span>
+                  <span className="w-14 shrink-0 font-medium">
+                    {t(`dimension.${dimension.key}`)}
+                  </span>
                   <span className="sr-only">{t(`status.${dimension.status}`)}</span>
-                  <span className="min-w-0 flex-1 leading-relaxed text-muted">{dimension.hint}</span>
+                  <span className="min-w-0 flex-1 leading-relaxed text-muted">
+                    {dimension.hint}
+                  </span>
                 </li>
               ))}
             </ul>

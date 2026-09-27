@@ -106,11 +106,7 @@ export function hasLinkedReference(document: ScriptDocument): boolean {
   );
 }
 
-function segmentHasRefs(
-  document: ScriptDocument,
-  scene: ScriptScene,
-  blockIndex: number,
-): boolean {
+function segmentHasRefs(document: ScriptDocument, scene: ScriptScene, blockIndex: number): boolean {
   const refs = resolveBreakpointRefs(document, scene, blockIndex);
   return refs.characterIds.length > 0 || Boolean(refs.sceneId);
 }

@@ -425,9 +425,7 @@ export function ImageGenerationStudio({
     if (!initialReferenceAssetIds?.length) return;
     seededReferencesRef.current = true;
     void Promise.all(
-      initialReferenceAssetIds.map((id) =>
-        api.get<Asset>(`/v1/assets/${id}`).catch(() => null),
-      ),
+      initialReferenceAssetIds.map((id) => api.get<Asset>(`/v1/assets/${id}`).catch(() => null)),
     )
       .then((resolved) => {
         const usable = resolved.filter((asset): asset is Asset => asset !== null);
@@ -696,7 +694,10 @@ export function ImageGenerationStudio({
         options={aspectOptions.map((value) => ({ value, label: value }))}
       />
 
-      <CollapsibleSection label={t('moreSettings')} icon={<IconGear className="size-4 text-muted" />}>
+      <CollapsibleSection
+        label={t('moreSettings')}
+        icon={<IconGear className="size-4 text-muted" />}
+      >
         <Select
           label={t('modelSelectLabel')}
           hint={t('modelSelectHint')}

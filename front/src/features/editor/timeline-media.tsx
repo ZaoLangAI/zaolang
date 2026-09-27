@@ -131,7 +131,10 @@ export function ClipThumbnails({
 
   if (thumbs.length === 0) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-60" aria-hidden>
+    <div
+      className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-60"
+      aria-hidden
+    >
       {thumbs.map((src, index) => (
         // eslint-disable-next-line @next/next/no-img-element -- tiny cached data URL, not a real <Image>
         <img key={index} src={src} alt="" className="h-full min-w-0 flex-1 object-cover" />
@@ -187,7 +190,12 @@ export function ClipWaveform({
     const barWidth = widthPx / peaks.length;
     peaks.forEach((peak, index) => {
       const barHeight = Math.max(1, peak * heightPx);
-      ctx.fillRect(index * barWidth, (heightPx - barHeight) / 2, Math.max(1, barWidth - 1), barHeight);
+      ctx.fillRect(
+        index * barWidth,
+        (heightPx - barHeight) / 2,
+        Math.max(1, barWidth - 1),
+        barHeight,
+      );
     });
   }, [peaks, widthPx, heightPx]);
 

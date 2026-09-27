@@ -45,18 +45,15 @@ describe('studioSubmitBusy', () => {
     ).toBe('polishing');
   });
 
-  it.each(['queued', 'running', 'awaiting_input'] as const)(
-    'locks while a job is %s',
-    (status) => {
-      expect(
-        studioSubmitBusy({
-          submitting: false,
-          polishPending: false,
-          jobs: [{ status }],
-        }),
-      ).toBe('generating');
-    },
-  );
+  it.each(['queued', 'running', 'awaiting_input'] as const)('locks while a job is %s', (status) => {
+    expect(
+      studioSubmitBusy({
+        submitting: false,
+        polishPending: false,
+        jobs: [{ status }],
+      }),
+    ).toBe('generating');
+  });
 
   it('stays idle once every job is terminal', () => {
     expect(

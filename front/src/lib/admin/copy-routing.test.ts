@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  copyEditorSlot,
-  recommendedCopyTemplateKey,
-  templatesForCopyAgent,
-} from './copy-routing';
+import { copyEditorSlot, recommendedCopyTemplateKey, templatesForCopyAgent } from './copy-routing';
 
 const catalog = [
   { key: 'copy-suggest', slot: 'suggest', asset_kind: 'copy', prompt_template: 'SUGGEST' },
@@ -53,9 +49,9 @@ describe('templatesForCopyAgent', () => {
   });
 
   it('offers only the work-copy draft on the copy bucket', () => {
-    expect(templatesForCopyAgent(catalog, 'suggest', 'copy').map((template) => template.key)).toEqual(
-      ['copy-suggest'],
-    );
+    expect(
+      templatesForCopyAgent(catalog, 'suggest', 'copy').map((template) => template.key),
+    ).toEqual(['copy-suggest']);
   });
 
   it('falls back to generic enhance when the bucket has no dedicated draft', () => {

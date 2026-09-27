@@ -76,7 +76,10 @@ export const Ruler = memo(function Ruler({
           }`}
           style={{ left: ticksToPx(marker.at_ticks, zoom) }}
         >
-          ▼{marker.label ? <span className="ml-0.5 max-w-16 truncate align-top">{marker.label}</span> : null}
+          ▼
+          {marker.label ? (
+            <span className="ml-0.5 max-w-16 truncate align-top">{marker.label}</span>
+          ) : null}
         </button>
       ))}
       <div

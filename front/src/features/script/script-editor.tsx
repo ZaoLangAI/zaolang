@@ -230,25 +230,29 @@ export function ScriptEditor({
 
   const isViewingLatest = detail !== null && selectedTurnId === detail.turns.at(-1)?.id;
 
-  const updateLink = useCallback(async (
-    update:
-      | { kind: 'character'; name: string; refId: string | null }
-      | { kind: 'scene'; heading: string; refId: string | null },
-  ) => {
-    try {
-      const script = await scriptApi.updateScriptLinks(episodeId, {
-        characters:
-          update.kind === 'character'
-            ? [{ name: update.name, character_ref_id: update.refId }]
-            : [],
-        scenes: update.kind === 'scene' ? [{ heading: update.heading, ref_id: update.refId }] : [],
-      });
-      setDetail((current) => (current ? { ...current, script } : current));
-      setViewedScript(script);
-    } catch (error) {
-      notify(isApiError(error) ? error.message : t('unavailable'), 'error');
-    }
-  }, [episodeId, notify, t]);
+  const updateLink = useCallback(
+    async (
+      update:
+        | { kind: 'character'; name: string; refId: string | null }
+        | { kind: 'scene'; heading: string; refId: string | null },
+    ) => {
+      try {
+        const script = await scriptApi.updateScriptLinks(episodeId, {
+          characters:
+            update.kind === 'character'
+              ? [{ name: update.name, character_ref_id: update.refId }]
+              : [],
+          scenes:
+            update.kind === 'scene' ? [{ heading: update.heading, ref_id: update.refId }] : [],
+        });
+        setDetail((current) => (current ? { ...current, script } : current));
+        setViewedScript(script);
+      } catch (error) {
+        notify(isApiError(error) ? error.message : t('unavailable'), 'error');
+      }
+    },
+    [episodeId, notify, t],
+  );
 
   const bumpLibrary = useCallback(() => {
     invalidateResource('/v1/characters');
@@ -453,11 +457,7 @@ export function ScriptEditor({
   const characterQueue = pendingCharacters(currentScript, inflightCharacters);
   const libraryItems = characterLibrary.data ?? [];
   const libraryByName = libraryCharacterByName(libraryItems);
-  const characterMatches = existingLibraryMatches(
-    currentScript,
-    libraryItems,
-    inflightCharacters,
-  );
+  const characterMatches = existingLibraryMatches(currentScript, libraryItems, inflightCharacters);
   const characterGenerateQueue = characterQueue.filter(
     (character) => !libraryByName.has(character.name.trim()),
   );
@@ -529,7 +529,9 @@ export function ScriptEditor({
         : batchKind === 'videos'
           ? videoQueue.map((item) => item.heading)
           : batchKind === 'audio'
-            ? audioQueue.map((item) => (item.character ? `${item.character}：${item.text}` : item.text))
+            ? audioQueue.map((item) =>
+                item.character ? `${item.character}：${item.text}` : item.text,
+              )
             : [];
   const dialogSkipLinked =
     batchKind === 'characters'
@@ -554,88 +556,90 @@ export function ScriptEditor({
 
   return (
     <>
-    {detail.blocking ? (
-      <div className="-mt-2 flex flex-wrap items-center justify-end gap-3">
-        <p className="text-xs text-muted">{t('openBlockingHint')}</p>
-        <Link
-          href={`/create/script/${episodeId}/blocking`}
-          className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 text-sm font-medium text-text transition-colors hover:border-border-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-focus"
-        >
-          <IconVideo className="size-4" />
-          {t('openBlocking')}
-          {detail.blocking.stale ? (
-            <span className="size-1.5 rounded-full bg-amber" aria-label={t('blockingStale')} />
-          ) : null}
-        </Link>
-      </div>
-    ) : null}
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.3fr)]">
-      <div className={`flex min-h-[50vh] flex-col ${WORKSPACE_HEIGHT}`}>
-        <ScriptChatPanel
-          turns={detail.turns}
-          selectedTurnId={selectedTurnId}
-          onSelectTurn={(id) => void selectTurn(id)}
-          onSend={sendTurn}
-          streaming={documentStreaming}
-          liveText={firstDraftStreaming ? (createStream?.liveText ?? '') : stream.liveText}
-          liveThinking={firstDraftStreaming ? (createStream?.liveThinking ?? '') : stream.liveThinking}
-          streamError={stream.error}
-        />
-      </div>
-      {/* Fixed to the same height as the chat column (not just capped) so
+      {detail.blocking ? (
+        <div className="-mt-2 flex flex-wrap items-center justify-end gap-3">
+          <p className="text-xs text-muted">{t('openBlockingHint')}</p>
+          <Link
+            href={`/create/script/${episodeId}/blocking`}
+            className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 text-sm font-medium text-text transition-colors hover:border-border-strong hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            <IconVideo className="size-4" />
+            {t('openBlocking')}
+            {detail.blocking.stale ? (
+              <span className="size-1.5 rounded-full bg-amber" aria-label={t('blockingStale')} />
+            ) : null}
+          </Link>
+        </div>
+      ) : null}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(24rem,1.3fr)]">
+        <div className={`flex min-h-[50vh] flex-col ${WORKSPACE_HEIGHT}`}>
+          <ScriptChatPanel
+            turns={detail.turns}
+            selectedTurnId={selectedTurnId}
+            onSelectTurn={(id) => void selectTurn(id)}
+            onSend={sendTurn}
+            streaming={documentStreaming}
+            liveText={firstDraftStreaming ? (createStream?.liveText ?? '') : stream.liveText}
+            liveThinking={
+              firstDraftStreaming ? (createStream?.liveThinking ?? '') : stream.liveThinking
+            }
+            streamError={stream.error}
+          />
+        </div>
+        {/* Fixed to the same height as the chat column (not just capped) so
           the composer on the left is always fully on screen without paging
           the whole browser window — the turn history and this panel are
           the two things with no natural length limit, so both need to be
           the ones that scroll internally instead. Only kicks in once the
           two-column layout itself does (`xl:`); below that both panels
           stack and the page scrolls normally like everywhere else. */}
-      <div className={`flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4 ${WORKSPACE_HEIGHT} xl:overflow-y-auto`}>
-        {isViewingLatest && !documentStreaming ? (
-          <ScriptBatchToolbar
-            characterCount={characterGenerateQueue.length}
-            characterPendingCount={characterQueue.length}
-            sceneCount={sceneQueue.length}
-            videoCount={videoQueue.length}
-            videoDisabled={videoDisabled}
-            audioCount={audioQueue.length}
-            disabled={documentStreaming}
-            running={batch.running}
-            paused={batch.paused}
-            progress={batchProgress}
-            onOpen={setBatchKind}
-            onResume={() => void batch.resumeQueue()}
-          />
-        ) : null}
-        {documentStreaming ? (
-          <ScriptDocumentLoading label={t('generating')} hint={t('scriptGeneratingBody')} />
-        ) : (
-          <ScriptDocumentView
-            document={currentScript}
-            episodeId={episodeId}
-            onLink={isViewingLatest ? (update) => void updateLink(update) : undefined}
-            onSaveContent={isViewingLatest ? (next) => void saveContent(next) : undefined}
-            videoBindings={videoBindings}
-            itemByKey={batch.itemByKey}
-            onRetryImage={
-              isViewingLatest
-                ? (kind, source) => void batch.retryImage(kind, source)
-                : undefined
-            }
-            libraryRevision={libraryRevision}
-          />
-        )}
+        <div
+          className={`flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-4 ${WORKSPACE_HEIGHT} xl:overflow-y-auto`}
+        >
+          {isViewingLatest && !documentStreaming ? (
+            <ScriptBatchToolbar
+              characterCount={characterGenerateQueue.length}
+              characterPendingCount={characterQueue.length}
+              sceneCount={sceneQueue.length}
+              videoCount={videoQueue.length}
+              videoDisabled={videoDisabled}
+              audioCount={audioQueue.length}
+              disabled={documentStreaming}
+              running={batch.running}
+              paused={batch.paused}
+              progress={batchProgress}
+              onOpen={setBatchKind}
+              onResume={() => void batch.resumeQueue()}
+            />
+          ) : null}
+          {documentStreaming ? (
+            <ScriptDocumentLoading label={t('generating')} hint={t('scriptGeneratingBody')} />
+          ) : (
+            <ScriptDocumentView
+              document={currentScript}
+              episodeId={episodeId}
+              onLink={isViewingLatest ? (update) => void updateLink(update) : undefined}
+              onSaveContent={isViewingLatest ? (next) => void saveContent(next) : undefined}
+              videoBindings={videoBindings}
+              itemByKey={batch.itemByKey}
+              onRetryImage={
+                isViewingLatest ? (kind, source) => void batch.retryImage(kind, source) : undefined
+              }
+              libraryRevision={libraryRevision}
+            />
+          )}
+        </div>
       </div>
-    </div>
-    <ScriptBatchDialog
-      key={batchKind ?? 'closed'}
-      kind={batchKind}
-      labels={dialogLabels}
-      skipLinked={dialogSkipLinked}
-      skipUnreferenced={dialogSkipUnreferenced}
-      existingRefByLabel={batchKind === 'characters' ? existingRefByLabel : undefined}
-      onClose={() => setBatchKind(null)}
-      onConfirm={confirmBatch}
-    />
+      <ScriptBatchDialog
+        key={batchKind ?? 'closed'}
+        kind={batchKind}
+        labels={dialogLabels}
+        skipLinked={dialogSkipLinked}
+        skipUnreferenced={dialogSkipUnreferenced}
+        existingRefByLabel={batchKind === 'characters' ? existingRefByLabel : undefined}
+        onClose={() => setBatchKind(null)}
+        onConfirm={confirmBatch}
+      />
     </>
   );
 }

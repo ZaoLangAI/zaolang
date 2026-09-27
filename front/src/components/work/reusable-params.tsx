@@ -78,7 +78,9 @@ export function ReusableParamsList({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => requireAuth({ label: tPage('savePreset'), run: () => setSaveOpen(true) })}
+            onClick={() =>
+              requireAuth({ label: tPage('savePreset'), run: () => setSaveOpen(true) })
+            }
             className="flex items-center gap-1 text-xs text-primary hover:underline"
           >
             <IconSparkle className="size-3.5" />

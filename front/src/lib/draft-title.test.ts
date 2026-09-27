@@ -21,15 +21,15 @@ describe('titleFromPrompt', () => {
 
 describe('draftDisplayTitle', () => {
   it('prefers a stored title over the prompt', () => {
-    expect(
-      draftDisplayTitle({ title: '雾谷', params: { prompt: '另一句提示' } }, '未命名'),
-    ).toBe('雾谷');
+    expect(draftDisplayTitle({ title: '雾谷', params: { prompt: '另一句提示' } }, '未命名')).toBe(
+      '雾谷',
+    );
   });
 
   it('uses the prompt when the title was never set', () => {
-    expect(
-      draftDisplayTitle({ title: null, params: { prompt: '都市霓虹后巷' } }, '未命名'),
-    ).toBe('都市霓虹后巷');
+    expect(draftDisplayTitle({ title: null, params: { prompt: '都市霓虹后巷' } }, '未命名')).toBe(
+      '都市霓虹后巷',
+    );
   });
 
   it('does not fall back to the section heading when both are missing', () => {

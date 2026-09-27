@@ -10,10 +10,7 @@ import {
   PromptPolishPanel,
   VIDEO_ONLY_DIRECTIONS,
 } from '@/components/studio/prompt-polish-panel';
-import {
-  hasMissingRequiredAnswer,
-  type QuestionAnswer,
-} from '@/components/studio/question-field';
+import { hasMissingRequiredAnswer, type QuestionAnswer } from '@/components/studio/question-field';
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
 import { ApiError } from '@/lib/api/errors';

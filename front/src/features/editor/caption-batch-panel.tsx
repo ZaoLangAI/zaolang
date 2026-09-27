@@ -6,7 +6,12 @@ import { useState } from 'react';
 import { IconButton } from '@/components/ui/button';
 import { IconClose } from '@/components/ui/icons';
 
-import { TICKS_PER_SECOND, type CanonicalDocument, type EditCommand, type TimelineElement } from './engine/ports';
+import {
+  TICKS_PER_SECOND,
+  type CanonicalDocument,
+  type EditCommand,
+  type TimelineElement,
+} from './engine/ports';
 
 interface CaptionDraft {
   text: string;
@@ -51,11 +56,16 @@ export function CaptionBatchPanel({
 }) {
   const t = useTranslations('editor');
   const captionTrack = document.tracks.find((track) => track.kind === 'caption');
-  const captions = [...(captionTrack?.elements ?? [])].sort((a, b) => a.start_ticks - b.start_ticks);
+  const captions = [...(captionTrack?.elements ?? [])].sort(
+    (a, b) => a.start_ticks - b.start_ticks,
+  );
   const [drafts, setDrafts] = useState<Record<string, CaptionDraft>>({});
 
   const setDraft = (element: TimelineElement, patch: Partial<CaptionDraft>) => {
-    setDrafts((prev) => ({ ...prev, [element.id]: { ...(prev[element.id] ?? draftOf(element)), ...patch } }));
+    setDrafts((prev) => ({
+      ...prev,
+      [element.id]: { ...(prev[element.id] ?? draftOf(element)), ...patch },
+    }));
   };
 
   const commit = (element: TimelineElement) => {

@@ -38,9 +38,7 @@ export function UsersPanel({ timeseries }: { timeseries: UserGrowthTimeseries })
           <TrendChart
             data={timeseries.points ?? []}
             emptyTitle={t('chartEmpty')}
-            series={[
-              { dataKey: 'new_users', label: t('usersChartNewUsers'), color: 'primary' },
-            ]}
+            series={[{ dataKey: 'new_users', label: t('usersChartNewUsers'), color: 'primary' }]}
           />
         </div>
       </section>

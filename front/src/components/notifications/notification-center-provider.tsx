@@ -138,9 +138,7 @@ export function NotificationCenterProvider({ children }: { children: React.React
 
       setRecent((current) => {
         const merged = [notification, ...current.filter((item) => item.id !== notification.id)];
-        merged.sort(
-          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-        );
+        merged.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
         return merged.slice(0, RECENT_LIMIT);
       });
 

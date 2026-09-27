@@ -71,11 +71,7 @@ export function CreateCollectionDialog({
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
-        <Switch
-          checked={isPublic}
-          onChange={setIsPublic}
-          label={t('collectionPublic')}
-        />
+        <Switch checked={isPublic} onChange={setIsPublic} label={t('collectionPublic')} />
         <div className="flex items-center justify-end gap-3">
           <Button variant="ghost" onClick={close}>
             {tActions('cancel')}

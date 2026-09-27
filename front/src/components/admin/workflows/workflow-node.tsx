@@ -77,9 +77,7 @@ export function WorkflowNode({ data, selected }: NodeProps & { data: WorkflowNod
             {spec?.is_agent ? <Badge tone="primary">AI</Badge> : null}
           </span>
         </div>
-        {data.title ? (
-          <p className="mt-0.5 truncate text-[11px] text-muted">{data.label}</p>
-        ) : null}
+        {data.title ? <p className="mt-0.5 truncate text-[11px] text-muted">{data.label}</p> : null}
         <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{data.nodeType}</p>
         {data.summary ? (
           <p className="mt-1 truncate text-[11px] text-muted" title={data.summary}>

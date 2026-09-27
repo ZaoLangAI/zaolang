@@ -11,7 +11,10 @@ import {
 import { PromptComposer } from '@/components/studio/prompt-composer';
 import { QualityTierField } from '@/components/studio/quality-tier-field';
 import { RightsAndEstimate } from '@/components/studio/rights-and-estimate';
-import { KNOWN_PRESET_KEYS, useStyleAndSkillPicker } from '@/components/studio/style-and-skill-picker';
+import {
+  KNOWN_PRESET_KEYS,
+  useStyleAndSkillPicker,
+} from '@/components/studio/style-and-skill-picker';
 import { IconButton } from '@/components/ui/button';
 import { Select, TextInput } from '@/components/ui/field';
 import { IconClose, IconMic, IconUpload } from '@/components/ui/icons';

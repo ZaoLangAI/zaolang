@@ -57,10 +57,15 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
       <div className="grid gap-4 sm:grid-cols-2">
         {SHORTCUT_GROUPS.map((group) => (
           <section key={group.group} className="flex flex-col gap-1.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">{t(group.group)}</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+              {t(group.group)}
+            </h3>
             <ul className="flex flex-col divide-y divide-border rounded-[var(--radius-sm)] border border-border">
               {group.items.map((item) => (
-                <li key={item.label} className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs">
+                <li
+                  key={item.label}
+                  className="flex items-center justify-between gap-3 px-2 py-1.5 text-xs"
+                >
                   <span className="text-text">{t(item.label)}</span>
                   <span className="flex shrink-0 gap-1">
                     {item.keys.map((key) => (

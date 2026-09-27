@@ -94,14 +94,8 @@ export function useStyleAndSkillPicker({
     return [...byId.values()];
   }, [publicPresets.data, minePresets.data]);
 
-  const {
-    skills,
-    mentionableSkills,
-    appliedSkillIds,
-    applySkill,
-    chips,
-    unlockDialog,
-  } = useAppliedSkills({ operation, onApplyParams, seedSkillId });
+  const { skills, mentionableSkills, appliedSkillIds, applySkill, chips, unlockDialog } =
+    useAppliedSkills({ operation, onApplyParams, seedSkillId });
 
   const [presetId, setPresetId] = useState('');
   const [skillPickerValue, setSkillPickerValue] = useState('');

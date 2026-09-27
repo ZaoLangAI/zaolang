@@ -8,7 +8,12 @@ import { ErrorNotice } from '@/components/ui/primitives';
 import type { ShortformProfile } from '@/lib/api/types';
 
 import type { EditorActions } from '../actions';
-import type { CanonicalDocument, EditCommand, ResolvedAsset, TimelineElement } from '../engine/ports';
+import type {
+  CanonicalDocument,
+  EditCommand,
+  ResolvedAsset,
+  TimelineElement,
+} from '../engine/ports';
 import { TICKS_PER_SECOND } from '../engine/ports';
 import { Preview } from '../preview';
 import { Timeline } from '../timeline/timeline';
@@ -264,7 +269,12 @@ export function StudioShell({
         <ResizablePanelGroup direction="vertical" autoSaveId="zaolang-studio-editor-v">
           <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 min-w-0 overflow-hidden">
             <ResizablePanelGroup direction="horizontal" autoSaveId="zaolang-studio-editor-h">
-              <ResizablePanel defaultSize={25} minSize={15} maxSize={40} className="min-h-0 min-w-0 overflow-hidden">
+              <ResizablePanel
+                defaultSize={25}
+                minSize={15}
+                maxSize={40}
+                className="min-h-0 min-w-0 overflow-hidden"
+              >
                 <MediaLibraryPanel
                   disabled={disabled}
                   onApply={onApply}
@@ -273,7 +283,11 @@ export function StudioShell({
                 />
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={50} minSize={30} className="min-h-0 min-w-0 overflow-hidden">
+              <ResizablePanel
+                defaultSize={50}
+                minSize={30}
+                className="min-h-0 min-w-0 overflow-hidden"
+              >
                 <div className="flex h-full min-h-0 flex-col overflow-hidden">
                   <Preview
                     document={document}
@@ -288,7 +302,12 @@ export function StudioShell({
                 </div>
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={25} minSize={15} maxSize={40} className="min-h-0 min-w-0 overflow-hidden">
+              <ResizablePanel
+                defaultSize={25}
+                minSize={15}
+                maxSize={40}
+                className="min-h-0 min-w-0 overflow-hidden"
+              >
                 <PropertiesPanel
                   document={document}
                   assets={assets}
@@ -317,7 +336,12 @@ export function StudioShell({
             </ResizablePanelGroup>
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel defaultSize={50} minSize={20} maxSize={70} className="min-h-0 min-w-0 overflow-hidden">
+          <ResizablePanel
+            defaultSize={50}
+            minSize={20}
+            maxSize={70}
+            className="min-h-0 min-w-0 overflow-hidden"
+          >
             <Timeline
               document={document}
               assets={assets}

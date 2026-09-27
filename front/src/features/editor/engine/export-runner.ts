@@ -146,7 +146,9 @@ async function renderMixedAudio(
   const maxTicks = Math.round(seconds * TICKS_PER_SECOND);
   const breakpoints = audioBreakpoints(document, maxTicks);
   const elementsById = new Map(
-    document.tracks.flatMap((track) => track.elements.map((element) => [element.id, element] as const)),
+    document.tracks.flatMap((track) =>
+      track.elements.map((element) => [element.id, element] as const),
+    ),
   );
   let scheduled = false;
   for (let index = 0; index < breakpoints.length - 1; index += 1) {

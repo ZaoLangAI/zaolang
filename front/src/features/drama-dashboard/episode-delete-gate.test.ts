@@ -49,7 +49,9 @@ describe('isExportRecordDeletable', () => {
   it('refuses in-flight or published rows', () => {
     expect(isExportRecordDeletable({ status: 'encoding' })).toBe(false);
     expect(isExportRecordDeletable({ status: 'queued' })).toBe(false);
-    expect(isExportRecordDeletable({ status: 'succeeded', published_work_id: 'w_pub' })).toBe(false);
+    expect(isExportRecordDeletable({ status: 'succeeded', published_work_id: 'w_pub' })).toBe(
+      false,
+    );
   });
 });
 

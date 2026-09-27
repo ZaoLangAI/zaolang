@@ -67,7 +67,10 @@ type TBody = ReturnType<typeof useTranslations>;
 
 const TITLE_KEYS: Record<
   string,
-  (payload: Record<string, unknown>, tBody: TBody) => {
+  (
+    payload: Record<string, unknown>,
+    tBody: TBody,
+  ) => {
     key: string;
     params?: Record<string, string>;
   }
@@ -281,7 +284,8 @@ export function notificationVisual(item: Notification): {
     return { icon: kindIcon, badge: IconMessage, tone: 'text-amber' };
   }
   if (item.type === 'job_progress') {
-    const amberOps = payload.operation === 'image_to_image' || payload.operation === 'image_to_video';
+    const amberOps =
+      payload.operation === 'image_to_image' || payload.operation === 'image_to_video';
     return { icon: kindIcon, badge: IconSparkle, tone: amberOps ? 'text-amber' : 'text-primary' };
   }
   if (item.type === 'new_follower') return { icon: IconUser, badge: null, tone: 'text-primary' };

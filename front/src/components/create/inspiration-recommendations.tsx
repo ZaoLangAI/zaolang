@@ -29,7 +29,10 @@ export async function InspirationRecommendations({ entries }: { entries: StyleGa
           {entries.map((entry) => (
             <li key={entry.id} className="w-36 shrink-0 sm:w-44">
               <Link
-                href={{ pathname: '/create/new', query: { mode: 'text_to_video', styleId: entry.id } }}
+                href={{
+                  pathname: '/create/new',
+                  query: { mode: 'text_to_video', styleId: entry.id },
+                }}
                 className="block"
               >
                 <Poster

@@ -28,7 +28,11 @@ export function recommendedCopyTemplateKey(kind: string | null | undefined): str
 
 export function assetKindLabelKey(
   kind: string,
-): 'assetKindDefaultCharacter' | 'assetKindDefaultScene' | 'assetKindDefaultCover' | 'assetKindDefaultCopy' {
+):
+  | 'assetKindDefaultCharacter'
+  | 'assetKindDefaultScene'
+  | 'assetKindDefaultCover'
+  | 'assetKindDefaultCopy' {
   if (kind === 'character') return 'assetKindDefaultCharacter';
   if (kind === 'scene') return 'assetKindDefaultScene';
   if (kind === 'cover') return 'assetKindDefaultCover';

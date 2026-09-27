@@ -93,9 +93,7 @@ export function CollaboratorsPanel({
       .then(() => {
         setRows((current) => current.filter((item) => item.id !== row.id));
         notify(
-          row.user_id === currentUserId
-            ? t('leaveCollaborationDone')
-            : t('removeCollaboratorDone'),
+          row.user_id === currentUserId ? t('leaveCollaborationDone') : t('removeCollaboratorDone'),
           'success',
         );
         onChanged?.();

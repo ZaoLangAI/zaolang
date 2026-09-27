@@ -250,9 +250,7 @@ export function AgentDebugChatDialog({
           className="flex min-h-[320px] max-h-[55vh] flex-col gap-2 overflow-y-auto rounded-[var(--radius-sm)] border border-border p-3"
         >
           {turns.length === 0 ? (
-            <p className="m-auto max-w-xs text-center text-xs text-muted">
-              {t('debugChatEmpty')}
-            </p>
+            <p className="m-auto max-w-xs text-center text-xs text-muted">{t('debugChatEmpty')}</p>
           ) : (
             turns.map((turn, index) => (
               <li

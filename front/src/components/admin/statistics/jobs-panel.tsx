@@ -50,9 +50,7 @@ export function JobsPanel({
             data={chartData}
             emptyTitle={t('chartEmpty')}
             height={180}
-            series={[
-              { dataKey: 'avg_completion_ms', label: t('avgCompletion'), color: 'primary' },
-            ]}
+            series={[{ dataKey: 'avg_completion_ms', label: t('avgCompletion'), color: 'primary' }]}
           />
         </div>
       </section>

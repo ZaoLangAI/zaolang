@@ -131,8 +131,10 @@ export function InlineImageResult({
   const [savingCoverSkillOpen, setSavingCoverSkillOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
 
-  const { reached, displayStage, finished, awaitingInput, reachedKey } =
-    jobStageState(job.status, events);
+  const { reached, displayStage, finished, awaitingInput, reachedKey } = jobStageState(
+    job.status,
+    events,
+  );
   const latestEvent = events[events.length - 1];
   const showAwaitingPanel = awaitingInput && !job.cancel_requested;
 
@@ -195,9 +197,9 @@ export function InlineImageResult({
   // that completion job has succeeded. The studio no longer starts a new
   // completion from this result.
   const completionSucceeded = completionJob?.status === 'succeeded';
-  const completionUrls = completionSucceeded ? completionJob?.output_urls ?? [] : [];
-  const completionAssetIds = completionSucceeded ? completionJob?.output_asset_ids ?? [] : [];
-  const completionViews = completionSucceeded ? completionJob?.character_views ?? [] : [];
+  const completionUrls = completionSucceeded ? (completionJob?.output_urls ?? []) : [];
+  const completionAssetIds = completionSucceeded ? (completionJob?.output_asset_ids ?? []) : [];
+  const completionViews = completionSucceeded ? (completionJob?.character_views ?? []) : [];
   const completionLabels: (string | null)[] =
     completionViews.length === completionUrls.length
       ? completionViews.map((view) => tCharacters(CHARACTER_VIEW_LABEL_KEY[view] ?? 'viewSide'))
@@ -218,7 +220,7 @@ export function InlineImageResult({
   // failed/cancelled always return bare, since there is nothing to link.
   const returnLinkRefId =
     job.status === 'succeeded'
-      ? job.linked_character_id ?? job.linked_scene_id ?? fallbackLinkRefId ?? null
+      ? (job.linked_character_id ?? job.linked_scene_id ?? fallbackLinkRefId ?? null)
       : null;
   const returnHref =
     returnTo && returnLinkRefId && returnLinkKind && returnLinkLabel
@@ -275,7 +277,10 @@ export function InlineImageResult({
               <IconSparkle
                 className={cn('size-5 text-amber', !reduced && !finished && 'animate-pulse')}
               />
-              <p aria-live="polite" className="tabular text-4xl font-semibold tracking-tight text-text">
+              <p
+                aria-live="polite"
+                className="tabular text-4xl font-semibold tracking-tight text-text"
+              >
                 {job.progress}%
               </p>
               <p aria-live="polite" className="text-sm text-text">
@@ -412,11 +417,7 @@ export function InlineImageResult({
           </Button>
         ) : null}
         {job.status === 'succeeded' && draftId ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => router.push(`/publish/${draftId}`)}
-          >
+          <Button variant="secondary" size="sm" onClick={() => router.push(`/publish/${draftId}`)}>
             {tJob('publish')}
           </Button>
         ) : null}

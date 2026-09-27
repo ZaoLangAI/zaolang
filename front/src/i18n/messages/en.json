@@ -2535,30 +2535,12 @@
     "stageQuality": "Quality",
     "stageDone": "Done",
     "funCaptions": {
-      "queued": [
-        "Standing in line for you",
-        "Warming up the engines"
-      ],
-      "safety": [
-        "Running a safety check",
-        "Making sure everything's above board"
-      ],
-      "planning": [
-        "Sketching out the plan",
-        "Ideas are falling into place"
-      ],
-      "generating": [
-        "Pixels hard at work",
-        "Painting away"
-      ],
-      "quality": [
-        "Double-checking the details",
-        "Quality control on duty"
-      ],
-      "done": [
-        "Almost there",
-        "Putting on the finishing touches"
-      ]
+      "queued": ["Standing in line for you", "Warming up the engines"],
+      "safety": ["Running a safety check", "Making sure everything's above board"],
+      "planning": ["Sketching out the plan", "Ideas are falling into place"],
+      "generating": ["Pixels hard at work", "Painting away"],
+      "quality": ["Double-checking the details", "Quality control on duty"],
+      "done": ["Almost there", "Putting on the finishing touches"]
     },
     "characterViewsTitle": "View progress {current}/{total}",
     "outputItemLabel": "Output {index} of {total}",

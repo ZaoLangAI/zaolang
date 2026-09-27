@@ -146,30 +146,30 @@ export function CommandPalette({ openSignal = 0 }: { openSignal?: number }) {
       // the moment login resolves.
       .filter((entry) => entry.id !== 'create-script' || user?.features.script_studio !== false)
       .map(({ id, label, path }) => ({
-      id,
-      group: t('groupNavigate'),
-      label,
-      run: () => {
-        if (
-          [
-            'learn-publish',
-            'collection',
-            'profile',
-            'billing',
-            'notifications',
-            'settings',
-            'create-script',
-            'create-characters',
-            'create-scenes',
-          ].includes(id)
-        ) {
-          close();
-          requireAuth({ label, run: () => go(path) });
-          return;
-        }
-        go(path);
-      },
-    }));
+        id,
+        group: t('groupNavigate'),
+        label,
+        run: () => {
+          if (
+            [
+              'learn-publish',
+              'collection',
+              'profile',
+              'billing',
+              'notifications',
+              'settings',
+              'create-script',
+              'create-characters',
+              'create-scenes',
+            ].includes(id)
+          ) {
+            close();
+            requireAuth({ label, run: () => go(path) });
+            return;
+          }
+          go(path);
+        },
+      }));
 
     const workResults: Command[] = (searchable ? works : []).map((work) => ({
       id: `work-${work.id}`,

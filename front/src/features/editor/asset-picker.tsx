@@ -63,12 +63,7 @@ export function AssetPicker({
       <Button size="sm" variant="secondary" disabled={disabled} onClick={() => setOpen(true)}>
         {triggerLabel}
       </Button>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title={t('assetPickerTitle')}
-        size="lg"
-      >
+      <Dialog open={open} onClose={() => setOpen(false)} title={t('assetPickerTitle')} size="lg">
         {loadError ? (
           <p className="text-xs text-danger">{loadError}</p>
         ) : filtered === null ? (

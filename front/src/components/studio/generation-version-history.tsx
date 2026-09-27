@@ -99,8 +99,7 @@ export function GenerationVersionHistory({
       // comment above.
       .filter((job) => !isCharacterCompletionJob(job))
       .sort(
-        (left, right) =>
-          new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
+        (left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
       );
     // The version number is a count of *successful* generations, not the raw
     // chronological position — the still-in-flight entry above only claims

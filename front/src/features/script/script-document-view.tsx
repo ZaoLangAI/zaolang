@@ -101,7 +101,12 @@ function sceneCloserChip({
  * just the one field changed and hands it up whole, since the backend
  * re-validates/bounds the whole document on every save (see `ScriptEditor`).
  */
-function thumbUrl(kind: 'character' | 'scene', refId: string | null, characters: Character[], scenes: Scene[]): string | null {
+function thumbUrl(
+  kind: 'character' | 'scene',
+  refId: string | null,
+  characters: Character[],
+  scenes: Scene[],
+): string | null {
   if (!refId) return null;
   if (kind === 'character') {
     const character = characters.find((item) => item.id === refId);
@@ -111,19 +116,12 @@ function thumbUrl(kind: 'character' | 'scene', refId: string | null, characters:
   return scene?.reference_assets?.[0]?.url ?? null;
 }
 
-function AssetThumb({
-  url,
-  item,
-}: {
-  url: string | null;
-  item: BatchItemState | null;
-}) {
-  const generating = item?.status === 'queued' || item?.status === 'submitting' || item?.status === 'running';
+function AssetThumb({ url, item }: { url: string | null; item: BatchItemState | null }) {
+  const generating =
+    item?.status === 'queued' || item?.status === 'submitting' || item?.status === 'running';
   return (
     <div className="relative size-14 shrink-0 overflow-hidden rounded-[var(--radius-sm)] border border-border bg-surface">
-      {url ? (
-        <Image src={url} alt="" fill sizes="56px" className="object-cover" />
-      ) : null}
+      {url ? <Image src={url} alt="" fill sizes="56px" className="object-cover" /> : null}
       {generating ? (
         <div className="absolute inset-0 grid place-items-center bg-surface/70">
           <Spinner />
@@ -247,55 +245,68 @@ export function ScriptDocumentView({
             {document.characters.map((character, characterIndex) => {
               const batchItem = itemByKey?.('character', character.name) ?? null;
               return (
-              <div
-                key={character.name}
-                className="flex gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2"
-              >
-                <AssetThumb
-                  url={thumbUrl('character', character.character_ref_id, characterItems, sceneItems)}
-                  item={batchItem}
-                />
-                <div className="flex min-w-0 flex-col gap-1.5">
-                <p className="text-sm font-medium">{character.name}</p>
-                {character.traits || onSaveContent ? (
-                  <EditableInlineText
-                    value={character.traits}
-                    onCommit={(next) => saveCharacterTraits(characterIndex, next)}
-                    editable={!!onSaveContent}
-                    className="mt-0.5 block max-w-[24ch] text-xs text-muted"
-                    ariaLabel={t('characters')}
-                    title={onSaveContent ? t('editHint') : undefined}
+                <div
+                  key={character.name}
+                  className="flex gap-2 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-3 py-2"
+                >
+                  <AssetThumb
+                    url={thumbUrl(
+                      'character',
+                      character.character_ref_id,
+                      characterItems,
+                      sceneItems,
+                    )}
+                    item={batchItem}
                   />
-                ) : null}
-                {batchItem?.status === 'running' || batchItem?.status === 'submitting' || batchItem?.status === 'queued' ? (
-                  <p className="text-[11px] text-muted">{t('batchItemGenerating')}</p>
-                ) : null}
-                {batchItem?.status === 'failed' && onRetryImage ? (
-                  <Button size="sm" variant="ghost" onClick={() => onRetryImage('character', character)}>
-                    {t('batchRetry')}
-                  </Button>
-                ) : null}
-                {onLink ? (
-                  <ScriptLinkPicker
-                    kind="character"
-                    refId={character.character_ref_id}
-                    refreshKey={libraryRevision}
-                    onChange={(refId) => onLink({ kind: 'character', name: character.name, refId })}
-                    createHref={
-                      episodeId
-                        ? buildCreateHref({
-                            episodeId,
-                            assetKind: 'character',
-                            prompt: characterImagePrompt(character),
-                            subjectNameHint: character.name,
-                            targetId: character.character_ref_id,
-                          })
-                        : undefined
-                    }
-                  />
-                ) : null}
+                  <div className="flex min-w-0 flex-col gap-1.5">
+                    <p className="text-sm font-medium">{character.name}</p>
+                    {character.traits || onSaveContent ? (
+                      <EditableInlineText
+                        value={character.traits}
+                        onCommit={(next) => saveCharacterTraits(characterIndex, next)}
+                        editable={!!onSaveContent}
+                        className="mt-0.5 block max-w-[24ch] text-xs text-muted"
+                        ariaLabel={t('characters')}
+                        title={onSaveContent ? t('editHint') : undefined}
+                      />
+                    ) : null}
+                    {batchItem?.status === 'running' ||
+                    batchItem?.status === 'submitting' ||
+                    batchItem?.status === 'queued' ? (
+                      <p className="text-[11px] text-muted">{t('batchItemGenerating')}</p>
+                    ) : null}
+                    {batchItem?.status === 'failed' && onRetryImage ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onRetryImage('character', character)}
+                      >
+                        {t('batchRetry')}
+                      </Button>
+                    ) : null}
+                    {onLink ? (
+                      <ScriptLinkPicker
+                        kind="character"
+                        refId={character.character_ref_id}
+                        refreshKey={libraryRevision}
+                        onChange={(refId) =>
+                          onLink({ kind: 'character', name: character.name, refId })
+                        }
+                        createHref={
+                          episodeId
+                            ? buildCreateHref({
+                                episodeId,
+                                assetKind: 'character',
+                                prompt: characterImagePrompt(character),
+                                subjectNameHint: character.name,
+                                targetId: character.character_ref_id,
+                              })
+                            : undefined
+                        }
+                      />
+                    ) : null}
+                  </div>
                 </div>
-              </div>
               );
             })}
           </div>

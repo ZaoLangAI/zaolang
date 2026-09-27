@@ -71,9 +71,7 @@ export function SeriesDetail({ seriesId }: { seriesId: string }) {
   useEffect(() => {
     const missing = episodes.filter(
       (item) =>
-        !item.preview_url &&
-        item.has_preview_source &&
-        !previewFillAttempted.current.has(item.id),
+        !item.preview_url && item.has_preview_source && !previewFillAttempted.current.has(item.id),
     );
     if (missing.length === 0) return;
     for (const item of missing) previewFillAttempted.current.add(item.id);

@@ -99,7 +99,9 @@ export function EpisodePreviewThumb({
           {busy ? (
             <div className="absolute inset-0 grid place-items-center bg-surface/70">
               <Spinner
-                label={busy === 'upload' ? t('episodePreviewUploading') : t('episodePreviewExtracting')}
+                label={
+                  busy === 'upload' ? t('episodePreviewUploading') : t('episodePreviewExtracting')
+                }
               />
             </div>
           ) : null}
@@ -155,7 +157,9 @@ export function EpisodePreviewThumb({
         {busy ? (
           <div className="absolute inset-0 grid place-items-center bg-surface/70">
             <Spinner
-              label={busy === 'upload' ? t('episodePreviewUploading') : t('episodePreviewExtracting')}
+              label={
+                busy === 'upload' ? t('episodePreviewUploading') : t('episodePreviewExtracting')
+              }
             />
           </div>
         ) : null}

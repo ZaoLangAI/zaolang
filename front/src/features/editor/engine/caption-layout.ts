@@ -39,7 +39,11 @@ function startsWithNoLineStart(unit: string): boolean {
 }
 
 /** Greedy wrap of one paragraph into lines of units. */
-function wrapUnits(units: string[], maxWidth: number, measure: (text: string) => number): string[][] {
+function wrapUnits(
+  units: string[],
+  maxWidth: number,
+  measure: (text: string) => number,
+): string[][] {
   const lines: string[][] = [];
   let line: string[] = [];
   for (const unit of units) {

@@ -112,7 +112,9 @@ export function PlatformConnect() {
               <span>
                 {t(`channel${account.channel.charAt(0).toUpperCase()}${account.channel.slice(1)}`)}
                 {' · '}
-                {t('connectedAs', { account: account.external_account_label ?? account.external_account_id })}
+                {t('connectedAs', {
+                  account: account.external_account_label ?? account.external_account_id,
+                })}
               </span>
               <Button
                 size="sm"

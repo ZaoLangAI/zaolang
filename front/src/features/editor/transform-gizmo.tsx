@@ -48,8 +48,18 @@ export function resolveTransform(element: TimelineElement, atTicks: number): Giz
   return {
     xMilli: resolveNumberAtTime(animations, 'transform.x_milli', atTicks, 0),
     yMilli: resolveNumberAtTime(animations, 'transform.y_milli', atTicks, 0),
-    scaleMillipercent: resolveNumberAtTime(animations, 'transform.scale_millipercent', atTicks, 100_000),
-    rotationMillidegrees: resolveNumberAtTime(animations, 'transform.rotation_millidegrees', atTicks, 0),
+    scaleMillipercent: resolveNumberAtTime(
+      animations,
+      'transform.scale_millipercent',
+      atTicks,
+      100_000,
+    ),
+    rotationMillidegrees: resolveNumberAtTime(
+      animations,
+      'transform.rotation_millidegrees',
+      atTicks,
+      0,
+    ),
   };
 }
 
@@ -67,7 +77,11 @@ export function keyframeTickFor(
 ): number {
   const points = element.animations.channels[property]?.points ?? [];
   if (points.length === 0) return element.start_ticks;
-  return clamp(playheadTicks, element.start_ticks, element.start_ticks + element.duration_ticks - 1);
+  return clamp(
+    playheadTicks,
+    element.start_ticks,
+    element.start_ticks + element.duration_ticks - 1,
+  );
 }
 
 /** `set_keyframe` commands for every channel whose value differs from `before`. */
@@ -78,7 +92,14 @@ export function transformCommands(
   playheadTicks: number,
 ): EditCommand[] {
   const commands: EditCommand[] = [];
-  const push = (property: 'transform.x_milli' | 'transform.y_milli' | 'transform.scale_millipercent' | 'transform.rotation_millidegrees', value: number) => {
+  const push = (
+    property:
+      | 'transform.x_milli'
+      | 'transform.y_milli'
+      | 'transform.scale_millipercent'
+      | 'transform.rotation_millidegrees',
+    value: number,
+  ) => {
     commands.push({
       type: 'set_keyframe',
       element_id: element.id,
@@ -87,8 +108,10 @@ export function transformCommands(
       value: Math.round(value),
     });
   };
-  if (Math.round(after.xMilli) !== Math.round(before.xMilli)) push('transform.x_milli', clamp(after.xMilli, -X_RANGE, X_RANGE));
-  if (Math.round(after.yMilli) !== Math.round(before.yMilli)) push('transform.y_milli', clamp(after.yMilli, -X_RANGE, X_RANGE));
+  if (Math.round(after.xMilli) !== Math.round(before.xMilli))
+    push('transform.x_milli', clamp(after.xMilli, -X_RANGE, X_RANGE));
+  if (Math.round(after.yMilli) !== Math.round(before.yMilli))
+    push('transform.y_milli', clamp(after.yMilli, -X_RANGE, X_RANGE));
   if (Math.round(after.scaleMillipercent) !== Math.round(before.scaleMillipercent)) {
     push('transform.scale_millipercent', clamp(after.scaleMillipercent, SCALE_MIN, SCALE_MAX));
   }
@@ -183,7 +206,10 @@ export function TransformGizmo({
       startClientY: event.clientY,
       centerClientX,
       centerClientY,
-      startDistance: Math.max(1, Math.hypot(event.clientX - centerClientX, event.clientY - centerClientY)),
+      startDistance: Math.max(
+        1,
+        Math.hypot(event.clientX - centerClientX, event.clientY - centerClientY),
+      ),
       startAngle: Math.atan2(event.clientY - centerClientY, event.clientX - centerClientX),
       surfaceWidth: rect.width,
       surfaceHeight: rect.height,
@@ -201,10 +227,14 @@ export function TransformGizmo({
         let dx = move.clientX - drag.startClientX;
         let dy = move.clientY - drag.startClientY;
         if (snap) {
-          const centerX = drag.surfaceWidth / 2 + (drag.start.xMilli / 1000) * drag.surfaceWidth + dx;
-          const centerY = drag.surfaceHeight / 2 + (drag.start.yMilli / 1000) * drag.surfaceHeight + dy;
-          if (Math.abs(centerX - drag.surfaceWidth / 2) <= CENTER_SNAP_PX) dx -= centerX - drag.surfaceWidth / 2;
-          if (Math.abs(centerY - drag.surfaceHeight / 2) <= CENTER_SNAP_PX) dy -= centerY - drag.surfaceHeight / 2;
+          const centerX =
+            drag.surfaceWidth / 2 + (drag.start.xMilli / 1000) * drag.surfaceWidth + dx;
+          const centerY =
+            drag.surfaceHeight / 2 + (drag.start.yMilli / 1000) * drag.surfaceHeight + dy;
+          if (Math.abs(centerX - drag.surfaceWidth / 2) <= CENTER_SNAP_PX)
+            dx -= centerX - drag.surfaceWidth / 2;
+          if (Math.abs(centerY - drag.surfaceHeight / 2) <= CENTER_SNAP_PX)
+            dy -= centerY - drag.surfaceHeight / 2;
         }
         next = {
           ...drag.start,
@@ -212,17 +242,26 @@ export function TransformGizmo({
           yMilli: clamp(drag.start.yMilli + (dy / drag.surfaceHeight) * 1000, -X_RANGE, X_RANGE),
         };
       } else if (drag.mode === 'scale') {
-        const distance = Math.hypot(move.clientX - drag.centerClientX, move.clientY - drag.centerClientY);
+        const distance = Math.hypot(
+          move.clientX - drag.centerClientX,
+          move.clientY - drag.centerClientY,
+        );
         let scale = (drag.start.scaleMillipercent * distance) / drag.startDistance;
         if (snap && Math.abs(scale - 100_000) <= 100_000 * SCALE_SNAP_RATIO) scale = 100_000;
         next = { ...drag.start, scaleMillipercent: clamp(scale, SCALE_MIN, SCALE_MAX) };
       } else {
-        const angle = Math.atan2(move.clientY - drag.centerClientY, move.clientX - drag.centerClientX);
-        let degrees = drag.start.rotationMillidegrees / 1000 + ((angle - drag.startAngle) * 180) / Math.PI;
+        const angle = Math.atan2(
+          move.clientY - drag.centerClientY,
+          move.clientX - drag.centerClientX,
+        );
+        let degrees =
+          drag.start.rotationMillidegrees / 1000 + ((angle - drag.startAngle) * 180) / Math.PI;
         while (degrees > 180) degrees -= 360;
         while (degrees < -180) degrees += 360;
         if (snap) {
-          const target = ROTATION_SNAP_TARGETS.find((candidate) => Math.abs(candidate - degrees) <= ROTATION_SNAP_DEGREES);
+          const target = ROTATION_SNAP_TARGETS.find(
+            (candidate) => Math.abs(candidate - degrees) <= ROTATION_SNAP_DEGREES,
+          );
           if (target !== undefined) degrees = target;
         }
         next = { ...drag.start, rotationMillidegrees: degrees * 1000 };
@@ -257,7 +296,11 @@ export function TransformGizmo({
     'absolute size-3 rounded-sm border border-primary bg-white shadow-sm pointer-events-auto';
 
   return (
-    <div ref={rootRef} className="pointer-events-none absolute inset-0 overflow-visible" aria-hidden={disabled}>
+    <div
+      ref={rootRef}
+      className="pointer-events-none absolute inset-0 overflow-visible"
+      aria-hidden={disabled}
+    >
       {surface.width > 0 ? (
         <div
           className="absolute"
@@ -279,10 +322,26 @@ export function TransformGizmo({
           />
           {!disabled ? (
             <>
-              <span onPointerDown={(event) => begin(event, 'scale')} className={`${cornerClass} -left-1.5 -top-1.5 cursor-nwse-resize`} title={t('gizmoScale')} />
-              <span onPointerDown={(event) => begin(event, 'scale')} className={`${cornerClass} -right-1.5 -top-1.5 cursor-nesw-resize`} title={t('gizmoScale')} />
-              <span onPointerDown={(event) => begin(event, 'scale')} className={`${cornerClass} -bottom-1.5 -left-1.5 cursor-nesw-resize`} title={t('gizmoScale')} />
-              <span onPointerDown={(event) => begin(event, 'scale')} className={`${cornerClass} -bottom-1.5 -right-1.5 cursor-nwse-resize`} title={t('gizmoScale')} />
+              <span
+                onPointerDown={(event) => begin(event, 'scale')}
+                className={`${cornerClass} -left-1.5 -top-1.5 cursor-nwse-resize`}
+                title={t('gizmoScale')}
+              />
+              <span
+                onPointerDown={(event) => begin(event, 'scale')}
+                className={`${cornerClass} -right-1.5 -top-1.5 cursor-nesw-resize`}
+                title={t('gizmoScale')}
+              />
+              <span
+                onPointerDown={(event) => begin(event, 'scale')}
+                className={`${cornerClass} -bottom-1.5 -left-1.5 cursor-nesw-resize`}
+                title={t('gizmoScale')}
+              />
+              <span
+                onPointerDown={(event) => begin(event, 'scale')}
+                className={`${cornerClass} -bottom-1.5 -right-1.5 cursor-nwse-resize`}
+                title={t('gizmoScale')}
+              />
               <span className="absolute left-1/2 top-0 h-6 w-px -translate-x-1/2 -translate-y-full bg-primary/80" />
               <button
                 type="button"
@@ -297,7 +356,8 @@ export function TransformGizmo({
           ) : null}
           {live ? (
             <span className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-white">
-              {Math.round(live.xMilli / 10)}%, {Math.round(live.yMilli / 10)}% · {Math.round(live.scaleMillipercent / 1000)}% ·{' '}
+              {Math.round(live.xMilli / 10)}%, {Math.round(live.yMilli / 10)}% ·{' '}
+              {Math.round(live.scaleMillipercent / 1000)}% ·{' '}
               {Math.round(live.rotationMillidegrees / 1000)}°
             </span>
           ) : null}

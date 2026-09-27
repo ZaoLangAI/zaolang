@@ -8,7 +8,11 @@ export async function generateMetadata() {
   // Internal QA harness, not a product surface: kept reachable by direct URL
   // (the e2e suite exercises it against a production build) but excluded
   // from search indexing and never linked from product navigation.
-  return { title: t('goldTitle'), description: t('goldHint'), robots: { index: false, follow: false } };
+  return {
+    title: t('goldTitle'),
+    description: t('goldHint'),
+    robots: { index: false, follow: false },
+  };
 }
 
 export default async function DramaGoldSamplePage() {

@@ -101,7 +101,8 @@ export function ScriptBatchDialog({
     for (const name of extraSkip) next.add(name);
     return next;
   }, [existingNames, extraSkip]);
-  const generateCount = kind === 'characters' ? labels.filter((label) => !skipped.has(label)).length : labels.length;
+  const generateCount =
+    kind === 'characters' ? labels.filter((label) => !skipped.has(label)).length : labels.length;
   const skipExistingCount = kind === 'characters' ? existingNames.size : 0;
 
   // Reset during render so the quote effect never sees the previous
@@ -165,8 +166,7 @@ export function ScriptBatchDialog({
           ? t('batchConfirmAudioTitle')
           : t('batchConfirmVideosTitle');
 
-  const canSubmit =
-    Boolean(quote?.sufficient) && !quoting && !quoteFailed && labels.length > 0;
+  const canSubmit = Boolean(quote?.sufficient) && !quoting && !quoteFailed && labels.length > 0;
 
   const toggleSkip = (label: string) => {
     if (existingNames.has(label)) return;
@@ -287,7 +287,9 @@ export function ScriptBatchDialog({
             title={
               quote.withinSpendLimit
                 ? t('batchInsufficient')
-                : t('batchSpendLimit', { remaining: formatCount(quote.periodRemaining ?? 0, locale) })
+                : t('batchSpendLimit', {
+                    remaining: formatCount(quote.periodRemaining ?? 0, locale),
+                  })
             }
           />
         ) : null}

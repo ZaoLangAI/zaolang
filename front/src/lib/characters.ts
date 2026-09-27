@@ -152,7 +152,9 @@ export function findCompletionJobFor(
   if (!targetCharacterId) return null;
 
   const frontJobs = jobs
-    .filter((candidate) => candidate.asset_kind === 'character' && !isCharacterCompletionJob(candidate))
+    .filter(
+      (candidate) => candidate.asset_kind === 'character' && !isCharacterCompletionJob(candidate),
+    )
     .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   const index = frontJobs.findIndex((candidate) => candidate.id === job.id);
   if (index === -1) return null;

@@ -15,7 +15,12 @@ import { CaptionBatchPanel } from '../caption-batch-panel';
 import { ClipAdjustControls } from '../clip-adjust-controls';
 import { EditPlanPanel } from '../edit-plan-panel';
 import { resolveNumberAtTime } from '../engine/animation';
-import type { CanonicalDocument, EditCommand, ResolvedAsset, TimelineElement } from '../engine/ports';
+import type {
+  CanonicalDocument,
+  EditCommand,
+  ResolvedAsset,
+  TimelineElement,
+} from '../engine/ports';
 import { TICKS_PER_SECOND } from '../engine/ports';
 import { EffectsMaskControls } from '../effects-mask-controls';
 import { ExportPanel } from '../export-panel';
@@ -94,7 +99,11 @@ export function PropertiesPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden p-3">
-      <div role="tablist" aria-label={t('propertiesTabsLabel')} className="mb-2 flex shrink-0 gap-2 border-b border-border">
+      <div
+        role="tablist"
+        aria-label={t('propertiesTabsLabel')}
+        className="mb-2 flex shrink-0 gap-2 border-b border-border"
+      >
         {(['element', 'document'] as const).map((id) => (
           <button
             key={id}
@@ -115,7 +124,11 @@ export function PropertiesPanel({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'element' ? (
           multi ? (
-            <MultiSelectionProperties count={selectedIds.length} disabled={disabled} actions={actions} />
+            <MultiSelectionProperties
+              count={selectedIds.length}
+              disabled={disabled}
+              actions={actions}
+            />
           ) : selected?.type === 'caption' ? (
             <CaptionProperties
               key={`${selected.id}-${syncNonce}`}
@@ -136,7 +149,11 @@ export function PropertiesPanel({
           )
         ) : (
           <div className="flex flex-col gap-2">
-            <CollapsibleSection key={`export-${exportRequestNonce}`} label={t('exportTitle')} defaultOpen>
+            <CollapsibleSection
+              key={`export-${exportRequestNonce}`}
+              label={t('exportTitle')}
+              defaultOpen
+            >
               <ExportPanel
                 revisionId={revisionId}
                 document={document}
@@ -203,7 +220,9 @@ function SubTabs<T extends string>({
           onClick={() => onChange(item.id)}
           className={cn(
             'rounded-full px-2.5 py-1 text-[11px] transition-colors',
-            active === item.id ? 'bg-primary/15 text-primary' : 'text-muted hover:bg-surface-soft hover:text-text',
+            active === item.id
+              ? 'bg-primary/15 text-primary'
+              : 'text-muted hover:bg-surface-soft hover:text-text',
           )}
         >
           {item.label}
@@ -303,7 +322,12 @@ function TransformProperties({
   const opacityMilli = resolveNumberAtTime(element.animations, 'opacity', playheadTicks, 100_000);
 
   const commitTransform = (patch: Partial<typeof transform>) => {
-    const commands = transformCommands(element, transform, { ...transform, ...patch }, playheadTicks);
+    const commands = transformCommands(
+      element,
+      transform,
+      { ...transform, ...patch },
+      playheadTicks,
+    );
     if (commands.length) onApply(commands);
   };
 
@@ -443,7 +467,11 @@ function CaptionProperties({
         disabled={disabled}
         onCommit={(value) =>
           onApply([
-            { type: 'update_caption', element_id: element.id, at_ticks: Math.round(value * TICKS_PER_SECOND) },
+            {
+              type: 'update_caption',
+              element_id: element.id,
+              at_ticks: Math.round(value * TICKS_PER_SECOND),
+            },
           ])
         }
       />
@@ -494,7 +522,12 @@ function MultiSelectionProperties({
       <p className="text-sm text-text">{t('multiSelected', { count })}</p>
       <p className="text-xs text-muted">{t('multiSelectedHint')}</p>
       <div className="flex gap-2">
-        <Button size="sm" variant="secondary" disabled={disabled} onClick={actions.duplicateSelected}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={disabled}
+          onClick={actions.duplicateSelected}
+        >
           <IconCopy className="size-4" />
           {t('toolbarDuplicate')}
         </Button>

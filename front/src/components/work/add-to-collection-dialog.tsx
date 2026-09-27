@@ -101,11 +101,7 @@ export function AddToCollectionDialog({
                       size="sm"
                       variant={isAdded ? 'secondary' : 'primary'}
                       icon={
-                        isAdded ? (
-                          <IconCheck className="size-4" />
-                        ) : (
-                          <IconPlus className="size-4" />
-                        )
+                        isAdded ? <IconCheck className="size-4" /> : <IconPlus className="size-4" />
                       }
                       disabled={isAdded}
                       loading={pending === collection.id}
@@ -119,7 +115,11 @@ export function AddToCollectionDialog({
             </ul>
           )}
 
-          <Button variant="secondary" icon={<IconPlus className="size-4" />} onClick={() => setCreateOpen(true)}>
+          <Button
+            variant="secondary"
+            icon={<IconPlus className="size-4" />}
+            onClick={() => setCreateOpen(true)}
+          >
             {tCollection('newCollection')}
           </Button>
 

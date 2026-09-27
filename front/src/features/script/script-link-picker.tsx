@@ -66,7 +66,13 @@ export function ScriptLinkPicker({
       align="start"
       width="w-56"
       ariaLabel={label}
-      triggerIcon={kind === 'character' ? <IconUser className="size-3.5" /> : <IconImage className="size-3.5" />}
+      triggerIcon={
+        kind === 'character' ? (
+          <IconUser className="size-3.5" />
+        ) : (
+          <IconImage className="size-3.5" />
+        )
+      }
       triggerLabel={linked ? `${linked.name} · ${linked.reference_assets?.length ?? 0}` : label}
     >
       {(close) => (

@@ -4,7 +4,13 @@ import { AgentCatalogProvider } from '@/components/admin/workflows/agent-catalog
 import { WorkflowEditor } from '@/components/admin/workflows/workflow-editor';
 import { PageHeading } from '@/components/ui/primitives';
 import { adminFetch } from '@/lib/api/admin-server';
-import type { AgentNode, AgentProfile, NodeTypeView, Page, RolePreset } from '@/lib/api/admin-types';
+import type {
+  AgentNode,
+  AgentProfile,
+  NodeTypeView,
+  Page,
+  RolePreset,
+} from '@/lib/api/admin-types';
 
 export async function generateMetadata() {
   const t = await getTranslations('adminRouting');

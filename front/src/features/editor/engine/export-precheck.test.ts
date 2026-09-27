@@ -35,7 +35,9 @@ function documentWithClip(overrides: Partial<TimelineElement> = {}): CanonicalDo
 }
 
 function withAnimation(property: AnimatableProperty, value: number): Partial<TimelineElement> {
-  return { animations: { channels: { [property]: { kind: 'number', points: [{ at_ticks: 0, value }] } } } };
+  return {
+    animations: { channels: { [property]: { kind: 'number', points: [{ at_ticks: 0, value }] } } },
+  };
 }
 
 describe('sampleTicks', () => {
