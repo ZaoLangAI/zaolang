@@ -231,3 +231,68 @@ def test_editing_a_pending_skill_closes_its_review_queue_item(
     db.refresh(skill)
     skill_library_service.approve(db, skill=skill, reviewer_user_id=reviewer.id)
     assert skill.status == CreationSkillStatus.PUBLISHED
+
+
+# ---- characters are only created/edited through /v1/characters ------------
+
+
+def test_generic_create_route_rejects_the_character_category(
+    client: TestClient, db: Session, author: User
+) -> None:
+    characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    db.commit()
+
+    # Neither a duplicate name (would trip the unique index) nor a fresh one
+    # (would skip the `params_json["character"]` shape) gets through.
+    for title in ("林夏", "周屿"):
+        response = client.post(
+            "/v1/skills",
+            json=_create_payload(title=title, category="character"),
+            headers=auth_header(author),
+        )
+        assert response.status_code == 422, response.text
+        assert "category" in response.json()["error"]["details"]["fields"]
+
+
+def test_generic_update_route_rejects_the_character_category(
+    client: TestClient, db: Session, author: User
+) -> None:
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    db.commit()
+    template = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    template_id = template.json()["id"]
+
+    # A template can't be turned into a character…
+    into_character = client.patch(
+        f"/v1/skills/{template_id}",
+        json=_create_payload(title="林夏", category="character"),
+        headers=auth_header(author),
+    )
+    assert into_character.status_code == 422, into_character.text
+
+    # …and a character's payload can't be overwritten wholesale.
+    over_character = client.patch(
+        f"/v1/skills/{character.id}",
+        json=_create_payload(title="林夏"),
+        headers=auth_header(author),
+    )
+    assert over_character.status_code == 422, over_character.text
+    db.expire_all()
+    skill = db.get(CreationSkill, character.id)
+    assert skill is not None
+    assert skill.category == "character"
+    assert "character" in skill.params_json
