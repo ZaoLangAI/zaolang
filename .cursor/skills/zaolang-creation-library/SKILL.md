@@ -30,7 +30,7 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 
 1. Characters/scenes are `CreationSkill` rows (`character`/`scene_asset`), payload at `params_json["character"|"scene"]`. Edit them only via `/v1/characters|scenes` — `PATCH /v1/skills/{id}` overwrites `params`/`category` wholesale.
 2. Create → `DRAFT`/`PRIVATE`. `publish()` runs the `skill_moderation` gate, sets `PENDING_REVIEW`/`PUBLIC`, reopens the single queue row (subject `skill`); re-publish is a no-op. Public reads check `status == PUBLISHED` only — `service.py:get_usable`.
-3. A content edit on a non-`DRAFT` row drops it to `DRAFT`/`PRIVATE` (all three services); `/pricing` never does. Only `withdraw()` closes the open queue item.
+3. A content edit on a non-`DRAFT` row drops it to `DRAFT`/`PRIVATE` and closes the open queue item (`withdrawn_by_owner`), same as `withdraw()` — all three services go through `service.py:withdraw_after_edit`; `/pricing` never does.
 4. Characters publish only via `POST /v1/characters/{id}/publish` with `portrait_consent: true` (stamps `portrait_consent_at`); `/v1/skills/{id}/publish` rejects them. Scenes need no consent.
 5. One character name per owner: DB index + `_require_unique_character_name` (422 on `name`). Scenes are not unique.
 6. Paid: `access_credits > 0` needs `marketplace_enabled` and ≤ `max_access_credits` (`access.service.normalize_access_credits`). Detail `params` is `{}` until `viewer_unlocked` (owner/free/grant). `/unlock` honours `Idempotency-Key`.
