@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { OptionGroup } from '@/components/studio/option-group';
 import {
@@ -94,27 +94,25 @@ export function AudioGenerationStudio({
       : [...FALLBACK_VOICES];
 
   const [mode, setMode] = useState<AudioMode>('voice');
-  const [voice, setVoice] = useState<string>(FALLBACK_VOICES[0]);
+  const [pickedVoice, setPickedVoice] = useState<string>(FALLBACK_VOICES[0]);
 
   // Keeps the voice `Select` valid as the roster changes under it (model
   // switched, or the live catalogue finished loading) instead of silently
   // submitting a voice id the newly-picked model does not recognize.
-  useEffect(() => {
-    const nextVoice = availableVoices[0];
-    if (!nextVoice) return;
-    if (!availableVoices.includes(voice)) setVoice(nextVoice);
-  }, [availableVoices, voice]);
+  const voice = availableVoices.includes(pickedVoice)
+    ? pickedVoice
+    : (availableVoices[0] ?? pickedVoice);
 
-  // A model with no known preset roster (fal's single-call clone models,
-  // e.g. `minimax/voice-clone`) has nothing for the "预设音色" tab to show —
-  // switch to the clone tab for the user rather than leaving them on an
-  // empty `Select`. Only fires on an explicit model pick, never on "自动
-  // 选择" (where some other candidate model may well have a real roster).
-  useEffect(() => {
-    if (forcedModel && selectedModelOption && !selectedModelOption.voices?.length) {
-      setMode('clone');
-    }
-  }, [forcedModel, selectedModelOption]);
+  const pickModel = (model: string) => {
+    setForcedModel(model);
+    // A model with no known preset roster (fal's single-call clone models,
+    // e.g. `minimax/voice-clone`) has nothing for the "预设音色" tab to show —
+    // switch to the clone tab for the user rather than leaving them on an
+    // empty `Select`. Only on an explicit model pick, never on "自动选择"
+    // (where some other candidate model may well have a real roster).
+    const option = modelOptions.find((candidate) => candidate.model === model);
+    if (model && option && !option.voices?.length) setMode('clone');
+  };
 
   // -- clone reference upload + the voice owner's consent ---------------
   const [cloneAsset, setCloneAsset] = useState<Asset | null>(null);
@@ -223,7 +221,7 @@ export function AudioGenerationStudio({
         label={t('modelSelectLabel')}
         hint={t('modelSelectHint')}
         value={forcedModel}
-        onChange={(event) => setForcedModel(event.target.value)}
+        onChange={(event) => pickModel(event.target.value)}
         options={[
           { value: '', label: t('modelAuto') },
           ...modelOptions.map((option) => ({ value: option.model, label: option.label })),
@@ -246,7 +244,7 @@ export function AudioGenerationStudio({
           label={t('voice')}
           hint={t('voiceHint')}
           value={voice}
-          onChange={(event) => setVoice(event.target.value)}
+          onChange={(event) => setPickedVoice(event.target.value)}
           options={availableVoices.map((value) => ({
             value,
             label: value,
