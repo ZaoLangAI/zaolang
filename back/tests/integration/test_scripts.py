@@ -507,8 +507,9 @@ def test_retry_script_reuses_stored_idea_when_body_omits_it(
     )
     assert retried.status_code == 202
     events = _parse_sse(retried.text)
-    assert [kind for kind, _ in events][0] == "start"
-    assert [kind for kind, _ in events][-1] == "complete"
+    kinds = [kind for kind, _ in events]
+    assert kinds[0] == "start"
+    assert kinds[-1] == "complete"
     complete = next(data for kind, data in events if kind == "complete")
     assert complete["episode_id"] == episode_id
     assert complete["turn_no"] == 1

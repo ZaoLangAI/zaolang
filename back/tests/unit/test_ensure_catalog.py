@@ -16,7 +16,8 @@ from app.domain.learning import catalog as learning_catalog
 from app.domain.skill_library import catalog as skill_catalog
 from app.models import CreationSkill, LearnPost, Profile, User
 from app.scripts import ensure_catalog
-from app.scripts.seed import SEED_PASSWORD, run as seed_run
+from app.scripts.seed import SEED_PASSWORD
+from app.scripts.seed import run as seed_run
 from app.security.passwords import verify_password
 from tests.conftest import make_user
 
