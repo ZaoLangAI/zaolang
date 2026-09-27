@@ -44,7 +44,7 @@ Series/episode management, content links, co-creation, trash, previews, distribu
 ## Lifecycle
 
 12. Trash: `DELETE /v1/drama-series/{id}` → `status=TRASHED` + `trashed_at` (`Conflict` if already); `POST …/untrash`; `DELETE …/purge` needs `TRASHED` and no episodes (`series_id` is `RESTRICT`). Dialogs: `trash-series-dialog.tsx`, `purge-series-dialog.tsx`.
-13. Episode delete: `purge_unpublished_editor_graph` removes exports → variants → plans → revisions (`revision_no` desc, flush per row — `parent_revision_id` self-`RESTRICT`) → cuts, unbinding drafts. Works, jobs, assets, siblings, the series stay.
+13. Episode delete: `purge_unpublished_editor_graph` removes exports → variants → plans → revisions (`revision_no` desc, flush per row — `parent_revision_id` self-`RESTRICT`) → cuts, unbinding drafts. Works, jobs, assets, siblings, the series stay. Sole exception: `delete_script` trashes (never purges) an owner's uncurated `/create/script` shell once its last episode is gone — see `reference-script-writing.md`.
 14. UI delete is disabled only when published (`isEpisodeDeleteBlocked`), not merely because a cut exists.
 
 ## Previews

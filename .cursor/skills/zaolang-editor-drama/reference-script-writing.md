@@ -28,7 +28,7 @@
 2. `prepare_new_script` with `seriesId` attaches to that drama series (must be accessible, `kind=drama`); without, mints a new `Series(kind=drama)` shell. Next number is computed in `season_number == 1`. Stores `source_idea` + `source_referenced_skill_ids_json` (≤5 skills) and fires the `script` notification in the same transaction.
 3. `_hydrate_source_idea` back-fills an empty shell's idea from a nearby `script_draft` `AgentRun` so retry works without re-typing.
 4. `script_writing.service._owned_episode` is really the accessible check (owner or active collaborator).
-5. `delete_script`: 422 if `canonical_work_id`; runs `purge_unpublished_editor_graph`; deletes the `Series` too when no other episode remains.
+5. `delete_script`: 422 if `canonical_work_id`; runs `purge_unpublished_editor_graph`; never hard-deletes the `Series`. When the owner deletes the last episode of a still-uncurated shell (empty `target_platforms_json`, never through the series form), the series goes to the recycle bin via `trash_drama_series`. Dashboard series, already-trashed series and co-creator deletes leave the series untouched.
 6. Extracted upload bytes are never stored as an `Asset`; the text lands in `source_idea`.
 
 ## Streaming
