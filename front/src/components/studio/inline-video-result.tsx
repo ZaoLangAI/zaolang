@@ -39,14 +39,15 @@ const STAGE_POP_DURATION = 420;
  * The video studio's preview-area result — replaces the standalone
  * `/jobs/[jobId]` page for `text_to_video`/`image_to_video`/`video_to_video`
  * so a generation never navigates the user away from the studio, extending
- * `inline-image-result.tsx`'s architecture to video creation (see
- * `zaolang-frontend-ui` invariant #19).
+ * `inline-image-result.tsx`'s architecture to video creation (see the
+ * `zaolang-frontend-ui` skill on image/video creation never navigating to
+ * `/jobs/[jobId]`).
  *
  * A smaller sibling of `job-progress.tsx`/`inline-image-result.tsx`: no
  * event-log sidebar (that stays `job-progress.tsx`-only), no character-
  * completion surface (video has none), no multi-output gallery (a video job
- * only ever produces one output — see `zaolang-generation-jobs` invariant
- * #20). What it keeps: the same stage mapping (`job-stages.ts`), cancel/
+ * only ever produces one output — see the `zaolang-generation-jobs` skill's
+ * asset-pipeline reference on multi-output jobs). What it keeps: the same stage mapping (`job-stages.ts`), cancel/
  * retry/promote, the cover-asset "另存为可分享技能" dialog (now keyed off
  * `video_asset_kind === 'cover_video'` instead of image's `asset_kind ===
  * 'cover'`), and — video-only — "进入剪辑" (`job-progress.tsx`'s own

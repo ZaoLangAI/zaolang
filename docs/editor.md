@@ -61,8 +61,8 @@
    `insert_caption` 命令的唯一入口是
    `front/src/features/editor/transcript-review-panel.tsx` 的人工审核。
 
-细节与「不要」条目见 `.cursor/skills/zaolang-editor-drama/SKILL.md` 的
-不变量 #19、#21-26。
+细节与「不要」条目见 `zaolang-editor-drama` skill 里渲染、混音、特效与蒙版、
+关键帧、贴纸转场和字幕转写的条目。
 
 ## 时间与命令
 

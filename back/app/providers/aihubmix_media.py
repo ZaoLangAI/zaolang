@@ -81,7 +81,8 @@ class NativeVideoModelProfile:
     supports_generate_audio: bool = False
     # Where the async task lands after `POST /ai/v1/videos`. MiniMax H3 and
     # `wan2.7-videoedit` poll a legacy `/ai/v1/tasks/{id}` (+ `/content`) pair
-    # confirmed live (see reference.md invariant #14). `doubao-
+    # confirmed live (see the `zaolang-agent-gateway` providers reference,
+    # AiHubMix native video profiles). `doubao-
     # seedance-2-5-260628`'s own AiHubMix schema
     # (`https://aihubmix.com/call/schema/models/doubao-seedance-2-5-260628/
     # endpoints`, checked 2026-08) instead documents `/ai/v1/videos/{id}` with

@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 只有 `GET /v1/works` 与 `GET /v1/credits/ledger` 真正落地了游标；其余列表端点也回这个信封，
 /// 只是 `nextCursor` 恒为 `nil`。UI 只看 `nextCursor` 决定是否显示"加载更多"，
-/// 后端补游标后客户端零改动（契约缺口清单见 `zaolang-ios-client` skill 的 roadmap.md）。
+/// 后端补游标后客户端零改动（见 `zaolang-ios-client` skill 路线图「列表无游标」这条契约缺口）。
 public struct Page<T: Codable & Sendable>: Codable, Sendable {
     public let items: [T]
     public let nextCursor: String?

@@ -486,7 +486,8 @@ class BatchQuoteLine(ApiModel):
 
 class BatchQuoteResponse(ApiModel):
     """A batch priced line by line with the same `quote_for` a submit uses
-    — an exact sum, never a range (credits-billing invariant #4)."""
+    — an exact sum, never a range (see the `zaolang-credits-billing` skill on
+    batch quotes)."""
 
     items: list[BatchQuoteLine]
     total_credits: int
@@ -644,8 +645,9 @@ class JobEventResponse(ApiModel):
     message: str
     internal_code: str | None = None
     created_at: dt.datetime
-    # Which graph node actually wrote this event (see `zaolang-generation-jobs`
-    # invariant #13). Already carried by the admin stream; exposed here too so
+    # Which graph node actually wrote this event (see the
+    # `zaolang-generation-jobs` skill on `JobEvent.node_id`). Already carried
+    # by the admin stream; exposed here too so
     # a multi-view `CHARACTER` job's client can tell an `asset_planning` re-entry
     # (one per produced view) apart from every other `planning`-type event,
     # without matching on `message` text.

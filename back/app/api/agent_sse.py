@@ -2,7 +2,8 @@
 
 Same shape as script-writing turns: `event: thinking` / `delta` / `complete`
 / `error`. Failures after the stream has started must be reported inside
-the stream (editor-drama invariant #20).
+the stream (see the `zaolang-editor-drama` skill's script-writing reference
+on streaming).
 """
 
 from __future__ import annotations

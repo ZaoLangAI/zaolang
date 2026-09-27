@@ -1,7 +1,7 @@
 import SwiftUI
 import ZaolangKit
 
-/// 创作 Tab 顶部常驻浮条（`roadmap.md`"进行中任务浮条"一节）：非终态任务显示进度，
+/// 创作 Tab 顶部常驻浮条（`zaolang-ios-client` skill 路线图「进行中任务浮条」一节）：非终态任务显示进度，
 /// 终态后变成结果提示，点掉或 8 秒后自动消失。用 `TimelineView` 周期性重新求值
 /// "距终态是否已经过 8 秒"，不需要额外的定时器状态。
 struct CreateJobBanner: View {

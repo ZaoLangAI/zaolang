@@ -1462,9 +1462,10 @@ def restore_revision(
 ) -> CutRevision:
     """Rolls the timeline back to an earlier revision's content by writing
     a brand-new head revision that copies it — history itself is never
-    rewritten (immutable snapshots, invariant #2), so "restore" is just
-    another editing action gated by the exact same lease + CAS check as
-    `apply_commands`, not a special-cased mutation."""
+    rewritten (revisions are immutable snapshots — see the
+    `zaolang-editor-drama` skill's timeline-engine reference), so "restore"
+    is just another editing action gated by the exact same lease + CAS check
+    as `apply_commands`, not a special-cased mutation."""
     editor_flags.require_flag(session, editor_flags.FLAG_EDITOR, user_id=user_id)
     cut = _owned_cut(session, user_id=user_id, cut_id=cut_id)
     # See the matching comment in `apply_commands`: `populate_existing=True`

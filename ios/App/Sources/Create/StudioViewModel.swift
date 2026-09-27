@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import ZaolangKit
 
-/// 工作台是一个界面两种形态（`roadmap.md` D3/D4）：`StudioMode.new` 没有 `source`，
+/// 工作台是一个界面两种形态（`zaolang-ios-client` skill 路线图「D3/D4 工作台形态」）：`StudioMode.new` 没有 `source`，
 /// `StudioMode.remix` 带 `sourceWorkID`，二者共用同一份表单状态与提交逻辑。
 /// 操作类型在文生视频 / 图生视频之间选，或走「图片创作」入口——`createPage` 入口卡片对应
 /// 文生视频、图生视频、图片创作 + 二创、发布；图片创作不单独暴露"文生图/图生图"两个操作，

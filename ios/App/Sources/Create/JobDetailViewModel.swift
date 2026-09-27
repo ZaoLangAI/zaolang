@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import ZaolangKit
 
-/// 任务详情：SSE 实时更新 + 5 秒轮询兜底同时跑（`roadmap.md` 第 5 条契约缺口的简化实现——
+/// 任务详情：SSE 实时更新 + 5 秒轮询兜底同时跑（`zaolang-ios-client` skill 路线图里「SSE 兜底简化」这条契约缺口的简化实现——
 /// `EventStreamClient` 内部退避重连是无限重试，没有"连续三次失败降级轮询"的计数器；
 /// 与其在这里精确复刻那套状态机，直接并行跑一个轮询循环更简单也更可靠：
 /// SSE 到就提前更新，轮询兜底保证最多 5 秒内一定和服务端状态对齐）。

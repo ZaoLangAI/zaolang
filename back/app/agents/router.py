@@ -137,7 +137,8 @@ def route(
     Forwarded to `select_provider` as context only.
 
     `forced_model` is a deliberate, narrow exception to this module's own
-    "choice is the LLM's" rule (see `zaolang-agent-gateway` invariant #1):
+    "choice is the LLM's" rule (see the `zaolang-agent-gateway` skill on
+    routing and on `forced_model`):
     when a caller (`GenerationParams.forced_model`) names a model by its
     exact `ProviderCapability.model_or_workflow`, the hard filter still runs
     unchanged, but the winner among what survives is picked deterministically

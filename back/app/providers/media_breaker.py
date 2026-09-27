@@ -5,7 +5,9 @@ job* (`previously_failed_this_job`). This is the cross-job complement: a route
 that keeps failing for everyone is taken out of rotation for a cooldown, so a
 brand-new job's first attempt does not walk straight into it.
 
-It is a hard filter, never a score (zaolang-agent-gateway invariants #1/#2):
+It is a hard filter, never a score (see the `zaolang-agent-gateway` skill on
+the media circuit breaker and on routing: filtering is code, choosing is the
+LLM's):
 `route()` marks an open route `filter_reason="provider_circuit_open"` like any
 other ineligible candidate, and the LLM selector never sees breaker state.
 Same Redis shape as the LLM gateway's breaker (`app/llm/failover.py`) under

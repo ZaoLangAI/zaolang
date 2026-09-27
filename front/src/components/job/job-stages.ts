@@ -2,7 +2,8 @@
  * The "pipeline node → visible stage" mapping shared by every progress view —
  * the standalone `/jobs/[jobId]` page (`job-progress.tsx`) and the image
  * studio's inline result (`inline-image-result.tsx`). Kept in one place so
- * the two never drift apart (see `zaolang-generation-jobs` invariant #13:
+ * the two never drift apart (see the `zaolang-generation-jobs` skill on
+ * `JobEvent.node_id`:
  * `JobEvent.node_id`/`event_type` don't map 1:1, so this table is the only
  * source of truth for "which stage dot lit up").
  */
