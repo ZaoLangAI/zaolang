@@ -28,18 +28,18 @@ Not here → `zaolang-admin-ops` (review, takedown), `zaolang-credits-billing` (
 
 ## Invariants
 
-1. Characters/scenes are `CreationSkill` rows (`character`/`scene_asset`), payload at `params_json["character"|"scene"]`. Edit them only via `/v1/characters|scenes` — `PATCH /v1/skills/{id}` overwrites `params`/`category` wholesale.
+1. Characters/scenes are `CreationSkill` rows (`character`/`scene_asset`), payload at `params_json["character"|"scene"]`. Edit them only via `/v1/characters|scenes`: `POST`/`PATCH /v1/skills` 422 on `category=character` (and on an existing character), but a scene `PATCH`ed there still has `params`/`category` overwritten wholesale.
 2. Create → `DRAFT`/`PRIVATE`. `publish()` runs the `skill_moderation` gate, sets `PENDING_REVIEW`/`PUBLIC`, reopens the single queue row (subject `skill`); re-publish is a no-op. Public reads check `status == PUBLISHED` only — `service.py:get_usable`.
 3. A content edit on a non-`DRAFT` row drops it to `DRAFT`/`PRIVATE` and closes the open queue item (`withdrawn_by_owner`), same as `withdraw()` — all three services go through `service.py:withdraw_after_edit`; `/pricing` never does.
 4. Characters publish only via `POST /v1/characters/{id}/publish` with `portrait_consent: true` (stamps `portrait_consent_at`); `/v1/skills/{id}/publish` rejects them. Scenes need no consent.
 5. One character name per owner: DB index + `_require_unique_character_name` (422 on `name`). Scenes are not unique.
 6. Paid: `access_credits > 0` needs `marketplace_enabled` and ≤ `max_access_credits` (`access.service.normalize_access_credits`). Detail `params` is `{}` until `viewer_unlocked` (owner/free/grant). `/unlock` honours `Idempotency-Key`.
-7. `POST /apply` is the only usage counter (asserts unlocked). The plaza dialog never calls it; the studio `?skillId=` seed does. Server re-fold and auto-matchers (`apply_matching_format_skills`, `list_drama_candidates`) never count or charge.
+7. `POST /apply` is the only usage counter (asserts unlocked). The plaza dialog never calls it; the studio `?skillId=` seed does. Server re-fold and auto-matchers (`apply_matching_format_skills`, `list_drama_candidates`) never count or charge — so the matchers only take free rows owned by the catalogue account (`_planted_catalog_rows`), never a user's same-titled skill.
 8. Image-asset categories fold only `TEMPLATE_FOLD_KEYS`; `variables` never folds; empty `applicable_operations` = any, yet `isSkillMentionable` hides image-asset skills without declared ops.
 9. `character_ids`/`scene_ids` (≤4 each) must be caller-owned; `jobs.service.submit` merges them before quoting into the shared 9-slot `reference_asset_ids`, explicit refs first. Others' marketplace stills pass via `asset_is_usable_skill_reference`.
 10. Never mutate `params_json` in place — `_payload` returns copies, writes go through `_set_payload`; otherwise the UPDATE is silently skipped.
 11. `reference_assets` ≤4 owned image/video; a character's non-`general` view replaces its old entry, scenes accumulate. `action_clips` (≤12 video) never reach `reference_asset_ids`.
-12. Catalogue identity is `(owner, title)` (`CatalogSkill.key` isn't stored): `ensure_catalog_skills` plants `PUBLISHED` rows without review, never overwrites edits, only backfills a null cover. A retitle plants a new row.
+12. Catalogue identity is `(owner, title)` (`CatalogSkill.key` isn't stored); the owner is the `catalog.CATALOG_OWNER_HANDLE` account (`zaolang_studio`), shared by `make seed` and `app.scripts.ensure_catalog`, and tests seed under the `catalog_owner` fixture. `ensure_catalog_skills` plants `PUBLISHED` rows without review, never overwrites edits, only backfills a null cover. A retitle plants a new row.
 13. `list_mine` and default `list_public` exclude `IMAGE_ASSET_SKILL_CATEGORIES`.
 
 ## Recipes
