@@ -19,6 +19,7 @@ from app.models.enums import (
     NotificationType,
     Operation,
     QualityTier,
+    ReportReason,
     VideoAssetKind,
 )
 from app.platform_config.schemas import MAX_GENERATION_DURATION_SECONDS
@@ -936,5 +937,5 @@ class NotificationResponse(ApiModel):
 class ReportCreateRequest(ApiModel):
     subject_type: str = Field(pattern=r"^(work|asset|user|comment)$")
     subject_id: str
-    reason: str
+    reason: ReportReason
     detail: str | None = Field(default=None, max_length=2000)

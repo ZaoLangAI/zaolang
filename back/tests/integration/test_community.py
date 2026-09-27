@@ -514,6 +514,21 @@ def test_reporting_a_work_opens_a_case(
     assert case.reporter_user_id == remixer.id
 
 
+def test_a_report_with_an_unknown_reason_is_rejected(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    """The admin queue groups and filters by `ReportReason`; a free-form
+    reason would land in no bucket."""
+    response = client.post(
+        "/v1/reports",
+        json={"subject_type": "work", "subject_id": work.id, "reason": "i_dont_like_it"},
+        headers=auth_header(remixer),
+    )
+    assert response.status_code == 422
+
+    assert db.scalar(select(ReportCase).where(ReportCase.subject_id == work.id)) is None
+
+
 def test_appealing_a_hidden_work_opens_a_pending_appeal(
     client: TestClient, db: Session, work: Work, author: User
 ) -> None:
