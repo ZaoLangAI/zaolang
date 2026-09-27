@@ -1,67 +1,68 @@
 ---
 name: zaolang-overview
-description: The ZaoLang repository's master index and routing table — front/back/ios/infra ownership, the boundaries of the 24 module skills, and which one to load explicitly for a given change. Use when working anywhere in this repository, or when the user mentions ZaoLang, works and lineage, the credit ledger, generation jobs, the agent gateway, the admin console, admin statistics, the iOS client, the drama editor, or asks where a feature lives in this codebase.
+description: ZaoLang repo map and skill router — stack, front/back/ios/infra layout, backend layering, global rules, and which zaolang-* module skill owns a change. Use when starting any work in this repo or when unsure where a feature lives.
 ---
 
 # ZaoLang — Repository Overview
 
-A global AI co-creation sharing platform. **Read this routing table first, then explicitly load the matching module skill** — don't guess and edit blind. This repo's invariants concentrate in three places — the credit ledger, the job state machine, and licensing/lineage — and breaking one won't show up in a type check. The software licence is Apache-2.0 (see root `LICENSE`); that's a separate thing from a work's license snapshot / lineage inside the product domain.
+Global AI co-creation sharing platform. Read the routing table, then load the owning module skill before editing. Invariants concentrate in the credit ledger, the job state machine and licensing/lineage — breaking one won't show up in a type check. Software licence: Apache-2.0 (root `LICENSE`), unrelated to in-product work licences.
 
-## Repository Layout
+## Stack & Layout
 
 | Path | Contents |
 | --- | --- |
-| `back/` | FastAPI + Agno AgentOS, conda env `zaolang`, Python 3.12 |
-| `front/` | Next.js 16 App Router + Tailwind v4, fnm reading `front/.node-version`; consumer and admin share one project, isolated in session and API |
-| `ios/` | the native iOS client, SwiftUI + Swift Concurrency, an XcodeGen project, a read-only M1 closed loop, no admin capability |
-| `infra/` | docker-compose: PostgreSQL 17 (pgvector) on `5433`, Redis on `6380`, MinIO on `9000` (opt-in — `make up` only starts postgres+redis; `Settings.storage_backend` still defaults to `minio`, but the intended local setup is `STORAGE_BACKEND=tencent_cos` with `COS_*` in `back/.env`, else start `minio minio-init` yourself) |
-| `docs/` | the MkDocs site source and ops runbook |
-| `assets-pack/` | where a user drops real media; `manifest.example.json` in the repo defines the import contract — for a real import, copy/fill in a local `assets-pack/manifest.json` (not committed by default) |
+| `back/` | FastAPI 0.141 + Agno 2.8, SQLAlchemy 2 + Alembic, Celery 5 + Redis, Pydantic 2; conda env `zaolang`, Python 3.12 |
+| `front/` | Next.js 16.2 App Router, React 19.2, Tailwind 4, next-intl 4, zustand 5, @xyflow/react 12, three 0.185, mediabunny 1.29; Node via fnm (`front/.node-version`). Consumer `(site)`/`(studio)` and `(admin)` share one app, isolated in session + API |
+| `ios/` | SwiftUI iOS 17 client, XcodeGen `ios/project.yml`, `ios/Packages/ZaolangKit`; no admin |
+| `infra/` | docker-compose: Postgres 17 + pgvector `5433`, Redis `6380`, MinIO `9000` (opt-in; `make up` starts only postgres+redis) |
+| `docs/` | MkDocs site source and ops runbooks |
+| `assets-pack/` | real-media drop zone; `assets-pack/manifest.example.json` defines the import contract |
 
-Backend layering: `api/v1` (the HTTP contract) → `domain/*` (where invariants live) → `models` (SQLAlchemy). `agents` / `teams` / `workflows` / `providers` / `workers` sit on top of domain — **an agent may only reach domain services through the `app/agents/tools.py` whitelist, and its output isn't fact until it's persisted.**
+Backend layering: `back/app/api/v1` (HTTP contract) → `back/app/domain/*` (invariants) → `back/app/models` (SQLAlchemy). `agents`/`teams`/`llm`/`providers`/`workflows`/`workers` sit on top of domain; an agent reaches domain only via the `back/app/agents/tools.py` whitelist, and its output isn't fact until persisted.
 
-## Load By Intent
+## Routing Table
 
-| What you're changing | Load |
+| Changing… | Load |
 | --- | --- |
-| Starting services, containers, env vars, the Makefile | `zaolang-local-env` |
-| Adding a table, a column, writing a migration | `zaolang-data-model` |
-| Adding an endpoint, an error code, idempotency, rate limits, auth | `zaolang-api-contract` |
-| Tier pricing, provider switches/quotas, feature flags, agent-model bindings | `zaolang-platform-config` |
-| Visibility, remix authorization, license snapshots, lineage edges/tombstones, credit-unlock grants | `zaolang-domain-licensing-lineage` |
-| Credit reservation and settlement, royalty payback, forced marketplace transfers, reconciliation, payment webhooks, redemption codes | `zaolang-credits-billing` |
-| Job submission, the state machine, SSE, Celery queues, cancellation and retries | `zaolang-generation-jobs` |
-| The Safety/Planner/Quality/Copy/Intent Router agents, provider hard-filtering and LLM selection, the LLM gateway and response normalization | `zaolang-agent-gateway` |
-| Upload presigning, private-object downloads, pHash fingerprinting, AI-provenance manifests | `zaolang-media-assets` |
-| Search, tags, inspiration-wall sort, pgvector similar works, style presets | `zaolang-discovery-search` |
-| Audit logs, SystemLog security signals, data export/deletion, backups and lifecycle | `zaolang-compliance-audit` |
-| Consumer pages, shared components, the login dialog and action recovery, the command palette | `zaolang-frontend-ui` |
-| Colour tokens, dark/light theming, flicker-free SSR | `zaolang-theming` |
-| Trilingual copy, locale and region, currency/date formatting | `zaolang-i18n-region` |
-| The lineage-graph DAG, version-parameter diffing | `zaolang-lineage-graph` |
-| The infinite canvas: card/edge row storage, per-node CAS, the `/graph-ops` write path, the change feed, domain bindings | `zaolang-canvas` |
-| The admin shell, its separate login, RBAC nav, tables and dangerous-action components | `zaolang-admin-console` |
-| Admin-ops endpoints and pages (incl. the skill library, style gallery, redemption codes, log center) | `zaolang-admin-ops` |
-| The admin statistics center, daily-trend timeseries, empty-day zero-fill | `zaolang-admin-statistics` |
-| The iOS client (SwiftUI screens, ZaolangKit, XcodeGen, colour/string generation scripts) | `zaolang-ios-client` |
-| Local gates, Docker images, the docs site | `zaolang-ci-release` |
-| Single-host remote deploy or update (rsync, prod compose, migrate, optional local-DB overwrite) | `zaolang-remote-deploy` |
-| Writing tests, running E2E, accessibility and visual QA | `zaolang-testing-qa` |
-| The drama timeline, EditCommand, leases, browser export, editor_planner, Remote MCP, conversational script writing (文案创作) | `zaolang-editor-drama` |
-| The 白膜 blockout studio: blocking document/sanitizer, blocking agent slots, the 3D player and drag editor, motion-guide reference videos | `zaolang-blocking-studio` |
+| Local stack, compose, `.env`, Makefile dev targets, seed | `zaolang-local-env` |
+| Tables, columns, enums, migrations, ID prefixes | `zaolang-data-model` |
+| New endpoint, error code, idempotency, rate limit, auth deps, logging/OTel | `zaolang-api-contract` |
+| Runtime config, feature flags, model prices | `zaolang-platform-config` |
+| Visibility, remix auth, paid unlocks, license snapshots, lineage, publish | `zaolang-domain-licensing-lineage` |
+| Credits reserve/settle, royalties, payments, redemption, reconciliation | `zaolang-credits-billing` |
+| Job state machine, SSE, Celery/Beat, retries, workflow graphs, video analysis | `zaolang-generation-jobs` |
+| Agents, LLM client, provider routing/quirks, prompt polish, `/gateway/status` | `zaolang-agent-gateway` |
+| Uploads, signed downloads, pHash, provenance, storage, assets-pack | `zaolang-media-assets` |
+| Search, tags, feeds, similar works, style presets/gallery | `zaolang-discovery-search` |
+| Skill library, characters, scenes, `/skills` plaza, @-mention apply | `zaolang-creation-library` |
+| Learning posts, notifications/push devices, profiles, collections, follows, reports | `zaolang-community` |
+| Audit, SystemLog, data export/deletion, consent, retention, backups | `zaolang-compliance-audit` |
+| Consumer routes, shared components, studios, API client, login wall, Cmd+K | `zaolang-frontend-ui` |
+| Colour tokens, dark/light, motion, breakpoints | `zaolang-theming` |
+| UI copy (zh-CN/en/ja), locale/region, formatting | `zaolang-i18n-region` |
+| Lineage-graph DAG UI, version diff | `zaolang-lineage-graph` |
+| Infinite canvas, `/graph-ops`, change feed, canvas Agent | `zaolang-canvas` |
+| Short drama: series/episodes, timeline editor, exports, MCP, 文案创作, shortform | `zaolang-editor-drama` |
+| 白膜 3D blockout studio, motion-guide reference video | `zaolang-blocking-studio` |
+| Admin shell, admin login, RBAC, nav | `zaolang-admin-console` |
+| Admin domain endpoints/pages, moderation queue, keyword gates | `zaolang-admin-ops` |
+| Admin statistics timeseries | `zaolang-admin-statistics` |
+| iOS client | `zaolang-ios-client` |
+| `make check` gate, pre-commit, Docker images, versions, docs site | `zaolang-ci-release` |
+| Single-host prod deploy | `zaolang-remote-deploy` |
+| Tests, e2e, a11y, visual QA | `zaolang-testing-qa` |
 
-For a change spanning modules, load in dependency order: `data-model` → `domain/*` → `api-contract` → frontend.
+Cross-module change order: `zaolang-data-model` → domain skill → `zaolang-api-contract` → frontend/iOS skill.
 
-## Three Global Rules
+## Global Rules
 
-1. **The implementation is ground truth.** When a requirement is ambiguous, read the existing code, `docs/`, and tests — don't invent product behavior from nothing.
-2. **Amounts are always integers** (credits and minor units) — any floating-point number touching an amount calculation is a bug.
-3. **IDs carry a type prefix** (`usr_` / `wrk_` / `job_` / `ast_`, etc.), generated by `back/app/models/base.py:new_id` via each model's `id_column(prefix)` — never hand-write an ID string.
+1. The implementation is ground truth — resolve ambiguity from code, `docs/` and tests, not invention.
+2. Money is always integer (credits, minor units, micro-USD); a float in an amount path is a bug.
+3. IDs carry a type prefix (`usr_`, `wrk_`, `job_`, `ast_`…) from `back/app/models/base.py:new_id` via each model's `id_column(prefix)`; never hand-write an ID.
 
-## Full Verification
+## Verify
 
 ```bash
-make check   # lint + typecheck + trilingual copy + OpenAPI drift + the full test suite
+make check   # lint + typecheck + messages + openapi-check + full test suite
 ```
-
-Per-module commands are in each module skill's "Verify" section.
+Per-module commands live in each skill's Verify section.
