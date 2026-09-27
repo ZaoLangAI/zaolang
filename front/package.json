@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
-    "@mdxeditor/editor": "^4.2.0",
+    "@mdxeditor/editor": "^4.3.0",
     "@photo-sphere-viewer/core": "^5.15.1",
     "@xyflow/react": "^12.11.2",
     "animejs": "^4.5.0",
@@ -54,6 +54,11 @@
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "@redocly/openapi-core": {
+      "js-yaml": "^4.3.2"
+    }
   }
 }
