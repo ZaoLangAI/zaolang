@@ -24,7 +24,7 @@ Engine, sync, render/export, leases, analysis, MCP and AI planning for `/studio-
 
 ## Commands & document
 
-1. Three places define a command: `commands.py` (authority), `canonical.ts` (local apply), `ports.ts` (type). `back/app/domain/editor/schemas/edit_command.schema.json` is not read by code and lags.
+1. Three places define a command: `commands.py` (authority), `canonical.ts` (local apply), `ports.ts` (type). There is no separate JSON schema — change all three together.
 2. `validate_batch` forbids generic path updates (`"path"` key or `update_property`). `set_keyframe.property` is a closed set with bounded `PROPERTY_RANGES`; add a property by hand on both sides — never accept caller paths.
 3. `volume` keyframes use the `set_clip_volume` range 0–200 000 millipercent. Keyframes are coarse points; `resolveNumberAtTime` (`engine/animation.ts`) interpolates and holds edges.
 4. Tracks: only `video`/`audio` (`TRACK_KINDS_ADDABLE`) can be added/removed; caption/overlay tracks are singletons; `remove_track` refuses the last of a kind or a non-empty track. Clip/caption inserts and cross-track moves check `track.kind`.
