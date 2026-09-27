@@ -139,3 +139,24 @@ def test_diff_for_a_private_child_work_is_not_found_to_a_stranger(
 
     owner = client.get(f"/v1/work-versions/{child_version.id}/diff", headers=auth_header(author))
     assert owner.status_code == 200, owner.text
+
+
+def test_consumer_session_admin_role_does_not_unlock_a_private_parent(
+    client: TestClient, db: Session, author: User, remixer: User, admin: User
+) -> None:
+    """An admin role on a *consumer* session is not staff access.
+
+    Staff visibility only comes from the separate admin-audience session.
+    If the consumer-side role counted, a private parent under a public
+    remixable child would 200 here with its full title and prompt, because
+    `can_remix` only gates on the child.
+    """
+    parent_work, parent_version = make_work(db, author, title="私密原作")
+    _child_work, child_version = make_work(db, remixer, title="二创")
+    _link(db, parent_work, parent_version, child_version, created_by=remixer.id)
+    parent_work.visibility = Visibility.PRIVATE
+    db.commit()
+
+    response = client.get(f"/v1/work-versions/{child_version.id}/diff", headers=auth_header(admin))
+    assert response.status_code == 404
+    assert "私密原作" not in response.text
