@@ -22,6 +22,7 @@ from app.models import (
     EpisodeCut,
     Notification,
     Series,
+    SeriesCollaborator,
     User,
     Work,
 )
@@ -34,6 +35,8 @@ from app.models.enums import (
     MediaType,
     ModerationStatus,
     NotificationType,
+    SeriesCollaboratorStatus,
+    SeriesStatus,
     Visibility,
 )
 from app.platform_config import service as config_service
@@ -960,12 +963,21 @@ def test_delete_script_removes_episode_and_turns(
         )
         == 0
     )
-    # The 1:1 `Series` created for this script goes away too, once it is the
-    # episode's only one.
-    assert db.get(Series, series_id) is None
+    # The shell `Series` this flow auto-created is not hard-deleted but moved
+    # to the owner's recycle bin, where the normal restore/purge flow applies.
+    series = db.get(Series, series_id)
+    assert series is not None
+    assert series.status == SeriesStatus.TRASHED
+    assert series.trashed_at is not None
 
     listed = client.get("/v1/scripts", headers=auth_header(author))
     assert listed.json() == []
+    trash = client.get("/v1/drama-series?status=trashed", headers=auth_header(author))
+    assert [item["id"] for item in trash.json()] == [series_id]
+
+    purged = client.delete(f"/v1/drama-series/{series_id}/purge", headers=auth_header(author))
+    assert purged.status_code == 204, purged.text
+    assert db.get(Series, series_id) is None
 
 
 def test_delete_script_rejects_another_users_episode(
@@ -1132,9 +1144,9 @@ def test_delete_script_blocked_when_export_bound_to_published_draft(
 def test_delete_script_leaves_sibling_episode_and_series(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`delete_script` only drops the 1:1 series when no other episode
-    still points at it — a sibling added later must keep both the series
-    and that extra episode."""
+    """`delete_script` only trashes the auto-created shell series when no
+    other episode still points at it — a sibling added later must keep both
+    the series (still active) and that extra episode."""
     _enable_script_studio(db, author)
     _patch_stream_session(monkeypatch, db)
 
@@ -1158,7 +1170,118 @@ def test_delete_script_leaves_sibling_episode_and_series(
     assert response.status_code == 204, response.text
     assert db.get(DramaEpisode, episode_id) is None
     assert db.get(DramaEpisode, sibling.json()["id"]) is not None
-    assert db.get(Series, series_id) is not None
+    series = db.get(Series, series_id)
+    assert series is not None
+    assert series.status == SeriesStatus.ACTIVE
+
+
+def test_delete_script_keeps_a_dashboard_created_series(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A series built on the `/create/short` dashboard (it has target
+    platforms) is left alone when its last script goes — same as the
+    dashboard's own `delete_episode` — instead of being trashed or
+    hard-deleted."""
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    series = client.post(
+        "/v1/drama-series",
+        headers=auth_header(author),
+        json={"title": "我的短剧项目", "target_platforms": ["manual_download"]},
+    )
+    assert series.status_code == 201, series.text
+    series_id = series.json()["id"]
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密", "series_id": series_id},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+    assert db.get(DramaEpisode, episode_id) is None
+    kept = db.get(Series, series_id)
+    assert kept is not None
+    assert kept.status == SeriesStatus.ACTIVE
+    assert kept.trashed_at is None
+
+
+def test_delete_script_by_collaborator_never_touches_the_owners_series(
+    client: TestClient, db: Session, author: User, remixer: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A co-creator may delete an episode but has no trash/purge rights on
+    the owner's series, even when that was the series' last episode and the
+    series is still an uncurated `/create/script` shell."""
+    _enable_script_studio(db, author)
+    _enable_script_studio(db, remixer)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+    series_id = db.get(DramaEpisode, episode_id).series_id
+    db.add(
+        SeriesCollaborator(
+            series_id=series_id,
+            user_id=remixer.id,
+            invited_by_user_id=author.id,
+            status=SeriesCollaboratorStatus.ACTIVE,
+        )
+    )
+    db.flush()
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(remixer))
+    assert response.status_code == 204, response.text
+    assert db.get(DramaEpisode, episode_id) is None
+    series = db.get(Series, series_id)
+    assert series is not None
+    assert series.status == SeriesStatus.ACTIVE
+    assert (
+        db.scalar(
+            select(func.count(SeriesCollaborator.id)).where(
+                SeriesCollaborator.series_id == series_id
+            )
+        )
+        == 1
+    )
+
+
+def test_delete_script_leaves_an_already_trashed_series_as_is(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deleting the last script of a series the owner already trashed must
+    not 409 on a second trash, nor purge it behind the owner's back."""
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    episode_id = next(data for kind, data in _parse_sse(created.text) if kind == "complete")[
+        "episode_id"
+    ]
+    series_id = db.get(DramaEpisode, episode_id).series_id
+    trashed = client.delete(f"/v1/drama-series/{series_id}", headers=auth_header(author))
+    assert trashed.status_code == 204, trashed.text
+    trashed_at = db.get(Series, series_id).trashed_at
+
+    response = client.delete(f"/v1/scripts/{episode_id}", headers=auth_header(author))
+    assert response.status_code == 204, response.text
+    series = db.get(Series, series_id)
+    assert series is not None
+    assert series.status == SeriesStatus.TRASHED
+    assert series.trashed_at == trashed_at
 
 
 def test_list_scripts_shows_zero_turn_shells_too(
