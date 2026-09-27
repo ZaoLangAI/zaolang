@@ -5,7 +5,7 @@ description: Consumer Next.js shell — (site)/(studio) routes, component famili
 
 # Consumer Frontend
 
-**Scope**: consumer routes under `front/src/app/[locale]/(site)/` and `(studio)/`, shared components in `front/src/components/`, and `front/src/lib/` client plumbing. Stack (`front/package.json`): Next 16.2 App Router + RSC, React 19.2, Tailwind 4, next-intl 4, zustand 5 (editor store only), animejs 4 (lazy), @mdxeditor/editor + react-markdown (learn posts), @xyflow/react, three, mediabunny. Dark theme is the visual baseline.
+**Scope**: consumer routes under `front/src/app/[locale]/(site)/` and `(studio)/`, shared components in `front/src/components/`, and `front/src/lib/` client plumbing. Stack (`front/package.json`): Next 16.3 App Router + RSC, React 19.2, Tailwind 4, next-intl 4, zustand 5 (editor store only), animejs 4 (lazy), @mdxeditor/editor + react-markdown (learn posts), @xyflow/react, three, mediabunny. Dark theme is the visual baseline.
 Not here → `zaolang-theming` (tokens, motion), `zaolang-i18n-region` (copy, locale), `zaolang-editor-drama` (文案创作 script, clip studio, cut editor, `/create/short`), `zaolang-canvas`, `zaolang-blocking-studio` (白膜), `zaolang-generation-jobs` (job SSE, thinking frames, video analysis), `zaolang-data-model` (draft `latest_job_id`/`applied_job_id`), `zaolang-creation-library` (skill plaza, character/scene libraries), `zaolang-community` (learn, profile, notifications, collections), `zaolang-discovery-search` (discover wall), `zaolang-admin-console` (`(admin)`), `zaolang-platform-config` (flags).
 
 ## Key Paths
