@@ -21,6 +21,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+# Learn-post Markdown bodies. Hard-wrapping this Chinese prose would add soft
+# line breaks, which Markdown renders as stray spaces between characters.
+"app/domain/learning/catalog.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
