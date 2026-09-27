@@ -629,6 +629,60 @@ def test_an_unkeyed_second_confirm_is_still_refused(
     assert second.status_code == 422
 
 
+def test_confirming_is_throttled_on_the_generation_budget(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """A throttled confirm is refused before anything is reserved."""
+    from app.api import rate_limit
+
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+    before = _balance(db, funded)
+
+    # Setup above already drew on the budget; start it from a known count.
+    rate_limit.reset("generation_submit", f"user:{funded.id}")
+    for _ in range(rate_limit.RULES["generation_submit"].limit):
+        rate_limit.enforce("generation_submit", f"user:{funded.id}")
+    throttled = client.post(
+        f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=auth_header(funded)
+    )
+    assert throttled.status_code == 429
+    assert throttled.headers.get("retry-after")
+    assert db.query(GenerationJob).count() == 0
+    assert _balance(db, funded) == before
+
+
+def test_autosave_pressure_does_not_block_a_confirm(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """A long drag session spends the autosave budget, not the one that lets
+    the user pay for a run they already reviewed."""
+    from app.api import rate_limit
+
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+
+    # Setup above already drew on the budget; start it from a known count.
+    rate_limit.reset("editor_write", f"user:{funded.id}")
+    for _ in range(rate_limit.RULES["editor_write"].limit):
+        rate_limit.enforce("editor_write", f"user:{funded.id}")
+    blocked = client.post(
+        f"/v1/canvas-projects/{canvas['id']}/graph-ops",
+        json={"base_seq": 0, "ops": []},
+        headers=auth_header(funded),
+    )
+    assert blocked.status_code == 429
+
+    confirmed = client.post(
+        f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=auth_header(funded)
+    )
+    assert confirmed.status_code == 200, confirmed.text
+
+
 def test_cancelling_stops_the_run_and_its_tasks(
     client: TestClient, db: Session, funded: User
 ) -> None:
