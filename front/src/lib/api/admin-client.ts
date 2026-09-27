@@ -32,9 +32,15 @@ export function getAdminToken(): string | null {
   return adminToken;
 }
 
-/** Full navigation so the console layout re-reads the cookie from scratch. */
-function redirectToAdminLogin(): void {
+/**
+ * Full navigation so the console layout re-reads the cookie from scratch.
+ * Used when the session ends (expiry here, sign-out in `AdminSessionProvider`).
+ */
+export function redirectToAdminLogin(): void {
   setAdminToken(null);
+  // A router push would keep the client router cache of the ended session's
+  // console pages, and this module has no router to push with anyway.
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- session change needs a full document load
   window.location.assign(`${window.location.pathname.split('/admin')[0]}/admin/login`);
 }
 
