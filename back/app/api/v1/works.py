@@ -53,7 +53,6 @@ from app.models import (
     WorkVersion,
 )
 from app.models.enums import (
-    ADMIN_ROLE_RANK,
     AccessSubjectType,
     AppealStatus,
     LifecycleStatus,
@@ -129,7 +128,6 @@ def get_work(
     summary = _summary(session, work, version, viewer)
     viewer_id = viewer.id if viewer else None
     can_remix = licensing.can_remix(work, viewer_id, session)
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
 
     is_owner = viewer is not None and viewer.id == work.owner_user_id
     latest_appeal = (
@@ -149,7 +147,7 @@ def get_work(
         current_version=_version_summary(session, version),
         reusable_params=_reusable_params(version) if can_remix else None,
         license=_license_info(session, version),
-        ancestors=_ancestors(session, version.id, viewer_id, is_staff),
+        ancestors=_ancestors(session, version.id, viewer_id),
         descendant_count=lineage_service.descendant_count(session, version.id),
         viewer_liked=_has_interaction(session, Like, viewer, work.id),
         viewer_bookmarked=_has_interaction(session, Bookmark, viewer, work.id),
@@ -174,16 +172,15 @@ def get_lineage(
     Tombstoned nodes stay in the graph so the chain is never visibly broken.
     """
     _work, version = _load_visible(session, work_id, viewer)
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
     viewer_id = viewer.id if viewer else None
     tree = lineage_service.build_tree(
-        session, version.id, max_depth=depth, viewer_user_id=viewer_id, viewer_is_staff=is_staff
+        session, version.id, max_depth=depth, viewer_user_id=viewer_id
     )
     all_descendants = lineage_service.descendants(session, version.id)
 
     return LineageResponse(
         root=_lineage_node(session, tree),
-        ancestors=_ancestors(session, version.id, viewer_id, is_staff),
+        ancestors=_ancestors(session, version.id, viewer_id),
         total_descendants=len(all_descendants),
         truncated=len(all_descendants) > _count_nodes(tree) - 1,
     )
@@ -494,8 +491,10 @@ def _load_visible(session, work_id: str, viewer: User | None) -> tuple[Work, Wor
     work = session.get(Work, work_id)
     if work is None:
         raise NotFound("作品不存在。")
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
-    licensing.assert_viewable(work, viewer.id if viewer else None, is_staff)
+    # `viewer` only ever proves a *consumer*-audience session, so an admin
+    # role in `viewer.roles` grants no staff visibility here (same rule as
+    # `GET /assets/{id}`); staff read hidden/private works via `/v1/admin`.
+    licensing.assert_viewable(work, viewer.id if viewer else None)
 
     version = session.get(WorkVersion, work.current_version_id or "")
     if version is None:
@@ -700,7 +699,6 @@ def _ancestors(
     session,  # type: ignore[no-untyped-def]
     version_id: str,
     viewer_user_id: str | None = None,
-    viewer_is_staff: bool = False,
 ) -> list[LineageAncestor]:
     result: list[LineageAncestor] = []
     for depth, edge in enumerate(lineage_service.ancestors(session, version_id), start=1):
@@ -710,10 +708,8 @@ def _ancestors(
         parent_work = session.get(Work, parent.work_id)
         # Same rule as the downstream tree (`lineage_service._node_for_version`):
         # an ancestor that has since gone private masks the same way a
-        # tombstoned one does, unless the caller is its owner or staff.
-        is_tombstone = parent_work is None or not licensing.can_view(
-            parent_work, viewer_user_id, viewer_is_staff
-        )
+        # tombstoned one does, unless the caller is its owner.
+        is_tombstone = parent_work is None or not licensing.can_view(parent_work, viewer_user_id)
         snapshot = edge.parent_author_snapshot_json
         result.append(
             LineageAncestor(
