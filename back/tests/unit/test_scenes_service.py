@@ -233,9 +233,12 @@ def test_remove_reference_asset_survives_a_fresh_reload(db: Session, author: Use
     assert reloaded.reference_assets == []
 
 
-def test_append_reference_asset_replaces_the_same_views_prior_image(
+def test_append_reference_asset_accumulates_shots_that_share_a_view(
     db: Session, author: User
 ) -> None:
+    """Unlike a character's fixed views, a scene keeps every `establishing`
+    shot (up to the cap) — only re-adding the *same* asset replaces its entry,
+    moving it to the end instead of listing it twice."""
     scene = scenes_service.create_scene(
         db, user_id=author.id, name="便利店", description=None, reference_asset_ids=[]
     )
@@ -251,6 +254,14 @@ def test_append_reference_asset_replaces_the_same_views_prior_image(
     db.expire_all()
     reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
     assert reloaded.reference_asset_ids == [first.id, second.id]
+
+    scenes_service.append_reference_asset(
+        db, user_id=author.id, scene_id=scene.id, asset_id=first.id, view="detail"
+    )
+    db.expire_all()
+    reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
+    assert reloaded.reference_asset_ids == [second.id, first.id]
+    assert [entry["view"] for entry in reloaded.reference_assets] == ["establishing", "detail"]
 
 
 def test_editing_a_published_scene_withdraws_it_to_draft(db: Session, author: User) -> None:

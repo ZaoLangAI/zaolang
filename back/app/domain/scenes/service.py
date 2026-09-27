@@ -262,11 +262,13 @@ def append_reference_asset(
     view: str = DEFAULT_VIEW,
     label: str | None = None,
 ) -> SceneView:
-    """Adds (or replaces) one shot's reference image.
+    """Adds one shot's reference image.
 
     Called both by the scene library UI's per-image upload and by
     `app.workflows.nodes.execute_asset_output_link` when a generation job's
-    output is auto-attached.
+    output is auto-attached. Unlike a character's fixed views, shots sharing
+    a `view` accumulate up to the cap (oldest dropped first); only re-adding
+    the same asset replaces its entry.
     """
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])
