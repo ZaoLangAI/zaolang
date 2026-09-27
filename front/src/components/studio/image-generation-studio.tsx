@@ -277,11 +277,13 @@ export function ImageGenerationStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
-  useEffect(() => {
-    if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId) {
-      setAppliedJobId(liveJob.id);
-    }
-  }, [liveJob, activeJobId]);
+  // A job that just succeeded becomes the applied version. Adjusted during
+  // render, once per live snapshot, rather than with a setState in an effect.
+  const [autoAppliedJob, setAutoAppliedJob] = useState<GenerationJob | null>(null);
+  if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId && liveJob !== autoAppliedJob) {
+    setAutoAppliedJob(liveJob);
+    setAppliedJobId(liveJob.id);
+  }
 
   // Historical "补全侧面/背面" jobs still merge into the gallery; the
   // studio no longer offers a new completion from here.

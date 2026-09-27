@@ -55,20 +55,31 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
   const [reconnecting, setReconnecting] = useState(false);
   const [liveThinking, setLiveThinking] = useState<LiveThinking>(EMPTY_LIVE_THINKING);
   const lastEventId = useRef(0);
+  const [streamedJobId, setStreamedJobId] = useState(jobId);
+
+  // Reset during render when the job changes, so the new job never renders
+  // with the previous job's events for a frame.
+  if (streamedJobId !== jobId) {
+    setStreamedJobId(jobId);
+    setEvents([]);
+    setDetail(null);
+    setConnected(false);
+    setReconnecting(false);
+    setLiveThinking(EMPTY_LIVE_THINKING);
+  }
 
   useEffect(() => {
-    if (!jobId) {
-      lastEventId.current = 0;
-      setLiveThinking(EMPTY_LIVE_THINKING);
-      return;
-    }
+    lastEventId.current = 0;
+    if (!jobId) return;
 
     const controller = new AbortController();
     let attempt = 0;
     let stopped = false;
-    lastEventId.current = 0;
 
     const applyDetail = (latest: AdminJobDetail) => {
+      // A request still in flight when the job changed must not leak into
+      // the next job's state.
+      if (stopped) return;
       setDetail(latest);
       if (!latest.events?.length) return;
       const incoming = latest.events.map(toStreamedEvent);
@@ -104,15 +115,6 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
     }, DETAIL_POLL_MS);
 
     const run = async () => {
-      // Yield so the reset is not a synchronous setState inside the effect.
-      await Promise.resolve();
-      if (stopped) return;
-      setEvents([]);
-      setDetail(null);
-      setConnected(false);
-      setReconnecting(false);
-      setLiveThinking(EMPTY_LIVE_THINKING);
-
       const initial = await refreshDetail();
       if (initial && isTerminal(initial.status)) {
         halt();

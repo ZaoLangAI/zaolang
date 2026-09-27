@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
-import { adminApi } from '@/lib/api/admin-client';
+import { adminApi, redirectToAdminLogin } from '@/lib/api/admin-client';
 import { highestRole, type AdminRole } from '@/lib/admin/rbac';
 
 export interface AdminSession {
@@ -41,7 +41,7 @@ export function AdminSessionProvider({
 
   const signOut = useCallback(async () => {
     await adminApi.post('/v1/admin/auth/logout');
-    window.location.assign(`${window.location.pathname.split('/admin')[0]}/admin/login`);
+    redirectToAdminLogin();
   }, []);
 
   const value = useMemo(
