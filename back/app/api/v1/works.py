@@ -229,10 +229,14 @@ def version_diff(
     if parent_work is None or child_work is None:
         raise NotFound("版本不存在。")
 
-    is_staff = bool(viewer and any(r in ADMIN_ROLE_RANK for r in viewer.roles))
+    # `viewer` only ever proves a *consumer*-audience session, so an admin
+    # role in `viewer.roles` must not grant staff visibility here (same rule
+    # as `GET /assets/{id}`). It would matter: `can_remix` below gates on the
+    # child alone, so a staff-visible private/hidden parent would hand over
+    # its full title and reusable params whenever the child is remixable.
     viewer_id = viewer.id if viewer else None
-    licensing.assert_viewable(parent_work, viewer_id, is_staff)
-    licensing.assert_viewable(child_work, viewer_id, is_staff)
+    licensing.assert_viewable(parent_work, viewer_id)
+    licensing.assert_viewable(child_work, viewer_id)
 
     can_reveal = licensing.can_remix(child_work, viewer_id, session)
 
