@@ -1,48 +1,53 @@
 ---
 name: zaolang-blocking-studio
-description: 白膜 (3D blockout / previs) studio for a script episode — the semantic blocking document and its sanitizer, the blocking_route/blocking_derive agent slots and the three-phase SSE turn that can rewrite the script too, manual saves with version CAS, the deterministic TS compiler, the plain-three.js player/mannequins/drag editor, and rendering a segment to MP4 as a motion-guide reference video (`reference_video_role="motion_guide"`). Use when touching /create/script/{id}/blocking, app.domain.blocking, blocking_director, episode_blocking_versions, DramaEpisode.blocking_json/target_duration_seconds, front/src/features/blocking, or motion-guide routing.
-disable-model-invocation: true
+description: 白膜 3D blockout studio for script episodes — blocking document, sanitizer, blocking_route/derive turns, TS compiler, three.js player, motion-guide reference video. Use when touching /create/script/{id}/blocking, app.domain.blocking, features/blocking or motion_guide routing.
 ---
 
 # 白膜 Blockout Studio
 
-## Scope
-
-A third surface over the same `DramaEpisode` as 文案创作 (`zaolang-editor-drama`): a 3D previs of the episode — sets built from primitives, procedural mannequins, and a camera per script segment — that the author adjusts by chat or by dragging, then renders per segment as a **reference video** for generation. Gated by `blocking_studio_enabled` **and** `script_studio_enabled` (`app.domain.blocking.service.is_enabled`); `ScriptDetailResponse.blocking` is `null` while off. Desktop widths only (`md`+).
+**Scope**: 3D previs over the same `DramaEpisode` as 文案创作 — sets, mannequins, per-segment shots — edited by chat or drag, rendered per segment as a reference video. Needs `blocking_studio_enabled` **and** `script_studio_enabled` (`service.py:is_enabled`); else `ScriptDetailResponse.blocking` is `null`.
+Not here → `zaolang-editor-drama` (scripts, turns), `zaolang-media-assets` (reference upload, CFR conform), `zaolang-generation-jobs` (submit).
 
 ## Key Paths
 
-| Path | Contents |
-| --- | --- |
-| `back/app/domain/blocking/vocabulary.py` | the closed preset vocabularies (actions, shot sizes, heights, sides, 15 camera moves, primitives…) and limits — one source for the Pydantic models/TS unions, the sanitizer and the prompt |
-| `back/app/domain/blocking/segments.py` | `ordered_segments` (Python port of `orderedBreakpointKeys` — keys must agree with `front/src/features/script/script-breakpoint.ts`), duration estimates, `segment_source_hash`/`script_hash` |
-| `back/app/domain/blocking/camera_language.py` | `parse_camera_text` (script camera block → size/move/speed) and `normalize_token` (Chinese labels, film shorthand, spelling variants → documented tokens) — the cross-provider tolerance layer |
-| `back/app/domain/blocking/sanitize.py` | `sanitize_blocking` — the only writer's validator; forces sets/cast/segments to the script, completes partial replies from the previous version, fits durations to the target, carries or drops `camera_override`; `stale_segment_keys` |
-| `back/app/domain/blocking/service.py` | state, three-phase turn stream, rebuild, `patch_manual` (409 on stale `base_version_no`, coalesces manual saves within 60s), settings |
-| `back/app/agents/blocking_director.py` | `copy` slots `blocking_route` (JSON) and `blocking_derive` (streamed summary + fenced JSON) |
-| `back/app/api/v1/blocking.py` | `/v1/scripts/{id}/blocking/turns` (SSE), `…/blocking:rebuild` (SSE), `PATCH …/blocking`, `PATCH …/blocking/settings`, `GET …/blocking/versions/{n}` |
-| `back/app/domain/media/reference_roles.py` | the motion-guide directive/negatives prepended in `workflows/nodes._plan_enhancements` |
-| `front/src/features/blocking/compiler/` | pure, deterministic document → `Timeline.sample(t)`: cast tracks (`tracks.ts`), per-shot framing/moves/subject tracking/occlusion avoidance (`camera.ts`), set geometry + A* walk grid (`obstacles.ts`), staging repairs (`compile.ts`), and `quality.ts` metrics (framing, occlusion, spacing, prop penetration) — vitest-covered |
-| `front/src/features/blocking/engine/` | plain three.js (no r3f): `player.ts`, `mannequin.ts` + `poses.ts` (FK pose table, sine gait), `stage.ts`, `editor.ts` (TransformControls) |
-| `front/src/features/blocking/export/render-segment.ts` | segment → MP4 (same player, detached canvas, mediabunny) |
-| `front/src/features/blocking/blocking-studio.tsx` | the page body: full-height viewport (director view mattes the delivered frame) + transport + scrubber on the left; tabbed panel (对话 `ScriptChatPanel` / 镜头 `shot-panel.tsx` / 生成) on the right; stacked on phones |
+| Path | What |
+|---|---|
+| `back/app/domain/blocking/vocabulary.py` | closed presets (`CameraMove`, sizes, actions…) + limits; source for schemas, sanitizer, prompt |
+| `back/app/domain/blocking/segments.py` | `ordered_segments` (port of `orderedBreakpointKeys`), duration estimate, source hashes |
+| `back/app/domain/blocking/camera_language.py` | `parse_camera_text` (camera block → size/move), `normalize_token` (Chinese/film shorthand) |
+| `back/app/domain/blocking/sanitize.py` | `sanitize_blocking`, `fit_durations`, `_reconcile_with_script`, `stale_segment_keys` |
+| `back/app/domain/blocking/service.py` | three-phase turn stream, rebuild, `patch_manual`, `update_settings`, versions |
+| `back/app/agents/blocking_director.py` | `copy` slots `blocking_route` (JSON) and `blocking_derive` (streamed) |
+| `back/app/api/v1/blocking.py` | `/v1/scripts/{id}/blocking/turns`, `blocking:rebuild` (SSE); PATCH blocking/settings; GET versions |
+| `back/app/domain/media/reference_roles.py` | motion-guide directive, applied in `back/app/workflows/nodes.py:_plan_enhancements` |
+| `front/src/features/blocking/compiler/` | pure `compileBlocking`; `camera.ts`, `obstacles.ts` (A*), `tracks.ts`, `quality.ts` metrics |
+| `front/src/features/blocking/engine/` | plain three.js (no r3f): player, mannequin/poses, stage, drag `editor.ts` |
+| `front/src/features/blocking/export/render-segment.ts` | segment → clip: WebCodecs+mediabunny, else MediaRecorder |
+| `front/src/features/blocking/use-blocking-video.ts` | render → upload `generation_reference` → submit `reference_video_role: 'motion_guide'` |
 
 ## Invariants
 
-1. **The model writes semantics, never animation.** Presets, anchors and shot grammar only; `compileBlocking` is the one place motion is computed, and the player and the exporter both sample it — so the exported clip matches what the author watched.
-2. **Every write goes through `sanitize_blocking`** — model reply (`mode="llm"`), browser save and settings (`mode="manual"`). Links (`character_ref_id`) come from the script, never from the model or the browser.
-3. **A segment has `shots[]`, and the script's camera blocks are authoritative.** Freshly staged segments get one shot per script `camera` block with its size and move (`_reconcile_with_script`); a staging-only chat turn reconciles only script-changed segments (`reconcile_keys`), manual saves never. Legacy single `shot` documents convert on read.
-4. **The compiler repairs physical staging, never the document**: marks out of furniture and ≥0.8m apart, walks routed round furniture and other cast, cameras framed per shot at the subject's position, tracking moving subjects, kept in front of walkers and moved when occluded. All deterministic.
-5. **Segments are keyed exactly like breakpoints** (`{heading}#{ordinal}`); a kept-over segment keeps its *old* `source_hash` so staleness stays visible until it is re-staged. Staleness is computed server side only.
-6. **A 白膜 turn edits the script only through `copywriter.stream_revise_script`** (phase `script`), and persists as `EpisodeScriptTurn(origin="blocking")` + one `EpisodeBlockingVersion`. A failed derive never blanks the blockout.
-7. **Segment durations are whole seconds in [5, 15]** (`VIDEO_MAX_DURATION_SECONDS` once `video_options` is set; the shortest reference-capable model floor), fitted to `target_duration_seconds` or the script estimate.
-8. **Render colours are fixed, not theme tokens** (`palette.ts`): a light and a dark theme must export the identical clip. Cast tags are DOM (CSS2D), so they never reach an exported frame and character images never need CORS.
-9. **Motion guides route only to reference-to-video models** (`ProviderCapability.accepts_video_reference`, never an EDIT model); ordinary video references are unaffected. Validation requires `text_to_video`, input-reference mode, exactly one video reference.
-10. **Three.js is lazy**: the engine and mediabunny load by dynamic `import()`; the studio page itself imports only the pure compiler.
+1. Model writes semantics, never animation: `compileBlocking` is the only motion source; player and exporter both sample it.
+2. Every write passes `sanitize_blocking` (`mode="llm"` model, `mode="manual"` browser). `character_ref_id` comes from the script only.
+3. Segment `shots[]`: script `camera` blocks are authoritative (`_reconcile_with_script`); staging-only turns reconcile only changed keys (`reconcile_keys`); manual saves never.
+4. Compiler repairs staging, never the document: cast ≥ `PERSONAL_SPACE` 0.8m, A* walks on 0.2m `CELL`, cameras track and dodge occlusion. Deterministic.
+5. Segment keys = breakpoint keys `{heading}#{ordinal}` (`front/src/features/script/script-breakpoint.ts`); staleness is server side only.
+6. A turn edits script only via `copywriter.stream_revise_script`; persists `EpisodeScriptTurn(origin="blocking")` + one `EpisodeBlockingVersion`.
+7. `patch_manual`: stale `base_version_no` → 409; saves within 60s (`MANUAL_COALESCE_WINDOW`) coalesce.
+8. Durations are whole seconds in [5, 15] (`SEGMENT_MIN_SECONDS`/`SEGMENT_MAX_SECONDS`), fitted by `fit_durations`.
+9. Render colours are fixed (`palette.ts`), not theme tokens, so exports match across themes; cast tags are CSS2D, never in frames.
+10. WebCodecs needs `window.isSecureContext`; on plain HTTP `render-segment.ts` records via MediaRecorder in real time (MP4 avc1 else WebM), upload mime matches.
+11. Motion guides route only to `accepts_video_reference` non-EDIT models (`back/app/agents/router.py`); need `text_to_video` + `input_references` (`back/app/api/schemas/jobs.py`) + exactly one video (`back/app/domain/media/service.py`).
+12. three.js and mediabunny load by dynamic `import()`; the page statically imports only the compiler.
+
+## Recipes
+
+1. **Add a camera move**: `CameraMove` in `vocabulary.py` and `front/src/features/blocking/types.ts` → `CAMERA_MOVES` label in `vocabulary.ts` → `compiler/camera.ts` → `normalize_token` aliases → tests.
+2. **Add a compiler repair**: implement in `compiler/`, add a `quality.ts` metric, pin in `compile.test.ts`.
 
 ## Verify
 
 ```bash
-cd back && pytest tests/unit/test_blocking_segments.py tests/unit/test_blocking_sanitize.py tests/unit/test_blocking_camera_language.py tests/unit/test_motion_guide_routing.py tests/integration/test_blocking.py
+cd back && conda run -n zaolang pytest tests/unit/test_blocking_segments.py tests/unit/test_blocking_sanitize.py tests/unit/test_blocking_camera_language.py tests/unit/test_motion_guide_routing.py tests/integration/test_blocking.py
 cd front && npx vitest run src/features/blocking && npm run check:messages
 ```
