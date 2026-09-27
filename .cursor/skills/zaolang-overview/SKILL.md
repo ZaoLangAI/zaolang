@@ -12,7 +12,7 @@ Global AI co-creation sharing platform. Read the routing table, then load the ow
 | Path | Contents |
 | --- | --- |
 | `back/` | FastAPI 0.141 + Agno 2.8, SQLAlchemy 2 + Alembic, Celery 5 + Redis, Pydantic 2; conda env `zaolang`, Python 3.12 |
-| `front/` | Next.js 16.2 App Router, React 19.2, Tailwind 4, next-intl 4, zustand 5, @xyflow/react 12, three 0.185, mediabunny 1.29; Node via fnm (`front/.node-version`). Consumer `(site)`/`(studio)` and `(admin)` share one app, isolated in session + API |
+| `front/` | Next.js 16.3 App Router, React 19.2, Tailwind 4, next-intl 4, zustand 5, @xyflow/react 12, three 0.185, mediabunny 1.29; Node via fnm (`front/.node-version`). Consumer `(site)`/`(studio)` and `(admin)` share one app, isolated in session + API |
 | `ios/` | SwiftUI iOS 17 client, XcodeGen `ios/project.yml`, `ios/Packages/ZaolangKit`; no admin |
 | `infra/` | docker-compose: Postgres 17 + pgvector `5433`, Redis `6380`, MinIO `9000` (opt-in; `make up` starts only postgres+redis) |
 | `docs/` | MkDocs site source and ops runbooks |
