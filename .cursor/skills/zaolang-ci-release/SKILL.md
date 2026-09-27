@@ -1,48 +1,44 @@
 ---
 name: zaolang-ci-release
-description: Engineering delivery chain — local `make check` and pre-commit gates, local Docker images and one-command demo orchestration, manual version bumps, the MkDocs Material docs site, and the Apache-2.0 licence baseline. Use when changing pre-commit hooks, Dockerfiles, the release compose file, version numbers, the docs site, or repository/licence baseline files.
-disable-model-invocation: true
+description: Local delivery chain — `make check` gate, pre-commit hooks, Dockerfiles and `make release-up` demo, version bumps, MkDocs site, Apache-2.0 baseline. Use when editing Makefile gate targets, .pre-commit-config.yaml, Dockerfiles, docker-compose.release.yml, versions, mkdocs.yml or docs/.
 ---
 
-# Local Delivery, Images & Docs Site
+# Local Delivery, Images & Docs
 
-## Scope
-
-Guarantee "it builds, it ships, it's documented." This repo is open-source under Apache-2.0. It does not use GitHub Actions, GHCR, release-please, or GitHub Pages. **Single-host remote deploy (rsync, `infra/docker-compose.prod.yml`, migrate, optional DB overwrite) is `zaolang-remote-deploy` — do not duplicate that runbook here.**
+**Scope**: "it builds, it ships, it's documented" — all local; no GitHub Actions/GHCR/Pages. Not here → `zaolang-remote-deploy` (prod box), `zaolang-testing-qa` (test layers).
 
 ## Key Paths
 
-| File | Contents |
+| Path | What |
 | --- | --- |
-| `Makefile` | the single gate entry point: `make check`; one-command demo: `make release-up` |
-| `.pre-commit-config.yaml` | local hooks: ruff / mypy / prettier / eslint / tsc / messages (i18n keys) / OpenAPI drift, plus the stock pre-commit-hooks (merge-conflict, yaml/json/toml, private-key, large-files ≤512kB) |
-| `front/package.json`'s `version` + `APP_VERSION` | bumped by hand at release time; `next.config.ts` exposes it as `NEXT_PUBLIC_APP_VERSION`, the backend reads `settings.app_version` and shows it in `/healthz` and the admin health cards |
-| `front/vitest.config.ts` + `src/**/*.test.ts(x)` | frontend unit tests, run via `npm test` in `front/` only — `make test-front` is typecheck + `next build` + bundle-size, and vitest is not part of `make check` |
-| `mkdocs.yml` (`strict: true`) + `docs/` | the docs site, embedding `docs/openapi.json` |
-| `back/Dockerfile`, `front/Dockerfile`, `infra/docker-compose.release.yml` | local production images and one-command demo orchestration |
+| `Makefile` | `check`, `format`, `docs`, `docs-build`, `release-up` |
+| `.pre-commit-config.yaml` | ruff, mypy, prettier, eslint, tsc, messages, openapi-drift + stock hygiene hooks |
+| `back/Dockerfile` | API/worker image (pip, ffmpeg) |
+| `front/Dockerfile` | web image (`output: 'standalone'` in `front/next.config.ts`) |
+| `infra/docker-compose.release.yml` | one-command local demo |
+| `mkdocs.yml` | docs site, `strict: true`, `nav` |
+| `docs/` | site pages; `docs/openapi.json` is copied from `back/openapi.json` |
 
 ## Invariants
 
-1. **The only gate is `make check`.** E2E and accessibility suites need a real database and seed data — they're an extra local suite, not something to fold into `make check` "to be safe" (that would make every commit depend on a full seeded database).
-2. **The autouse fake-gateway fixture inside `make check` must not be bypassed**: tests must be deterministic, key-free, and cost-free. Production code has no stub/auto mode — only `back/tests/fake_llm_gateway.py`'s monkeypatch (via `conftest.py`) keeps the suite offline. `@pytest.mark.live` smoke tests never run inside `make check` (`-m "not live"`); `@pytest.mark.real_gateway_seams` tests still run, they just skip the fake to exercise the real client's own failover/circuit-breaker logic against a mocked transport.
-3. **The version number lives in two places**: at release time, bump `front/package.json`'s `version` and sync `APP_VERSION`. Don't update only one. `NEXT_PUBLIC_APP_VERSION` is injected at build time but no consumer page renders it — `(site)/layout.tsx` has only `TopBar` + `main`, no footer; the version is visible in admin health (`health-cards.tsx`) and `/healthz`.
-4. **Apache-2.0, not internal-proprietary.** This repo's software licence is Apache-2.0 (root `LICENSE`). The consumer site still has no footer and shows no version or licence notice — that's a product-UI choice, not a licence-compliance requirement, so don't add one to the running app without the operator asking. Third-party NOTICE/LICENSE files (e.g. OpenCut's MIT notice) must not be removed, and any Apache-2.0 `NOTICE` file added at the repo root must ship unmodified with distributions.
-5. **`mkdocs.yml` is `strict: true`**: dead links and orphan pages fail the build. Adding a doc means adding it to `nav` too. `docs/performance-audit.md` currently sits outside `nav` (MkDocs only logs INFO for pages missing from `nav`, so strict mode doesn't catch it) — it's unreachable from the site; don't add more like it.
-6. **`docs/openapi.json` is a build artifact**: `make docs` / `make docs-build` copy it from `back/openapi.json` — never hand-edit it.
-7. **Docker images ship with ffmpeg/ffprobe**: the backend worker's `complete` and `media_analysis` steps depend on ffprobe. `back/Dockerfile` already installs it — don't strip it from the image.
-8. **Never reintroduce GitHub-hosted builds**: no new `.github/workflows`, no pushing to GHCR, no release-please, no GitHub Pages deployment. There is no root `.github/`; the only workflow file is vendored upstream (`third_party/opencut-classic/.github/workflows/bun-ci.yml`) and is not ours to wire up.
+1. `make check` = `lint typecheck messages openapi-check test` (`test` = `test-back` + `test-front`). It is the only gate; anything needing a seeded DB (e2e/a11y/visual) stays a separate target.
+2. Formatting gap: pre-commit's prettier hook runs `npm run format` (writes), but `make check`'s `lint` never runs `format:check` for `front/` (back is covered by `ruff format --check`). Unformatted front code can pass `make check`.
+3. vitest (`cd front && npm test`) is not in `make check`; `test-front` = typecheck + `next build` + bundle-size.
+4. Version lives in two places: `front/package.json` `version` and the `APP_VERSION` env (`back/.env.example`, compose files). Backend exposes `settings.app_version` in `/healthz`; web gets `NEXT_PUBLIC_APP_VERSION`.
+5. `docs/openapi.json` is generated by `make docs`/`make docs-build` — never hand-edit. New docs page → add to `mkdocs.yml` `nav` (strict mode only logs INFO for unlisted pages).
+6. Images must keep ffmpeg/ffprobe (media analysis depends on it).
+7. Licence is Apache-2.0 (`LICENSE`); keep vendored third-party notices. No root `.github/`; don't add hosted CI.
 
-## Extension Points
+## Recipes
 
-- **Add a check**: first decide whether it needs a database. If yes → a separate `make` target, not folded into `make check`. If no → wire it into the existing `make check` / pre-commit.
-- **Add a pre-commit hook**: add the hook to `.pre-commit-config.yaml` and confirm `make check` has an equivalent command — the two must match, or `make check` passing locally while the hook still blocks becomes a real annoyance.
-- **Change a Dockerfile**: `front` depends on `output: 'standalone'` (already set in `next.config.ts`); `back` installs via pip outside conda to keep the image small. Verify with a local `docker build` or `make release-up`.
-- **Add a docs page**: `docs/*.md` + `mkdocs.yml`'s `nav`, then `make docs-build` must pass.
+**Add a check**: needs a DB → own make target; else add to `make check` and mirror it in `.pre-commit-config.yaml` (keep both in sync).
+
+**Add a docs page**: a new page under `docs/` + `mkdocs.yml` `nav` → `make docs-build`.
 
 ## Verify
 
 ```bash
-make check          # the full local gate
-make docs-build      # strict-mode docs build
-make release-up      # build images locally and start the one-command demo orchestration
+make check
+make docs-build
+make release-up
 ```
