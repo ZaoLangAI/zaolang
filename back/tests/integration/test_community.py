@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from app.domain.credits import service as credits_service
 from app.domain.jobs import service as jobs_service
 from app.domain.publishing import service as publishing
-from app.models import Follow, Notification, ReportCase, User, Work, WorkAppeal, WorkVersion
+from app.models import (
+    Follow,
+    Notification,
+    Profile,
+    ReportCase,
+    User,
+    Work,
+    WorkAppeal,
+    WorkVersion,
+)
 from app.models.base import new_id
 from app.models.enums import LifecycleStatus, NotificationType, Operation, QualityTier, Visibility
 from app.workers import pipeline
@@ -418,6 +427,25 @@ def test_the_profile_reports_follower_counts(
     body = profile.json()
     assert body["follower_count"] == 1
     assert body["viewer_following"] is True
+
+
+def test_a_private_profile_hides_its_works_from_visitors(
+    client: TestClient, db: Session, work: Work, author: User, remixer: User
+) -> None:
+    """The works list must 404 exactly like the profile page does, or a
+    private profile's public works stay enumerable by handle."""
+    profile = db.scalar(select(Profile).where(Profile.user_id == author.id))
+    assert profile is not None
+    profile.public_profile = False
+    db.commit()
+
+    assert client.get("/v1/profiles/author", headers=auth_header(remixer)).status_code == 404
+    assert client.get("/v1/profiles/author/works", headers=auth_header(remixer)).status_code == 404
+    assert client.get("/v1/profiles/author/works").status_code == 404
+
+    own = client.get("/v1/profiles/author/works", headers=auth_header(author))
+    assert own.status_code == 200
+    assert [item["id"] for item in own.json()["items"]] == [work.id]
 
 
 def test_anonymous_bookmarks_are_rejected_as_unauthenticated(client: TestClient) -> None:

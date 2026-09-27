@@ -21,13 +21,7 @@ router = APIRouter(tags=["profiles"])
 
 @router.get("/profiles/{handle}", response_model=PublicProfileResponse)
 def get_profile(handle: str, session: DbSession, viewer: OptionalUser) -> PublicProfileResponse:
-    profile = session.scalar(select(Profile).where(Profile.handle == handle))
-    if profile is None:
-        raise NotFound("用户不存在。")
-
-    is_self = viewer is not None and viewer.id == profile.user_id
-    if not profile.public_profile and not is_self:
-        raise NotFound("用户不存在。")
+    profile, is_self = _visible_profile(session, handle, viewer)
 
     return PublicProfileResponse(
         user_id=profile.user_id,
@@ -59,11 +53,7 @@ def profile_works(
     viewer: OptionalUser,
     limit: int = Query(default=24, ge=1, le=60),
 ) -> Page[WorkSummary]:
-    profile = session.scalar(select(Profile).where(Profile.handle == handle))
-    if profile is None:
-        raise NotFound("用户不存在。")
-
-    is_self = viewer is not None and viewer.id == profile.user_id
+    profile, is_self = _visible_profile(session, handle, viewer)
     stmt = (
         select(Work, WorkVersion)
         .join(WorkVersion, WorkVersion.id == Work.current_version_id)
@@ -125,6 +115,22 @@ def my_bookmarks(
         .limit(limit)
     ).all()
     return Page(items=_summaries(session, [(work, version) for work, version in rows], viewer))
+
+
+def _visible_profile(session, handle: str, viewer) -> tuple[Profile, bool]:  # type: ignore[no-untyped-def]
+    """The profile behind `handle` and whether the viewer owns it.
+
+    A non-public profile 404s for everyone but its owner, on every route that
+    exposes it — the page and its works list alike.
+    """
+    profile = session.scalar(select(Profile).where(Profile.handle == handle))
+    if profile is None:
+        raise NotFound("用户不存在。")
+
+    is_self = viewer is not None and viewer.id == profile.user_id
+    if not profile.public_profile and not is_self:
+        raise NotFound("用户不存在。")
+    return profile, is_self
 
 
 def _count(session, model, condition) -> int:  # type: ignore[no-untyped-def]
