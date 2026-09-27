@@ -45,6 +45,13 @@ function defaultsFor(kind: BatchKind): BatchParams {
   return DEFAULT_VIDEO_PARAMS;
 }
 
+/** One quote fetch's inputs; its identity is what marks a result as current. */
+interface QuoteRequest {
+  kind: BatchKind;
+  params: BatchParams;
+  count: number;
+}
+
 function aspectsFor(kind: BatchKind): string[] {
   if (kind === 'characters') return CHARACTER_ASPECTS;
   if (kind === 'scenes') return SCENE_ASPECTS;
@@ -76,9 +83,12 @@ export function ScriptBatchDialog({
   const tAudio = useTranslations('remixPage');
   const locale = useLocale() as Locale;
   const [params, setParams] = useState<BatchParams>(() => defaultsFor(kind ?? 'characters'));
-  const [quote, setQuote] = useState<BatchQuote | null>(null);
-  const [quoteFailed, setQuoteFailed] = useState(false);
-  const [quoting, setQuoting] = useState(false);
+  // The last settled quote fetch, tagged with the request it answered
+  // (`quote: null` means it failed).
+  const [quoteResult, setQuoteResult] = useState<{
+    request: QuoteRequest;
+    quote: BatchQuote | null;
+  } | null>(null);
   const [openKind, setOpenKind] = useState<BatchKind | null>(kind);
   const [extraSkip, setExtraSkip] = useState<Set<string>>(() => new Set());
 
@@ -98,40 +108,10 @@ export function ScriptBatchDialog({
   // kind's params (scene 16:9 / duration 0 leaking into a video quote).
   if (kind !== openKind) {
     setOpenKind(kind);
-    setQuote(null);
-    setQuoteFailed(false);
+    setQuoteResult(null);
     setExtraSkip(new Set());
     if (kind) setParams(defaultsFor(kind));
   }
-
-  useEffect(() => {
-    if (!kind) return;
-    if (generateCount === 0) {
-      setQuote(ZERO_QUOTE);
-      setQuoteFailed(false);
-      setQuoting(false);
-      return;
-    }
-    let cancelled = false;
-    setQuoting(true);
-    void quoteForBatch(kind, params, generateCount)
-      .then((next) => {
-        if (cancelled) return;
-        setQuote(next);
-        setQuoteFailed(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setQuote(null);
-        setQuoteFailed(true);
-      })
-      .finally(() => {
-        if (!cancelled) setQuoting(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [kind, generateCount, params]);
 
   // "自动选择" (no forced model in the batch runner) — the same union
   // fallback `AudioGenerationStudio` shows before picking a model.
@@ -141,12 +121,38 @@ export function ScriptBatchDialog({
     return union.length > 0 ? union : [...FALLBACK_VOICES];
   }, [audioModelOptions]);
 
+  // Derived rather than corrected in an effect: an audio batch always
+  // quotes and submits a voice the current roster actually offers.
+  const effectiveParams = useMemo(() => {
+    if (kind !== 'audio' || audioVoices.length === 0) return params;
+    if (params.voice && audioVoices.includes(params.voice)) return params;
+    return { ...params, voice: audioVoices[0] };
+  }, [kind, audioVoices, params]);
+
+  // An empty batch is free, so it needs no fetch at all.
+  const quoteRequest = useMemo<QuoteRequest | null>(
+    () =>
+      kind && generateCount > 0 ? { kind, params: effectiveParams, count: generateCount } : null,
+    [kind, effectiveParams, generateCount],
+  );
+  const quote = generateCount === 0 ? ZERO_QUOTE : (quoteResult?.quote ?? null);
+  const quoteFailed = generateCount > 0 && quoteResult !== null && quoteResult.quote === null;
+  const quoting = quoteRequest !== null && quoteResult?.request !== quoteRequest;
+
   useEffect(() => {
-    if (kind !== 'audio' || audioVoices.length === 0) return;
-    if (!params.voice || !audioVoices.includes(params.voice)) {
-      setParams((current) => ({ ...current, voice: audioVoices[0] }));
-    }
-  }, [kind, audioVoices, params.voice]);
+    if (!quoteRequest) return;
+    let cancelled = false;
+    void quoteForBatch(quoteRequest.kind, quoteRequest.params, quoteRequest.count)
+      .then((next) => {
+        if (!cancelled) setQuoteResult({ request: quoteRequest, quote: next });
+      })
+      .catch(() => {
+        if (!cancelled) setQuoteResult({ request: quoteRequest, quote: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [quoteRequest]);
 
   if (!kind) return null;
 
@@ -195,7 +201,7 @@ export function ScriptBatchDialog({
             loading={quoting}
             onClick={() => {
               if (!quote) return;
-              onConfirm(params, quote, [...skipped]);
+              onConfirm(effectiveParams, quote, [...skipped]);
             }}
           >
             {t('batchConfirm')}
@@ -230,7 +236,7 @@ export function ScriptBatchDialog({
               <Select
                 label={tAudio('voice')}
                 hint={tAudio('voiceHint')}
-                value={params.voice ?? audioVoices[0]}
+                value={effectiveParams.voice ?? audioVoices[0]}
                 options={audioVoices.map((value) => ({ value, label: value }))}
                 onChange={(event) =>
                   setParams((current) => ({ ...current, voice: event.target.value }))
