@@ -113,6 +113,7 @@ export function ScriptEditor({
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
   const characterLibrary = useResource<Character[]>('/v1/characters');
+  const refetchCharacterLibrary = characterLibrary.refetch;
 
   // Seeds the retry composer with the idea/skills that produced the current
   // (possibly missing) first draft — once, the first time a real idea shows
@@ -253,8 +254,8 @@ export function ScriptEditor({
     invalidateResource('/v1/characters');
     invalidateResource('/v1/scenes');
     setLibraryRevision((current) => current + 1);
-    characterLibrary.refetch();
-  }, [characterLibrary.refetch]);
+    refetchCharacterLibrary();
+  }, [refetchCharacterLibrary]);
 
   const videoBindings = useMemo(
     () => indexBreakpointVideos(linkedDrafts, (viewedScript ?? detail?.script)?.scenes ?? []),
