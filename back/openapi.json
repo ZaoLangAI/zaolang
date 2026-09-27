@@ -25702,7 +25702,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 120,
+            "maxLength": 80,
             "minLength": 1,
             "title": "Name"
           },
@@ -25961,7 +25961,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 120,
+                "maxLength": 80,
                 "minLength": 1
               },
               {
@@ -37224,7 +37224,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 120,
+            "maxLength": 80,
             "minLength": 1,
             "title": "Name"
           },
@@ -37404,7 +37404,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 120,
+                "maxLength": 80,
                 "minLength": 1
               },
               {

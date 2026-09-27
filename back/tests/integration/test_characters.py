@@ -246,3 +246,22 @@ def test_withdraw_returns_a_published_character_to_draft(
     assert withdrawn.status_code == 200
     assert withdrawn.json()["status"] == "draft"
     assert withdrawn.json()["visibility"] == "private"
+
+
+def test_character_name_is_bounded_by_the_skill_title_column(
+    client: TestClient, db: Session, author: User
+) -> None:
+    # A character is stored as a `CreationSkill` whose `title` is
+    # `VARCHAR(80)` — a longer name must fail validation, not the INSERT.
+    too_long = client.post("/v1/characters", json={"name": "角" * 81}, headers=auth_header(author))
+    assert too_long.status_code == 422, too_long.text
+
+    created = client.post("/v1/characters", json={"name": "角" * 80}, headers=auth_header(author))
+    assert created.status_code == 201, created.text
+
+    renamed = client.patch(
+        f"/v1/characters/{created.json()['id']}",
+        json={"name": "色" * 81},
+        headers=auth_header(author),
+    )
+    assert renamed.status_code == 422, renamed.text
