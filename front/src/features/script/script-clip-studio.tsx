@@ -211,11 +211,13 @@ export function ScriptClipStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
-  useEffect(() => {
-    if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId) {
-      setAppliedJobId(liveJob.id);
-    }
-  }, [liveJob, activeJobId]);
+  // A job that just succeeded becomes the applied version. Adjusted during
+  // render, once per live snapshot, rather than with a setState in an effect.
+  const [autoAppliedJob, setAutoAppliedJob] = useState<GenerationJob | null>(null);
+  if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId && liveJob !== autoAppliedJob) {
+    setAutoAppliedJob(liveJob);
+    setAppliedJobId(liveJob.id);
+  }
 
   const cancelActiveJob = async () => {
     if (!activeJobId) return;
