@@ -184,7 +184,8 @@ _VIDEO_ANALYSIS_INSTRUCTIONS = (
     "不要包含任何 JSON 之外的文字或 Markdown 代码块标记，字段如下：\n"
     "{\n"
     '  "summary": "对整体内容、题材与风格的一段话摘要",\n'
-    '  "composed_prompt": "可直接用于视频生成的整合提示词，需具体描述运镜、场景、主体、光线与风格",\n'
+    '  "composed_prompt": "可直接用于视频生成的整合提示词，'
+    '需具体描述运镜、场景、主体、光线与风格",\n'
     '  "style_tags": ["风格标签", "..."],\n'
     '  "pacing": "整体节奏描述，例如：快节奏剪辑 / 舒缓长镜头",\n'
     '  "shots": [\n'

@@ -106,7 +106,10 @@ SKILL_TEMPLATES: tuple[SkillTemplate, ...] = (
     SkillTemplate(
         key="planner-asset-plan",
         label="任务规划 · 图片资产规划",
-        description="为角色设定图/场景图/封面规划提示词；角色 front 是一张多分区设定图，side/back 仍是单视角。",
+        description=(
+            "为角色设定图/场景图/封面规划提示词；"
+            "角色 front 是一张多分区设定图，side/back 仍是单视角。"
+        ),
         category=JUDGMENT,
         prompt_template=planner.ASSET_PLAN_SYSTEM_PROMPT,
         role="planner",
