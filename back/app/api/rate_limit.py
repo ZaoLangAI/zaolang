@@ -45,6 +45,11 @@ RULES: dict[str, RateLimitRule] = {
     # in the same way a login attempt is, so it gets its own strict budget
     # rather than sharing `editor_write`'s much looser one.
     "series_collab_invite": RateLimitRule(limit=10, window_seconds=300),
+    # Following notifies a stranger (and an unfollow/re-follow cycle notifies
+    # again); a report lands in the operator queue with no dedupe. Both are
+    # cheap to send and costly to receive, so neither shares
+    # `authenticated_write`'s budget.
+    "social_outreach": RateLimitRule(limit=30, window_seconds=300),
     "mcp_tool": RateLimitRule(limit=60, window_seconds=60),
     # Back office gets its own budget so consumer traffic can never starve an
     # operator during an incident.

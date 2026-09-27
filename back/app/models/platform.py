@@ -140,6 +140,9 @@ class Notification(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_notifications_user_created", "user_id", "created_at"),
         Index("ix_notifications_user_updated", "user_id", "updated_at"),
+        # One row per upserted creation target — keep this list in step with
+        # the `CREATION_TARGET_*` types `sync_creation_notification` is
+        # called with in `app.domain.notifications.push`.
         Index(
             "uq_notifications_user_creation_target",
             "user_id",
@@ -147,7 +150,8 @@ class Notification(Base, TimestampMixin):
             "target_id",
             unique=True,
             postgresql_where=text(
-                "target_type IN ('generation_job', 'editor_export') AND target_id IS NOT NULL"
+                "target_type IN ('generation_job', 'editor_export', 'episode_script', 'draft') "
+                "AND target_id IS NOT NULL"
             ),
         ),
     )

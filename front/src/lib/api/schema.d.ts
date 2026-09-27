@@ -11566,11 +11566,15 @@ export interface components {
             subject_type: string;
             /** Subject Id */
             subject_id: string;
-            /** Reason */
-            reason: string;
+            reason: components["schemas"]["ReportReason"];
             /** Detail */
             detail?: string | null;
         };
+        /**
+         * ReportReason
+         * @enum {string}
+         */
+        ReportReason: "copyright" | "sexual_content" | "violence" | "hate" | "minor_safety" | "fraud" | "other";
         /** ReportResolveRequest */
         ReportResolveRequest: {
             /**

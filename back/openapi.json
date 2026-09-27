@@ -36871,8 +36871,7 @@
             "title": "Subject Id"
           },
           "reason": {
-            "type": "string",
-            "title": "Reason"
+            "$ref": "#/components/schemas/ReportReason"
           },
           "detail": {
             "anyOf": [
@@ -36894,6 +36893,19 @@
           "reason"
         ],
         "title": "ReportCreateRequest"
+      },
+      "ReportReason": {
+        "type": "string",
+        "enum": [
+          "copyright",
+          "sexual_content",
+          "violence",
+          "hate",
+          "minor_safety",
+          "fraud",
+          "other"
+        ],
+        "title": "ReportReason"
       },
       "ReportResolveRequest": {
         "properties": {

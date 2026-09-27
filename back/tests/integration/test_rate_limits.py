@@ -10,10 +10,13 @@ import contextlib
 from typing import ClassVar
 
 import pytest
+from fastapi import APIRouter
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api import rate_limit
+from app.api.v1 import community, devices
 from app.models import User
 from tests.conftest import admin_header, auth_header
 
@@ -160,3 +163,51 @@ def test_an_authenticated_write_is_bounded(client: TestClient, author: User) -> 
     assert "authenticated_write" in rate_limit.RULES
     response = client.get("/v1/credits/balance", headers=auth_header(author))
     assert response.status_code == 200
+
+
+def _route_buckets(router: APIRouter) -> dict[str, list[str]]:
+    """`METHOD path` → the buckets its `rate_limited(...)` dependencies name."""
+    buckets: dict[str, list[str]] = {}
+    for route in router.routes:
+        assert isinstance(route, APIRoute)
+        names = [
+            dep.call.__closure__[0].cell_contents
+            for dep in route.dependant.dependencies
+            if dep.call is not None
+            and dep.call.__qualname__ == "rate_limited.<locals>._dependency"
+            and dep.call.__closure__
+        ]
+        for method in route.methods:
+            buckets[f"{method} {route.path}"] = names
+    return buckets
+
+
+@pytest.mark.parametrize("router", [community.router, devices.router], ids=["community", "devices"])
+def test_every_community_and_device_route_has_a_bucket(router: APIRouter) -> None:
+    for route, names in _route_buckets(router).items():
+        assert names, f"{route} 没有限流桶"
+        assert set(names) <= set(rate_limit.RULES), f"{route} 引用了不存在的限流桶 {names}"
+
+
+def test_follow_spam_is_throttled_on_its_own_budget(
+    client: TestClient, author: User, remixer: User
+) -> None:
+    """Every unfollow/re-follow cycle notifies the target again, so the
+    follow route must run out long before `authenticated_write` would."""
+    limit = rate_limit.RULES["social_outreach"].limit
+    assert limit < rate_limit.RULES["authenticated_write"].limit
+
+    statuses = [
+        client.post(f"/v1/users/{author.id}/follow", headers=auth_header(remixer)).status_code
+        for _ in range(limit + 1)
+    ]
+    assert statuses[:limit] == [200] * limit
+    assert statuses[-1] == 429
+
+    # Other writes keep their own budget.
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    assert created.status_code == 201
