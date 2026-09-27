@@ -279,12 +279,15 @@ def _validate_command(command: dict[str, Any]) -> None:
         raise ValidationFailed("特效参数必须是对象。")
     if command_type == "set_clip_mask":
         mask = command.get("mask")
-        if mask is not None:
-            if not isinstance(mask, dict) or mask.get("shape") not in MASK_SHAPES:
-                raise ValidationFailed("不支持的蒙版形状。")
-    if command_type in {"set_keyframe", "delete_keyframe", "clear_keyframes"}:
-        if command.get("property") not in ANIMATABLE_PROPERTIES:
-            raise ValidationFailed("不支持的动画属性。")
+        if mask is not None and (
+            not isinstance(mask, dict) or mask.get("shape") not in MASK_SHAPES
+        ):
+            raise ValidationFailed("不支持的蒙版形状。")
+    if (
+        command_type in {"set_keyframe", "delete_keyframe", "clear_keyframes"}
+        and command.get("property") not in ANIMATABLE_PROPERTIES
+    ):
+        raise ValidationFailed("不支持的动画属性。")
     if command_type in {"set_keyframe", "delete_keyframe"}:
         _require_int(command["at_ticks"], label="at_ticks")
     if command_type == "set_keyframe":
@@ -312,9 +315,9 @@ def _validate_command(command: dict[str, Any]) -> None:
         command_type == "insert_clip"
         and "element_type" in command
         and command["element_type"] is not None
+        and command["element_type"] not in ELEMENT_TYPES_ADDABLE
     ):
-        if command["element_type"] not in ELEMENT_TYPES_ADDABLE:
-            raise ValidationFailed("不支持的元素类型。")
+        raise ValidationFailed("不支持的元素类型。")
     if command_type == "set_transition":
         if command.get("edge") not in {"in", "out"}:
             raise ValidationFailed("edge 必须是 in 或 out。")
