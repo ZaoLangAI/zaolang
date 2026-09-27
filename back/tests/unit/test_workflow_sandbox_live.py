@@ -341,9 +341,7 @@ def test_live_sandbox_video_resolves_a_client_tier_to_the_models_own_spelling(
     assert provider.submitted_requests[0].resolution == "768P"
 
 
-def test_live_sandbox_video_adapts_1080p_ceiling_down_to_h3_768p(
-    db: Session, author: User
-) -> None:
+def test_live_sandbox_video_adapts_1080p_ceiling_down_to_h3_768p(db: Session, author: User) -> None:
     """H3 has no 1080p. The user's ceiling must become 720p/`768P`, never 2K."""
     provider = _ScriptedProvider(
         [GenerationResult(succeeded=True, object_key="sandbox/out.mp4", mime_type="video/mp4")]

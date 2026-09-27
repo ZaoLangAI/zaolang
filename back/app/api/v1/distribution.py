@@ -77,7 +77,9 @@ def list_accounts(
     session: DbSession,
     _: Annotated[None, Depends(rate_limited("public_read"))],
 ) -> list[PlatformAccountLinkResponse]:
-    return [_link_response(item) for item in distribution.list_linked_accounts(session, user_id=user.id)]
+    return [
+        _link_response(item) for item in distribution.list_linked_accounts(session, user_id=user.id)
+    ]
 
 
 @router.delete("/platform-accounts/{link_id}", response_model=PlatformAccountLinkResponse)
@@ -110,9 +112,7 @@ def publish_fanout(
     A channel that isn't configured/linked, or that fails, never blocks the
     others — see `distribution.publish_fanout`'s own docstring.
     """
-    request_hash = idempotency.hash_request(
-        {"work_id": work_id, **payload.model_dump(mode="json")}
-    )
+    request_hash = idempotency.hash_request({"work_id": work_id, **payload.model_dump(mode="json")})
     if idempotency_key:
         replay = idempotency.find_replay(
             session,

@@ -930,9 +930,7 @@ class LlmProviderEndpoint(ConfigSection):
             music=self.media_pricing.music if "music" in priced else None,
         )
         if "image" in self.output_modalities and self.timeout_ms < MEDIA_IMAGE_TIMEOUT_MS_MIN:
-            raise ValueError(
-                f"生图媒体端点超时不能低于 {MEDIA_IMAGE_TIMEOUT_MS_MIN // 1000} 秒。"
-            )
+            raise ValueError(f"生图媒体端点超时不能低于 {MEDIA_IMAGE_TIMEOUT_MS_MIN // 1000} 秒。")
         return self
 
     @model_validator(mode="before")

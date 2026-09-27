@@ -1000,9 +1000,7 @@ def test_resolve_copy_agent_id_prefers_asset_kind_then_the_copy_bucket(db: Sessi
     )
     other = agent_skills_service.create_profile(db, role="copy", key="pinned", display_name="钉死")
 
-    assert (
-        agent_skills_service.resolve_copy_agent_id(db, asset_kind="character") == character.id
-    )
+    assert agent_skills_service.resolve_copy_agent_id(db, asset_kind="character") == character.id
     assert agent_skills_service.resolve_copy_agent_id(db, asset_kind="general") == catch_all.id
     assert agent_skills_service.resolve_copy_agent_id(db, asset_kind="") == catch_all.id
     assert (

@@ -308,7 +308,11 @@ def _validate_command(command: dict[str, Any]) -> None:
         label = command.get("label")
         if label is not None and len(str(label)) > 120:
             raise ValidationFailed("标记点文案最多 120 字符。")
-    if command_type == "insert_clip" and "element_type" in command and command["element_type"] is not None:
+    if (
+        command_type == "insert_clip"
+        and "element_type" in command
+        and command["element_type"] is not None
+    ):
         if command["element_type"] not in ELEMENT_TYPES_ADDABLE:
             raise ValidationFailed("不支持的元素类型。")
     if command_type == "set_transition":
@@ -475,7 +479,9 @@ def _apply_one(
         animations = found[1].setdefault("animations", {"channels": {}})
         channels = animations.setdefault("channels", {})
         existing = channels.get(prop)
-        points = [p for p in (existing.get("points") if existing else []) if p["at_ticks"] != at_ticks]
+        points = [
+            p for p in (existing.get("points") if existing else []) if p["at_ticks"] != at_ticks
+        ]
         if len(points) >= MAX_KEYFRAMES_PER_CHANNEL:
             raise ValidationFailed(f"单个属性最多 {MAX_KEYFRAMES_PER_CHANNEL} 个关键帧。")
         points.append({"at_ticks": at_ticks, "value": value, "easing": easing})

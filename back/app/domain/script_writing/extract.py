@@ -298,9 +298,7 @@ def _readable_strings_from_ole_streams(streams: list[bytes]) -> str:
     parts: list[str] = []
     utf16_run = re.compile(rb"(?:[\x20-\x7e\n\r\t]\x00){6,}")
     ascii_run = re.compile(rb"[\x20-\x7e]{8,}")
-    cjk_run = re.compile(
-        rb"(?:(?:[\x20-\x7e\n\r\t]\x00)|(?:[\x00-\xff][\x4e-\x9f])){6,}"
-    )
+    cjk_run = re.compile(rb"(?:(?:[\x20-\x7e\n\r\t]\x00)|(?:[\x00-\xff][\x4e-\x9f])){6,}")
     for data in streams:
         for match in utf16_run.finditer(data):
             parts.append(match.group().decode("utf-16le", errors="ignore"))

@@ -74,9 +74,7 @@ def _ensure_studio_owner(session: Session) -> tuple[User, bool]:
     random unusable password — not the local seed password.
     """
     by_email = session.scalar(select(User).where(User.email == STUDIO_EMAIL))
-    by_handle = session.scalar(
-        select(User).join(Profile).where(Profile.handle == STUDIO_HANDLE)
-    )
+    by_handle = session.scalar(select(User).join(Profile).where(Profile.handle == STUDIO_HANDLE))
     if by_email is not None and by_handle is not None and by_email.id != by_handle.id:
         raise RuntimeError(
             f"{STUDIO_EMAIL} 与 handle {STUDIO_HANDLE} 指向两个不同用户，拒绝自动合并。"

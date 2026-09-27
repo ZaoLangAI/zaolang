@@ -115,7 +115,9 @@ def _content_items_from_references(request: GenerationRequest) -> list[dict[str,
     return items
 
 
-def _validate_generation_request(model: str, request: GenerationRequest) -> VideoModelProfile | None:
+def _validate_generation_request(
+    model: str, request: GenerationRequest
+) -> VideoModelProfile | None:
     profile = video_model_profile(model)
     if profile is None:
         return None
@@ -131,7 +133,9 @@ def _validate_generation_request(model: str, request: GenerationRequest) -> Vide
     return profile
 
 
-def build_generation_body(request: GenerationRequest, *, model: str = MINIMAX_H3_MODEL) -> dict[str, Any]:
+def build_generation_body(
+    request: GenerationRequest, *, model: str = MINIMAX_H3_MODEL
+) -> dict[str, Any]:
     """Official MiniMax V2 create body: `content[]` plus duration/resolution/ratio.
 
     Text-only (t2va): `ratio` is required and cannot be `adaptive` — a
@@ -377,7 +381,9 @@ class MinimaxV2MediaProvider(GenerationProvider):
                 download.raise_for_status()
                 video_bytes = download.content or None
         except httpx.HTTPError as exc:
-            logger.warning("minimax_v2 video download failed for task %s: %s", external_task_id, exc)
+            logger.warning(
+                "minimax_v2 video download failed for task %s: %s", external_task_id, exc
+            )
             return GenerationResult(
                 succeeded=False,
                 pending=True,

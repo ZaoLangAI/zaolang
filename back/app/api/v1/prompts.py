@@ -74,8 +74,7 @@ def enhance_generation_prompt(
                 "matched",
                 {
                     "referenced_skills": [
-                        {"id": entry["id"], "title": entry["title"]}
-                        for entry in reference_skills
+                        {"id": entry["id"], "title": entry["title"]} for entry in reference_skills
                     ]
                 },
             )
@@ -132,9 +131,7 @@ def _enhance_complete_payload(result: prompts.PromptEnhancement) -> dict[str, An
         "referenced_skills": [
             {"id": skill.id, "title": skill.title} for skill in result.referenced_skills
         ],
-        "questions": [
-            view.model_dump(mode="json") for view in question_views(result.questions)
-        ],
+        "questions": [view.model_dump(mode="json") for view in question_views(result.questions)],
     }
     if result.script_segment is not None:
         payload["script_segment"] = result.script_segment

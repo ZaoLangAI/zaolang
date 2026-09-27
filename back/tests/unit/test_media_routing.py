@@ -309,9 +309,7 @@ def test_wan_videoedit_is_hard_filtered_by_its_own_narrower_profile(db: Session)
             "video_options": {"resolution": "720p", "reference_mode": "input_references"},
         },
     )
-    candidate = next(
-        item for item in rejected_aspect.candidates if item.provider == provider_name
-    )
+    candidate = next(item for item in rejected_aspect.candidates if item.provider == provider_name)
     assert candidate.eligible is False
 
     adapted_resolution = router.route(
@@ -477,9 +475,7 @@ def test_a_configured_price_replaces_the_built_in_cost_estimate(db: Session) -> 
     unpriced = router.route(
         db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
     )
-    guess = next(
-        item for item in unpriced.candidates if item.provider == "media-ep:image_to_image"
-    )
+    guess = next(item for item in unpriced.candidates if item.provider == "media-ep:image_to_image")
     assert guess.cost_is_estimated is True
 
     _seed_media_endpoint(
@@ -491,9 +487,7 @@ def test_a_configured_price_replaces_the_built_in_cost_estimate(db: Session) -> 
             }
         },
     )
-    priced = router.route(
-        db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD
-    )
+    priced = router.route(db, operation=Operation.IMAGE_TO_IMAGE, quality_tier=QualityTier.STANDARD)
     quoted = next(item for item in priced.candidates if item.provider == "media-ep:image_to_image")
     assert quoted.cost_is_estimated is False
     assert quoted.estimated_cost_micro_usd == 25_350
@@ -975,9 +969,7 @@ def test_estimated_cost_prices_the_resolved_literal_not_the_raw_tier(db: Session
             "video_options": {"resolution": "720p", "reference_mode": "input_references"},
         },
     )
-    candidate = next(
-        item for item in decision.candidates if item.provider == "h3-ep:text_to_video"
-    )
+    candidate = next(item for item in decision.candidates if item.provider == "h3-ep:text_to_video")
     assert candidate.eligible is True
     assert candidate.estimated_cost_micro_usd == 5 * per_second
 
@@ -1006,9 +998,7 @@ def test_estimated_cost_prices_adapted_downgrade_not_the_raw_ceiling(db: Session
             "video_options": {"resolution": "1080p", "reference_mode": "input_references"},
         },
     )
-    candidate = next(
-        item for item in decision.candidates if item.provider == "h3-ep:text_to_video"
-    )
+    candidate = next(item for item in decision.candidates if item.provider == "h3-ep:text_to_video")
     assert candidate.eligible is True
     assert candidate.estimated_cost_micro_usd == 5 * per_second
     adapted = router._resolved_request_params(

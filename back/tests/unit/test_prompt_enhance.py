@@ -93,9 +93,7 @@ def test_a_sparse_video_polish_auto_attaches_format_skills_once_the_catalog_is_s
         select(CreationSkill).where(CreationSkill.owner_user_id == catalog_owner.id)
     ).all()
     assert any(
-        row.params_json["prompt_suffix"] in result.prompt
-        for row in rows
-        if row.id in applied_ids
+        row.params_json["prompt_suffix"] in result.prompt for row in rows if row.id in applied_ids
     )
 
 
@@ -481,9 +479,7 @@ def test_enhance_text_is_usable_requires_enhance_shaped_json() -> None:
         is False
     )
     assert (
-        copywriter._enhance_text_is_usable(
-            'If unsure {"answer":"$your_answer"} then ' + usable
-        )
+        copywriter._enhance_text_is_usable('If unsure {"answer":"$your_answer"} then ' + usable)
         is True
     )
     assert copywriter._enhance_text_is_usable("先分析这段描述缺什么") is False

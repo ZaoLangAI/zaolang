@@ -557,7 +557,11 @@ def _call_gateway(
     try:
         consume()
     except BadRequestError as exc:
-        if include_usage and _is_stream_usage_rejection(exc) and not (content_parts or reasoning_parts):
+        if (
+            include_usage
+            and _is_stream_usage_rejection(exc)
+            and not (content_parts or reasoning_parts)
+        ):
             include_usage = False
             consume()
         else:
@@ -802,9 +806,7 @@ def _stream_complete_from_endpoints(
             # decoy object, or JSON cut off mid-object) also gets that one
             # retry — the polish UI only commits on `complete`, so a second
             # same-endpoint attempt does not rewrite a bubble mid-sentence.
-            recovered_unusable = bool(
-                visible and is_usable is not None and not is_usable(visible)
-            )
+            recovered_unusable = bool(visible and is_usable is not None and not is_usable(visible))
             transport_retryable = error is None or isinstance(error, (TimeoutError, OpenAIError))
             should_retry = (
                 transport_retryable

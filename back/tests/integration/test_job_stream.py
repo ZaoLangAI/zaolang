@@ -146,8 +146,14 @@ def test_thinking_frames_are_forwarded_without_an_sse_id(
     response = client.get(f"/v1/generation-jobs/{job.id}/events", headers=auth_header(author))
     assert response.status_code == 200
     frames = _events(response.text)
-    thinking = next(json.loads(data) for event_id, data in frames if json.loads(data).get("event_type") == "thinking")
-    thinking_id = next(event_id for event_id, data in frames if json.loads(data).get("event_type") == "thinking")
+    thinking = next(
+        json.loads(data)
+        for event_id, data in frames
+        if json.loads(data).get("event_type") == "thinking"
+    )
+    thinking_id = next(
+        event_id for event_id, data in frames if json.loads(data).get("event_type") == "thinking"
+    )
     assert thinking_id == ""
     assert thinking["thinking"] == "先构图"
     assert "sequence" not in thinking

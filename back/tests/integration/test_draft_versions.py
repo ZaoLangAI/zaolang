@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 from app.domain.publishing import service as publishing
 from app.models import Asset, Draft, GenerationJob, User
 from app.models.base import new_id
-from app.models.enums import AssetRole, JobStatus, MediaType, ModerationStatus, Operation, Visibility
+from app.models.enums import (
+    AssetRole,
+    JobStatus,
+    MediaType,
+    ModerationStatus,
+    Operation,
+    Visibility,
+)
 from tests.conftest import auth_header
 from tests.factories import make_job
 
@@ -137,9 +144,7 @@ def test_hide_last_visible_version_clears_applied_pointers(
     assert draft.output_asset_id is None
 
 
-def test_cannot_hide_an_in_flight_version(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_cannot_hide_an_in_flight_version(client: TestClient, db: Session, author: User) -> None:
     draft = publishing.create_draft(db, user_id=author.id, source_work_id=None)
     job = make_job(db, author, status=JobStatus.RUNNING, operation=Operation.TEXT_TO_VIDEO)
     job.draft_id = draft.id

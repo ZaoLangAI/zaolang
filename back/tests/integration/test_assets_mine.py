@@ -95,9 +95,7 @@ def _link_job_output(
     job.output_asset_ids_json = [asset.id, *(extra_output_ids or [])]
 
 
-def test_hides_character_and_scene_outputs(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_hides_character_and_scene_outputs(client: TestClient, db: Session, author: User) -> None:
     general = _asset(db, author, media_type=MediaType.IMAGE)
     cover = _asset(db, author, media_type=MediaType.IMAGE)
     character = _asset(db, author, media_type=MediaType.IMAGE)
@@ -118,7 +116,10 @@ def test_hides_character_and_scene_outputs(
     _link_job_output(db, author, scene, asset_kind=ImageAssetKind.SCENE.value)
     _link_job_output(db, author, video, asset_kind="character_action")
     failed_job = make_job(db, author, status=JobStatus.FAILED)
-    failed_job.request_json = {**failed_job.request_json, "asset_kind": ImageAssetKind.CHARACTER.value}
+    failed_job.request_json = {
+        **failed_job.request_json,
+        "asset_kind": ImageAssetKind.CHARACTER.value,
+    }
     failed_partial = _asset(
         db,
         author,

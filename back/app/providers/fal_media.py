@@ -441,8 +441,7 @@ def probe_audio_body(model: str = FAL_VOICE_CLONE_MODEL) -> dict[str, Any]:
         return {"text": "A door creaking open, connectivity test.", "duration_seconds": 2}
     return {
         "audio_url": (
-            "https://storage.googleapis.com/falserverless/model_tests/zonos/"
-            "demo_voice_zonos.wav"
+            "https://storage.googleapis.com/falserverless/model_tests/zonos/demo_voice_zonos.wav"
         ),
     }
 

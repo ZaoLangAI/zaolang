@@ -119,9 +119,7 @@ def test_someone_elses_draft_skill_does_not_hydrate(
     assert len(body["nodes"]) == 1
 
 
-def test_my_own_draft_skill_still_hydrates(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_my_own_draft_skill_still_hydrates(client: TestClient, db: Session, author: User) -> None:
     """Same rule as `skill_library_service.get_usable`: a draft is visible to
     its owner. Someone building a skill should be able to lay it out on their
     canvas before publishing it."""

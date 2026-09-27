@@ -174,9 +174,7 @@ def test_complete_truncation_retry_caps_at_the_endpoint_max_output(
         if len(seen) == 1:
             return {
                 "model": kwargs["model"],
-                "choices": [
-                    {"message": {"content": "not-json"}, "finish_reason": "length"}
-                ],
+                "choices": [{"message": {"content": "not-json"}, "finish_reason": "length"}],
                 "usage": {},
             }
         return _completion_payload(kwargs["model"], {"ok": True})

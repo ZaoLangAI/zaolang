@@ -55,9 +55,7 @@ def test_ensure_catalog_plants_the_catalogues_for_a_new_studio(
     assert profile is not None
     assert profile.handle == ensure_catalog.STUDIO_HANDLE
 
-    skills = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == owner.id)
-    ).all()
+    skills = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == owner.id)).all()
     posts = db.scalars(select(LearnPost).where(LearnPost.author_user_id == owner.id)).all()
     assert len(skills) == len(skill_catalog.CATALOG)
     assert len(posts) == len(learning_catalog.CATALOG)
@@ -85,9 +83,7 @@ def test_ensure_catalog_does_not_rotate_an_existing_studio_password(
     assert second == {"studio_created": 0, "skills": 0, "learn_posts": 0}
 
 
-def test_ensure_catalog_refuses_a_split_studio_identity(
-    db: Session, _quiet_bucket: None
-) -> None:
+def test_ensure_catalog_refuses_a_split_studio_identity(db: Session, _quiet_bucket: None) -> None:
     make_user(db, email=ensure_catalog.STUDIO_EMAIL, handle="not-studio")
     make_user(db, email="other-studio@zaolang.dev", handle=ensure_catalog.STUDIO_HANDLE)
 

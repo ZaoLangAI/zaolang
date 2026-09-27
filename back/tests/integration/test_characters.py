@@ -122,9 +122,7 @@ def test_create_character_rejects_a_duplicate_name_for_the_same_owner(
 ) -> None:
     first = client.post("/v1/characters", json={"name": "林彻"}, headers=auth_header(author))
     assert first.status_code == 201
-    duplicate = client.post(
-        "/v1/characters", json={"name": " 林彻 "}, headers=auth_header(author)
-    )
+    duplicate = client.post("/v1/characters", json={"name": " 林彻 "}, headers=auth_header(author))
     assert duplicate.status_code == 422
     body = duplicate.json()["error"]
     assert body["code"] == "VALIDATION_FAILED"

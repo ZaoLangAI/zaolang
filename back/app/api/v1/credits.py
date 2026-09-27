@@ -67,9 +67,7 @@ def set_spend_limit(
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CreditBalanceResponse:
     """The user's own monthly cap on generation spend (`null` removes it)."""
-    account = credits_service.set_monthly_spend_limit(
-        session, user.id, payload.monthly_spend_limit
-    )
+    account = credits_service.set_monthly_spend_limit(session, user.id, payload.monthly_spend_limit)
     session.commit()
     return _balance_response(account)
 

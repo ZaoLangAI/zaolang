@@ -312,9 +312,7 @@ def test_qwen_image_edit_caps_references_at_three(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(httpx.Client, "get", fake_get)
     provider = _provider(Operation.IMAGE_TO_IMAGE.value, model="qwen-image-edit")
-    result = provider.submit(
-        _request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=keys)
-    )
+    result = provider.submit(_request(Operation.IMAGE_TO_IMAGE.value, reference_object_keys=keys))
 
     assert result.succeeded is True
     assert len(calls[0]["input"]["image"]) == 3
@@ -324,9 +322,7 @@ def test_qwen_image_edit_missing_output_url_is_a_provider_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     reference_key = "test/reference-for-qwen-edit-missing.png"
-    s3.put_object(
-        reference_key, base64.b64decode(_png_b64((4, 4, 4))), content_type="image/png"
-    )
+    s3.put_object(reference_key, base64.b64decode(_png_b64((4, 4, 4))), content_type="image/png")
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
         return _FakeResponse(json_body={"output": []})
@@ -348,9 +344,7 @@ def test_a_reference_over_the_base64_limit_falls_back_to_a_signed_url(
 
     monkeypatch.setattr(aihubmix_media, "_MAX_BASE64_REFERENCE_BYTES", 8)
     reference_key = "test/reference-too-big-for-base64.png"
-    s3.put_object(
-        reference_key, base64.b64decode(_png_b64((1, 2, 3))), content_type="image/png"
-    )
+    s3.put_object(reference_key, base64.b64decode(_png_b64((1, 2, 3))), content_type="image/png")
     monkeypatch.setattr(
         s3,
         "presign_get",
@@ -414,9 +408,7 @@ def test_audio_generation_stores_the_raw_response_bytes(monkeypatch: pytest.Monk
 def test_video_analysis_submits_video_url_and_parses_structured_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}"
-    )
+    monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
     captured: dict = {}
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
@@ -439,7 +431,11 @@ def test_video_analysis_submits_video_url_and_parses_structured_json(
             ],
         }
         return _FakeResponse(
-            json_body={"choices": [{"message": {"content": f"```json\n{__import__('json').dumps(body)}\n```"}}]}
+            json_body={
+                "choices": [
+                    {"message": {"content": f"```json\n{__import__('json').dumps(body)}\n```"}}
+                ]
+            }
         )
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
@@ -645,9 +641,7 @@ def test_h3_resolution_passthrough_defaults_to_2k_but_honours_768p(
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     provider = _provider(Operation.TEXT_TO_VIDEO.value, model="minimax-h3")
     provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5))
-    provider.submit(
-        _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5, resolution="768P")
-    )
+    provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5, resolution="768P"))
 
     assert payloads[0]["resolution"] == "2K"
     assert payloads[1]["resolution"] == "768P"
@@ -932,9 +926,7 @@ def test_openai_video_submit_posts_to_v1_videos_without_a_reference(
         return _FakeResponse(json_body={"id": "video_123"})
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
-    provider = _provider(
-        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
-    )
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai")
     result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value, duration_seconds=8))
 
     assert captured["url"] == "/v1/videos"
@@ -950,9 +942,7 @@ def test_openai_video_submit_posts_to_v1_videos_without_a_reference(
 def test_openai_video_submit_attaches_an_image_reference_when_supplied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}"
-    )
+    monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
     captured: dict[str, object] = {}
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
@@ -960,7 +950,9 @@ def test_openai_video_submit_attaches_an_image_reference_when_supplied(
         return _FakeResponse(json_body={"id": "video_456"})
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
-    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="some-openai-model", protocol="openai")
+    provider = _provider(
+        Operation.TEXT_TO_VIDEO.value, model="some-openai-model", protocol="openai"
+    )
     provider.submit(
         _request(
             Operation.TEXT_TO_VIDEO.value,
@@ -968,9 +960,7 @@ def test_openai_video_submit_attaches_an_image_reference_when_supplied(
         )
     )
 
-    assert captured["json"]["input_reference"] == {
-        "image_url": "https://signed.invalid/ref.png"
-    }
+    assert captured["json"]["input_reference"] == {"image_url": "https://signed.invalid/ref.png"}
 
 
 def test_openai_video_submit_missing_task_id_is_a_provider_failure(
@@ -980,9 +970,7 @@ def test_openai_video_submit_missing_task_id_is_a_provider_failure(
         return _FakeResponse(json_body={})
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
-    provider = _provider(
-        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
-    )
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai")
     result = provider.submit(_request(Operation.TEXT_TO_VIDEO.value))
 
     assert result.succeeded is False
@@ -1002,9 +990,7 @@ def test_openai_video_poll_stays_pending_and_reports_a_wobbly_progress_field(
         return _FakeResponse(json_body={"status": "processing", "progress": 42})
 
     monkeypatch.setattr(httpx.Client, "get", fake_get)
-    provider = _provider(
-        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
-    )
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai")
     result = provider.poll("video_789", _request(Operation.TEXT_TO_VIDEO.value))
 
     assert result.pending is True
@@ -1023,9 +1009,7 @@ def test_openai_video_poll_downloads_the_finished_content(
         return _FakeResponse(json_body={"status": "completed"})
 
     monkeypatch.setattr(httpx.Client, "get", fake_get)
-    provider = _provider(
-        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
-    )
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai")
     request = _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=8)
     result = provider.poll("video_999", request)
 
@@ -1040,9 +1024,7 @@ def test_openai_video_poll_reports_a_failed_task(monkeypatch: pytest.MonkeyPatch
         return _FakeResponse(json_body={"status": "failed", "error": "上游拒绝"})
 
     monkeypatch.setattr(httpx.Client, "get", fake_get)
-    provider = _provider(
-        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
-    )
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai")
     result = provider.poll("video_bad", _request(Operation.TEXT_TO_VIDEO.value))
 
     assert result.pending is False
@@ -1055,9 +1037,7 @@ def test_openai_video_cancel_always_returns_false(monkeypatch: pytest.MonkeyPatc
         raise AssertionError("must not call an undocumented cancel endpoint")
 
     monkeypatch.setattr(httpx.Client, "post", fail_post)
-    provider = _provider(
-        Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai"
-    )
+    provider = _provider(Operation.TEXT_TO_VIDEO.value, model="wan2.7-videoedit", protocol="openai")
 
     assert provider.cancel("video_1") is False
 
@@ -1074,7 +1054,8 @@ def test_join_media_url_does_not_double_v1() -> None:
         "/v1/images/generations"
     )
     assert (
-        join_media_url("https://aihubmix.com", "/ai/v1/videos") == "https://aihubmix.com/ai/v1/videos"
+        join_media_url("https://aihubmix.com", "/ai/v1/videos")
+        == "https://aihubmix.com/ai/v1/videos"
     )
     assert media_request_path("https://proxy.example/openai/v1", "/v1/images/generations") == (
         "/openai/v1/images/generations"

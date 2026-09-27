@@ -365,7 +365,11 @@ def test_every_other_operation_still_requires_a_non_empty_prompt() -> None:
 
 def test_video_to_video_requires_a_reference_unless_a_licensed_source_is_attached() -> None:
     with pytest.raises(ValidationError, match="必须提供参考视频"):
-        _request(Operation.VIDEO_TO_VIDEO, duration_seconds=8, video_options={"reference_mode": "input_references"})
+        _request(
+            Operation.VIDEO_TO_VIDEO,
+            duration_seconds=8,
+            video_options={"reference_mode": "input_references"},
+        )
 
     uploaded = _request(
         Operation.VIDEO_TO_VIDEO,
@@ -405,9 +409,7 @@ def test_forced_model_is_accepted_for_image_and_video_creation() -> None:
     image_request = _request(Operation.TEXT_TO_IMAGE, forced_model="doubao-seedream-5-0-pro")
     assert image_request.params.forced_model == "doubao-seedream-5-0-pro"
 
-    video_request = _request(
-        Operation.TEXT_TO_VIDEO, duration_seconds=5, forced_model="minimax-h3"
-    )
+    video_request = _request(Operation.TEXT_TO_VIDEO, duration_seconds=5, forced_model="minimax-h3")
     assert video_request.params.forced_model == "minimax-h3"
 
 
@@ -417,9 +419,7 @@ def test_forced_model_is_accepted_for_audio_generation() -> None:
     model_catalog.voices_for_model`) is what actually needs to know which
     model was picked, hence this operation joining the `forced_model`
     scope alongside image/video."""
-    request = _request(
-        Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-1"
-    )
+    request = _request(Operation.AUDIO_GENERATION, extra={"voice": "nova"}, forced_model="tts-1")
     assert request.params.forced_model == "tts-1"
 
 
@@ -428,9 +428,7 @@ def test_forced_model_is_rejected_outside_image_video_or_audio_creation() -> Non
         GenerationJobCreateRequest(
             operation=Operation.VIDEO_ANALYSIS,
             quality_tier=QualityTier.STANDARD,
-            params=GenerationParams(
-                reference_asset_ids=["asset-video"], forced_model="some-model"
-            ),
+            params=GenerationParams(reference_asset_ids=["asset-video"], forced_model="some-model"),
         )
 
 

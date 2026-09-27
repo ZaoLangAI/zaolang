@@ -369,12 +369,12 @@ def test_an_async_video_failure_upserts_the_same_notification_row_to_its_termina
     db: Session, funded: User, provider: _AsyncProvider
 ) -> None:
     job = _suspended(db, funded)
-    note_id = db.scalar(
-        select(Notification.id).where(Notification.target_id == job.id)
-    )
+    note_id = db.scalar(select(Notification.id).where(Notification.target_id == job.id))
     assert note_id is not None
 
-    provider.outcomes = [GenerationResult(succeeded=False, failure_code="PROVIDER_TEMPORARY_FAILURE")]
+    provider.outcomes = [
+        GenerationResult(succeeded=False, failure_code="PROVIDER_TEMPORARY_FAILURE")
+    ]
     _due(db, job.id)
     async_polling.poll_once(db)
     while async_tasks.find_for_job(db, job.id) is not None:
@@ -557,9 +557,7 @@ def test_a_dead_upstream_that_never_answers_is_eventually_given_up_on(
 
     def _stale_and_due() -> AsyncProviderTask:
         task = _due(db, job.id)
-        task.created_at = utcnow() - dt.timedelta(
-            seconds=async_tasks.MAX_POLL_DURATION_SECONDS + 1
-        )
+        task.created_at = utcnow() - dt.timedelta(seconds=async_tasks.MAX_POLL_DURATION_SECONDS + 1)
         db.flush()
         return task
 

@@ -132,9 +132,7 @@ def test_media_requires_a_modality_combination_that_derives_a_capability(
     assert response.status_code == 422
 
 
-def test_an_image_media_endpoint_rejects_a_sub_90s_timeout(
-    client: TestClient, admin: User
-) -> None:
+def test_an_image_media_endpoint_rejects_a_sub_90s_timeout(client: TestClient, admin: User) -> None:
     response = client.put(
         "/v1/admin/llm-providers/ep-short",
         json=_media_payload(
@@ -395,9 +393,7 @@ def test_a_viewer_can_poll_a_validation_job(
             latency_ms=9,
         ),
     )
-    started = client.post(
-        "/v1/admin/llm-providers/ep-poll/validate", headers=admin_header(admin)
-    )
+    started = client.post("/v1/admin/llm-providers/ep-poll/validate", headers=admin_header(admin))
     assert started.status_code == 200
     validation_id = started.json()["validation_id"]
     polled = client.get(

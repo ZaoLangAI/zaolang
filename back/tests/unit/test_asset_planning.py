@@ -170,9 +170,7 @@ def test_asset_planning_carries_prior_view_description_for_consistency(
     assert "银色短发、黑色风衣" in ctx.prompt
 
 
-@pytest.mark.parametrize(
-    "view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value]
-)
+@pytest.mark.parametrize("view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value])
 def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
     db: Session, author: User, view: str
 ) -> None:
@@ -188,7 +186,8 @@ def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
     final prompt in a real job's `job_events`, ambiguous about which single
     angle it wanted)."""
     other_view = (
-        CharacterViewAngle.BACK.value if view == CharacterViewAngle.SIDE.value
+        CharacterViewAngle.BACK.value
+        if view == CharacterViewAngle.SIDE.value
         else CharacterViewAngle.SIDE.value
     )
     ctx = _ctx(
@@ -203,9 +202,7 @@ def test_asset_planning_overrides_the_prompt_for_a_side_or_back_completion_pass(
     assert _CHARACTER_COMPLETION_FIXED_PROMPTS[other_view] not in ctx.prompt
 
 
-@pytest.mark.parametrize(
-    "view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value]
-)
+@pytest.mark.parametrize("view", [CharacterViewAngle.SIDE.value, CharacterViewAngle.BACK.value])
 def test_asset_planning_seeds_the_anti_collage_negative_for_a_completion_pass(
     db: Session, author: User, view: str
 ) -> None:
@@ -250,17 +247,13 @@ def test_asset_planning_resets_prompt_and_negative_prompt_between_loop_passes(
     ctx.state["_current_character_view"] = CharacterViewAngle.BACK.value
     execute_asset_planning(ctx, AssetPlanningConfig())
     assert ctx.prompt.startswith(_CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.BACK.value])
-    assert (
-        _CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value] not in ctx.prompt
-    )
+    assert _CHARACTER_COMPLETION_FIXED_PROMPTS[CharacterViewAngle.SIDE.value] not in ctx.prompt
     back_negative = ctx.params["negative_prompt"]
     assert "五官被头发遮挡" not in back_negative
     assert "露出正面五官" in back_negative
 
 
-def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(
-    db: Session, author: User
-) -> None:
+def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(db: Session, author: User) -> None:
     """The `front` pass — including a plain single-view job with no
     `character_views` at all — keeps the caller's identity prompt and
     appends the sheet-layout suffix. Only a side/back completion pass
@@ -277,7 +270,9 @@ def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(
     execute_asset_planning(ctx, AssetPlanningConfig())
     assert ctx.prompt.startswith("一位神秘的女侦探")
     assert _CHARACTER_SHEET_LAYOUT_SUFFIX in ctx.prompt
-    assert _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT not in (ctx.params.get("negative_prompt") or "")
+    assert _CHARACTER_COMPLETION_FIXED_NEGATIVE_PROMPT not in (
+        ctx.params.get("negative_prompt") or ""
+    )
 
 
 def test_asset_plan_prompt_locks_character_visual_medium() -> None:
