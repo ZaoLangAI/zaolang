@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
@@ -26,7 +26,7 @@ from app.domain.errors import Conflict, Forbidden, NotFound, ValidationFailed
 from app.domain.moderation_policy import assert_allowed, text_values
 from app.domain.moderation_queue import service as moderation_queue
 from app.domain.skill_library import catalog as skill_catalog
-from app.models import Asset, CreationSkill, ModerationQueueItem
+from app.models import Asset, CreationSkill, ModerationQueueItem, Profile
 from app.models.base import utcnow
 from app.models.enums import (
     IMAGE_ASSET_SKILL_CATEGORIES,
@@ -603,6 +603,24 @@ _FORMAT_SKILL_TITLES_BY_DIMENSION: dict[str, frozenset[str]] = {
 MAX_AUTO_APPLIED_FORMAT_SKILLS = 2
 
 
+def _planted_catalog_rows() -> tuple[ColumnElement[bool], ...]:
+    """Narrows a title match to rows `ensure_catalog_skills` planted.
+
+    The auto-matchers below skip `assert_unlocked_for_use`/`record_usage`,
+    which is only defensible for the free, platform-owned catalogue. A title
+    alone is not an identity — any user can publish a skill under a catalogue
+    title, and a paid one would then be applied for free — so the owner has to
+    be the catalogue account too. `access_credits == 0` keeps that true even if
+    an operator later prices a planted row.
+    """
+    return (
+        CreationSkill.owner_user_id.in_(
+            select(Profile.user_id).where(Profile.handle == skill_catalog.CATALOG_OWNER_HANDLE)
+        ),
+        CreationSkill.access_credits == 0,
+    )
+
+
 def apply_matching_format_skills(
     session: Session,
     *,
@@ -653,6 +671,7 @@ def apply_matching_format_skills(
                 CreationSkill.status == CreationSkillStatus.PUBLISHED,
                 CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
                 CreationSkill.title.in_(candidate_titles),
+                *_planted_catalog_rows(),
             )
         )
     }
@@ -714,6 +733,7 @@ def list_drama_candidates(session: Session) -> list[tuple[str, str]]:
             CreationSkill.status == CreationSkillStatus.PUBLISHED,
             CreationSkill.visibility == CreationSkillVisibility.PUBLIC,
             CreationSkill.title.in_(_CATALOG_DRAMA_TITLES),
+            *_planted_catalog_rows(),
         )
     )
     return sorted(((row.id, row.title) for row in rows), key=lambda pair: pair[1])

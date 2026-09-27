@@ -695,7 +695,11 @@ def test_referenced_skill_style_hint_reaches_the_prompt(
 
 
 def test_the_scenes_an_idea_contains_reach_the_prompt_without_being_used(
-    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+    client: TestClient,
+    db: Session,
+    author: User,
+    monkeypatch: pytest.MonkeyPatch,
+    catalog_owner: User,
 ) -> None:
     """Auto-matched 「戏码与情绪」rows top the reference list up to the cap
     even when the user picked nothing.
@@ -711,7 +715,7 @@ def test_the_scenes_an_idea_contains_reach_the_prompt_without_being_used(
 
     _enable_script_studio(db, author)
     _patch_stream_session(monkeypatch, db)
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.flush()
 
     response = client.post(
@@ -734,7 +738,7 @@ def test_the_scenes_an_idea_contains_reach_the_prompt_without_being_used(
 
     matched = db.scalars(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id,
+            CreationSkill.owner_user_id == catalog_owner.id,
             CreationSkill.category == CreationSkillCategory.DRAMA,
         )
     ).all()

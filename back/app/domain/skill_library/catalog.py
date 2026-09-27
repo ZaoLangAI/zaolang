@@ -61,6 +61,12 @@ from typing import Any
 
 from app.models.enums import CreationSkillCategory, Operation
 
+# The account every catalogue row is planted under — `make seed`
+# (`app.scripts.seed`) and the production backfill (`app.scripts.ensure_catalog`)
+# both use it. `CatalogSkill.key` is never stored, so anything that has to tell
+# a planted row from a user's same-titled one matches on this owner.
+CATALOG_OWNER_HANDLE = "zaolang_studio"
+
 # AI-generated cover stills shipped alongside this module (one JPEG per
 # `CatalogSkill.key`), committed to the repo as system-default content —
 # `ensure_catalog_skills` uploads whichever of these exist and are still
