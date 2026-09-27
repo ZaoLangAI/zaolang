@@ -19,8 +19,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, Query, Response, status
 from fastapi.responses import StreamingResponse
 
-from app.api import sse_quota
-from app.api.deps import CurrentUser, DbSession
+from app.api import idempotency, sse_quota
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey
 from app.api.schemas.canvas import (
     CanvasAgentRunCreateRequest,
     CanvasAgentRunResponse,
@@ -42,6 +42,7 @@ from app.api.schemas.canvas import (
 )
 from app.domain.canvas import agent_service, graph_service, workflow_service
 from app.domain.canvas import service as canvas_service
+from app.domain.errors import DomainError
 from app.domain.jobs import dispatch as job_dispatch
 from app.models import (
     CanvasAgentRun,
@@ -529,13 +530,68 @@ def create_canvas_workflow_run(
     return response
 
 
+CONFIRM_AGENT_RUN_ENDPOINT = "POST /v1/canvas-agent-runs/{run_id}/confirm"
+
+
 @router.post("/canvas-agent-runs/{run_id}/confirm", response_model=CanvasAgentRunResponse)
 def confirm_canvas_agent_run(
-    run_id: str, user: CurrentUser, session: DbSession
+    run_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    idempotency_key: IdempotencyKey,
 ) -> CanvasAgentRunResponse:
-    """Spend the credits and submit the planned jobs."""
-    run, dispatched = agent_service.confirm_run(session, user_id=user.id, run_id=run_id)
+    """Spend the credits and submit the planned jobs.
+
+    The conditional transition in `confirm_run` already stops a second confirm
+    from reserving credits twice, but it answers that second call with an
+    error. A client retrying after a timeout needs the answer the first call
+    got instead — the credits *were* spent — so a keyed retry replays it.
+    """
+    request_hash = idempotency.hash_request({"run_id": run_id})
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=CONFIRM_AGENT_RUN_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            return CanvasAgentRunResponse.model_validate(replay.response_snapshot)
+
+    try:
+        run, dispatched = agent_service.confirm_run(session, user_id=user.id, run_id=run_id)
+    except DomainError:
+        if not idempotency_key:
+            raise
+        # A retry that arrived while the original was still in flight got past
+        # the lookup above, then blocked on the run row until the original
+        # committed and lost the transition. The original's record is visible
+        # now; answering with it is the whole point of the key.
+        session.rollback()
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=CONFIRM_AGENT_RUN_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is None:
+            raise
+        return CanvasAgentRunResponse.model_validate(replay.response_snapshot)
     response = _agent_run_response(session, run)
+    if idempotency_key:
+        # In the same transaction as the reservation: a committed spend always
+        # has its replay, and a rolled-back one never does.
+        idempotency.remember(
+            session,
+            user_id=user.id,
+            endpoint=CONFIRM_AGENT_RUN_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+            status_code=200,
+            response=response.model_dump(mode="json"),
+        )
     session.commit()
     # After the commit, for the same reason canvas changes are: a broker that
     # picks the job up before its row is visible would find nothing.

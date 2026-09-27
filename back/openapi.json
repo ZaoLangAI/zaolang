@@ -12051,7 +12051,7 @@
           "canvas"
         ],
         "summary": "Confirm Canvas Agent Run",
-        "description": "Spend the credits and submit the planned jobs.",
+        "description": "Spend the credits and submit the planned jobs.\n\nThe conditional transition in `confirm_run` already stops a second confirm\nfrom reserving credits twice, but it answers that second call with an\nerror. A client retrying after a timeout needs the answer the first call\ngot instead — the credits *were* spent — so a keyed retry replays it.",
         "operationId": "confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post",
         "parameters": [
           {
@@ -12077,6 +12077,22 @@
                 }
               ],
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],

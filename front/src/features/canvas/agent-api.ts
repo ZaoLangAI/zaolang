@@ -104,9 +104,19 @@ export function streamCanvasAgentPlan(
   );
 }
 
-/** Spend the credits and submit the planned jobs. */
-export function confirmCanvasAgentRun(runId: string): Promise<CanvasAgentRun> {
-  return api.post<CanvasAgentRun>(`/v1/canvas-agent-runs/${runId}/confirm`, {});
+/**
+ * Spend the credits and submit the planned jobs.
+ *
+ * `idempotencyKey` is one per confirm *attempt*, reused on retry: a retry after
+ * a timeout then gets the original answer instead of an "already submitted"
+ * error for credits that were in fact spent. Callers hold it via
+ * `useConfirmCanvasAgentRun`.
+ */
+export function confirmCanvasAgentRun(
+  runId: string,
+  idempotencyKey: string,
+): Promise<CanvasAgentRun> {
+  return api.post<CanvasAgentRun>(`/v1/canvas-agent-runs/${runId}/confirm`, {}, { idempotencyKey });
 }
 
 export function cancelCanvasAgentRun(runId: string): Promise<CanvasAgentRun> {

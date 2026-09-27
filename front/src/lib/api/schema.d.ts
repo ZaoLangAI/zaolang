@@ -2960,6 +2960,11 @@ export interface paths {
         /**
          * Confirm Canvas Agent Run
          * @description Spend the credits and submit the planned jobs.
+         *
+         *     The conditional transition in `confirm_run` already stops a second confirm
+         *     from reserving credits twice, but it answers that second call with an
+         *     error. A client retrying after a timeout needs the answer the first call
+         *     got instead — the credits *were* spent — so a keyed retry replays it.
          */
         post: operations["confirm_canvas_agent_run_v1_canvas_agent_runs__run_id__confirm_post"];
         delete?: never;
@@ -19821,6 +19826,7 @@ export interface operations {
             query?: never;
             header?: {
                 authorization?: string | null;
+                "Idempotency-Key"?: string | null;
             };
             path: {
                 run_id: string;
