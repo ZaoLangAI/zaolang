@@ -1,65 +1,51 @@
 ---
 name: zaolang-credits-billing
-description: Credit ledger and billing — the three-phase reserve/capture/release flow, optimistic locking and unique keys, tier pricing and settlement, royalty payback to ancestor authors, reconciliation and dangling reservations, mock payment webhook idempotency, admin manual adjustments. Use when touching credits, the ledger, pricing quotes, settlement, royalties, payment webhooks, reconciliation, or manual credit adjustments.
-disable-model-invocation: true
+description: Credit ledger and billing — reserve/capture/release, optimistic-lock balances, pricing, royalties, marketplace transfers, spend cap, mock checkout/webhook, redemption, reconciliation. Use when touching back/app/domain/credits, /v1/credits/*, admin ledger or the billing page.
 ---
 
 # Credit Ledger & Billing
 
-## Scope
-
-The single source of truth for money. The ledger is **append-only**; account balances are just its cache, and what the consumer billing page shows is a read-time projection over it (invariant #10) rather than the rows themselves. Any balance change must go through `app/domain/credits/service.py` — bypassing it with a direct account UPDATE means the books stop reconciling.
+**Scope**: the only money path. `CreditLedgerEntry` is append-only; `CreditAccount` balances are its cache; every change goes through `_apply`.
+Not here → `zaolang-generation-jobs` (when jobs reserve/settle), `zaolang-platform-config` (pricing/royalty config).
 
 ## Key Paths
 
-| File | Contents |
-| --- | --- |
-| `back/app/domain/credits/service.py` | `grant` / `purchase` / `reserve` / `capture` / `release` / `adjust` / `royalty_transfer` / `access_transfer` / `list_ledger`, all funneling through the private `_apply`; plus `list_billing_history` / `BillingLedgerRow`, the consumer-facing **projection** over that ledger (invariant #10) |
-| `back/app/domain/credits/pricing.py` | `quote()` for pricing, `settlement_credits()` for actual-usage conversion |
-| `back/app/domain/credits/royalty.py` | `plan_royalties` / `distribute` for payback to ancestors |
-| `back/app/domain/credits/reconciliation.py` | `derive_totals` / `find_mismatches` / `find_dangling_reservations` (unsettled reserves whose job is already terminal) / `build_report` |
-| `back/app/domain/credits/redemption.py` | redemption-code generation/redemption (`RedemptionCodeKind.INVITE` one-to-one referral / `PROMO` shared campaign code), internally routed through `grant` |
-| `back/app/api/v1/credits.py` | balance, billing history (`GET /credits/ledger` calls `list_billing_history`, **not** `list_ledger`), packages, mock payment + webhook (incl. `GET /credits/checkout/{external_reference}` for polling one intent), `POST /redeem` |
-| `back/app/api/v1/admin/ledger.py` | admin ledger search, reconciliation reports, dangling reservations, manual adjustments |
-| `back/tests/unit/test_credits_invariants.py` / `test_credits_properties.py` / `back/tests/concurrency/test_credit_races.py` | example-based, property-based, and race-condition test layers |
+| Path | What |
+|---|---|
+| `back/app/domain/credits/service.py` | `grant`/`purchase`/`reserve`/`capture`/`release`/`adjust`/`royalty_transfer`/`access_transfer` → `_apply`; `list_ledger` (raw), `list_billing_history` (projection); spend cap helpers |
+| `back/app/domain/credits/pricing.py` | `quote()`, `settlement_credits()` |
+| `back/app/domain/credits/` | also `royalty.py` (`plan_royalties`), `reconciliation.py` (`build_report`), `redemption.py` (`INVITE`/`PROMO` codes → `grant`) |
+| `back/app/api/v1/credits.py` | balance, spend-limit, ledger, packages, redeem, mock checkout, HMAC webhook `/webhooks/payments/mock` |
+| `back/app/api/v1/admin/ledger.py` | admin ledger, reconciliation, `/credits/dangling` (`DANGLING_WARNING_HOURS = 2`), adjust |
+| `front/src/app/[locale]/(site)/billing/page.tsx` | billing page; `billing/mock-checkout/page.tsx` confirms a checkout intent |
+| `front/src/components/billing/` | `ledger-table.tsx`, `spend-limit-form.tsx`, `credit-packages.tsx`, `redeem-code-form.tsx` |
 
 ## Invariants
 
-1. **Exactly one `reserve` eventually gets exactly one `capture` or one `release`** — never both, never twice. Enforced at the database layer by `uq_credit_ledger_job_type`, a unique constraint on `CreditLedgerEntry` `(job_id, type)` — no `account_id` in the key, so a job's `reserve`/`capture`/`release` are each globally unique regardless of which account they touched.
-2. **Balances never go negative**: `_apply` puts `version` and `available_balance + delta >= 0`, `reserved_balance + delta >= 0` all into the UPDATE's WHERE clause. Zero rows matched → `Conflict("concurrently modified")`, never a silent overdraft. **Never move these conditions into Python** — that reintroduces the check-then-act double-spend hole.
-3. **Optimistic-lock `version` increments by 1 on every write**; concurrent writers have exactly one winner. The race-condition tests assert precisely "exactly one winner."
-4. **`capture` caps actual usage at the reserved quote value**: whatever the provider reports costing, only the quoted amount is charged; any difference returns to available immediately.
-5. **A payment posts exactly once**: `purchase` relies on a unique `payment_reference`; `grant` / `adjust` rely on a unique `idempotency_key` (globally unique, not per-account). Webhook redelivery is the norm, not an exception.
-6. **A manual adjustment only appends an `adjustment` record**, always with a reason and an actor, always written to `AuditLog`. Historical records are never modified. The route (`POST /admin/users/{user_id}/credits/adjust`) requires the `Operator` role plus the `AdminDangerous` dependency and `require_confirmation` — not plain `Admin`.
-7. **Royalty payback is best-effort**: a failed `_pay_royalties` must not roll back the publish, but a successful one must post both sides of the entry (`royalty_out` / `royalty_in`) — the amounts must balance.
-8. **A marketplace unlock is a forced transfer**: `access_transfer` posts `access_out` / `access_in` — the buyer pays the full price, the seller receives the net amount, and the platform fee is burned; insufficient balance must fail, and it must never reuse `royalty_transfer`. Credits earned this way are spendable on-platform only; there is no cash withdrawal in this version.
-9. **`IntegrityError` triggers `session.rollback()`** (inside `_apply`), discarding the entire unit of work. Callers must either stop depending on previously flushed objects afterward, or commit first — a past bug here is why `tests/conftest.py`'s `committed_db` fixture exists.
-10. **The consumer billing view is a projection; the stored ledger is not.** `GET /v1/credits/ledger` returns `list_billing_history`, which folds a job's lifecycle into one visible row: stored `capture`/`release` entries are omitted entirely, an unsettled `reserve` stays a hold, a captured reserve is projected as a `capture` carrying the **reserve's** id and `created_at` with the **settlement's** amount and `balance_after`, and a released reserve becomes a zero-amount `release`. `BillingLedgerRow` is a frozen dataclass and must never be persisted — the append-only table is untouched, and admin search plus `reconciliation.py` keep reading raw rows via `list_ledger`. Don't "fix" a reconciliation discrepancy by reading the projection: the two are supposed to differ in shape, not in totals.
-11. **The monthly spend cap is the user's own, and it lives in the same UPDATE as the balance.** `CreditAccount.monthly_spend_limit` (null = no cap, set via `PUT /v1/credits/spend-limit` → `set_monthly_spend_limit`: a versioned conditional UPDATE, no ledger row) caps credits *reserved for generation* per UTC month. `period_spent`/`spend_period` ("YYYY-MM") count those reserves: `reserve` stamps `metadata_json.spend_period` and passes `spend_delta=+amount` to `_apply`, which adds `COALESCE-by-period(period_spent) + delta <= monthly_spend_limit` to the UPDATE's WHERE (invariant #2 — never a Python-only check); `release` gives the whole reserve back and `capture` gives back what it returns, but only while the account is still in the reserve's month (after a rollover there is nothing to undo, so the refund is dropped rather than going negative). Grants, purchases, royalties and access transfers never touch it; sandbox jobs never reserve, so they never count. `jobs.service.submit` pre-checks `remaining_monthly_spend` before the job row exists and raises `SpendLimitExceeded` (402, `SPEND_LIMIT_EXCEEDED`) — distinct from `InsufficientCredits` (the user may have the credits) and from the per-job `CreditsExceedBudget` (409); the canvas agent's `SKIPPABLE` skips it like the other pre-write rejections. `POST /v1/generation-jobs/quote:batch` prices each line with the same `quote_for` a submit uses and sums them — an exact total, never a range (invariant #4) — and reports `period_remaining`/`within_spend_limit`; the script batch dialog uses it and says when the cap, not the balance, is what blocks.
+1. One `reserve` → exactly one `capture` or `release`: `uq_credit_ledger_job_type` on `(job_id, type)` (no account in key) → `back/app/models/credits.py`.
+2. `_apply` puts `version` (+1 per write), `available + delta >= 0`, `reserved + delta >= 0` and the spend cap in the UPDATE's WHERE; 0 rows → `Conflict`. Never move these into Python only.
+3. `capture` charges `min(actual, reserved)`; the rest returns to available.
+4. Post once: unique `payment_reference` (purchase), global unique `idempotency_key` (grant/adjust/transfers). Webhook: `X-Signature` HMAC over `timestamp.raw_body`, `X-Timestamp` window, `WebhookEvent` event-id dedupe.
+5. `IntegrityError` in `_apply` → `session.rollback()` of the whole unit of work; callers must not reuse earlier flushed objects (hence `committed_db` in `back/tests/conftest.py`).
+6. Admin adjust appends an `adjustment` with reason + actor + audit; route needs `Operator` + `AdminDangerous` + `require_confirmation`.
+7. Royalties are best-effort (`publishing.service._pay_royalties` failure doesn't roll back publish) but post both `royalty_out`/`royalty_in`; capped by `RoyaltyRule.total_cap_bps`.
+8. `access_transfer` must succeed or fail whole: buyer pays `price`, seller gets `seller_net`, fee burned; never reuse `royalty_transfer`.
+9. `GET /v1/credits/ledger` = `list_billing_history` projection: stored capture/release hidden, reserve shown as hold / settled amount / zero release. `BillingLedgerRow` is never persisted; admin + reconciliation read raw `list_ledger`.
+10. Monthly cap `monthly_spend_limit` (null = none) counts generation reserves per UTC month (`spend_period`, `period_spent`) inside `_apply`'s WHERE; release/capture refund only within the same month. `jobs.service.submit` pre-checks → `SpendLimitExceeded` (402), distinct from `InsufficientCredits` and `CreditsExceedBudget` (409).
+11. Prices come from config `pricing` (`tier_pricing`, video surcharge), never hardcoded. `output_count` multiplies base price only. `settlement_credits` refunds only a short video, pro rata, min 1.
+12. `quote:batch` (`back/app/api/v1/jobs.py`) sums the same per-line `quote_for` — exact total, never a range.
+13. Two reconciliation metrics: `find_dangling_reservations` (unsettled reserve on a terminal job = bug) vs `/credits/dangling` (older than 2h, any status = ops signal). They differ by design.
 
-## Pricing & Settlement
+## Recipes
 
-`quote()` reads the `pricing` section of the config center: `tier_pricing[operation][tier]` is the base price, and video adds `video_per_second_surcharge` beyond `video_base_seconds`. Change prices via config, **never via a hardcoded number in code** (see `zaolang-platform-config`). `quote(..., output_count=)` multiplies the tier base price (not the duration surcharge) for a multi-view `character`-asset job (`character_output_count` in `jobs/service.py`); every other job passes `1`. `settlement_credits()` returns the reserved amount unchanged except for one case: a video delivered shorter than `requested_duration_seconds` is charged pro rata (`round(reserved * delivered/requested)`, never below 1) — the quote is a price, not a cost pass-through, so the provider's own bill never changes what the user pays.
+**Add a ledger entry type**: `LedgerEntryType` value → thin wrapper calling `_apply` with explicit deltas → property-test invariants → label in `ledger-table.tsx` + copy. `REFUND` exists with no wrapper: add `refund()` before first use.
 
-## Reconciliation (Two Distinct Metrics)
-
-- `find_mismatches`: account balance disagrees with the ledger replay — **this is a bug signal**.
-- `find_dangling_reservations` (feeds `build_report`'s `dangling_reserved_count`): a `reserve` with no matching `capture`/`release` **whose `GenerationJob` is already terminal** (`succeeded`/`failed`/`cancelled`/`expired`) — an in-flight job is expected to be unsettled and is not counted. This is a missed-settlement-path **bug signal** too.
-- `GET /admin/credits/dangling` (`admin/ledger.py`): every unsettled reserve older than `DANGLING_WARNING_HOURS = 2`, regardless of job status, with the job's current status attached — **this is the ops signal** (a stuck job, a dead worker).
-
-The report counts by job terminality; the endpoint counts by age. The two numbers differing is expected — don't "fix" them into agreement.
-
-## Extension Points
-
-- **Add a ledger entry type**: add a value to `LedgerEntryType` → add a thin wrapper in the service calling `_apply` (with explicit `available_delta` / `reserved_delta`) → cover it in the property tests' invariant assertions → add a display name to `billing/ledger-table.tsx` and the trilingual copy. `LedgerEntryType.REFUND` already exists (and reconciliation's `EXTERNAL_TYPES` counts it) but `credits/service.py` has no `refund()` wrapper — the first real refund path must add one rather than posting the type by hand.
-- **Wire up real payments**: there is no `PaymentProvider` adapter or module yet — the mock checkout (`POST /credits/checkout`, `POST /credits/checkout/confirm`, `GET /credits/checkout/{external_reference}`) and the HMAC-verified webhook (`POST /webhooks/payments/mock`: `X-Signature` over `timestamp.raw_body`, `X-Timestamp` window, `WebhookEvent` unique-event-id replay protection) live inline in `api/v1/credits.py`. Swapping in Stripe means extracting that verification into an adapter and replacing it — **posting still goes through `purchase` with a unique `payment_reference`**.
-- **Change royalty rules**: edit the config center's `royalty` section and `royalty.py`'s `plan_royalties`, mindful of the ancestor-depth cap and the total-share cap.
+**Wire a real payment provider**: extract webhook verification from `credits.py` into an adapter; posting still via `purchase` with unique `payment_reference`.
 
 ## Verify
 
 ```bash
-cd back && conda run -n zaolang pytest tests/unit/test_credits_invariants.py tests/unit/test_credits_properties.py tests/unit/test_access_marketplace.py tests/concurrency -v
-cd back && conda run -n zaolang pytest tests/integration/test_billing_webhook.py tests/integration/test_access_marketplace.py -v
+cd back && conda run -n zaolang pytest tests/unit/test_credits_invariants.py tests/unit/test_credits_properties.py tests/unit/test_credit_spend_limit.py tests/unit/test_access_marketplace.py tests/concurrency -v
+cd back && conda run -n zaolang pytest tests/integration/test_billing_webhook.py tests/integration/test_credit_spend_limit_api.py tests/integration/test_access_marketplace.py -v
 ```
-
-Always run the concurrency suite after a change: the ledger's guarantees only hold when "two transactions arrive at once" — sequential tests can't prove them.
+Always run `tests/concurrency` after ledger changes.
