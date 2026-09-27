@@ -168,6 +168,68 @@ def test_adding_the_same_work_twice_does_not_duplicate_it(
     assert listed.json()["items"][0]["item_count"] == 1
 
 
+def test_you_cannot_collect_a_work_you_cannot_see(
+    client: TestClient, db: Session, work: Work, remixer: User, author: User
+) -> None:
+    work.visibility = Visibility.PRIVATE
+    db.commit()
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+
+    added = client.post(
+        f"/v1/collections/{collection_id}/items",
+        params={"work_id": work.id},
+        headers=auth_header(remixer),
+    )
+    assert added.status_code == 404
+
+    listed = client.get("/v1/collections", headers=auth_header(remixer))
+    assert listed.json()["items"][0]["item_count"] == 0
+
+    # The author still sees their own private work, so they may collect it.
+    own = client.post(
+        "/v1/collections",
+        json={"name": "草稿", "description": None, "is_public": False},
+        headers=auth_header(author),
+    )
+    assert (
+        client.post(
+            f"/v1/collections/{own.json()['id']}/items",
+            params={"work_id": work.id},
+            headers=auth_header(author),
+        ).status_code
+        == 200
+    )
+
+
+def test_a_work_that_goes_private_drops_out_of_collection_covers(
+    client: TestClient, db: Session, work: Work, remixer: User
+) -> None:
+    created = client.post(
+        "/v1/collections",
+        json={"name": "灵感", "description": None, "is_public": False},
+        headers=auth_header(remixer),
+    )
+    collection_id = created.json()["id"]
+    client.post(
+        f"/v1/collections/{collection_id}/items",
+        params={"work_id": work.id},
+        headers=auth_header(remixer),
+    )
+    before = client.get("/v1/collections", headers=auth_header(remixer)).json()["items"][0]
+    assert len(before["cover_urls"]) == 1
+
+    work.visibility = Visibility.PRIVATE
+    db.commit()
+
+    after = client.get("/v1/collections", headers=auth_header(remixer)).json()["items"][0]
+    assert after["cover_urls"] == []
+
+
 def test_the_owner_can_rename_and_publish_a_collection(client: TestClient, remixer: User) -> None:
     created = client.post(
         "/v1/collections",

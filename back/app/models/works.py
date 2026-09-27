@@ -312,6 +312,9 @@ class Collection(Base, TimestampMixin):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stored and echoed back only: every collection route is owner-only today,
+    # so nothing reads this yet. A route that shows a collection to anyone
+    # else must gate on it and still filter items through `can_view`.
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     __table_args__ = (

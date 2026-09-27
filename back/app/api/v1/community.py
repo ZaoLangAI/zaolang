@@ -25,6 +25,7 @@ from app.api.schemas.works import (
 )
 from app.domain.access import service as access_service
 from app.domain.errors import Conflict, Forbidden, NotFound
+from app.domain.licensing import service as licensing
 from app.domain.notifications import push as notifications
 from app.models import (
     Asset,
@@ -106,8 +107,12 @@ def add_to_collection(
     collection_id: str, work_id: str, user: CurrentUser, session: DbSession
 ) -> OkResponse:
     collection = _owned_collection(session, collection_id, user.id)
-    if session.get(Work, work_id) is None:
+    work = session.get(Work, work_id)
+    if work is None:
         raise NotFound("作品不存在。")
+    # Same gate as `GET /works/{id}`: a collection must not become a way to
+    # pin (and later render the cover of) a work the owner cannot open.
+    licensing.assert_viewable(work, user.id)
 
     existing = session.scalar(
         select(CollectionItem).where(
@@ -460,10 +465,15 @@ def _collection_responses(  # type: ignore[no-untyped-def]
     if asset_ids:
         session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
 
+    owners_by_collection = {c.id: c.owner_user_id for c in collections}
     covers_by_collection: dict[str, list[str]] = {}
     for collection_id, work_id in top_items:
         work = works_by_id.get(work_id)
         if work is None or not work.current_version_id:
+            continue
+        # A work that was public when added may since have gone private or
+        # been trashed by its author; its cover must stop showing here too.
+        if not licensing.can_view(work, owners_by_collection[collection_id]):
             continue
         version = versions_by_id.get(work.current_version_id)
         url = media_urls.asset_url(session, version.cover_asset_id) if version else None
