@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { useSession } from '@/components/auth/session-provider';
 
@@ -18,9 +18,9 @@ export function LoginDialogHost() {
   const { loginPrompt } = useSession();
   const [ready, setReady] = useState(false);
 
-  useEffect(() => {
-    if (loginPrompt.open) setReady(true);
-  }, [loginPrompt.open]);
+  // Latch during render: once the dialog has been asked for, keep it mounted
+  // so its close animation and form state survive later toggles.
+  if (loginPrompt.open && !ready) setReady(true);
 
   if (!ready) return null;
   return <LoginDialog />;
