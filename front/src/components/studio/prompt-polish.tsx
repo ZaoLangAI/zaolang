@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { IconSparkle } from '@/components/ui/icons';
 import { ApiError } from '@/lib/api/errors';
+import { useIsomorphicLayoutEffect } from '@/lib/motion';
 import type {
   PromptEnhancePayload,
   PromptEnhanceReferencedSkill,
@@ -129,7 +130,11 @@ export function PromptPolish({
   }
 
   const onPendingChangeRef = useRef(onPendingChange);
-  onPendingChangeRef.current = onPendingChange;
+  // Synced after commit rather than assigned during render (refs must not be
+  // written while rendering) — same pattern as `use-overlay-transition.ts`.
+  useIsomorphicLayoutEffect(() => {
+    onPendingChangeRef.current = onPendingChange;
+  });
   // A parent that locked submit on `pending` must unlock if this unmounts
   // mid-stream (navigating away, swapping studios) — otherwise the button
   // stays stuck. The in-flight `request()` also reports true/false itself.
