@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.domain.characters import service as characters_service
 from app.domain.scenes import service as scenes_service
+from app.domain.skill_library import service as skill_library_service
 from app.models import CreationSkill, User
-from app.models.enums import CreationSkillStatus, Operation
+from app.models.enums import CreationSkillStatus, ModerationStatus, Operation
 from tests.conftest import auth_header
 
 
@@ -195,3 +196,38 @@ def test_generic_publish_route_rejects_character_skills(
 
     response = client.post(f"/v1/skills/{character.id}/publish", headers=auth_header(author))
     assert response.status_code == 422, response.text
+
+
+# ---- editing an in-review skill withdraws its review request -------------
+
+
+def test_editing_a_pending_skill_closes_its_review_queue_item(
+    client: TestClient, db: Session, author: User, reviewer: User
+) -> None:
+    created = client.post("/v1/skills", json=_create_payload(), headers=auth_header(author))
+    skill_id = created.json()["id"]
+    published = client.post(f"/v1/skills/{skill_id}/publish", headers=auth_header(author))
+    assert published.json()["status"] == CreationSkillStatus.PENDING_REVIEW.value
+
+    edited = client.patch(
+        f"/v1/skills/{skill_id}",
+        json=_create_payload(title="改过的夜景"),
+        headers=auth_header(author),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["status"] == CreationSkillStatus.DRAFT.value
+
+    skill = db.get(CreationSkill, skill_id)
+    assert skill is not None
+    queue_item = skill_library_service._queue_item_for(db, skill)
+    assert queue_item is not None
+    assert queue_item.status == ModerationStatus.REJECTED
+    assert queue_item.reason_code == "withdrawn_by_owner"
+
+    # Re-publishing reopens the same row, and a decision on it now lands.
+    client.post(f"/v1/skills/{skill_id}/publish", headers=auth_header(author))
+    db.refresh(queue_item)
+    assert queue_item.status == ModerationStatus.NEEDS_REVIEW
+    db.refresh(skill)
+    skill_library_service.approve(db, skill=skill, reviewer_user_id=reviewer.id)
+    assert skill.status == CreationSkillStatus.PUBLISHED

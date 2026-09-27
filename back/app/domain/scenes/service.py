@@ -33,8 +33,6 @@ from app.models import Asset, CreationSkill
 from app.models.base import utcnow
 from app.models.enums import (
     CreationSkillCategory,
-    CreationSkillStatus,
-    CreationSkillVisibility,
     MediaType,
 )
 
@@ -242,10 +240,7 @@ def update_scene(
     # Editing a shared skill's content withdraws it from the marketplace
     # until the owner re-publishes — same rule as any other `CreationSkill`
     # (`skill_library.service.update`).
-    if skill.status != CreationSkillStatus.DRAFT:
-        skill.status = CreationSkillStatus.DRAFT
-        skill.visibility = CreationSkillVisibility.PRIVATE
-        skill.reject_reason = None
+    skill_library_service.withdraw_after_edit(session, skill)
     session.flush()
     return SceneView(skill)
 

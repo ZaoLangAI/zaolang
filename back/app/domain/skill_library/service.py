@@ -250,12 +250,24 @@ def update(
     skill.applicable_operations_json = _deduped_operations(applicable_operations)
     skill.cover_asset_id = cover_asset_id
 
-    # 已公开或正在审核的技能一旦改动内容，视为撤回分享——必须重新走 publish()。
-    if skill.status != CreationSkillStatus.DRAFT:
-        _unpublish(skill)
-
+    withdraw_after_edit(session, skill)
     session.flush()
     return skill
+
+
+def withdraw_after_edit(session: Session, skill: CreationSkill) -> None:
+    """A content edit on a shared or in-review skill withdraws it to a private
+    `DRAFT` — the owner has to `publish()` again.
+
+    Shared by `update()` and the character/scene adapters. The open queue item
+    closes too: otherwise it lingers in the review queue for a skill that is
+    no longer `PENDING_REVIEW`, and a reviewer approving it hits `approve()`'s
+    409.
+    """
+    if skill.status == CreationSkillStatus.DRAFT:
+        return
+    _unpublish(skill)
+    _resolve_open_queue_item(session, skill)
 
 
 def update_pricing(
@@ -546,7 +558,8 @@ def _reopen_queue_item(session: Session, skill: CreationSkill) -> None:
 
 
 def _resolve_open_queue_item(session: Session, skill: CreationSkill) -> None:
-    """Owner-initiated withdrawal closes a queue item still awaiting review."""
+    """Owner-initiated withdrawal (explicit or by editing) closes a queue item
+    still awaiting review."""
     item = _queue_item_for(session, skill)
     if item is not None and item.status == ModerationStatus.NEEDS_REVIEW:
         item.status = ModerationStatus.REJECTED

@@ -21,9 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.domain.errors import NotFound, ValidationFailed
 from app.domain.scenes import service as scenes_service
-from app.models import Asset, User
+from app.domain.skill_library import service as skill_library_service
+from app.models import Asset, CreationSkill, User
 from app.models.base import new_id
-from app.models.enums import MediaType
+from app.models.enums import MediaType, ModerationStatus
 from tests.conftest import make_user
 
 
@@ -264,6 +265,12 @@ def test_editing_a_published_scene_withdraws_it_to_draft(db: Session, author: Us
     reloaded = scenes_service.get_scene(db, user_id=author.id, scene_id=scene.id)
     assert reloaded.status == "draft"
     assert reloaded.visibility == "private"
+    # The review request goes with it — no open queue item left for a
+    # reviewer to approve into a 409.
+    queue_item = skill_library_service._queue_item_for(db, db.get(CreationSkill, scene.id))
+    assert queue_item is not None
+    assert queue_item.status == ModerationStatus.REJECTED
+    assert queue_item.reason_code == "withdrawn_by_owner"
 
 
 # ---- Publish / withdraw -----------------------------------------------------
