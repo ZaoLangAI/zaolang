@@ -7,11 +7,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 from pydantic import Field
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, rate_limited
 from app.api.schemas.common import ApiModel, OkResponse
 from app.domain.errors import Forbidden, NotFound
 from app.models import Device
@@ -34,7 +36,10 @@ class DeviceResponse(ApiModel):
 
 @router.post("/me/devices", response_model=DeviceResponse, status_code=201)
 def register_device(
-    payload: DeviceRegister, user: CurrentUser, session: DbSession
+    payload: DeviceRegister,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> DeviceResponse:
     """按 `push_token` upsert：重装 App 换新 token 会插新行，旧 token 静默失效——
     不主动清理旧行，靠 APNs 返回的 Unregistered 反馈去删（该反馈通道本地环境用不上）。
@@ -60,7 +65,12 @@ def register_device(
 
 
 @router.delete("/me/devices/{device_id}", response_model=OkResponse)
-def unregister_device(device_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
+def unregister_device(
+    device_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> OkResponse:
     device = session.get(Device, device_id)
     if device is None:
         raise NotFound("设备不存在。")

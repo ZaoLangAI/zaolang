@@ -5,14 +5,15 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
+from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api import sse_quota
-from app.api.deps import CurrentUser, DbSession, OptionalUser
+from app.api.deps import CurrentUser, DbSession, OptionalUser, rate_limited
 from app.api.schemas.common import CountResponse, OkResponse, Page
 from app.api.schemas.jobs import NotificationResponse, ReportCreateRequest
 from app.api.schemas.works import (
@@ -57,7 +58,10 @@ NOTIFICATION_STREAM_MAX_DURATION_SECONDS = 600
 
 @router.post("/collections", response_model=CollectionResponse, status_code=201)
 def create_collection(
-    payload: CollectionCreateRequest, user: CurrentUser, session: DbSession
+    payload: CollectionCreateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CollectionResponse:
     collection = Collection(
         owner_user_id=user.id,
@@ -71,7 +75,11 @@ def create_collection(
 
 
 @router.get("/collections", response_model=Page[CollectionResponse])
-def list_collections(user: CurrentUser, session: DbSession) -> Page[CollectionResponse]:
+def list_collections(
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> Page[CollectionResponse]:
     rows = session.scalars(
         select(Collection)
         .where(Collection.owner_user_id == user.id)
@@ -82,7 +90,11 @@ def list_collections(user: CurrentUser, session: DbSession) -> Page[CollectionRe
 
 @router.patch("/collections/{collection_id}", response_model=CollectionResponse)
 def update_collection(
-    collection_id: str, payload: CollectionUpdateRequest, user: CurrentUser, session: DbSession
+    collection_id: str,
+    payload: CollectionUpdateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CollectionResponse:
     collection = _owned_collection(session, collection_id, user.id)
     collection.name = payload.name
@@ -93,7 +105,12 @@ def update_collection(
 
 
 @router.delete("/collections/{collection_id}", response_model=OkResponse)
-def delete_collection(collection_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
+def delete_collection(
+    collection_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> OkResponse:
     collection = _owned_collection(session, collection_id, user.id)
     # `collection_items.collection_id` is `ondelete="CASCADE"`, so the items
     # disappear with the row — no need to delete them one by one here.
@@ -104,7 +121,11 @@ def delete_collection(collection_id: str, user: CurrentUser, session: DbSession)
 
 @router.post("/collections/{collection_id}/items", response_model=OkResponse)
 def add_to_collection(
-    collection_id: str, work_id: str, user: CurrentUser, session: DbSession
+    collection_id: str,
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> OkResponse:
     collection = _owned_collection(session, collection_id, user.id)
     work = session.get(Work, work_id)
@@ -135,7 +156,11 @@ def add_to_collection(
 
 @router.delete("/collections/{collection_id}/items/{work_id}", response_model=OkResponse)
 def remove_from_collection(
-    collection_id: str, work_id: str, user: CurrentUser, session: DbSession
+    collection_id: str,
+    work_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> OkResponse:
     _owned_collection(session, collection_id, user.id)
     item = session.scalar(
@@ -154,7 +179,10 @@ def remove_from_collection(
 
 @router.post("/style-presets", response_model=StylePresetResponse, status_code=201)
 def create_preset(
-    payload: StylePresetCreateRequest, user: CurrentUser, session: DbSession
+    payload: StylePresetCreateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> StylePresetResponse:
     """Saves reusable parameters.
 
@@ -189,6 +217,7 @@ def create_preset(
 def list_presets(
     session: DbSession,
     viewer: OptionalUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
     mine: bool = False,
     limit: int = Query(default=30, ge=1, le=60),
 ) -> Page[StylePresetResponse]:
@@ -203,7 +232,12 @@ def list_presets(
 
 
 @router.post("/style-presets/{preset_id}/apply", response_model=StylePresetResponse)
-def apply_preset(preset_id: str, user: CurrentUser, session: DbSession) -> StylePresetResponse:
+def apply_preset(
+    preset_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> StylePresetResponse:
     preset = session.get(StylePreset, preset_id)
     if preset is None:
         raise NotFound("预设不存在。")
@@ -222,6 +256,7 @@ def apply_preset(preset_id: str, user: CurrentUser, session: DbSession) -> Style
 def list_notifications(
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
     unread_only: bool = False,
     limit: int = Query(default=30, ge=1, le=60),
 ) -> Page[NotificationResponse]:
@@ -262,7 +297,11 @@ def list_notifications(
 
 
 @router.get("/notifications/unread-count", response_model=CountResponse)
-def unread_count(user: CurrentUser, session: DbSession) -> CountResponse:
+def unread_count(
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> CountResponse:
     count = session.scalar(
         select(func.count())
         .select_from(Notification)
@@ -273,7 +312,10 @@ def unread_count(user: CurrentUser, session: DbSession) -> CountResponse:
 
 @router.post("/notifications/read", response_model=CountResponse)
 def mark_read(
-    user: CurrentUser, session: DbSession, notification_id: str | None = None
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+    notification_id: str | None = None,
 ) -> CountResponse:
     stmt = select(Notification).where(
         Notification.user_id == user.id, Notification.read_at.is_(None)
@@ -291,7 +333,10 @@ def mark_read(
 
 
 @router.get("/notifications/stream")
-def stream_notifications(user: CurrentUser) -> StreamingResponse:
+def stream_notifications(
+    user: CurrentUser,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
+) -> StreamingResponse:
     """Live tail of this user's notifications, for the bell badge/popover and
     the right-side creation-status toasts.
 
@@ -336,7 +381,12 @@ def stream_notifications(user: CurrentUser) -> StreamingResponse:
 
 
 @router.post("/users/{user_id}/follow", response_model=OkResponse)
-def follow(user_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
+def follow(
+    user_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("social_outreach"))],
+) -> OkResponse:
     if user_id == user.id:
         raise Conflict("不能关注自己。")
     if session.scalar(select(Profile).where(Profile.user_id == user_id)) is None:
@@ -366,7 +416,12 @@ def follow(user_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
 
 
 @router.delete("/users/{user_id}/follow", response_model=OkResponse)
-def unfollow(user_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
+def unfollow(
+    user_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> OkResponse:
     existing = session.scalar(
         select(Follow).where(Follow.follower_user_id == user.id, Follow.followed_user_id == user_id)
     )
@@ -378,7 +433,10 @@ def unfollow(user_id: str, user: CurrentUser, session: DbSession) -> OkResponse:
 
 @router.post("/reports", response_model=OkResponse, status_code=201)
 def create_report(
-    payload: ReportCreateRequest, user: CurrentUser, session: DbSession
+    payload: ReportCreateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("social_outreach"))],
 ) -> OkResponse:
     session.add(
         ReportCase(
