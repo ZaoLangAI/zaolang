@@ -304,7 +304,7 @@ export function CharacterLibrary({ initial }: { initial: Character[] }) {
       <TextInput
         label={t('nameLabel')}
         value={form.name}
-        maxLength={120}
+        maxLength={80}
         required
         error={nameError ?? undefined}
         onChange={(event) => {

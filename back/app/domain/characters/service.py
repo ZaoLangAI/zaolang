@@ -36,8 +36,6 @@ from app.models.base import utcnow
 from app.models.enums import (
     CharacterViewAngle,
     CreationSkillCategory,
-    CreationSkillStatus,
-    CreationSkillVisibility,
     MediaType,
 )
 from app.presenters import media_urls
@@ -368,10 +366,7 @@ def update_character(
     # until the owner re-publishes — same rule as any other `CreationSkill`
     # (`skill_library.service.update`); a character swapped mid-share must
     # not keep showing a buyer stale claims about what they are getting.
-    if skill.status != CreationSkillStatus.DRAFT:
-        skill.status = CreationSkillStatus.DRAFT
-        skill.visibility = CreationSkillVisibility.PRIVATE
-        skill.reject_reason = None
+    skill_library_service.withdraw_after_edit(session, skill)
     session.flush()
     return CharacterView(skill)
 

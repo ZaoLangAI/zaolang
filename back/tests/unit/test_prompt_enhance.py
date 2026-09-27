@@ -65,13 +65,13 @@ def test_the_diagnosis_explains_every_dimension_of_the_medium(db: Session, autho
 
 
 def test_a_sparse_video_polish_auto_attaches_format_skills_once_the_catalog_is_seeded(
-    db: Session, author: User
+    db: Session, author: User, catalog_owner: User
 ) -> None:
     """The coach has no tool access to the skill library — see
     `app.domain.skill_library.service.apply_matching_format_skills`'s own
     docstring — so this is the end-to-end path: `enhance()` runs the coach,
     then attaches library rows itself off the diagnosis it just got back."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -90,7 +90,7 @@ def test_a_sparse_video_polish_auto_attaches_format_skills_once_the_catalog_is_s
     # At least one attached rule's own text actually landed on the wire.
     applied_ids = {skill.id for skill in result.applied_format_skills}
     rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
+        select(CreationSkill).where(CreationSkill.owner_user_id == catalog_owner.id)
     ).all()
     assert any(
         row.params_json["prompt_suffix"] in result.prompt
@@ -115,11 +115,11 @@ def test_a_video_polish_attaches_nothing_when_the_catalog_is_not_seeded(
 
 
 def test_an_image_polish_never_attaches_a_format_skill_even_when_seeded(
-    db: Session, author: User
+    db: Session, author: User, catalog_owner: User
 ) -> None:
     """Every seeded `format` row is video-only — an image polish must come
     back empty regardless of what the catalog contains."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -132,12 +132,12 @@ def test_an_image_polish_never_attaches_a_format_skill_even_when_seeded(
 
 
 def test_a_video_polish_shows_the_coach_the_scenes_its_story_contains(
-    db: Session, author: User
+    db: Session, author: User, catalog_owner: User
 ) -> None:
     """The second half of the same "the coach has no tool access" story as
     the format-skill test above: `enhance()` matches `drama` rows itself and
     hands them over as reference material."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(
@@ -159,11 +159,13 @@ def test_a_video_polish_shows_the_coach_the_scenes_its_story_contains(
         assert rows[title].params_json["prompt_suffix"] not in result.prompt
 
 
-def test_an_image_polish_is_never_shown_drama_references(db: Session, author: User) -> None:
+def test_an_image_polish_is_never_shown_drama_references(
+    db: Session, author: User, catalog_owner: User
+) -> None:
     """Every `drama` row is about how a beat plays out over time. Matching
     them for a still would spend a matcher call and several hundred prompt
     tokens on advice a single frame cannot act on."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     result = prompts.enhance(

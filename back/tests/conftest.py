@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.db import get_engine
+from app.domain.skill_library.catalog import CATALOG_OWNER_HANDLE
 from app.llm import client as llm_client
 from app.models import Base, Profile, User
 from app.models.enums import UserRole
@@ -295,6 +296,18 @@ def make_user(
 @pytest.fixture
 def author(db: Session) -> User:
     return make_user(db, email="author@example.com", handle="author", display_name="原作者")
+
+
+@pytest.fixture
+def catalog_owner(db: Session) -> User:
+    """The account `make seed` and `app.scripts.ensure_catalog` plant the skill
+    catalogue under. The catalogue auto-matchers only trust rows it owns."""
+    return make_user(
+        db,
+        email="studio@zaolang.dev",
+        handle=CATALOG_OWNER_HANDLE,
+        display_name="造浪工作室",
+    )
 
 
 @pytest.fixture

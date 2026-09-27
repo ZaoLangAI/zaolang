@@ -195,3 +195,22 @@ def test_scene_pricing_uses_the_generic_skill_pricing_endpoint(
 
     refetched = client.get(f"/v1/scenes/{created['id']}", headers=auth_header(author))
     assert refetched.json()["access_credits"] == 50
+
+
+def test_scene_name_is_bounded_by_the_skill_title_column(
+    client: TestClient, db: Session, author: User
+) -> None:
+    # A scene is stored as a `CreationSkill` whose `title` is `VARCHAR(80)` —
+    # a longer name must fail validation, not the INSERT.
+    too_long = client.post("/v1/scenes", json={"name": "景" * 81}, headers=auth_header(author))
+    assert too_long.status_code == 422, too_long.text
+
+    created = client.post("/v1/scenes", json={"name": "景" * 80}, headers=auth_header(author))
+    assert created.status_code == 201, created.text
+
+    renamed = client.patch(
+        f"/v1/scenes/{created.json()['id']}",
+        json={"name": "场" * 81},
+        headers=auth_header(author),
+    )
+    assert renamed.status_code == 422, renamed.text

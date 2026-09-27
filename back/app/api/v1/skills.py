@@ -106,6 +106,7 @@ def create_skill(
         if replay is not None:
             return CreationSkillDetail.model_validate(replay.response_snapshot)
 
+    _reject_character_category(payload.category)
     skill = skill_library.create(
         session,
         owner_user_id=user.id,
@@ -142,6 +143,8 @@ def update_skill(
     _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CreationSkillDetail:
     skill = _require_owned(session, skill_id, user.id)
+    _reject_character_category(skill.category)
+    _reject_character_category(payload.category)
     skill = skill_library.update(
         session,
         skill=skill,
@@ -299,6 +302,18 @@ def apply_skill(
     skill = skill_library.record_usage(session, skill=skill)
     session.commit()
     return _detail(session, skill, user.id)
+
+
+def _reject_character_category(category: str) -> None:
+    """Characters are created and edited only via `/v1/characters`: that path
+    enforces the one-name-per-owner rule and the `params_json["character"]`
+    shape, while this route would skip the first (surfacing the unique index
+    as an `IntegrityError`) and overwrite the second wholesale."""
+    if category == CreationSkillCategory.CHARACTER:
+        raise ValidationFailed(
+            "角色请通过角色库接口创建和编辑。",
+            fields={"category": "character skills are managed via /v1/characters"},
+        )
 
 
 def _require_owned(session: DbSession, skill_id: str, owner_user_id: str) -> CreationSkill:

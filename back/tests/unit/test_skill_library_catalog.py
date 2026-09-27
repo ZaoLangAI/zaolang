@@ -548,12 +548,12 @@ def _first_title(prefix: str) -> str:
 
 
 def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """`camera` maps onto `fmt-camera-*`; `scene` has no `format` axis at all
     (see the mapping's own docstring) and must not match anything even when
     flagged `missing`."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -572,7 +572,8 @@ def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
     assert applied[0]["title"] == expected_title
     expected_row = db.scalar(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id, CreationSkill.title == expected_title
+            CreationSkill.owner_user_id == catalog_owner.id,
+            CreationSkill.title == expected_title,
         )
     )
     assert expected_row is not None
@@ -582,12 +583,12 @@ def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(
 
 
 def test_apply_matching_format_skills_respects_the_dimension_order_and_limit(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """At most `MAX_AUTO_APPLIED_FORMAT_SKILLS`, taken in the diagnosis's own
     dimension order — not every matching dimension gets a row once the cap
     is hit."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     _prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -610,11 +611,11 @@ def test_apply_matching_format_skills_respects_the_dimension_order_and_limit(
 
 
 def test_apply_matching_format_skills_is_a_noop_for_an_image_operation(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """Every seeded `format` row is video-only — an image polish must never
     pick one up even when a (hypothetical) dimension name collides."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -630,10 +631,10 @@ def test_apply_matching_format_skills_is_a_noop_for_an_image_operation(
 
 
 def test_apply_matching_format_skills_never_exceeds_max_length(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """Appending is skipped rather than truncating a rule mid-sentence."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     prompt, applied = skill_library_service.apply_matching_format_skills(
@@ -649,18 +650,19 @@ def test_apply_matching_format_skills_never_exceeds_max_length(
 
 
 def test_apply_matching_format_skills_skips_a_suffix_already_in_the_prompt(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """A rule already spelled out by the author (or a previous round) is not
     appended twice — the picker falls through to the next `fmt-camera-*` row
     for that same dimension instead, since the dimension is still weak."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     first_title = _first_title("fmt-camera-")
     first_row = db.scalar(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id, CreationSkill.title == first_title
+            CreationSkill.owner_user_id == catalog_owner.id,
+            CreationSkill.title == first_title,
         )
     )
     assert first_row is not None
@@ -682,11 +684,11 @@ def test_apply_matching_format_skills_skips_a_suffix_already_in_the_prompt(
 
 
 def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_used(
-    db: Session, author: User
+    db: Session, catalog_owner: User
 ) -> None:
     """Once every `fmt-camera-*` row's suffix is already on the wire, the
     dimension contributes nothing rather than erroring or looping."""
-    skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
     db.commit()
 
     camera_titles = [
@@ -694,7 +696,7 @@ def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_
     ]
     camera_rows = db.scalars(
         select(CreationSkill).where(
-            CreationSkill.owner_user_id == author.id,
+            CreationSkill.owner_user_id == catalog_owner.id,
             CreationSkill.title.in_(camera_titles),
         )
     ).all()
@@ -711,3 +713,70 @@ def test_apply_matching_format_skills_gives_up_on_a_dimension_once_every_row_is_
 
     assert applied == []
     assert prompt == f"她推开门，{already_present}"
+
+
+def test_apply_matching_format_skills_ignores_a_users_skill_under_a_catalogue_title(
+    db: Session, author: User, catalog_owner: User
+) -> None:
+    """Auto-apply skips unlock and usage, so it may only pick planted rows. A
+    user's published — and here paid — `format` skill that borrows a
+    catalogue title must neither be applied for free when the catalogue is
+    missing nor shadow the planted row once it is there."""
+    title = _first_title("fmt-camera-")
+    impostor = CreationSkill(
+        owner_user_id=author.id,
+        title=title,
+        category=CreationSkillCategory.FORMAT,
+        params_json={"prompt_suffix": "付费运镜秘籍"},
+        applicable_operations_json=[Operation.TEXT_TO_VIDEO.value],
+        visibility=CreationSkillVisibility.PUBLIC,
+        status=CreationSkillStatus.PUBLISHED,
+        access_credits=50,
+    )
+    db.add(impostor)
+    db.commit()
+    dimensions = [{"key": "camera", "status": "weak", "hint": "x"}]
+
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db, operation="text_to_video", dimensions=dimensions, prompt="她推开门", max_length=4096
+    )
+    assert applied == []
+    assert prompt == "她推开门"
+
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
+    db.commit()
+    prompt, applied = skill_library_service.apply_matching_format_skills(
+        db, operation="text_to_video", dimensions=dimensions, prompt="她推开门", max_length=4096
+    )
+    assert [entry["title"] for entry in applied] == [title]
+    assert applied[0]["id"] != impostor.id
+    assert "付费运镜秘籍" not in prompt
+
+
+def test_apply_matching_format_skills_skips_a_planted_row_an_operator_priced(
+    db: Session, catalog_owner: User
+) -> None:
+    """Free is what makes skipping unlock defensible — a planted row that
+    later gets a price drops out of auto-apply."""
+    skill_library_service.ensure_catalog_skills(db, owner_user_id=catalog_owner.id)
+    camera_titles = [
+        item.title for item in skill_catalog.CATALOG if item.key.startswith("fmt-camera-")
+    ]
+    for row in db.scalars(
+        select(CreationSkill).where(
+            CreationSkill.owner_user_id == catalog_owner.id,
+            CreationSkill.title.in_(camera_titles),
+        )
+    ):
+        row.access_credits = 10
+    db.commit()
+
+    _prompt, applied = skill_library_service.apply_matching_format_skills(
+        db,
+        operation="text_to_video",
+        dimensions=[{"key": "camera", "status": "weak", "hint": "x"}],
+        prompt="她推开门",
+        max_length=4096,
+    )
+
+    assert applied == []

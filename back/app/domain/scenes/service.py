@@ -33,8 +33,6 @@ from app.models import Asset, CreationSkill
 from app.models.base import utcnow
 from app.models.enums import (
     CreationSkillCategory,
-    CreationSkillStatus,
-    CreationSkillVisibility,
     MediaType,
 )
 
@@ -242,10 +240,7 @@ def update_scene(
     # Editing a shared skill's content withdraws it from the marketplace
     # until the owner re-publishes — same rule as any other `CreationSkill`
     # (`skill_library.service.update`).
-    if skill.status != CreationSkillStatus.DRAFT:
-        skill.status = CreationSkillStatus.DRAFT
-        skill.visibility = CreationSkillVisibility.PRIVATE
-        skill.reject_reason = None
+    skill_library_service.withdraw_after_edit(session, skill)
     session.flush()
     return SceneView(skill)
 
@@ -267,11 +262,13 @@ def append_reference_asset(
     view: str = DEFAULT_VIEW,
     label: str | None = None,
 ) -> SceneView:
-    """Adds (or replaces) one shot's reference image.
+    """Adds one shot's reference image.
 
     Called both by the scene library UI's per-image upload and by
     `app.workflows.nodes.execute_asset_output_link` when a generation job's
-    output is auto-attached.
+    output is auto-attached. Unlike a character's fixed views, shots sharing
+    a `view` accumulate up to the cap (oldest dropped first); only re-adding
+    the same asset replaces its entry.
     """
     skill = _owned_scene_skill(session, user_id=user_id, scene_id=scene_id)
     _validate_reference_assets(session, user_id=user_id, asset_ids=[asset_id])

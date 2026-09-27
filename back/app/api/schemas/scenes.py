@@ -18,13 +18,14 @@ from app.models.enums import CreationSkillStatus, CreationSkillVisibility
 
 
 class SceneCreateRequest(ApiModel):
-    name: str = Field(min_length=1, max_length=120)
+    # Stored as `CreationSkill.title` (`VARCHAR(80)`).
+    name: str = Field(min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=2000)
     reference_asset_ids: list[str] = Field(default_factory=list, max_length=4)
 
 
 class SceneUpdateRequest(ApiModel):
-    name: str | None = Field(default=None, min_length=1, max_length=120)
+    name: str | None = Field(default=None, min_length=1, max_length=80)
     description: str | None = Field(default=None, max_length=2000)
     reference_asset_ids: list[str] | None = Field(default=None, max_length=4)
 
