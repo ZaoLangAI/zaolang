@@ -15,7 +15,7 @@
 3. `_sanitise_plan` enforces what the prompt only asks: drop ops outside `PLANNABLE_OPERATIONS`; strip reference ids not in the context digest; drop (don't rewrite) an `image_to_image` left with no reference; quality tier may only move down; `forced_model` is never read.
 4. `canvas_planner.FALLBACK` is an empty plan → run fails visibly at zero cost. Never invent work on parse failure.
 5. Refuse before charging: node room (`MAX_NODES`) and reference checks run at plan time.
-6. Confirm is a conditional transition: `_set_run_status` puts legal source states in the WHERE; task jobs use `idempotency_key=f"canvas-agent:{task.id}"`, so a double tap reserves once.
+6. Confirm is a conditional transition: `_set_run_status` puts legal source states in the WHERE; task jobs use `idempotency_key=f"canvas-agent:{task.id}"`, so a double tap reserves once. The route adds `Idempotency-Key` replay on top, so a keyed retry gets the original response rather than the transition's 422.
 7. Camera vocabulary (`canvas-camera.ts`) reaches models as prompt text, never as params.
 
 ## Landing (`agent_service.land_job_result`)
