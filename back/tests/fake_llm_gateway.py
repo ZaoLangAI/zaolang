@@ -48,7 +48,8 @@ BLOCKED_TERMS = (
 SENSITIVE_TERMS = ("血腥", "gore", "暴力", "violence", "武器", "weapon", "斗殴")
 
 # A literal marker rather than a length threshold: unlike `copywriter.clarify`
-# (only called on demand, pre-submit, by the shortform studio), the planner's
+# (runs only in a `copy` node that opts in via `allow_followup_question`,
+# off by default), the planner's
 # `clarify` slot now runs by default on every job through `execute_planning`
 # (`PlanningConfig.allow_followup_question` defaults to `True`). The test
 # suite is full of short placeholder prompts ("测试", "一只猫", "海雾" ...)

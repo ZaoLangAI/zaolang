@@ -35,7 +35,7 @@ export interface PromptPolishContext {
   hasReference?: boolean;
   /** Only meaningful for an image job — routes the polish to that kind's
    * dedicated agent (`character`/`scene`/`cover`); omitted or `general`
-   * behaves like before. `ShortformStudio` never sets this. */
+   * behaves like before. */
   assetKind?: PromptEnhancePayload['asset_kind'];
   /** The video-side equivalent of `assetKind` — routes the polish to that
    * kind's dedicated agent (`character_action`/`transition_video`/

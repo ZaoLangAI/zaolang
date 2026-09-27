@@ -2,7 +2,7 @@
 
 Three rules the whole schema depends on:
 
-* IDs are prefixed, non-enumerable strings (`work_01hq...`) so a leaked ID never
+* IDs are prefixed, non-enumerable strings (`wrk_01hq...`) so a leaked ID never
   reveals volume or ordering across tenants.
 * Money and credits are integers in the smallest unit. Floats are never used.
 * Every domain table carries `created_at` / `updated_at` in UTC.

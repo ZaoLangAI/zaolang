@@ -314,9 +314,10 @@ def _reset(session: Session) -> None:
     """
     tables = ", ".join(model.__tablename__ for model in RESET_TABLES)
     session.execute(text(f"TRUNCATE TABLE {tables} CASCADE"))
-    # Cast rosters stay (they are not in RESET_TABLES). Drama rows share
-    # `series` but their episodes/cuts were just truncated, so the leftover
-    # production shells would reappear on the editor landing as empty ghosts.
+    # `series` is not in RESET_TABLES, but its episodes/cuts were just
+    # truncated, so the leftover shells would reappear on the editor landing
+    # as empty ghosts. Every series is `kind=drama` (nothing writes
+    # `kind=cast` any more).
     session.execute(text("DELETE FROM series WHERE kind = 'drama'"))
     session.flush()
     logger.info("truncated %d tables", len(RESET_TABLES))

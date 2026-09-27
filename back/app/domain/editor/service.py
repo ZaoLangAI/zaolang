@@ -447,10 +447,9 @@ def create_episode(
     episode_kind: str = EpisodeKind.MAIN,
     synopsis: str | None = None,
 ) -> DramaEpisode:
-    """Basic episode CRUD is intentionally *not* flag-gated and not limited
-    to `kind=drama` series — every series (the roster's `kind=cast` short-
-    drama entries included) can manage its own episode list. Only entering
-    the full timeline editor (`create_cut_from_job`/`acquire_lease`/
+    """Basic episode CRUD is intentionally *not* flag-gated: every series the
+    user can access manages its own episode list. Only entering the full
+    timeline editor (`create_cut_from_job`/`acquire_lease`/
     `apply_commands`/exports/AI) still requires `FLAG_EDITOR` and friends —
     see `zaolang-editor-drama`."""
     series = _accessible_series(session, user_id=user_id, series_id=series_id)

@@ -1,9 +1,4 @@
-"""Shared plumbing for the two prompt-polish endpoints.
-
-`GenerationStudio` and `ShortformStudio` each own their own route (only the
-latter is feature-flagged) but publish the same request and response, and must
-handle a degraded copy agent identically.
-"""
+"""Request/response plumbing for the prompt-polish route (`api/v1/prompts.py`)."""
 
 from __future__ import annotations
 
@@ -77,7 +72,7 @@ def enhanced_response(session: Session, result: prompts.PromptEnhancement) -> Pr
 
 
 def question_views(questions: list[prompts.PromptQuestion]) -> list[PromptQuestionView]:
-    """One conversion for both routes and for the SSE `complete` frame."""
+    """The questions as the SSE `complete` frame publishes them."""
     return [
         PromptQuestionView(
             id=question.id,

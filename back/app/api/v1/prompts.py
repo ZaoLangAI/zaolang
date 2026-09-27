@@ -1,10 +1,10 @@
-"""Prompt-polish for the generation studio.
+"""Prompt-polish for the creation studios.
 
-`ShortformStudio` has its own gated endpoint (`/shortform/prompt/enhance`,
-behind the `shortform_studio` feature flag). This one backs
-`GenerationStudio`'s "AI 润色" button instead — same shared logic
-(`app.domain.prompts`), no feature flag, available to any authenticated user
-composing a prompt.
+`POST /generation/prompts/enhance` is the only polish route: it backs the
+"AI 润色" button of every studio prompt field (`prompt-field.tsx`), has no
+feature flag, and is open to any authenticated user composing a prompt. It
+streams SSE — a `matched` frame, then the shared `iter_agent_sse` frames —
+over the logic in `app.domain.prompts`.
 """
 
 from __future__ import annotations
