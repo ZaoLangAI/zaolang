@@ -2,18 +2,8 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
-from app.api.schemas.shortform import (
-    AppliedFormatSkillView,
-    PromptDimensionView,
-    PromptEnhanceRequest,
-    PromptEnhanceResponse,
-    PromptQuestionView,
-    ReferencedSkillView,
-)
+from app.api.schemas.shortform import PromptEnhanceRequest, PromptQuestionView
 from app.domain import prompts
-from app.domain.errors import ProviderTemporaryFailure
 
 
 def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
@@ -34,40 +24,6 @@ def context_from(payload: PromptEnhanceRequest) -> prompts.PromptContext:
         asset_kind=resolved_asset_kind,
         script_segment=segment,
         question_answers=dict(payload.question_answers) or None,
-    )
-
-
-def enhanced_response(session: Session, result: prompts.PromptEnhancement) -> PromptEnhanceResponse:
-    """Commits the `AgentRun`, then fails loudly if the agent degraded.
-
-    The order matters both ways. Committing first keeps the degraded call in
-    the ops console — `get_db` never commits on the way out, so raising before
-    this would erase the only record that the gateway was unreachable. Raising
-    after it is what stops the caller from presenting the fallback (which is
-    the author's own text, echoed back) as a polish: an honest 503 is more
-    useful than a suggestion that suggests nothing.
-    """
-    session.commit()
-    if result.degraded:
-        raise ProviderTemporaryFailure(prompts.ENHANCE_UNAVAILABLE_MESSAGE)
-    return PromptEnhanceResponse(
-        prompt=result.prompt,
-        detail_level=result.detail_level,
-        feedback=result.feedback,
-        dimensions=[
-            PromptDimensionView(key=d.key, status=d.status, hint=d.hint) for d in result.dimensions
-        ],
-        additions=result.additions,
-        applied_format_skills=[
-            AppliedFormatSkillView(id=skill.id, title=skill.title)
-            for skill in result.applied_format_skills
-        ],
-        referenced_skills=[
-            ReferencedSkillView(id=skill.id, title=skill.title)
-            for skill in result.referenced_skills
-        ],
-        questions=question_views(result.questions),
-        script_segment=result.script_segment,
     )
 
 

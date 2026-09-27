@@ -1,6 +1,6 @@
 /**
- * Same quoting/Blob-download idiom as the admin audit console's inline CSV
- * export (`audit-console.tsx`) — kept local to this feature rather than
+ * Same quoting/Blob-download idiom as the admin log center's inline CSV
+ * export (`log-center-console.tsx`) — kept local to this feature rather than
  * promoted to a shared helper, since generalizing three call sites across
  * unrelated features isn't this change's job.
  */

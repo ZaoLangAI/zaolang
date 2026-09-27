@@ -67,7 +67,7 @@
 ## 时间与命令
 
 - `120000 ticks = 1 秒`，API 只接受 JS 安全整数。
-- 共享 schema：`back/app/domain/editor/schemas/edit_command.schema.json`。
+- 命令定义以 `back/app/domain/editor/commands.py` 为准，前端 `engine/canonical.ts`（本地应用）与 `engine/ports.ts`（类型）跟随。
 - 禁止通用 `path`/`value` 更新。失败批次整批回滚。
 
 ## Feature flags
