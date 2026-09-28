@@ -278,18 +278,18 @@ class ContentDailyStat:
 def content_daily(session: Session, days: int) -> list[ContentDailyStat]:
     start, all_days = _window(days)
     published_rows = session.execute(
-        select(_day_bucket(Work.published_at).label("day"), func.count().label("count"))
+        select(_day_bucket(Work.published_at).label("day"), func.count().label("total"))
         .where(Work.published_at.is_not(None), Work.published_at >= start)
         .group_by("day")
     ).all()
     remix_rows = session.execute(
-        select(_day_bucket(LineageEdge.created_at).label("day"), func.count().label("count"))
+        select(_day_bucket(LineageEdge.created_at).label("day"), func.count().label("total"))
         .where(LineageEdge.created_at >= start)
         .group_by("day")
     ).all()
 
-    published_by_day = {row.day.date(): int(row.count) for row in published_rows}
-    remix_by_day = {row.day.date(): int(row.count) for row in remix_rows}
+    published_by_day = {row.day.date(): int(row.total) for row in published_rows}
+    remix_by_day = {row.day.date(): int(row.total) for row in remix_rows}
     return [
         ContentDailyStat(
             date=day,
@@ -495,11 +495,11 @@ def users_growth(session: Session, days: int) -> UserGrowthStats:
     suspended count is reported as a current snapshot instead."""
     start, all_days = _window(days)
     rows = session.execute(
-        select(_day_bucket(User.created_at).label("day"), func.count().label("count"))
+        select(_day_bucket(User.created_at).label("day"), func.count().label("total"))
         .where(User.created_at >= start)
         .group_by("day")
     ).all()
-    by_day = {row.day.date(): int(row.count) for row in rows}
+    by_day = {row.day.date(): int(row.total) for row in rows}
     points = [UserGrowthDailyStat(date=day, new_users=by_day.get(day, 0)) for day in all_days]
 
     total_users = int(session.scalar(select(func.count()).select_from(User)) or 0)
