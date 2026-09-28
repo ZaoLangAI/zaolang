@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api import rate_limit
-from app.api.v1 import community, devices
+from app.api.v1 import canvas, community, devices
 from app.models import User
 from tests.conftest import admin_header, auth_header
 
@@ -182,11 +182,26 @@ def _route_buckets(router: APIRouter) -> dict[str, list[str]]:
     return buckets
 
 
-@pytest.mark.parametrize("router", [community.router, devices.router], ids=["community", "devices"])
-def test_every_community_and_device_route_has_a_bucket(router: APIRouter) -> None:
+@pytest.mark.parametrize(
+    "router",
+    [community.router, devices.router, canvas.router],
+    ids=["community", "devices", "canvas"],
+)
+def test_every_route_on_a_fully_bucketed_router_has_a_bucket(router: APIRouter) -> None:
     for route, names in _route_buckets(router).items():
         assert names, f"{route} 没有限流桶"
         assert set(names) <= set(rate_limit.RULES), f"{route} 引用了不存在的限流桶 {names}"
+
+
+def test_canvas_routes_are_bucketed_by_what_they_cost() -> None:
+    """The confirm moves credits, so it shares the studio's submit budget
+    rather than the far looser write one; the planning turn is a model call;
+    autosave is priced like the timeline editor's, whose loop it copies."""
+    buckets = _route_buckets(canvas.router)
+    assert buckets["POST /canvas-agent-runs/{run_id}/confirm"] == ["generation_submit"]
+    assert buckets["POST /canvas-projects/{canvas_id}/agent-runs"] == ["script_studio_write"]
+    assert buckets["POST /canvas-projects/{canvas_id}/graph-ops"] == ["editor_write"]
+    assert buckets["GET /canvas-projects/{canvas_id}"] == ["public_read"]
 
 
 def test_follow_spam_is_throttled_on_its_own_budget(

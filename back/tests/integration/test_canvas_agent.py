@@ -528,6 +528,161 @@ def test_confirming_twice_does_not_reserve_credits_twice(
     assert db.query(GenerationJob).count() == jobs_after_first
 
 
+def _balance(db: Session, user: User) -> int:
+    db.expire_all()
+    return credits_service.get_or_create_account(db, user.id).available_balance
+
+
+def test_a_keyed_confirm_retry_replays_the_original_and_charges_once(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """A client that timed out does not know whether the confirm landed. Its
+    retry must get the answer the first call got — not an error for a spend
+    that did happen, and not a second spend."""
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+    before = _balance(db, funded)
+    headers = {**auth_header(funded), "Idempotency-Key": "confirm-attempt-1"}
+
+    first = client.post(f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=headers)
+    assert first.status_code == 200, first.text
+    charged = before - _balance(db, funded)
+    assert charged == run["quoted_credits"] > 0
+    jobs_after_first = db.query(GenerationJob).count()
+
+    retried = client.post(f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=headers)
+    assert retried.status_code == 200, retried.text
+    assert retried.json() == first.json()
+    assert db.query(GenerationJob).count() == jobs_after_first
+    assert before - _balance(db, funded) == charged
+
+
+def test_a_retry_that_raced_the_original_still_gets_its_response(
+    client: TestClient, db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A retry sent while the original is still in flight finds no record,
+    then loses the run's status transition once the original commits. It must
+    still be answered from the original's record rather than refused."""
+    from app.api import idempotency
+
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+    headers = {**auth_header(funded), "Idempotency-Key": "confirm-attempt-race"}
+
+    first = client.post(f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=headers)
+    assert first.status_code == 200, first.text
+
+    # Replay the interleaving: the retry's up-front lookup ran before the
+    # original's record existed.
+    real_find_replay = idempotency.find_replay
+    lookups: list[int] = []
+
+    def find_replay_after_first_miss(*args, **kwargs):  # type: ignore[no-untyped-def]
+        lookups.append(1)
+        return None if len(lookups) == 1 else real_find_replay(*args, **kwargs)
+
+    monkeypatch.setattr(idempotency, "find_replay", find_replay_after_first_miss)
+    retried = client.post(f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=headers)
+    assert retried.status_code == 200, retried.text
+    assert retried.json() == first.json()
+    assert len(lookups) == 2
+
+
+def test_a_confirm_key_reused_for_another_run_is_a_conflict(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card("cnd_agent_a", x=100)])
+    _apply(client, funded, canvas["id"], [_agent_card("cnd_agent_b", x=600)])
+    run_a = _plan(client, funded, canvas["id"], node_id="cnd_agent_a")
+    run_b = _plan(client, funded, canvas["id"], node_id="cnd_agent_b")
+    headers = {**auth_header(funded), "Idempotency-Key": "confirm-attempt-reused"}
+
+    assert (
+        client.post(f"/v1/canvas-agent-runs/{run_a['id']}/confirm", headers=headers).status_code
+        == 200
+    )
+    reused = client.post(f"/v1/canvas-agent-runs/{run_b['id']}/confirm", headers=headers)
+    assert reused.status_code == 409
+    assert reused.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_an_unkeyed_second_confirm_is_still_refused(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """Replay is opt-in by key. Without one, a second confirm is a double tap,
+    and the conditional transition refuses it as before."""
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+    keyed = {**auth_header(funded), "Idempotency-Key": "confirm-attempt-2"}
+
+    first = client.post(f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=keyed)
+    assert first.status_code == 200
+    second = client.post(f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=auth_header(funded))
+    assert second.status_code == 422
+
+
+def test_confirming_is_throttled_on_the_generation_budget(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """A throttled confirm is refused before anything is reserved."""
+    from app.api import rate_limit
+
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+    before = _balance(db, funded)
+
+    # Setup above already drew on the budget; start it from a known count.
+    rate_limit.reset("generation_submit", f"user:{funded.id}")
+    for _ in range(rate_limit.RULES["generation_submit"].limit):
+        rate_limit.enforce("generation_submit", f"user:{funded.id}")
+    throttled = client.post(
+        f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=auth_header(funded)
+    )
+    assert throttled.status_code == 429
+    assert throttled.headers.get("retry-after")
+    assert db.query(GenerationJob).count() == 0
+    assert _balance(db, funded) == before
+
+
+def test_autosave_pressure_does_not_block_a_confirm(
+    client: TestClient, db: Session, funded: User
+) -> None:
+    """A long drag session spends the autosave budget, not the one that lets
+    the user pay for a run they already reviewed."""
+    from app.api import rate_limit
+
+    _set_canvas_flag(db, enabled=True)
+    canvas = _canvas(client, funded)
+    _apply(client, funded, canvas["id"], [_agent_card()])
+    run = _plan(client, funded, canvas["id"])
+
+    # Setup above already drew on the budget; start it from a known count.
+    rate_limit.reset("editor_write", f"user:{funded.id}")
+    for _ in range(rate_limit.RULES["editor_write"].limit):
+        rate_limit.enforce("editor_write", f"user:{funded.id}")
+    blocked = client.post(
+        f"/v1/canvas-projects/{canvas['id']}/graph-ops",
+        json={"base_seq": 0, "ops": []},
+        headers=auth_header(funded),
+    )
+    assert blocked.status_code == 429
+
+    confirmed = client.post(
+        f"/v1/canvas-agent-runs/{run['id']}/confirm", headers=auth_header(funded)
+    )
+    assert confirmed.status_code == 200, confirmed.text
+
+
 def test_cancelling_stops_the_run_and_its_tasks(
     client: TestClient, db: Session, funded: User
 ) -> None:

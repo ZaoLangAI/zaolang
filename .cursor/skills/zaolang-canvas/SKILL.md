@@ -45,8 +45,9 @@ Not here → `zaolang-generation-jobs` (terminal-job hook, job SSE), `zaolang-da
 15. Access: drama → `editor_service._accessible_series` (owner or active co-creator); free → owner; delete → owner only; inaccessible → 404.
 16. The Agent never calls a provider: `GenerationParams` → `jobs_service.submit` → `dispatch.enqueue_or_fail`. Only the run's author may confirm/cancel.
 17. Terminal jobs land via `completion.on_job_terminal` → `land_job_result` — hook rules: see `zaolang-generation-jobs` › terminal-job hook.
-18. No route in `api/v1/canvas.py` declares a rate-limit bucket or `Idempotency-Key` (incl. credit-spending `confirm`) — a known gap, not a pattern.
-19. Removed: AGPL-derived canvas code — don't restore (repo is Apache-2.0; see `zaolang-ci-release`).
+18. Every route in `api/v1/canvas.py` declares a bucket by cost (module docstring): `confirm` → `generation_submit`, planning → `script_studio_write`, `/graph-ops` + restore-card → `editor_write`, other writes `authenticated_write`, reads `public_read`. `tests/integration/test_rate_limits.py` walks the router, so a new route without one fails.
+19. Only `confirm` moves credits, so only it takes `Idempotency-Key` (`CONFIRM_AGENT_RUN_ENDPOINT`): a keyed retry, even one that raced the in-flight original, replays the stored response; unkeyed, a second confirm is still a 422. Planning and workflow-runs only quote. Front: `useConfirmCanvasAgentRun` holds one key per attempt.
+20. Removed: AGPL-derived canvas code — don't restore (repo is Apache-2.0; see `zaolang-ci-release`).
 
 ## Recipes
 

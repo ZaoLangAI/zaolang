@@ -7,6 +7,12 @@ The write path is `POST /canvas-projects/{id}/graph-ops`, and it is deliberately
 not a whole-document PUT. See `app/domain/canvas/graph_service.py` for why —
 briefly, a worker landing a generated card and a browser autosaving a drag must
 both succeed, and a document-shaped write gives them one cell to fight over.
+
+Rate-limit buckets follow cost, not path: `/graph-ops` and card restores are
+the canvas' autosave and share `editor_write` with the timeline editor whose
+sync loop they copy; the Agent's planning turn is a model call
+(`script_studio_write`); the confirm moves credits (`generation_submit`);
+other writes are `authenticated_write` and reads `public_read`.
 """
 
 from __future__ import annotations
@@ -16,11 +22,11 @@ import time
 from collections.abc import Iterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from fastapi.responses import StreamingResponse
 
-from app.api import sse_quota
-from app.api.deps import CurrentUser, DbSession
+from app.api import idempotency, sse_quota
+from app.api.deps import CurrentUser, DbSession, IdempotencyKey, rate_limited
 from app.api.schemas.canvas import (
     CanvasAgentRunCreateRequest,
     CanvasAgentRunResponse,
@@ -42,6 +48,7 @@ from app.api.schemas.canvas import (
 )
 from app.domain.canvas import agent_service, graph_service, workflow_service
 from app.domain.canvas import service as canvas_service
+from app.domain.errors import DomainError
 from app.domain.jobs import dispatch as job_dispatch
 from app.models import (
     CanvasAgentRun,
@@ -116,7 +123,9 @@ def _detail(session: DbSession, project: CanvasProject, user_id: str) -> CanvasP
 
 @router.get("/canvas-projects", response_model=list[CanvasProjectSummaryResponse])
 def list_canvas_projects(
-    user: CurrentUser, session: DbSession
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
 ) -> list[CanvasProjectSummaryResponse]:
     projects = canvas_service.list_projects(session, user_id=user.id)
     return [_summary(session, project, user.id) for project in projects]
@@ -128,7 +137,10 @@ def list_canvas_projects(
     status_code=status.HTTP_201_CREATED,
 )
 def create_canvas_project(
-    payload: CanvasProjectCreateRequest, user: CurrentUser, session: DbSession
+    payload: CanvasProjectCreateRequest,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CanvasProjectResponse:
     project = canvas_service.create_project(
         session, user_id=user.id, title=payload.title, series_id=payload.series_id
@@ -140,7 +152,10 @@ def create_canvas_project(
 
 @router.get("/canvas-projects/{canvas_id}", response_model=CanvasProjectResponse)
 def get_canvas_project(
-    canvas_id: str, user: CurrentUser, session: DbSession
+    canvas_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
 ) -> CanvasProjectResponse:
     project = canvas_service.get_project(session, user_id=user.id, canvas_id=canvas_id)
     return _detail(session, project, user.id)
@@ -152,6 +167,7 @@ def update_canvas_project(
     payload: CanvasProjectUpdateRequest,
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CanvasProjectWriteResponse:
     project = canvas_service.update_project(
         session,
@@ -181,6 +197,7 @@ def apply_canvas_graph_ops(
     payload: CanvasGraphOpsRequest,
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
 ) -> CanvasGraphOpsResponse:
     """Apply a batch of card/connection operations.
 
@@ -229,6 +246,7 @@ def read_canvas_changes(
     canvas_id: str,
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
     since: int = Query(default=0, ge=0),
 ) -> CanvasChangesResponse:
     """Non-SSE catch-up. `gap: true` means reload rather than apply."""
@@ -246,6 +264,7 @@ def stream_canvas_events(
     canvas_id: str,
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
     """Live changes for one canvas, resumable by `Last-Event-ID`.
@@ -371,7 +390,12 @@ def _parse_last_event_id(value: str | None) -> int:
 
 
 @router.delete("/canvas-projects/{canvas_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_canvas_project(canvas_id: str, user: CurrentUser, session: DbSession) -> Response:
+def delete_canvas_project(
+    canvas_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
+) -> Response:
     canvas_service.delete_project(session, user_id=user.id, canvas_id=canvas_id)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -379,7 +403,10 @@ def delete_canvas_project(canvas_id: str, user: CurrentUser, session: DbSession)
 
 @router.get("/drama-series/{series_id}/canvas", response_model=CanvasProjectResponse)
 def get_series_canvas(
-    series_id: str, user: CurrentUser, session: DbSession
+    series_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
 ) -> CanvasProjectResponse:
     """Resolve-or-create, so the series page's "画布视图" button is one click
     rather than a create-then-open dance."""
@@ -436,6 +463,7 @@ def create_canvas_agent_run(
     payload: CanvasAgentRunCreateRequest,
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("script_studio_write"))],
 ) -> StreamingResponse:
     """Plan a generation from one card and the cards feeding it.
 
@@ -506,6 +534,7 @@ def create_canvas_workflow_run(
     payload: CanvasWorkflowRunCreateRequest,
     user: CurrentUser,
     session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CanvasAgentRunResponse:
     """Expand a workflow skill into a priced, unconfirmed run.
 
@@ -529,13 +558,69 @@ def create_canvas_workflow_run(
     return response
 
 
+CONFIRM_AGENT_RUN_ENDPOINT = "POST /v1/canvas-agent-runs/{run_id}/confirm"
+
+
 @router.post("/canvas-agent-runs/{run_id}/confirm", response_model=CanvasAgentRunResponse)
 def confirm_canvas_agent_run(
-    run_id: str, user: CurrentUser, session: DbSession
+    run_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    idempotency_key: IdempotencyKey,
+    _: Annotated[None, Depends(rate_limited("generation_submit"))],
 ) -> CanvasAgentRunResponse:
-    """Spend the credits and submit the planned jobs."""
-    run, dispatched = agent_service.confirm_run(session, user_id=user.id, run_id=run_id)
+    """Spend the credits and submit the planned jobs.
+
+    The conditional transition in `confirm_run` already stops a second confirm
+    from reserving credits twice, but it answers that second call with an
+    error. A client retrying after a timeout needs the answer the first call
+    got instead — the credits *were* spent — so a keyed retry replays it.
+    """
+    request_hash = idempotency.hash_request({"run_id": run_id})
+    if idempotency_key:
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=CONFIRM_AGENT_RUN_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            return CanvasAgentRunResponse.model_validate(replay.response_snapshot)
+
+    try:
+        run, dispatched = agent_service.confirm_run(session, user_id=user.id, run_id=run_id)
+    except DomainError:
+        if not idempotency_key:
+            raise
+        # A retry that arrived while the original was still in flight got past
+        # the lookup above, then blocked on the run row until the original
+        # committed and lost the transition. The original's record is visible
+        # now; answering with it is the whole point of the key.
+        session.rollback()
+        replay = idempotency.find_replay(
+            session,
+            user_id=user.id,
+            endpoint=CONFIRM_AGENT_RUN_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+        )
+        if replay is None:
+            raise
+        return CanvasAgentRunResponse.model_validate(replay.response_snapshot)
     response = _agent_run_response(session, run)
+    if idempotency_key:
+        # In the same transaction as the reservation: a committed spend always
+        # has its replay, and a rolled-back one never does.
+        idempotency.remember(
+            session,
+            user_id=user.id,
+            endpoint=CONFIRM_AGENT_RUN_ENDPOINT,
+            key=idempotency_key,
+            request_hash=request_hash,
+            status_code=200,
+            response=response.model_dump(mode="json"),
+        )
     session.commit()
     # After the commit, for the same reason canvas changes are: a broker that
     # picks the job up before its row is visible would find nothing.
@@ -551,7 +636,10 @@ def confirm_canvas_agent_run(
 
 @router.post("/canvas-agent-runs/{run_id}/cancel", response_model=CanvasAgentRunResponse)
 def cancel_canvas_agent_run(
-    run_id: str, user: CurrentUser, session: DbSession
+    run_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("authenticated_write"))],
 ) -> CanvasAgentRunResponse:
     run = agent_service.cancel_run(session, user_id=user.id, run_id=run_id)
     response = _agent_run_response(session, run)
@@ -563,7 +651,10 @@ def cancel_canvas_agent_run(
     "/canvas-agent-tasks/{task_id}/restore-card", response_model=CanvasNodeResponse, status_code=201
 )
 def restore_canvas_task_card(
-    task_id: str, user: CurrentUser, session: DbSession
+    task_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("editor_write"))],
 ) -> CanvasNodeResponse:
     """Put a landed result back on the canvas after its card was deleted."""
     node = agent_service.restore_task_card(session, user_id=user.id, task_id=task_id)
@@ -576,7 +667,10 @@ def restore_canvas_task_card(
 
 @router.get("/canvas-agent-runs/{run_id}", response_model=CanvasAgentRunResponse)
 def get_canvas_agent_run(
-    run_id: str, user: CurrentUser, session: DbSession
+    run_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
 ) -> CanvasAgentRunResponse:
     run = agent_service.get_run(session, user_id=user.id, run_id=run_id)
     return _agent_run_response(session, run)
@@ -584,7 +678,10 @@ def get_canvas_agent_run(
 
 @router.get("/canvas-projects/{canvas_id}/agent-runs", response_model=list[CanvasAgentRunResponse])
 def list_canvas_agent_runs(
-    canvas_id: str, user: CurrentUser, session: DbSession
+    canvas_id: str,
+    user: CurrentUser,
+    session: DbSession,
+    _: Annotated[None, Depends(rate_limited("public_read"))],
 ) -> list[CanvasAgentRunResponse]:
     runs = agent_service.list_runs(session, user_id=user.id, canvas_id=canvas_id)
     return [_agent_run_response(session, run) for run in runs]
