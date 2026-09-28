@@ -79,6 +79,10 @@ make dev-purge-queues  # 清理失效的 Celery 消息与结果（保留有效�
 默认工作流模板、Feature Flag），不再生成任何业务内容（作品、任务、审核队列、画风库等）——
 上面这些角色对应的业务场景需要真实跑一遍生成/发布/审核流程才能观察到。
 
+E2E 用例要走的那几条数据由单独的 `make e2e-fixtures`（`back/app/scripts/e2e_fixtures.py`）写入：
+一条含已撤回中间节点的二创链、一个付费作品、一个付费技能、一份待发布草稿、一个带运行日志的失败任务。
+它只给测试用，不属于 `make seed`；重复执行不会新增数据，只会把用例改动过的状态（点赞、余额）复位。已被买过的付费作品不会“退款重置”（同一买家对同一作品的账本记录只能有一条），而是下架后重新发布一个新的付费样例。
+
 后台会话与 C 端会话完全独立：`/admin/login` 签发 audience 为 `admin` 的 token 并存在 `zl_admin_session` cookie 里，拿 C 端 token 打 `/v1/admin/*` 一律 401。
 
 ## LLM 网关
@@ -131,8 +135,10 @@ E2E 与无障碍是额外的本地套件：它们需要真实数据库与种子�
 make up && make migrate && make seed   # 真实数据库与种子数据
 make dev-api                            # 后端必须在 3001，CORS 允许 3000/3100
 cd front && npm run build && npx next start --port 3100
-make test-e2e
+make test-e2e                           # 先跑 make e2e-fixtures，写入 front/e2e/.fixtures.json
 ```
+
+直接用 `npm run test:e2e` / `npx playwright test` 时要自己先执行 `make e2e-fixtures`；缺少清单文件的用例会直接报错并提示这一步。
 
 Playwright 的 `baseURL` 用 `localhost:3100` 而不是 `127.0.0.1:3100`：后台会话 cookie 是 `SameSite=Strict`，浏览器把这两个主机名当成不同站点，用 IP 会静默丢掉后端设的 cookie，所有需要登录的用例都会失败。`e2e/setup/auth.setup.ts` 只登录四次并存下会话，其余用例复用——既省时间，也避免把登录接口每五分钟十次的限流当成 flaky 失败。
 

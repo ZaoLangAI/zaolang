@@ -59,7 +59,7 @@ cd back && conda run -n zaolang pytest tests/integration/test_admin_ops_runtime.
 make test-e2e   # front/e2e/flows/admin.spec.ts
 ```
 
-`make seed` plants accounts, system defaults, and the `zaolang_studio` skill catalogue (see zaolang-creation-library); job/moderation/credit pages stay empty until real data exists.
+`make seed` plants accounts, system defaults, and the `zaolang_studio` skill catalogue (see zaolang-creation-library); moderation/credit pages stay empty until real data exists. `make e2e-fixtures` adds finished jobs and one failed `PROVIDER_TIMEOUT` job with its log, for the job console (see zaolang-testing-qa).
 
 ## References
 
