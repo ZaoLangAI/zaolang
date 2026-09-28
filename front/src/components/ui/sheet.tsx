@@ -114,6 +114,12 @@ export function Sheet({
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
+      // React bubbles events through portals along the component tree, so a
+      // `Dialog` opened from inside the sheet (e.g. the style gallery) sends
+      // its keys here too. Those belong to that dialog: without this, Escape
+      // would close the sheet underneath and, by stopping propagation, keep
+      // the dialog's own document-level handler from ever seeing it.
+      if (!panelRef.current?.contains(event.target as Node)) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         onClose();
