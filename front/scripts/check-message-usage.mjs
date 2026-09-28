@@ -4,7 +4,7 @@
  *
  * A missing message key is invisible to `tsc` and only surfaces as a runtime
  * error on the page that uses it, which is exactly the kind of defect that
- * survives review. Namespaces are read from the nearest
+ * survives review. Each call is resolved against the nearest preceding
  * `useTranslations('ns')` / `getTranslations('ns')` call in the same file, so a
  * file using several namespaces is checked per binding.
  */
@@ -40,14 +40,24 @@ const BINDING =
 const missing = [];
 for (const file of walk(join(root, 'src'))) {
   const source = readFileSync(file, 'utf8');
-  const namespaces = new Map();
-  for (const match of source.matchAll(BINDING)) namespaces.set(match[1], match[2]);
-  if (namespaces.size === 0) continue;
+  // Several components in one file may each declare `const t = ...` with a
+  // different namespace, so keep every binding with its position rather than
+  // one namespace per name.
+  const bindings = new Map();
+  for (const match of source.matchAll(BINDING)) {
+    if (!bindings.has(match[1])) bindings.set(match[1], []);
+    bindings.get(match[1]).push({ index: match.index, namespace: match[2] });
+  }
+  if (bindings.size === 0) continue;
 
-  for (const [binding, namespace] of namespaces) {
+  for (const [binding, declarations] of bindings) {
     // Template and computed keys cannot be checked statically; skip them.
     const usage = new RegExp(`\\b${binding}\\(\\s*'([^']+)'`, 'g');
     for (const match of source.matchAll(usage)) {
+      // A call belongs to the nearest binding above it; a call above every
+      // binding (e.g. a helper hoisted over its component) falls back to the first.
+      const namespace = declarations.findLast((d) => d.index < match.index)?.namespace
+        ?? declarations[0].namespace;
       if (!has(namespace, match[1])) {
         missing.push(`${file.slice(root.length + 1)}: ${namespace}.${match[1]}`);
       }
