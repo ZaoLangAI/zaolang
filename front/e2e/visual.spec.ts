@@ -125,7 +125,6 @@ test.describe('signed in', () => {
           body: await page.screenshot({ fullPage: true }),
           contentType: 'image/png',
         });
-        await styleDialog.focus();
         await page.keyboard.press('Escape');
         await styleDialog.waitFor({ state: 'hidden' });
 
