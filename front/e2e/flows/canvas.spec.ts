@@ -304,26 +304,34 @@ test.describe('infinite canvas', () => {
     await page.waitForURL(/\/canvas\/cnv_/);
     const canvasUrl = page.url();
 
+    // Let each edit's save land before the next one. Saves are coalesced: an
+    // undo and redo queued behind an in-flight write collapse into "no
+    // change", so no save (and no "已保存" flash) would follow at all.
+    const edit = async (action: () => Promise<void>, nodes: number) => {
+      const saved = page.waitForResponse(
+        (response) =>
+          response.url().includes('/graph-ops') && response.request().method() === 'POST',
+        { timeout: 15_000 },
+      );
+      await action();
+      await expect(page.locator('.react-flow__node')).toHaveCount(nodes);
+      expect((await saved).ok()).toBe(true);
+    };
+
     // Nothing to undo on a fresh board.
     await expect(page.getByRole('button', { name: '撤销' })).toBeDisabled();
 
-    await page.getByRole('button', { name: '便签' }).click();
-    await page.getByRole('button', { name: '提示词', exact: true }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
+    await edit(() => page.getByRole('button', { name: '便签' }).click(), 1);
+    await edit(() => page.getByRole('button', { name: '提示词', exact: true }).click(), 2);
 
     await selectNode(page, page.locator('.react-flow__node').last());
-    await page.getByRole('button', { name: '删除所选' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(1);
+    await edit(() => page.getByRole('button', { name: '删除所选' }).click(), 1);
 
-    await page.getByRole('button', { name: '撤销' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
-    await page.getByRole('button', { name: '重做' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(1);
+    await edit(() => page.getByRole('button', { name: '撤销' }).click(), 2);
+    await edit(() => page.getByRole('button', { name: '重做' }).click(), 1);
 
     // Undo/redo are real edits, not a local-only view — they persist.
-    await page.getByRole('button', { name: '撤销' }).click();
-    await expect(page.locator('.react-flow__node')).toHaveCount(2);
-    await expect(page.getByText('已保存')).toBeVisible({ timeout: 10_000 });
+    await edit(() => page.getByRole('button', { name: '撤销' }).click(), 2);
     await page.goto(canvasUrl, { waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
   });
