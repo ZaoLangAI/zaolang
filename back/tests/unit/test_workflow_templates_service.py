@@ -270,9 +270,7 @@ def test_ensure_default_templates_seeds_every_operation_exactly_once(db: Session
         active = workflow_templates_service.get_active(db, operation.value)
         assert active is not None
         expected = (
-            video_analysis_graph(db)
-            if operation == Operation.VIDEO_ANALYSIS
-            else default_graph(db)
+            video_analysis_graph(db) if operation == Operation.VIDEO_ANALYSIS else default_graph(db)
         )
         assert active.graph_json == expected
 

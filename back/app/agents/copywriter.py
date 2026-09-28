@@ -833,7 +833,7 @@ def _enhance_user_prompt(
         "max_length": max_length,
         "output_now": (
             "立即输出完整 JSON（必须含 prompt 与 detail_level）。"
-            "思考不要讨论输出格式，不要写 {\"answer\": ...} 占位。"
+            '思考不要讨论输出格式，不要写 {"answer": ...} 占位。'
             "可见内容的第一个字符必须是 {。"
         ),
     }

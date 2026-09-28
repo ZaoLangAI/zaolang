@@ -106,7 +106,12 @@ export function EffectsMaskControls({
     const effect = effects[index];
     if (!effect) return;
     onCommit([
-      { type: 'update_effect_params', element_id: elementId, effect_index: index, params: effect.params },
+      {
+        type: 'update_effect_params',
+        element_id: elementId,
+        effect_index: index,
+        params: effect.params,
+      },
     ]);
   };
 
@@ -130,7 +135,13 @@ export function EffectsMaskControls({
         <p className="text-sm font-semibold text-fg">{t('effectsTitle')}</p>
         <div className="flex flex-wrap gap-2">
           {EFFECT_TYPES.map((type) => (
-            <Button key={type} size="sm" variant="secondary" disabled={disabled} onClick={() => addEffect(type)}>
+            <Button
+              key={type}
+              size="sm"
+              variant="secondary"
+              disabled={disabled}
+              onClick={() => addEffect(type)}
+            >
               {effectLabel[type]}
             </Button>
           ))}
@@ -160,7 +171,12 @@ export function EffectsMaskControls({
                       className="w-full accent-primary"
                     />
                   </label>
-                  <Button size="sm" variant="ghost" disabled={disabled} onClick={() => removeEffect(index)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={disabled}
+                    onClick={() => removeEffect(index)}
+                  >
                     {t('effectRemove')}
                   </Button>
                 </li>
@@ -201,13 +217,7 @@ export function EffectsMaskControls({
         {mask ? (
           <div className="grid grid-cols-2 gap-2">
             {(
-              [
-                'x_milli',
-                'y_milli',
-                'width_milli',
-                'height_milli',
-                'feather_millipercent',
-              ] as const
+              ['x_milli', 'y_milli', 'width_milli', 'height_milli', 'feather_millipercent'] as const
             ).map((field) => (
               <label key={field} className="flex flex-col gap-1">
                 {maskFieldLabel[field]}

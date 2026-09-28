@@ -216,9 +216,7 @@ def invite(
     return collaborator
 
 
-def list_members(
-    session: Session, *, user_id: str, series_id: str
-) -> list[SeriesCollaborator]:
+def list_members(session: Session, *, user_id: str, series_id: str) -> list[SeriesCollaborator]:
     series = _get_drama_series(session, series_id)
     if not is_active_member(session, user_id=user_id, series_id=series.id):
         raise NotFound("剧集不存在。")
@@ -235,9 +233,7 @@ def list_members(
     return list(session.scalars(stmt))
 
 
-def remove(
-    session: Session, *, actor_user_id: str, series_id: str, collaborator_id: str
-) -> None:
+def remove(session: Session, *, actor_user_id: str, series_id: str, collaborator_id: str) -> None:
     """The owner may remove any row (kicking a `pending` invite or an
     `active` collaborator); a collaborator may only remove their own row
     (leaving). Anyone else is `Forbidden`."""
@@ -262,7 +258,9 @@ def remove(
 
     notify_user_id = collaborator.user_id if is_owner_action else series.owner_user_id
     title_key = (
-        "notification.series_collab_removed" if is_owner_action else "notification.series_collab_left"
+        "notification.series_collab_removed"
+        if is_owner_action
+        else "notification.series_collab_left"
     )
     actor_profile = profiles_by_user_id(session, [collaborator.user_id]).get(collaborator.user_id)
     notify(

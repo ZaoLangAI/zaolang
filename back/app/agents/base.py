@@ -133,9 +133,7 @@ def _bound_endpoint(
     return None
 
 
-def _binding_max_tokens(
-    profile_max: int | None, endpoint: LlmProviderEndpoint | None
-) -> int:
+def _binding_max_tokens(profile_max: int | None, endpoint: LlmProviderEndpoint | None) -> int:
     """Sampling size: profile override, else the model's declared max output.
 
     `AgentProfile.max_tokens` is an operator cap and is itself clamped to

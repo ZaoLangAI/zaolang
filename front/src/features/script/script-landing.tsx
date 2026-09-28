@@ -53,9 +53,7 @@ export function ScriptLanding({
   const [deletingScript, setDeletingScript] = useState<ScriptSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [autoOpenedForSeriesId, setAutoOpenedForSeriesId] = useState<string | undefined>(
-    undefined
-  );
+  const [autoOpenedForSeriesId, setAutoOpenedForSeriesId] = useState<string | undefined>(undefined);
   // The "用于文案创作" jump from a settled `video_analysis` job's result — a
   // separate flag from `autoOpenedForSeriesId` above because the two deep
   // links never carry both params at once, but each has to compare against

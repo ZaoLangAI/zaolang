@@ -119,14 +119,10 @@ def adapt_resolution_tier(
     if not requested:
         return None
     if available is None:
-        return AdaptedResolution(
-            studio_tier=requested, vendor_literal=requested, kind="exact"
-        )
+        return AdaptedResolution(studio_tier=requested, vendor_literal=requested, kind="exact")
     exact = resolve_resolution_tier(requested, available)
     if exact is not None:
-        return AdaptedResolution(
-            studio_tier=requested, vendor_literal=exact, kind="exact"
-        )
+        return AdaptedResolution(studio_tier=requested, vendor_literal=exact, kind="exact")
     try:
         req_idx = STUDIO_RESOLUTION_TIERS.index(requested)
     except ValueError:
@@ -135,15 +131,11 @@ def adapt_resolution_tier(
         for tier in reversed(STUDIO_RESOLUTION_TIERS[:req_idx]):
             literal = resolve_resolution_tier(tier, available)
             if literal is not None:
-                return AdaptedResolution(
-                    studio_tier=tier, vendor_literal=literal, kind="downgrade"
-                )
+                return AdaptedResolution(studio_tier=tier, vendor_literal=literal, kind="downgrade")
     for tier in STUDIO_RESOLUTION_TIERS:
         literal = resolve_resolution_tier(tier, available)
         if literal is not None:
-            return AdaptedResolution(
-                studio_tier=tier, vendor_literal=literal, kind="upgrade"
-            )
+            return AdaptedResolution(studio_tier=tier, vendor_literal=literal, kind="upgrade")
     return None
 
 

@@ -713,9 +713,7 @@ def apply_matching_format_skills(
 # because the catalogue is free, public and factory-owned. A user-authored
 # paid `drama` skill must not be handed to an agent behind its author's back.
 _CATALOG_DRAMA_TITLES: frozenset[str] = frozenset(
-    item.title
-    for item in skill_catalog.CATALOG
-    if item.category == CreationSkillCategory.DRAMA
+    item.title for item in skill_catalog.CATALOG if item.category == CreationSkillCategory.DRAMA
 )
 
 

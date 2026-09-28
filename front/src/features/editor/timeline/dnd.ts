@@ -75,7 +75,10 @@ export function trackKindForMedia(mediaType: string): 'video' | 'audio' {
 }
 
 /** Default clip length for a dropped asset: its own length, or 3s for stills/unknown. */
-export function defaultInsertDuration(payload: { duration_ticks: number | null; media_type: string }): number {
+export function defaultInsertDuration(payload: {
+  duration_ticks: number | null;
+  media_type: string;
+}): number {
   if (payload.duration_ticks && payload.duration_ticks > 0) return payload.duration_ticks;
   return 3 * TICKS_PER_SECOND;
 }

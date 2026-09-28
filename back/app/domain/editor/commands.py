@@ -279,12 +279,15 @@ def _validate_command(command: dict[str, Any]) -> None:
         raise ValidationFailed("特效参数必须是对象。")
     if command_type == "set_clip_mask":
         mask = command.get("mask")
-        if mask is not None:
-            if not isinstance(mask, dict) or mask.get("shape") not in MASK_SHAPES:
-                raise ValidationFailed("不支持的蒙版形状。")
-    if command_type in {"set_keyframe", "delete_keyframe", "clear_keyframes"}:
-        if command.get("property") not in ANIMATABLE_PROPERTIES:
-            raise ValidationFailed("不支持的动画属性。")
+        if mask is not None and (
+            not isinstance(mask, dict) or mask.get("shape") not in MASK_SHAPES
+        ):
+            raise ValidationFailed("不支持的蒙版形状。")
+    if (
+        command_type in {"set_keyframe", "delete_keyframe", "clear_keyframes"}
+        and command.get("property") not in ANIMATABLE_PROPERTIES
+    ):
+        raise ValidationFailed("不支持的动画属性。")
     if command_type in {"set_keyframe", "delete_keyframe"}:
         _require_int(command["at_ticks"], label="at_ticks")
     if command_type == "set_keyframe":
@@ -308,9 +311,13 @@ def _validate_command(command: dict[str, Any]) -> None:
         label = command.get("label")
         if label is not None and len(str(label)) > 120:
             raise ValidationFailed("标记点文案最多 120 字符。")
-    if command_type == "insert_clip" and "element_type" in command and command["element_type"] is not None:
-        if command["element_type"] not in ELEMENT_TYPES_ADDABLE:
-            raise ValidationFailed("不支持的元素类型。")
+    if (
+        command_type == "insert_clip"
+        and "element_type" in command
+        and command["element_type"] is not None
+        and command["element_type"] not in ELEMENT_TYPES_ADDABLE
+    ):
+        raise ValidationFailed("不支持的元素类型。")
     if command_type == "set_transition":
         if command.get("edge") not in {"in", "out"}:
             raise ValidationFailed("edge 必须是 in 或 out。")
@@ -475,7 +482,9 @@ def _apply_one(
         animations = found[1].setdefault("animations", {"channels": {}})
         channels = animations.setdefault("channels", {})
         existing = channels.get(prop)
-        points = [p for p in (existing.get("points") if existing else []) if p["at_ticks"] != at_ticks]
+        points = [
+            p for p in (existing.get("points") if existing else []) if p["at_ticks"] != at_ticks
+        ]
         if len(points) >= MAX_KEYFRAMES_PER_CHANNEL:
             raise ValidationFailed(f"单个属性最多 {MAX_KEYFRAMES_PER_CHANNEL} 个关键帧。")
         points.append({"at_ticks": at_ticks, "value": value, "easing": easing})

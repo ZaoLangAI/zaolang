@@ -97,9 +97,7 @@ export function FilterBar({
             onChange(filter.id, next.join(','));
           };
           const triggerLabel =
-            selected.length > 0
-              ? `${filter.label} (${selected.length})`
-              : filter.label;
+            selected.length > 0 ? `${filter.label} (${selected.length})` : filter.label;
           return (
             <div key={filter.id} className="flex flex-col gap-1 text-xs text-muted">
               <span className="pl-0.5">{filter.label}</span>

@@ -89,9 +89,7 @@ def test_cancelled_and_expired_jobs_reuse_the_creation_row(db: Session, author: 
     credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
     cancelled = _submit(db, author, prompt="取消")
     sm.transition(db, cancelled.id, JobStatus.CANCELLED)
-    cancel_note = db.scalar(
-        select(Notification).where(Notification.target_id == cancelled.id)
-    )
+    cancel_note = db.scalar(select(Notification).where(Notification.target_id == cancelled.id))
     assert cancel_note is not None
     assert cancel_note.type == NotificationType.JOB_CANCELLED
     assert cancel_note.title_key == "notification.job_cancelled"
@@ -120,9 +118,7 @@ def test_sandbox_jobs_never_write_consumer_notifications(db: Session, author: Us
     assert _job_notes(db, author) == []
 
 
-def test_list_overlays_live_job_status(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_list_overlays_live_job_status(client: TestClient, db: Session, author: User) -> None:
     credits_service.grant(db, author.id, 5_000, idempotency_key=new_id("grant"))
     job = _submit(db, author)
     job.status = JobStatus.SUCCEEDED

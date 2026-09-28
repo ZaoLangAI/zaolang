@@ -51,7 +51,10 @@ export function DurationBars({ segments }: { segments: DurationSegment[] }) {
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
         {segments.map((segment) => (
           <li key={segment.key} className="flex items-center gap-1.5">
-            <span aria-hidden="true" className={cn('size-2 rounded-full', TONE_BAR[segment.tone])} />
+            <span
+              aria-hidden="true"
+              className={cn('size-2 rounded-full', TONE_BAR[segment.tone])}
+            />
             <span className="text-text">{segment.label}</span>
             <span className="tabular">{formatNumber(segment.ms, locale)}ms</span>
           </li>

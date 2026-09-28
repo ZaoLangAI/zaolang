@@ -11,12 +11,7 @@ import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { useIsomorphicLayoutEffect } from '@/lib/motion';
-import type {
-  CreationSkillDetail,
-  CreationSkillSummary,
-  Operation,
-  Page,
-} from '@/lib/api/types';
+import type { CreationSkillDetail, CreationSkillSummary, Operation, Page } from '@/lib/api/types';
 import { isSkillMentionable } from '@/lib/skill-mention';
 import { useResource } from '@/lib/use-resource';
 

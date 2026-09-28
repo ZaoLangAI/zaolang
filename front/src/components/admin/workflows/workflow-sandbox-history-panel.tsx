@@ -143,9 +143,7 @@ export function WorkflowSandboxHistoryPanel({
                           {tJob(row.status)}
                         </Badge>
                         <Badge tone={row.used_draft ? 'amber' : 'neutral'}>
-                          {row.used_draft
-                            ? t('sandboxHistoryDraft')
-                            : t('sandboxHistoryPublished')}
+                          {row.used_draft ? t('sandboxHistoryDraft') : t('sandboxHistoryPublished')}
                         </Badge>
                       </span>
                       <span className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">

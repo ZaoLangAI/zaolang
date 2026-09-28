@@ -188,11 +188,11 @@ export function JobsConsole() {
     .find((entry) => entry.source === 'pipeline' || entry.level === 'error')?.message;
   const showFailure = Boolean(
     job &&
-      (['failed', 'expired', 'cancelled'].includes(job.status) ||
-        job.failure_code ||
-        job.failure_message ||
-        failedAttempts.length > 0 ||
-        fallbackLogMessage),
+    (['failed', 'expired', 'cancelled'].includes(job.status) ||
+      job.failure_code ||
+      job.failure_message ||
+      failedAttempts.length > 0 ||
+      fallbackLogMessage),
   );
 
   // Each segment is the gap between two consecutive events, labelled by the
@@ -262,7 +262,12 @@ export function JobsConsole() {
             kind: 'multiselect',
             options: STATUSES.map((value) => ({ value, label: tJob(value) })),
           },
-          { id: 'user', label: t('filterUser'), kind: 'text', placeholder: t('filterUserPlaceholder') },
+          {
+            id: 'user',
+            label: t('filterUser'),
+            kind: 'text',
+            placeholder: t('filterUserPlaceholder'),
+          },
           {
             id: 'provider',
             label: t('colProvider'),
@@ -566,8 +571,8 @@ export function JobsConsole() {
                         </span>
                         <span className="tabular text-muted">
                           {t('promptTokens')} {formatNumber(run.prompt_tokens ?? 0, locale)} ·{' '}
-                          {t('completionTokens')} {formatNumber(run.completion_tokens ?? 0, locale)} ·{' '}
-                          {formatNumber(run.latency_ms ?? 0, locale)}ms
+                          {t('completionTokens')} {formatNumber(run.completion_tokens ?? 0, locale)}{' '}
+                          · {formatNumber(run.latency_ms ?? 0, locale)}ms
                         </span>
                       </div>
                       <ThinkingDisclosure
@@ -603,7 +608,9 @@ export function JobsConsole() {
                       <p className="whitespace-pre-wrap break-words text-muted">{entry.message}</p>
                       {entry.details && Object.keys(entry.details).length > 0 ? (
                         <details>
-                          <summary className="cursor-pointer text-muted">{t('relatedLogDetails')}</summary>
+                          <summary className="cursor-pointer text-muted">
+                            {t('relatedLogDetails')}
+                          </summary>
                           <pre className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-sm)] bg-surface-soft p-2 font-mono text-[11px] whitespace-pre-wrap">
                             {JSON.stringify(entry.details, null, 2)}
                           </pre>

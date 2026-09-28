@@ -1624,5 +1624,3 @@ def test_copy_enhance_asset_templates_match_the_module_constants(
     assert generic["prompt_template"] == copywriter.ENHANCE_SYSTEM_PROMPT
     assert by_key["copy-suggest"]["asset_kind"] == "copy"
     assert by_key["copy-suggest"]["prompt_template"] == copywriter.SYSTEM_PROMPT
-
-

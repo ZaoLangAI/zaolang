@@ -130,7 +130,10 @@ export function SourceMaterialRail({
   };
 
   return (
-    <aside aria-labelledby="source-material-heading" className="lg:border-r lg:border-border lg:pr-4">
+    <aside
+      aria-labelledby="source-material-heading"
+      className="lg:border-r lg:border-border lg:pr-4"
+    >
       <h2 id="source-material-heading" className="text-sm font-semibold">
         {t('sourceMaterials', { count: total })}
       </h2>

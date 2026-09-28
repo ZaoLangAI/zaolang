@@ -47,7 +47,7 @@ export function detectMentionTrigger(
   const match = /@([^\s@]*)$/.exec(before);
   if (!match) return null;
   const atIndex = match.index;
-  const charBefore = atIndex === 0 ? '' : before[atIndex - 1] ?? '';
+  const charBefore = atIndex === 0 ? '' : (before[atIndex - 1] ?? '');
   if (atIndex !== 0 && !/\s/.test(charBefore)) return null;
   return { start: atIndex, query: match[1] ?? '' };
 }

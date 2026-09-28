@@ -101,7 +101,10 @@ function findCatalogEntry(
     ?.models?.find((entry) => entry.model === model);
 }
 
-function relevantDimensions(entry: ModelCatalogEntry | undefined, keys: string[]): Set<string> | null {
+function relevantDimensions(
+  entry: ModelCatalogEntry | undefined,
+  keys: string[],
+): Set<string> | null {
   if (!entry) return null;
   const dims = new Set(
     (entry.price_items ?? [])
@@ -182,16 +185,7 @@ interface EndpointFormState {
  * what each vendor's own API expects (never normalised) — DMXAPI's doubao
  * models answer lowercase, its `wan3.0-video` answers uppercase, MiniMax
  * stays `768P`/`2K`. */
-const VIDEO_RESOLUTIONS = [
-  '2K',
-  '768P',
-  '480p',
-  '720p',
-  '1080p',
-  '480P',
-  '720P',
-  '1080P',
-] as const;
+const VIDEO_RESOLUTIONS = ['2K', '768P', '480p', '720p', '1080p', '480P', '720P', '1080P'] as const;
 
 function emptyResolutionPrices(): Record<string, string> {
   return Object.fromEntries(VIDEO_RESOLUTIONS.map((resolution) => [resolution, '']));
@@ -1292,7 +1286,7 @@ function VendorModelPicker({
   const applyModel = (modelId: string) => {
     const entry = knownModels.find((item) => item.model === modelId);
     if (!entry) return;
-    const rateMicro = priceCurrency === 'CNY' ? parseCnyPerUsd(cnyPerUsd) ?? 1 : 1;
+    const rateMicro = priceCurrency === 'CNY' ? (parseCnyPerUsd(cnyPerUsd) ?? 1) : 1;
     const pricingPatch = priceItemsToFormPatch(entry.price_items ?? [], priceCurrency, rateMicro);
     if (editing.kind === 'media') {
       onChange({
@@ -1313,7 +1307,9 @@ function VendorModelPicker({
     onChange({
       model: entry.model,
       base_url: activeVendor?.base_url ?? editing.base_url,
-      context_length: entry.context_length ? formatTokenCount(entry.context_length) : editing.context_length,
+      context_length: entry.context_length
+        ? formatTokenCount(entry.context_length)
+        : editing.context_length,
       billing_profile: entry.billing_profile ?? null,
       ...pricingPatch,
     });
@@ -1722,11 +1718,7 @@ function ModalitySelector({
   // when the tie-break toggle below actually matters to the operator.
   const isAudioPairAmbiguous =
     inputModalities.includes('text') && outputModalities.includes('audio');
-  const derived = capabilitiesForModalities(
-    inputModalities,
-    outputModalities,
-    audioGenerationKind,
-  );
+  const derived = capabilitiesForModalities(inputModalities, outputModalities, audioGenerationKind);
 
   const toggleInput = (modality: MediaInputModality) => {
     const next = inputModalities.includes(modality)
@@ -2131,7 +2123,9 @@ function NodeRow({
           ) : null}
           {endpoint.kind === 'media' ? (
             <Badge tone="neutral">
-              {endpoint.generation_kind === 'edit' ? t('generationKindEdit') : t('generationKindCreate')}
+              {endpoint.generation_kind === 'edit'
+                ? t('generationKindEdit')
+                : t('generationKindCreate')}
             </Badge>
           ) : null}
           <Badge tone={endpoint.enabled ? 'success' : 'neutral'}>

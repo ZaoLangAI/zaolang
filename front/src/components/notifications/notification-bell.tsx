@@ -151,7 +151,12 @@ function BellItem({
   const href = targetHref(item);
 
   const content = (
-    <div className={cn('flex w-full gap-2.5 rounded-[var(--radius-sm)] px-2 py-2 text-left', !item.read && 'bg-primary/6')}>
+    <div
+      className={cn(
+        'flex w-full gap-2.5 rounded-[var(--radius-sm)] px-2 py-2 text-left',
+        !item.read && 'bg-primary/6',
+      )}
+    >
       <span
         className={cn(
           'relative mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-soft',
@@ -187,7 +192,12 @@ function BellItem({
           {content}
         </Link>
       ) : (
-        <button type="button" role="menuitem" onClick={onOpen} className="block w-full hover:bg-surface-soft">
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onOpen}
+          className="block w-full hover:bg-surface-soft"
+        >
           {content}
         </button>
       )}

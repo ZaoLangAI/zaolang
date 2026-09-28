@@ -473,8 +473,7 @@ export function VideoGenerationStudio({
   const sourceIsVideo =
     (source?.work.media_type ?? source?.work.current_version?.media_type) === 'video';
   const sourceOutputAssetId = source?.work.current_version?.output_asset_id ?? null;
-  const hasVideoReference =
-    uploads.some((asset) => asset.media_type === 'video') || sourceIsVideo;
+  const hasVideoReference = uploads.some((asset) => asset.media_type === 'video') || sourceIsVideo;
   const hasImageReference = uploads.some((asset) => asset.media_type === 'image');
   let operation: Operation = initialOperation;
   if (initialOperation === 'text_to_video') {
@@ -716,7 +715,13 @@ export function VideoGenerationStudio({
                       />
                       <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
                         {thumbnailUrl ? (
-                          <Image src={thumbnailUrl} alt="" fill sizes="28px" className="object-cover" />
+                          <Image
+                            src={thumbnailUrl}
+                            alt=""
+                            fill
+                            sizes="28px"
+                            className="object-cover"
+                          />
                         ) : null}
                       </span>
                       {character.name}
@@ -754,7 +759,13 @@ export function VideoGenerationStudio({
                       />
                       <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
                         {thumbnailUrl ? (
-                          <Image src={thumbnailUrl} alt="" fill sizes="28px" className="object-cover" />
+                          <Image
+                            src={thumbnailUrl}
+                            alt=""
+                            fill
+                            sizes="28px"
+                            className="object-cover"
+                          />
                         ) : null}
                       </span>
                       {scene.name}
@@ -838,7 +849,10 @@ export function VideoGenerationStudio({
         />
       </div>
 
-      <CollapsibleSection label={t('moreSettings')} icon={<IconGear className="size-4 text-muted" />}>
+      <CollapsibleSection
+        label={t('moreSettings')}
+        icon={<IconGear className="size-4 text-muted" />}
+      >
         <TextInput
           label={t('seed')}
           hint={t('seedHint')}

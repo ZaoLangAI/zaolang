@@ -7,11 +7,7 @@ import { PageHeading } from '@/components/ui/primitives';
 import { serverFetchOrNull } from '@/lib/api/server';
 import type { Draft, StyleGalleryEntry, WorkDetail } from '@/lib/api/types';
 import { STUDIO_PROMPT_MAX_LENGTH } from '@/lib/prompt-limits';
-import {
-  readDraftReturnContext,
-  sanitizeReturnTo,
-  studioSessionKey,
-} from '@/lib/studio-session';
+import { readDraftReturnContext, sanitizeReturnTo, studioSessionKey } from '@/lib/studio-session';
 
 // `image_creation`/`video_creation` are URL-level modes only — the merged
 // "图片创作"/"视频创作" cards from `create-mode-cards.tsx` — not backend
@@ -21,12 +17,7 @@ import {
 // (`ImageGenerationStudio`'s `text_to_image → image_to_image`,
 // `VideoGenerationStudio`'s `text_to_video → image_to_video/video_to_video`
 // — the same "derive from what's attached" pattern on both sides).
-const MODES = [
-  'image_creation',
-  'video_creation',
-  'audio_generation',
-  'music_generation',
-] as const;
+const MODES = ['image_creation', 'video_creation', 'audio_generation', 'music_generation'] as const;
 type Mode = (typeof MODES)[number];
 
 const OPERATION_BY_MODE: Record<

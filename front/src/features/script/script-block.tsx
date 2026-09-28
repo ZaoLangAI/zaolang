@@ -96,7 +96,10 @@ export function ScriptBlockRow({
       <div className="flex items-center gap-2 py-1 text-script-breakpoint">
         <span className="h-px flex-1 border-t border-dashed border-script-breakpoint/40" />
         {breakpointVideoHref ? (
-          <Link href={breakpointVideoHref} className={cn(badgeClassName, 'hover:bg-script-breakpoint/20')}>
+          <Link
+            href={breakpointVideoHref}
+            className={cn(badgeClassName, 'hover:bg-script-breakpoint/20')}
+          >
             {badgeContent}
           </Link>
         ) : (
@@ -104,10 +107,7 @@ export function ScriptBlockRow({
         )}
         <span className="h-px flex-1 border-t border-dashed border-script-breakpoint/40" />
         {block.text ? (
-          <span
-            title={block.text}
-            className="max-w-[40ch] shrink-0 truncate text-xs opacity-80"
-          >
+          <span title={block.text} className="max-w-[40ch] shrink-0 truncate text-xs opacity-80">
             {block.text}
           </span>
         ) : null}

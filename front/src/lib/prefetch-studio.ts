@@ -1,8 +1,5 @@
 export type StudioPrefetchMode =
-  | 'image_creation'
-  | 'video_creation'
-  | 'audio_generation'
-  | 'music_generation';
+  'image_creation' | 'video_creation' | 'audio_generation' | 'music_generation';
 
 /**
  * Warms the `/create/new` studio chunk that a create-mode card will open.

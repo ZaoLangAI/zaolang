@@ -68,13 +68,7 @@ function variablesOf(detail: CreationSkillDetail | undefined): WorkflowVariable[
   });
 }
 
-export function WorkflowPanel({
-  node,
-  canvasId,
-}: {
-  node: CanvasFlowNode;
-  canvasId: string;
-}) {
+export function WorkflowPanel({ node, canvasId }: { node: CanvasFlowNode; canvasId: string }) {
   const t = useTranslations('canvas');
   const tSkill = useTranslations('skillLibrary');
   const skillId = node.data.binding?.skill_id ?? null;
@@ -170,9 +164,7 @@ export function WorkflowPanel({
               value={answers[variable.id]}
               requiredLabel={t('workflow.required')}
               choosePlaceholder={t('workflow.choose')}
-              onChange={(value) =>
-                setAnswers((current) => ({ ...current, [variable.id]: value }))
-              }
+              onChange={(value) => setAnswers((current) => ({ ...current, [variable.id]: value }))}
             />
           ))}
           <Button

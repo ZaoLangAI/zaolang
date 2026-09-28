@@ -145,7 +145,10 @@ export function promptForBreakpointKey(document: ScriptDocument, key: string): s
 }
 
 /** Segment-owned shootable blocks, plus inherited environment when missing. */
-export function displaySegmentBlocks(scene: ScriptScene, breakpointBlockIndex: number): {
+export function displaySegmentBlocks(
+  scene: ScriptScene,
+  breakpointBlockIndex: number,
+): {
   environment: ScriptBlock[];
   blocks: ScriptBlock[];
 } {
@@ -227,7 +230,9 @@ export function applySegmentBlockTexts(
         if (block.type === 'breakpoint') return block;
         const replacement = source[shootableIndex];
         shootableIndex += 1;
-        return replacement ? { ...block, text: replacement.text, character: block.character } : block;
+        return replacement
+          ? { ...block, text: replacement.text, character: block.character }
+          : block;
       }),
     };
   });

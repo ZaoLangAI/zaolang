@@ -93,9 +93,7 @@ def test_create_rejects_a_duplicate_name_for_the_same_owner(db: Session, author:
     assert caught.value.details["fields"]["name"] == "角色名称已存在"
 
 
-def test_update_rejects_renaming_onto_another_characters_name(
-    db: Session, author: User
-) -> None:
+def test_update_rejects_renaming_onto_another_characters_name(db: Session, author: User) -> None:
     characters_service.create_character(
         db,
         user_id=author.id,
@@ -153,9 +151,7 @@ def test_two_owners_may_share_a_character_name(db: Session, author: User) -> Non
         voice_description=None,
     )
     assert mine.id != theirs.id
-    found = characters_service.find_owned_character_by_name(
-        db, user_id=author.id, name=" 林彻 "
-    )
+    found = characters_service.find_owned_character_by_name(db, user_id=author.id, name=" 林彻 ")
     assert found is not None
     assert found.id == mine.id
     assert (

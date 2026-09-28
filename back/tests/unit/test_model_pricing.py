@@ -85,9 +85,7 @@ def test_an_undeclared_token_price_costs_nothing_rather_than_guessing() -> None:
         )
         == 0
     )
-    assert (
-        costs.llm_call_cost_micro_usd(None, prompt_tokens=1_000_000, completion_tokens=0) == 0
-    )
+    assert costs.llm_call_cost_micro_usd(None, prompt_tokens=1_000_000, completion_tokens=0) == 0
 
 
 def test_a_cached_prompt_hit_bills_at_the_cached_rate_not_the_regular_one() -> None:
@@ -251,9 +249,7 @@ def test_a_capability_bills_against_its_own_pricing_section() -> None:
         video=_video_pricing(),
     )
 
-    assert (
-        costs.media_call_cost_micro_usd(pricing, capability="text_to_image") == IMAGE_GENERATION
-    )
+    assert costs.media_call_cost_micro_usd(pricing, capability="text_to_image") == IMAGE_GENERATION
     assert (
         costs.media_call_cost_micro_usd(
             pricing, capability="audio_generation", prompt_characters=10_000

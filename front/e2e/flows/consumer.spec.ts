@@ -69,7 +69,10 @@ test.describe('anonymous browsing', () => {
   // Restore once a fixture-creation helper can publish enough works to sort.
   test.skip('the inspiration wall can be sorted by recency', async ({ page }) => {
     await page.goto('/zh-CN/discover', { waitUntil: 'load' });
-    await page.getByRole('navigation', { name: '排序' }).getByRole('link', { name: '最新' }).click();
+    await page
+      .getByRole('navigation', { name: '排序' })
+      .getByRole('link', { name: '最新' })
+      .click();
     await expect(page).toHaveURL(/sort=recent/);
     await expect(page.getByRole('list', { name: '灵感推荐' })).toBeVisible();
   });
@@ -196,8 +199,12 @@ test.describe('creation', () => {
     // becomes "生成预览" instead of "生成短视频". Not clicked — that would
     // spend real credits on live provider config, same discipline as the
     // H3 config test above.
-    await expect(page.getByRole('radiogroup', { name: '质量档位' }).getByText('快速预览')).toHaveCount(0);
-    await expect(page.getByRole('radiogroup', { name: '质量档位' }).getByText('标准')).toBeVisible();
+    await expect(
+      page.getByRole('radiogroup', { name: '质量档位' }).getByText('快速预览'),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('radiogroup', { name: '质量档位' }).getByText('标准'),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: '生成预览' })).toBeVisible();
   });
 

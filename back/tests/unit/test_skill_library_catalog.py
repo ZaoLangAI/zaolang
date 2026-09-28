@@ -29,9 +29,7 @@ def test_ensure_catalog_skills_plants_the_whole_catalogue(db: Session, author: U
     db.commit()
 
     assert len(created) == len(skill_catalog.CATALOG)
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     assert len(rows) == len(skill_catalog.CATALOG)
     for row in rows:
         assert row.status == CreationSkillStatus.PUBLISHED
@@ -49,9 +47,7 @@ def test_ensure_catalog_skills_is_idempotent(db: Session, author: User) -> None:
     db.commit()
 
     assert second_run == []
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     assert len(rows) == len(skill_catalog.CATALOG)
 
 
@@ -94,9 +90,7 @@ def test_ensure_catalog_skills_backfills_a_cover_for_every_entry(db: Session, au
     skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
     db.commit()
 
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
     assert len(rows) == len(skill_catalog.CATALOG)
     for row in rows:
         item = next(entry for entry in skill_catalog.CATALOG if entry.title == row.title)
@@ -109,9 +103,7 @@ def test_ensure_catalog_skills_backfills_a_cover_for_every_entry(db: Session, au
         assert row.cover_asset_id is not None, f"{row.title} has no cover_asset_id"
 
 
-def test_covers_pending_only_names_entries_that_really_lack_one(
-    db: Session, author: User
-) -> None:
+def test_covers_pending_only_names_entries_that_really_lack_one(db: Session, author: User) -> None:
     """`COVERS_PENDING` is a to-do list, not a mute button: a key stays on it
     only until its JPEG lands, and it may not name an entry that is not in the
     catalogue at all."""
@@ -197,21 +189,15 @@ def test_asset_catalog_entries_are_image_only_recipes() -> None:
             assert "scene" not in params
 
 
-def test_seeded_character_and_scene_assets_get_a_reference_still(
-    db: Session, author: User
-) -> None:
+def test_seeded_character_and_scene_assets_get_a_reference_still(db: Session, author: User) -> None:
     """After `ensure_catalog_skills`, a character/scene recipe's cover is
     also the first `reference_assets` still — the plaza card and a later
     `@` apply share it."""
     skill_library_service.ensure_catalog_skills(db, owner_user_id=author.id)
     db.commit()
 
-    rows = db.scalars(
-        select(CreationSkill).where(CreationSkill.owner_user_id == author.id)
-    ).all()
-    asset_titles = {
-        item.title for item in skill_catalog.CATALOG if item.key.startswith("asset-")
-    }
+    rows = db.scalars(select(CreationSkill).where(CreationSkill.owner_user_id == author.id)).all()
+    asset_titles = {item.title for item in skill_catalog.CATALOG if item.key.startswith("asset-")}
     seeded = [row for row in rows if row.title in asset_titles]
     assert len(seeded) == 24
     for row in seeded:
@@ -428,9 +414,7 @@ def test_format_prompt_suffixes_are_positive_phrasings(db: Session, author: User
 _DRAMA_SUB_PREFIX_COUNTS = {"drama-scene-": 50, "drama-emotion-": 30}
 
 
-def test_the_drama_section_is_split_between_scenes_and_emotions(
-    db: Session, author: User
-) -> None:
+def test_the_drama_section_is_split_between_scenes_and_emotions(db: Session, author: User) -> None:
     """`drama` is the one category `app.agents.skill_matcher` searches, so
     what it contains *is* what plot matching can ever find.
 
@@ -475,9 +459,7 @@ def test_drama_prompt_suffixes_are_positive_phrasings(db: Session, author: User)
         assert not offenders, f"{item.key} uses negative phrasing: {sorted(offenders)}"
 
 
-def test_a_seeded_format_skill_appends_its_rule_to_a_video_job(
-    db: Session, author: User
-) -> None:
+def test_a_seeded_format_skill_appends_its_rule_to_a_video_job(db: Session, author: User) -> None:
     """The `format` category ships through the plain `prompt_suffix` append
     path — no new folding mechanism — so this asserts a rule row behaves
     exactly like a `lens-*` recipe once seeded, only carrying a structural
@@ -542,9 +524,7 @@ def _first_title(prefix: str) -> str:
     over a `frozenset`), so a test can predict which row gets picked without
     hardcoding a Chinese title that would silently go stale on a catalogue
     edit."""
-    return sorted(
-        item.title for item in skill_catalog.CATALOG if item.key.startswith(prefix)
-    )[0]
+    return sorted(item.title for item in skill_catalog.CATALOG if item.key.startswith(prefix))[0]
 
 
 def test_apply_matching_format_skills_picks_one_row_per_weak_dimension(

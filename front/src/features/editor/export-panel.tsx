@@ -54,9 +54,7 @@ export function ExportPanel({
   };
   const defaultKey = pickDefaultProfileKey(profiles, document.canvas, defaultProfile);
   const selectionSeed = `${defaultKey ?? ''}:${canvasOrientation(document.canvas)}`;
-  const [picked, setPicked] = useState<Set<string>>(
-    () => new Set(defaultKey ? [defaultKey] : []),
-  );
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(defaultKey ? [defaultKey] : []));
   const [pickedSeed, setPickedSeed] = useState(selectionSeed);
   if (pickedSeed !== selectionSeed) {
     setPickedSeed(selectionSeed);
@@ -250,7 +248,9 @@ export function ExportPanel({
               <input
                 type="checkbox"
                 checked={acknowledged.checked}
-                onChange={(event) => setAcknowledged({ key: issueKey, checked: event.target.checked })}
+                onChange={(event) =>
+                  setAcknowledged({ key: issueKey, checked: event.target.checked })
+                }
               />
               {t('exportPrecheckAcknowledge')}
             </label>

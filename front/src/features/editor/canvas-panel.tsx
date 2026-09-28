@@ -61,9 +61,7 @@ export function CanvasPanel({
             triggerLabel={t('brandOverlayPick')}
             onSelect={(asset) => setOverlayAssetId(asset.id)}
           />
-          {overlayAssetId ? (
-            <span className="text-xs text-muted">{overlayAssetId}</span>
-          ) : null}
+          {overlayAssetId ? <span className="text-xs text-muted">{overlayAssetId}</span> : null}
           <Button
             size="sm"
             disabled={disabled || !overlayAssetId.trim()}

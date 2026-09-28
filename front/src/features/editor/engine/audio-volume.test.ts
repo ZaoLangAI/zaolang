@@ -57,7 +57,9 @@ describe('layerVolumeAt', () => {
 describe('resolveAudioLayers', () => {
   it('reports a boosted volume keyframe to both preview and export', () => {
     const document = emptyDocument(1080, 1920);
-    document.tracks.find((track) => track.kind === 'audio')!.elements.push(audioClip({ animations: ramp }));
+    document.tracks
+      .find((track) => track.kind === 'audio')!
+      .elements.push(audioClip({ animations: ramp }));
     expect(resolveAudioLayers(document, 1.5 * S)[0]?.volume).toBeCloseTo(1.5, 5);
   });
 });

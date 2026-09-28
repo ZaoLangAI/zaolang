@@ -148,9 +148,7 @@ def matched_reference_skills(
 
     if operation not in copywriter.VIDEO_OPERATIONS_FOR_ENHANCE:
         return []
-    matched_ids = skill_matcher.select_reference_skills(
-        session, brief=prompt, user_id=user_id
-    )
+    matched_ids = skill_matcher.select_reference_skills(session, brief=prompt, user_id=user_id)
     return skill_library_service.load_reference_skills(session, matched_ids)
 
 

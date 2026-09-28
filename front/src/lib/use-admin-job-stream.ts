@@ -178,7 +178,8 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
                 return current;
               });
               setEvents((current) =>
-                payload.sequence != null && current.some((event) => event.sequence === payload.sequence)
+                payload.sequence != null &&
+                current.some((event) => event.sequence === payload.sequence)
                   ? current
                   : [...current, payload],
               );
@@ -272,7 +273,9 @@ function mergeEvents(
     if (event.sequence == null) continue;
     bySequence.set(event.sequence, event);
   }
-  return [...bySequence.values()].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
+  return [...bySequence.values()].sort(
+    (left, right) => (left.sequence ?? 0) - (right.sequence ?? 0),
+  );
 }
 
 function parseFrame(frame: string): AdminStreamedEvent | null {

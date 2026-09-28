@@ -84,7 +84,10 @@ export function formatTimecode(ticks: number, fps: number): string {
   const safe = Math.max(0, ticks);
   const totalSeconds = Math.floor(safe / TICKS_PER_SECOND);
   const remainderTicks = safe - totalSeconds * TICKS_PER_SECOND;
-  const frames = Math.min(Math.max(1, Math.round(fps)) - 1, Math.floor((remainderTicks / TICKS_PER_SECOND) * fps));
+  const frames = Math.min(
+    Math.max(1, Math.round(fps)) - 1,
+    Math.floor((remainderTicks / TICKS_PER_SECOND) * fps),
+  );
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
@@ -127,7 +130,11 @@ export function rulerTicks(zoom: number, fromTicks: number, toTicks: number): Ru
   const minorTicks = Math.max(1, Math.round((majorSeconds * TICKS_PER_SECOND) / minorPerMajor));
   const start = Math.max(0, Math.floor(fromTicks / minorTicks) * minorTicks);
   const out: RulerTick[] = [];
-  for (let at = start, index = Math.round(start / minorTicks); at <= toTicks; at += minorTicks, index++) {
+  for (
+    let at = start, index = Math.round(start / minorTicks);
+    at <= toTicks;
+    at += minorTicks, index++
+  ) {
     out.push({ ticks: at, major: index % minorPerMajor === 0 });
   }
   return out;
@@ -141,7 +148,11 @@ export interface SnapResult {
 }
 
 /** Nearest target within `thresholdTicks`, else the candidate unchanged. */
-export function snapTick(candidate: number, targets: Iterable<number>, thresholdTicks: number): SnapResult {
+export function snapTick(
+  candidate: number,
+  targets: Iterable<number>,
+  thresholdTicks: number,
+): SnapResult {
   let best = candidate;
   let bestDistance = thresholdTicks;
   let hit: number | null = null;
@@ -163,7 +174,11 @@ export function snapTick(candidate: number, targets: Iterable<number>, threshold
  */
 export function collectSnapTargets(
   document: CanonicalDocument,
-  options: { excludeIds?: Iterable<string>; playheadTicks?: number | null; includeMarkers?: boolean } = {},
+  options: {
+    excludeIds?: Iterable<string>;
+    playheadTicks?: number | null;
+    includeMarkers?: boolean;
+  } = {},
 ): number[] {
   const exclude = new Set(options.excludeIds ?? []);
   const targets = new Set<number>([0]);
@@ -195,7 +210,11 @@ export function elementIdsUnderTick(document: CanonicalDocument, atTicks: number
 }
 
 /** Speed (px per frame, signed) for edge auto-scroll given the pointer's distance to the container edges. */
-export function edgeAutoScrollSpeed(pointerPx: number, containerStartPx: number, containerEndPx: number): number {
+export function edgeAutoScrollSpeed(
+  pointerPx: number,
+  containerStartPx: number,
+  containerEndPx: number,
+): number {
   const fromStart = pointerPx - containerStartPx;
   const fromEnd = containerEndPx - pointerPx;
   if (fromStart < EDGE_AUTO_SCROLL_PX) {

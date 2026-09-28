@@ -88,7 +88,7 @@ def test_extract_summary_and_script_falls_back_to_bare_json_without_a_fence() ->
 
 def test_script_text_is_usable_accepts_bare_json_with_real_scenes() -> None:
     raw = (
-        '先改了开场。\n'
+        "先改了开场。\n"
         '{"title": "t", "scenes": [{"heading": "第一场", '
         '"blocks": [{"type": "scene", "character": null, "text": "开场"}]}]}'
     )
@@ -396,7 +396,7 @@ def test_block_type_rules_split_framing_from_camera_movement() -> None:
 
 
 def test_breakpoint_rules_give_a_duration_baseline_to_estimate_with() -> None:
-    """"Estimate the duration" is unactionable on its own — the baselines turn
+    """ "Estimate the duration" is unactionable on its own — the baselines turn
     it into arithmetic against the platform's live per-generation ceiling."""
     rules = copywriter._BREAKPOINT_RULES
 

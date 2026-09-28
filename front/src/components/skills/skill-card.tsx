@@ -91,7 +91,9 @@ export function SkillCard({
         ) : null}
         <div className="mt-3 flex items-center justify-between text-[11px] text-muted">
           <span>{t('byAuthor', { name: skill.author.display_name })}</span>
-          <span className="tabular">{t('usageCount', { count: formatCount(skill.usage_count, locale) })}</span>
+          <span className="tabular">
+            {t('usageCount', { count: formatCount(skill.usage_count, locale) })}
+          </span>
         </div>
       </div>
     </>

@@ -31,7 +31,8 @@ import { TranscriptReviewPanel } from '../transcript-review-panel';
 type Tab = 'media' | 'captions';
 type ViewMode = 'grid' | 'list';
 
-const ACCEPT = 'video/mp4,video/webm,audio/mpeg,audio/wav,audio/mp4,image/png,image/jpeg,image/webp';
+const ACCEPT =
+  'video/mp4,video/webm,audio/mpeg,audio/wav,audio/mp4,image/png,image/jpeg,image/webp';
 
 /**
  * Adapted from OpenCut's `panels/assets/index.tsx` + `tabbar.tsx` — the
@@ -277,7 +278,9 @@ function MediaView({
             {query ? t('mediaSearchEmpty') : t('mediaLibraryEmpty')}
           </p>
         ) : (
-          <ul className={cn('min-w-0 gap-2', view === 'grid' ? 'grid grid-cols-2' : 'flex flex-col')}>
+          <ul
+            className={cn('min-w-0 gap-2', view === 'grid' ? 'grid grid-cols-2' : 'flex flex-col')}
+          >
             {filtered.map((asset) => (
               <li key={asset.id} className="min-w-0">
                 <MediaCard
@@ -285,7 +288,9 @@ function MediaView({
                   view={view}
                   disabled={disabled}
                   onInsert={() => insert(asset)}
-                  onInsertAsSticker={asset.media_type === 'image' ? () => insert(asset, 'sticker') : undefined}
+                  onInsertAsSticker={
+                    asset.media_type === 'image' ? () => insert(asset, 'sticker') : undefined
+                  }
                   onTranscribe={
                     asset.media_type === 'video' || asset.media_type === 'audio'
                       ? () => setTranscribingAssetId(asset.id)
@@ -329,7 +334,8 @@ function MediaCard({
   onTranscribe?: () => void;
 }) {
   const t = useTranslations('editor');
-  const durationLabel = asset.duration_ms != null ? `${(asset.duration_ms / 1000).toFixed(1)}s` : null;
+  const durationLabel =
+    asset.duration_ms != null ? `${(asset.duration_ms / 1000).toFixed(1)}s` : null;
   const kindIcon =
     asset.media_type === 'video' ? (
       <IconVideo className="size-3" />
@@ -341,7 +347,9 @@ function MediaCard({
     <span
       className={cn(
         'relative flex items-center justify-center overflow-hidden bg-track',
-        view === 'grid' ? 'aspect-video w-full' : 'aspect-video w-20 shrink-0 rounded-[var(--radius-sm)]',
+        view === 'grid'
+          ? 'aspect-video w-full'
+          : 'aspect-video w-20 shrink-0 rounded-[var(--radius-sm)]',
       )}
     >
       {asset.media_type === 'image' && asset.url ? (
@@ -359,7 +367,13 @@ function MediaCard({
           className="size-full object-cover"
         />
       ) : asset.media_type === 'video' && asset.url ? (
-        <video src={asset.url} muted preload="metadata" crossOrigin="anonymous" className="size-full object-cover" />
+        <video
+          src={asset.url}
+          muted
+          preload="metadata"
+          crossOrigin="anonymous"
+          className="size-full object-cover"
+        />
       ) : (
         <IconWave className="size-6 text-muted" />
       )}
@@ -419,7 +433,9 @@ function MediaCard({
             {kindIcon}
             {asset.ai_generated ? t('mediaSourceGenerated') : t('mediaSourceUploaded')}
           </span>
-          {view === 'list' ? <span className="truncate font-mono text-[10px]">{asset.id}</span> : null}
+          {view === 'list' ? (
+            <span className="truncate font-mono text-[10px]">{asset.id}</span>
+          ) : null}
         </span>
       </button>
       {view === 'grid' && onInsertAsSticker ? (

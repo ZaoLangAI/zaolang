@@ -44,11 +44,21 @@ export function StyleGalleryFormDialog({
   const t = useTranslations('adminStyleGallery');
 
   return (
-    <Dialog open={open} onClose={onClose} title={entry ? t('editTitle') : t('createTitle')} size="lg">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={entry ? t('editTitle') : t('createTitle')}
+      size="lg"
+    >
       {/* Keyed on the identity of what is being edited, not just `open`: this
           is what re-seeds every field from `entry` on a fresh mount instead of
           reaching for an effect that calls `setState` on every open. */}
-      <StyleGalleryForm key={open ? entry?.id ?? 'create' : 'closed'} entry={entry} onClose={onClose} onSaved={onSaved} />
+      <StyleGalleryForm
+        key={open ? (entry?.id ?? 'create') : 'closed'}
+        entry={entry}
+        onClose={onClose}
+        onSaved={onSaved}
+      />
     </Dialog>
   );
 }

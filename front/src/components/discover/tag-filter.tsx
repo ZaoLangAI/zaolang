@@ -110,11 +110,7 @@ export function DiscoverSort({
   const active = sort ?? 'popular';
 
   return (
-    <nav
-      aria-label={t('sort')}
-      tabIndex={0}
-      className="no-scrollbar flex gap-4 overflow-x-auto"
-    >
+    <nav aria-label={t('sort')} tabIndex={0} className="no-scrollbar flex gap-4 overflow-x-auto">
       {SORT_MODES.map((mode) => {
         const query = feedQuery({ q, tag, sort: mode, access });
         const isActive = active === mode;
@@ -172,11 +168,7 @@ export function DiscoverAccess({
       {ACCESS_MODES.map((mode) => {
         const query = feedQuery({ q, tag, sort, access: mode });
         return (
-          <Chip
-            key={mode}
-            href={query ? { pathname, query } : pathname}
-            active={active === mode}
-          >
+          <Chip key={mode} href={query ? { pathname, query } : pathname} active={active === mode}>
             {t(ACCESS_LABEL[mode])}
           </Chip>
         );

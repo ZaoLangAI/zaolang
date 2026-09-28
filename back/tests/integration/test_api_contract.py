@@ -89,9 +89,7 @@ def test_discovery_lists_only_public_active_works(
     assert private.id not in ids
 
 
-def test_work_list_includes_output_duration(
-    client: TestClient, db: Session, author: User
-) -> None:
+def test_work_list_includes_output_duration(client: TestClient, db: Session, author: User) -> None:
     clip, clip_version = make_work(db, author, title="有时长")
     still, still_version = make_work(db, author, title="静帧")
     video = Asset(

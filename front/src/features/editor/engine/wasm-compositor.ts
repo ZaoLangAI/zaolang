@@ -135,7 +135,8 @@ export class WasmCompositor {
     const perPassSigmaY = sigmaY / Math.sqrt(iterations);
     const stepX = Math.max(1, perPassSigmaX / MAX_SINGLE_PASS_SIGMA);
     const stepY = Math.max(1, perPassSigmaY / MAX_SINGLE_PASS_SIGMA);
-    const passes: Array<{ shader: string; uniforms: Array<{ name: string; value: number[] }> }> = [];
+    const passes: Array<{ shader: string; uniforms: Array<{ name: string; value: number[] }> }> =
+      [];
     for (let i = 0; i < iterations; i += 1) {
       passes.push({
         shader: 'gaussian-blur',
@@ -155,7 +156,12 @@ export class WasmCompositor {
       });
     }
     try {
-      return this.wasmModule.applyEffectPasses({ source, width: this.width, height: this.height, passes });
+      return this.wasmModule.applyEffectPasses({
+        source,
+        width: this.width,
+        height: this.height,
+        passes,
+      });
     } catch {
       return null;
     }

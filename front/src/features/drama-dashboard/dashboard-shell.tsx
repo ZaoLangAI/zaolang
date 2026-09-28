@@ -209,7 +209,10 @@ export function DashboardShell() {
       </div>
 
       {view === 'active' ? (
-        <nav aria-label={t('seriesGenreTags')} className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+        <nav
+          aria-label={t('seriesGenreTags')}
+          className="no-scrollbar flex gap-2 overflow-x-auto pb-1"
+        >
           <button
             type="button"
             onClick={() => setGenre(null)}
@@ -259,8 +262,16 @@ export function DashboardShell() {
               key={series.id}
               className="flex flex-col overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface transition-shadow hover:shadow-raised"
             >
-              <Link href={`/create/short/series/${series.id}`} className="relative flex flex-1 flex-col">
-                <Poster src={series.logo_url} alt={series.title} aspect="square" className="w-full" />
+              <Link
+                href={`/create/short/series/${series.id}`}
+                className="relative flex flex-1 flex-col"
+              >
+                <Poster
+                  src={series.logo_url}
+                  alt={series.title}
+                  aspect="square"
+                  className="w-full"
+                />
                 {view === 'trash' ? (
                   <span className="absolute right-2 top-2 flex gap-1.5">
                     <IconButton

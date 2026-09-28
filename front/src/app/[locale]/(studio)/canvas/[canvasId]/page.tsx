@@ -7,11 +7,7 @@ export async function generateMetadata() {
   return { title: t('title') };
 }
 
-export default async function CanvasPage({
-  params,
-}: {
-  params: Promise<{ canvasId: string }>;
-}) {
+export default async function CanvasPage({ params }: { params: Promise<{ canvasId: string }> }) {
   const { canvasId } = await params;
   return <CanvasShell canvasId={canvasId} />;
 }

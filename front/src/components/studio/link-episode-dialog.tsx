@@ -158,7 +158,9 @@ export function LinkEpisodeDialog({
             options={[
               {
                 value: '',
-                label: seriesId ? t('linkEpisodeEpisodePlaceholder') : t('linkEpisodePickSeriesFirst'),
+                label: seriesId
+                  ? t('linkEpisodeEpisodePlaceholder')
+                  : t('linkEpisodePickSeriesFirst'),
               },
               ...episodes.map((item) => ({
                 value: item.id,

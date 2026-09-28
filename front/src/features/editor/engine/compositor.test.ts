@@ -198,7 +198,9 @@ describe('resolveFrame — transitions', () => {
       incoming: { transition_in: { type: 'crossfade', duration_ticks: TICKS_PER_SECOND } },
     });
     // dip_to_black (outgoing's own) should win, so no transitionLayer ever appears.
-    expect(resolveFrame(document, TICKS_PER_SECOND + TICKS_PER_SECOND / 2).transitionLayer).toBeNull();
+    expect(
+      resolveFrame(document, TICKS_PER_SECOND + TICKS_PER_SECOND / 2).transitionLayer,
+    ).toBeNull();
   });
 
   it('has no effect outside the overlap window', () => {
@@ -248,7 +250,10 @@ describe('resolveFrame — opacity and transform keyframes', () => {
       animations: {
         channels: {
           'transform.x_milli': { kind: 'number', points: [{ at_ticks: 0, value: 300 }] },
-          'transform.scale_millipercent': { kind: 'number', points: [{ at_ticks: 0, value: 150_000 }] },
+          'transform.scale_millipercent': {
+            kind: 'number',
+            points: [{ at_ticks: 0, value: 150_000 }],
+          },
         },
       },
     });
@@ -263,25 +268,27 @@ describe('resolveFrame — opacity and transform keyframes', () => {
 describe('resolveFrame — captions', () => {
   it('includes captions active at the requested tick only', () => {
     const document = documentWithClip();
-    document.tracks.find((track) => track.kind === 'caption')!.elements.push({
-      id: 'el_cap',
-      type: 'caption',
-      track_id: 'trk_caption',
-      asset_id: null,
-      start_ticks: TICKS_PER_SECOND,
-      duration_ticks: TICKS_PER_SECOND,
-      source_in_ticks: 0,
-      source_out_ticks: TICKS_PER_SECOND,
-      volume_millipercent: 100_000,
-      speed_millipercent: 100_000,
-      text: 'hello',
-      caption_language: 'zh-CN',
-      effects: [],
-      mask: null,
-      animations: { channels: {} },
-      transition_in: null,
-      transition_out: null,
-    });
+    document.tracks
+      .find((track) => track.kind === 'caption')!
+      .elements.push({
+        id: 'el_cap',
+        type: 'caption',
+        track_id: 'trk_caption',
+        asset_id: null,
+        start_ticks: TICKS_PER_SECOND,
+        duration_ticks: TICKS_PER_SECOND,
+        source_in_ticks: 0,
+        source_out_ticks: TICKS_PER_SECOND,
+        volume_millipercent: 100_000,
+        speed_millipercent: 100_000,
+        text: 'hello',
+        caption_language: 'zh-CN',
+        effects: [],
+        mask: null,
+        animations: { channels: {} },
+        transition_in: null,
+        transition_out: null,
+      });
     expect(resolveFrame(document, 0).captions).toEqual([]);
     expect(resolveFrame(document, TICKS_PER_SECOND).captions).toEqual(['hello']);
     expect(resolveFrame(document, 2 * TICKS_PER_SECOND).captions).toEqual([]);
@@ -299,8 +306,19 @@ describe('resolveFrame — overlay and canvas', () => {
   });
 });
 
-function extraTrack(kind: TimelineTrack['kind'], overrides: Partial<TimelineTrack> = {}): TimelineTrack {
-  return { id: `trk_${kind}_extra`, kind, elements: [], order: 0, label: null, muted: false, ...overrides };
+function extraTrack(
+  kind: TimelineTrack['kind'],
+  overrides: Partial<TimelineTrack> = {},
+): TimelineTrack {
+  return {
+    id: `trk_${kind}_extra`,
+    kind,
+    elements: [],
+    order: 0,
+    label: null,
+    muted: false,
+    ...overrides,
+  };
 }
 
 describe('activeVideoLayer — multi-track selection', () => {
@@ -318,7 +336,9 @@ describe('activeVideoLayer — multi-track selection', () => {
     const document = documentWithClip(); // covers 0..2s
     const top = extraTrack('video', {
       order: 1,
-      elements: [clipElement({ id: 'el_top', asset_id: 'ast_top', start_ticks: 5 * TICKS_PER_SECOND })],
+      elements: [
+        clipElement({ id: 'el_top', asset_id: 'ast_top', start_ticks: 5 * TICKS_PER_SECOND }),
+      ],
     });
     document.tracks.push(top);
 
@@ -340,9 +360,9 @@ describe('activeVideoLayer — multi-track selection', () => {
 describe('resolveAudioLayers', () => {
   it('mixes every non-muted audio track plus the visible video clip', () => {
     const document = documentWithClip(); // visible video clip, asset ast_1
-    document.tracks.find((track) => track.kind === 'audio')!.elements.push(
-      clipElement({ id: 'el_audio', asset_id: 'ast_audio', track_id: 'trk_audio' }),
-    );
+    document.tracks
+      .find((track) => track.kind === 'audio')!
+      .elements.push(clipElement({ id: 'el_audio', asset_id: 'ast_audio', track_id: 'trk_audio' }));
     const layers = resolveAudioLayers(document, TICKS_PER_SECOND);
     const assetIds = layers.map((layer) => layer.asset_id).sort();
     expect(assetIds).toEqual(['ast_1', 'ast_audio']);
@@ -351,9 +371,9 @@ describe('resolveAudioLayers', () => {
   it('excludes a muted audio track', () => {
     const document = documentWithClip();
     document.tracks.find((track) => track.kind === 'audio')!.muted = true;
-    document.tracks.find((track) => track.kind === 'audio')!.elements.push(
-      clipElement({ id: 'el_audio', asset_id: 'ast_audio', track_id: 'trk_audio' }),
-    );
+    document.tracks
+      .find((track) => track.kind === 'audio')!
+      .elements.push(clipElement({ id: 'el_audio', asset_id: 'ast_audio', track_id: 'trk_audio' }));
     const layers = resolveAudioLayers(document, TICKS_PER_SECOND);
     expect(layers.map((layer) => layer.asset_id)).toEqual(['ast_1']);
   });
@@ -364,9 +384,11 @@ describe('resolveAudioLayers', () => {
       elements: [clipElement({ id: 'el_bgm', asset_id: 'ast_bgm', track_id: 'trk_bgm' })],
     });
     document.tracks.push(bgm);
-    document.tracks.find((track) => track.kind === 'audio')!.elements.push(
-      clipElement({ id: 'el_dialogue', asset_id: 'ast_dialogue', track_id: 'trk_audio' }),
-    );
+    document.tracks
+      .find((track) => track.kind === 'audio')!
+      .elements.push(
+        clipElement({ id: 'el_dialogue', asset_id: 'ast_dialogue', track_id: 'trk_audio' }),
+      );
     const layers = resolveAudioLayers(document, TICKS_PER_SECOND);
     expect(layers.map((layer) => layer.asset_id).sort()).toEqual(['ast_bgm', 'ast_dialogue']);
   });
@@ -383,25 +405,27 @@ describe('resolveAudioLayers', () => {
 
   it('resolves an audio clip volume from a keyframed channel over the playhead', () => {
     const document = emptyDocument(1080, 1920);
-    document.tracks.find((track) => track.kind === 'audio')!.elements.push(
-      clipElement({
-        id: 'el_audio',
-        asset_id: 'ast_audio',
-        track_id: 'trk_audio',
-        volume_millipercent: 100_000,
-        animations: {
-          channels: {
-            volume: {
-              kind: 'number',
-              points: [
-                { at_ticks: 0, value: 0 },
-                { at_ticks: 2 * TICKS_PER_SECOND, value: 100_000 },
-              ],
+    document.tracks
+      .find((track) => track.kind === 'audio')!
+      .elements.push(
+        clipElement({
+          id: 'el_audio',
+          asset_id: 'ast_audio',
+          track_id: 'trk_audio',
+          volume_millipercent: 100_000,
+          animations: {
+            channels: {
+              volume: {
+                kind: 'number',
+                points: [
+                  { at_ticks: 0, value: 0 },
+                  { at_ticks: 2 * TICKS_PER_SECOND, value: 100_000 },
+                ],
+              },
             },
           },
-        },
-      }),
-    );
+        }),
+      );
     const layers = resolveAudioLayers(document, TICKS_PER_SECOND);
     const audioLayer = layers.find((layer) => layer.asset_id === 'ast_audio')!;
     expect(audioLayer.volume).toBeCloseTo(0.5, 5);

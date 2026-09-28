@@ -52,11 +52,7 @@ export function DetailDrawer({
 
   return (
     <>
-      <div
-        aria-hidden="true"
-        onClick={onClose}
-        className="fixed inset-0 z-40 bg-overlay"
-      />
+      <div aria-hidden="true" onClick={onClose} className="fixed inset-0 z-40 bg-overlay" />
       <div
         ref={panelRef}
         role="dialog"

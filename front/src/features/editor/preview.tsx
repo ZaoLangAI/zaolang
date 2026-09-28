@@ -262,7 +262,11 @@ export function Preview({
         <ToolbarButton label={t('stepBack')} shortcut="←" onClick={() => actions.stepFrames(-1)}>
           <IconStepBack />
         </ToolbarButton>
-        <ToolbarButton label={playing ? t('pause') : t('play')} shortcut="Space" onClick={actions.togglePlay}>
+        <ToolbarButton
+          label={playing ? t('pause') : t('play')}
+          shortcut="Space"
+          onClick={actions.togglePlay}
+        >
           {playing ? <IconPause /> : <IconPlay />}
         </ToolbarButton>
         <ToolbarButton label={t('stepForward')} shortcut="→" onClick={() => actions.stepFrames(1)}>
@@ -275,7 +279,10 @@ export function Preview({
           {timecode}
         </span>
         <span className="ml-auto text-[10px] text-muted">{t('previewScrubMuted')}</span>
-        <ToolbarButton label={fullscreen ? t('exitFullscreen') : t('fullscreen')} onClick={toggleFullscreen}>
+        <ToolbarButton
+          label={fullscreen ? t('exitFullscreen') : t('fullscreen')}
+          onClick={toggleFullscreen}
+        >
           <IconFullscreen />
         </ToolbarButton>
       </div>

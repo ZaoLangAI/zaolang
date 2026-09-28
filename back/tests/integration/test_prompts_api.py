@@ -363,9 +363,7 @@ def test_scene_enhance_asks_follow_ups_then_stops_once_they_are_answered(
         "operation": "text_to_image",
         "asset_kind": "scene",
     }
-    first = client.post(
-        "/v1/generation/prompts/enhance", json=payload, headers=auth_header(author)
-    )
+    first = client.post("/v1/generation/prompts/enhance", json=payload, headers=auth_header(author))
     assert first.status_code == 200, first.text
     asked = _enhance_complete(first)["questions"]
     assert [question["id"] for question in asked] == ["space_type", "anchor"]

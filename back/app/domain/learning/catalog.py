@@ -256,10 +256,7 @@ CATALOG: tuple[LearnPostSeed, ...] = (
     LearnPostSeed(
         key="credits-and-cost-basics",
         title="看懂积分账本：每次生成花的是什么钱",
-        summary=(
-            "提交任务时积分怎么扣、失败会不会退——搞懂预扣与结算规则，"
-            "创作前先算清楚这笔账。"
-        ),
+        summary=("提交任务时积分怎么扣、失败会不会退——搞懂预扣与结算规则，创作前先算清楚这笔账。"),
         level=LearnPostLevel.BEGINNER,
         body_markdown=_CREDITS_BODY,
     ),
@@ -268,8 +265,7 @@ CATALOG: tuple[LearnPostSeed, ...] = (
         key="character-consistency-library",
         title="人物不跳脸：用角色库留住同一张脸",
         summary=(
-            "靠一张参考图不够稳——建一个带正/侧/背视图的角色资产，"
-            '每次生成都用它，把"这是谁"锁死。'
+            '靠一张参考图不够稳——建一个带正/侧/背视图的角色资产，每次生成都用它，把"这是谁"锁死。'
         ),
         level=LearnPostLevel.INTERMEDIATE,
         body_markdown=_CHARACTER_BODY,
@@ -277,10 +273,7 @@ CATALOG: tuple[LearnPostSeed, ...] = (
     LearnPostSeed(
         key="scene-asset-space-continuity",
         title="场景资产怎么用：让每一集共享同一个空间",
-        summary=(
-            "都市霓虹后巷、豪门客厅——用场景库固定空间细节，"
-            '同一个场景在多集里不"重新装修"。'
-        ),
+        summary=('都市霓虹后巷、豪门客厅——用场景库固定空间细节，同一个场景在多集里不"重新装修"。'),
         level=LearnPostLevel.INTERMEDIATE,
         body_markdown=_SCENE_BODY,
     ),
@@ -318,10 +311,7 @@ CATALOG: tuple[LearnPostSeed, ...] = (
     LearnPostSeed(
         key="from-draft-to-publish",
         title="从生成到发布：进入剪辑、导出与发布流程",
-        summary=(
-            "片段生成之后去哪儿？进入剪辑精修、导出成片、绑定草稿，"
-            "走完发布前的完整链路。"
-        ),
+        summary=("片段生成之后去哪儿？进入剪辑精修、导出成片、绑定草稿，走完发布前的完整链路。"),
         level=LearnPostLevel.ADVANCED,
         body_markdown=_FROM_DRAFT_TO_PUBLISH_BODY,
     ),

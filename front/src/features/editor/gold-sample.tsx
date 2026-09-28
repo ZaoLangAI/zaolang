@@ -96,7 +96,12 @@ export function GoldSample() {
         new Set(),
       );
       let blob: Blob | undefined;
-      for await (const progress of runner.export(spec, testDocument, [], new AbortController().signal)) {
+      for await (const progress of runner.export(
+        spec,
+        testDocument,
+        [],
+        new AbortController().signal,
+      )) {
         blob = progress.blob ?? blob;
       }
       if (!blob) throw new Error('empty_export');

@@ -40,9 +40,7 @@ export default async function PublishPage({ params }: Params) {
 
   return (
     <div className="mx-auto flex w-full max-w-[1160px] flex-col gap-6 px-4 py-8 sm:px-6">
-      <GoBackLink fallbackHref={publishBackHref(draft)}>
-        {tCreate('backToPrevious')}
-      </GoBackLink>
+      <GoBackLink fallbackHref={publishBackHref(draft)}>{tCreate('backToPrevious')}</GoBackLink>
       <PageHeading eyebrow={t('eyebrow')} title={t('title')} />
       <PublishForm draft={draft} />
     </div>

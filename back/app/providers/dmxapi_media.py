@@ -120,6 +120,7 @@ def music_style_for_model(model: str) -> frozenset[str] | None:
     music_style_for_model` for the fal SFX half)."""
     return frozenset({"music"}) if model in _MUSIC_MODELS else None
 
+
 # The polling `model` id each video family answers to — DMXAPI's own
 # `"{family}-get"` convention, confirmed on doc.dmxapi.cn's text-to-video page
 # for three of the four. `MiniMax-H3-video_regeneration`'s own poll model id

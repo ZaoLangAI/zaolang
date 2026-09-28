@@ -67,7 +67,12 @@ export function VideoUploadField({
 
       {asset ? (
         <div className="relative overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface-soft">
-          <video src={asset.url ?? undefined} controls preload="metadata" className="max-h-72 w-full" />
+          <video
+            src={asset.url ?? undefined}
+            controls
+            preload="metadata"
+            className="max-h-72 w-full"
+          />
           <div className="flex items-center justify-between gap-3 border-t border-border bg-surface px-3 py-2">
             <p className="truncate text-xs text-muted">
               {formatBytes(asset.size_bytes, locale)}

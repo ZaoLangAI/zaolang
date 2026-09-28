@@ -86,8 +86,10 @@ const iconButtonSizes: Record<Size, string> = {
   lg: 'size-13 rounded-[var(--radius-md)]',
 };
 
-export interface IconButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+export interface IconButtonProps extends Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  'children'
+> {
   variant?: Variant;
   size?: Size;
   loading?: boolean;
@@ -107,7 +109,17 @@ export interface IconButtonProps
  * not collapse cleanly to a centered square.
  */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { variant = 'ghost', size = 'sm', loading = false, label, className, children, disabled, type = 'button', ...rest },
+  {
+    variant = 'ghost',
+    size = 'sm',
+    loading = false,
+    label,
+    className,
+    children,
+    disabled,
+    type = 'button',
+    ...rest
+  },
   ref,
 ) {
   return (

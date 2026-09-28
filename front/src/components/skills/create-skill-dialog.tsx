@@ -11,14 +11,7 @@ import { ErrorNotice } from '@/components/ui/primitives';
 import { api } from '@/lib/api/client';
 import type { CreationSkillCategory, CreationSkillDetail } from '@/lib/api/types';
 
-const CATEGORIES: CreationSkillCategory[] = [
-  'scene',
-  'lens',
-  'style',
-  'format',
-  'drama',
-  'other',
-];
+const CATEGORIES: CreationSkillCategory[] = ['scene', 'lens', 'style', 'format', 'drama', 'other'];
 
 /**
  * Creates a `CreationSkill` (always starts as a private draft).

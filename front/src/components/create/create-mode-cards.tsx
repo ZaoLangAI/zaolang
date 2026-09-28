@@ -25,11 +25,7 @@ import type { Me } from '@/lib/api/types';
 import { prefetchStudio, type StudioPrefetchMode } from '@/lib/prefetch-studio';
 
 type ModeId =
-  | 'script'
-  | 'image_creation'
-  | 'video_creation'
-  | 'audio_generation'
-  | 'music_generation';
+  'script' | 'image_creation' | 'video_creation' | 'audio_generation' | 'music_generation';
 
 const MODES: Array<{
   id: ModeId;
@@ -184,7 +180,8 @@ export function CreateModeCards({ className }: { className?: string }) {
                 className="mt-4"
                 disabled={!available}
                 onFocus={() => {
-                  if (available && mode.id !== 'script') prefetchStudio(mode.id as StudioPrefetchMode);
+                  if (available && mode.id !== 'script')
+                    prefetchStudio(mode.id as StudioPrefetchMode);
                 }}
                 onClick={() =>
                   requireAuth({ label: label.title, run: () => router.push(mode.href) })

@@ -148,9 +148,7 @@ def stream_plan_timeline(
     return chunks, finish
 
 
-def _sanitize_plan_outcome(
-    outcome: AgentOutcome, *, goal: str, max_commands: int
-) -> AgentOutcome:
+def _sanitize_plan_outcome(outcome: AgentOutcome, *, goal: str, max_commands: int) -> AgentOutcome:
     commands = outcome.data.get("commands")
     if not isinstance(commands, list):
         outcome.data["commands"] = []

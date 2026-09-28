@@ -219,9 +219,7 @@ def test_image_generation_time_limits_single_pass() -> None:
 
 
 def test_image_generation_time_limits_scale_with_character_views() -> None:
-    two = _limits_job(
-        asset_kind=ImageAssetKind.CHARACTER.value, character_views=["side", "back"]
-    )
+    two = _limits_job(asset_kind=ImageAssetKind.CHARACTER.value, character_views=["side", "back"])
     three = _limits_job(
         asset_kind=ImageAssetKind.CHARACTER.value,
         character_views=["front", "side", "back"],

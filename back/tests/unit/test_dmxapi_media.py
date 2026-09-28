@@ -78,7 +78,12 @@ class _FakeResponse:
 
 
 def test_every_video_model_has_a_profile() -> None:
-    for model in (MINIMAX_H3_MODEL, MINIMAX_H3_REGENERATION_MODEL, DOUBAO_SEEDANCE_25_MODEL, WAN3_VIDEO_MODEL):
+    for model in (
+        MINIMAX_H3_MODEL,
+        MINIMAX_H3_REGENERATION_MODEL,
+        DOUBAO_SEEDANCE_25_MODEL,
+        WAN3_VIDEO_MODEL,
+    ):
         assert video_model_profile(model) is not None
 
 
@@ -111,8 +116,12 @@ def test_minimax_h3_first_last_frame_roles(monkeypatch: pytest.MonkeyPatch) -> N
         _request(
             Operation.IMAGE_TO_VIDEO.value,
             references=[
-                ProviderReference(object_key="first.png", media_type="image", frame_type="first_frame"),
-                ProviderReference(object_key="last.png", media_type="image", frame_type="last_frame"),
+                ProviderReference(
+                    object_key="first.png", media_type="image", frame_type="first_frame"
+                ),
+                ProviderReference(
+                    object_key="last.png", media_type="image", frame_type="last_frame"
+                ),
             ],
         )
     )
@@ -126,7 +135,9 @@ def test_minimax_h3_first_last_frame_roles(monkeypatch: pytest.MonkeyPatch) -> N
     assert items[2]["role"] == "last_frame"
 
 
-def test_minimax_h3_generic_reference_gets_a_reference_role(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_minimax_h3_generic_reference_gets_a_reference_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
     body = _build_minimax_h3_body(
         _request(
@@ -155,14 +166,20 @@ def test_regeneration_body_carries_the_original_prompt_and_base_video(
         _request(
             Operation.VIDEO_TO_VIDEO.value,
             references=[
-                ProviderReference(object_key="source.mp4", media_type="video", frame_type="base_video")
+                ProviderReference(
+                    object_key="source.mp4", media_type="video", frame_type="base_video"
+                )
             ],
         )
     )
     assert body["model"] == MINIMAX_H3_REGENERATION_MODEL
     assert body["input"] == [
         {"type": "text", "text": "一只在雨夜霓虹街道上奔跑的机械狐狸"},
-        {"type": "video_url", "video_url": {"url": "https://signed.invalid/source.mp4"}, "role": "base_video"},
+        {
+            "type": "video_url",
+            "video_url": {"url": "https://signed.invalid/source.mp4"},
+            "role": "base_video",
+        },
     ]
 
 
@@ -219,8 +236,12 @@ def test_seedance_25_first_last_frame_go_into_input_with_adaptive_ratio(
             Operation.IMAGE_TO_VIDEO.value,
             aspect_ratio="16:9",
             references=[
-                ProviderReference(object_key="first.png", media_type="image", frame_type="first_frame"),
-                ProviderReference(object_key="last.png", media_type="image", frame_type="last_frame"),
+                ProviderReference(
+                    object_key="first.png", media_type="image", frame_type="first_frame"
+                ),
+                ProviderReference(
+                    object_key="last.png", media_type="image", frame_type="last_frame"
+                ),
             ],
         )
     )
@@ -243,7 +264,9 @@ def test_seedance_25_video_frame_images_and_input_references_are_exclusive(
             _request(
                 Operation.IMAGE_TO_VIDEO.value,
                 references=[
-                    ProviderReference(object_key="a.png", media_type="image", frame_type="first_frame"),
+                    ProviderReference(
+                        object_key="a.png", media_type="image", frame_type="first_frame"
+                    ),
                     ProviderReference(object_key="b.mp4", media_type="video"),
                 ],
             )
@@ -313,7 +336,9 @@ def test_seedream_multi_image_fusion(monkeypatch: pytest.MonkeyPatch) -> None:
     assert body["image"] == ["https://signed.invalid/a.png", "https://signed.invalid/b.png"]
 
 
-def test_seedream_single_reference_is_not_wrapped_in_a_list(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_seedream_single_reference_is_not_wrapped_in_a_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(s3, "presign_get", lambda key, **kwargs: f"https://signed.invalid/{key}")
     body = _build_seedream_body(
         _request(
@@ -410,7 +435,9 @@ def test_poll_minimax_h3_downloads_the_finished_video(monkeypatch: pytest.Monkey
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     monkeypatch.setattr(httpx.Client, "get", fake_get)
     provider = _provider(Operation.TEXT_TO_VIDEO.value, MINIMAX_H3_MODEL)
-    result = provider.poll("427019898360251", _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5))
+    result = provider.poll(
+        "427019898360251", _request(Operation.TEXT_TO_VIDEO.value, duration_seconds=5)
+    )
 
     assert result.succeeded is True
     assert result.mime_type == "video/mp4"
@@ -429,7 +456,9 @@ def test_poll_minimax_h3_stays_pending_while_running(monkeypatch: pytest.MonkeyP
     assert result.succeeded is False
 
 
-def _poll_error_response(status_code: int, *, json_body: dict | None = None, text: str = "") -> httpx.Response:
+def _poll_error_response(
+    status_code: int, *, json_body: dict | None = None, text: str = ""
+) -> httpx.Response:
     request = httpx.Request("POST", "https://www.dmxapi.cn/v1/responses")
     if json_body is not None:
         return httpx.Response(status_code, json=json_body, request=request)
@@ -558,7 +587,9 @@ def test_poll_wan3_stays_pending_while_task_status_is_pending(
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
         return _FakeResponse(
             json_body={
-                "output": [{"type": "message", "content": [{"type": "output_text", "text": "e47a17af"}]}],
+                "output": [
+                    {"type": "message", "content": [{"type": "output_text", "text": "e47a17af"}]}
+                ],
                 "provider_metadata": {"task_id": "e47a17af", "task_status": "PENDING"},
             }
         )
@@ -629,7 +660,9 @@ def test_cancel_is_always_unsupported() -> None:
 # -- provider submit(): audio (synchronous) ----------------------------------
 
 
-def test_submit_gpt4o_mini_tts_stores_the_raw_response_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_submit_gpt4o_mini_tts_stores_the_raw_response_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     audio_bytes = b"\xff\xfbfake-mp3-payload"
 
     def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
@@ -644,9 +677,7 @@ def test_submit_gpt4o_mini_tts_stores_the_raw_response_bytes(monkeypatch: pytest
 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     provider = _provider(Operation.AUDIO_GENERATION.value, AUDIO_MODEL_GPT4O_MINI_TTS)
-    result = provider.submit(
-        _request(Operation.AUDIO_GENERATION.value, extra={"voice": "nova"})
-    )
+    result = provider.submit(_request(Operation.AUDIO_GENERATION.value, extra={"voice": "nova"}))
 
     assert result.succeeded is True
     assert result.mime_type == "audio/mpeg"
@@ -712,9 +743,7 @@ def test_submit_audio_falls_back_to_a_default_voice_when_the_caller_omits_one(
 
 
 def test_build_music_body_omits_lyrics_by_default() -> None:
-    body = _build_music_body(
-        _request(Operation.MUSIC_GENERATION.value, prompt="轻快的夏日民谣")
-    )
+    body = _build_music_body(_request(Operation.MUSIC_GENERATION.value, prompt="轻快的夏日民谣"))
     assert body == {
         "model": MUSIC_MODEL_DMX,
         "input": "轻快的夏日民谣",
@@ -754,7 +783,10 @@ def test_extract_music_result_reads_output_text_and_extra_info_duration() -> Non
     url, duration_ms = extract_music_result(
         {
             "output": [
-                {"type": "message", "content": [{"type": "output_text", "text": "https://cdn.invalid/song.mp3"}]}
+                {
+                    "type": "message",
+                    "content": [{"type": "output_text", "text": "https://cdn.invalid/song.mp3"}],
+                }
             ],
             "extra_info": {"music_duration": 32000},
         }

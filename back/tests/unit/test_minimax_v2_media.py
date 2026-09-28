@@ -92,9 +92,7 @@ def test_text_to_video_body_uses_content_not_input() -> None:
 
 
 def test_text_to_video_remaps_adaptive_ratio_to_16_9() -> None:
-    body = build_generation_body(
-        _request(Operation.TEXT_TO_VIDEO.value, aspect_ratio="adaptive")
-    )
+    body = build_generation_body(_request(Operation.TEXT_TO_VIDEO.value, aspect_ratio="adaptive"))
     assert body["ratio"] == "16:9"
 
 

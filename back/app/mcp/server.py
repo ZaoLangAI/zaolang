@@ -383,7 +383,12 @@ def _call_tool(
                 asset = session.get(Asset, analysis.asset_id)
                 if asset is not None and asset.owner_user_id == principal.user_id:
                     result = {"transcript": analysis.transcript_json}
-            return {"id": analysis.id, "kind": "media_analysis", "status": analysis.status, **result}
+            return {
+                "id": analysis.id,
+                "kind": "media_analysis",
+                "status": analysis.status,
+                **result,
+            }
         raise ValidationFailed("操作不存在。")
     if name == "editor.cancel_operation":
         export = export_service.request_cancel(

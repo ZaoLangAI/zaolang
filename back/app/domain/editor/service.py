@@ -739,9 +739,7 @@ def maybe_fill_episode_preview(
     return episode
 
 
-def _try_fill_episode_preview(
-    session: Session, *, episode: DramaEpisode, user_id: str
-) -> None:
+def _try_fill_episode_preview(session: Session, *, episode: DramaEpisode, user_id: str) -> None:
     """Auto-fill must never fail the write that produced the video."""
     try:
         maybe_fill_episode_preview(session, episode=episode, actor_user_id=user_id)
@@ -1117,9 +1115,7 @@ def _default_full_cut(session: Session, *, episode_id: str) -> EpisodeCut | None
     ).first()
 
 
-def _clear_stale_link_episode_id(
-    session: Session, *, job: GenerationJob, episode_id: str
-) -> None:
+def _clear_stale_link_episode_id(session: Session, *, job: GenerationJob, episode_id: str) -> None:
     """Drop a draft pointer whose episode row is gone so the shell-creating
     fallback can write a fresh `link_episode_id`. Copy-then-reassign: a
     nested JSON mutation is otherwise silently lost."""

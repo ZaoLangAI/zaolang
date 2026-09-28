@@ -9,20 +9,11 @@
  * locked.
  */
 
-const TERMINAL_JOB_STATUSES = new Set([
-  'succeeded',
-  'failed',
-  'cancelled',
-  'expired',
-]);
+const TERMINAL_JOB_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
 
 export type StudioSubmitBusy = 'submitting' | 'polishing' | 'generating' | null;
 
-export type StudioSubmitLabelKey =
-  | 'submit'
-  | 'submitting'
-  | 'submitGenerating'
-  | 'submitPolishing';
+export type StudioSubmitLabelKey = 'submit' | 'submitting' | 'submitGenerating' | 'submitPolishing';
 
 export function studioSubmitLabelKey(busy: StudioSubmitBusy): StudioSubmitLabelKey {
   if (busy === 'submitting') return 'submitting';

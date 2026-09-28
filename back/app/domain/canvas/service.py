@@ -255,9 +255,7 @@ def _node_asset_urls(session: Session, project: CanvasProject) -> dict[str, Any]
     }
 
 
-def domain_snapshot(
-    session: Session, project: CanvasProject, *, viewer_id: str
-) -> dict[str, Any]:
+def domain_snapshot(session: Session, project: CanvasProject, *, viewer_id: str) -> dict[str, Any]:
     """Everything a drama-mode canvas needs to render, in one read.
 
     Without this the client would repeat `episode-panel.tsx`'s per-row

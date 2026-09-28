@@ -45,7 +45,9 @@ def purge_idempotency_records(
 ) -> int:
     cutoff = utcnow() - dt.timedelta(days=older_than_days)
     return _delete_in_batches(
-        session, IdempotencyRecord, select(IdempotencyRecord.id).where(IdempotencyRecord.created_at < cutoff)
+        session,
+        IdempotencyRecord,
+        select(IdempotencyRecord.id).where(IdempotencyRecord.created_at < cutoff),
     )
 
 

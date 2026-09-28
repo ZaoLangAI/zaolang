@@ -1220,9 +1220,7 @@ def _enable_video_analysis(session: Session, actor: User) -> None:
     from app.platform_config import service as config_service
     from app.platform_config.schemas import FeatureFlags
 
-    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(
-        mode="json"
-    )
+    value = config_service.get_typed(session, "feature_flags", FeatureFlags).model_dump(mode="json")
     value["video_analysis_enabled"] = True
     config_service.set_value(session, "feature_flags", value, actor_user_id=actor.id, note="test")
 
@@ -1307,9 +1305,7 @@ def test_video_analysis_settles_into_structured_analysis_and_the_operation_filte
     assert result.job.analysis_result_json is not None
     assert result.job.analysis_result_json["composed_prompt"]
 
-    body = client.get(
-        f"/v1/generation-jobs/{result.job.id}", headers=auth_header(funded)
-    ).json()
+    body = client.get(f"/v1/generation-jobs/{result.job.id}", headers=auth_header(funded)).json()
     assert body["analysis"]["composed_prompt"] == result.job.analysis_result_json["composed_prompt"]
     assert body["analysis"]["shots"][0]["camera_movement"]
     assert body["output_asset_id"] is None

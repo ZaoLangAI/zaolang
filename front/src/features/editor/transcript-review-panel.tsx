@@ -182,7 +182,9 @@ export function TranscriptReviewPanel({
           {segments.length === 0 ? <p className="text-muted">{t('transcribeEmpty')}</p> : null}
           <Button
             size="sm"
-            disabled={disabled || !segments.some((segment) => segment.included && segment.text.trim())}
+            disabled={
+              disabled || !segments.some((segment) => segment.included && segment.text.trim())
+            }
             onClick={insertSelected}
           >
             {t('transcribeInsert')}

@@ -625,9 +625,7 @@ def test_only_the_owner_can_appeal_a_hidden_work(
     assert response.status_code == 403
 
 
-def test_an_active_work_cannot_be_appealed(
-    client: TestClient, work: Work, author: User
-) -> None:
+def test_an_active_work_cannot_be_appealed(client: TestClient, work: Work, author: User) -> None:
     response = client.post(
         f"/v1/works/{work.id}/appeal",
         json={"reason": "作品并没有被隐藏。"},

@@ -13,9 +13,9 @@ const draft = (overrides: Partial<Draft> = {}): Draft =>
 
 describe('generatedVideoDetailHref', () => {
   it('routes a work link to the work page without waiting for work details', () => {
-    expect(
-      generatedVideoDetailHref({ contentType: 'work', contentRefId: 'w_abc' }),
-    ).toBe('/work/w_abc');
+    expect(generatedVideoDetailHref({ contentType: 'work', contentRefId: 'w_abc' })).toBe(
+      '/work/w_abc',
+    );
   });
 
   it('routes a published draft to the published work', () => {

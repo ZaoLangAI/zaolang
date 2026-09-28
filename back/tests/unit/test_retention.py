@@ -183,9 +183,7 @@ def test_purge_job_events_only_touches_old_terminal_jobs(db: Session, author: Us
     deleted = retention.purge_job_events(db)
 
     assert deleted == 1
-    remaining_job_ids = set(
-        db.scalars(select(JobEvent.job_id))
-    )
+    remaining_job_ids = set(db.scalars(select(JobEvent.job_id)))
     assert terminal_and_old.id not in remaining_job_ids
     assert terminal_but_recent.id in remaining_job_ids
     assert still_running.id in remaining_job_ids

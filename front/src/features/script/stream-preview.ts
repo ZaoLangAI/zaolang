@@ -33,7 +33,8 @@ export function isWritingScriptBody(rawText: string): boolean {
  */
 export function extractStreamingSummary(rawText: string): string {
   const fenceIndex = rawText.indexOf(JSON_FENCE_MARKER);
-  const summary = fenceIndex === -1 ? rawText.replace(PARTIAL_FENCE_TAIL, '') : rawText.slice(0, fenceIndex);
+  const summary =
+    fenceIndex === -1 ? rawText.replace(PARTIAL_FENCE_TAIL, '') : rawText.slice(0, fenceIndex);
   return summary.trim();
 }
 

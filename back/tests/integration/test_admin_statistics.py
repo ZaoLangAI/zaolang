@@ -271,9 +271,7 @@ def test_spend_older_than_the_window_is_not_counted(
     client: TestClient, db: Session, admin: User, priced_spend: None
 ) -> None:
     db.query(AgentRun).update({AgentRun.created_at: utcnow() - dt.timedelta(days=30)})
-    db.query(ProviderAttempt).update(
-        {ProviderAttempt.created_at: utcnow() - dt.timedelta(days=30)}
-    )
+    db.query(ProviderAttempt).update({ProviderAttempt.created_at: utcnow() - dt.timedelta(days=30)})
     db.flush()
     db.commit()
 

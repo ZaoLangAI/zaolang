@@ -85,9 +85,7 @@ describe('characterSheetAsset', () => {
 
 describe('isCharacterCompletionJob', () => {
   it('is a character job whose views omit front', () => {
-    expect(
-      isCharacterCompletionJob(job({ character_views: ['side', 'back'] })),
-    ).toBe(true);
+    expect(isCharacterCompletionJob(job({ character_views: ['side', 'back'] }))).toBe(true);
     expect(isCharacterCompletionJob(job({ character_views: ['front'] }))).toBe(false);
     expect(isCharacterCompletionJob(job({ asset_kind: 'scene' }))).toBe(false);
   });

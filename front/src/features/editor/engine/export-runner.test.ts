@@ -23,7 +23,8 @@ describe('SequentialExportRunner.preflight', () => {
     originalUserAgent = navigator.userAgent;
     originalVideoEncoder = (globalThis as Record<string, unknown>).VideoEncoder;
     Object.defineProperty(navigator, 'userAgent', {
-      value: 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
+      value:
+        'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
       configurable: true,
     });
     (globalThis as Record<string, unknown>).VideoEncoder = class {};
@@ -54,7 +55,8 @@ describe('SequentialExportRunner.preflight', () => {
 
   it('rejects a non-Chrome/Edge browser', async () => {
     Object.defineProperty(navigator, 'userAgent', {
-      value: 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+      value:
+        'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
       configurable: true,
     });
     const report = await new SequentialExportRunner().preflight(BASE_SPEC);
@@ -63,7 +65,8 @@ describe('SequentialExportRunner.preflight', () => {
 
   it('rejects a mobile Chrome user agent', async () => {
     Object.defineProperty(navigator, 'userAgent', {
-      value: 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36',
+      value:
+        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36',
       configurable: true,
     });
     const report = await new SequentialExportRunner().preflight(BASE_SPEC);
