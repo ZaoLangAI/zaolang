@@ -56,8 +56,8 @@ for (const file of walk(join(root, 'src'))) {
     for (const match of source.matchAll(usage)) {
       // A call belongs to the nearest binding above it; a call above every
       // binding (e.g. a helper hoisted over its component) falls back to the first.
-      const namespace = declarations.findLast((d) => d.index < match.index)?.namespace
-        ?? declarations[0].namespace;
+      const namespace =
+        declarations.findLast((d) => d.index < match.index)?.namespace ?? declarations[0].namespace;
       if (!has(namespace, match[1])) {
         missing.push(`${file.slice(root.length + 1)}: ${namespace}.${match[1]}`);
       }
