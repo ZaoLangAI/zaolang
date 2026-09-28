@@ -34,7 +34,7 @@ description: Test system — pytest layers (unit/hypothesis/integration/concurre
 5. Concurrency: no rollback session; each worker ends its own transaction (`race()` rolls back before re-raise); every session sets `lock_timeout` 5s so deadlocks fail, not hang. `run_in_parallel` returns exceptions; assert exactly one winner and that the loser failed for a concurrency reason (`Conflict`/`InsufficientCredits`/`SQLAlchemyError`).
 6. Playwright reuses sessions because `/v1/auth/login` is limited to 10/5 min (`auth_attempt` in `back/app/api/rate_limit.py`). `setup` signs in five accounts into `e2e/.auth/*.json`; each extra stored session costs budget. Anonymous tests set `storageState: { cookies: [], origins: [] }`.
 7. `baseURL` uses `localhost`, not `127.0.0.1` (admin cookie is `SameSite=Strict`); backend `CORS_ORIGINS` must include 3000 and 3100.
-8. `watchForPageErrors` allowlist (`EXPECTED_FAILURES` in `front/e2e/support/session.ts`) stays minimal; spec-specific noise gets a local filter (e.g. `isExpiredSeedMedia` in `canvas.spec.ts`).
+8. `watchForPageErrors` allowlist (`EXPECTED_FAILURES` in `front/e2e/support/session.ts`) stays minimal; spec-specific noise gets a local filter (e.g. `isMissingSeedMedia` in `canvas.spec.ts`).
 9. Visual suite asserts mechanics only (no horizontal overflow at three viewports, no console errors, reduced-motion ≤50ms); screenshots are for humans. a11y scans both themes incl. `color-contrast`.
 10. Desktop-only routes (drama editor, canvas) stay out of `a11y-mobile` and `PUBLIC_PAGES`.
 11. `front/.env.local` needs `ALLOW_LOCAL_IMAGE_HOSTS=1` with MinIO (Next blocks private-IP image hosts); never in production.

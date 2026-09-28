@@ -4,16 +4,17 @@ import { STATE_FILES, watchForPageErrors } from '../support/session';
 
 /** Seed rows point at staging object storage that no longer holds the objects.
  *
- * Two symptoms, one cause: Next's image proxy 404s on the expired URLs, and
+ * Two symptoms, one cause: Next's image proxy 404s on the missing objects, and
  * `preview:from-video` 404s from the storage backend when it tries to read a
  * seeded video that is not there. Both are properties of the demo data, not of
  * the canvas, and they would otherwise mask the failures this spec cares about.
  *
- * Matched narrowly — that exact endpoint, that exact status. A 404 anywhere
- * else, or a different status on this one, still fails the test. */
-const isExpiredSeedMedia = (problem: string) =>
-  problem.includes('/_next/image?url=') ||
-  (problem.includes('404: ') && problem.includes('/preview:from-video'));
+ * Matched narrowly — those two endpoints, that exact status. A 404 anywhere
+ * else, or a different status on these, still fails the test: a 403 from the
+ * image proxy is an expired signature, which is a real bug, not seed data. */
+const isMissingSeedMedia = (problem: string) =>
+  problem.startsWith('404: ') &&
+  (problem.includes('/_next/image?url=') || problem.includes('/preview:from-video'));
 
 /**
  * Selects a canvas node.
@@ -75,7 +76,7 @@ test.describe('infinite canvas', () => {
     // The real proof it persisted: a cold reload brings the nodes back.
     await page.reload({ waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
-    expect(problems().filter((p) => !isExpiredSeedMedia(p))).toEqual([]);
+    expect(problems().filter((p) => !isMissingSeedMedia(p))).toEqual([]);
 
     // Deleting is reachable too, and also survives a reload. A freshly added
     // node lands at the middle of the viewport, which is the one spot no
@@ -129,7 +130,7 @@ test.describe('infinite canvas', () => {
     // by an earlier visit there is nothing new to write, so no save fires.
     await page.reload({ waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(seeded);
-    expect(problems().filter((p) => !isExpiredSeedMedia(p))).toEqual([]);
+    expect(problems().filter((p) => !isMissingSeedMedia(p))).toEqual([]);
   });
 
   test('a node can be named and given content, and it survives a reload', async ({ page }) => {
@@ -559,7 +560,7 @@ test.describe('infinite canvas', () => {
     await page.goto(canvasUrl, { waitUntil: 'load' });
     await expect(page.locator('.react-flow__node')).toHaveCount(1);
     await expect(page.getByText('已失效')).toHaveCount(0);
-    expect(problems().filter((p) => !isExpiredSeedMedia(p))).toEqual([]);
+    expect(problems().filter((p) => !isMissingSeedMedia(p))).toEqual([]);
   });
 
   test('the canvas is gated by width, not by browser', async ({ page }) => {
