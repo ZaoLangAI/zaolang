@@ -10,6 +10,7 @@ import { expect, type Page, type TestInfo } from '@playwright/test';
  * rule id.
  */
 export async function expectNoAxeViolations(page: Page, testInfo: TestInfo, label: string) {
+  await waitForAnimationsToSettle(page);
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])
     // Third-party media controls are not in scope; everything else is ours.
@@ -21,6 +22,12 @@ export async function expectNoAxeViolations(page: Page, testInfo: TestInfo, labe
       body: JSON.stringify(results.violations, null, 2),
       contentType: 'application/json',
     });
+    // If a contrast failure still shows up, this says whether something was
+    // mid-flight when axe sampled.
+    await testInfo.attach(`animations-${label}.json`, {
+      body: JSON.stringify(await runningAnimations(page), null, 2),
+      contentType: 'application/json',
+    });
   }
 
   const summary = results.violations.map(
@@ -28,6 +35,56 @@ export async function expectNoAxeViolations(page: Page, testInfo: TestInfo, labe
       `${violation.id} (${violation.impact ?? 'n/a'}): ${violation.nodes.length} node(s) — ${violation.help}`,
   );
   expect(summary, `axe violations on ${label}`).toEqual([]);
+}
+
+/**
+ * Waits for every finite animation, CSS transition and view transition to end.
+ *
+ * axe computes contrast from the colours on screen at that instant, so a scan
+ * that lands inside a fade reads text blended into its background and reports
+ * contrast failures that never exist once the page is still. Right after
+ * `load` that is not hypothetical: a theme crossfade (`theme-provider.tsx`)
+ * can start as soon as the signed-in preference settles, and the studio's
+ * option chips were caught at a fraction of their opacity. Infinite
+ * animations (spinners) never finish, so they are left out rather than waited
+ * on.
+ */
+async function waitForAnimationsToSettle(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () =>
+      document
+        .getAnimations()
+        .every(
+          (animation) =>
+            animation.playState !== 'running' ||
+            animation.effect?.getTiming().iterations === Infinity,
+        ),
+    undefined,
+    { timeout: 5_000 },
+  );
+}
+
+async function runningAnimations(page: Page) {
+  return page.evaluate(() =>
+    document
+      .getAnimations()
+      .filter((animation) => animation.playState === 'running')
+      .map((animation) => ({
+        type: animation.constructor.name,
+        name:
+          'animationName' in animation
+            ? (animation as CSSAnimation).animationName
+            : 'transitionProperty' in animation
+              ? (animation as CSSTransition).transitionProperty
+              : animation.id,
+        target:
+          animation.effect instanceof KeyframeEffect
+            ? String(
+                animation.effect.target?.tagName ?? animation.effect.pseudoElement ?? 'unknown',
+              )
+            : 'unknown',
+      })),
+  );
 }
 
 /**
