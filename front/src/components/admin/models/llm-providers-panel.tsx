@@ -280,6 +280,12 @@ function generateModelId(existingIds: Set<string>): string {
   return `ep_${randomHex(12)}`;
 }
 
+/** Media endpoints start at the backend's floor for image generation
+ * (`MEDIA_IMAGE_TIMEOUT_MS_MIN`); a general endpoint keeps the shorter chat default. */
+function defaultTimeoutMs(kind: LlmProviderKind): string {
+  return kind === 'media' ? '90000' : '30000';
+}
+
 function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): EndpointFormState {
   return {
     id,
@@ -297,7 +303,7 @@ function emptyForm(id: string, kind: LlmProviderKind, hasPrimary: boolean): Endp
     role: !hasPrimary ? 'primary' : 'backup',
     backup_order: '100',
     max_concurrency: '4',
-    timeout_ms: kind === 'media' ? '90000' : '30000',
+    timeout_ms: defaultTimeoutMs(kind),
     enabled: true,
     billing_profile: null,
     context_length: '',
@@ -953,6 +959,18 @@ export function LlmProvidersPanel({
                     // "general", and vice versa) — back to free text.
                     vendor: CUSTOM_VENDOR,
                     billing_profile: null,
+                    // Modalities are kind-scoped too: a general model's
+                    // default text input (or a video-analysis tick) must not
+                    // leak into the media checklist as a pre-checked switch.
+                    input_modalities: kind === 'general' ? ['text'] : [],
+                    output_modalities: [],
+                    // Follow the kind's default unless the operator already
+                    // typed their own — the general 30s is below the media
+                    // image floor, so keeping it would make save fail.
+                    timeout_ms:
+                      current.timeout_ms === defaultTimeoutMs(current.kind)
+                        ? defaultTimeoutMs(kind)
+                        : current.timeout_ms,
                     protocol: kind === 'media' ? current.protocol || 'openai' : current.protocol,
                     generation_kind: kind === 'media' ? current.generation_kind : 'create',
                     audio_generation_kind:

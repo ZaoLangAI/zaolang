@@ -66,7 +66,7 @@ test.describe('infinite canvas', () => {
     await page.getByRole('button', { name: '便签' }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(1);
 
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
 
     // Autosave reports success rather than staying silent.
@@ -197,7 +197,7 @@ test.describe('infinite canvas', () => {
     await page.getByRole('button', { name: '新建画布' }).click();
     await page.waitForURL(/\/canvas\/cnv_/);
 
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await selectNode(page, page.locator('.react-flow__node').first());
 
     // Empty prompt cannot generate.
@@ -254,7 +254,7 @@ test.describe('infinite canvas', () => {
     await expect(page.locator('.react-flow__node').first()).toContainText('参考：雨夜街角');
 
     // Wire it into a prompt card: the edge is what makes it a reference.
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
     const promptNode = page.locator('.react-flow__node').last();
     await selectNode(page, promptNode);
@@ -308,7 +308,7 @@ test.describe('infinite canvas', () => {
     await expect(page.getByRole('button', { name: '撤销' })).toBeDisabled();
 
     await page.getByRole('button', { name: '便签' }).click();
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await expect(page.locator('.react-flow__node')).toHaveCount(2);
 
     await selectNode(page, page.locator('.react-flow__node').last());
@@ -399,7 +399,7 @@ test.describe('infinite canvas', () => {
     await page.waitForURL(/\/canvas\/cnv_/);
     const canvasUrl = page.url();
 
-    await page.getByRole('button', { name: '提示词' }).click();
+    await page.getByRole('button', { name: '提示词', exact: true }).click();
     await selectNode(page, page.locator('.react-flow__node').first());
     await page.getByLabel('提示词').fill('一只在屋顶上的猫');
 

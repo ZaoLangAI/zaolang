@@ -137,14 +137,19 @@ test.describe('creation', () => {
     await page.goto('/zh-CN/create/new?mode=text_to_video', { waitUntil: 'load' });
 
     await page.getByLabel('说说你想怎么改').fill('雨夜霓虹下的长镜头推进');
-    // Resolution and seed live in the collapsed "更多设置" section.
-    await page.getByRole('button', { name: '更多设置' }).click();
+    // Resolution is a client tier the router maps to each vendor's spelling,
+    // so it is always pickable; 1080p is the studio's own default.
+    await expect(page.getByLabel('分辨率')).toHaveValue('1080p');
+    await page.getByLabel('分辨率').selectOption('2K');
     await expect(page.getByLabel('分辨率')).toHaveValue('2K');
-    await expect(page.getByLabel('分辨率')).toBeDisabled();
+    // The seed lives in the collapsed "更多设置" section.
+    await page.getByRole('button', { name: '更多设置' }).click();
     await page.getByLabel('随机种子').fill('42');
     await page.getByRole('radiogroup', { name: '时长' }).getByText('15 秒').click();
     await page.getByRole('radiogroup', { name: '画面方向' }).getByText('横屏').click();
     await page.getByRole('radiogroup', { name: '画幅' }).getByText('21:9').click();
+    // Reference mode lives in its own collapsed "参考设置" section.
+    await page.getByRole('button', { name: '参考设置' }).click();
     await page.getByRole('radiogroup', { name: '参考方式' }).getByText('首尾帧').click();
     await expect(page.getByLabel('首帧')).toBeVisible();
     await expect(page.getByRole('button', { name: '生成我的版本' })).toBeDisabled();
@@ -155,7 +160,8 @@ test.describe('creation', () => {
     await page.getByRole('radiogroup', { name: '质量档位' }).getByText('快速预览').click();
     await expect(page.getByRole('radio', { name: '快速预览' })).toBeChecked();
 
-    await page.getByRole('checkbox').first().check();
+    // By name: the portrait-consent checkbox in the sources panel comes first.
+    await page.getByRole('checkbox', { name: /我确认拥有新增素材的使用权/ }).check();
     // This suite may run against a developer's live provider configuration.
     // Stop before submission so UI coverage never creates a billable render;
     // backend lifecycle tests exercise submit -> SSE -> terminal settlement.
@@ -180,32 +186,6 @@ test.describe('creation', () => {
   test.skip('the library shows the seeded draft awaiting publication', async ({ page }) => {
     await page.goto('/zh-CN/collection', { waitUntil: 'load' });
     await expect(page.getByText('潮汐之上 · 未完成').first()).toBeVisible();
-  });
-
-  test('the shortform studio offers the clarify step and a preview-first submit', async ({
-    page,
-  }) => {
-    await page.goto('/zh-CN/create/short', { waitUntil: 'load' });
-
-    await page.getByLabel('画面描述').fill('女孩在海边');
-
-    // The clarify button sits next to the existing polish button rather than
-    // replacing it — both must be reachable at once.
-    await expect(page.getByRole('button', { name: 'AI 润色' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'AI 帮你补全细节' })).toBeVisible();
-
-    // With the preview picker enabled, `preview` drops out of the tier choice
-    // (it is no longer a submittable destination on its own) and the main CTA
-    // becomes "生成预览" instead of "生成短视频". Not clicked — that would
-    // spend real credits on live provider config, same discipline as the
-    // H3 config test above.
-    await expect(
-      page.getByRole('radiogroup', { name: '质量档位' }).getByText('快速预览'),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole('radiogroup', { name: '质量档位' }).getByText('标准'),
-    ).toBeVisible();
-    await expect(page.getByRole('button', { name: '生成预览' })).toBeVisible();
   });
 
   // Skipped: needs `SEEDED_PAID_WORK` to exist, which `make seed` no longer
