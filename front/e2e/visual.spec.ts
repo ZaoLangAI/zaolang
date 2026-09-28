@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { expectNoHorizontalOverflow } from './support/axe';
+import { fixtures } from './support/fixtures';
 import { STATE_FILES, watchForPageErrors } from './support/session';
 import { expectTheme, setTheme } from './support/theme';
 
@@ -62,33 +63,35 @@ for (const theme of ['dark', 'light'] as const) {
  */
 const API_URL = process.env.PLAYWRIGHT_API_URL ?? 'http://localhost:3001';
 
-async function seededPaths(page: Page) {
+async function creationChainPaths(page: Page) {
+  // The work and the draft are the ones `make e2e-fixtures` plants, so the
+  // chain always has both ends to scan.
+  const { free_remix_work_id: workId, draft_id: draftId } = fixtures();
+
   // The refresh cookie rides in the saved storage state; the access token does
   // not exist until it is redeemed, exactly as in the browser.
   const refreshed = await page.request.post(`${API_URL}/v1/auth/refresh`);
   const { access_token: token } = (await refreshed.json()) as { access_token: string };
-  const authorization = { authorization: `Bearer ${token}` };
-
-  const works = await page.request.get(`${API_URL}/v1/works`, { params: { limit: 1 } });
-  const drafts = await page.request.get(`${API_URL}/v1/drafts`, { headers: authorization });
-
-  const work = ((await works.json()) as { items: Array<{ id: string }> }).items[0];
+  const drafts = await page.request.get(`${API_URL}/v1/drafts`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
   const draftItems = (
     (await drafts.json()) as {
       items: Array<{ id: string; latest_job_id?: string; params?: { operation?: string } }>;
     }
   ).items;
-  const draft = draftItems[0];
   // Image/video jobs redirect off `/jobs/[jobId]` into the studio; only audio
   // still renders the standalone progress page this label is meant to scan.
+  // There is no audio fixture, so this step runs only when an earlier audio
+  // generation left one behind.
   const audioDraft = draftItems.find((item) => item.params?.operation === 'audio_generation');
 
   return [
-    work ? { path: `/zh-CN/work/${work.id}`, label: 'work' } : null,
+    { path: `/zh-CN/work/${workId}`, label: 'work' },
     audioDraft?.latest_job_id
       ? { path: `/zh-CN/jobs/${audioDraft.latest_job_id}`, label: 'jobs' }
       : null,
-    draft ? { path: `/zh-CN/publish/${draft.id}`, label: 'publish' } : null,
+    { path: `/zh-CN/publish/${draftId}`, label: 'publish' },
   ].filter((entry) => entry !== null);
 }
 
@@ -138,19 +141,14 @@ test.describe('signed in', () => {
         expect(problems(), 'console errors on generation-studio').toEqual([]);
       });
 
-      // Skipped: `make seed` no longer publishes any work or leaves a draft
-      // behind (see `back/app/scripts/seed.py`), so `seededPaths()` always
-      // comes back empty. Restore once a fixture-creation helper can produce
-      // a real work/draft/job for the suite to walk.
-      test.skip(`the creation chain renders without overflow · ${theme} · ${viewport.label}`, async ({
+      test(`the creation chain renders without overflow · ${theme} · ${viewport.label}`, async ({
         page,
       }, info) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await setTheme(page, theme);
         await page.goto('/zh-CN/collection', { waitUntil: 'load' });
 
-        const targets = await seededPaths(page);
-        expect(targets.length, 'seeded work and draft').toBeGreaterThan(0);
+        const targets = await creationChainPaths(page);
 
         for (const target of targets) {
           // Not `networkidle`: the job page holds a live progress stream open, so
