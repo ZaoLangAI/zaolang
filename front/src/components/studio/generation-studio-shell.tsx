@@ -112,7 +112,7 @@ export function GenerationStudioShell({
   price: string;
   estimate: string;
   error: string | null;
-  /** The params panel content, rendered once and shared by the desktop aside and the mobile sheet. */
+  /** The params panel content, mounted in exactly one of the desktop aside and the mobile sheet. */
   children: React.ReactNode;
 }) {
   const t = useTranslations('remixPage');
@@ -123,6 +123,14 @@ export function GenerationStudioShell({
   // state the wide layout can be in at all.
   const isDesktop = useMinWidth('lg');
   const paramsOpen = paramsRequested && !isDesktop;
+  // The panel's open/closed state (e.g. the style gallery dialog's) lives in
+  // the studio above, so mounting `children` in both places opens every
+  // portalled dialog in it twice — once from the aside that is merely
+  // `hidden` below `lg`. The sheet mounts its content only while it is open,
+  // so the aside steps aside for exactly that long. Keyed on `paramsOpen`
+  // rather than `isDesktop` so the server, which has no viewport, still
+  // renders the panel in the aside.
+  const panelInAside = !paramsOpen;
 
   const cover =
     previewOverrideUrl ?? source?.work.current_version?.cover_url ?? source?.work.cover_url;
@@ -216,7 +224,7 @@ export function GenerationStudioShell({
         <h2 id="generation-params-heading" className="text-sm font-semibold">
           {t('howToGenerate')}
         </h2>
-        {children}
+        {panelInAside ? children : null}
         <Button
           size="lg"
           onClick={onSubmit}
