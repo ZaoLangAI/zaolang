@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict
 from typing import Any
@@ -239,7 +239,7 @@ def publish_thinking(ctx: WorkflowContext, text: str) -> None:
 
 
 @contextmanager
-def _live_thinking(ctx: WorkflowContext):
+def _live_thinking(ctx: WorkflowContext) -> Iterator[None]:
     def on_chunk(chunk: StreamChunk) -> None:
         if chunk.kind == "thinking" and chunk.text:
             publish_thinking(ctx, chunk.text)

@@ -396,11 +396,11 @@ def _sanitize_shot(
     if not isinstance(raw, dict):
         return dict(fallback)
     subject_raw = str(raw.get("subject") or "").strip()
-    subject = aliases.get(subject_raw, subject_raw)
+    subject: str | None = aliases.get(subject_raw, subject_raw)
     if subject not in cast_ids and subject not in anchors:
         subject = fallback.get("subject")
     over_raw = str(raw.get("over") or "").strip()
-    over = aliases.get(over_raw, over_raw)
+    over: str | None = aliases.get(over_raw, over_raw)
     side = _choice(raw.get("side"), v.CAMERA_SIDES, "front", "side")
     if over not in cast_ids or over == subject:
         over = None
