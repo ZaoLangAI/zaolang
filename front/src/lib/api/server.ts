@@ -16,8 +16,19 @@ export const REFRESH_COOKIE = 'zl_refresh';
 
 interface ServerRequestOptions {
   query?: Record<string, string | number | boolean | undefined | null>;
-  /** Attach the caller's session. Omit for public data so it stays cacheable. */
+  /** Attach the caller's session. Authenticated reads are never cached. */
   authenticated?: boolean;
+  /**
+   * Opt a public read into Next's data cache. Uncached unless set.
+   *
+   * Only for payloads that carry no presigned media URL (`/v1/tags`, not
+   * `/v1/works`). The data cache is stale-while-revalidate with no bound on
+   * staleness: the first render after a quiet spell gets the cached payload
+   * however old it is, and a URL signed for 15 minutes (the API's
+   * `download_url_ttl_seconds`) is then long expired — `/_next/image` gets a
+   * 403 and the cover breaks. No revalidate value is short enough to prevent
+   * that, since the gap is set by traffic, not by this number.
+   */
   revalidate?: number | false;
   tags?: string[];
 }
@@ -75,15 +86,16 @@ export async function serverFetch<T>(path: string, options: ServerRequestOptions
     if (token) headers.authorization = `Bearer ${token}`;
   }
 
+  // Authenticated reads are per-user and must never land in a shared cache;
+  // public ones only when the caller vouches the payload holds no signed URL.
+  const cached = !options.authenticated && options.revalidate !== undefined;
+
   let response: Response;
   try {
     response = await fetch(buildUrl(path, options.query), {
       headers,
-      // Authenticated reads are per-user and must never land in a shared cache.
-      cache: options.authenticated ? 'no-store' : undefined,
-      next: options.authenticated
-        ? undefined
-        : { revalidate: options.revalidate ?? 30, tags: options.tags },
+      cache: cached ? undefined : 'no-store',
+      next: cached ? { revalidate: options.revalidate, tags: options.tags } : undefined,
     });
   } catch {
     throw new ApiError(503, undefined, 'API unreachable');
