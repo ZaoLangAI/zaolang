@@ -103,7 +103,7 @@ def active_member_counts(session: Session, *, series_ids: list[str]) -> dict[str
         )
         .group_by(SeriesCollaborator.series_id)
     )
-    return dict(rows.all())
+    return dict(rows.tuples().all())
 
 
 def profiles_by_user_id(session: Session, user_ids: list[str]) -> dict[str, Profile]:
