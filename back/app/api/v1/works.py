@@ -696,7 +696,7 @@ def _license_info(session, version: WorkVersion) -> LicenseInfo | None:  # type:
 
 
 def _ancestors(
-    session,  # type: ignore[no-untyped-def]
+    session: DbSession,
     version_id: str,
     viewer_user_id: str | None = None,
 ) -> list[LineageAncestor]:

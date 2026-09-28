@@ -71,6 +71,7 @@ from app.models import (
     Asset,
     CutRevision,
     DeliveryVariant,
+    DramaEpisode,
     EditorExport,
     EditPlan,
     EpisodeCut,
@@ -207,7 +208,9 @@ def episode_response(  # type: ignore[no-untyped-def]
     )
 
 
-def _episode_payloads(session: DbSession, episodes: list) -> list[DramaEpisodeResponse]:  # type: ignore[no-untyped-def]
+def _episode_payloads(
+    session: DbSession, episodes: list[DramaEpisode]
+) -> list[DramaEpisodeResponse]:
     ids = [item.id for item in episodes]
     turned = editor_service.episodes_with_script_turns(session, episode_ids=ids)
     sources = editor_service.episodes_with_preview_source(session, episode_ids=ids)

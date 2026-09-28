@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import exists, or_, select, true
+from sqlalchemy import ColumnElement, exists, or_, select, true
 from sqlalchemy.orm import Session
 
 from app.domain.access import service as access_service
@@ -154,7 +154,7 @@ def _work_library_accessible_series_ids(session: Session, *, user_id: str) -> li
     return list({*owned, *collaborators.collaborator_series_ids(session, user_id=user_id)})
 
 
-def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]):
+def _draft_bound_to_inaccessible_series(accessible_series_ids: list[str]) -> ColumnElement[bool]:
     """True when the draft is tied to an episode on a series the caller
     neither owns nor actively collaborates on.
 
