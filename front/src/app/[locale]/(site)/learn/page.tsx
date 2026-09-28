@@ -24,7 +24,6 @@ export default async function LearnPage() {
 
   const page = await serverFetchOrNull<Page<LearnPostSummary>>('/v1/learn/posts', {
     query: { limit: 12 },
-    revalidate: 60,
   });
   const posts = page?.items ?? [];
   // 最新一条通过审核的内容撑起 hero；没有任何发表时退化成纯文字引导，而不是
