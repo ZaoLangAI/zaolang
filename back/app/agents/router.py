@@ -261,8 +261,8 @@ def route(
         agent_id=selector_agent_id,
     )
     selected_name = outcome.data.get("selected_provider")
-    winner = next((c for c in eligible if c.provider == selected_name), None)
-    if outcome.degraded or winner is None:
+    llm_winner = next((c for c in eligible if c.provider == selected_name), None)
+    if outcome.degraded or llm_winner is None:
         return RoutingDecision(
             selected=None,
             candidates=candidates,
@@ -276,7 +276,7 @@ def route(
         f"llm_selected:{rationale}" if isinstance(rationale, str) and rationale else "llm_selected"
     )
     return RoutingDecision(
-        selected=winner,
+        selected=llm_winner,
         candidates=candidates,
         reason=reason,
         catalog=catalog,

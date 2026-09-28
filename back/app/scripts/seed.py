@@ -573,14 +573,17 @@ def sync_seeded_copy_agent_prompts(session: Session) -> None:
 
     for bucket, spec in _ENHANCE_ASSET_AGENT_SPECS.items():
         key, _display_name, description, system_prompt = spec
-        profile = agent_skills_service.find_profile(session, "copy", key)
-        if profile is None:
+        asset_profile = agent_skills_service.find_profile(session, "copy", key)
+        if asset_profile is None:
             continue
-        if profile.description in _FACTORY_ENHANCE_DESCRIPTIONS or not profile.description:
-            agent_skills_service.update_profile(session, profile.id, description=description)
+        if (
+            asset_profile.description in _FACTORY_ENHANCE_DESCRIPTIONS
+            or not asset_profile.description
+        ):
+            agent_skills_service.update_profile(session, asset_profile.id, description=description)
         _publish_factory_prompt(
             session,
-            profile=profile,
+            profile=asset_profile,
             slot=copywriter_agent.ENHANCE_SLOT,
             prompt=system_prompt,
             openers=_FACTORY_ENHANCE_OPENERS[bucket],

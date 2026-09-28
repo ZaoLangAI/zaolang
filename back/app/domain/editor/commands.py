@@ -325,8 +325,12 @@ def _validate_command(command: dict[str, Any]) -> None:
         if transition is not None:
             if not isinstance(transition, dict) or transition.get("type") not in TRANSITION_TYPES:
                 raise ValidationFailed("不支持的转场类型。")
-            duration = transition.get("duration_ticks")
-            if not isinstance(duration, int) or isinstance(duration, bool) or duration <= 0:
+            transition_ticks = transition.get("duration_ticks")
+            if (
+                not isinstance(transition_ticks, int)
+                or isinstance(transition_ticks, bool)
+                or transition_ticks <= 0
+            ):
                 raise ValidationFailed("转场时长必须为正整数 tick。")
 
 
