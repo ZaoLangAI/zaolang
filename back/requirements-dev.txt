@@ -7,4 +7,5 @@ mypy==1.19.1
 types-boto3==1.43.62
 pre-commit==4.4.0
 mkdocs-material==9.7.7
+pymdown-extensions==12.1
 mkdocs-swagger-ui-tag==0.7.2
