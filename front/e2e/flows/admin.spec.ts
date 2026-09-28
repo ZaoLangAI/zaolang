@@ -402,8 +402,11 @@ test.describe('operations screens', () => {
     await page.goto('/zh-CN/admin/routing', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '沙盒试跑' }).click();
 
+    // Every run adds a history row, so a fixed prompt would match rows left
+    // behind by earlier runs against the same database.
+    const prompt = `历史回放用的猫 ${Date.now()}`;
     const sandbox = page.getByRole('dialog');
-    await sandbox.getByLabel('提示词').fill('历史回放用的猫');
+    await sandbox.getByLabel('提示词').fill(prompt);
     const sandboxRun = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' && response.url().includes('/sandbox-run'),
@@ -417,7 +420,7 @@ test.describe('operations screens', () => {
     await page.getByRole('button', { name: '试跑历史' }).click();
     const history = page.getByRole('complementary', { name: '试跑历史' });
     await expect(history.getByRole('heading', { name: '试跑历史' })).toBeVisible();
-    await expect(history.getByText('历史回放用的猫')).toBeVisible();
+    await expect(history.getByText(prompt)).toBeVisible();
 
     await page.getByRole('button', { name: '关闭试跑历史' }).click();
     await expect(page.getByRole('complementary', { name: '试跑历史' })).toHaveCount(0);
@@ -445,7 +448,7 @@ test.describe('operations screens', () => {
               message: '节点已完成',
               node_id: 'provider_generate',
               created_at: new Date().toISOString(),
-              payload: { prompt: '历史回放用的猫' },
+              payload: { prompt },
             },
           ],
         }),
@@ -454,7 +457,7 @@ test.describe('operations screens', () => {
 
     await page
       .getByRole('complementary', { name: '试跑历史' })
-      .getByRole('button', { name: /历史回放用的猫/ })
+      .getByRole('button', { name: prompt })
       .click();
     const detail = page.getByRole('dialog');
     await expect(detail.getByRole('heading', { name: '试跑详情' })).toBeVisible();
@@ -490,7 +493,7 @@ test.describe('operations screens', () => {
     await expect(dialog.getByRole('button', { name: '发布并生效' })).toBeDisabled();
   });
 
-  test('the models console renders primary/backup lists', async ({ page }) => {
+  test('the models console groups models by kind', async ({ page }) => {
     await page.route('**/v1/admin/llm-providers/*/validate/*', async (route) => {
       await route.fulfill({
         status: 200,
@@ -545,9 +548,12 @@ test.describe('operations screens', () => {
     await page.getByRole('button', { name: '刷新' }).click();
     await refreshed;
 
-    // Flat primary/backup list — taxonomy lives in the create/edit dialog.
-    await expect(page.getByText('主用节点', { exact: true })).toBeVisible();
-    await expect(page.getByText('备用节点', { exact: true })).toBeVisible();
+    // One group per kind; primary/backup is a per-row role inside a group
+    // (primary sorts first), not a separate list.
+    const generalGroup = page.getByRole('heading', { name: '通用模型', level: 3 });
+    const mediaGroup = page.getByRole('heading', { name: '媒体模型', level: 3 });
+    await expect(generalGroup).toBeVisible();
+    await expect(mediaGroup).toBeVisible();
 
     await page.getByRole('button', { name: '新增模型' }).click();
     await expect(page.getByRole('heading', { name: '新增模型' })).toBeVisible();
@@ -565,10 +571,9 @@ test.describe('operations screens', () => {
     await editorDialog.press('Escape');
     await expect(editorDialog).toBeHidden();
 
-    const mediaRow = page
-      .getByText('minimax-h3', { exact: true })
-      .first()
-      .locator('xpath=../../..');
+    // Any media endpoint will do — the probe is mocked above. `make seed` does
+    // not create one, so this needs a media model configured on the database.
+    const mediaRow = mediaGroup.locator('xpath=following-sibling::div[1]/div[1]');
     await mediaRow.getByRole('button', { name: '验证' }).click();
     await expect(page.getByRole('heading', { name: '验证媒体模型' })).toBeVisible();
     await page.getByRole('button', { name: '发送验证请求' }).click();
