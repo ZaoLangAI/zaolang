@@ -18,11 +18,7 @@ import { isApiError } from '@/lib/api/errors';
  * stores the encrypted token) and then send the creator back to the
  * dashboard.
  */
-export default function PlatformCallbackPage({
-  params,
-}: {
-  params: Promise<{ channel: string }>;
-}) {
+export default function PlatformCallbackPage({ params }: { params: Promise<{ channel: string }> }) {
   const { channel } = use(params);
   const t = useTranslations('editor');
   const router = useRouter();

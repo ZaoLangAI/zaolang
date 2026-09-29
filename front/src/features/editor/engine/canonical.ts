@@ -480,7 +480,8 @@ function applyOne(
     case 'set_clip_mask': {
       const found = findElement(document, command.element_id);
       if (!found) throw new Error('元素不存在。');
-      if (command.mask && !MASK_SHAPES.has(command.mask.shape)) throw new Error('不支持的蒙版形状。');
+      if (command.mask && !MASK_SHAPES.has(command.mask.shape))
+        throw new Error('不支持的蒙版形状。');
       found.element.mask = command.mask;
       return;
     }
@@ -496,7 +497,9 @@ function applyOne(
       const easing = command.easing ?? DEFAULT_EASING;
       if (!EASING_TYPES.has(easing)) throw new Error('不支持的缓动类型。');
       const existing = found.element.animations.channels[command.property];
-      const points = (existing?.points ?? []).filter((point) => point.at_ticks !== command.at_ticks);
+      const points = (existing?.points ?? []).filter(
+        (point) => point.at_ticks !== command.at_ticks,
+      );
       if (points.length >= MAX_KEYFRAMES_PER_CHANNEL) {
         throw new Error(`单个属性最多 ${MAX_KEYFRAMES_PER_CHANNEL} 个关键帧。`);
       }
@@ -527,7 +530,10 @@ function applyOne(
       const { transition } = command;
       if (transition) {
         if (!TRANSITION_TYPES.has(transition.type)) throw new Error('不支持的转场类型。');
-        if (transition.duration_ticks <= 0 || transition.duration_ticks > found.element.duration_ticks) {
+        if (
+          transition.duration_ticks <= 0 ||
+          transition.duration_ticks > found.element.duration_ticks
+        ) {
           throw new Error('转场时长必须大于零且不超过该元素自身时长。');
         }
       }
@@ -542,8 +548,13 @@ function applyOne(
         throw new Error('标记点 id 已存在。');
       }
       assertSafeTicks(command.at_ticks, 'at_ticks');
-      if (command.label != null && command.label.length > 120) throw new Error('标记点文案最多 120 字符。');
-      document.markers.push({ id: markerId, at_ticks: command.at_ticks, label: command.label ?? null });
+      if (command.label != null && command.label.length > 120)
+        throw new Error('标记点文案最多 120 字符。');
+      document.markers.push({
+        id: markerId,
+        at_ticks: command.at_ticks,
+        label: command.label ?? null,
+      });
       return;
     }
     case 'remove_marker': {
@@ -555,7 +566,8 @@ function applyOne(
     case 'update_marker': {
       const marker = document.markers.find((item) => item.id === command.marker_id);
       if (!marker) throw new Error('标记点不存在。');
-      if (command.label != null && command.label.length > 120) throw new Error('标记点文案最多 120 字符。');
+      if (command.label != null && command.label.length > 120)
+        throw new Error('标记点文案最多 120 字符。');
       if (command.at_ticks !== undefined) marker.at_ticks = command.at_ticks;
       if (command.label !== undefined) marker.label = command.label ?? null;
       return;

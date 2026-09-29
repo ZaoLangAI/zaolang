@@ -160,7 +160,6 @@ export interface GenerationSubmitInput extends GenerationQuoteInput {
   forcedModel?: string;
 }
 
-
 export interface GenerationSubmit {
   quote: Quote | null;
   /** The quote call failed; the estimate on screen is stale or absent. */

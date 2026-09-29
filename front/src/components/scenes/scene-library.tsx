@@ -291,11 +291,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
   };
 
   const sceneForm = (
-    <form
-      id="scene-form"
-      onSubmit={(event) => void submit(event)}
-      className="flex flex-col gap-4"
-    >
+    <form id="scene-form" onSubmit={(event) => void submit(event)} className="flex flex-col gap-4">
       <TextInput
         label={t('nameLabel')}
         value={form.name}
@@ -437,7 +433,13 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                         onClick={() => setLightboxUrl(hero.url ?? null)}
                         className="absolute inset-0"
                       >
-                        <Image src={hero.url} alt="" fill sizes="360px" className="object-contain" />
+                        <Image
+                          src={hero.url}
+                          alt=""
+                          fill
+                          sizes="360px"
+                          className="object-contain"
+                        />
                       </button>
                     ) : (
                       <button

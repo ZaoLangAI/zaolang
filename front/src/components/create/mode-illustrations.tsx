@@ -143,7 +143,6 @@ export function ShortformIllustration(props: IllustrationProps) {
   );
 }
 
-
 /** A film frame with a magnifying glass over it, standing in for "analyse
  * an existing video" rather than "generate a new one" (`TextToVideoIllustration`
  * above uses the same frame shape with a play mark instead). */
@@ -186,13 +185,34 @@ export function CharacterLibraryIllustration(props: IllustrationProps) {
 export function SceneLibraryIllustration(props: IllustrationProps) {
   return (
     <Scene {...props}>
-      <rect x="26" y="8" width="98" height="24" rx="5" fillOpacity="0.05" fill="currentColor" strokeOpacity="0.3" />
-      <rect x="18" y="34" width="106" height="30" rx="5" fillOpacity="0.06" fill="currentColor" strokeOpacity="0.55" />
+      <rect
+        x="26"
+        y="8"
+        width="98"
+        height="24"
+        rx="5"
+        fillOpacity="0.05"
+        fill="currentColor"
+        strokeOpacity="0.3"
+      />
+      <rect
+        x="18"
+        y="34"
+        width="106"
+        height="30"
+        rx="5"
+        fillOpacity="0.06"
+        fill="currentColor"
+        strokeOpacity="0.55"
+      />
       <rect x="10" y="62" width="114" height="28" rx="6" fillOpacity="0.08" fill="currentColor" />
       <circle cx="30" cy="76" r="4" />
       <path d="M18 88 40 70l10 8 14-12 20 16" strokeOpacity="0.7" />
       <circle cx="140" cy="26" r="8" />
-      <path d="M132 26h-6M140 18v-6M148 26h6M140 34v6M135 21l-4-4M145 21l4-4M135 31l-4 4M145 31l4 4" strokeOpacity="0.5" />
+      <path
+        d="M132 26h-6M140 18v-6M148 26h6M140 34v6M135 21l-4-4M145 21l4-4M135 31l-4 4M145 31l4 4"
+        strokeOpacity="0.5"
+      />
     </Scene>
   );
 }

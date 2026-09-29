@@ -65,9 +65,7 @@ export function sceneHasUnclosedSegment(scene: ScriptScene): boolean {
 }
 
 /** Virtual closer after the last real block — key is `{heading}#{existing count}`. */
-export function trailingBreakpoint(
-  scene: ScriptScene,
-): { key: string; blockIndex: number } | null {
+export function trailingBreakpoint(scene: ScriptScene): { key: string; blockIndex: number } | null {
   if (!sceneHasUnclosedSegment(scene)) return null;
   return {
     key: breakpointKey(scene.heading, breakpointOrdinalInScene(scene, scene.blocks.length)),

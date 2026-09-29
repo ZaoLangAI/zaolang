@@ -83,15 +83,24 @@ export function MaskOverlay({
       const drag = dragRef.current;
       if (!drag) return;
       const deltaXMilli = ((moveEvent.clientX - drag.startClientX) / drag.surfaceWidth) * MILLI_MAX;
-      const deltaYMilli = ((moveEvent.clientY - drag.startClientY) / drag.surfaceHeight) * MILLI_MAX;
+      const deltaYMilli =
+        ((moveEvent.clientY - drag.startClientY) / drag.surfaceHeight) * MILLI_MAX;
       let next: ClipMask;
       if (drag.mode === 'move') {
         const x = clamp(drag.start.x_milli + deltaXMilli, 0, MILLI_MAX - drag.start.width_milli);
         const y = clamp(drag.start.y_milli + deltaYMilli, 0, MILLI_MAX - drag.start.height_milli);
         next = { ...drag.start, x_milli: Math.round(x), y_milli: Math.round(y) };
       } else {
-        const width = clamp(drag.start.width_milli + deltaXMilli, MIN_SIZE_MILLI, MILLI_MAX - drag.start.x_milli);
-        const height = clamp(drag.start.height_milli + deltaYMilli, MIN_SIZE_MILLI, MILLI_MAX - drag.start.y_milli);
+        const width = clamp(
+          drag.start.width_milli + deltaXMilli,
+          MIN_SIZE_MILLI,
+          MILLI_MAX - drag.start.x_milli,
+        );
+        const height = clamp(
+          drag.start.height_milli + deltaYMilli,
+          MIN_SIZE_MILLI,
+          MILLI_MAX - drag.start.y_milli,
+        );
         next = { ...drag.start, width_milli: Math.round(width), height_milli: Math.round(height) };
       }
       previewRef.current = next;

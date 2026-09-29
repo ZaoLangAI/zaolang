@@ -81,7 +81,12 @@ export function useScriptTurnStream() {
               liveThinking: current.liveThinking + event.data.text,
             }));
           } else if (event.event === 'error') {
-            setState({ streaming: false, liveText: '', liveThinking: '', error: event.data.message });
+            setState({
+              streaming: false,
+              liveText: '',
+              liveThinking: '',
+              error: event.data.message,
+            });
             return;
           } else if (event.event === 'complete') {
             setState({ streaming: false, liveText: '', liveThinking: '', error: null });

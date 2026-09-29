@@ -124,11 +124,13 @@ export function GenerationStudioShell({
   const isDesktop = useMinWidth('lg');
   const paramsOpen = paramsRequested && !isDesktop;
 
-  const cover = previewOverrideUrl ?? source?.work.current_version?.cover_url ?? source?.work.cover_url;
+  const cover =
+    previewOverrideUrl ?? source?.work.current_version?.cover_url ?? source?.work.cover_url;
   const previewTitle = source?.work.title ?? previewPlaceholder ?? t('promptLabel');
   const sourceMediaType = source?.work.media_type ?? source?.work.current_version?.media_type;
   const sourceVideoUrl = source?.work.current_version?.media_url;
-  const playSourceVideo = sourceMediaType === 'video' && Boolean(sourceVideoUrl) && !previewOverrideUrl;
+  const playSourceVideo =
+    sourceMediaType === 'video' && Boolean(sourceVideoUrl) && !previewOverrideUrl;
   const refreshSourceVideo = useCallback(
     () => (source ? refreshWorkMediaUrl(source.work.id) : Promise.resolve(null)),
     [source],

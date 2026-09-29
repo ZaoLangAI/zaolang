@@ -16,12 +16,14 @@ export interface JobOutputs {
   assetIds: string[];
 }
 
-export function jobOutputs(job: {
-  output_url?: string | null;
-  output_urls?: string[] | null;
-  output_asset_id?: string | null;
-  output_asset_ids?: string[] | null;
-} | null): JobOutputs {
+export function jobOutputs(
+  job: {
+    output_url?: string | null;
+    output_urls?: string[] | null;
+    output_asset_id?: string | null;
+    output_asset_ids?: string[] | null;
+  } | null,
+): JobOutputs {
   if (!job) return { urls: [], assetIds: [] };
   return {
     urls: job.output_urls?.length ? job.output_urls : job.output_url ? [job.output_url] : [],

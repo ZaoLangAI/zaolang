@@ -188,7 +188,10 @@ export function PublishForm({ draft }: { draft: Draft }) {
           <div className="rounded-[var(--radius-sm)] border border-amber/40 bg-amber/8 px-4 py-3">
             <p className="text-sm font-medium">{t('pendingTitle')}</p>
             <p className="mt-1 text-xs text-muted">{t('pendingHint')}</p>
-            <Link href="/collection" className="mt-2 inline-block text-xs text-primary hover:underline">
+            <Link
+              href="/collection"
+              className="mt-2 inline-block text-xs text-primary hover:underline"
+            >
               {t('pendingGoCollection')}
             </Link>
           </div>

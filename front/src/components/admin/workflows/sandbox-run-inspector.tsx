@@ -14,7 +14,10 @@ import type { AdminJobDetail } from '@/lib/api/admin-types';
 import type { JobStatus } from '@/lib/api/types';
 import { cn } from '@/lib/cn';
 import { formatDateTime, formatNumber } from '@/lib/format';
-import type { AdminStreamedEvent, LiveThinking as LiveThinkingState } from '@/lib/use-admin-job-stream';
+import type {
+  AdminStreamedEvent,
+  LiveThinking as LiveThinkingState,
+} from '@/lib/use-admin-job-stream';
 import { EMPTY_LIVE_THINKING } from '@/lib/use-admin-job-stream';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
@@ -149,59 +152,61 @@ export function SandboxRunInspector({
           {events
             .filter((event) => event.event_type !== 'thinking' && event.sequence != null)
             .map((event) => {
-            const expandable = Boolean(event.node_id);
-            const expanded = event.sequence === selectedSequence;
-            return (
-              <li key={event.sequence}>
-                <div
-                  className={cn(
-                    'overflow-hidden rounded-[var(--radius-sm)] border transition-colors',
-                    expanded
-                      ? 'border-primary bg-primary/12'
-                      : event.status === 'awaiting_input'
-                        ? 'border-amber/40 bg-amber/5'
-                        : 'border-border bg-surface',
-                  )}
-                >
-                  <button
-                    type="button"
-                    disabled={!expandable}
-                    aria-expanded={expandable ? expanded : undefined}
-                    onClick={() => event.node_id && event.sequence != null && toggleEvent(event.sequence)}
+              const expandable = Boolean(event.node_id);
+              const expanded = event.sequence === selectedSequence;
+              return (
+                <li key={event.sequence}>
+                  <div
                     className={cn(
-                      'flex w-full flex-col gap-0.5 px-3 py-1.5 text-left text-xs transition-colors',
-                      expandable
-                        ? 'hover:bg-surface-soft active:bg-primary/12'
-                        : 'cursor-default',
-                      !expanded && expandable && 'hover:border-border-strong',
+                      'overflow-hidden rounded-[var(--radius-sm)] border transition-colors',
+                      expanded
+                        ? 'border-primary bg-primary/12'
+                        : event.status === 'awaiting_input'
+                          ? 'border-amber/40 bg-amber/5'
+                          : 'border-border bg-surface',
                     )}
                   >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="font-medium">{event.node_id ?? event.event_type}</span>
-                      <span className="tabular text-muted">{event.progress}%</span>
-                    </span>
-                    <span className="text-muted">{event.message}</span>
-                  </button>
-                  {expanded && inspect ? (
-                    <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-medium">{t('dryRunSelectNode')}</p>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSequence(null)}
-                          aria-label={t('dryRunCollapseNode')}
-                          className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-soft hover:text-text active:bg-primary/12"
-                        >
-                          <IconClose className="size-3.5" />
-                        </button>
+                    <button
+                      type="button"
+                      disabled={!expandable}
+                      aria-expanded={expandable ? expanded : undefined}
+                      onClick={() =>
+                        event.node_id && event.sequence != null && toggleEvent(event.sequence)
+                      }
+                      className={cn(
+                        'flex w-full flex-col gap-0.5 px-3 py-1.5 text-left text-xs transition-colors',
+                        expandable
+                          ? 'hover:bg-surface-soft active:bg-primary/12'
+                          : 'cursor-default',
+                        !expanded && expandable && 'hover:border-border-strong',
+                      )}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{event.node_id ?? event.event_type}</span>
+                        <span className="tabular text-muted">{event.progress}%</span>
+                      </span>
+                      <span className="text-muted">{event.message}</span>
+                    </button>
+                    {expanded && inspect ? (
+                      <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-medium">{t('dryRunSelectNode')}</p>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSequence(null)}
+                            aria-label={t('dryRunCollapseNode')}
+                            className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-sm)] text-muted transition-colors hover:bg-surface-soft hover:text-text active:bg-primary/12"
+                          >
+                            <IconClose className="size-3.5" />
+                          </button>
+                        </div>
+                        <NodeInspectBody inspect={inspect} />
                       </div>
-                      <NodeInspectBody inspect={inspect} />
-                    </div>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
         </ol>
       )}
 
@@ -218,7 +223,9 @@ export function SandboxRunInspector({
           <p>
             <span className="text-muted">{t('dryRunLatest')}</span> {latestEvent.message}
           </p>
-          <p className="tabular text-muted">{tJob('progress', { percent: latestEvent.progress })}</p>
+          <p className="tabular text-muted">
+            {tJob('progress', { percent: latestEvent.progress })}
+          </p>
           <LiveThinking
             thinking={liveThinking.text}
             label={t('thinkingLive')}
@@ -276,7 +283,9 @@ export function SandboxRunInspector({
           )}
         </div>
       ) : layout === 'split' ? (
-        <p className="flex min-h-0 flex-1 items-center text-xs text-muted">{t('dryRunNoPreview')}</p>
+        <p className="flex min-h-0 flex-1 items-center text-xs text-muted">
+          {t('dryRunNoPreview')}
+        </p>
       ) : null}
     </div>
   );

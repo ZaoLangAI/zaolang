@@ -115,7 +115,9 @@ export function LibraryTabs({
   const bookmarks = useResource<Page<WorkSummary>>(
     tab === 'bookmarks' ? '/v1/me/bookmarks?limit=60' : null,
   );
-  const trash = useResource<Page<TrashWorkSummary>>(tab === 'trash' ? '/v1/me/trash?limit=60' : null);
+  const trash = useResource<Page<TrashWorkSummary>>(
+    tab === 'trash' ? '/v1/me/trash?limit=60' : null,
+  );
   const collections = useResource<Page<Collection>>(
     tab === 'collections' ? '/v1/collections' : null,
   );

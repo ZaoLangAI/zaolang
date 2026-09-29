@@ -62,7 +62,11 @@ export function CollaborationInvitesDialog({
               className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-3"
             >
               <div className="flex items-center gap-3">
-                <Avatar src={invite.inviter.avatar_url} name={invite.inviter.display_name} size="sm" />
+                <Avatar
+                  src={invite.inviter.avatar_url}
+                  name={invite.inviter.display_name}
+                  size="sm"
+                />
                 <p className="min-w-0 flex-1 text-sm">
                   {t('collaborationInvitedBy', {
                     name: invite.inviter.display_name,
@@ -79,7 +83,11 @@ export function CollaborationInvitesDialog({
                 >
                   {t('collaborationInviteDecline')}
                 </Button>
-                <Button size="sm" loading={busyId === invite.id} onClick={() => respond(invite, true)}>
+                <Button
+                  size="sm"
+                  loading={busyId === invite.id}
+                  onClick={() => respond(invite, true)}
+                >
                   {t('collaborationInviteAccept')}
                 </Button>
               </div>

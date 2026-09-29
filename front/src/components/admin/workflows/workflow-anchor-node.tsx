@@ -1,6 +1,13 @@
 'use client';
 
-import { BaseEdge, Handle, Position, getBezierPath, type EdgeProps, type NodeProps } from '@xyflow/react';
+import {
+  BaseEdge,
+  Handle,
+  Position,
+  getBezierPath,
+  type EdgeProps,
+  type NodeProps,
+} from '@xyflow/react';
 
 import { cn } from '@/lib/cn';
 import { anchorKindOf } from '@/components/admin/workflows/workflow-anchors';

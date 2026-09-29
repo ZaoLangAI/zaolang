@@ -23,12 +23,7 @@ import { type BreakpointVideoBinding } from './script-breakpoint';
 export type BatchKind = 'characters' | 'scenes' | 'videos' | 'audio';
 export type BatchItemKind = 'character' | 'scene' | 'video' | 'audio';
 export type BatchItemStatus =
-  | 'queued'
-  | 'submitting'
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'paused';
+  'queued' | 'submitting' | 'running' | 'succeeded' | 'failed' | 'paused';
 
 export interface BatchItemState {
   kind: BatchItemKind;
@@ -94,12 +89,7 @@ const SUBMIT_GAP_MS = 5500;
 const POLL_MS = 2500;
 const IMAGE_CONCURRENCY = 3;
 const STORAGE_VERSION = 1;
-const TERMINAL: ReadonlySet<JobStatus> = new Set([
-  'succeeded',
-  'failed',
-  'cancelled',
-  'expired',
-]);
+const TERMINAL: ReadonlySet<JobStatus> = new Set(['succeeded', 'failed', 'cancelled', 'expired']);
 
 type StoredBatch = {
   v: typeof STORAGE_VERSION;
@@ -182,10 +172,7 @@ export function quoteForBatch(
     });
 }
 
-export function inFlightIds(
-  items: Iterable<BatchItemState>,
-  kind: BatchItemKind,
-): Set<string> {
+export function inFlightIds(items: Iterable<BatchItemState>, kind: BatchItemKind): Set<string> {
   const ids = new Set<string>();
   for (const item of items) {
     if (item.kind !== kind) continue;
@@ -344,7 +331,8 @@ export function useScriptBatch({
       const kind = persistKind.current;
       if (!kind) return;
       const active = nextItems.some(
-        (item) => isActiveStatus(item.status) || item.status === 'paused' || item.status === 'failed',
+        (item) =>
+          isActiveStatus(item.status) || item.status === 'paused' || item.status === 'failed',
       );
       writeStore(
         episodeId,
@@ -393,8 +381,7 @@ export function useScriptBatch({
         });
         return;
       }
-      const refId =
-        item.kind === 'character' ? job.linked_character_id : job.linked_scene_id;
+      const refId = item.kind === 'character' ? job.linked_character_id : job.linked_scene_id;
       if (!refId) {
         patchItem(item.kind, item.id, {
           status: 'failed',
@@ -553,7 +540,9 @@ export function useScriptBatch({
     (kind: 'video' | 'audio') => {
       setItems((current) => {
         const next = current.map((row) =>
-          row.kind === kind && row.status === 'queued' ? { ...row, status: 'paused' as const } : row,
+          row.kind === kind && row.status === 'queued'
+            ? { ...row, status: 'paused' as const }
+            : row,
         );
         persist(next);
         return next;
@@ -783,13 +772,18 @@ export function useScriptBatch({
   const retryImage = useCallback(
     async (kind: 'character' | 'scene', source: ScriptCharacter | ScriptScene) => {
       if (running) return;
-      const id = kind === 'character' ? (source as ScriptCharacter).name : (source as ScriptScene).heading;
+      const id =
+        kind === 'character' ? (source as ScriptCharacter).name : (source as ScriptScene).heading;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
       setRunning(true);
       try {
-        const quote = await quoteForBatch(kind === 'character' ? 'characters' : 'scenes', persistParams.current, 1);
+        const quote = await quoteForBatch(
+          kind === 'character' ? 'characters' : 'scenes',
+          persistParams.current,
+          1,
+        );
         unitCreditsRef.current = quote.unitCredits;
         await runImage(
           { kind, id, label: id, status: 'queued' },
@@ -903,7 +897,11 @@ export function useScriptBatch({
         (item) => item.jobId && (item.status === 'submitting' || item.status === 'running'),
       );
       const queued = stored.items.filter((item) => item.status === 'queued');
-      if (inflight.length === 0 && queued.length === 0 && !stored.items.some((item) => item.status === 'paused')) {
+      if (
+        inflight.length === 0 &&
+        queued.length === 0 &&
+        !stored.items.some((item) => item.status === 'paused')
+      ) {
         writeStore(episodeId, null);
         return;
       }

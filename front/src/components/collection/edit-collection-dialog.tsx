@@ -96,12 +96,7 @@ export function EditCollectionDialog({
 
         <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
           <p className="text-xs text-muted">{t('deleteCollectionHint')}</p>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            onClick={() => setConfirmDelete(true)}
-          >
+          <Button type="button" variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             {t('deleteCollection')}
           </Button>
         </div>

@@ -30,7 +30,15 @@ interface PropertyConfig {
 }
 
 function propertyConfigs(
-  t: (key: 'keyframeOpacity' | 'keyframeX' | 'keyframeY' | 'keyframeScale' | 'keyframeRotation' | 'keyframeVolume') => string,
+  t: (
+    key:
+      | 'keyframeOpacity'
+      | 'keyframeX'
+      | 'keyframeY'
+      | 'keyframeScale'
+      | 'keyframeRotation'
+      | 'keyframeVolume',
+  ) => string,
   baseVolumeMillipercent: number,
 ): PropertyConfig[] {
   return [
@@ -128,15 +136,29 @@ export function KeyframeControls({
   const playheadTicks = useEditorUi((state) => state.playheadTicks);
   const [animations, setAnimations] = useState(initialAnimations);
   const [drafts, setDrafts] = useState<Partial<Record<AnimatableProperty, number>>>({});
-  const [easingDrafts, setEasingDrafts] = useState<Partial<Record<AnimatableProperty, EasingType>>>({});
+  const [easingDrafts, setEasingDrafts] = useState<Partial<Record<AnimatableProperty, EasingType>>>(
+    {},
+  );
 
   const addKeyframe = (config: PropertyConfig) => {
-    const resolved = resolveNumberAtTime(animations, config.property, playheadTicks, config.defaultValue);
+    const resolved = resolveNumberAtTime(
+      animations,
+      config.property,
+      playheadTicks,
+      config.defaultValue,
+    );
     const display = drafts[config.property] ?? config.toDisplay(resolved);
     const value = Math.round(config.fromDisplay(display));
     const easing = easingDrafts[config.property] ?? 'linear';
     onCommit([
-      { type: 'set_keyframe', element_id: elementId, property: config.property, at_ticks: playheadTicks, value, easing },
+      {
+        type: 'set_keyframe',
+        element_id: elementId,
+        property: config.property,
+        at_ticks: playheadTicks,
+        value,
+        easing,
+      },
     ]);
     setAnimations((current) => {
       const existing = current.channels[config.property]?.points ?? [];
@@ -151,7 +173,9 @@ export function KeyframeControls({
   const deleteKeyframe = (property: AnimatableProperty, atTicks: number) => {
     onCommit([{ type: 'delete_keyframe', element_id: elementId, property, at_ticks: atTicks }]);
     setAnimations((current) => {
-      const points = (current.channels[property]?.points ?? []).filter((point) => point.at_ticks !== atTicks);
+      const points = (current.channels[property]?.points ?? []).filter(
+        (point) => point.at_ticks !== atTicks,
+      );
       return { channels: { ...current.channels, [property]: { kind: 'number', points } } };
     });
   };
@@ -171,7 +195,12 @@ export function KeyframeControls({
       <p className="text-xs text-muted">{t('keyframesHint')}</p>
       {properties.map((config) => {
         const points = animations.channels[config.property]?.points ?? [];
-        const resolved = resolveNumberAtTime(animations, config.property, playheadTicks, config.defaultValue);
+        const resolved = resolveNumberAtTime(
+          animations,
+          config.property,
+          playheadTicks,
+          config.defaultValue,
+        );
         const draft = drafts[config.property] ?? config.toDisplay(resolved);
         return (
           <div key={config.property} className="flex flex-col gap-1">
@@ -186,7 +215,10 @@ export function KeyframeControls({
                   value={draft}
                   disabled={disabled}
                   onChange={(event) =>
-                    setDrafts((current) => ({ ...current, [config.property]: Number(event.target.value) }))
+                    setDrafts((current) => ({
+                      ...current,
+                      [config.property]: Number(event.target.value),
+                    }))
                   }
                   className="w-16 rounded-[var(--radius-sm)] border border-border bg-surface-soft px-1 py-0.5 text-fg"
                 />
@@ -195,22 +227,40 @@ export function KeyframeControls({
                 value={easingDrafts[config.property] ?? 'linear'}
                 disabled={disabled}
                 onChange={(event) =>
-                  setEasingDrafts((current) => ({ ...current, [config.property]: event.target.value as EasingType }))
+                  setEasingDrafts((current) => ({
+                    ...current,
+                    [config.property]: event.target.value as EasingType,
+                  }))
                 }
                 aria-label={t('keyframeEasing')}
                 className="rounded-[var(--radius-sm)] border border-border bg-surface-soft px-1 py-0.5 text-fg"
               >
                 {EASING_OPTIONS.map((easing) => (
                   <option key={easing} value={easing}>
-                    {t(`keyframeEasing_${easing}` as 'keyframeEasing_linear' | 'keyframeEasing_ease_in' | 'keyframeEasing_ease_out')}
+                    {t(
+                      `keyframeEasing_${easing}` as
+                        | 'keyframeEasing_linear'
+                        | 'keyframeEasing_ease_in'
+                        | 'keyframeEasing_ease_out',
+                    )}
                   </option>
                 ))}
               </select>
-              <Button size="sm" variant="secondary" disabled={disabled} onClick={() => addKeyframe(config)}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={disabled}
+                onClick={() => addKeyframe(config)}
+              >
                 {t('keyframeAdd')}
               </Button>
               {points.length > 0 ? (
-                <Button size="sm" variant="ghost" disabled={disabled} onClick={() => clearKeyframes(config.property)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={disabled}
+                  onClick={() => clearKeyframes(config.property)}
+                >
                   {t('keyframeClearAll')}
                 </Button>
               ) : null}

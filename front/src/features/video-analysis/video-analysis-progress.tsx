@@ -59,7 +59,9 @@ export function VideoAnalysisProgress({
           <Spinner />
           {tJob(job.status)}
         </p>
-        <span className="tabular text-xs text-muted">{tJob('progress', { percent: job.progress })}</span>
+        <span className="tabular text-xs text-muted">
+          {tJob('progress', { percent: job.progress })}
+        </span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-track">
         <div

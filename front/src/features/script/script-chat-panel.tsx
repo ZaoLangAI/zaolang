@@ -166,7 +166,9 @@ export function ScriptChatPanel({
       const token = `@${skill.title} `;
       setMessage(before + token + after);
       if (!alreadyReferenced) {
-        setReferencedSkillIds((ids) => (ids.length >= MAX_REFERENCED_SKILLS ? ids : [...ids, skill.id]));
+        setReferencedSkillIds((ids) =>
+          ids.length >= MAX_REFERENCED_SKILLS ? ids : [...ids, skill.id],
+        );
       }
       dismissedMentionStartRef.current = null;
       setMention(null);
@@ -208,7 +210,13 @@ export function ScriptChatPanel({
         event.preventDefault();
         setMention((current) =>
           current
-            ? { ...current, activeIndex: Math.min(current.activeIndex + 1, Math.max(filteredSkills.length - 1, 0)) }
+            ? {
+                ...current,
+                activeIndex: Math.min(
+                  current.activeIndex + 1,
+                  Math.max(filteredSkills.length - 1, 0),
+                ),
+              }
             : current,
         );
         return;
@@ -370,7 +378,9 @@ export function ScriptChatPanel({
             label={t('referenceSkill')}
             emptyLabel={t('mentionEmpty')}
             priceLabel={(credits) => t('referenceSkillPrice', { credits })}
-            onHoverIndex={(index) => setMention((current) => (current ? { ...current, activeIndex: index } : current))}
+            onHoverIndex={(index) =>
+              setMention((current) => (current ? { ...current, activeIndex: index } : current))
+            }
             onSelect={selectMention}
           />
         ) : null}

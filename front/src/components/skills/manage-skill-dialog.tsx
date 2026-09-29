@@ -11,7 +11,11 @@ import { Select, TextArea, TextInput } from '@/components/ui/field';
 import { ErrorNotice } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
-import type { CreationSkillCategory, CreationSkillDetail, CreationSkillSummary } from '@/lib/api/types';
+import type {
+  CreationSkillCategory,
+  CreationSkillDetail,
+  CreationSkillSummary,
+} from '@/lib/api/types';
 import { useResource } from '@/lib/use-resource';
 
 // `character`/`scene_asset` are managed from their own dedicated page
@@ -21,14 +25,7 @@ import { useResource } from '@/lib/use-resource';
 // the skill plaza (its own card has no dedicated management page) — see
 // `IMAGE_ASSET_ONLY_CATEGORIES` below, which is why re-filing away from
 // `cover_asset` isn't offered either.
-const CATEGORIES: CreationSkillCategory[] = [
-  'scene',
-  'lens',
-  'style',
-  'format',
-  'drama',
-  'other',
-];
+const CATEGORIES: CreationSkillCategory[] = ['scene', 'lens', 'style', 'format', 'drama', 'other'];
 const IMAGE_ASSET_ONLY_CATEGORIES = new Set<CreationSkillCategory>([
   'character',
   'scene_asset',

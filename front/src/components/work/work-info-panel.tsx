@@ -286,11 +286,7 @@ export function WorkInfoPanel({
           onClick={startRemix}
           disabled={!work.can_remix && !needsUnlock}
         >
-          {needsUnlock
-            ? tPage('unlockCta')
-            : work.can_remix
-              ? t('remixThis')
-              : t('notRemixable')}
+          {needsUnlock ? tPage('unlockCta') : work.can_remix ? t('remixThis') : t('notRemixable')}
         </Button>
         <Button
           size="lg"

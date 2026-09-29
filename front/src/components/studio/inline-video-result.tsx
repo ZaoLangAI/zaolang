@@ -7,11 +7,7 @@ import { LiveThinking } from '@/components/ai/thinking-disclosure';
 import { useSession } from '@/components/auth/session-provider';
 import { AwaitingInputPanel } from '@/components/job/awaiting-input-panel';
 import { PromoteJobDialog } from '@/components/job/promote-job-dialog';
-import {
-  STAGES,
-  stageLabelKey,
-  type Stage,
-} from '@/components/job/job-stages';
+import { STAGES, stageLabelKey, type Stage } from '@/components/job/job-stages';
 import { jobStageState } from '@/components/job/job-stage-state';
 import { DevicePreview } from '@/components/media/device-preview';
 import { DownloadAssetButton } from '@/components/media/download-asset-button';
@@ -100,8 +96,10 @@ export function InlineVideoResult({
   const [linkEpisodeOpen, setLinkEpisodeOpen] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(false);
 
-  const { reached, displayStage, finished, awaitingInput, reachedKey } =
-    jobStageState(job.status, events);
+  const { reached, displayStage, finished, awaitingInput, reachedKey } = jobStageState(
+    job.status,
+    events,
+  );
   const latestEvent = events[events.length - 1];
   const showAwaitingPanel = awaitingInput && !job.cancel_requested;
 
@@ -207,7 +205,10 @@ export function InlineVideoResult({
               <IconSparkle
                 className={cn('size-5 text-amber', !reduced && !finished && 'animate-pulse')}
               />
-              <p aria-live="polite" className="tabular text-4xl font-semibold tracking-tight text-text">
+              <p
+                aria-live="polite"
+                className="tabular text-4xl font-semibold tracking-tight text-text"
+              >
                 {job.progress}%
               </p>
               <p className="text-sm text-text">{t(stageLabelKey(displayStage, job.operation))}</p>
@@ -307,7 +308,9 @@ export function InlineVideoResult({
         <ErrorNotice title={t('cancelledTitle')} detail={t('failedHint')} />
       ) : null}
 
-      {showAwaitingPanel && job.output_url ? <AwaitingInputPanel key={job.id} jobId={job.id} /> : null}
+      {showAwaitingPanel && job.output_url ? (
+        <AwaitingInputPanel key={job.id} jobId={job.id} />
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         {showEnterEditor ? (

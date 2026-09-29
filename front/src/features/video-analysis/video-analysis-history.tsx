@@ -97,7 +97,12 @@ export function VideoAnalysisHistory({ refreshKey }: { refreshKey: number }) {
           >
             <div className="relative size-14 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
               {job.reference_url ? (
-                <video src={job.reference_url} muted preload="metadata" className="size-full object-cover" />
+                <video
+                  src={job.reference_url}
+                  muted
+                  preload="metadata"
+                  className="size-full object-cover"
+                />
               ) : null}
             </div>
             <div className="min-w-0 flex-1">
@@ -106,7 +111,12 @@ export function VideoAnalysisHistory({ refreshKey }: { refreshKey: number }) {
               </p>
               <p className="mt-0.5 text-xs text-muted">{formatDateTime(job.created_at, locale)}</p>
             </div>
-            <span className={cn('shrink-0 text-xs font-medium', STATUS_TONE[job.status] ?? 'text-muted')}>
+            <span
+              className={cn(
+                'shrink-0 text-xs font-medium',
+                STATUS_TONE[job.status] ?? 'text-muted',
+              )}
+            >
               {tJob(job.status)}
             </span>
           </button>

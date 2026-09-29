@@ -40,7 +40,9 @@ export function CollapsibleSection({
           className={cn('size-4 text-muted transition-transform', open && 'rotate-180')}
         />
       </button>
-      {open ? <div className="flex flex-col gap-4 border-t border-border p-3">{children}</div> : null}
+      {open ? (
+        <div className="flex flex-col gap-4 border-t border-border p-3">{children}</div>
+      ) : null}
     </div>
   );
 }

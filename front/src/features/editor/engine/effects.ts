@@ -72,7 +72,12 @@ function cssFilterFor(effects: ClipEffect[], includeBlurFallback: boolean): stri
   return parts.join(' ');
 }
 
-function drawMaskShape(ctx: OffscreenCanvasRenderingContext2D, mask: ClipMask, width: number, height: number): void {
+function drawMaskShape(
+  ctx: OffscreenCanvasRenderingContext2D,
+  mask: ClipMask,
+  width: number,
+  height: number,
+): void {
   const x = (mask.x_milli / 1000) * width;
   const y = (mask.y_milli / 1000) * height;
   const w = (mask.width_milli / 1000) * width;
@@ -139,7 +144,11 @@ export function applyClipEffects(
     const intensity = blurEffect.params.intensity ?? 15;
     const sigmaX = intensityToSigma(intensity, width, BLUR_REFERENCE_WIDTH);
     const sigmaY = intensityToSigma(intensity, height, BLUR_REFERENCE_HEIGHT);
-    const blurred = wasm.applyBlur(toOffscreenCanvas(current, width, height, scratch), sigmaX, sigmaY);
+    const blurred = wasm.applyBlur(
+      toOffscreenCanvas(current, width, height, scratch),
+      sigmaX,
+      sigmaY,
+    );
     if (blurred) {
       current = blurred;
       blurredByWasm = true;

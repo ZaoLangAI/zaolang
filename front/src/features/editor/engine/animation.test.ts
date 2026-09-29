@@ -17,7 +17,12 @@ describe('resolveNumberAtTime', () => {
   });
 
   it('returns the single point value everywhere when only one point exists', () => {
-    const value = resolveNumberAtTime(animations([{ at_ticks: 5000, value: 80 }]), 'opacity', 0, 50);
+    const value = resolveNumberAtTime(
+      animations([{ at_ticks: 5000, value: 80 }]),
+      'opacity',
+      0,
+      50,
+    );
     expect(value).toBe(80);
   });
 

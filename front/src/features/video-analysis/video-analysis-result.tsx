@@ -42,7 +42,9 @@ export function VideoAnalysisResult({
   };
 
   const useForVideoCreation = () =>
-    router.push(`/create/new?mode=video_creation&prompt=${encodeURIComponent(analysis.composed_prompt)}`);
+    router.push(
+      `/create/new?mode=video_creation&prompt=${encodeURIComponent(analysis.composed_prompt)}`,
+    );
   const useForScriptWriting = () =>
     router.push(`/create/script?ideaPrefill=${encodeURIComponent(analysis.composed_prompt)}`);
 
@@ -88,7 +90,9 @@ export function VideoAnalysisResult({
           {styleTags.map((tag) => (
             <Badge key={tag}>{tag}</Badge>
           ))}
-          {analysis.pacing ? <Badge tone="amber">{t('resultPacing', { pacing: analysis.pacing })}</Badge> : null}
+          {analysis.pacing ? (
+            <Badge tone="amber">{t('resultPacing', { pacing: analysis.pacing })}</Badge>
+          ) : null}
         </div>
       ) : null}
 

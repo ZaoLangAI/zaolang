@@ -73,9 +73,7 @@ async function DiscoverHero() {
   // Only the first slide's detail is resolved here so the wall is not held
   // behind five extra round trips. Neighbours load as the carousel rotates.
   const first = feed.items[0];
-  const firstDetail = first
-    ? await serverFetchOrNull<WorkDetail>(`/v1/works/${first.id}`)
-    : null;
+  const firstDetail = first ? await serverFetchOrNull<WorkDetail>(`/v1/works/${first.id}`) : null;
   if (feed.items.length === 0) return null;
 
   return (
@@ -109,7 +107,12 @@ async function InspirationSection({ filters }: { filters: Filters }) {
         title={t('inspiration')}
         description={t('inspirationHint')}
         action={
-          <DiscoverSort q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
+          <DiscoverSort
+            q={filters.q}
+            tag={filters.tag}
+            sort={filters.sort}
+            access={filters.access}
+          />
         }
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -120,7 +123,12 @@ async function InspirationSection({ filters }: { filters: Filters }) {
           sort={filters.sort}
           access={filters.access}
         />
-        <DiscoverAccess q={filters.q} tag={filters.tag} sort={filters.sort} access={filters.access} />
+        <DiscoverAccess
+          q={filters.q}
+          tag={filters.tag}
+          sort={filters.sort}
+          access={filters.access}
+        />
       </div>
       <div className="mt-5">
         {tiles.length > 0 ? (

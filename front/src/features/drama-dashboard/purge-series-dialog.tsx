@@ -61,7 +61,12 @@ export function PurgeSeriesDialog({
           <Button variant="ghost" onClick={onClose}>
             {tActions('cancel')}
           </Button>
-          <Button variant="danger" loading={busy} disabled={hasEpisodes} onClick={() => void purge()}>
+          <Button
+            variant="danger"
+            loading={busy}
+            disabled={hasEpisodes}
+            onClick={() => void purge()}
+          >
             {tActions('confirm')}
           </Button>
         </>

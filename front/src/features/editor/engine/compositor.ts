@@ -140,7 +140,10 @@ function resolveOverlap(
  * descending) that has any active content at `atTicks`. Lower tracks are
  * neither drawn nor heard while a higher one is covering them.
  */
-export function activeVideoLayers(document: CanonicalDocument, atTicks: number): WeightedVideoLayer[] {
+export function activeVideoLayers(
+  document: CanonicalDocument,
+  atTicks: number,
+): WeightedVideoLayer[] {
   const videoTracks = document.tracks
     .filter((track) => track.kind === 'video' && !track.muted)
     .sort((a, b) => b.order - a.order);
@@ -159,11 +162,20 @@ export function activeVideoLayer(
   return activeVideoLayers(document, atTicks)[0];
 }
 
-function buildClipLayer(element: TimelineElement, atTicks: number, weight: number): ActiveClipLayer | null {
+function buildClipLayer(
+  element: TimelineElement,
+  atTicks: number,
+  weight: number,
+): ActiveClipLayer | null {
   if (!element.asset_id) return null;
   const animations = element.animations;
   const baseOpacity = resolveNumberAtTime(animations, 'opacity', atTicks, 100_000) / 100_000;
-  const resolvedVolume = resolveNumberAtTime(animations, 'volume', atTicks, element.volume_millipercent);
+  const resolvedVolume = resolveNumberAtTime(
+    animations,
+    'volume',
+    atTicks,
+    element.volume_millipercent,
+  );
   return {
     asset_id: element.asset_id,
     element_id: element.id,
@@ -174,8 +186,18 @@ function buildClipLayer(element: TimelineElement, atTicks: number, weight: numbe
     opacity: Math.min(1, Math.max(0, baseOpacity * weight)),
     speedFactor: Math.max(element.speed_millipercent, 1) / 100_000,
     transform: {
-      xMilli: resolveNumberAtTime(animations, 'transform.x_milli', atTicks, IDENTITY_TRANSFORM.xMilli),
-      yMilli: resolveNumberAtTime(animations, 'transform.y_milli', atTicks, IDENTITY_TRANSFORM.yMilli),
+      xMilli: resolveNumberAtTime(
+        animations,
+        'transform.x_milli',
+        atTicks,
+        IDENTITY_TRANSFORM.xMilli,
+      ),
+      yMilli: resolveNumberAtTime(
+        animations,
+        'transform.y_milli',
+        atTicks,
+        IDENTITY_TRANSFORM.yMilli,
+      ),
       scaleMillipercent: resolveNumberAtTime(
         animations,
         'transform.scale_millipercent',
@@ -200,7 +222,9 @@ export function resolveFrame(document: CanonicalDocument, atTicks: number): Fram
   const secondary = videoLayers[1];
 
   const clip = primary ? buildClipLayer(primary.element, atTicks, primary.weight) : null;
-  const transitionLayer = secondary ? buildClipLayer(secondary.element, atTicks, secondary.weight) : null;
+  const transitionLayer = secondary
+    ? buildClipLayer(secondary.element, atTicks, secondary.weight)
+    : null;
 
   const captions = (captionTrack?.elements ?? [])
     .filter(
@@ -380,7 +404,11 @@ export class MediaPool {
 
   /** A second scratch buffer for `applyClipEffects`, kept separate from `scratchCanvas` since both can be read from in the same frame. */
   effectsScratchCanvas(width: number, height: number): OffscreenCanvas {
-    if (!this.effectsScratch || this.effectsScratch.width !== width || this.effectsScratch.height !== height) {
+    if (
+      !this.effectsScratch ||
+      this.effectsScratch.width !== width ||
+      this.effectsScratch.height !== height
+    ) {
       this.effectsScratch = new OffscreenCanvas(width, height);
     }
     return this.effectsScratch;
@@ -709,7 +737,15 @@ export async function composeFrame(
   let clipVolume: number | null = null;
   let complete = true;
   if (layers.clip) {
-    complete = await renderClipLayer(ctx, canvasWidth, canvasHeight, layers.clip, assets, pool, playing);
+    complete = await renderClipLayer(
+      ctx,
+      canvasWidth,
+      canvasHeight,
+      layers.clip,
+      assets,
+      pool,
+      playing,
+    );
     clipVolume = layers.clip.volume;
   }
   // Drawn on top of the primary layer with its own resolved (already

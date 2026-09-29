@@ -49,7 +49,15 @@ export function ExportPrecheckPanel({
       for (const sample of samples) {
         if (cancelled) return;
         try {
-          await composeFrame(ctx, canvas.width, canvas.height, document, sample.atTicks, assets, pool);
+          await composeFrame(
+            ctx,
+            canvas.width,
+            canvas.height,
+            document,
+            sample.atTicks,
+            assets,
+            pool,
+          );
           const src = canvas.toDataURL('image/jpeg', 0.6);
           if (!cancelled) setThumbs((prev) => new Map(prev).set(sample.atTicks, src));
         } catch {
@@ -82,7 +90,9 @@ export function ExportPrecheckPanel({
                 <span className="text-[9px] text-muted">{t('exportPrecheckThumbFailed')}</span>
               ) : null}
             </div>
-            <span className="font-mono text-[9px] text-muted">{formatTimecode(sample.atTicks)}</span>
+            <span className="font-mono text-[9px] text-muted">
+              {formatTimecode(sample.atTicks)}
+            </span>
           </div>
         );
       })}

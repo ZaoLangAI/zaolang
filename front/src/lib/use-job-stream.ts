@@ -302,7 +302,9 @@ function mergeEvents(current: StreamedEvent[], incoming: StreamedEvent[]): Strea
     const existing = bySequence.get(event.sequence);
     bySequence.set(event.sequence, existing ? { ...existing, ...event } : event);
   }
-  return [...bySequence.values()].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
+  return [...bySequence.values()].sort(
+    (left, right) => (left.sequence ?? 0) - (right.sequence ?? 0),
+  );
 }
 
 type ThinkingFrame = StreamedEvent & { event_type: 'thinking'; thinking?: string };

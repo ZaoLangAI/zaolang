@@ -137,7 +137,8 @@ function isModifier(event: { metaKey: boolean; ctrlKey: boolean }): boolean {
 
 /** Video on top (topmost layer first), then audio; caption above everything, overlay only if it has content. */
 function displayTracks(document: CanonicalDocument): TimelineTrack[] {
-  const byKind = (kind: TimelineTrack['kind']) => document.tracks.filter((track) => track.kind === kind);
+  const byKind = (kind: TimelineTrack['kind']) =>
+    document.tracks.filter((track) => track.kind === kind);
   const video = byKind('video').sort((a, b) => b.order - a.order || a.id.localeCompare(b.id));
   const audio = byKind('audio').sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
   const caption = byKind('caption');
@@ -198,27 +199,39 @@ export function Timeline({
   const fps = canvasFps(document.canvas);
   const pxPerTick = pxPerTickAt(zoom);
   const spanTicks = Math.max(durationTicks, TICKS_PER_SECOND) + TAIL_SECONDS * TICKS_PER_SECOND;
-  const contentWidth = Math.max(viewport.width - HEADER_WIDTH, Math.ceil(ticksToPx(spanTicks, zoom)));
+  const contentWidth = Math.max(
+    viewport.width - HEADER_WIDTH,
+    Math.ceil(ticksToPx(spanTicks, zoom)),
+  );
   const tracks = useMemo(() => displayTracks(document), [document]);
   const trackCountByKind = useMemo(() => {
     const counts: Partial<Record<TimelineTrack['kind'], number>> = {};
     for (const track of document.tracks) counts[track.kind] = (counts[track.kind] ?? 0) + 1;
     return counts;
   }, [document.tracks]);
-  const assetById = useMemo(() => new Map(assets.map((asset) => [asset.asset_id, asset])), [assets]);
+  const assetById = useMemo(
+    () => new Map(assets.map((asset) => [asset.asset_id, asset])),
+    [assets],
+  );
   const elementById = useMemo(() => {
     const map = new Map<string, { element: TimelineElement; track: TimelineTrack }>();
-    for (const track of document.tracks) for (const element of track.elements) map.set(element.id, { element, track });
+    for (const track of document.tracks)
+      for (const element of track.elements) map.set(element.id, { element, track });
     return map;
   }, [document.tracks]);
-  const markers = useMemo(() => [...document.markers].sort((a, b) => a.at_ticks - b.at_ticks), [document.markers]);
+  const markers = useMemo(
+    () => [...document.markers].sort((a, b) => a.at_ticks - b.at_ticks),
+    [document.markers],
+  );
   const activeMarker = markers.find((marker) => marker.at_ticks === playheadTicks) ?? null;
 
   const dragRef = useRef<DragSession | null>(null);
   const autoScrollRafRef = useRef<number | null>(null);
   const [live, setLive] = useState<Map<string, LivePosition> | null>(null);
   const [snapLine, setSnapLine] = useState<number | null>(null);
-  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(
+    null,
+  );
   const [dropGhost, setDropGhost] = useState<DropGhost | null>(null);
   const [newTrackLaneKind, setNewTrackLaneKind] = useState<'video' | 'audio' | null>(null);
 
@@ -340,15 +353,26 @@ export function Timeline({
     (session: DragSession, clientX: number, clientY: number, shiftKey: boolean): DragResult => {
       const deltaPx = clientX - session.startClientX;
       let deltaTicks = Math.round(deltaPx / pxPerTick);
-      const minStart = Math.min(...[...session.origins.values()].map((origin) => origin.start_ticks));
+      const minStart = Math.min(
+        ...[...session.origins.values()].map((origin) => origin.start_ticks),
+      );
       deltaTicks = Math.max(deltaTicks, -minStart);
       let snapTicks: number | null = null;
       const primary = session.primaryId ? session.origins.get(session.primaryId) : undefined;
       if (primary && snapEnabledFor({ shiftKey })) {
-        const targets = collectSnapTargets(document, { excludeIds: session.elementIds, playheadTicks });
+        const targets = collectSnapTargets(document, {
+          excludeIds: session.elementIds,
+          playheadTicks,
+        });
         const startSnap = snapTick(primary.start_ticks + deltaTicks, targets, snapThresholdTicks);
-        const endSnap = snapTick(primary.start_ticks + primary.duration_ticks + deltaTicks, targets, snapThresholdTicks);
-        const startDistance = startSnap.snapped ? Math.abs(startSnap.ticks - (primary.start_ticks + deltaTicks)) : Infinity;
+        const endSnap = snapTick(
+          primary.start_ticks + primary.duration_ticks + deltaTicks,
+          targets,
+          snapThresholdTicks,
+        );
+        const startDistance = startSnap.snapped
+          ? Math.abs(startSnap.ticks - (primary.start_ticks + deltaTicks))
+          : Infinity;
         const endDistance = endSnap.snapped
           ? Math.abs(endSnap.ticks - (primary.start_ticks + primary.duration_ticks + deltaTicks))
           : Infinity;
@@ -356,7 +380,10 @@ export function Timeline({
           deltaTicks = Math.max(-minStart, startSnap.ticks - primary.start_ticks);
           snapTicks = startSnap.target;
         } else if (endSnap.snapped) {
-          deltaTicks = Math.max(-minStart, endSnap.ticks - primary.start_ticks - primary.duration_ticks);
+          deltaTicks = Math.max(
+            -minStart,
+            endSnap.ticks - primary.start_ticks - primary.duration_ticks,
+          );
           snapTicks = endSnap.target;
         }
       }
@@ -379,7 +406,17 @@ export function Timeline({
       }
       return { deltaTicks, targetTrackId, newTrackKind, trim: null, snapTicks };
     },
-    [contentPoint, document, playheadTicks, pxPerTick, rowIndexAtY, snapEnabledFor, snapThresholdTicks, trackCountByKind, tracks],
+    [
+      contentPoint,
+      document,
+      playheadTicks,
+      pxPerTick,
+      rowIndexAtY,
+      snapEnabledFor,
+      snapThresholdTicks,
+      trackCountByKind,
+      tracks,
+    ],
   );
 
   const computeTrim = useCallback(
@@ -402,7 +439,10 @@ export function Timeline({
         }
         let duration = Math.max(MIN_ELEMENT_DURATION_TICKS, end - origin.start_ticks);
         if (sourceLength != null && origin.type !== 'caption') {
-          const maxDuration = Math.max(MIN_ELEMENT_DURATION_TICKS, Math.floor((sourceLength - origin.source_in_ticks) / speed));
+          const maxDuration = Math.max(
+            MIN_ELEMENT_DURATION_TICKS,
+            Math.floor((sourceLength - origin.source_in_ticks) / speed),
+          );
           duration = Math.min(duration, maxDuration);
         }
         return {
@@ -410,7 +450,11 @@ export function Timeline({
           targetTrackId: null,
           newTrackKind: null,
           snapTicks,
-          trim: { startTicks: origin.start_ticks, durationTicks: duration, sourceInTicks: origin.source_in_ticks },
+          trim: {
+            startTicks: origin.start_ticks,
+            durationTicks: duration,
+            sourceInTicks: origin.source_in_ticks,
+          },
         };
       }
       let start = origin.start_ticks + deltaTicks;
@@ -421,7 +465,10 @@ export function Timeline({
       }
       const end = origin.start_ticks + origin.duration_ticks;
       // Can't reveal media before the source's own first frame.
-      const earliest = origin.type === 'caption' ? 0 : Math.max(0, origin.start_ticks - Math.floor(origin.source_in_ticks / speed));
+      const earliest =
+        origin.type === 'caption'
+          ? 0
+          : Math.max(0, origin.start_ticks - Math.floor(origin.source_in_ticks / speed));
       start = Math.max(earliest, Math.min(start, end - MIN_ELEMENT_DURATION_TICKS));
       const shift = start - origin.start_ticks;
       return {
@@ -432,7 +479,10 @@ export function Timeline({
         trim: {
           startTicks: start,
           durationTicks: end - start,
-          sourceInTicks: origin.type === 'caption' ? 0 : Math.max(0, origin.source_in_ticks + Math.round(shift * speed)),
+          sourceInTicks:
+            origin.type === 'caption'
+              ? 0
+              : Math.max(0, origin.source_in_ticks + Math.round(shift * speed)),
         },
       };
     },
@@ -444,7 +494,11 @@ export function Timeline({
       const { x } = contentPoint(clientX, 0);
       let ticks = snapToFrame(Math.max(0, pxToTicks(x, zoom)), document.canvas);
       if (snapEnabledFor({ shiftKey })) {
-        const snapped = snapTick(ticks, collectSnapTargets(document, { playheadTicks: null }), snapThresholdTicks);
+        const snapped = snapTick(
+          ticks,
+          collectSnapTargets(document, { playheadTicks: null }),
+          snapThresholdTicks,
+        );
         if (snapped.snapped) ticks = snapped.ticks;
       }
       setPlayhead(ticks);
@@ -467,7 +521,14 @@ export function Timeline({
         const rowTop = RULER_HEIGHT + index * ROW_HEIGHT;
         if (!rangesOverlap(rowTop, rowTop + LANE_HEIGHT, y0, y1)) return;
         for (const element of track.elements) {
-          if (rangesOverlap(element.start_ticks, element.start_ticks + element.duration_ticks, fromTicks, toTicks)) {
+          if (
+            rangesOverlap(
+              element.start_ticks,
+              element.start_ticks + element.duration_ticks,
+              fromTicks,
+              toTicks,
+            )
+          ) {
             hits.push(element.id);
           }
         }
@@ -484,12 +545,20 @@ export function Timeline({
       session.lastClientX = clientX;
       session.lastClientY = clientY;
       if (session.kind === 'pending') {
-        const travelled = Math.hypot(clientX - session.startClientX, clientY - session.startClientY);
+        const travelled = Math.hypot(
+          clientX - session.startClientX,
+          clientY - session.startClientY,
+        );
         if (travelled < DRAG_THRESHOLD_PX) return;
         session.kind = session.intent;
-        if (session.kind === 'move' || session.kind === 'trim-start' || session.kind === 'trim-end') {
+        if (
+          session.kind === 'move' ||
+          session.kind === 'trim-start' ||
+          session.kind === 'trim-end'
+        ) {
           // Dragging an unselected element selects it (and only it) first.
-          if (session.primaryId && !session.initialSelection.includes(session.primaryId)) select([session.primaryId]);
+          if (session.primaryId && !session.initialSelection.includes(session.primaryId))
+            select([session.primaryId]);
         }
       }
       switch (session.kind) {
@@ -509,7 +578,9 @@ export function Timeline({
               startTicks: origin.start_ticks + result.deltaTicks,
               durationTicks: origin.duration_ticks,
               sourceInTicks: origin.source_in_ticks,
-              trackId: result.newTrackKind ? NEW_TRACK_LANE : (result.targetTrackId ?? origin.track_id),
+              trackId: result.newTrackKind
+                ? NEW_TRACK_LANE
+                : (result.targetTrackId ?? origin.track_id),
             });
           }
           setLive(next);
@@ -600,7 +671,12 @@ export function Timeline({
         if (startTicks === origin.start_ticks && nextDuration === origin.duration_ticks) return;
         if (origin.type === 'caption') {
           onCommand([
-            { type: 'update_caption', element_id: origin.id, at_ticks: startTicks, duration_ticks: nextDuration },
+            {
+              type: 'update_caption',
+              element_id: origin.id,
+              at_ticks: startTicks,
+              duration_ticks: nextDuration,
+            },
           ]);
         } else {
           onCommand([
@@ -634,7 +710,11 @@ export function Timeline({
         const container = scrollRef.current;
         if (!current || !container) return;
         const rect = container.getBoundingClientRect();
-        const speed = edgeAutoScrollSpeed(current.lastClientX, rect.left + HEADER_WIDTH, rect.right);
+        const speed = edgeAutoScrollSpeed(
+          current.lastClientX,
+          rect.left + HEADER_WIDTH,
+          rect.right,
+        );
         if (speed !== 0) {
           const before = container.scrollLeft;
           container.scrollLeft = Math.max(0, before + speed);
@@ -663,7 +743,11 @@ export function Timeline({
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
-    if (target.closest('[data-track-header]') || target.closest('[data-marker-id]') || target.closest('input,button,textarea')) {
+    if (
+      target.closest('[data-track-header]') ||
+      target.closest('[data-marker-id]') ||
+      target.closest('input,button,textarea')
+    ) {
       return;
     }
     const point = contentPoint(event.clientX, event.clientY);
@@ -699,14 +783,17 @@ export function Timeline({
       const id = elementNode.dataset.elementId!;
       const found = elementById.get(id);
       if (!found) return;
-      const trim = target.closest<HTMLElement>('[data-trim]')?.dataset.trim as 'start' | 'end' | undefined;
+      const trim = target.closest<HTMLElement>('[data-trim]')?.dataset.trim as
+        'start' | 'end' | undefined;
       const group = trim ? [id] : selectedIds.includes(id) ? selectedIds : [id];
       const origins = new Map<string, TimelineElement>();
       for (const memberId of group) {
         const member = elementById.get(memberId);
         if (member) origins.set(memberId, member.element);
       }
-      const kinds = new Set([...origins.values()].map((origin) => elementById.get(origin.id)!.track.kind));
+      const kinds = new Set(
+        [...origins.values()].map((origin) => elementById.get(origin.id)!.track.kind),
+      );
       const trackIds = new Set([...origins.values()].map((origin) => origin.track_id));
       dragRef.current = {
         ...base,
@@ -719,7 +806,11 @@ export function Timeline({
       };
       return;
     }
-    if (target.closest('[data-lane]') || target.closest('[data-new-track-zone]') || target === scrollRef.current) {
+    if (
+      target.closest('[data-lane]') ||
+      target.closest('[data-new-track-zone]') ||
+      target === scrollRef.current
+    ) {
       dragRef.current = {
         ...base,
         kind: 'pending',
@@ -741,14 +832,23 @@ export function Timeline({
     const point = contentPoint(event.clientX, event.clientY);
     let atTicks = Math.max(0, pxToTicks(point.x, zoom));
     if (snapEnabledFor(event)) {
-      const snapped = snapTick(atTicks, collectSnapTargets(document, { playheadTicks }), snapThresholdTicks);
+      const snapped = snapTick(
+        atTicks,
+        collectSnapTargets(document, { playheadTicks }),
+        snapThresholdTicks,
+      );
       if (snapped.snapped) atTicks = snapped.ticks;
     }
     if (files) return { laneId: null, atTicks, durationTicks: 3 * TICKS_PER_SECOND, kind: 'files' };
     const row = rowIndexAtY(point.y);
     const track = typeof row === 'number' ? tracks[row] : undefined;
     return {
-      laneId: track && (track.kind === 'video' || track.kind === 'audio') ? track.id : row === 'new' ? NEW_TRACK_LANE : null,
+      laneId:
+        track && (track.kind === 'video' || track.kind === 'audio')
+          ? track.id
+          : row === 'new'
+            ? NEW_TRACK_LANE
+            : null,
       atTicks,
       durationTicks: 3 * TICKS_PER_SECOND,
       kind: 'asset',
@@ -781,10 +881,16 @@ export function Timeline({
     const duration = defaultInsertDuration(payload);
     const commands: EditCommand[] = [];
     let trackId: string | null = null;
-    const hovered = ghost.laneId && ghost.laneId !== NEW_TRACK_LANE ? document.tracks.find((track) => track.id === ghost.laneId) : null;
+    const hovered =
+      ghost.laneId && ghost.laneId !== NEW_TRACK_LANE
+        ? document.tracks.find((track) => track.id === ghost.laneId)
+        : null;
     if (hovered && hovered.kind === kind) {
       trackId = hovered.id;
-    } else if ((trackCountByKind[kind] ?? 0) < MAX_TRACKS_PER_KIND && (ghost.laneId === NEW_TRACK_LANE || hovered)) {
+    } else if (
+      (trackCountByKind[kind] ?? 0) < MAX_TRACKS_PER_KIND &&
+      (ghost.laneId === NEW_TRACK_LANE || hovered)
+    ) {
       trackId = newTrackId();
       commands.push({ type: 'add_track', kind, track_id: trackId });
     } else {
@@ -808,7 +914,10 @@ export function Timeline({
   const visibleToTicks = pxToTicks(viewport.scrollLeft + Math.max(viewport.width, 1) + 100, zoom);
 
   const laneContents = useMemo(() => {
-    const map = new Map<string, { element: TimelineElement; position: LivePosition; sourceTrack: TimelineTrack }[]>();
+    const map = new Map<
+      string,
+      { element: TimelineElement; position: LivePosition; sourceTrack: TimelineTrack }[]
+    >();
     for (const track of document.tracks) {
       for (const element of track.elements) {
         const position = live?.get(element.id) ?? {
@@ -843,10 +952,16 @@ export function Timeline({
     const isCaption = element.type === 'caption';
     const isSelected = selectedIds.includes(element.id);
     const isLive = live?.has(element.id) ?? false;
-    const mediaKind = asset?.media_type ?? (asset?.mime_type.startsWith('audio/') ? 'audio' : asset?.mime_type.startsWith('image/') ? 'image' : 'video');
+    const mediaKind =
+      asset?.media_type ??
+      (asset?.mime_type.startsWith('audio/')
+        ? 'audio'
+        : asset?.mime_type.startsWith('image/')
+          ? 'image'
+          : 'video');
     const label = isCaption
-      ? element.text ?? ''
-      : `${element.type === 'sticker' ? t('elementSticker') : mediaLabel[mediaKind] ?? mediaLabel.video} · ${element.asset_id?.slice(-4) ?? ''}`;
+      ? (element.text ?? '')
+      : `${element.type === 'sticker' ? t('elementSticker') : (mediaLabel[mediaKind] ?? mediaLabel.video)} · ${element.asset_id?.slice(-4) ?? ''}`;
     return (
       <div
         key={element.id}
@@ -856,16 +971,27 @@ export function Timeline({
         aria-label={`${label} ${formatSeconds(position.durationTicks)}`}
         className={cn(
           'group absolute top-1 h-[44px] select-none overflow-hidden rounded-sm border text-left text-[10px] text-on-primary',
-          isCaption ? 'bg-script-dialogue/80' : element.type === 'sticker' ? 'bg-accent/80' : 'bg-primary/70',
+          isCaption
+            ? 'bg-script-dialogue/80'
+            : element.type === 'sticker'
+              ? 'bg-accent/80'
+              : 'bg-primary/70',
           disabled ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
-          isSelected ? 'border-white ring-2 ring-primary' : 'border-transparent hover:brightness-110',
+          isSelected
+            ? 'border-white ring-2 ring-primary'
+            : 'border-transparent hover:brightness-110',
           isLive && 'opacity-90 shadow-lg',
         )}
         style={{ left: leftPx, width: widthPx }}
       >
         {!isCaption && laneKind === 'video' && asset && mediaKind === 'image' ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed, short-lived URL; not a static asset
-          <img src={asset.url} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-60" />
+          <img
+            src={asset.url}
+            alt=""
+            aria-hidden
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-60"
+          />
         ) : null}
         {!isCaption && laneKind === 'video' && asset && mediaKind === 'video' ? (
           <ClipThumbnails
@@ -887,9 +1013,15 @@ export function Timeline({
           />
         ) : null}
         <span className="pointer-events-none relative flex items-center gap-1 truncate px-1.5 pt-0.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]">
-          {isCaption ? <IconText className="size-3 shrink-0" /> : element.type === 'sticker' ? <IconSticker className="size-3 shrink-0" /> : null}
+          {isCaption ? (
+            <IconText className="size-3 shrink-0" />
+          ) : element.type === 'sticker' ? (
+            <IconSticker className="size-3 shrink-0" />
+          ) : null}
           <span className="truncate">{label}</span>
-          <span className="ml-auto shrink-0 tabular-nums opacity-80">{formatSeconds(position.durationTicks)}</span>
+          <span className="ml-auto shrink-0 tabular-nums opacity-80">
+            {formatSeconds(position.durationTicks)}
+          </span>
         </span>
         {(element.transition_in || element.transition_out) && (
           <span className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-0.5 text-[8px] opacity-80">
@@ -944,7 +1076,10 @@ export function Timeline({
         }}
         onDrop={onDrop}
       >
-        <div className="relative" style={{ width: HEADER_WIDTH + contentWidth, minHeight: RULER_HEIGHT + totalRowsHeight }}>
+        <div
+          className="relative"
+          style={{ width: HEADER_WIDTH + contentWidth, minHeight: RULER_HEIGHT + totalRowsHeight }}
+        >
           {/* Ruler row (sticky at the top) */}
           <div className="sticky top-0 z-30 flex" style={{ height: RULER_HEIGHT }}>
             <div
@@ -971,13 +1106,20 @@ export function Timeline({
             const isOnlyOfKind = (trackCountByKind[track.kind] ?? 0) <= 1;
             const contents = laneContents.get(track.id) ?? [];
             return (
-              <div key={track.id} className="flex" style={{ height: ROW_HEIGHT, paddingBottom: ROW_GAP }}>
+              <div
+                key={track.id}
+                className="flex"
+                style={{ height: ROW_HEIGHT, paddingBottom: ROW_GAP }}
+              >
                 <div
                   data-track-header
                   className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border bg-surface-soft px-2"
                   style={{ width: HEADER_WIDTH, height: LANE_HEIGHT }}
                 >
-                  <span aria-hidden className={cn('h-6 w-1 shrink-0 rounded-full', TRACK_ACCENT[track.kind])} />
+                  <span
+                    aria-hidden
+                    className={cn('h-6 w-1 shrink-0 rounded-full', TRACK_ACCENT[track.kind])}
+                  />
                   <span className="shrink-0 text-muted">
                     {track.kind === 'video' ? (
                       <IconVideo className="size-3.5" />
@@ -989,25 +1131,53 @@ export function Timeline({
                       <IconImage className="size-3.5" />
                     )}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-muted" title={track.label || kindLabel[track.kind]}>
-                    {track.label || `${kindLabel[track.kind]}${isAddable && !isOnlyOfKind ? ` ${index + 1}` : ''}`}
+                  <span
+                    className="min-w-0 flex-1 truncate text-[11px] text-muted"
+                    title={track.label || kindLabel[track.kind]}
+                  >
+                    {track.label ||
+                      `${kindLabel[track.kind]}${isAddable && !isOnlyOfKind ? ` ${index + 1}` : ''}`}
                   </span>
                   {isAddable ? (
                     <span className="flex shrink-0 items-center">
                       <button
                         type="button"
-                        title={track.kind === 'video' ? (track.muted ? t('showTrack') : t('hideTrack')) : track.muted ? t('unmuteTrack') : t('muteTrack')}
-                        aria-label={track.kind === 'video' ? (track.muted ? t('showTrack') : t('hideTrack')) : track.muted ? t('unmuteTrack') : t('muteTrack')}
+                        title={
+                          track.kind === 'video'
+                            ? track.muted
+                              ? t('showTrack')
+                              : t('hideTrack')
+                            : track.muted
+                              ? t('unmuteTrack')
+                              : t('muteTrack')
+                        }
+                        aria-label={
+                          track.kind === 'video'
+                            ? track.muted
+                              ? t('showTrack')
+                              : t('hideTrack')
+                            : track.muted
+                              ? t('unmuteTrack')
+                              : t('muteTrack')
+                        }
                         aria-pressed={track.muted}
                         disabled={disabled}
-                        onClick={() => onCommand([{ type: 'set_track_muted', track_id: track.id, muted: !track.muted }])}
+                        onClick={() =>
+                          onCommand([
+                            { type: 'set_track_muted', track_id: track.id, muted: !track.muted },
+                          ])
+                        }
                         className={cn(
                           'inline-flex size-6 items-center justify-center rounded-[var(--radius-sm)] hover:bg-surface disabled:opacity-40',
                           track.muted ? 'text-danger' : 'text-muted',
                         )}
                       >
                         {track.kind === 'video' ? (
-                          track.muted ? <IconEyeOff className="size-3.5" /> : <IconEye className="size-3.5" />
+                          track.muted ? (
+                            <IconEyeOff className="size-3.5" />
+                          ) : (
+                            <IconEye className="size-3.5" />
+                          )
                         ) : track.muted ? (
                           <IconVolumeOff className="size-3.5" />
                         ) : (
@@ -1040,7 +1210,10 @@ export function Timeline({
                     <div
                       aria-hidden
                       className="pointer-events-none absolute top-1 h-[44px] rounded-sm border-2 border-dashed border-primary bg-primary/20"
-                      style={{ left: ticksToPx(dropGhost.atTicks, zoom), width: Math.max(4, ticksToPx(dropGhost.durationTicks, zoom)) }}
+                      style={{
+                        left: ticksToPx(dropGhost.atTicks, zoom),
+                        width: Math.max(4, ticksToPx(dropGhost.durationTicks, zoom)),
+                      }}
                     />
                   ) : null}
                 </div>
@@ -1059,7 +1232,9 @@ export function Timeline({
               data-new-track-zone
               className={cn(
                 'relative shrink-0 rounded-sm border border-dashed transition-colors',
-                newTrackLaneKind || dropGhost?.laneId === NEW_TRACK_LANE ? 'border-primary bg-primary/10' : 'border-transparent',
+                newTrackLaneKind || dropGhost?.laneId === NEW_TRACK_LANE
+                  ? 'border-primary bg-primary/10'
+                  : 'border-transparent',
               )}
               style={{ width: contentWidth, height: NEW_TRACK_ZONE_HEIGHT - ROW_GAP }}
             >
@@ -1073,14 +1248,20 @@ export function Timeline({
                   key={entry.element.id}
                   aria-hidden
                   className="pointer-events-none absolute top-1 h-6 rounded-sm bg-primary/50"
-                  style={{ left: ticksToPx(entry.position.startTicks, zoom), width: Math.max(4, ticksToPx(entry.position.durationTicks, zoom)) }}
+                  style={{
+                    left: ticksToPx(entry.position.startTicks, zoom),
+                    width: Math.max(4, ticksToPx(entry.position.durationTicks, zoom)),
+                  }}
                 />
               ))}
               {dropGhost && dropGhost.laneId === NEW_TRACK_LANE ? (
                 <div
                   aria-hidden
                   className="pointer-events-none absolute top-1 h-6 rounded-sm border-2 border-dashed border-primary bg-primary/20"
-                  style={{ left: ticksToPx(dropGhost.atTicks, zoom), width: Math.max(4, ticksToPx(dropGhost.durationTicks, zoom)) }}
+                  style={{
+                    left: ticksToPx(dropGhost.atTicks, zoom),
+                    width: Math.max(4, ticksToPx(dropGhost.durationTicks, zoom)),
+                  }}
                 />
               ) : null}
             </div>
@@ -1096,14 +1277,22 @@ export function Timeline({
             <div
               aria-hidden
               className="pointer-events-none absolute z-20 w-px bg-accent"
-              style={{ left: HEADER_WIDTH + ticksToPx(snapLine, zoom), top: RULER_HEIGHT, height: totalRowsHeight }}
+              style={{
+                left: HEADER_WIDTH + ticksToPx(snapLine, zoom),
+                top: RULER_HEIGHT,
+                height: totalRowsHeight,
+              }}
             />
           ) : null}
           {dropGhost?.kind === 'files' ? (
             <div
               aria-hidden
               className="pointer-events-none absolute z-20 w-0.5 bg-primary"
-              style={{ left: HEADER_WIDTH + ticksToPx(dropGhost.atTicks, zoom), top: RULER_HEIGHT, height: totalRowsHeight }}
+              style={{
+                left: HEADER_WIDTH + ticksToPx(dropGhost.atTicks, zoom),
+                top: RULER_HEIGHT,
+                height: totalRowsHeight,
+              }}
             />
           ) : null}
           {marquee ? (

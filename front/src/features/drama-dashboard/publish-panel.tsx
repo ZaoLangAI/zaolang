@@ -167,7 +167,9 @@ export function PublishPanel({ workId }: { workId: string }) {
                       ? t('platformNotConfiguredHint')
                       : result.reason === 'not_linked'
                         ? t('publishNotLinked')
-                        : t(`publishStatus${result.status.charAt(0).toUpperCase()}${result.status.slice(1)}`)}
+                        : t(
+                            `publishStatus${result.status.charAt(0).toUpperCase()}${result.status.slice(1)}`,
+                          )}
               </span>
             </li>
           ))}

@@ -69,7 +69,10 @@ function withPredictedIds(commands: EditCommand[]): EditCommand[] {
   });
 }
 
-function findElement(document: CanonicalDocument, id: string | undefined): TimelineElement | undefined {
+function findElement(
+  document: CanonicalDocument,
+  id: string | undefined,
+): TimelineElement | undefined {
   if (!id) return undefined;
   for (const track of document.tracks) {
     const found = track.elements.find((element) => element.id === id);
@@ -186,7 +189,11 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
     // A fresh load (initial mount) or a post-conflict resync both mean "the
     // server state we knew about is gone, start over" — reset the undo
     // stack to a single entry anchored at whatever the server says is head.
-    setCheckpoints(next.head_revision_id ? { stack: [next.head_revision_id], index: 0 } : { stack: [], index: -1 });
+    setCheckpoints(
+      next.head_revision_id
+        ? { stack: [next.head_revision_id], index: 0 }
+        : { stack: [], index: -1 },
+    );
   }, [adoptRevision, cutId]);
 
   useEffect(() => {
@@ -255,7 +262,11 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
       })
       .then((revision) => {
         headRef.current = revision.id;
-        const nextCut = { ...(cutRef.current ?? currentCut), head_revision_id: revision.id, head: revision };
+        const nextCut = {
+          ...(cutRef.current ?? currentCut),
+          head_revision_id: revision.id,
+          head: revision,
+        };
         cutRef.current = nextCut;
         setCut(nextCut);
         pushCheckpoint(revision.id);
@@ -394,8 +405,10 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
   // document no longer has.
   useEffect(() => {
     const present = new Set<string>();
-    for (const track of document.tracks) for (const element of track.elements) present.add(element.id);
-    if (selectedIds.some((id) => !present.has(id))) select(selectedIds.filter((id) => present.has(id)));
+    for (const track of document.tracks)
+      for (const element of track.elements) present.add(element.id);
+    if (selectedIds.some((id) => !present.has(id)))
+      select(selectedIds.filter((id) => present.has(id)));
   }, [document, select, selectedIds]);
 
   const durationTicks = useMemo(() => documentDuration(document), [document]);
@@ -431,11 +444,18 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
 
   const frame = frameTicks(document.canvas);
   const clampTick = (ticks: number) => Math.max(0, Math.min(durationTicks, Math.round(ticks)));
-  const selectedElements = selectedIds.map((id) => findElement(document, id)).filter((item): item is TimelineElement => !!item);
+  const selectedElements = selectedIds
+    .map((id) => findElement(document, id))
+    .filter((item): item is TimelineElement => !!item);
 
   const trimTo = (element: TimelineElement, start: number, end: number): EditCommand => {
     if (element.type === 'caption') {
-      return { type: 'update_caption', element_id: element.id, at_ticks: start, duration_ticks: end - start };
+      return {
+        type: 'update_caption',
+        element_id: element.id,
+        at_ticks: start,
+        duration_ticks: end - start,
+      };
     }
     const speed = Math.max(element.speed_millipercent, 1) / 100_000;
     const sourceIn = element.source_in_ticks + Math.round((start - element.start_ticks) * speed);
@@ -456,13 +476,22 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
     undo: () => void undo(),
     redo: () => void redo(),
     splitAtPlayhead: () => {
-      const targets = selectedIds.length > 0 ? selectedIds : elementIdsUnderTick(document, playheadTicks);
+      const targets =
+        selectedIds.length > 0 ? selectedIds : elementIdsUnderTick(document, playheadTicks);
       const commands: EditCommand[] = [];
       for (const id of targets) {
         const element = findElement(document, id);
         if (!element) continue;
-        if (playheadTicks > element.start_ticks && playheadTicks < element.start_ticks + element.duration_ticks) {
-          commands.push({ type: 'split_element', element_id: id, at_ticks: playheadTicks, new_element_id: newElementId() });
+        if (
+          playheadTicks > element.start_ticks &&
+          playheadTicks < element.start_ticks + element.duration_ticks
+        ) {
+          commands.push({
+            type: 'split_element',
+            element_id: id,
+            at_ticks: playheadTicks,
+            new_element_id: newElementId(),
+          });
         }
       }
       if (commands.length) apply(commands);
@@ -473,7 +502,8 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
       for (const element of selectedElements) {
         const end = element.start_ticks + element.duration_ticks;
         if (playheadTicks <= element.start_ticks) toDelete.push(element.id);
-        else if (playheadTicks < end) commands.push(trimTo(element, element.start_ticks, playheadTicks));
+        else if (playheadTicks < end)
+          commands.push(trimTo(element, element.start_ticks, playheadTicks));
       }
       if (toDelete.length) commands.push({ type: 'delete_elements', element_ids: toDelete });
       if (commands.length) apply(commands);
@@ -484,7 +514,8 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
       for (const element of selectedElements) {
         const end = element.start_ticks + element.duration_ticks;
         if (playheadTicks >= end) toDelete.push(element.id);
-        else if (playheadTicks > element.start_ticks) commands.push(trimTo(element, playheadTicks, end));
+        else if (playheadTicks > element.start_ticks)
+          commands.push(trimTo(element, playheadTicks, end));
       }
       if (toDelete.length) commands.push({ type: 'delete_elements', element_ids: toDelete });
       if (commands.length) apply(commands);
@@ -499,7 +530,9 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
       if (selectedIds.length) setClipboard(selectedIds);
     },
     paste: () => {
-      const sources = clipboardIds.map((id) => findElement(document, id)).filter((item): item is TimelineElement => !!item);
+      const sources = clipboardIds
+        .map((id) => findElement(document, id))
+        .filter((item): item is TimelineElement => !!item);
       if (sources.length === 0) return;
       const earliest = Math.min(...sources.map((element) => element.start_ticks));
       const newIds = sources.map(() => newElementId());
@@ -516,7 +549,8 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
     deleteSelected: () => {
       if (selectedIds.length) apply([{ type: 'delete_elements', element_ids: selectedIds }]);
     },
-    selectAll: () => select(document.tracks.flatMap((track) => track.elements.map((element) => element.id))),
+    selectAll: () =>
+      select(document.tracks.flatMap((track) => track.elements.map((element) => element.id))),
     deselectAll: () => select([]),
     toggleMarkerAtPlayhead: () => {
       const existing = document.markers.find((marker) => marker.at_ticks === playheadTicks);
@@ -527,14 +561,16 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
       if (selectedElements.length === 0) return;
       const earliest = Math.min(...selectedElements.map((element) => element.start_ticks));
       const delta = playheadTicks - earliest;
-      if (delta !== 0) apply([{ type: 'move_elements', element_ids: selectedIds, delta_ticks: delta }]);
+      if (delta !== 0)
+        apply([{ type: 'move_elements', element_ids: selectedIds, delta_ticks: delta }]);
     },
     toggleSnapping,
     togglePlay: () => setPlaying(!playing),
     seekTo: (ticks) => setPlayhead(clampTick(ticks)),
     // Read the live playhead: key auto-repeat can fire several times per React commit.
     seekBy: (delta) => setPlayhead(clampTick(useEditorUi.getState().playheadTicks + delta)),
-    stepFrames: (frames) => setPlayhead(clampTick(useEditorUi.getState().playheadTicks + frames * frame)),
+    stepFrames: (frames) =>
+      setPlayhead(clampTick(useEditorUi.getState().playheadTicks + frames * frame)),
     goToStart: () => setPlayhead(0),
     goToEnd: () => setPlayhead(durationTicks),
     addTrack: (kind) => apply([{ type: 'add_track', kind, track_id: newTrackId() }]),
@@ -552,7 +588,13 @@ export function DramaEditor({ cutId, draftId }: { cutId: string; draftId: string
         const trackId = documentRef.current.tracks.find((track) => track.kind === kind)?.id;
         if (!trackId) continue;
         apply([
-          { type: 'insert_clip', track_id: trackId, asset_id: asset.id, at_ticks: cursor, duration_ticks: duration },
+          {
+            type: 'insert_clip',
+            track_id: trackId,
+            asset_id: asset.id,
+            at_ticks: cursor,
+            duration_ticks: duration,
+          },
         ]);
         cursor += duration;
       } catch (error) {

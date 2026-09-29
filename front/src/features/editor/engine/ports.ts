@@ -168,7 +168,12 @@ export type EditCommand =
   | { type: 'delete_elements'; element_ids: string[] }
   | { type: 'move_elements'; element_ids: string[]; delta_ticks: number; track_id?: string }
   /** Copies each element onto its own track with a fresh id; without `delta_ticks` the copy lands right after the source's end, with it the copy is offset from the source's start. `new_element_ids` (one per source) lets the optimistic frontend predict the ids. */
-  | { type: 'duplicate_elements'; element_ids: string[]; delta_ticks?: number; new_element_ids?: string[] }
+  | {
+      type: 'duplicate_elements';
+      element_ids: string[];
+      delta_ticks?: number;
+      new_element_ids?: string[];
+    }
   | {
       type: 'trim_element';
       element_id: string;

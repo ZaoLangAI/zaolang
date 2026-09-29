@@ -5,7 +5,12 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 
-import { TICKS_PER_SECOND, type ClipTransition, type EditCommand, type TransitionType } from './engine/ports';
+import {
+  TICKS_PER_SECOND,
+  type ClipTransition,
+  type EditCommand,
+  type TransitionType,
+} from './engine/ports';
 
 const TRANSITION_TYPES: TransitionType[] = ['crossfade', 'dip_to_black'];
 
@@ -82,11 +87,15 @@ function EdgeControls({
     dip_to_black: t('transitionType.dip_to_black'),
   };
   const [type, setType] = useState<TransitionType | 'none'>(initial?.type ?? 'none');
-  const [seconds, setSeconds] = useState(initial ? initial.duration_ticks / TICKS_PER_SECOND : Math.min(1, maxSeconds));
+  const [seconds, setSeconds] = useState(
+    initial ? initial.duration_ticks / TICKS_PER_SECOND : Math.min(1, maxSeconds),
+  );
 
   const apply = () => {
     const transition: ClipTransition | null =
-      type === 'none' ? null : { type, duration_ticks: Math.round(Math.min(seconds, maxSeconds) * TICKS_PER_SECOND) };
+      type === 'none'
+        ? null
+        : { type, duration_ticks: Math.round(Math.min(seconds, maxSeconds) * TICKS_PER_SECOND) };
     onCommit([{ type: 'set_transition', element_id: elementId, edge, transition }]);
   };
 

@@ -34,7 +34,13 @@ export function StyleGalleryDialog({
   const entries = gallery.data?.items ?? [];
 
   return (
-    <Dialog open={open} onClose={onClose} title={t('dialogTitle')} description={t('dialogDescription')} size="xl">
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={t('dialogTitle')}
+      description={t('dialogDescription')}
+      size="xl"
+    >
       {gallery.status === 'loading' ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }, (_, index) => (

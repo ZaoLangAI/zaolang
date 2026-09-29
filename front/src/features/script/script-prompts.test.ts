@@ -50,9 +50,9 @@ describe('characterImagePrompt', () => {
   });
 
   it('does not prepend a second medium when traits already name one', () => {
-    expect(
-      characterImagePrompt(character({ traits: '二维日系动漫造型，银发高中生' })),
-    ).toBe(`林夏。二维日系动漫造型，银发高中生。${CHARACTER_SHEET_PROMPT_HINT}`);
+    expect(characterImagePrompt(character({ traits: '二维日系动漫造型，银发高中生' }))).toBe(
+      `林夏。二维日系动漫造型，银发高中生。${CHARACTER_SHEET_PROMPT_HINT}`,
+    );
   });
 });
 
@@ -85,16 +85,23 @@ describe('breakpointSegmentPrompt', () => {
   });
 
   it('inherits this scene’s environment on a later segment with no scene block', () => {
-    expect(breakpointSegmentPrompt(mixedScene(), 7)).toBe('雨巷，夜，霓虹倒映积水\n台词：林夏：别走。');
+    expect(breakpointSegmentPrompt(mixedScene(), 7)).toBe(
+      '雨巷，夜，霓虹倒映积水\n台词：林夏：别走。',
+    );
   });
 });
 
 describe('breakpointSegmentUserPrompt / promptForBreakpointKey', () => {
   it('seeds the clip studio with original wording, speaker included', () => {
     expect(breakpointSegmentUserPrompt(mixedScene(), 5)).toBe(
-      ['雨巷', '夜，霓虹倒映积水', '苏晴撑伞停下', '中景推近', '苏晴：你终于来了。', '她转身离开'].join(
-        '\n',
-      ),
+      [
+        '雨巷',
+        '夜，霓虹倒映积水',
+        '苏晴撑伞停下',
+        '中景推近',
+        '苏晴：你终于来了。',
+        '她转身离开',
+      ].join('\n'),
     );
   });
 
@@ -141,9 +148,7 @@ describe('displaySegmentBlocks / applySegmentBlockTexts', () => {
       scenes: [mixedScene()],
     };
     expect(
-      applySegmentBlockTexts(document, '雨巷#1', [
-        { type: 'action', character: null, text: '错' },
-      ]),
+      applySegmentBlockTexts(document, '雨巷#1', [{ type: 'action', character: null, text: '错' }]),
     ).toBeNull();
   });
 });

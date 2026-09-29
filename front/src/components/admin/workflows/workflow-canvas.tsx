@@ -49,11 +49,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Select, TextInput } from '@/components/ui/field';
 import { Badge } from '@/components/ui/primitives';
-import type {
-  NodeTypeView,
-  WorkflowEdgeKind,
-  WorkflowGraphJson,
-} from '@/lib/api/admin-types';
+import type { NodeTypeView, WorkflowEdgeKind, WorkflowGraphJson } from '@/lib/api/admin-types';
 
 const nodeTypes: NodeTypes = { workflowNode: WorkflowNode, [ANCHOR_NODE_TYPE]: WorkflowAnchorNode };
 const edgeTypes: EdgeTypes = { workflowEdge: WorkflowEdge, [ANCHOR_EDGE_TYPE]: WorkflowAnchorEdge };
@@ -839,9 +835,7 @@ function WorkflowCanvasInner({
                   spec={editingNode.data.spec}
                   value={editingNode.data.config}
                   disabled={readOnly}
-                  availablePorts={
-                    editingNode.data.nodeType === 'join' ? availablePorts : undefined
-                  }
+                  availablePorts={editingNode.data.nodeType === 'join' ? availablePorts : undefined}
                   onChange={updateNodeConfig}
                 />
               </div>

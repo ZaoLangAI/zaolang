@@ -20,7 +20,13 @@ import {
 
 import type { EditorActions } from '../actions';
 import type { Marker } from '../engine/ports';
-import { ZOOM_BUTTON_FACTOR, clampZoom, formatTimecode, sliderFromZoom, zoomFromSlider } from './geometry';
+import {
+  ZOOM_BUTTON_FACTOR,
+  clampZoom,
+  formatTimecode,
+  sliderFromZoom,
+  zoomFromSlider,
+} from './geometry';
 
 function ToolButton({
   label,
@@ -93,20 +99,45 @@ export function TimelineToolbar({
   const t = useTranslations('editor');
   return (
     <div className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border bg-surface px-2">
-      <ToolButton label={t('undo')} shortcut="Ctrl+Z" onClick={actions.undo} disabled={disabled || !actions.canUndo}>
+      <ToolButton
+        label={t('undo')}
+        shortcut="Ctrl+Z"
+        onClick={actions.undo}
+        disabled={disabled || !actions.canUndo}
+      >
         <IconUndo />
       </ToolButton>
-      <ToolButton label={t('redo')} shortcut="Ctrl+Shift+Z" onClick={actions.redo} disabled={disabled || !actions.canRedo}>
+      <ToolButton
+        label={t('redo')}
+        shortcut="Ctrl+Shift+Z"
+        onClick={actions.redo}
+        disabled={disabled || !actions.canRedo}
+      >
         <IconRedo />
       </ToolButton>
       <Divider />
-      <ToolButton label={t('splitAtPlayhead')} shortcut="S" onClick={actions.splitAtPlayhead} disabled={disabled}>
+      <ToolButton
+        label={t('splitAtPlayhead')}
+        shortcut="S"
+        onClick={actions.splitAtPlayhead}
+        disabled={disabled}
+      >
         <IconScissors />
       </ToolButton>
-      <ToolButton label={t('keepLeft')} shortcut="W" onClick={actions.keepLeft} disabled={disabled || !hasSelection}>
+      <ToolButton
+        label={t('keepLeft')}
+        shortcut="W"
+        onClick={actions.keepLeft}
+        disabled={disabled || !hasSelection}
+      >
         <span className="text-[11px] font-semibold">◧</span>
       </ToolButton>
-      <ToolButton label={t('keepRight')} shortcut="Q" onClick={actions.keepRight} disabled={disabled || !hasSelection}>
+      <ToolButton
+        label={t('keepRight')}
+        shortcut="Q"
+        onClick={actions.keepRight}
+        disabled={disabled || !hasSelection}
+      >
         <span className="text-[11px] font-semibold">◨</span>
       </ToolButton>
       <ToolButton
@@ -171,10 +202,18 @@ export function TimelineToolbar({
         <IconMagnet />
       </ToolButton>
       <Divider />
-      <ToolButton label={t('addVideoTrack')} onClick={() => actions.addTrack('video')} disabled={disabled}>
+      <ToolButton
+        label={t('addVideoTrack')}
+        onClick={() => actions.addTrack('video')}
+        disabled={disabled}
+      >
         <IconVideo />
       </ToolButton>
-      <ToolButton label={t('addAudioTrack')} onClick={() => actions.addTrack('audio')} disabled={disabled}>
+      <ToolButton
+        label={t('addAudioTrack')}
+        onClick={() => actions.addTrack('audio')}
+        disabled={disabled}
+      >
         <IconMusic />
       </ToolButton>
 
@@ -184,7 +223,10 @@ export function TimelineToolbar({
         {formatTimecode(durationTicks, fps)}
       </span>
       <Divider />
-      <ToolButton label={t('timelineZoomOut')} onClick={() => onZoomChange(clampZoom(zoom / ZOOM_BUTTON_FACTOR))}>
+      <ToolButton
+        label={t('timelineZoomOut')}
+        onClick={() => onZoomChange(clampZoom(zoom / ZOOM_BUTTON_FACTOR))}
+      >
         <IconZoomOut />
       </ToolButton>
       <input
@@ -197,7 +239,10 @@ export function TimelineToolbar({
         onChange={(event) => onZoomChange(zoomFromSlider(Number(event.target.value)))}
         className="w-24 accent-primary"
       />
-      <ToolButton label={t('timelineZoomIn')} onClick={() => onZoomChange(clampZoom(zoom * ZOOM_BUTTON_FACTOR))}>
+      <ToolButton
+        label={t('timelineZoomIn')}
+        onClick={() => onZoomChange(clampZoom(zoom * ZOOM_BUTTON_FACTOR))}
+      >
         <IconZoomIn />
       </ToolButton>
     </div>

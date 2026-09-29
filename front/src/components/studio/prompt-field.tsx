@@ -139,7 +139,10 @@ export function PromptField({
         current
           ? {
               ...current,
-              activeIndex: Math.min(current.activeIndex + 1, Math.max(filteredSkills.length - 1, 0)),
+              activeIndex: Math.min(
+                current.activeIndex + 1,
+                Math.max(filteredSkills.length - 1, 0),
+              ),
             }
           : current,
       );
@@ -180,7 +183,10 @@ export function PromptField({
         maxLength={maxLength}
         onChange={(event) => {
           onChange(event.target.value);
-          refreshMention(event.target.value, event.target.selectionStart ?? event.target.value.length);
+          refreshMention(
+            event.target.value,
+            event.target.selectionStart ?? event.target.value.length,
+          );
         }}
         onKeyDown={handleKeyDown}
       />

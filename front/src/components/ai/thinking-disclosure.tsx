@@ -117,13 +117,18 @@ export function LiveThinking({
         onClick={() => setExpanded((current) => !current)}
         className="mb-1 flex items-center gap-1 text-[11px] font-medium text-muted transition-colors hover:text-text"
       >
-        <IconChevronDown className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-180')} />
+        <IconChevronDown
+          className={cn('size-3 shrink-0 transition-transform', expanded && 'rotate-180')}
+        />
         {label}
       </button>
       {expanded ? (
         <div
           ref={scrollRef}
-          className={cn('overflow-y-auto rounded-[var(--radius-sm)] bg-surface-soft/60 px-2.5 py-2', className)}
+          className={cn(
+            'overflow-y-auto rounded-[var(--radius-sm)] bg-surface-soft/60 px-2.5 py-2',
+            className,
+          )}
         >
           <ThinkingParagraphs text={thinking} />
         </div>
