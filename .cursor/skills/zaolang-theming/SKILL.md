@@ -13,16 +13,16 @@ Not here → `zaolang-frontend-ui` (components), `zaolang-i18n-region` (locale f
 | Path | What |
 |---|---|
 | `front/src/app/globals.css` | dark + light token sets, `@theme inline`, `--breakpoint-*`, reduced-motion rules |
-| `front/src/lib/theme.ts` | `themePreferences`, `THEME_COOKIE` (`zl_theme`), `MOTION_COOKIE`, `themeColor`, `themeInitScript` |
-| `front/src/components/theme/theme-provider.tsx` | `useTheme`: preference, `reduceMotion`, cookies, side-effect sync |
+| `front/src/lib/theme.ts` | `themePreferences`, `THEME_COOKIE` (`zl_theme`), `MOTION_COOKIE` (`zl_reduce_motion`), `themeColor`, `themeInitScript`, `resolveTheme` |
+| `front/src/components/theme/theme-provider.tsx` | `useTheme`: preference, `resolved`, `reduceMotion`; writes cookies, applies to `<html>`, View Transition crossfade |
 | `front/src/components/theme/theme-init-script.tsx` | injects `themeInitScript` via `useServerInsertedHTML` |
-| `front/src/app/[locale]/layout.tsx` | SSR `data-theme` / `data-reduced-motion` from cookies |
+| `front/src/app/[locale]/layout.tsx` | SSR `data-theme` / `data-theme-preference` / `data-reduced-motion` from cookies (`system` → dark) |
 | `front/src/components/layout/theme-menu.tsx` | switcher; in top-bar preference menu and editor header |
-| `front/src/components/app-providers.tsx` | `persistTheme` → `PATCH /v1/auth/me/preferences` |
-| `front/src/lib/motion.ts` | `loadAnime` (lazy animejs), `useReducedMotion` |
+| `front/src/lib/theme-sync.ts` | `syncThemePreference` → `PATCH /v1/auth/me/preferences`; wired as `onPersist` in `front/src/components/app-providers.tsx` |
+| `front/src/lib/motion.ts` | `loadAnime` (lazy animejs), `useReducedMotion`, `useIsomorphicLayoutEffect` |
 | `front/src/lib/use-reveal.ts` | `useRevealOnView` — one-shot fade-up on first view |
-| `front/src/lib/use-overlay-transition.ts` | keeps overlays mounted through their exit animation |
-| `front/src/lib/use-media-query.ts` | `useMediaQuery`, `useMinWidth`, `BREAKPOINTS` (mirrors `--breakpoint-*`) |
+| `front/src/lib/use-overlay-transition.ts` | returns `render`: mounts a commit after `open`, unmounts after the exit animation |
+| `front/src/lib/use-media-query.ts` | `useMediaQuery`, `useMinWidth`, `BREAKPOINTS` (mirrors `--breakpoint-*`: xs 480, sm 760, md 1024, lg 1180, xl 1440 — not Tailwind defaults) |
 
 ## Invariants
 
@@ -30,8 +30,8 @@ Not here → `zaolang-frontend-ui` (components), `zaolang-i18n-region` (locale f
 2. Dark values are locked. A new colour = new token in dark, light, and `@theme inline`; missing one silently inherits.
 3. Light must pass WCAG AA (4.5:1 body, 3:1 large); compute before changing light `--primary`. `--script-*` tokens aren't axe-scanned (gated route) — recompute by hand.
 4. SSR is flicker-free: `data-theme` from the cookie; `themeInitScript` resolves `system` before paint. Inject only via `useServerInsertedHTML` — a React `<script>` child errors in React 19; an effect flashes.
-5. Switching also sets `color-scheme` and `<meta name="theme-color">` (`themeColor`).
-6. Theme + reduce-motion persist in cookies. `persistTheme` also PATCHes preferences (`anonymous: true`) and skips `ADMIN_PATH` — console routes must not call the consumer preferences API.
+5. Switching also sets `color-scheme` and `<meta name="theme-color">` (`themeColor`), inside `document.startViewTransition` unless `shouldSkipViewTransition` (unsupported, reduced motion, hidden tab — it throws there); first mount applies with no transition. axe scans wait for running transitions (`front/e2e/support/axe.ts`) — a mid-fade scan reports false contrast failures.
+6. Theme + reduce-motion persist in cookies — the only source SSR reads. `syncThemePreference` also PATCHes the account `theme`, authenticated (normal refresh-and-retry), only when `getAccessToken()` is set, and never on console routes (`ADMIN_PATH` anchored to the locale-less root, so `/profile/admin` still syncs). Web never applies `user.theme` back; the account copy is write-only here.
 7. Reduced motion = OS query OR app toggle (`data-reduced-motion`). CSS collapses durations; JS goes through `useReducedMotion` + `loadAnime`, never a static animejs import. `qa-visual` fails any duration > 50 ms.
 8. `useMediaQuery` is `false` on the server — behaviour only, layout stays in CSS. A `--breakpoint-*` change must update `BREAKPOINTS`.
 
@@ -46,6 +46,7 @@ Not here → `zaolang-frontend-ui` (components), `zaolang-i18n-region` (locale f
 ```bash
 make test-a11y   # axe incl. color-contrast, both themes
 make qa-visual   # both themes × 3 viewports + reduced motion
+cd front && npx vitest run src/lib/theme-sync.test.ts
 ```
 
 Manual: light → reload, no dark flash; `system` follows OS live.

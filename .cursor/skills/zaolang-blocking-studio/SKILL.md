@@ -16,14 +16,17 @@ Not here → `zaolang-editor-drama` (scripts, turns), `zaolang-media-assets` (re
 | `back/app/domain/blocking/segments.py` | `ordered_segments` (port of `orderedBreakpointKeys`), duration estimate, source hashes |
 | `back/app/domain/blocking/camera_language.py` | `parse_camera_text` (camera block → size/move), `normalize_token` (Chinese/film shorthand) |
 | `back/app/domain/blocking/sanitize.py` | `sanitize_blocking`, `fit_durations`, `_reconcile_with_script`, `stale_segment_keys` |
-| `back/app/domain/blocking/service.py` | three-phase turn stream, rebuild, `patch_manual`, `update_settings`, versions |
+| `back/app/domain/blocking/service.py` | `stream_blocking_turn` (`PhaseMarker` route → script → blocking; rebuild skips route/script), `prepare_rebuild`, `patch_manual`, `update_settings`, `get_version` |
+| `back/app/api/schemas/blocking.py` | `BlockingDocument`/`BlockingState` (+ Literal vocab); `front/src/features/blocking/types.ts` only aliases the generated schema |
+| `back/app/models/editor.py:EpisodeBlockingVersion` | history (`version_no`, origin `llm_turn`/`rebuild`/`manual`); head is `DramaEpisode.blocking_json` |
 | `back/app/agents/blocking_director.py` | `copy` slots `blocking_route` (JSON) and `blocking_derive` (streamed) |
 | `back/app/api/v1/blocking.py` | `/v1/scripts/{id}/blocking/turns`, `blocking:rebuild` (SSE); PATCH blocking/settings; GET versions |
 | `back/app/domain/media/reference_roles.py` | motion-guide directive, applied in `back/app/workflows/nodes.py:_plan_enhancements` |
 | `front/src/features/blocking/compiler/` | pure `compileBlocking`; `camera.ts`, `obstacles.ts` (A*), `tracks.ts`, `quality.ts` metrics |
 | `front/src/features/blocking/engine/` | plain three.js (no r3f): player, mannequin/poses, stage, drag `editor.ts` |
 | `front/src/features/blocking/export/render-segment.ts` | segment → clip: WebCodecs+mediabunny, else MediaRecorder |
-| `front/src/features/blocking/use-blocking-video.ts` | render → upload `generation_reference` → submit `reference_video_role: 'motion_guide'` |
+| `front/src/features/blocking/video-plan.ts` | `planSegmentVideos` (segment duration, linked cast/scene, prompt via `breakpointSegmentPrompt`), `castLegend` (mannequin colour → character) |
+| `front/src/features/blocking/use-blocking-video.ts` | render → upload `generation_reference` → `text_to_video`, `reference_mode: 'input_references'`, `reference_video_role: 'motion_guide'`, with `link_episode_id`/`link_breakpoint_key` |
 
 ## Invariants
 
@@ -38,11 +41,11 @@ Not here → `zaolang-editor-drama` (scripts, turns), `zaolang-media-assets` (re
 9. Render colours are fixed (`palette.ts`), not theme tokens, so exports match across themes; cast tags are CSS2D, never in frames.
 10. WebCodecs needs `window.isSecureContext`; on plain HTTP `render-segment.ts` records via MediaRecorder in real time (MP4 avc1 else WebM), upload mime matches.
 11. Motion guides route only to `accepts_video_reference` non-EDIT models (`back/app/agents/router.py`); need `text_to_video` + `input_references` (`back/app/api/schemas/jobs.py`) + exactly one video (`back/app/domain/media/service.py`).
-12. three.js and mediabunny load by dynamic `import()`; the page statically imports only the compiler.
+12. three.js (`blocking-viewport.tsx`) and mediabunny load by dynamic `import()`; the page statically imports only the compiler. Destructure straight off `await import('mediabunny')` — `Promise.all` defeats tree-shaking; `front/scripts/bundle-budget.json` gates size.
 
 ## Recipes
 
-1. **Add a camera move**: `CameraMove` in `vocabulary.py` and `front/src/features/blocking/types.ts` → `CAMERA_MOVES` label in `vocabulary.ts` → `compiler/camera.ts` → `normalize_token` aliases → tests.
+1. **Add a camera move**: `CameraMove` Literal in `vocabulary.py` → `make openapi` (`types.ts` derives it; TS then fails until handled) → `CAMERA_MOVES` label in `vocabulary.ts` + messages → `compiler/camera.ts` → `normalize_token` aliases → tests.
 2. **Add a compiler repair**: implement in `compiler/`, add a `quality.ts` metric, pin in `compile.test.ts`.
 
 ## Verify
@@ -50,4 +53,5 @@ Not here → `zaolang-editor-drama` (scripts, turns), `zaolang-media-assets` (re
 ```bash
 cd back && conda run -n zaolang pytest tests/unit/test_blocking_segments.py tests/unit/test_blocking_sanitize.py tests/unit/test_blocking_camera_language.py tests/unit/test_motion_guide_routing.py tests/integration/test_blocking.py
 cd front && npx vitest run src/features/blocking && npm run check:messages
+make openapi-check
 ```

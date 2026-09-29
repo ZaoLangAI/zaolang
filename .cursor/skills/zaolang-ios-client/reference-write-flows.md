@@ -22,7 +22,8 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 ## Character view completion (补全侧面/背面)
 - `StudioViewModel.completeViews(for:)`, triggered from the character `LibraryPickerSheet` row (`canComplete`/`completingID`/`onComplete`) when `CharacterResponse.canCompleteViews`.
 - Submits one `image_to_image` job, `characterViews: [.side, .back]`, `frontReference.assetID` as sole reference, `targetCharacterID`, `autoAttachAsset: true`; idempotency key `complete-views-<character id>`. Polls `fetchGenerationJob` every 3s until terminal, then `fetchCharacter(id:)` replaces the row. No draft, not `submit()`.
-- iOS is the only client calling this (web `front/src/components/characters/character-library.tsx` has no view completion). Don't delete the path assuming web owns it.
+- iOS is the only client calling this (web dropped completion; `front/src/lib/characters.ts:missingReferenceViews` survives for API/iOS callers). Don't delete the path assuming web owns it.
+- Divergence: iOS always requests `[.side, .back]`, even when one already exists; web's `missingReferenceViews` asks only for the missing subset.
 - Reference-image editing and publishing characters/scenes are web-only.
 
 ## Job detail (`Create/JobDetailViewModel.swift`)
@@ -41,7 +42,7 @@ Paths below are relative to `ios/App/Sources/` unless they start with `ios/`.
 
 ## Push
 - `PushManager.shared.requestAuthorizationAndRegister()` has one call site: the notifications section of `Library/SettingsView.swift`. Onboarding and cold start never prompt.
-- Token → `AppEnvironment.registerPushToken` → `POST /v1/me/devices`. `signOut()` first `DELETE /v1/me/devices/{id}`.
+- Token → `AppEnvironment.registerPushToken` → `POST /v1/me/devices`. `signOut()` first `DELETE /v1/me/devices/{id}`, then `POST /v1/auth/logout` (see roadmap: no refresh cookie sent).
 - Backend send is a logging stub — see `reference-roadmap.md`.
 
 ## Money

@@ -15,7 +15,8 @@ Engine, sync, render/export, leases, analysis, MCP and AI planning for `/studio-
 | `front/src/features/editor/engine/ports.ts` | `EditCommand` TS union |
 | `front/src/features/editor/engine/compositor.ts` | `resolveFrame`, `resolveOverlap`, `resolveAudioLayers`, `layerVolumeAt`, `composeFrame`, `aiLabelRect` |
 | `front/src/features/editor/engine/export-runner.ts` | browser export: mediabunny (dynamic import), `renderMixedAudio`, `aigcMetadataTags` |
-| `front/src/features/editor/engine/` | also `audio-mixer.ts` (preview audio), `caption-layout.ts`, `effects.ts`, `wasm-compositor.ts`, `animation.ts`, `export-precheck.ts` |
+| `front/src/features/editor/engine/` | also `audio-mixer.ts` (preview audio), `caption-layout.ts`, `effects.ts`, `wasm-compositor.ts`, `animation.ts`, `export-precheck.ts`, `waveform.ts` (`computePeaks`), `command-codec.ts`, `engine.ts` |
+| `front/public/wasm/opencut/` | vendored OpenCut WASM, loaded by `wasm-compositor.ts` via `import(/* webpackIgnore */ '/wasm/opencut/opencut_wasm.js')`; rebuild from `third_party/opencut-classic` (`wasm-pack build rust/wasm --target web`) — never hand-edit |
 | `front/src/features/editor/drama-editor.tsx` | local-first apply + serial sync queue, `withPredictedIds` |
 | `front/src/features/editor/actions.ts` | `EditorActions` — one verb surface for toolbar, shortcuts, panels |
 | `front/src/features/editor/studio/` | shell: `studio-shell.tsx` (`useEditorShortcuts`) + `shortcuts-dialog.tsx` (keep in step), media library, properties panel |
@@ -24,7 +25,7 @@ Engine, sync, render/export, leases, analysis, MCP and AI planning for `/studio-
 
 ## Commands & document
 
-1. Three places define a command: `commands.py` (authority), `canonical.ts` (local apply), `ports.ts` (type). There is no separate JSON schema — change all three together.
+1. Three places define a command: `commands.py` (authority: `ALLOWED_TYPES`, `_allowed_keys`, `_validate_command`, `_apply_one`), `canonical.ts` (local apply), `ports.ts` (type). No separate JSON schema — change all three together.
 2. `validate_batch` forbids generic path updates (`"path"` key or `update_property`). `set_keyframe.property` is a closed set with bounded `PROPERTY_RANGES`; add a property by hand on both sides — never accept caller paths.
 3. `volume` keyframes use the `set_clip_volume` range 0–200 000 millipercent. Keyframes are coarse points; `resolveNumberAtTime` (`engine/animation.ts`) interpolates and holds edges.
 4. Tracks: only `video`/`audio` (`TRACK_KINDS_ADDABLE`) can be added/removed; caption/overlay tracks are singletons; `remove_track` refuses the last of a kind or a non-empty track. Clip/caption inserts and cross-track moves check `track.kind`.

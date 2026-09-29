@@ -23,7 +23,7 @@ Not here → `zaolang-admin-console` (shell, RBAC, audit pattern), `zaolang-admi
 ## Invariants
 
 1. Health probes report, never repair; failure → `healthy=False`, never raises (`observability.py:_probe`). Probe SQL uses `_isolated_query` (`begin_nested`) so it can't poison the request transaction.
-2. `async_provider_polling` probe (overdue unclaimed `AsyncProviderTask`) is the only dead-Beat signal. Queues: `QUEUE_NAMES` in `back/app/workers/celery_app.py`; a new one also goes in Makefile `dev-worker -Q`.
+2. `async_provider_polling` probe (overdue unclaimed `AsyncProviderTask`) is the only dead-Beat signal. Queues: `QUEUE_NAMES` in `back/app/workers/celery_app.py`; adding one → `zaolang-generation-jobs` "Add a queue" (Makefile + both compose files; `provider_task_polling` runs alone on `dev-poller`).
 3. Terminate uses `sm.transition` (never a raw UPDATE), releases the reserve if `release_credits` (default true), first tries `cancel_upstream` for an in-flight provider task (failure only logs) → `jobs.py:terminate`.
 4. Requeue only for non-terminal jobs; reuses the same job and reservation, no new reserve → `jobs.py:requeue`.
 5. New `ProviderStat` row: `default=0` applies only at flush — flush before `+=` (`back/app/agents/router.py`).
@@ -48,7 +48,7 @@ Not here → `zaolang-admin-console` (shell, RBAC, audit pattern), `zaolang-admi
 
 **Add a bulk action**: accept a list of IDs, call the single-item domain function per item (keeps validation + per-item audit); no bulk UPDATE.
 
-**Add a moderation producer**: call `moderation_queue.enqueue_for_review(subject_type, subject_id, stage, reason_code, categories)`; add detail/thumbnail handling in `content.py:moderation_detail` and `subject-thumb.tsx`.
+**Add a moderation producer**: call `moderation_queue.enqueue_for_review(session, subject_type=…, subject_id=…, stage=…, reason_code=…, categories=…)`; add detail/thumbnail handling in `content.py:moderation_detail` and `subject-thumb.tsx`.
 
 **Add a keyword-gated surface**: `KeywordModerationConfig` subclass + key in `back/app/platform_config/schemas.py` → `assert_allowed(session, config_key=…, texts=text_values(params), subject_type=…)` before persisting.
 
@@ -59,7 +59,7 @@ cd back && conda run -n zaolang pytest tests/integration/test_admin_ops_runtime.
 make test-e2e   # front/e2e/flows/admin.spec.ts
 ```
 
-`make seed` plants accounts, system defaults, and the `zaolang_studio` skill catalogue (see zaolang-creation-library); moderation/credit pages stay empty until real data exists. `make e2e-fixtures` adds finished jobs and one failed `PROVIDER_TIMEOUT` job with its log, for the job console (see zaolang-testing-qa).
+`make seed` plants accounts, system defaults, and the `zaolang_studio` skill catalogue (see zaolang-creation-library); moderation/credit pages stay empty until real data exists. `make e2e-fixtures` (`back/app/scripts/e2e_fixtures.py`, run first by `make test-e2e`) adds finished jobs and one failed `PROVIDER_TIMEOUT` job with its `async_task_poll_budget_exceeded` log, which the job-console specs find by manifest id (see zaolang-testing-qa).
 
 ## References
 

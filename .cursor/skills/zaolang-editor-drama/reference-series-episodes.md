@@ -11,6 +11,7 @@ Series/episode management, content links, co-creation, trash, previews, distribu
 | `back/app/domain/publishing/service.py` | `create_draft` best-effort episode link; `list_unpublished_work_drafts` seat filter |
 | `back/app/domain/shortform/service.py` | `PublicationIntent` create/list/`mark_submitted`/`mark_failed` used by distribution |
 | `back/app/api/v1/distribution.py` | `/v1/platform-accounts*`, `/v1/works/{id}/publications:fanout`, `/v1/works/{id}/metrics`, `/v1/drama-series/{id}/metrics` |
+| `back/app/domain/distribution/` | `service.py` (OAuth, fanout, metrics rollups), `douyin_client.py`/`kuaishou_client.py` (`client_base.py`), `crypto.py` (Fernet tokens at rest) |
 | `front/src/features/drama-dashboard/dashboard-shell.tsx` | `/create/short`: owned + collaborating series cards, create dialog, trash view, invites entry |
 | `front/src/features/drama-dashboard/series-form-dialog.tsx` | the only writer of series-form metadata (title, English title, planned count, genres, platforms, logo) |
 | `front/src/features/drama-dashboard/series-detail.tsx` | `/create/short/series/{id}`: season-grouped roster, collaborators, analytics overview, trash dialogs |
@@ -18,7 +19,7 @@ Series/episode management, content links, co-creation, trash, previews, distribu
 | `front/src/features/drama-dashboard/episode-delete-gate.ts` | `isEpisodeDeleteBlocked`, `isExportRecordDeletable`, `resumeEditorHref` (vitest) |
 | `front/src/features/drama-dashboard/generated-video-href.ts` | `isGeneratedVideoCard`, `generatedVideoDetailHref` (draft studio vs `/work/{id}`) |
 | `front/src/features/drama-dashboard/format.ts` | `SERIES_GENRES`, `TARGET_PLATFORMS`, `pascalCase` (i18n keys), `episodeStatusTone` |
-| `front/src/features/drama-dashboard/distribution-api.ts` | client for distribution routes; `publish-panel.tsx`, `analytics-panel.tsx` |
+| `front/src/features/drama-dashboard/distribution-api.ts` | client for distribution routes; `publish-panel.tsx`, `analytics-panel.tsx`, `channels.ts` (channel label keys) |
 | `front/src/features/drama-dashboard/series-analytics-detail.tsx` | `/create/short/series/{id}/analytics` report (+ `episode-ranking.ts`, `export-csv.ts`, `channel-metric-chart.tsx`) |
 | `front/src/components/settings/platform-connect.tsx` | per-user platform OAuth (`/profile/settings?section=platforms`); callback page `/create/short/platform-callback/[channel]` |
 | `front/src/components/studio/link-episode-dialog.tsx` | 关联到剧集 from a standalone video result (same `createContentLink`) |
@@ -50,7 +51,7 @@ Series/episode management, content links, co-creation, trash, previews, distribu
 ## Previews
 
 15. `resolve_episode_preview_source` order: canonical work video → draft/work content link → succeeded export → cut `source_asset_id` (short clip before a big export).
-16. Auto-fill rides `create_content_link`, `set_canonical_work`, `create_cut_from_job`; never overwrites; failures swallowed in `_try_fill_episode_preview`. `PATCH /v1/drama-episodes/{id}` binds/clears by `model_fields_set` presence. `episodes_with_preview_source` batches `has_preview_source`. UI: `episode-preview-thumb.tsx`.
+16. Auto-fill rides `create_content_link`, `set_canonical_work`, `create_cut_from_job`, and job success for drafts with `link_episode_id` (`back/app/workflows/nodes.py:_maybe_fill_linked_episode_preview`); runs `extract_video_frame` as the video owner; never overwrites; failures swallowed in `_try_fill_episode_preview`. `PATCH /v1/drama-episodes/{id}` binds/clears by `model_fields_set` presence. `episodes_with_preview_source` batches `has_preview_source`. UI: `episode-preview-thumb.tsx`.
 
 ## Dashboard UI rules
 
@@ -61,6 +62,6 @@ Series/episode management, content links, co-creation, trash, previews, distribu
 
 ## Distribution & analytics
 
-21. All distribution is owner-scoped through `app.domain.distribution`. `publish_fanout` creates one `PublicationIntent` per channel via `shortform_service.create_publication_intent` (`EXPORTED`/`READY`), then pushes and calls `mark_submitted`/`mark_failed`.
-22. `PublishPanel`/`AnalyticsPanel` mount only on `episode-panel.tsx`, once `canonical_work_id` is set, for owners. Series metrics (`GET /v1/drama-series/{id}/metrics?days=`) feed `series-analytics-overview.tsx` and the detail report.
-23. Route contract details: `zaolang-api-contract`.
+21. All distribution is owner-scoped through `app.domain.distribution`. `publish_fanout` creates one `PublicationIntent` per channel via `shortform_service.create_publication_intent` (`EXPORTED`/`READY`), then pushes synchronously and calls `mark_submitted`/`mark_failed`; skipped channels report `reason` `manual_download`/`not_configured`/`not_linked`. Channels: `douyin`, `kuaishou`, `manual_download` (no per-work metrics).
+22. OAuth `state` is HMAC-signed (`_sign_state`/`_verify_state`); tokens are Fernet-encrypted with `platform_token_encryption_key` (unset → `PlatformNotConfigured`) and never logged. Metrics refresh hourly via beat `pull_episode_metrics` on queue `platform_distribution`.
+23. `PublishPanel`/`AnalyticsPanel` mount only on `episode-panel.tsx`, once `canonical_work_id` is set, for owners. Series metrics (`GET /v1/drama-series/{id}/metrics?days=`) feed `series-analytics-overview.tsx` and the detail report.

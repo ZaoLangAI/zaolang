@@ -16,16 +16,16 @@ Not here → `zaolang-admin-ops` (domains, route map), `zaolang-api-contract` (c
 | `back/app/api/v1/admin/deps.py` | `Viewer`/`Reviewer`/`Operator`/`Admin`, `AdminRead`/`AdminWrite`/`AdminDangerous`, `require_confirmation` |
 | `back/app/api/v1/admin/auth.py` | `/v1/admin/auth/login`, `/me`, `/logout`; sets httpOnly cookie |
 | `back/app/api/rate_limit.py` | `admin_read` 300/60s, `admin_write` 60/60s, `admin_dangerous` 10/300s (per admin) |
-| `back/app/api/schemas/admin.py` | `DangerousAction` base (`confirm` + non-empty `reason`) |
+| `back/app/api/schemas/admin.py` | `DangerousAction` base (`confirm` + `reason` 4–500 chars, stored in audit) |
 | `front/src/app/[locale]/(admin)/admin/login/page.tsx` | standalone login (never the consumer dialog) |
 | `front/src/app/[locale]/(admin)/admin/(console)/layout.tsx` | shell: resolves `/auth/me` once, else redirects to admin login |
 | `front/src/lib/admin/rbac.ts` | `NAV_GROUPS`, `visibleGroups(role)`, `atLeast`, `highestRole` |
 | `front/src/components/admin/` | top level: shared primitives (`data-table`, `filter-bar`, `detail-drawer`, `danger-confirm`, `json-diff`, `timeline`, sidebar, session provider); subdirs: one per domain page |
-| `front/src/lib/api/admin-server.ts` | RSC `adminFetch`/`adminFetchOrNull`/`hasAdminSession`; client twin `admin-client.ts`; list hook `front/src/lib/admin/use-admin-list.ts` |
+| `front/src/lib/api/admin-server.ts` | RSC `adminFetch`/`adminFetchOrNull`/`hasAdminSession`; client twin `front/src/lib/api/admin-client.ts:redirectToAdminLogin` (cookie-only, no 401 retry); list hook `front/src/lib/admin/use-admin-list.ts` |
 
 ## Invariants
 
-1. Sessions never cross: consumer token on `/v1/admin/*` → 401 and vice versa (audience + cookie differ).
+1. Sessions never cross: consumer token on `/v1/admin/*` → 401 and vice versa (audience + cookie differ). An admin role on a *consumer* session grants no staff reads (private/hidden works stay 404) → `back/tests/integration/test_consumer_admin_role_visibility.py`.
 2. RBAC is server-side; `NAV_GROUPS` only hides links. Ladder `viewer < reviewer < operator < admin`; `requires` must match the route's alias.
 3. Read/write tiers differ (config: read `Viewer`, write `Admin`) — no save button for lower roles is correct.
 4. Dangerous action = `AdminDangerous` + payload extending `DangerousAction` + `require_confirmation(payload.confirm)` first; UI uses `danger-confirm.tsx`.
@@ -34,6 +34,7 @@ Not here → `zaolang-admin-ops` (domains, route map), `zaolang-api-contract` (c
 7. An admin can't strip their own admin role; a suspended admin loses access on the next request (tests in `test_admin_security.py`).
 8. Lists show resolved names (`user_display_name`, `provider_label`, …) with raw IDs only as tooltip; the schema adds the name field beside the ID.
 9. `/admin/reports` is only a redirect to `/admin/moderation?tab=reports`, not a nav page.
+10. Session changes are full-document loads, never `router.push`: login (`admin-login-form.tsx`), sign-out and client 401 (`redirectToAdminLogin`) use `window.location.assign` so the layout re-reads the httpOnly cookie and no router cache outlives the session. Keep the targeted `eslint-disable … no-location-assign-relative-destination -- <why>`; a 401 on the login call itself stays a form error.
 
 ## Recipes
 

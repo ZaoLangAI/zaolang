@@ -17,6 +17,7 @@ Global AI co-creation sharing platform. Read the routing table, then load the ow
 | `infra/` | docker-compose: Postgres 17 + pgvector `5433`, Redis `6380`, MinIO `9000` (opt-in; `make up` starts only postgres+redis) |
 | `docs/` | MkDocs site source and ops runbooks |
 | `assets-pack/` | real-media drop zone; `assets-pack/manifest.example.json` defines the import contract |
+| `third_party/` | vendored `opencut-classic` Rust workspace → `front/public/wasm/opencut/` compositor (drama editor); never hand-edited |
 
 Backend layering: `back/app/api/v1` (HTTP contract) → `back/app/domain/*` (invariants) → `back/app/models` (SQLAlchemy). `agents`/`teams`/`llm`/`providers`/`workflows`/`workers` sit on top of domain; an agent reaches domain only via the `back/app/agents/tools.py` whitelist, and its output isn't fact until persisted.
 
@@ -48,9 +49,9 @@ Backend layering: `back/app/api/v1` (HTTP contract) → `back/app/domain/*` (inv
 | Admin domain endpoints/pages, moderation queue, keyword gates | `zaolang-admin-ops` |
 | Admin statistics timeseries | `zaolang-admin-statistics` |
 | iOS client | `zaolang-ios-client` |
-| `make check` gate, pre-commit, Docker images, versions, docs site | `zaolang-ci-release` |
+| `make check` gate, pre-commit, lint/format config, Docker images, dependency pins, versions, docs site | `zaolang-ci-release` |
 | Single-host prod deploy | `zaolang-remote-deploy` |
-| Tests, e2e, a11y, visual QA | `zaolang-testing-qa` |
+| Tests, e2e + `make e2e-fixtures`, a11y, visual QA, skill-freshness guard | `zaolang-testing-qa` |
 
 Cross-module change order: `zaolang-data-model` → domain skill → `zaolang-api-contract` → frontend/iOS skill.
 
@@ -63,6 +64,6 @@ Cross-module change order: `zaolang-data-model` → domain skill → `zaolang-ap
 ## Verify
 
 ```bash
-make check   # lint + typecheck + messages + openapi-check + full test suite
+make check   # lint + typecheck + messages + openapi-check + test-back + test-front (no vitest/e2e)
 ```
 Per-module commands live in each skill's Verify section.
