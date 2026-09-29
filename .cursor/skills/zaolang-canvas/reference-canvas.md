@@ -7,15 +7,16 @@
 3. Stream: `GET …/events` backfills from `Last-Event-ID`, emits `event: synced` (no `id:`), then live frames from Redis (`subscribe_canvas`). Client: `use-canvas-events.ts` (streamed `fetch`, `last-event-id` header, backoff).
 4. `GET …/changes?since=N` is the polling read; `gap: true` → reload the project.
 5. Client sync: `use-canvas-sync.ts` is a single-flight FIFO autosave; `diffGraph` (documents → ops) and `applyChanges` (feed → document) live in `graph-ops.ts`.
+6. Legacy `graph_json` is unmapped: a pre-row-store canvas renders empty until `app.scripts.backfill_canvas_rows` replays it via `apply_ops` (idempotent).
 
 ## Agent (plan → price → confirm)
 
-1. `POST …/agent-runs` (202, SSE) plans; the run rests at `awaiting_confirm` with a quote. Only `POST /v1/canvas-agent-runs/{id}/confirm` moves credits.
+1. `POST …/agent-runs` (202, SSE) plans; the run row is written only once the stream drains, resting at `awaiting_confirm` with a quote.
 2. Context walk (`upstream_context`) is breadth-first and bounded: `MAX_CONTEXT_DEPTH = 3`, `MAX_CONTEXT_NODES = 12`, `MAX_CONTEXT_TEXT = 600`. `MAX_TASKS_PER_RUN = 4`.
 3. `_sanitise_plan` enforces what the prompt only asks: drop ops outside `PLANNABLE_OPERATIONS`; strip reference ids not in the context digest; drop (don't rewrite) an `image_to_image` left with no reference; quality tier may only move down; `forced_model` is never read.
 4. `canvas_planner.FALLBACK` is an empty plan → run fails visibly at zero cost. Never invent work on parse failure.
 5. Refuse before charging: node room (`MAX_NODES`) and reference checks run at plan time.
-6. Confirm is a conditional transition: `_set_run_status` puts legal source states in the WHERE; task jobs use `idempotency_key=f"canvas-agent:{task.id}"`, so a double tap reserves once. The route adds `Idempotency-Key` replay on top, so a keyed retry gets the original response rather than the transition's 422.
+6. Confirm is a conditional transition: `_set_run_status` puts legal source states in the WHERE; task jobs use `idempotency_key=f"canvas-agent:{task.id}"`, so a double tap reserves once (route-level key replay: SKILL.md).
 7. Camera vocabulary (`canvas-camera.ts`) reaches models as prompt text, never as params.
 
 ## Landing (`agent_service.land_job_result`)

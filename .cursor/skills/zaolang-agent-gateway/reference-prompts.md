@@ -11,7 +11,7 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 
 ## Copy coaches (`back/app/agents/copywriter.py`)
 
-- Slots (`PROMPT_SLOTS["copy"]`): `suggest` (`SYSTEM_PROMPT`, work title/description/tags), `enhance`, `clarify`, `script_draft`/`script_revise` (streamed), plus 白膜 slots. Copy never returns a pass/fail verdict.
+- Slots (`PROMPT_SLOTS["copy"]`): `suggest` (`SYSTEM_PROMPT`, work title/description/tags), `enhance`, `clarify`, `script_draft`/`script_revise` (streamed), `skill_match` (`skill_matcher`), plus 白膜 `blocking_route`/`blocking_derive`. Copy never returns a pass/fail verdict.
 - `enhance` coaches: `ENHANCE_SYSTEM_PROMPT` (general) and per-kind `ENHANCE_SYSTEM_PROMPT_CHARACTER`/`_SCENE`/`_COVER`; video kinds use `_VIDEO_ENHANCE_SYSTEM_PROMPTS` (fallback dict only, no seeded profiles). All share `_ENHANCE_CONTRACT` for the JSON shape — add a first-class constant per kind, never a footnote on the generic coach, and never a new slot for a kind.
 - Enhance success needs an enhance-shaped object (`ENHANCE_JSON_KEYS` = `prompt` + `detail_level`); the first `{...}` in a reasoning trace is often a decoy.
 - `_sanitize_enhance_outcome` runs kind-specific repairs (below) and `_sanitize_script_segment` (clip-studio `script_segment`: rewrite block `text` in place; add/drop/retype/`breakpoint` → fall back to the request segment).

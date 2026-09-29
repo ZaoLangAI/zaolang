@@ -23,7 +23,7 @@ Generation studios under `front/src/components/studio/`, the `/jobs/[jobId]` pag
 
 | File | What |
 |---|---|
-| `front/src/components/studio/generation-studio-shell.tsx` | layout (rail / preview / params, mobile `Sheet`); `previewSlot` = inline result, `promptSlot` = composer |
+| `front/src/components/studio/generation-studio-shell.tsx` | layout (rail / preview / params, mobile `Sheet`); `previewSlot` = inline result, `promptSlot` = composer. Params `children` mount in exactly one place: the aside yields them while the sheet is open (`panelInAside`), else portalled dialogs (style gallery) open twice |
 | `front/src/components/studio/prompt-composer.tsx` | card around `PromptField`: skill chips/unlock dialog, optional `tip` (video/audio fold 写得更像导演 copy here) |
 | `front/src/components/studio/prompt-field.tsx` | textarea + counter (`STUDIO_PROMPT_MAX_LENGTH` in `front/src/lib/prompt-limits.ts`); `skillMention` = `@` apply menu (image/video) |
 | `front/src/components/studio/prompt-polish.tsx` | AI 润色 (image/video, `polishContext`): inline `prompt-polish-panel.tsx`, never a drawer; may ask `QuestionField`s |

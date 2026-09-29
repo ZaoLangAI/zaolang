@@ -16,13 +16,13 @@ Not here → `zaolang-editor-drama` (Series/episode semantics, collaborators), `
 | `back/app/models/enums.py` | every enum + all status-transition tables (`*_TRANSITIONS`, `TERMINAL_*` sets) |
 | `back/app/models/__init__.py` | re-exports every model (and `__all__`) so `Base.metadata` is complete for autogenerate |
 | `back/app/models/` (modules) | one module per domain; table map in `reference-tables.md` |
-| `back/alembic/versions/` | linear chain; find head with `cd back && conda run -n zaolang alembic heads` |
+| `back/alembic/versions/` | linear chain, files `YYYYMMDD_HHMM_<slug>.py` (`file_template` in `back/alembic.ini`); head = `cd back && conda run -n zaolang alembic heads` |
 | `back/app/api/v1/admin/observability.py` | `GET /v1/admin/health` reports the DB's applied `alembic_revision` |
 | `back/app/scripts/seed.py` | `RESET_TABLES` + `_reset` (`TRUNCATE … CASCADE`, then `DELETE FROM series WHERE kind = 'drama'`) |
 
 ## Invariants
 
-1. IDs: `id: Mapped[str] = id_column("<prefix>")` → `f"{prefix}_{48-bit ms time + 80 random bits}"`, `String(40)`. Never autoincrement, bare UUID, or hand-written literals outside tests. Pick a prefix no other table uses (grep `id_column("` in `back/app/models`).
+1. IDs: `id: Mapped[str] = id_column("<prefix>")` → `f"{prefix}_{48-bit ms time + 80 random bits}"`, `String(40)`. Never autoincrement, bare UUID, or hand-written literals outside tests. Pick a prefix no other table uses (grep `id_column("` in `back/app/models`; `agr` is already shared by `AgentRun` and `AccessGrant` — legacy, don't repeat).
 2. Money/credits are `Integer` in the smallest unit; `Numeric`/`Float` forbidden (canvas positions are ints too).
 3. Constraint/index names follow `NAMING_CONVENTION` (or pass explicit `name=`), else autogenerate churns.
 4. Ledger keys are untouchable: `uq_credit_ledger_job_type` `(job_id, type)`, `uq_credit_ledger_idempotency`, `uq_credit_ledger_payment` (`back/app/models/credits.py`). They are the real "capture once / post once" guarantees.

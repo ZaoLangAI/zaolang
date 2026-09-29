@@ -19,8 +19,8 @@ Not here → `zaolang-api-contract` (errors, idempotency), `zaolang-generation-j
 | `ios/Packages/ZaolangKit/Sources/ZaolangKit/Session/` | `SessionManager`, `CookieCodec`, `AuthTransport`, `RefreshTransport`, `KeychainStore`, `URLSessionFactory` |
 | `ios/Packages/ZaolangKit/Sources/ZaolangKit/Streaming/` | `EventStreamClient.swift` (actor, 1/2/5/10/30s reconnect via `SSEReconnectPolicy`), `JobEventStream.swift` (`jobEvents(jobID:)`), `SSEFrameParser` |
 | `ios/Packages/ZaolangKit/Sources/ZaolangKit/Media/` | `UploadTransport` (direct PUT to presigned URL); `AssetCache` (UI images skip it, loading signed URLs via `App/Sources/Media/`) |
-| `ios/App/Sources/Shell/` | `RootView`, `RootTabView` (custom 4-tab bar, one `NavigationStack` each), `AppRouter`, `Routes`, `DeepLink`, `DebugSessionView` |
-| `ios/App/Sources/Support/` | `AppEnvironment` (`requireAuth`, `trackJob`, push token), `AppConfig`, `L10n`, `PushManager`, `GenerationOperation` |
+| `ios/App/Sources/Shell/` | `RootView`, `RootTabView` (custom 4-tab bar over `AppTab`, one `NavigationStack` each), `AppRouter`, `Routes`, `DeepLink`, `DebugSessionView` |
+| `ios/App/Sources/Support/` | `AppEnvironment` (`requireAuth`, `trackJob`, push token), `AppConfig`, `L10n`, `PushManager`, `GenerationOperation`, `ReachabilityMonitor` (global offline banner) |
 | `ios/App/Sources/Common/` | `LoadableState`, `StateViews`, `SharedComponents`, `Date+ZL.swift` (`ZLClock`) |
 | `ios/App/Sources/DesignSystem/` | `Color.zl.*`, radius/shadow, `zlMotion`, `.zlEyebrow()`, `.zlSkeletonPulse()` |
 | `ios/App/Sources/Create/` | Create hub, `StudioView`/`StudioViewModel`, job detail, publish, draft detail, `CreateJobBanner`, `AssetLibrary/LibraryPickerSheet.swift` |
@@ -38,11 +38,11 @@ Other feature dirs under `ios/App/Sources/` pair `*View` + `*ViewModel`. Learn u
 4. `zl_refresh` is taken over manually: `URLSessionFactory` sets `httpShouldSetCookies = false`, `CookieCodec` parses `Set-Cookie` into Keychain, `SessionManager.inFlightRefresh` single-flights 401s. Changing the cookie (`back/app/api/deps.py:REFRESH_COOKIE_NAME`) or its attributes silently breaks renewal.
 5. Reduced motion: read `@Environment(\.zlMotion)` (system OR server `reduce_motion`, merged in `RootView`), never `accessibilityReduceMotion` directly. Gate every new animation/transition on it.
 6. `ref` (inspiration) ≠ `source_work_id` (remix → lineage edge + license). Both go through one `StudioView`/`StudioViewModel` distinguished by `StudioMode` — never split. See `reference-write-flows.md`.
-7. Parse every list as `Page<T>` even when the backend only takes `limit` (only `/v1/works`, `/v1/credits/ledger`, `/v1/learn/posts` take `cursor`). Exception: `/v1/characters` and `/v1/scenes` return bare arrays — decode `[T]` (`APIClient+AssetLibrary.swift`).
+7. Parse every list as `Page<T>` even when the backend only takes `limit` (of the lists iOS calls, only `/v1/works`, `/v1/credits/ledger`, `/v1/learn/posts` take `cursor`). Exception: `/v1/characters` and `/v1/scenes` return bare arrays — decode `[T]` (`APIClient+AssetLibrary.swift`).
 8. Lineage graph requests depth 3 (`LineageViewModel.depth`), not the API default 4 — phone width. Deliberate.
-9. Amounts are `Int`; enum raw values follow `back/app/models/enums.py`; mirror backend enum additions (`Operation`, `ImageAssetKind`, `CharacterViewAngle` in `Models/Enums.swift`) in the same change.
+9. Amounts are `Int`; enum raw values follow `back/app/models/enums.py`; mirror backend enum additions (`Operation`, `ImageAssetKind`, `CharacterViewAngle` in `Models/Enums.swift`) in the same change. Known drift: `Operation` lacks `music_generation`/`video_analysis` (response DTOs decode them as unknown via `RawOrUnknown`).
 10. XcodeGen 2.46.0's top-level `resources:` emits no resources phase. Put new resource files in the target's `sources:` with `buildPhase: resources`, as `project.yml` does.
-11. `GENERATE_INFOPLIST_FILE: NO` → `App/Resources/Info.plist` must keep its five hand-written `CFBundle*` keys, or install fails.
+11. `GENERATE_INFOPLIST_FILE: NO` → `App/Resources/Info.plist` must keep `CFBundleIdentifier`/`Executable`/`PackageType`/`Name`/`InfoDictionaryVersion` by hand, or install fails.
 12. `Operation` collides with `Foundation.Operation`, and `ZaolangKit.Operation` hits the namespace enum `ZaolangKit.ZaolangKit`. Files importing Foundation use the `GenerationOperation` alias (`Support/GenerationOperation.swift`).
 13. Login wall = `AppEnvironment.requireAuth(actionLabel:action:)` + `AuthSheet`: runs now if signed in, once after login, discarded on cancel. `actionLabel` is an existing i18n key. Removed: `LoginWallSheet` — don't restore.
 14. Every displayed timestamp goes through `ZLClock` (pinned to `Asia/Shanghai`, mirrors web `DISPLAY_TIME_ZONE`), never `Date.formatted` with the system zone.

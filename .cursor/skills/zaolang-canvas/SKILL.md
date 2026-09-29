@@ -25,6 +25,7 @@ Not here → `zaolang-generation-jobs` (terminal-job hook, job SSE), `zaolang-da
 | `front/src/app/[locale]/(studio)/canvas/[canvasId]/page.tsx` | canvas route → `CanvasShell` (md-width gate; auth via `(studio)` layout) |
 | `front/src/app/[locale]/(site)/create/tools/canvas/page.tsx` | 「我的画布」 library (`CanvasLibrary`) |
 | `back/tests/concurrency/test_canvas_races.py` | acceptance test: client ops + agent landing interleaved, no lost write |
+| `front/e2e/flows/canvas.spec.ts` | Playwright flows |
 
 ## Invariants
 
@@ -40,14 +41,15 @@ Not here → `zaolang-generation-jobs` (terminal-job hook, job SSE), `zaolang-da
 10. `binding_asset_id` / `binding_skill_id` are indexed columns (no FK), written as a set so a swapped binding clears the old one. Card `skill_id` is client-written → `_bound_skills` filters to published-or-own.
 11. Edge handles are `""`, never NULL (else `uq_canvas_edges_endpoints` is defeated); edges have no `revision`; duplicate create = applied.
 12. Positions are integers; `diffGraph` rounds and diffs against the last *acknowledged* graph. `revision`/`origin` must survive `graphToFlow`→`flowToGraph` or every update conflicts.
-13. Undo/redo is client-only (`use-canvas-editing.ts`).
+13. Undo/redo history is client-only (`use-canvas-editing.ts`); each step persists as a normal `/graph-ops` save. Autosave coalesces — edits netting to the saved board send nothing, so e2e waits on the POST, not the 已保存 flash.
 14. Caps `MAX_NODES = 2000`, `MAX_EDGES = 4000`, `MAX_OPS_PER_BATCH = 200`; an Agent plan that would overflow is refused before credits are spent.
 15. Access: drama → `editor_service._accessible_series` (owner or active co-creator); free → owner; delete → owner only; inaccessible → 404.
-16. The Agent never calls a provider: `GenerationParams` → `jobs_service.submit` → `dispatch.enqueue_or_fail`. Only the run's author may confirm/cancel.
+16. The Agent never calls a provider: `confirm_run` → `jobs_service.submit` returns jobs; the route `dispatch.enqueue_or_fail`s them after commit. Only the run's author may confirm/cancel (others 404).
 17. Terminal jobs land via `completion.on_job_terminal` → `land_job_result` — hook rules: see `zaolang-generation-jobs` › terminal-job hook.
-18. Every route in `api/v1/canvas.py` declares a bucket by cost (module docstring): `confirm` → `generation_submit`, planning → `script_studio_write`, `/graph-ops` + restore-card → `editor_write`, other writes `authenticated_write`, reads `public_read`. `tests/integration/test_rate_limits.py` walks the router, so a new route without one fails.
-19. Only `confirm` moves credits, so only it takes `Idempotency-Key` (`CONFIRM_AGENT_RUN_ENDPOINT`): a keyed retry, even one that raced the in-flight original, replays the stored response; unkeyed, a second confirm is still a 422. Planning and workflow-runs only quote. Front: `useConfirmCanvasAgentRun` holds one key per attempt.
-20. Removed: AGPL-derived canvas code — don't restore (repo is Apache-2.0; see `zaolang-ci-release`).
+18. Every canvas route declares a bucket by cost (module docstring): `confirm` → `generation_submit`, planning → `script_studio_write`, `/graph-ops` + restore-card → `editor_write`, other writes `authenticated_write`, reads `public_read`. `test_rate_limits.py` walks the router; an unbucketed route fails.
+19. Only `confirm` moves credits, so only it takes `Idempotency-Key` (`CONFIRM_AGENT_RUN_ENDPOINT`): a keyed retry, even one racing the in-flight original, replays the stored response; unkeyed, a second confirm is 422. Planning/workflow-runs only quote. Front: `useConfirmCanvasAgentRun` holds one key per attempt.
+20. Import (`canvas-io.ts`) is a copy: fresh node/edge ids, domain bindings dropped.
+21. Removed: AGPL-derived canvas code — don't restore (repo is Apache-2.0; see `zaolang-ci-release`).
 
 ## Recipes
 
@@ -60,8 +62,9 @@ Not here → `zaolang-generation-jobs` (terminal-job hook, job SSE), `zaolang-da
 ## Verify
 
 ```bash
-cd back && conda run -n zaolang pytest tests/integration/test_canvas_projects.py tests/integration/test_canvas_graph_ops.py tests/integration/test_canvas_events.py tests/integration/test_canvas_agent.py tests/integration/test_canvas_landing.py tests/integration/test_canvas_prompt_library.py tests/integration/test_canvas_workflow_runs.py tests/unit/test_skill_context.py tests/concurrency/test_canvas_races.py -q
+cd back && conda run -n zaolang pytest tests/integration/test_canvas_projects.py tests/integration/test_canvas_graph_ops.py tests/integration/test_canvas_events.py tests/integration/test_canvas_agent.py tests/integration/test_canvas_landing.py tests/integration/test_canvas_prompt_library.py tests/integration/test_canvas_workflow_runs.py tests/integration/test_rate_limits.py tests/unit/test_skill_context.py tests/unit/test_backfill_canvas_rows.py tests/concurrency/test_canvas_races.py -q
 cd front && npm run test -- src/features/canvas && npm run check:messages
+cd front && npx playwright test e2e/flows/canvas.spec.ts --project=e2e   # prereqs: zaolang-testing-qa
 ```
 Manual: open one canvas in two windows; a card added in one appears in the other (header dot = stream attached).
 

@@ -15,7 +15,7 @@ Not here → `zaolang-admin-ops` (snapshots), `zaolang-admin-console` (RBAC), `z
 | `back/app/domain/statistics/service.py` | `*_daily`, `cost_by_provider_daily`, `cost_by_model`, `users_growth`; helpers `_window`, `_day_bucket` |
 | `back/app/api/v1/admin/statistics.py` | routes, `days` 1–180 (default 30), `Viewer` + `AdminRead` |
 | `back/app/api/schemas/admin.py` | `*TimeseriesView` / `*DailyPoint` |
-| `front/src/app/[locale]/(admin)/admin/(console)/statistics/page.tsx` | RSC: snapshots + 30-day series via `adminFetchOrNull` |
+| `front/src/app/[locale]/(admin)/admin/(console)/statistics/page.tsx` | RSC: snapshots + `DEFAULT_TIMESERIES_DAYS` (30) series via `adminFetchOrNull`; a range change re-fetches every series at once client-side |
 | `front/src/components/admin/statistics/` | `statistics-workspace.tsx` (`TABS`, `RANGES` 7/30/90) + one panel per tab |
 | `front/src/components/charts/` | `trend-chart.tsx`, `bar-comparison-chart.tsx`, `channel-share-pie-chart.tsx`; also used by `front/src/features/drama-dashboard/` series analytics |
 
@@ -29,6 +29,7 @@ Not here → `zaolang-admin-ops` (snapshots), `zaolang-admin-console` (RBAC), `z
 6. One failing endpoint degrades to an empty series/card (`adminFetchOrNull`), never a page 500.
 7. `recharts` only inside `front/src/components/charts/` wrappers (colors bound to `--color-*`); admin panels and drama-dashboard never import it directly — new chart type = new wrapper.
 8. Cost series are micro-USD: LLM `AgentRun.cost_micro_usd` vs media `ProviderAttempt.cost_micro_usd`.
+9. Count columns are `.label("total")`, never `"count"` — `row.count` is shadowed by the Row tuple's `count()` (mypy sees the method).
 
 ## Recipes
 

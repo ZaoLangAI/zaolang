@@ -6,7 +6,7 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 
 | Dir | Purpose (owner skill if not this one) |
 |---|---|
-| `front/src/components/ui/` | primitives: button, field (`TextInput`/`Select`/`Switch`), dialog, sheet, dropdown-menu, toast, spinner, icons |
+| `front/src/components/ui/` | primitives: button, field (`TextInput`/`Select`/`Switch`), dialog + sheet (focus trap, portal, opener restore), dropdown-menu, toast, spinner, icons |
 | `front/src/components/ui/primitives.tsx` | `Card`, `Badge`, `PageHeading`, `Skeleton`, `EmptyState`, `ErrorNotice`, `StatTile` |
 | `front/src/components/ui/confirm-dialog.tsx` | consumer destructive confirm (no reason field; admin uses `DangerConfirm`) |
 | `front/src/components/ui/go-back-link.tsx` | `router.back()` with `fallbackHref`; `back-link.tsx` = fixed href; `media-lightbox.tsx` = still preview on `Dialog` |
@@ -36,7 +36,7 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/components/publish/` | `publish-form`: 202 review flow — stays on page and flips to pending; one idempotency key per attempt |
 | `front/src/components/ai/` | `thinking-disclosure` (`aria-live="polite"`) — semantics in zaolang-generation-jobs |
 | `front/src/components/theme/` | theme provider + SSR init script (zaolang-theming) |
-| `front/src/components/charts/` | recharts wrappers |
+| `front/src/components/charts/` | recharts wrappers used by admin statistics + drama-dashboard analytics (zaolang-admin-statistics) |
 | `front/src/components/admin/` | admin console (zaolang-admin-console) |
 
 ## lib helpers (`front/src/lib/`)
@@ -52,7 +52,7 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/lib/resource-cache.ts` | `dedupedFetch` + last-response cache behind `use-resource.ts` (no TTL, always refetches) |
 | `front/src/lib/devices.ts` | phone specs (`DEVICES`) for framed preview; display params, not measurements |
 | `front/src/lib/api/work-loaders.ts` | `getWork` via React `cache()` — one fetch per RSC request |
-| `front/src/lib/refresh-media-src.ts` | re-sign expired asset / job / work / draft media URLs |
+| `front/src/lib/refresh-media-src.ts` | `refreshAssetUrl` / `refreshJobOutputUrl` / `refreshWorkMediaUrl` / `refreshDraftOutputUrl` — re-sign expired media URLs |
 | `front/src/lib/random-id.ts` | `randomUuid` (works on HTTP origins) |
 | `front/src/lib/sha256.ts` | `sha256Hex` with software fallback (HTTP origins) |
 | `front/src/lib/upload.ts` | `uploadFile`: presign → PUT to storage → register; consent records (zaolang-media-assets) |
@@ -65,7 +65,9 @@ Where things live under `front/src/`. `ls` the dir for current files; this lists
 | `front/src/lib/video-draft.ts` | `isVideoCreationOperation`, `videoCreationStudioHref` |
 | `front/src/lib/draft-title.ts` | `draftDisplayTitle` — title, else first prompt line, else untitled |
 | `front/src/lib/studio-session.ts` | `studioSessionKey`, `sanitizeReturnTo`, draft return-context helpers |
-| `front/src/lib/motion.ts` | animejs loader + reduced motion (zaolang-theming) |
+| `front/src/lib/motion.ts` | `loadAnime`, `useReducedMotion`, `useIsomorphicLayoutEffect` (zaolang-theming) |
+| `front/src/lib/theme-sync.ts` | `syncThemePreference` — theme → account (zaolang-theming) |
+| `front/src/lib/locale-transition.ts` | region-switch fade (zaolang-i18n-region) |
 | `front/src/lib/use-media-query.ts` | JS breakpoints (zaolang-theming) |
-| `front/src/lib/use-job-stream.ts` | GET job SSE hook (zaolang-generation-jobs) |
+| `front/src/lib/use-job-stream.ts` | GET job SSE hook (zaolang-generation-jobs); `use-admin-job-stream.ts` = console variant |
 | `front/src/lib/admin/` | admin list/fetch helpers (zaolang-admin-console) |

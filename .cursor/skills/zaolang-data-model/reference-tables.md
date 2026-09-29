@@ -4,7 +4,7 @@ Class lists drift; `grep -n "^class " back/app/models/<module>.py` is authoritat
 
 | Module | Tables / notes |
 |---|---|
-| `back/app/models/identity.py` | `User`, `Profile` (preferences `theme`/`locale`/`region` live here), `Follow` |
+| `back/app/models/identity.py` | `User` (preferences `theme`/`locale`/`region`, `roles` array, `age_gate_confirmed_at`), `Profile` (display fields, `reduce_motion`), `Follow` |
 | `back/app/models/works.py` | `Work` (`trashed_at` recycle bin), `WorkVersion`, `LicenseSnapshot`, `LineageEdge`, `Draft`, likes/bookmarks/collections/tags, `StylePreset`, `PublicationIntent` |
 | `back/app/models/generation.py` | `Workflow(Version)`, `GenerationWorkflowTemplate`, `GenerationJob`, `JobEvent`, `ProviderAttempt`, `ProviderStat`, `AgentRun` |
 | `back/app/models/credits.py` | `CreditAccount`, `CreditLedgerEntry`, `CreditPackage`, `PaymentIntent`, `WebhookEvent`, redemption codes/records |
@@ -14,7 +14,7 @@ Class lists drift; `grep -n "^class " back/app/models/<module>.py` is authoritat
 | `back/app/models/editor.py` | `DramaEpisode`, `EpisodeContentLink`, cuts/revisions/exports, `EpisodeScriptTurn`, `EpisodeBlockingVersion`, `EditPlan`, `DeliveryVariant`, `MediaAnalysis`, `EditorLease`, editor event logs, `McpTokenGrant` |
 | `back/app/models/canvas.py` | six canvas tables → `zaolang-canvas` |
 | `back/app/models/skill_library.py` | `CreationSkill` (templates, characters, scenes, covers) |
-| other modules | `distribution.py` (off-platform accounts + metrics), `search.py` (`WorkEmbedding`, pgvector), `agent_skills.py`, `async_tasks.py` (`AsyncProviderTask`), `workflow_input.py`, `style_gallery.py`, `learning.py`, `system_log.py`, `access.py` (`AccessGrant`) |
+| other modules | `distribution.py` (off-platform accounts + metrics), `search.py` (`WorkEmbedding`, pgvector), `agent_skills.py` (`AgentNode`/`AgentProfile`/`AgentSkill`), `async_tasks.py` (`AsyncProviderTask`), `workflow_input.py`, `style_gallery.py`, `learning.py`, `system_log.py`, `access.py` (`AccessGrant`) |
 
 ## Column rules worth knowing
 
