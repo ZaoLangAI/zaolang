@@ -606,6 +606,11 @@ export function AgentSkillEditorDialog({
     const template = slotTemplates.find((item) => item.key === fallbackKey);
     if (!template?.prompt_template) return;
     appliedTemplateRef.current = true;
+    // A one-time, `appliedTemplateRef`-guarded fill once both the versions
+    // and the templates fetch have landed — not a render-loop setState. It
+    // can't move into render: `load()`'s async callback shares that ref to
+    // avoid clobbering an operator's pick, and refs can't be read in render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTemplateKey(fallbackKey);
     setPromptTemplate(template.prompt_template);
     setToolGrants(template.tool_grants ?? []);

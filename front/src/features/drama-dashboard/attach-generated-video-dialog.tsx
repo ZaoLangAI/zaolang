@@ -42,10 +42,19 @@ export function AttachGeneratedVideoDialog({
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset on each open, adjusted during render rather than in the fetch
+  // effect (same pattern as `command-palette.tsx`).
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setError(null);
+      setLoading(true);
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
-    setError(null);
-    setLoading(true);
     void api
       .get<Page<Draft>>('/v1/drafts')
       .then((page) => setDrafts(page.items))

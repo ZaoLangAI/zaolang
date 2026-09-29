@@ -39,10 +39,26 @@ export function LinkEpisodeDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Resets adjusted during render rather than in the fetch effects (same
+  // pattern as `command-palette.tsx`); the effects only do the fetching.
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setError(null);
+      setLoading(true);
+    }
+  }
+  const episodesSeriesId = open ? seriesId : '';
+  const [lastEpisodesSeriesId, setLastEpisodesSeriesId] = useState('');
+  if (episodesSeriesId !== lastEpisodesSeriesId) {
+    setLastEpisodesSeriesId(episodesSeriesId);
+    setEpisodeId('');
+    if (!episodesSeriesId) setEpisodes([]);
+  }
+
   useEffect(() => {
     if (!open) return;
-    setError(null);
-    setLoading(true);
     void editorApi
       .listDramaSeries()
       .then((rows) => {
@@ -56,14 +72,9 @@ export function LinkEpisodeDialog({
   }, [open, tStates]);
 
   useEffect(() => {
-    if (!open || !seriesId) {
-      setEpisodes([]);
-      setEpisodeId('');
-      return;
-    }
-    setEpisodeId('');
+    if (!episodesSeriesId) return;
     void editorApi
-      .listEpisodes(seriesId)
+      .listEpisodes(episodesSeriesId)
       .then((rows) => {
         setEpisodes(rows);
         if (rows.length === 1) setEpisodeId(rows[0]?.id ?? '');
@@ -71,7 +82,7 @@ export function LinkEpisodeDialog({
       .catch((caught) => {
         setError(isApiError(caught) ? caught.message : tStates('errorHint'));
       });
-  }, [open, seriesId, tStates]);
+  }, [episodesSeriesId, tStates]);
 
   const submit = async () => {
     if (!episodeId) return;

@@ -129,7 +129,10 @@ export function PromptPolish({
   }
 
   const onPendingChangeRef = useRef(onPendingChange);
-  onPendingChangeRef.current = onPendingChange;
+  // Assigned in an effect, not during render — `react-hooks/refs`.
+  useEffect(() => {
+    onPendingChangeRef.current = onPendingChange;
+  }, [onPendingChange]);
   // A parent that locked submit on `pending` must unlock if this unmounts
   // mid-stream (navigating away, swapping studios) — otherwise the button
   // stays stuck. The in-flight `request()` also reports true/false itself.

@@ -57,9 +57,10 @@ export function useAdminJobStream(jobId: string | null): AdminJobStreamState {
   const lastEventId = useRef(0);
 
   useEffect(() => {
+    // No job: the return below already masks every field, and `run()` resets
+    // them all (thinking included) when the next job starts.
     if (!jobId) {
       lastEventId.current = 0;
-      setLiveThinking(EMPTY_LIVE_THINKING);
       return;
     }
 

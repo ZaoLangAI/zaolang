@@ -85,7 +85,10 @@ export function useAppliedSkills({
   const [appliedSkillIds, setAppliedSkillIds] = useState<string[]>([]);
   const [pendingUnlockSkill, setPendingUnlockSkill] = useState<CreationSkillSummary | null>(null);
   const onApplyParamsRef = useRef(onApplyParams);
-  onApplyParamsRef.current = onApplyParams;
+  // Assigned in an effect, not during render — `react-hooks/refs`.
+  useEffect(() => {
+    onApplyParamsRef.current = onApplyParams;
+  }, [onApplyParams]);
   const seededSkillIdRef = useRef<string | null>(null);
 
   const applyUnlockedSkill = async (skill: CreationSkillSummary) => {

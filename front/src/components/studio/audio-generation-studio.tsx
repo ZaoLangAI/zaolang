@@ -1,7 +1,7 @@
 'use client';
 
 import { useLocale, useTranslations } from 'next-intl';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { OptionGroup } from '@/components/studio/option-group';
 import {
@@ -91,22 +91,25 @@ export function AudioGenerationStudio({
   // Keeps the voice `Select` valid as the roster changes under it (model
   // switched, or the live catalogue finished loading) instead of silently
   // submitting a voice id the newly-picked model does not recognize.
-  useEffect(() => {
-    const nextVoice = availableVoices[0];
-    if (!nextVoice) return;
-    if (!availableVoices.includes(voice)) setVoice(nextVoice);
-  }, [availableVoices, voice]);
+  // Adjusted during render rather than in an effect: it only reacts to state
+  // this component already has, and settles after one pass.
+  if (availableVoices[0] && !availableVoices.includes(voice)) {
+    setVoice(availableVoices[0]);
+  }
 
   // A model with no known preset roster (fal's single-call clone models,
   // e.g. `minimax/voice-clone`) has nothing for the "预设音色" tab to show —
   // switch to the clone tab for the user rather than leaving them on an
   // empty `Select`. Only fires on an explicit model pick, never on "自动
   // 选择" (where some other candidate model may well have a real roster).
-  useEffect(() => {
-    if (forcedModel && selectedModelOption && !selectedModelOption.voices?.length) {
-      setMode('clone');
-    }
-  }, [forcedModel, selectedModelOption]);
+  // Keyed on the picked model so the user can still switch back afterwards.
+  const rosterlessModel =
+    forcedModel && selectedModelOption && !selectedModelOption.voices?.length ? forcedModel : '';
+  const [lastRosterlessModel, setLastRosterlessModel] = useState('');
+  if (rosterlessModel !== lastRosterlessModel) {
+    setLastRosterlessModel(rosterlessModel);
+    if (rosterlessModel) setMode('clone');
+  }
 
   // -- clone reference upload -------------------------------------------
   const [cloneAsset, setCloneAsset] = useState<Asset | null>(null);

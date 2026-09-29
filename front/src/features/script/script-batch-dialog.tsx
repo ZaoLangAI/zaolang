@@ -102,16 +102,31 @@ export function ScriptBatchDialog({
     if (kind) setParams(defaultsFor(kind));
   }
 
-  useEffect(() => {
-    if (!kind) return;
-    if (generateCount === 0) {
+  // Each new quote request is marked during render (same pattern as the kind
+  // reset above) so the effect below only fetches.
+  const [quotedFor, setQuotedFor] = useState<{
+    kind: BatchKind | null;
+    params: BatchParams;
+    generateCount: number;
+  } | null>(null);
+  if (
+    quotedFor?.kind !== kind ||
+    quotedFor.params !== params ||
+    quotedFor.generateCount !== generateCount
+  ) {
+    setQuotedFor({ kind, params, generateCount });
+    if (kind && generateCount === 0) {
       setQuote(ZERO_QUOTE);
       setQuoteFailed(false);
       setQuoting(false);
-      return;
+    } else if (kind) {
+      setQuoting(true);
     }
+  }
+
+  useEffect(() => {
+    if (!kind || generateCount === 0) return;
     let cancelled = false;
-    setQuoting(true);
     void quoteForBatch(kind, params, generateCount)
       .then((next) => {
         if (cancelled) return;
@@ -139,12 +154,15 @@ export function ScriptBatchDialog({
     return union.length > 0 ? union : [...FALLBACK_VOICES];
   }, [audioModelOptions]);
 
-  useEffect(() => {
-    if (kind !== 'audio' || audioVoices.length === 0) return;
-    if (!params.voice || !audioVoices.includes(params.voice)) {
-      setParams((current) => ({ ...current, voice: audioVoices[0] }));
-    }
-  }, [kind, audioVoices, params.voice]);
+  // Adjusted during render rather than in an effect: it only reacts to state
+  // this component already has, and settles after one pass.
+  if (
+    kind === 'audio' &&
+    audioVoices.length > 0 &&
+    (!params.voice || !audioVoices.includes(params.voice))
+  ) {
+    setParams((current) => ({ ...current, voice: audioVoices[0] }));
+  }
 
   if (!kind) return null;
 

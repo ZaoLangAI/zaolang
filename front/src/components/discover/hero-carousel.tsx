@@ -81,9 +81,6 @@ export function HeroCarousel({
   const [paused, setPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [details, setDetails] = useState<Record<string, WorkDetail>>(initialDetails);
-  const detailsRef = useRef(details);
-  detailsRef.current = details;
-  const requestedRef = useRef(new Set(Object.keys(initialDetails)));
 
   const [bookmarkOverrides, setBookmarkOverrides] = useState<Record<string, boolean>>({});
 
@@ -94,16 +91,23 @@ export function HeroCarousel({
     setTrackedSlidesKey(slidesKey);
     setIndex(0);
     setDetails(initialDetails);
-    requestedRef.current = new Set(Object.keys(initialDetails));
   }
+  // Which works have been fetched for the current slide set. Reset inside the
+  // fetch effect, not in the render-time block above: refs can't be written
+  // during render (`react-hooks/refs`).
+  const requestedRef = useRef({ slidesKey, ids: new Set(Object.keys(initialDetails)) });
 
   const mountedIds = useMemo(() => neighborIds(slides, index), [slides, index]);
   const mountedKey = mountedIds.join('|');
 
   useEffect(() => {
-    const missing = mountedIds.filter((id) => !requestedRef.current.has(id));
+    if (requestedRef.current.slidesKey !== slidesKey) {
+      requestedRef.current = { slidesKey, ids: new Set(Object.keys(initialDetails)) };
+    }
+    const requested = requestedRef.current.ids;
+    const missing = mountedIds.filter((id) => !requested.has(id));
     if (missing.length === 0) return;
-    for (const id of missing) requestedRef.current.add(id);
+    for (const id of missing) requested.add(id);
     let cancelled = false;
     void Promise.all(
       missing.map(async (workId) => {
@@ -126,7 +130,7 @@ export function HeroCarousel({
     return () => {
       cancelled = true;
     };
-  }, [mountedIds]);
+  }, [mountedIds, slidesKey, initialDetails]);
 
   useEffect(() => {
     if (status !== 'authenticated' || mountedKey === '') return;

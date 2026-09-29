@@ -108,33 +108,26 @@ export function ScriptEditor({
   // A ref, not `useState`: this is purely a run-once guard, never read by
   // render — same pattern as `WorkflowPublishDialog`'s `wasOpen`.
   const pendingLinkApplied = useRef(false);
-  const retryIdeaSeeded = useRef(false);
+  const [retryIdeaSeeded, setRetryIdeaSeeded] = useState(false);
   const stream = useScriptTurnStream();
   const createStream = useCreateStream(episodeId);
   const characterLibrary = useResource<Character[]>('/v1/characters');
 
   // Seeds the retry composer with the idea/skills that produced the current
   // (possibly missing) first draft — once, the first time a real idea shows
-  // up. Lives up here (ahead of the loading/error early returns below) and
-  // as an effect (not a render-time `if` guarded by the ref) so reading/
-  // writing `retryIdeaSeeded.current` never happens during render itself.
-  useEffect(() => {
-    if (retryIdeaSeeded.current) return;
-    const idea = (createStream?.idea || detail?.source_idea || '').trim();
-    if (!idea) return;
-    retryIdeaSeeded.current = true;
-    setRetryIdea(idea);
+  // up. Lives up here, ahead of the loading/error early returns below, and
+  // is adjusted during render (same pattern as `command-palette.tsx`) with a
+  // state guard rather than a ref, since refs can't be read during render.
+  const seedIdea = (createStream?.idea || detail?.source_idea || '').trim();
+  if (!retryIdeaSeeded && seedIdea) {
+    setRetryIdeaSeeded(true);
+    setRetryIdea(seedIdea);
     setRetrySkillIds(
       createStream?.referencedSkillIds?.length
         ? createStream.referencedSkillIds
         : detail?.source_referenced_skill_ids ?? [],
     );
-  }, [
-    createStream?.idea,
-    createStream?.referencedSkillIds,
-    detail?.source_idea,
-    detail?.source_referenced_skill_ids,
-  ]);
+  }
 
   useEffect(() => {
     let cancelled = false;

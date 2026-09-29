@@ -353,11 +353,16 @@ export function VideoGenerationStudio({
     lastRememberedDisplayJobRef.current = displayJob;
     setKnownJobsById((current) => ({ ...current, [displayJob.id]: displayJob }));
   }, [displayJob]);
-  useEffect(() => {
-    if (liveJob?.status === 'succeeded' && liveJob.id === activeJobId) {
-      setAppliedJobId(liveJob.id);
-    }
-  }, [liveJob, activeJobId]);
+  // Adjusted during render rather than in an effect (same pattern as the
+  // resumed-job handling above). Keyed on the succeeded job's id so it fires
+  // once per success and never snaps back over a version applied afterwards.
+  const succeededJobId =
+    liveJob?.status === 'succeeded' && liveJob.id === activeJobId ? liveJob.id : null;
+  const [lastSucceededJobId, setLastSucceededJobId] = useState<string | null>(null);
+  if (succeededJobId !== lastSucceededJobId) {
+    setLastSucceededJobId(succeededJobId);
+    if (succeededJobId) setAppliedJobId(succeededJobId);
+  }
 
   const cancelActiveJob = async () => {
     if (!activeJobId) return;

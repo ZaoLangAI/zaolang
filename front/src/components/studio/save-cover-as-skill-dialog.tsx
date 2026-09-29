@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
 import { Button } from '@/components/ui/button';
@@ -33,12 +33,17 @@ export function SaveCoverAsSkillDialog({
   const [credits, setCredits] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setTitle('');
-    setDescription('');
-    setCredits(0);
-  }, [open]);
+  // Reset on each open, adjusted during render rather than in an effect
+  // (same pattern as `command-palette.tsx`).
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setTitle('');
+      setDescription('');
+      setCredits(0);
+    }
+  }
 
   const save = async () => {
     if (!outputAssetId) return;
