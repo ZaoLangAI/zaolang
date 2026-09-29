@@ -40,14 +40,20 @@ const BINDING =
 const missing = [];
 for (const file of walk(join(root, 'src'))) {
   const source = readFileSync(file, 'utf8');
+  // A name can be bound more than once per file (e.g. `t` in two components),
+  // so keep every binding in source order rather than letting the last win.
   const namespaces = new Map();
-  for (const match of source.matchAll(BINDING)) namespaces.set(match[1], match[2]);
+  for (const match of source.matchAll(BINDING)) {
+    if (!namespaces.has(match[1])) namespaces.set(match[1], []);
+    namespaces.get(match[1]).push({ index: match.index, namespace: match[2] });
+  }
   if (namespaces.size === 0) continue;
 
-  for (const [binding, namespace] of namespaces) {
+  for (const [binding, bindings] of namespaces) {
     // Template and computed keys cannot be checked statically; skip them.
     const usage = new RegExp(`\\b${binding}\\(\\s*'([^']+)'`, 'g');
     for (const match of source.matchAll(usage)) {
+      const { namespace } = bindings.findLast((b) => b.index < match.index) ?? bindings[0];
       if (!has(namespace, match[1])) {
         missing.push(`${file.slice(root.length + 1)}: ${namespace}.${match[1]}`);
       }
@@ -55,9 +61,10 @@ for (const file of walk(join(root, 'src'))) {
   }
 }
 
-if (missing.length > 0) {
-  console.error(`Missing message keys (${missing.length}):`);
-  for (const line of [...new Set(missing)].sort()) console.error(`  ${line}`);
+const unique = [...new Set(missing)].sort();
+if (unique.length > 0) {
+  console.error(`Missing message keys (${unique.length}):`);
+  for (const line of unique) console.error(`  ${line}`);
   process.exit(1);
 }
 
