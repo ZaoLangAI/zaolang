@@ -12,7 +12,10 @@ import {
   adaptStudioResolution,
 } from '@/components/studio/generation-resolution';
 import { GenerationVersionHistory } from '@/components/studio/generation-version-history';
-import { durationFromVersion, promptFromVersion } from '@/components/studio/generation-version-select';
+import {
+  durationFromVersion,
+  promptFromVersion,
+} from '@/components/studio/generation-version-select';
 import { InlineVideoResult } from '@/components/studio/inline-video-result';
 import { OptionGroup } from '@/components/studio/option-group';
 import { PromptComposer } from '@/components/studio/prompt-composer';
@@ -25,7 +28,13 @@ import {
   useStyleAndSkillPicker,
 } from '@/components/studio/style-and-skill-picker';
 import { Select, TextInput } from '@/components/ui/field';
-import { IconGear, IconLandscape, IconPortrait, IconVolume, IconVolumeOff } from '@/components/ui/icons';
+import {
+  IconGear,
+  IconLandscape,
+  IconPortrait,
+  IconVolume,
+  IconVolumeOff,
+} from '@/components/ui/icons';
 import { useToast } from '@/components/ui/toast';
 import { Link } from '@/i18n/navigation';
 import type { Locale } from '@/i18n/routing';
@@ -49,7 +58,12 @@ import { useGenerationSubmit } from '@/lib/use-generation-submit';
 import { useJobStream } from '@/lib/use-job-stream';
 import { useResource } from '@/lib/use-resource';
 
-import { updateScriptContent, type ScriptBlock, type ScriptDetail, type ScriptDocument } from './api';
+import {
+  updateScriptContent,
+  type ScriptBlock,
+  type ScriptDetail,
+  type ScriptDocument,
+} from './api';
 import { ScriptBlockRow } from './script-block';
 import { locateBreakpoint } from './script-breakpoint';
 import {
@@ -298,8 +312,7 @@ export function ScriptClipStudio({
           ? [...current, id]
           : current,
     );
-  const selectReferenceScene = (id: string) =>
-    setSelectedReferenceSceneIds(id ? [id] : []);
+  const selectReferenceScene = (id: string) => setSelectedReferenceSceneIds(id ? [id] : []);
 
   const applyParams = (params: Record<string, unknown>) => {
     const aspectRatio = params.aspect_ratio;
@@ -425,8 +438,7 @@ export function ScriptClipStudio({
       prompt: composeClipPrompt(prompt, labeled),
       aspectRatio: aspect,
       seed: parsedSeed,
-      referenceAssetIds:
-        referenceMode === 'frame_images' ? [] : uploads.map((asset) => asset.id),
+      referenceAssetIds: referenceMode === 'frame_images' ? [] : uploads.map((asset) => asset.id),
       videoOptions: {
         resolution,
         reference_mode: referenceMode,
@@ -495,7 +507,13 @@ export function ScriptClipStudio({
                     />
                     <span className="relative size-7 shrink-0 overflow-hidden rounded-[var(--radius-sm)] bg-surface-soft">
                       {thumbnailUrl ? (
-                        <Image src={thumbnailUrl} alt="" fill sizes="28px" className="object-cover" />
+                        <Image
+                          src={thumbnailUrl}
+                          alt=""
+                          fill
+                          sizes="28px"
+                          className="object-cover"
+                        />
                       ) : null}
                     </span>
                     {character.name}
@@ -595,7 +613,10 @@ export function ScriptClipStudio({
         />
       </div>
 
-      <CollapsibleSection label={t('moreSettings')} icon={<IconGear className="size-4 text-muted" />}>
+      <CollapsibleSection
+        label={t('moreSettings')}
+        icon={<IconGear className="size-4 text-muted" />}
+      >
         <TextInput
           label={t('seed')}
           hint={t('seedHint')}
