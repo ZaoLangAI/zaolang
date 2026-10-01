@@ -851,3 +851,82 @@ def test_submit_music_missing_url_is_a_provider_failure(monkeypatch: pytest.Monk
 
     assert result.succeeded is False
     assert result.failure_code == "PROVIDER_INVALID_RESPONSE"
+
+
+# -- Seedream group ("组图") generation --------------------------------------
+
+
+def test_seedream_group_body_asks_for_sequential_images() -> None:
+    from app.providers.dmxapi_media import _build_seedream_body as build
+
+    body = build(_request(Operation.TEXT_TO_IMAGE.value, output_count=3))
+    assert body["sequential_image_generation"] == "auto"
+    assert body["sequential_image_generation_options"] == {"max_images": 3}
+    single = build(_request(Operation.TEXT_TO_IMAGE.value))
+    assert "sequential_image_generation" not in single
+
+
+def test_seedream_results_parse_every_image_in_both_shapes() -> None:
+    from app.providers.dmxapi_media import extract_seedream_results
+
+    assert extract_seedream_results(
+        {"data": [{"url": "https://cdn.invalid/1.png"}, {"b64_json": "QUJD"}]}
+    ) == [("https://cdn.invalid/1.png", None), (None, "QUJD")]
+    assert extract_seedream_results(
+        {
+            "output": [
+                {
+                    "content": [
+                        {"image_url": {"url": "https://cdn.invalid/a.png"}},
+                        {"image_url": {"url": "https://cdn.invalid/b.png"}},
+                    ]
+                }
+            ]
+        }
+    ) == [("https://cdn.invalid/a.png", None), ("https://cdn.invalid/b.png", None)]
+
+
+def test_submit_seedream_group_stores_each_image_and_reports_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        assert kwargs["json"]["sequential_image_generation_options"] == {"max_images": 3}
+        return _FakeResponse(
+            json_body={
+                "data": [
+                    {"url": "https://cdn.invalid/1.png"},
+                    {"url": "https://cdn.invalid/broken.png"},
+                    {"url": "https://cdn.invalid/3.png"},
+                ]
+            }
+        )
+
+    def fake_get(self, url, **kwargs):  # type: ignore[no-untyped-def]
+        if "broken" in url:
+            raise httpx.ConnectError("boom")
+        return _FakeResponse(content=f"png-{url}".encode())
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    provider = _provider(Operation.TEXT_TO_IMAGE.value, SEEDREAM_5_PRO_MODEL)
+    result = provider.submit(
+        _request(Operation.TEXT_TO_IMAGE.value, output_count=3, attempt_number=2)
+    )
+
+    assert result.succeeded is True
+    assert result.delivered_outputs == 2
+    assert result.object_key == "generated/job-text_to_image/output_2.png"
+    assert [extra.object_key for extra in result.extra_outputs] == [
+        "generated/job-text_to_image/output_2_1.png"
+    ]
+    assert s3.get_object(result.extra_outputs[0].object_key) == b"png-https://cdn.invalid/3.png"
+    assert result.metadata["requested_outputs"] == 3
+    assert result.metadata["delivered_outputs"] == 2
+
+
+def test_seedream_profile_advertises_group_output() -> None:
+    from app.providers.media_endpoints import _max_outputs_per_call
+
+    assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_image") == 4
+    assert _max_outputs_per_call("dmxapi", SEEDREAM_5_PRO_MODEL, "text_to_video") == 1
+    assert _max_outputs_per_call("openai", "gpt-image-2", "text_to_image") == 1

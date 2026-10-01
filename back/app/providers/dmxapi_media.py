@@ -42,6 +42,7 @@ from PIL import Image, UnidentifiedImageError
 
 from app.providers.aihubmix_media import media_client_base, media_request_path
 from app.providers.base import (
+    GeneratedOutput,
     GenerationProvider,
     GenerationRequest,
     GenerationResult,
@@ -224,6 +225,9 @@ class ImageModelProfile:
     max_total_pixels: int
     min_aspect_ratio: float
     max_aspect_ratio: float
+    # Separate images one call may return via sequential ("组图") generation;
+    # 1 = no group support. Ark-style APIs cap references + outputs at 15.
+    max_group_outputs: int = 1
 
 
 IMAGE_MODEL_PROFILES: dict[str, ImageModelProfile] = {
@@ -234,8 +238,15 @@ IMAGE_MODEL_PROFILES: dict[str, ImageModelProfile] = {
         max_total_pixels=4_194_304,
         min_aspect_ratio=1 / 16,
         max_aspect_ratio=16.0,
+        # Request/response shape follows Volcengine Ark's documented
+        # `sequential_image_generation`; confirm with
+        # `tests/live/test_seedream_group_live.py` against a real key.
+        max_group_outputs=4,
     ),
 }
+# Ark: input reference images + requested outputs must stay within 15.
+_SEEDREAM_MAX_REFERENCES_PLUS_OUTPUTS = 15
+_SEEDREAM_GROUP_TIMEOUT_CAP_S = 720.0
 
 
 def image_model_profile(model: str) -> ImageModelProfile | None:
@@ -599,9 +610,19 @@ def _build_seedream_body(request: GenerationRequest) -> dict[str, Any]:
         "output_format": "png",
     }
     image_refs = _image_reference_urls(request)
+    if request.output_count > 1:
+        image_refs = image_refs[
+            : max(0, _SEEDREAM_MAX_REFERENCES_PLUS_OUTPUTS - request.output_count)
+        ]
     if image_refs:
         body["image"] = image_refs[0] if len(image_refs) == 1 else image_refs
     body["size"] = _seedream_size_for(request.aspect_ratio, request.quality_tier)
+    if request.output_count > 1:
+        # 组图: one call, several separate images. `auto` lets the model stop
+        # early, which is why delivery is counted, not assumed
+        # (`GenerationResult.delivered_outputs`).
+        body["sequential_image_generation"] = "auto"
+        body["sequential_image_generation_options"] = {"max_images": request.output_count}
     return body
 
 
@@ -703,25 +724,36 @@ def _poll_result(model: str, payload: dict[str, Any]) -> tuple[str, str | None, 
 
 
 def extract_seedream_result(payload: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Returns `(url_or_data_uri, b64_json)` — at most one populated, both
-    `None` if the response could not be parsed. This response's envelope was
-    not confirmed against a live credential; tries the shapes already
-    established elsewhere in this module/`aihubmix_media.py` (Responses-
-    style `output[]`, and a plain OpenAI-images-style `data[]`) rather than
-    betting on just one.
+    """Returns `(url_or_data_uri, b64_json)` for the first image — at most one
+    populated, both `None` if the response could not be parsed. See
+    `extract_seedream_results` for the shapes tried."""
+    results = extract_seedream_results(payload)
+    return results[0] if results else (None, None)
+
+
+def extract_seedream_results(payload: dict[str, Any]) -> list[tuple[str | None, str | None]]:
+    """Every image in the response, in order, as `(url_or_data_uri, b64)`.
+
+    This response's envelope was not confirmed against a live credential;
+    tries the shapes already established elsewhere in this module/
+    `aihubmix_media.py` (a plain OpenAI-images-style `data[]`, and the
+    Responses-style `output[]`) rather than betting on just one. A group
+    call (`sequential_image_generation`) returns one entry per image.
     """
+    results: list[tuple[str | None, str | None]] = []
     data = payload.get("data")
-    if isinstance(data, list) and data and isinstance(data[0], dict):
-        entry = data[0]
-        url = entry.get("url")
-        if isinstance(url, str) and url:
-            return url, None
-        b64 = entry.get("b64_json")
-        if isinstance(b64, str) and b64:
-            return None, b64
-    text = _first_output_text(payload)
-    if isinstance(text, str) and (text.startswith("http") or text.startswith("data:")):
-        return text, None
+    if isinstance(data, list):
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            url = entry.get("url")
+            b64 = entry.get("b64_json")
+            if isinstance(url, str) and url:
+                results.append((url, None))
+            elif isinstance(b64, str) and b64:
+                results.append((None, b64))
+    if results:
+        return results
     output = payload.get("output")
     if isinstance(output, list):
         for item in output:
@@ -737,11 +769,16 @@ def extract_seedream_result(payload: dict[str, Any]) -> tuple[str | None, str | 
                 if isinstance(image_url, dict):
                     url = image_url.get("url")
                     if isinstance(url, str) and url:
-                        return url, None
+                        results.append((url, None))
+                        continue
                 b64 = part.get("b64_json")
                 if isinstance(b64, str) and b64:
-                    return None, b64
-    return None, None
+                    results.append((None, b64))
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and (text.startswith("http") or text.startswith("data:")):
+                    results.append((text, None))
+    return results
 
 
 def _decode_data_uri(data_uri: str) -> bytes | None:
@@ -911,23 +948,66 @@ class DmxApiMediaProvider(GenerationProvider):
 
     def _submit_image(self, request: GenerationRequest, started: float) -> GenerationResult:
         body = _build_seedream_body(request)
-        with self._client() as client:
+        requested = max(1, request.output_count)
+        # A group call renders several images server-side before answering;
+        # capped so it still ends inside the worker's own time limit
+        # (`tasks.image_generation_time_limits`).
+        timeout = min(
+            self._creds.timeout_s * requested,
+            max(self._creds.timeout_s, _SEEDREAM_GROUP_TIMEOUT_CAP_S),
+        )
+        with self._client(timeout=timeout) as client:
             response = client.post(
                 media_request_path(self._creds.base_url, "/v1/responses"), json=body
             )
             response.raise_for_status()
             payload = response.json()
 
-        url, b64 = extract_seedream_result(payload)
-        image_bytes: bytes | None = None
+        stored: list[GeneratedOutput] = []
+        for url, b64 in extract_seedream_results(payload)[:requested]:
+            try:
+                image_bytes = self._image_bytes(url, b64)
+            except httpx.HTTPError:
+                # One image of a group failing to download must not lose the
+                # others; delivery is counted, not assumed.
+                logger.warning("seedream image download failed for job %s", request.job_id)
+                continue
+            if not image_bytes:
+                continue
+            width, height = _probe_image_size(image_bytes)
+            suffix = "" if not stored else f"_{len(stored)}"
+            object_key = f"generated/{request.job_id}/output_{request.attempt_number}{suffix}.png"
+            s3.put_object(object_key, image_bytes, content_type="image/png")
+            stored.append(GeneratedOutput(object_key=object_key, width=width, height=height))
+
+        if not stored:
+            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
+
+        primary, extras = stored[0], stored[1:]
+        metadata: dict[str, Any] = {"provider": self.name, "model": self._model}
+        if requested > 1:
+            metadata["requested_outputs"] = requested
+            metadata["delivered_outputs"] = len(stored)
+        return GenerationResult(
+            succeeded=True,
+            object_key=primary.object_key,
+            mime_type="image/png",
+            width=primary.width,
+            height=primary.height,
+            latency_ms=self._elapsed_ms(started),
+            metadata=metadata,
+            extra_outputs=extras,
+        )
+
+    def _image_bytes(self, url: str | None, b64: str | None) -> bytes | None:
         if b64:
             try:
-                image_bytes = base64.b64decode(b64)
+                return base64.b64decode(b64)
             except (ValueError, TypeError):
-                image_bytes = None
-        elif url and url.startswith("data:"):
-            image_bytes = _decode_data_uri(url)
-        elif url:
+                return None
+        if url and url.startswith("data:"):
+            return _decode_data_uri(url)
+        if url:
             # A bare, header-less client: this response's image URL is very
             # likely a pre-signed cloud-storage link, same reasoning as
             # `aihubmix_media._submit_qwen_image_edit`'s BCE download — a
@@ -936,24 +1016,8 @@ class DmxApiMediaProvider(GenerationProvider):
             with httpx.Client(timeout=self._creds.timeout_s) as download_client:
                 download = download_client.get(url)
                 download.raise_for_status()
-                image_bytes = download.content or None
-
-        if not image_bytes:
-            return self._failure(started, "PROVIDER_INVALID_RESPONSE", "missing_image")
-
-        width, height = _probe_image_size(image_bytes)
-        object_key = f"generated/{request.job_id}/output_{request.attempt_number}.png"
-        s3.put_object(object_key, image_bytes, content_type="image/png")
-
-        return GenerationResult(
-            succeeded=True,
-            object_key=object_key,
-            mime_type="image/png",
-            width=width,
-            height=height,
-            latency_ms=self._elapsed_ms(started),
-            metadata={"provider": self.name, "model": self._model},
-        )
+                return download.content or None
+        return None
 
     def _submit_audio(self, request: GenerationRequest, started: float) -> GenerationResult:
         """Synchronous TTS, same `/v1/audio/speech` contract as
@@ -1128,11 +1192,11 @@ class DmxApiMediaProvider(GenerationProvider):
         # `AiHubMixMediaProvider` gives for its own undocumented tracks.
         return False
 
-    def _client(self) -> httpx.Client:
+    def _client(self, *, timeout: float | None = None) -> httpx.Client:
         return httpx.Client(
             base_url=media_client_base(self._creds.base_url),
             headers={"Authorization": f"Bearer {self._creds.api_key}"},
-            timeout=self._creds.timeout_s,
+            timeout=timeout or self._creds.timeout_s,
         )
 
     def _failure(self, started: float, code: str, detail: str) -> GenerationResult:

@@ -30284,6 +30284,11 @@
               }
             ],
             "title": "Voices"
+          },
+          "max_outputs_per_call": {
+            "type": "integer",
+            "title": "Max Outputs Per Call",
+            "default": 1
           }
         },
         "type": "object",

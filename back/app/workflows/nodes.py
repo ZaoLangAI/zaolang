@@ -503,6 +503,9 @@ ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
 # One write-back label per image of a scene variant group, in variant order
 # (`prompt_builder.group_labels`).
 GROUP_LABELS_STATE_KEY = "group_labels"
+# Every image a scene variant group delivered, `{asset_id, label}` in order
+# (`_register_group_outputs`); `asset_output_advance` records them all.
+GROUP_OUTPUTS_STATE_KEY = "group_outputs"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
 _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
 
@@ -743,7 +746,13 @@ def execute_asset_output_advance(
         axis is not None and axis[0] == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     )
     view = _current_character_view(ctx) if is_character else str(asset_kind or "")
-    if asset_id:
+    group_outputs = ctx.state.get(GROUP_OUTPUTS_STATE_KEY)
+    if group_outputs:
+        outputs.extend(
+            {"asset_id": str(entry["asset_id"]), "view": view, "label": str(entry["label"])}
+            for entry in group_outputs
+        )
+    elif asset_id:
         outputs.append({"asset_id": str(asset_id), "view": view})
 
     if not is_character:
@@ -1570,6 +1579,15 @@ def _preview_url_for(object_key: str) -> str:
     return s3.presign_get(object_key, expires_in=get_settings().download_url_ttl_seconds)
 
 
+def _requested_group_outputs(ctx: WorkflowContext) -> int:
+    """Images one provider call should return: the variant count of a scene
+    variant group, else 1."""
+    if ctx.params.get("asset_kind") != ImageAssetKind.SCENE.value:
+        return 1
+    variants = ctx.params.get("scene_variants")
+    return len(variants) if isinstance(variants, list) and len(variants) > 1 else 1
+
+
 def _with_reference_legend(
     prompt: str, references: list[Any], capability: Any, ctx: WorkflowContext
 ) -> str:
@@ -1642,6 +1660,7 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         resolution=_vendor_resolution_for(decision.capability, ctx.params),
         references=references,
         extra=dict(ctx.params.get("extra") or {}),
+        output_count=_requested_group_outputs(ctx),
     )
     result = provider.submit(request)
     if result.pending and result.external_task_id:
@@ -1769,8 +1788,19 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             references=references,
             extra=dict(ctx.params.get("extra") or {}),
             attempt_number=attempt_number,
+            output_count=_requested_group_outputs(ctx),
         )
+        ctx.state["requested_outputs"] = request.output_count
         result = decision.provider.submit(request)
+        if request.output_count > 1 and result.pending:
+            # Group calls are synchronous by contract: a parked async task
+            # has no way to carry N outputs through `poll()`.
+            result = GenerationResult(
+                succeeded=False,
+                failure_code="PROVIDER_INVALID_RESPONSE",
+                latency_ms=result.latency_ms,
+                metadata={**result.metadata, "detail": "group_call_returned_pending"},
+            )
         # Priced here, against the endpoint's configuration as it stands right
         # now. Deriving it at report time instead would let tomorrow's price
         # change rewrite what today's generation cost.
@@ -1780,6 +1810,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             request=request,
             billing_profile=capability.billing_profile,
             default_resolution=capability.default_resolution,
+            generated_images=result.delivered_outputs if result.succeeded else 1,
         )
         attempt = ProviderAttempt(
             job_id=ctx.job.id,
@@ -2132,11 +2163,15 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
                 _maybe_fill_linked_episode_preview(ctx.session, draft)
 
     ctx.state["asset_id"] = asset.id
+    group_outputs = _register_group_outputs(ctx, result, capability, primary_asset_id=asset.id)
+    requested_outputs = max(1, int(ctx.state.get("requested_outputs") or 1))
     ctx.state["actual_credits"] = settlement_credits(
         reserved_credits=ctx.job.reserved_credits,
         operation=ctx.job.operation,
         requested_duration_seconds=int(ctx.params.get("duration_seconds") or 0),
         delivered_duration_ms=result.duration_ms,
+        requested_outputs=requested_outputs,
+        delivered_outputs=len(group_outputs) if requested_outputs > 1 else 1,
     )
     if ctx.is_sandbox:
         # Product sandbox is a real job; successful output still needs a
@@ -2150,6 +2185,43 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
             reason_code="SANDBOX_OUTPUT",
         )
     return NodeResult(port="pass", summary=f"达标，结算 {ctx.state['actual_credits']} 积分")
+
+
+def _register_group_outputs(
+    ctx: WorkflowContext, result: GenerationResult, capability: Any, *, primary_asset_id: str
+) -> list[dict[str, str]]:
+    """Registers a group call's extra images and records every image of the
+    group, labelled in variant order (`GROUP_LABELS_STATE_KEY`), under
+    `GROUP_OUTPUTS_STATE_KEY`. Empty for a single-output call."""
+    if not result.extra_outputs:
+        ctx.state.pop(GROUP_OUTPUTS_STATE_KEY, None)
+        return []
+    labels: list[str] = list(ctx.state.get(GROUP_LABELS_STATE_KEY) or [])
+    asset_ids = [primary_asset_id]
+    for extra in result.extra_outputs:
+        asset = media_service.register_generated_asset(
+            ctx.session,
+            owner_user_id=ctx.job.user_id,
+            object_key=extra.object_key,
+            mime_type=extra.mime_type,
+            width=extra.width,
+            height=extra.height,
+            duration_ms=None,
+            generation_job_id=ctx.job.id,
+            provenance={
+                "provider": capability.name,
+                "model_or_workflow": capability.model_or_workflow,
+                "operation": ctx.job.operation,
+                "quality_tier": ctx.job.quality_tier,
+            },
+        )
+        asset_ids.append(asset.id)
+    outputs = [
+        {"asset_id": asset_id, "label": labels[index] if index < len(labels) else ""}
+        for index, asset_id in enumerate(asset_ids)
+    ]
+    ctx.state[GROUP_OUTPUTS_STATE_KEY] = outputs
+    return outputs
 
 
 def execute_join(ctx: WorkflowContext, config: JoinConfig) -> NodeResult:
@@ -2170,7 +2242,7 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
     # `len(character_views)` for a multi-view `CHARACTER` completion job.
     # Every other operation (video, audio, plain `general` image) never
     # reaches that node type, so `ctx.state["asset_id"]` alone is unchanged.
-    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY)
+    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY) or ctx.state.get(GROUP_OUTPUTS_STATE_KEY)
     if outputs:
         asset_ids = [str(o["asset_id"]) for o in outputs if o.get("asset_id")]
         asset_id = asset_ids[0] if asset_ids else None
