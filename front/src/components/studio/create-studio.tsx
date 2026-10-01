@@ -64,6 +64,7 @@ export function CreateStudio({
   initialSkillId,
   initialReferenceAssetIds,
   initialScenePresets,
+  initialTargetVariantId,
 }: {
   operation: 'text_to_image' | 'text_to_video' | 'audio_generation' | 'music_generation';
   initialPrompt?: string;
@@ -93,6 +94,8 @@ export function CreateStudio({
   initialReferenceAssetIds?: string[];
   /** Scene lighting/weather from a script heading jump-out. */
   initialScenePresets?: ScenePresets;
+  /** Look / scene variant the output is filed under (`target_variant_id`). */
+  initialTargetVariantId?: string;
 }) {
   if (operation === 'audio_generation') {
     return <AudioGenerationStudio initialPrompt={initialPrompt} reference={reference} />;
@@ -118,6 +121,7 @@ export function CreateStudio({
         initialSkillId={initialSkillId}
         initialReferenceAssetIds={initialReferenceAssetIds}
         initialScenePresets={initialScenePresets}
+        initialTargetVariantId={initialTargetVariantId}
       />
     );
   }

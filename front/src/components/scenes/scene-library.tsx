@@ -9,12 +9,14 @@ import {
   type ExistingAssetPick,
 } from '@/components/library/existing-asset-picker-dialog';
 import { AccessPriceField } from '@/components/marketplace/access-price-field';
+import { AssetVariantsSheet } from '@/components/library/asset-variants-sheet';
 import { Button, IconButton } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog } from '@/components/ui/dialog';
 import { TextArea, TextInput } from '@/components/ui/field';
 import {
   IconClose,
+  IconGrid,
   IconImage,
   IconPencil,
   IconPlus,
@@ -125,6 +127,7 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
   const [publishBusy, setPublishBusy] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [variantsTarget, setVariantsTarget] = useState<Scene | null>(null);
   // `Sheet` (bottom drawer) below `lg`, `Dialog` (centred) at/above it —
   // mirrors `character-library.tsx` and `generation-studio-shell.tsx`'s own
   // `lg`-gated Sheet. Safe pre-hydration: `sheetOpen` only ever flips true
@@ -509,6 +512,13 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
                     <IconButton size="sm" label={tActions('edit')} onClick={() => openEdit(scene)}>
                       <IconPencil className="size-4" />
                     </IconButton>
+                    <IconButton
+                      size="sm"
+                      label={t('manageVariants')}
+                      onClick={() => setVariantsTarget(scene)}
+                    >
+                      <IconGrid className="size-4" />
+                    </IconButton>
                     {scene.status === 'draft' || scene.status === 'rejected' ? (
                       <IconButton
                         size="sm"
@@ -629,6 +639,29 @@ export function SceneLibrary({ initial }: { initial: Scene[] }) {
           {publishError ? <ErrorNotice title={publishError} /> : null}
         </div>
       </Dialog>
+      {variantsTarget ? (
+        <AssetVariantsSheet
+          kind="scene"
+          card={variantsTarget}
+          variants={variantsTarget.variants ?? []}
+          anchorEntryId={variantsTarget.anchor_entry_id}
+          open
+          onClose={() => setVariantsTarget(null)}
+          onCardChange={(updated) => {
+            setVariantsTarget(updated);
+            setScenes((current) => current.map((c) => (c.id === updated.id ? updated : c)));
+          }}
+          generateHref={(variant) =>
+            sceneImageStudioHref({
+              sceneId: variantsTarget.id,
+              name: variantsTarget.name,
+              description: variantsTarget.description,
+              variantId: variant.id,
+              presets: variant.presets as { lighting?: string | null; weather?: string | null },
+            })
+          }
+        />
+      ) : null}
     </div>
   );
 }

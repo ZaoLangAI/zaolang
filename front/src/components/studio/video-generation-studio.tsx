@@ -629,10 +629,10 @@ export function VideoGenerationStudio({
       assetPresets: {
         character_ref_selection: characterRefPicks
           .selectionFor(selectedReferenceCharacterIds)
-          .map(({ ownerId, asset_ids }) => ({ character_id: ownerId, asset_ids })),
+          .map(({ ownerId, ...pick }) => ({ character_id: ownerId, ...pick })),
         scene_ref_selection: sceneRefPicks
           .selectionFor(selectedReferenceSceneIds)
-          .map(({ ownerId, asset_ids }) => ({ scene_id: ownerId, asset_ids })),
+          .map(({ ownerId, ...pick }) => ({ scene_id: ownerId, ...pick })),
       },
       sourceWorkId: source?.work.id,
       maxCredits: quote?.credits,
@@ -747,12 +747,10 @@ export function VideoGenerationStudio({
                     {checked ? (
                       <ReferenceImagePicker
                         label={t('referencePickLabel', { name: character.name })}
-                        assets={character.reference_assets ?? []}
-                        selected={
-                          characterRefPicks.picks[character.id] ??
-                          defaultCharacterReferenceIds(character)
-                        }
-                        onChange={(ids) => characterRefPicks.set(character.id, ids)}
+                        variants={character.looks ?? []}
+                        defaultAssetIds={defaultCharacterReferenceIds(character)}
+                        value={characterRefPicks.picks[character.id]}
+                        onChange={(pick) => characterRefPicks.set(character.id, pick)}
                       />
                     ) : null}
                   </li>
@@ -802,9 +800,10 @@ export function VideoGenerationStudio({
                     {checked ? (
                       <ReferenceImagePicker
                         label={t('referencePickLabel', { name: scene.name })}
-                        assets={scene.reference_assets ?? []}
-                        selected={sceneRefPicks.picks[scene.id] ?? defaultSceneReferenceIds(scene)}
-                        onChange={(ids) => sceneRefPicks.set(scene.id, ids)}
+                        variants={scene.variants ?? []}
+                        defaultAssetIds={defaultSceneReferenceIds(scene)}
+                        value={sceneRefPicks.picks[scene.id]}
+                        onChange={(pick) => sceneRefPicks.set(scene.id, pick)}
                       />
                     ) : null}
                   </li>

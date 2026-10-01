@@ -119,6 +119,7 @@ export type AssetPresetParams = Pick<
   | 'scene_state'
   | 'scene_period'
   | 'scene_variants'
+  | 'target_variant_id'
 >;
 
 export function scenePresetParams(presets: ScenePresets): AssetPresetParams {

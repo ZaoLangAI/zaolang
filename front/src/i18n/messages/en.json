@@ -1763,7 +1763,8 @@
     "deleteViewLabel": "Delete {view} reference",
     "actionClipsLabel": "Linked videos",
     "deleteConfirmTitle": "Delete this character?",
-    "deleteConfirmBody": "Deleting \"{name}\" cannot be undone — its character sheet and voice description will be removed too."
+    "deleteConfirmBody": "Deleting \"{name}\" cannot be undone — its character sheet and voice description will be removed too.",
+    "manageLooks": "Manage looks"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3217,7 +3218,14 @@
         "contemporary": "Contemporary",
         "near_future": "Near future"
       }
-    }
+    },
+    "targetLook": "File under look",
+    "targetLookHint": "The result joins the chosen look.",
+    "targetLookAuto": "Automatic (outfit name or default look)",
+    "targetSceneVariant": "File under variant",
+    "targetSceneVariantHint": "The result joins the chosen variant.",
+    "targetSceneVariantAuto": "Automatic (presets or main scene)",
+    "referencePickLookDefault": "With no image ticked, the look's default references are used."
   },
   "scenes": {
     "eyebrow": "Scene library",
@@ -3250,7 +3258,8 @@
     "clipsLabel": "Linked videos",
     "generateSceneVideo": "Generate scene video →",
     "deleteConfirmTitle": "Delete this scene?",
-    "deleteConfirmBody": "Deleting \"{name}\" cannot be undone — its reference assets will be removed too."
+    "deleteConfirmBody": "Deleting \"{name}\" cannot be undone — its reference assets will be removed too.",
+    "manageVariants": "Manage variants"
   },
   "scriptStudio": {
     "title": "Script writing",
@@ -3711,5 +3720,46 @@
     "unlockCta": "Unlock and remix",
     "needsUnlock": "This work allows remixes after a credit unlock.",
     "goBilling": "Buy credits"
+  },
+  "assetVariants": {
+    "titleLooks": "Looks of “{name}”",
+    "titleVariants": "Variants of “{name}”",
+    "hintLooks": "Each look has its own sheet, views and expressions; video jobs can pick references by look.",
+    "hintVariants": "Each variant (lighting, weather, state, period) has its own master and shots; jobs can pick references by variant.",
+    "default": "Default",
+    "newLook": "New look",
+    "newVariant": "New variant",
+    "name": "Name",
+    "lookPlaceholder": "e.g. Wedding, Armor, Teenage",
+    "variantPlaceholder": "e.g. Rainy dusk, Battle-damaged",
+    "create": "Create",
+    "genericError": "Something went wrong. Please try again.",
+    "uploaded": "Reference added",
+    "lookDescription": "Outfit and accessories",
+    "variantDescription": "Variant notes",
+    "save": "Save",
+    "makeDefault": "Make default",
+    "deleteLook": "Delete look",
+    "deleteVariant": "Delete variant",
+    "generateHere": "Generate into this",
+    "upload": "Upload image",
+    "emptyVariant": "No images yet — upload or generate one.",
+    "anchor": "Anchor",
+    "entryType": "Type",
+    "moveTo": "Move to",
+    "setAnchor": "Set as anchor",
+    "removeEntry": "Remove",
+    "type": {
+      "identity_portrait": "Portrait",
+      "character_sheet": "Character sheet",
+      "view": "View",
+      "expression_sheet": "Expression sheet",
+      "pose": "Pose",
+      "outfit_detail": "Outfit detail",
+      "prop": "Prop",
+      "master": "Master",
+      "shot": "Shot",
+      "other": "Other"
+    }
   }
 }

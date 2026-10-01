@@ -1763,7 +1763,8 @@
     "deleteViewLabel": "{view}の参考画像を削除",
     "actionClipsLabel": "関連動画",
     "deleteConfirmTitle": "このキャラクターを削除しますか？",
-    "deleteConfirmBody": "「{name}」を削除すると元に戻せません。設定図と声の説明も削除されます。"
+    "deleteConfirmBody": "「{name}」を削除すると元に戻せません。設定図と声の説明も削除されます。",
+    "manageLooks": "衣装を管理"
   },
   "collectionPage": {
     "eyebrow": "MY LIBRARY",
@@ -3217,7 +3218,14 @@
         "contemporary": "現代",
         "near_future": "近未来"
       }
-    }
+    },
+    "targetLook": "保存先の衣装",
+    "targetLookHint": "生成結果は選んだ衣装に追加されます。",
+    "targetLookAuto": "自動（衣装名または既定の衣装）",
+    "targetSceneVariant": "保存先のバリエーション",
+    "targetSceneVariantHint": "生成結果は選んだバリエーションに追加されます。",
+    "targetSceneVariantAuto": "自動（プリセットまたはメインシーン）",
+    "referencePickLookDefault": "画像を選ばない場合は、その衣装の既定の参考画像を使います。"
   },
   "scenes": {
     "eyebrow": "シーンライブラリ",
@@ -3250,7 +3258,8 @@
     "clipsLabel": "関連動画",
     "generateSceneVideo": "シーン動画を生成 →",
     "deleteConfirmTitle": "このシーンを削除しますか？",
-    "deleteConfirmBody": "「{name}」を削除すると元に戻せません。参考素材も削除されます。"
+    "deleteConfirmBody": "「{name}」を削除すると元に戻せません。参考素材も削除されます。",
+    "manageVariants": "バリエーションを管理"
   },
   "scriptStudio": {
     "title": "台本づくり",
@@ -3711,5 +3720,46 @@
     "unlockCta": "解除してリミックス",
     "needsUnlock": "この作品はクレジット解除後にリミックスできます。",
     "goBilling": "チャージする"
+  },
+  "assetVariants": {
+    "titleLooks": "「{name}」の衣装",
+    "titleVariants": "「{name}」のシーンバリエーション",
+    "hintLooks": "衣装ごとに設定画・視点・表情を持ちます。動画生成では衣装単位で参考画像を選べます。",
+    "hintVariants": "バリエーション（光・天候・状態・時代）ごとにメイン画像とカットを持ちます。生成時にバリエーション単位で選べます。",
+    "default": "既定",
+    "newLook": "衣装を追加",
+    "newVariant": "バリエーションを追加",
+    "name": "名前",
+    "lookPlaceholder": "例：ウェディング、鎧、少年期",
+    "variantPlaceholder": "例：雨の夕暮れ、戦損",
+    "create": "作成",
+    "genericError": "操作に失敗しました。時間をおいて再度お試しください。",
+    "uploaded": "参考画像を追加しました",
+    "lookDescription": "衣装・小物の説明",
+    "variantDescription": "バリエーションの説明",
+    "save": "保存",
+    "makeDefault": "既定にする",
+    "deleteLook": "衣装を削除",
+    "deleteVariant": "バリエーションを削除",
+    "generateHere": "ここに生成",
+    "upload": "画像をアップロード",
+    "emptyVariant": "まだ画像がありません。アップロードまたは生成してください。",
+    "anchor": "アンカー",
+    "entryType": "種類",
+    "moveTo": "移動先",
+    "setAnchor": "アンカーにする",
+    "removeEntry": "外す",
+    "type": {
+      "identity_portrait": "ポートレート",
+      "character_sheet": "設定画",
+      "view": "視点画",
+      "expression_sheet": "表情集",
+      "pose": "ポーズ",
+      "outfit_detail": "衣装ディテール",
+      "prop": "小道具",
+      "master": "メイン",
+      "shot": "カット",
+      "other": "その他"
+    }
   }
 }
