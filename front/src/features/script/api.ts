@@ -16,6 +16,8 @@ export interface ScriptScene {
   /** Links this heading to a reusable `Scene` asset — set only via
    * `updateScriptLinks`, never by a model turn. */
   ref_id: string | null;
+  /** Which variant of that scene (黄昏/战损…); absent = its default. */
+  variant_id?: string | null;
 }
 
 export interface ScriptCharacter {
@@ -24,6 +26,8 @@ export interface ScriptCharacter {
   /** Links this character to a reusable `Character` asset — set only via
    * `updateScriptLinks`, never by a model turn. */
   character_ref_id: string | null;
+  /** Which look of that character (婚礼/战甲…); absent = its default. */
+  look_id?: string | null;
 }
 
 export interface ScriptDocument {
@@ -129,8 +133,8 @@ export function getTurnSnapshot(episodeId: string, turnId: string) {
 export function updateScriptLinks(
   episodeId: string,
   input: {
-    characters?: { name: string; character_ref_id: string | null }[];
-    scenes?: { heading: string; ref_id: string | null }[];
+    characters?: { name: string; character_ref_id: string | null; look_id?: string | null }[];
+    scenes?: { heading: string; ref_id: string | null; variant_id?: string | null }[];
   },
 ) {
   return api.patch<ScriptDocument>(`/v1/scripts/${episodeId}/links`, {

@@ -3400,7 +3400,9 @@
     "turnOriginBlocking": "白膜",
     "openBlocking": "白膜预演",
     "openBlockingHint": "用 3D 白膜预演机位与走位，再作为参考视频生成。",
-    "blockingStale": "白膜需要按新文案重建"
+    "blockingStale": "白膜需要按新文案重建",
+    "linkLook": "使用造型",
+    "linkSceneVariant": "使用变体"
   },
   "search": {
     "recentSearches": "最近搜索",

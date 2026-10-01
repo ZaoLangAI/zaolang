@@ -854,6 +854,103 @@ def test_update_links_patches_the_document_without_creating_a_turn(
     assert revised_character["character_ref_id"] == character.id
 
 
+def test_links_carry_a_look_and_a_scene_variant(
+    client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.domain.asset_variants import service as asset_variants_service
+    from app.domain.characters import service as characters_service
+    from app.domain.scenes import service as scenes_service
+
+    _enable_script_studio(db, author)
+    _patch_stream_session(monkeypatch, db)
+    character = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="小雨",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    wedding = asset_variants_service.create_variant(db, character.skill, name="婚礼")
+    scene = scenes_service.create_scene(
+        db, user_id=author.id, name="便利店", description=None, reference_asset_ids=[]
+    )
+    night = asset_variants_service.create_variant(db, scene.skill, name="夜")
+    other = characters_service.create_character(
+        db,
+        user_id=author.id,
+        name="阿杰",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    foreign_look = asset_variants_service.create_variant(db, other.skill, name="战甲")
+    db.flush()
+
+    created = client.post(
+        "/v1/scripts",
+        json={"title": "", "idea": "深夜便利店的秘密"},
+        headers=auth_header(author),
+    )
+    first = next(data for kind, data in _parse_sse(created.text) if kind == "complete")
+    episode_id = first["episode_id"]
+    character_name = first["script"]["characters"][0]["name"]
+    scene_heading = first["script"]["scenes"][0]["heading"]
+
+    rejected = client.patch(
+        f"/v1/scripts/{episode_id}/links",
+        json={
+            "characters": [
+                {
+                    "name": character_name,
+                    "character_ref_id": character.id,
+                    "look_id": foreign_look.id,
+                }
+            ],
+            "scenes": [],
+        },
+        headers=auth_header(author),
+    )
+    assert rejected.status_code == 422
+
+    linked = client.patch(
+        f"/v1/scripts/{episode_id}/links",
+        json={
+            "characters": [
+                {"name": character_name, "character_ref_id": character.id, "look_id": wedding.id}
+            ],
+            "scenes": [{"heading": scene_heading, "ref_id": scene.id, "variant_id": night.id}],
+        },
+        headers=auth_header(author),
+    )
+    assert linked.status_code == 200
+    assert linked.json()["characters"][0]["look_id"] == wedding.id
+    assert linked.json()["scenes"][0]["variant_id"] == night.id
+
+    revised = client.post(
+        f"/v1/scripts/{episode_id}/turns",
+        json={"message": "继续修改"},
+        headers=auth_header(author),
+    )
+    revised_complete = next(data for kind, data in _parse_sse(revised.text) if kind == "complete")
+    revised_character = next(
+        c for c in revised_complete["script"]["characters"] if c["name"] == character_name
+    )
+    assert revised_character["look_id"] == wedding.id
+
+    unlinked = client.patch(
+        f"/v1/scripts/{episode_id}/links",
+        json={
+            "characters": [
+                {"name": character_name, "character_ref_id": None, "look_id": wedding.id}
+            ],
+            "scenes": [],
+        },
+        headers=auth_header(author),
+    )
+    assert unlinked.json()["characters"][0]["look_id"] is None
+
+
 def test_update_content_saves_hand_edited_text_without_creating_a_turn(
     client: TestClient, db: Session, author: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

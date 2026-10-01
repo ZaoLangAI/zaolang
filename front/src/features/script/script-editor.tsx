@@ -233,17 +233,31 @@ export function ScriptEditor({
   const updateLink = useCallback(
     async (
       update:
-        | { kind: 'character'; name: string; refId: string | null }
-        | { kind: 'scene'; heading: string; refId: string | null },
+        | { kind: 'character'; name: string; refId: string | null; variantId?: string | null }
+        | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null },
     ) => {
       try {
         const script = await scriptApi.updateScriptLinks(episodeId, {
           characters:
             update.kind === 'character'
-              ? [{ name: update.name, character_ref_id: update.refId }]
+              ? [
+                  {
+                    name: update.name,
+                    character_ref_id: update.refId,
+                    look_id: update.variantId ?? null,
+                  },
+                ]
               : [],
           scenes:
-            update.kind === 'scene' ? [{ heading: update.heading, ref_id: update.refId }] : [],
+            update.kind === 'scene'
+              ? [
+                  {
+                    heading: update.heading,
+                    ref_id: update.refId,
+                    variant_id: update.variantId ?? null,
+                  },
+                ]
+              : [],
         });
         setDetail((current) => (current ? { ...current, script } : current));
         setViewedScript(script);

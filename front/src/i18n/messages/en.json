@@ -3400,7 +3400,9 @@
     "turnOriginBlocking": "Blockout",
     "openBlocking": "Blockout",
     "openBlockingHint": "Previsualise framing and blocking in 3D, then use it as a reference video.",
-    "blockingStale": "The blockout needs rebuilding"
+    "blockingStale": "The blockout needs rebuilding",
+    "linkLook": "Look",
+    "linkSceneVariant": "Variant"
   },
   "search": {
     "recentSearches": "Recent searches",

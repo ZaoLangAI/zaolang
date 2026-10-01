@@ -496,6 +496,8 @@ export function useScriptBatch({
           draftId: existing?.draftId,
           characterIds: video.characterIds,
           sceneIds: video.sceneId ? [video.sceneId] : [],
+          // The script's linked look / scene variant for this segment.
+          assetPresets: video.selections,
           videoOptions: {
             resolution: params.resolution,
             reference_mode: 'input_references',

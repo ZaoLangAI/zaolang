@@ -59,7 +59,11 @@ def test_stream_revise_script_changes_the_script_and_keeps_it_on_failure(db: Ses
     # document, but the stub only appends, it never drops what existed.
     # `ref_id` is sanitizer-added (absent from the caller's plain dict, so
     # `None` after a round trip) rather than part of the original content.
-    assert outcome.script["scenes"][0] == {**current["scenes"][0], "ref_id": None}
+    assert outcome.script["scenes"][0] == {
+        **current["scenes"][0],
+        "ref_id": None,
+        "variant_id": None,
+    }
 
 
 def test_extract_summary_and_script_splits_on_the_fence() -> None:

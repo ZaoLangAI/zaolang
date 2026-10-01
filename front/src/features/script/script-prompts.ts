@@ -49,16 +49,53 @@ export function resolveBreakpointRefs(
   document: ScriptDocument,
   scene: ScriptScene,
   breakpointBlockIndex: number,
-): { characterIds: string[]; sceneId: string | null } {
+): {
+  characterIds: string[];
+  sceneId: string | null;
+  /** Linked looks (`character_id → look id`) — only non-default ones. */
+  characterLooks: Record<string, string>;
+  sceneVariantId: string | null;
+} {
   const names = new Set(
     breakpointSegmentBlocks(scene, breakpointBlockIndex)
       .filter((block) => block.type === 'dialogue' && block.character)
       .map((block) => block.character as string),
   );
-  const characterIds = document.characters
-    .filter((character) => names.has(character.name) && character.character_ref_id)
-    .map((character) => character.character_ref_id as string);
-  return { characterIds, sceneId: scene.ref_id };
+  const linked = document.characters.filter(
+    (character) => names.has(character.name) && character.character_ref_id,
+  );
+  const characterLooks: Record<string, string> = {};
+  for (const character of linked) {
+    if (character.look_id) characterLooks[character.character_ref_id as string] = character.look_id;
+  }
+  return {
+    characterIds: linked.map((character) => character.character_ref_id as string),
+    sceneId: scene.ref_id,
+    characterLooks,
+    sceneVariantId: scene.ref_id ? (scene.variant_id ?? null) : null,
+  };
+}
+
+/** `*_ref_selection` items for a segment's linked looks / scene variant. */
+export function lookSelections(refs: {
+  characterLooks: Record<string, string>;
+  sceneId: string | null;
+  sceneVariantId: string | null;
+}): {
+  character_ref_selection: { character_id: string; variant_id: string }[] | null;
+  scene_ref_selection: { scene_id: string; variant_id: string }[] | null;
+} {
+  const characters = Object.entries(refs.characterLooks).map(([character_id, variant_id]) => ({
+    character_id,
+    variant_id,
+  }));
+  return {
+    character_ref_selection: characters.length ? characters : null,
+    scene_ref_selection:
+      refs.sceneId && refs.sceneVariantId
+        ? [{ scene_id: refs.sceneId, variant_id: refs.sceneVariantId }]
+        : null,
+  };
 }
 
 function shootableSegmentBlocks(scene: ScriptScene, breakpointBlockIndex: number): ScriptBlock[] {

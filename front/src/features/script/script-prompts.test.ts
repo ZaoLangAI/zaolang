@@ -14,6 +14,8 @@ import {
   displaySegmentBlocks,
   episodeLinkedAssetIds,
   promptForBreakpointKey,
+  lookSelections,
+  resolveBreakpointRefs,
 } from './script-prompts';
 
 function character(overrides: Partial<ScriptCharacter> = {}): ScriptCharacter {
@@ -179,5 +181,38 @@ describe('composeClipPrompt', () => {
     expect(composeClipPrompt('雨巷\n苏晴撑伞', '动作：苏晴撑伞')).toBe(
       '雨巷\n苏晴撑伞\n\n动作：苏晴撑伞',
     );
+  });
+});
+
+describe('linked looks in breakpoint refs', () => {
+  const document: ScriptDocument = {
+    title: '',
+    logline: '',
+    characters: [
+      { name: '林夏', traits: '', character_ref_id: 'chr_a', look_id: 'skv_wedding' },
+      { name: '周野', traits: '', character_ref_id: 'chr_b' },
+    ],
+    scenes: [
+      {
+        heading: '内景 客厅 夜',
+        ref_id: 'sk_scene',
+        variant_id: 'skv_night',
+        blocks: [
+          { type: 'dialogue', character: '林夏', text: '你来了。' },
+          { type: 'dialogue', character: '周野', text: '嗯。' },
+          { type: 'breakpoint', character: null, text: '' },
+        ],
+      },
+    ],
+  };
+
+  it('carries only non-default looks and the scene variant', () => {
+    const refs = resolveBreakpointRefs(document, document.scenes[0]!, 2);
+    expect(refs.characterIds).toEqual(['chr_a', 'chr_b']);
+    expect(refs.characterLooks).toEqual({ chr_a: 'skv_wedding' });
+    expect(lookSelections(refs)).toEqual({
+      character_ref_selection: [{ character_id: 'chr_a', variant_id: 'skv_wedding' }],
+      scene_ref_selection: [{ scene_id: 'sk_scene', variant_id: 'skv_night' }],
+    });
   });
 });

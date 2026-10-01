@@ -152,8 +152,8 @@ export function ScriptDocumentView({
   episodeId?: string;
   onLink?: (
     update:
-      | { kind: 'character'; name: string; refId: string | null }
-      | { kind: 'scene'; heading: string; refId: string | null },
+      | { kind: 'character'; name: string; refId: string | null; variantId?: string | null }
+      | { kind: 'scene'; heading: string; refId: string | null; variantId?: string | null },
   ) => void;
   onSaveContent?: (next: ScriptDocument) => void;
   /** Drafts already linked to this episode, keyed by `breakpointKey`. */
@@ -203,8 +203,11 @@ export function ScriptDocumentView({
       <ScriptLinkPicker
         kind="scene"
         refId={scene.ref_id}
+        variantId={scene.variant_id ?? null}
         refreshKey={libraryRevision}
-        onChange={(refId) => onLink({ kind: 'scene', heading: scene.heading, refId })}
+        onChange={(refId, variantId) =>
+          onLink({ kind: 'scene', heading: scene.heading, refId, variantId })
+        }
         createHref={
           episodeId
             ? buildCreateHref({
@@ -296,9 +299,10 @@ export function ScriptDocumentView({
                       <ScriptLinkPicker
                         kind="character"
                         refId={character.character_ref_id}
+                        variantId={character.look_id ?? null}
                         refreshKey={libraryRevision}
-                        onChange={(refId) =>
-                          onLink({ kind: 'character', name: character.name, refId })
+                        onChange={(refId, variantId) =>
+                          onLink({ kind: 'character', name: character.name, refId, variantId })
                         }
                         createHref={
                           episodeId

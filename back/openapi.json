@@ -39508,6 +39508,17 @@
               }
             ],
             "title": "Character Ref Id"
+          },
+          "look_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Id"
           }
         },
         "type": "object",
@@ -39532,6 +39543,18 @@
               }
             ],
             "title": "Character Ref Id"
+          },
+          "look_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Look Id"
           }
         },
         "type": "object",
@@ -39810,6 +39833,17 @@
               }
             ],
             "title": "Ref Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
           }
         },
         "type": "object",
@@ -39835,6 +39869,18 @@
               }
             ],
             "title": "Ref Id"
+          },
+          "variant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Id"
           }
         },
         "type": "object",

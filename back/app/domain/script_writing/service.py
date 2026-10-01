@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import copywriter, skill_matcher
 from app.db import session_scope
+from app.domain.asset_variants import service as asset_variants_service
 from app.domain.characters import service as characters_service
 from app.domain.editor import collaborators
 from app.domain.editor import service as editor_service
@@ -825,8 +826,8 @@ def update_links(
     *,
     user_id: str,
     episode_id: str,
-    character_links: list[tuple[str, str | None]],
-    scene_links: list[tuple[str, str | None]],
+    character_links: list[tuple[str, str | None, str | None]],
+    scene_links: list[tuple[str, str | None, str | None]],
 ) -> DramaEpisode:
     """Links a script's characters/scene headings to reusable `Character`/
     `Scene` assets — a structural edit, not a content revision, so it writes
@@ -849,27 +850,31 @@ def update_links(
     if not script:
         raise ValidationFailed("该剧本还没有初稿，请先生成初稿。")
 
-    character_ref_by_name = dict(character_links)
-    for ref_id in character_ref_by_name.values():
+    character_ref_by_name: dict[str, tuple[str | None, str | None]] = {}
+    for name, ref_id, look_id in character_links:
         if ref_id:
-            characters_service.get_character(session, user_id=user_id, character_id=ref_id)
-    scene_ref_by_heading = dict(scene_links)
-    for ref_id in scene_ref_by_heading.values():
+            card = characters_service.get_character(session, user_id=user_id, character_id=ref_id)
+            _require_variant(card.skill, look_id, field="characters.look_id")
+        character_ref_by_name[name] = (ref_id, look_id if ref_id else None)
+    scene_ref_by_heading: dict[str, tuple[str | None, str | None]] = {}
+    for heading, ref_id, variant_id in scene_links:
         if ref_id:
-            scenes_service.get_scene(session, user_id=user_id, scene_id=ref_id)
+            scene_card = scenes_service.get_scene(session, user_id=user_id, scene_id=ref_id)
+            _require_variant(scene_card.skill, variant_id, field="scenes.variant_id")
+        scene_ref_by_heading[heading] = (ref_id, variant_id if ref_id else None)
 
     next_characters = []
     for item in script.get("characters") or []:
         item = dict(item)
         if item.get("name") in character_ref_by_name:
-            item["character_ref_id"] = character_ref_by_name[item["name"]]
+            item["character_ref_id"], item["look_id"] = character_ref_by_name[item["name"]]
         next_characters.append(item)
 
     next_scenes = []
     for scene in script.get("scenes") or []:
         scene = dict(scene)
         if scene.get("heading") in scene_ref_by_heading:
-            scene["ref_id"] = scene_ref_by_heading[scene["heading"]]
+            scene["ref_id"], scene["variant_id"] = scene_ref_by_heading[scene["heading"]]
         next_scenes.append(scene)
 
     # A fresh dict, not a mutated nested one — SQLAlchemy only detects a
@@ -910,3 +915,9 @@ def update_content(
     episode.script_json = sanitized
     session.flush()
     return episode
+
+
+def _require_variant(skill: Any, variant_id: str | None, *, field: str) -> None:
+    """A linked look / scene variant must belong to the linked card."""
+    if variant_id and asset_variants_service.find_variant(skill, variant_id) is None:
+        raise ValidationFailed("所选造型/变体不属于该卡片。", fields={field: "variant_id 无效"})

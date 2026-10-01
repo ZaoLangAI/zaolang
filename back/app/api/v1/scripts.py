@@ -493,8 +493,8 @@ def update_script_links(
         session,
         user_id=user.id,
         episode_id=episode_id,
-        character_links=[(c.name, c.character_ref_id) for c in payload.characters],
-        scene_links=[(s.heading, s.ref_id) for s in payload.scenes],
+        character_links=[(c.name, c.character_ref_id, c.look_id) for c in payload.characters],
+        scene_links=[(s.heading, s.ref_id, s.variant_id) for s in payload.scenes],
     )
     session.commit()
     return ScriptDocument.model_validate(episode.script_json or {})

@@ -35,13 +35,16 @@ type LinkKind = 'character' | 'scene';
 export function ScriptLinkPicker({
   kind,
   refId,
+  variantId = null,
   onChange,
   createHref,
   refreshKey,
 }: {
   kind: LinkKind;
   refId: string | null;
-  onChange: (refId: string | null) => void;
+  /** The linked card's look (character) / variant (scene); null = default. */
+  variantId?: string | null;
+  onChange: (refId: string | null, variantId?: string | null) => void;
   createHref?: string;
   /** Bumped after a batch job writes a new card so the picker reloads. */
   refreshKey?: number;
@@ -57,6 +60,11 @@ export function ScriptLinkPicker({
   }, [refreshKey]);
   const items = resource.data ?? [];
   const linked = items.find((item) => item.id === refId) ?? null;
+  const linkedVariants =
+    (linked &&
+      ('looks' in linked ? linked.looks : 'variants' in linked ? linked.variants : null)) ??
+    [];
+  const linkedVariant = linkedVariants.find((variant) => variant.id === variantId) ?? null;
   const manageHref = kind === 'character' ? '/create/characters' : '/create/scenes';
   const label = kind === 'character' ? t('linkCharacter') : t('linkScene');
   const createLabel = kind === 'character' ? t('generateCharacterImage') : t('generateSceneImage');
@@ -73,7 +81,13 @@ export function ScriptLinkPicker({
           <IconImage className="size-3.5" />
         )
       }
-      triggerLabel={linked ? `${linked.name} · ${linked.reference_assets?.length ?? 0}` : label}
+      triggerLabel={
+        linked
+          ? linkedVariant && !linkedVariant.is_default
+            ? `${linked.name} · ${linkedVariant.name}`
+            : `${linked.name} · ${linked.reference_assets?.length ?? 0}`
+          : label
+      }
     >
       {(close) => (
         <>
@@ -97,6 +111,22 @@ export function ScriptLinkPicker({
               ))
             )}
           </DropdownMenuGroup>
+          {linked && linkedVariants.length > 1 ? (
+            <DropdownMenuGroup label={kind === 'character' ? t('linkLook') : t('linkSceneVariant')}>
+              {linkedVariants.map((variant) => (
+                <DropdownMenuRadioItem
+                  key={variant.id}
+                  selected={variant.id === variantId || (variant.is_default && !linkedVariant)}
+                  onSelect={() => {
+                    onChange(linked.id, variant.is_default ? null : variant.id);
+                    close();
+                  }}
+                >
+                  {variant.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuGroup>
+          ) : null}
           <DropdownMenuFooter>
             <Link href={manageHref} className="hover:text-text" onClick={close}>
               {kind === 'character' ? t('manageCharacters') : t('manageScenes')}

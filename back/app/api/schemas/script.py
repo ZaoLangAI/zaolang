@@ -26,6 +26,9 @@ class ScriptScene(ApiModel):
     # never sets this itself, only a user's own link action does; see
     # `app.agents.copywriter._sanitize_script`.
     ref_id: str | None = None
+    # Which of that scene's variants (黄昏/战损…) this heading uses; unset =
+    # its default. Same link rules as `ref_id`.
+    variant_id: str | None = None
 
 
 class ScriptCharacter(ApiModel):
@@ -34,6 +37,9 @@ class ScriptCharacter(ApiModel):
     # Links this character to a reusable `Character` asset (reference
     # images/videos) — same rule as `ScriptScene.ref_id` above.
     character_ref_id: str | None = None
+    # Which of that character's looks (婚礼/战甲…) this script uses; unset =
+    # the default look.
+    look_id: str | None = None
 
 
 class ScriptDocument(ApiModel):
@@ -81,11 +87,15 @@ class ScriptTurnRequest(ApiModel):
 class ScriptCharacterLinkUpdate(ApiModel):
     name: str
     character_ref_id: str | None = None
+    # A look of `character_ref_id` (authoritative with it: `None` = default).
+    look_id: str | None = Field(default=None, max_length=40)
 
 
 class ScriptSceneLinkUpdate(ApiModel):
     heading: str
     ref_id: str | None = None
+    # A variant of `ref_id` (authoritative with it: `None` = default).
+    variant_id: str | None = Field(default=None, max_length=40)
 
 
 class ScriptLinksUpdateRequest(ApiModel):
