@@ -343,6 +343,72 @@ def test_a_failing_route_is_retried_before_giving_up(db: Session, funded: User) 
     assert [a.attempt_number for a in attempts] == [1, 2]
 
 
+def test_every_character_view_gets_its_own_route_budget(
+    db: Session, funded: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A three-view character job whose first try on *every* view fails must
+    still finish: each view is its own generation with its own
+    `route_score` budget, while `attempt_number` (which names the output
+    object key) keeps counting across the whole job so no view's output
+    overwrites another's."""
+    from tests import fake_providers
+
+    calls = {"n": 0}
+
+    def flaky(original):
+        def submit(self, request):
+            calls["n"] += 1
+            if calls["n"] % 2 == 1:
+                return fake_providers.GenerationResult(
+                    succeeded=False,
+                    failure_code="PROVIDER_TEMPORARY_FAILURE",
+                    metadata={"provider": self.name, "simulated": True},
+                )
+            return original(self, request)
+
+        return submit
+
+    for cls in (fake_providers.FakeOpenWorkflowProvider, fake_providers.FakePaidApiProvider):
+        monkeypatch.setattr(cls, "submit", flaky(cls.submit))
+
+    from app.domain.workflow_templates import service as workflow_templates_service
+
+    workflow_templates_service.ensure_default_templates(db)
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.TEXT_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "一位神秘的女侦探",
+            "aspect_ratio": "16:9",
+            "asset_kind": "character",
+            "character_views": ["front", "side", "back"],
+            "auto_attach_asset": False,
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+
+    outcome = pipeline.run_generation_pipeline(db, job.id)
+
+    assert outcome.status == JobStatus.SUCCEEDED
+    db.refresh(job)
+    assert len(job.output_asset_ids_json or []) == 3
+    attempts = list(
+        db.scalars(
+            select(ProviderAttempt)
+            .where(ProviderAttempt.job_id == job.id)
+            .order_by(ProviderAttempt.created_at)
+        )
+    )
+    numbers = [a.attempt_number for a in attempts]
+    assert numbers == [1, 2, 3, 4, 5, 6]
+    object_keys = {
+        db.get(Asset, asset_id).object_key for asset_id in job.output_asset_ids_json or []
+    }
+    assert len(object_keys) == 3
+
+
 def _park_awaiting_input(db: Session, job: GenerationJob) -> None:
     from app.domain.jobs import input_requests
 
