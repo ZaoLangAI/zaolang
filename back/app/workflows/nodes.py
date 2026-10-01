@@ -609,6 +609,22 @@ def _current_character_view(ctx: WorkflowContext) -> str:
     return CharacterViewAngle.FRONT.value
 
 
+def _start_next_asset_pass(ctx: WorkflowContext) -> None:
+    """Gives a multi-view job's next pass a fresh routing budget.
+
+    Each view is its own generation: the previous view already succeeded,
+    so neither its spent `route_attempts` nor the providers it excluded
+    along the way (`tried_providers`, plus the stale `failure_code` that
+    `execute_route_score` reads to grow that set) say anything about this
+    one. `attempt_seq` is deliberately *not* reset — it keeps numbering
+    output object keys uniquely across the whole job.
+    """
+    ctx.state["route_attempts"] = 0
+    ctx.state["tried_providers"] = set()
+    ctx.state.pop("failure_code", None)
+    ctx.state.pop("decision", None)
+
+
 def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
     """Rescales a node's fixed progress constant for a multi-view `CHARACTER`
     job, so the overall bar climbs once per produced view instead of
@@ -690,6 +706,9 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
     if axis is None:
         return NodeResult(port="ok")
     media_axis, asset_kind = axis
+
+    if ctx.state.get(ASSET_OUTPUTS_STATE_KEY):
+        _start_next_asset_pass(ctx)
 
     if _ORIGINAL_PROMPT_STATE_KEY not in ctx.state:
         ctx.state[_ORIGINAL_PROMPT_STATE_KEY] = ctx.prompt
@@ -1200,6 +1219,7 @@ def _input_checkpoint(
             # `ProviderAttempt` was recorded as attempt 2 (live:
             # `job_01m1608wr7hm49wzdggkynz6ay`).
             "route_attempts": ctx.state.get("route_attempts", 0),
+            "attempt_seq": ctx.state.get("attempt_seq", 0),
             "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
             "intent_hint": ctx.state.get("intent_hint") or {},
         },
@@ -1270,13 +1290,19 @@ def _effective_tier(requested: str, hint: dict[str, object]) -> str:
 
 
 def execute_route_score(ctx: WorkflowContext, config: RouteScoreConfig) -> NodeResult:
+    # `route_attempts` is this *pass's* budget (reset per character view by
+    # `execute_asset_planning`); `attempt_seq` numbers every attempt across
+    # the whole job, so `attempt_number` — which names the output object key
+    # `generated/{job_id}/output_{n}.png` — never repeats between views.
     attempts = ctx.state.get("route_attempts", 0) + 1
     ctx.state["route_attempts"] = attempts
     if attempts > config.max_attempts:
         return NodeResult(
             port="retries_exhausted", summary=f"已用尽 {config.max_attempts} 次选路预算"
         )
-    ctx.state["attempt_number"] = attempts
+    attempt_seq = int(ctx.state.get("attempt_seq", 0)) + 1
+    ctx.state["attempt_seq"] = attempt_seq
+    ctx.state["attempt_number"] = attempt_seq
 
     _emit(ctx, JobEventType.ROUTING, JobStatus.QUEUED, "正在选择生成路线", 24)
 
@@ -1381,6 +1407,7 @@ def _provider_checkpoint(
         "state": {
             "attempt_number": ctx.state.get("attempt_number", 1),
             "route_attempts": ctx.state.get("route_attempts", 1),
+            "attempt_seq": ctx.state.get("attempt_seq", ctx.state.get("attempt_number", 1)),
             "tried_providers": sorted(ctx.state.get("tried_providers") or ()),
             "intent_hint": ctx.state.get("intent_hint") or {},
         },

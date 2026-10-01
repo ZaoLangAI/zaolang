@@ -253,6 +253,48 @@ def test_asset_planning_resets_prompt_and_negative_prompt_between_loop_passes(
     assert "露出正面五官" in back_negative
 
 
+def test_asset_planning_gives_each_later_view_a_fresh_route_budget(
+    db: Session, author: User
+) -> None:
+    """The second view must not inherit the first view's spent
+    `route_attempts`, its excluded providers or its stale `failure_code` —
+    but `attempt_seq` (which names output object keys) keeps counting."""
+    ctx = _ctx(
+        db,
+        author,
+        params={
+            "asset_kind": ImageAssetKind.CHARACTER.value,
+            "character_views": [CharacterViewAngle.FRONT.value, CharacterViewAngle.SIDE.value],
+        },
+    )
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    # The front view needed a retry before it succeeded.
+    ctx.state.update(
+        route_attempts=2,
+        attempt_seq=2,
+        tried_providers={"provider_a"},
+        failure_code="PROVIDER_TEMPORARY_FAILURE",
+        asset_id=_asset(db, author).id,
+    )
+    execute_asset_output_advance(ctx, AssetOutputAdvanceConfig())
+
+    execute_asset_planning(ctx, AssetPlanningConfig())
+
+    assert ctx.state["route_attempts"] == 0
+    assert ctx.state["tried_providers"] == set()
+    assert "failure_code" not in ctx.state
+    assert ctx.state["attempt_seq"] == 2
+
+
+def test_asset_planning_leaves_the_first_pass_routing_state_alone(
+    db: Session, author: User
+) -> None:
+    ctx = _ctx(db, author, params={"asset_kind": ImageAssetKind.SCENE.value})
+    ctx.state["tried_providers"] = {"provider_a"}
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert ctx.state["tried_providers"] == {"provider_a"}
+
+
 def test_asset_planning_appends_the_sheet_suffix_on_a_front_pass(db: Session, author: User) -> None:
     """The `front` pass — including a plain single-view job with no
     `character_views` at all — keeps the caller's identity prompt and

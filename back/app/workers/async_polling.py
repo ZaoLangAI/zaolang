@@ -414,6 +414,11 @@ def _context(session: Session, job: GenerationJob, task: AsyncProviderTask) -> W
     checkpoint = dict(task.state_checkpoint_json or {})
     ctx.state["attempt_number"] = int(checkpoint.get("attempt_number") or 1)
     ctx.state["route_attempts"] = int(checkpoint.get("route_attempts") or 1)
+    # Checkpoints written before `attempt_seq` existed had one job-wide
+    # `route_attempts` counter, which is exactly the sequence number.
+    ctx.state["attempt_seq"] = int(
+        checkpoint.get("attempt_seq") or checkpoint.get("route_attempts") or 1
+    )
     ctx.state["tried_providers"] = set(checkpoint.get("tried_providers") or ())
     ctx.state["intent_hint"] = dict(checkpoint.get("intent_hint") or {})
     return ctx
