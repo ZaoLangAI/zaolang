@@ -1,0 +1,365 @@
+"""The closed vocabularies a character/scene image request is written in.
+
+One source of truth for three readers — the Pydantic request model
+(`GenerationParams`, and through `make openapi` the frontend's TS unions),
+`prompt_builder`, and the planner/copy prompts — so a preset the studio
+offers is always one the pipeline can phrase. Mirrors
+`app.domain.blocking.vocabulary`.
+
+Every entry carries a short Chinese `label` (UI copy and write-back labels),
+a `prompt` fragment written as concrete visual facts the image model can
+render (facial muscles, colour temperature, light direction, era fixtures —
+never a bare mood word), and a `negative` fragment naming the mistakes
+models actually make for that preset.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Literal, get_args
+
+CharacterExpression = Literal[
+    "neutral",
+    "smile",
+    "laugh",
+    "smirk",
+    "restrained",
+    "breakdown",
+    "anger",
+    "shock",
+    "fear",
+    "sad",
+    "shy",
+    "cold_gaze",
+]
+SceneLighting = Literal[
+    "dawn",
+    "day",
+    "dusk",
+    "night_interior",
+    "night_exterior",
+    "candle",
+    "neon",
+    "overcast",
+]
+SceneWeather = Literal["clear", "rain", "snow", "fog", "sandstorm"]
+SceneState = Literal[
+    "intact",
+    "messy",
+    "searched",
+    "damage_light",
+    "damage_medium",
+    "damage_heavy",
+    "ruins",
+    "festive",
+]
+ScenePeriod = Literal["ancient", "republic", "1980s", "1990s", "contemporary", "near_future"]
+
+CHARACTER_EXPRESSIONS: tuple[str, ...] = get_args(CharacterExpression)
+SCENE_LIGHTINGS: tuple[str, ...] = get_args(SceneLighting)
+SCENE_WEATHERS: tuple[str, ...] = get_args(SceneWeather)
+SCENE_STATES: tuple[str, ...] = get_args(SceneState)
+SCENE_PERIODS: tuple[str, ...] = get_args(ScenePeriod)
+
+# One composite expression image holds at most this many faces.
+MAX_CHARACTER_EXPRESSIONS = 9
+# A scene variant group asks one provider call for 2..N separate images.
+MIN_SCENE_VARIANTS = 2
+MAX_SCENE_VARIANTS = 4
+# Outfit names ride into reference-asset labels (≤60) next to other text.
+MAX_OUTFIT_LABEL_LEN = 20
+MAX_PRESET_LABEL_LEN = 20
+
+
+@dataclass(frozen=True, slots=True)
+class Preset:
+    label: str
+    prompt: str
+    negative: str
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodPreset(Preset):
+    # Era tells the rewrite must draw props/materials from — same role as
+    # `app.agents.scene_skills.SceneSpaceSkill.cues`.
+    cues: tuple[str, ...]
+    # Anachronisms image models actually slip in for this era.
+    pitfalls: tuple[str, ...]
+
+
+EXPRESSION_PRESETS: dict[str, Preset] = {
+    "neutral": Preset(
+        "平静",
+        "平静：面部肌肉放松，嘴唇自然闭合，眼神平视前方，眉毛舒展",
+        "夸张表情",
+    ),
+    "smile": Preset(
+        "微笑",
+        "微笑：嘴角上扬并露出少许上齿，苹果肌隆起，眼角出现细纹形成笑眼",
+        "假笑，僵硬的嘴角",
+    ),
+    "laugh": Preset(
+        "大笑",
+        "大笑：嘴巴张开露出上下齿，眼睛眯成弯月，头部微微后仰，脸颊明显鼓起",
+        "面部扭曲变形",
+    ),
+    "smirk": Preset(
+        "冷笑",
+        "冷笑：单侧嘴角上挑，另一侧保持不动，上眼睑微压，眼神斜睨带轻蔑",
+        "对称的微笑，友善的笑容",
+    ),
+    "restrained": Preset(
+        "隐忍",
+        "隐忍：下颌收紧咬肌微鼓，嘴唇抿成一条线，眼眶泛红含泪但泪水未落",
+        "泪流满面，放声大哭",
+    ),
+    "breakdown": Preset(
+        "崩溃大哭",
+        "崩溃大哭：眉头上抬并向中间聚拢，嘴巴张开向下拉，泪痕布满脸颊，鼻翼泛红",
+        "干净无泪的脸，微笑",
+    ),
+    "anger": Preset(
+        "愤怒",
+        "愤怒：眉头下压聚拢形成竖纹，鼻翼张开，紧咬牙关，目光凶狠直视",
+        "微笑，放松的眉眼",
+    ),
+    "shock": Preset(
+        "震惊",
+        "震惊：眉毛高高抬起，眼睛睁大露出上眼白，嘴巴微张，面部僵住",
+        "眯眼，平静的表情",
+    ),
+    "fear": Preset(
+        "恐惧",
+        "恐惧：眉毛上抬聚拢，瞳孔收缩眼睛睁大，嘴角向两侧拉紧，脸色发白",
+        "微笑，放松",
+    ),
+    "sad": Preset(
+        "悲伤",
+        "悲伤：眉头内侧上扬呈八字，嘴角下垂，眼神低垂失焦，眼眶微湿",
+        "微笑，兴奋",
+    ),
+    "shy": Preset(
+        "羞涩",
+        "羞涩：视线向下侧移避开镜头，脸颊与耳尖泛红，嘴角轻抿含笑",
+        "直视镜头，夸张大笑",
+    ),
+    "cold_gaze": Preset(
+        "霸总凝视",
+        "霸总凝视：下巴微收，眼神冷静锐利直视镜头，面无表情，嘴唇紧闭，侧光勾勒轮廓",
+        "微笑，柔和的眼神",
+    ),
+}
+
+LIGHTING_PRESETS: dict[str, Preset] = {
+    "dawn": Preset(
+        "清晨",
+        "清晨：太阳刚升起，低角度暖橙光约 3500K 从一侧斜射，暗部偏冷蓝，空气中有薄雾，长而柔的投影",
+        "正午顶光，夜景",
+    ),
+    "day": Preset(
+        "白天",
+        "白天：约 5600K 日光，主光来自窗户或天空，光线明亮通透，阴影方向一致",
+        "夜景，昏暗",
+    ),
+    "dusk": Preset(
+        "黄昏",
+        "黄昏：太阳贴近地平线，约 3000K 金橙色逆光，长投影，空气中可见光束，暗部偏冷形成冷暖对比",
+        "正午顶光，阴天的平光",
+    ),
+    "night_interior": Preset(
+        "夜·室内",
+        "夜晚室内：动机光源为台灯、吊灯或屏幕，暖光约 2800K 形成有限光池，"
+        "窗外是深蓝夜色或对楼灯火，整体低调",
+        "窗外是白天天空，均匀明亮的室内",
+    ),
+    "night_exterior": Preset(
+        "夜·外景",
+        "夜晚外景：天空深蓝近黑，路灯或招牌等人工光源形成局部光池与反射，环境大面积处于阴影",
+        "白天天空，太阳",
+    ),
+    "candle": Preset(
+        "烛光",
+        "烛光：唯一光源是烛火或油灯，约 1900K 的暖黄光，衰减快，远处沉入黑暗，光影轻微摇曳",
+        "电灯，日光，均匀照明",
+    ),
+    "neon": Preset(
+        "霓虹",
+        "霓虹：品红、青蓝等饱和霓虹灯作为主光，在潮湿表面形成彩色反射，高对比，暗部浓重",
+        "自然日光，柔和低饱和",
+    ),
+    "overcast": Preset(
+        "阴天",
+        "阴天：天空被云层完全覆盖，柔和漫射的冷灰光约 6500K，几乎没有硬阴影，饱和度偏低",
+        "强烈阳光，硬阴影，晴朗蓝天",
+    ),
+}
+
+WEATHER_PRESETS: dict[str, Preset] = {
+    "clear": Preset("晴", "晴天：天空通透无云或少云，空气清晰", "雨水，积雪，浓雾"),
+    "rain": Preset(
+        "雨",
+        "下雨：可见雨丝，地面湿润反光并有积水，玻璃上挂着水痕，空气中有水汽",
+        "干燥的地面，晴朗无云",
+    ),
+    "snow": Preset(
+        "雪",
+        "下雪：雪花飘落，地面、屋檐和物体顶部覆盖积雪，环境偏冷色调",
+        "绿叶繁茂的夏季，干燥地面",
+    ),
+    "fog": Preset(
+        "雾",
+        "大雾：浓雾弥漫，远景逐渐消失在灰白雾气中，层次靠空气透视区分，光线柔和",
+        "清晰锐利的远景",
+    ),
+    "sandstorm": Preset(
+        "沙尘",
+        "沙尘：空气中弥漫黄褐色沙尘，能见度低，光线浑浊发黄，物体表面落满沙土",
+        "清澈蓝天，干净的表面",
+    ),
+}
+
+STATE_PRESETS: dict[str, Preset] = {
+    "intact": Preset("完好", "状态完好：陈设整齐，结构无损，保持日常使用痕迹", "破损，废墟"),
+    "messy": Preset(
+        "凌乱",
+        "凌乱：物品随意堆放，衣物杂物散落，桌面杂乱，但结构完好无破坏",
+        "整洁有序，破损坍塌",
+    ),
+    "searched": Preset(
+        "被搜查",
+        "被翻找过：抽屉全部拉出，柜门敞开，物品散落一地，床垫被掀起，纸张四散",
+        "整洁有序，火烧痕迹",
+    ),
+    "damage_light": Preset(
+        "战损·轻",
+        "轻度战损：墙面零星弹孔与细裂纹，玻璃个别破碎，少量碎屑落地，整体结构完好",
+        "墙体坍塌，大面积焦黑，废墟",
+    ),
+    "damage_medium": Preset(
+        "战损·中",
+        "中度战损：墙面密集弹孔与放射状裂纹，局部焦黑熏痕，家具翻倒，玻璃大面积碎裂散落，"
+        "空气中有粉尘，但墙体和屋顶未坍塌",
+        "完好整洁，屋顶坍塌",
+    ),
+    "damage_heavy": Preset(
+        "战损·重",
+        "重度战损：部分墙体与屋顶坍塌露出钢筋或木梁，瓦砾堆积，残留火光与烟雾，焦黑遍布",
+        "完好整洁，轻微划痕",
+    ),
+    "ruins": Preset(
+        "废墟",
+        "废墟：建筑大面积坍塌，只剩残垣断壁，杂草或积尘覆盖，长期无人",
+        "完好的家具，新近的生活痕迹",
+    ),
+    "festive": Preset(
+        "节庆装饰",
+        "节庆装饰：悬挂灯笼、彩带或灯串，张贴节日装饰，整体喜庆但符合场景的年代与地域",
+        "破损，阴森",
+    ),
+}
+
+PERIOD_PRESETS: dict[str, PeriodPreset] = {
+    "ancient": PeriodPreset(
+        "古代",
+        "古代：木构建筑、榫卯梁柱、纸糊窗棂或格栅，照明为烛火与油灯，器物为陶瓷、铜器、竹木",
+        "电灯，玻璃窗，塑料制品，现代家具",
+        cues=("木构梁柱与斗拱", "纸窗或格栅窗", "青砖或夯土地面", "烛台、油灯", "陶瓷与铜器"),
+        pitfalls=("出现电线插座", "出现透明大玻璃窗", "出现现代沙发或金属家具"),
+    ),
+    "republic": PeriodPreset(
+        "民国",
+        "民国时期：中西合璧的建筑与陈设，木质家具搭配西式吊灯，老式拉线开关，旗袍月份牌，"
+        "留声机与搪瓷器皿",
+        "液晶电视，手机，塑料制品，现代装修",
+        cues=("拉线开关与外露电线", "月份牌与老报纸", "留声机、老式座钟", "花砖地面", "木质百叶窗"),
+        pitfalls=("出现平板电视或手机", "出现石膏板吊顶", "出现塑料椅"),
+    ),
+    "1980s": PeriodPreset(
+        "八十年代",
+        "1980 年代：水泥或水磨石地面，日光灯管，搪瓷杯与暖水瓶，挂历，"
+        "凤凰牌自行车，小尺寸显像管电视",
+        "智能手机，液晶屏，现代装修",
+        cues=("日光灯管", "搪瓷脸盆与暖水瓶", "挂历与奖状", "绿色墙裙", "显像管电视与收音机"),
+        pitfalls=("出现液晶电视或手机", "出现木地板与现代吊顶", "出现空调外机林立"),
+    ),
+    "1990s": PeriodPreset(
+        "九十年代",
+        "1990 年代：瓷砖地面，组合家具，大屁股彩电，VCD 机，BP 机或大哥大，港风海报",
+        "智能手机，平板电脑，极简现代装修",
+        cues=("组合柜与玻璃茶几", "显像管彩电与 VCD", "港风海报与挂钟", "瓷砖与墙纸"),
+        pitfalls=("出现智能手机", "出现超薄电视", "出现网约车或共享单车"),
+    ),
+    "contemporary": PeriodPreset(
+        "当代",
+        "当代：现代装修与家具，液晶电视或智能设备，LED 照明，符合当下城市生活的真实细节",
+        "古装元素，复古过时的器物",
+        cues=("LED 灯与筒灯", "智能手机与平板", "现代家电", "简约家具"),
+        pitfalls=("混入明显的年代旧物", "科幻化的全息界面"),
+    ),
+    "near_future": PeriodPreset(
+        "近未来",
+        "近未来：在当代城市基础上加入克制的科技元素，如透明显示屏、智能家居面板、无人配送设备，"
+        "整体可信不夸张",
+        "古装元素，赛博朋克夸张霓虹，太空舰船",
+        cues=("透明或柔性显示屏", "极简白色家电", "智能家居面板", "无人机或机器人"),
+        pitfalls=("夸张的全息投影铺满画面", "出现外星或太空元素"),
+    ),
+}
+
+# How many cells (rows x cols) a composite expression image is laid out in,
+# keyed by expression count. One expression is a single close-up.
+EXPRESSION_GRID: dict[int, tuple[int, int]] = {
+    1: (1, 1),
+    2: (1, 2),
+    3: (2, 2),
+    4: (2, 2),
+    5: (2, 3),
+    6: (2, 3),
+    7: (3, 3),
+    8: (3, 3),
+    9: (3, 3),
+}
+
+SCENE_PRESET_TABLES: dict[str, Mapping[str, Preset]] = {
+    "lighting": LIGHTING_PRESETS,
+    "weather": WEATHER_PRESETS,
+    "state": STATE_PRESETS,
+    "period": PERIOD_PRESETS,
+}
+# The order scene preset fragments are written in, and the `scene_<axis>`
+# request field each one comes from.
+SCENE_PRESET_AXES: tuple[str, ...] = ("period", "state", "lighting", "weather")
+
+
+def expression_grid(count: int) -> tuple[int, int]:
+    """Rows/cols for `count` expressions (clamped to the supported range)."""
+    clamped = max(1, min(count, MAX_CHARACTER_EXPRESSIONS))
+    return EXPRESSION_GRID[clamped]
+
+
+def scene_presets_from(source: dict[str, object]) -> dict[str, str]:
+    """`{axis: value}` for every known, set scene preset in `source`.
+
+    `source` is either request params (`scene_lighting`, …) or one
+    `scene_variants` entry (`lighting`, …); both spellings are accepted so
+    callers don't have to translate first. Unknown values are dropped — the
+    request schema already rejected them, this is only a defensive read of
+    a JSON column.
+    """
+    presets: dict[str, str] = {}
+    for axis in SCENE_PRESET_AXES:
+        value = source.get(f"scene_{axis}", source.get(axis))
+        if isinstance(value, str) and value in SCENE_PRESET_TABLES[axis]:
+            presets[axis] = value
+    return presets
+
+
+def scene_preset_label(presets: dict[str, str]) -> str:
+    """`夜·室内 / 雨 / 战损·中 / 民国`-style label for a preset combination,
+    in `SCENE_PRESET_AXES`' reading order (lighting/weather first reads more
+    naturally to a human, so labels use their own order)."""
+    order = ("lighting", "weather", "state", "period")
+    return " / ".join(
+        SCENE_PRESET_TABLES[axis][presets[axis]].label for axis in order if axis in presets
+    )

@@ -30,6 +30,10 @@ Copy coaches, asset-kind prompt rules, scene skill packs, follow-up questions. S
 | `back/app/agents/copywriter.py` `ENHANCE_SYSTEM_PROMPT_CHARACTER`, `restore_character_sheet_prompt` | coach + repair: missing `三视图`/`色板` or collapse markers → re-append `CHARACTER_SHEET_LAYOUT_SENTENCE` |
 | `front/src/lib/characters.ts` `characterSheetPrompt` | library/script jump-out prompt sent to the image studio (web submits front only) |
 
+## Character/scene preset vocabulary
+
+`back/app/domain/image_assets/vocabulary.py` is the single source for expression (`CharacterExpression`) and scene `SceneLighting`/`SceneWeather`/`SceneState`/`ScenePeriod` presets: `Literal` + `get_args` tuple + `{label, prompt, negative}` per value (periods add `cues`/`pitfalls`). Prompt fragments state renderable facts (facial muscles, colour temperature, light direction, era fixtures), never a bare mood word. Adding a value: Literal → preset entry → `make openapi` → front label map + copy.
+
 ## Scene plates
 
 - Rule (`_ASSET_KIND_BRIEF["scene"]`, `ENHANCE_SYSTEM_PROMPT_SCENE`): empty plate, no people/silhouettes, single camera, one continuous space, occlusion holds (a closed door stays closed), no split/alternative viewpoints, explicit era/region (or worldbuilding) and a fixed visual medium.
