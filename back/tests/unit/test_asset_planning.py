@@ -1198,7 +1198,7 @@ def test_asset_planning_prefixes_a_scene_variant_only_with_a_reference(
     assert "黄昏" in without_ref.prompt
 
 
-def test_asset_planning_records_group_labels_for_a_variant_group(db: Session, author: User) -> None:
+def test_a_scene_variant_set_runs_one_pass_per_variant(db: Session, author: User) -> None:
     ctx = _ctx(
         db,
         author,
@@ -1209,5 +1209,13 @@ def test_asset_planning_records_group_labels_for_a_variant_group(db: Session, au
         },
     )
     execute_asset_planning(ctx, AssetPlanningConfig())
-    assert ctx.state["group_labels"] == ["白天", "战损·重"]
-    assert "共 2 张独立的场景图" in ctx.prompt
+    assert "白天" in ctx.prompt and "重度战损" not in ctx.prompt
+    ctx.state["asset_id"] = _asset(db, author).id
+    assert execute_asset_output_advance(ctx, AssetOutputAdvanceConfig()).port == "next"
+
+    execute_asset_planning(ctx, AssetPlanningConfig())
+    assert "重度战损" in ctx.prompt and "白天：" not in ctx.prompt
+    ctx.state["asset_id"] = _asset(db, author).id
+    assert execute_asset_output_advance(ctx, AssetOutputAdvanceConfig()).port == "done"
+
+    assert [entry["label"] for entry in ctx.state["asset_outputs"]] == ["白天", "战损·重"]

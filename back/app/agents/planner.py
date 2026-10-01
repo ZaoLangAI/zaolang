@@ -265,9 +265,9 @@ ASSET_PLAN_SYSTEM_PROMPT = f"""你是造浪平台的图片资产规划器，
   character_expressions = 表情合集图（source_params.character_expressions 列出各格表情）：
   只出同一人物的头肩特写宫格，禁止补三视图/设定图/色板/全身像，
   prompt_enhancements 只补充保持五官、发型、服装在各格一致的描述；
-  scene = 单张场景图；scene_variant_group = 一组同一机位的场景变体
-  （source_params.scene_variants 逐张列出光照/天气/状态/时期），每张独立成图，禁止拼接分格
-- 当 source_params 带有 scene_lighting/scene_weather/scene_state/scene_period（或 scene_variants）
+  scene = 单张场景图（场景变体组逐张生成，source_params.current_scene_variant 是当前这一张的变体，
+  其光照/天气/状态/时期已写入 scene_lighting 等字段）
+- 当 source_params 带有 scene_lighting/scene_weather/scene_state/scene_period
   时，这些预设已经写进了 intent，是硬性要求：prompt_enhancements 不得改写光照、天气、
   破损程度或年代，也不得引入与 scene_period 不同的年代器物；只补充与预设一致的细节
 - 当 source_params.character_outfit_label 存在时，intent 描述的是该造型的服装，

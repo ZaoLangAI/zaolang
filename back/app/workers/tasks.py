@@ -65,8 +65,6 @@ _GENERATION = {"soft_time_limit": 300, "time_limit": 360}
 # hit the cap; that combination is called out on the catalog entry.
 _IMAGE_GENERATION = {"soft_time_limit": 660, "time_limit": 720}
 _IMAGE_EXTRA_VIEW = {"soft_time_limit": 180, "time_limit": 240}
-# Each extra image of a scene variant group (one longer Seedream call).
-_IMAGE_EXTRA_GROUP_OUTPUT = {"soft_time_limit": 60, "time_limit": 60}
 _IMAGE_GENERATION_CAP = {"soft_time_limit": 780, "time_limit": 960}
 _LONG_GENERATION = {"soft_time_limit": 480, "time_limit": 600}
 _BATCH = {"soft_time_limit": 300, "time_limit": 450}
@@ -651,18 +649,13 @@ def image_generation_time_limits(job: GenerationJob) -> dict[str, int]:
         - 1,
         0,
     )
-    # A scene variant group is one (longer) provider call, not extra passes.
+    # A scene variant set loops one pass per variant, exactly like views.
     raw_variants = params.get("scene_variants")
-    group_extra = (
-        max(len(raw_variants) - 1, 0)
-        if raw_kind == "scene" and isinstance(raw_variants, list)
-        else 0
-    )
+    if raw_kind == "scene" and isinstance(raw_variants, list):
+        extra = max(len(raw_variants) - 1, 0)
     return {
         name: min(
-            _IMAGE_GENERATION[name]
-            + _IMAGE_EXTRA_VIEW[name] * extra
-            + _IMAGE_EXTRA_GROUP_OUTPUT[name] * group_extra,
+            _IMAGE_GENERATION[name] + _IMAGE_EXTRA_VIEW[name] * extra,
             _IMAGE_GENERATION_CAP[name],
         )
         for name in ("soft_time_limit", "time_limit")

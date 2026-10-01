@@ -3163,10 +3163,10 @@
       "axisWeather": "Weather",
       "axisState": "State",
       "axisPeriod": "Period",
-      "groupLabel": "Generate several variants at once",
+      "groupLabel": "Generate several variants",
       "groupOff": "Off",
-      "groupHint": "Pick one dimension to vary; one call returns several same-camera variants.",
-      "groupActiveHint": "Pick {min}–{max} values on that dimension. Charged per image delivered.",
+      "groupHint": "Pick one dimension to vary; the job generates one same-camera variant after another.",
+      "groupActiveHint": "Pick {min}–{max} values on that dimension. Charged per variant, generated one by one.",
       "groupAxisValues": "{axis} (multi-select)",
       "expression": {
         "neutral": "Neutral",

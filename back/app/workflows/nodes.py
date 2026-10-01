@@ -500,12 +500,9 @@ def execute_intent_router(ctx: WorkflowContext, config: IntentRouterConfig) -> N
 
 ASSET_PLAN_STATE_KEY = "asset_plan"
 ASSET_OUTPUTS_STATE_KEY = "asset_outputs"
-# One write-back label per image of a scene variant group, in variant order
-# (`prompt_builder.group_labels`).
-GROUP_LABELS_STATE_KEY = "group_labels"
-# Every image a scene variant group delivered, `{asset_id, label}` in order
-# (`_register_group_outputs`); `asset_output_advance` records them all.
-GROUP_OUTPUTS_STATE_KEY = "group_outputs"
+# Which `scene_variants` entry the current pass of a scene variant set is
+# producing (0-based); advanced by `execute_asset_output_advance`.
+SCENE_VARIANT_STATE_KEY = "_current_scene_variant"
 _ORIGINAL_PROMPT_STATE_KEY = "_asset_plan_original_prompt"
 _ORIGINAL_NEGATIVE_PROMPT_STATE_KEY = "_asset_plan_original_negative_prompt"
 
@@ -566,30 +563,67 @@ def _start_next_asset_pass(ctx: WorkflowContext) -> None:
 
 
 def _scale_for_character_views(ctx: WorkflowContext, progress: int) -> int:
-    """Rescales a node's fixed progress constant for a multi-view `CHARACTER`
-    job, so the overall bar climbs once per produced view instead of
-    restarting from the same per-node constant on every loop-back through
-    `asset_planning` (see `execute_asset_output_advance`).
+    """Rescales a node's fixed progress constant for a multi-pass asset job
+    (several `character_views`, or a scene variant set), so the overall bar
+    climbs once per produced image instead of restarting from the same
+    per-node constant on every loop-back through `asset_planning` (see
+    `execute_asset_output_advance`).
 
-    A no-op for every job that isn't `asset_kind=CHARACTER` with more than
-    one `character_views` entry — every other job's progress numbers are
-    unchanged. Safe to apply to *every* emitted event unconditionally
-    (including `queued`/`safety`, which only ever fire once before the loop
-    even starts, and the terminal `succeeded`/`failed` events, whose raw
-    stored value doesn't matter since `progress_for` and the frontend both
-    already force 100 for a terminal status regardless of what's stored).
+    A no-op for every single-pass job. Safe to apply to *every* emitted
+    event unconditionally (including `queued`/`safety`, which only ever fire
+    once before the loop even starts, and the terminal `succeeded`/`failed`
+    events, whose raw stored value doesn't matter since `progress_for` and
+    the frontend both already force 100 for a terminal status).
     """
-    if ctx.params.get("asset_kind") != ImageAssetKind.CHARACTER.value:
+    passes, index = _pass_position(ctx)
+    if passes <= 1:
         return progress
-    raw_views = ctx.params.get("character_views")
-    views = [str(v) for v in raw_views] if isinstance(raw_views, list) and raw_views else []
-    if len(views) <= 1:
-        return progress
-    try:
-        view_index = views.index(_current_character_view(ctx))
-    except ValueError:
-        view_index = 0
-    return round((view_index * 100 + progress) / len(views))
+    return round((index * 100 + progress) / passes)
+
+
+def _pass_position(ctx: WorkflowContext) -> tuple[int, int]:
+    """`(total passes, current 0-based pass)` of a looping asset job."""
+    kind = ctx.params.get("asset_kind")
+    if kind == ImageAssetKind.CHARACTER.value:
+        raw_views = ctx.params.get("character_views")
+        views = [str(v) for v in raw_views] if isinstance(raw_views, list) and raw_views else []
+        try:
+            index = views.index(_current_character_view(ctx))
+        except ValueError:
+            index = 0
+        return len(views), index
+    if kind == ImageAssetKind.SCENE.value:
+        return len(_scene_variants(ctx)), _current_scene_variant(ctx)
+    return 1, 0
+
+
+def _scene_variants(ctx: WorkflowContext) -> list[dict[str, str]]:
+    """A scene variant set's combos (`GenerationParams.scene_variants`), each
+    produced by its own pass; empty for any other job."""
+    if ctx.params.get("asset_kind") != ImageAssetKind.SCENE.value:
+        return []
+    raw = ctx.params.get("scene_variants")
+    if not isinstance(raw, list) or len(raw) < 2:
+        return []
+    return [scene_presets_from(item) for item in raw if isinstance(item, dict)]
+
+
+def _current_scene_variant(ctx: WorkflowContext) -> int:
+    return int(ctx.state.get(SCENE_VARIANT_STATE_KEY) or 0)
+
+
+def _pass_params(ctx: WorkflowContext) -> dict[str, Any]:
+    """`ctx.params` as this pass should see them: a scene variant set's
+    current combo becomes the single-image `scene_*` presets."""
+    variants = _scene_variants(ctx)
+    if not variants:
+        return ctx.params
+    combo = variants[min(_current_scene_variant(ctx), len(variants) - 1)]
+    params = {key: value for key, value in ctx.params.items() if key != "scene_variants"}
+    for axis in ("lighting", "weather", "state", "period"):
+        params[f"scene_{axis}"] = combo.get(axis)
+    params["current_scene_variant"] = scene_preset_label(combo)
+    return params
 
 
 def _asset_axis(ctx: WorkflowContext) -> tuple[str, str] | None:
@@ -655,9 +689,10 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     is_character = media_axis == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     character_view = _current_character_view(ctx) if is_character else None
+    pass_params = _pass_params(ctx)
     asset_pass = (
         prompt_builder.resolve_pass(
-            ctx.params, asset_kind=asset_kind, character_view=character_view
+            pass_params, asset_kind=asset_kind, character_view=character_view
         )
         if media_axis == "image"
         else prompt_builder.AssetPass.OTHER
@@ -666,12 +701,10 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
         asset_pass,
         prompt=ctx.prompt,
         negative=ctx.params.get("negative_prompt"),
-        params=ctx.params,
+        params=pass_params,
         character_view=character_view,
         has_reference=bool(ctx.params.get("reference_asset_ids")),
     )
-    if asset_pass is prompt_builder.AssetPass.SCENE_VARIANT_GROUP:
-        ctx.state[GROUP_LABELS_STATE_KEY] = prompt_builder.group_labels(ctx.params)
 
     if media_axis == "video":
         _emit(ctx, JobEventType.PLANNING, JobStatus.QUEUED, "正在规划视频资产生成方案", 16)
@@ -698,7 +731,7 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
                 asset_pass=asset_pass.value,
                 target_character_id=ctx.params.get("target_character_id"),
                 target_scene_id=ctx.params.get("target_scene_id"),
-                source_params=ctx.params,
+                source_params=pass_params,
                 job_id=ctx.agent_job_id,
                 user_id=ctx.job.user_id,
                 agent_id=config.agent_id,
@@ -708,7 +741,7 @@ def execute_asset_planning(ctx: WorkflowContext, config: AssetPlanningConfig) ->
 
     enhancements = outcome.data.get("prompt_enhancements")
     if isinstance(enhancements, list) and enhancements:
-        kept = prompt_builder.sanitize_enhancements(asset_pass, enhancements, params=ctx.params)
+        kept = prompt_builder.sanitize_enhancements(asset_pass, enhancements, params=pass_params)
         addition = "，".join(kept)
         if addition and addition not in ctx.prompt:
             ctx.prompt = f"{ctx.prompt}，{addition}" if ctx.prompt else addition
@@ -746,13 +779,20 @@ def execute_asset_output_advance(
         axis is not None and axis[0] == "image" and asset_kind == ImageAssetKind.CHARACTER.value
     )
     view = _current_character_view(ctx) if is_character else str(asset_kind or "")
-    group_outputs = ctx.state.get(GROUP_OUTPUTS_STATE_KEY)
-    if group_outputs:
-        outputs.extend(
-            {"asset_id": str(entry["asset_id"]), "view": view, "label": str(entry["label"])}
-            for entry in group_outputs
+    variants = _scene_variants(ctx)
+    if variants:
+        index = _current_scene_variant(ctx)
+        if asset_id:
+            label = scene_preset_label(variants[min(index, len(variants) - 1)])
+            outputs.append({"asset_id": str(asset_id), "view": view, "label": label})
+        if index + 1 >= len(variants):
+            return NodeResult(port="done")
+        ctx.state[SCENE_VARIANT_STATE_KEY] = index + 1
+        return NodeResult(
+            port="next",
+            summary=f"继续生成第 {index + 2}/{len(variants)} 张场景变体",
         )
-    elif asset_id:
+    if asset_id:
         outputs.append({"asset_id": str(asset_id), "view": view})
 
     if not is_character:
@@ -1579,15 +1619,6 @@ def _preview_url_for(object_key: str) -> str:
     return s3.presign_get(object_key, expires_in=get_settings().download_url_ttl_seconds)
 
 
-def _requested_group_outputs(ctx: WorkflowContext) -> int:
-    """Images one provider call should return: the variant count of a scene
-    variant group, else 1."""
-    if ctx.params.get("asset_kind") != ImageAssetKind.SCENE.value:
-        return 1
-    variants = ctx.params.get("scene_variants")
-    return len(variants) if isinstance(variants, list) and len(variants) > 1 else 1
-
-
 def _with_reference_legend(
     prompt: str, references: list[Any], capability: Any, ctx: WorkflowContext
 ) -> str:
@@ -1660,7 +1691,6 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         resolution=_vendor_resolution_for(decision.capability, ctx.params),
         references=references,
         extra=dict(ctx.params.get("extra") or {}),
-        output_count=_requested_group_outputs(ctx),
     )
     result = provider.submit(request)
     if result.pending and result.external_task_id:
@@ -1788,19 +1818,8 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             references=references,
             extra=dict(ctx.params.get("extra") or {}),
             attempt_number=attempt_number,
-            output_count=_requested_group_outputs(ctx),
         )
-        ctx.state["requested_outputs"] = request.output_count
         result = decision.provider.submit(request)
-        if request.output_count > 1 and result.pending:
-            # Group calls are synchronous by contract: a parked async task
-            # has no way to carry N outputs through `poll()`.
-            result = GenerationResult(
-                succeeded=False,
-                failure_code="PROVIDER_INVALID_RESPONSE",
-                latency_ms=result.latency_ms,
-                metadata={**result.metadata, "detail": "group_call_returned_pending"},
-            )
         # Priced here, against the endpoint's configuration as it stands right
         # now. Deriving it at report time instead would let tomorrow's price
         # change rewrite what today's generation cost.
@@ -1810,7 +1829,6 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             request=request,
             billing_profile=capability.billing_profile,
             default_resolution=capability.default_resolution,
-            generated_images=result.delivered_outputs if result.succeeded else 1,
         )
         attempt = ProviderAttempt(
             job_id=ctx.job.id,
@@ -2163,15 +2181,11 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
                 _maybe_fill_linked_episode_preview(ctx.session, draft)
 
     ctx.state["asset_id"] = asset.id
-    group_outputs = _register_group_outputs(ctx, result, capability, primary_asset_id=asset.id)
-    requested_outputs = max(1, int(ctx.state.get("requested_outputs") or 1))
     ctx.state["actual_credits"] = settlement_credits(
         reserved_credits=ctx.job.reserved_credits,
         operation=ctx.job.operation,
         requested_duration_seconds=int(ctx.params.get("duration_seconds") or 0),
         delivered_duration_ms=result.duration_ms,
-        requested_outputs=requested_outputs,
-        delivered_outputs=len(group_outputs) if requested_outputs > 1 else 1,
     )
     if ctx.is_sandbox:
         # Product sandbox is a real job; successful output still needs a
@@ -2185,43 +2199,6 @@ def execute_quality_check(ctx: WorkflowContext, config: QualityCheckConfig) -> N
             reason_code="SANDBOX_OUTPUT",
         )
     return NodeResult(port="pass", summary=f"达标，结算 {ctx.state['actual_credits']} 积分")
-
-
-def _register_group_outputs(
-    ctx: WorkflowContext, result: GenerationResult, capability: Any, *, primary_asset_id: str
-) -> list[dict[str, str]]:
-    """Registers a group call's extra images and records every image of the
-    group, labelled in variant order (`GROUP_LABELS_STATE_KEY`), under
-    `GROUP_OUTPUTS_STATE_KEY`. Empty for a single-output call."""
-    if not result.extra_outputs:
-        ctx.state.pop(GROUP_OUTPUTS_STATE_KEY, None)
-        return []
-    labels: list[str] = list(ctx.state.get(GROUP_LABELS_STATE_KEY) or [])
-    asset_ids = [primary_asset_id]
-    for extra in result.extra_outputs:
-        asset = media_service.register_generated_asset(
-            ctx.session,
-            owner_user_id=ctx.job.user_id,
-            object_key=extra.object_key,
-            mime_type=extra.mime_type,
-            width=extra.width,
-            height=extra.height,
-            duration_ms=None,
-            generation_job_id=ctx.job.id,
-            provenance={
-                "provider": capability.name,
-                "model_or_workflow": capability.model_or_workflow,
-                "operation": ctx.job.operation,
-                "quality_tier": ctx.job.quality_tier,
-            },
-        )
-        asset_ids.append(asset.id)
-    outputs = [
-        {"asset_id": asset_id, "label": labels[index] if index < len(labels) else ""}
-        for index, asset_id in enumerate(asset_ids)
-    ]
-    ctx.state[GROUP_OUTPUTS_STATE_KEY] = outputs
-    return outputs
 
 
 def execute_join(ctx: WorkflowContext, config: JoinConfig) -> NodeResult:
@@ -2242,7 +2219,7 @@ def execute_settle_success(ctx: WorkflowContext, config: SettleSuccessConfig) ->
     # `len(character_views)` for a multi-view `CHARACTER` completion job.
     # Every other operation (video, audio, plain `general` image) never
     # reaches that node type, so `ctx.state["asset_id"]` alone is unchanged.
-    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY) or ctx.state.get(GROUP_OUTPUTS_STATE_KEY)
+    outputs = ctx.state.get(ASSET_OUTPUTS_STATE_KEY)
     if outputs:
         asset_ids = [str(o["asset_id"]) for o in outputs if o.get("asset_id")]
         asset_id = asset_ids[0] if asset_ids else None

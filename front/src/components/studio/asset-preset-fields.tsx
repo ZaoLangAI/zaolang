@@ -141,14 +141,13 @@ export function CharacterPresetFields({
 }
 
 /**
- * Scene-image presets: one value per axis for a single image, or — when a
- * group-capable model is available — a variant group that varies one axis
- * across 2–4 values (one image each, one provider call).
+ * Scene-image presets: one value per axis for a single image, or a variant
+ * set that varies one axis across 2–4 values — one image per variant,
+ * generated one after another in the same job.
  */
 export function ScenePresetFields({
   presets,
   onPresetsChange,
-  groupAvailable,
   groupAxis,
   onGroupAxisChange,
   groupValues,
@@ -156,7 +155,6 @@ export function ScenePresetFields({
 }: {
   presets: ScenePresets;
   onPresetsChange: (next: ScenePresets) => void;
-  groupAvailable: boolean;
   groupAxis: Axis | null;
   onGroupAxisChange: (axis: Axis | null) => void;
   groupValues: string[];
@@ -204,31 +202,29 @@ export function ScenePresetFields({
           ),
         )}
         <p className="text-[11px] text-muted">{t('presets.sceneHint')}</p>
-        {groupAvailable ? (
-          <div className="flex flex-col gap-2">
-            <OptionGroup
-              label={t('presets.groupLabel')}
-              columns={3}
-              value={groupAxis ?? ''}
-              onChange={(value) => {
-                onGroupAxisChange((value || null) as Axis | null);
-                onGroupValuesChange([]);
-              }}
-              options={[
-                { value: '', label: t('presets.groupOff') },
-                ...AXES.map(({ axis, labelKey }) => ({ value: axis, label: t(labelKey) })),
-              ]}
-            />
-            <p className="text-[11px] text-muted">
-              {groupAxis
-                ? t('presets.groupActiveHint', {
-                    min: MIN_SCENE_VARIANTS,
-                    max: MAX_SCENE_VARIANTS,
-                  })
-                : t('presets.groupHint')}
-            </p>
-          </div>
-        ) : null}
+        <div className="flex flex-col gap-2">
+          <OptionGroup
+            label={t('presets.groupLabel')}
+            columns={3}
+            value={groupAxis ?? ''}
+            onChange={(value) => {
+              onGroupAxisChange((value || null) as Axis | null);
+              onGroupValuesChange([]);
+            }}
+            options={[
+              { value: '', label: t('presets.groupOff') },
+              ...AXES.map(({ axis, labelKey }) => ({ value: axis, label: t(labelKey) })),
+            ]}
+          />
+          <p className="text-[11px] text-muted">
+            {groupAxis
+              ? t('presets.groupActiveHint', {
+                  min: MIN_SCENE_VARIANTS,
+                  max: MAX_SCENE_VARIANTS,
+                })
+              : t('presets.groupHint')}
+          </p>
+        </div>
       </div>
     </details>
   );

@@ -3163,10 +3163,10 @@
       "axisWeather": "天气",
       "axisState": "状态",
       "axisPeriod": "时期",
-      "groupLabel": "一次生成多个变体（组图）",
+      "groupLabel": "一次生成多个变体",
       "groupOff": "关闭",
-      "groupHint": "选择一个变化维度，一次调用生成多张同机位的变体图。",
-      "groupActiveHint": "请在该维度选择 {min}–{max} 个值；按实际交付张数结算。",
+      "groupHint": "选择一个变化维度，在同一任务中逐张生成多张同机位的变体图。",
+      "groupActiveHint": "请在该维度选择 {min}–{max} 个值；按变体数量计费，逐张生成。",
       "groupAxisValues": "{axis}（多选）",
       "expression": {
         "neutral": "平静",

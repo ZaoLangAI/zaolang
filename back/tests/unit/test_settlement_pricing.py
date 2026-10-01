@@ -85,25 +85,3 @@ def test_every_operation_settles_to_a_positive_amount(operation: str) -> None:
         delivered_duration_ms=3_000,
     )
     assert charged > 0
-
-
-def test_a_short_image_group_is_charged_pro_rata() -> None:
-    unit = quote(operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD).credits
-    reserved = quote(
-        operation=Operation.TEXT_TO_IMAGE, quality_tier=QualityTier.STANDARD, output_count=4
-    ).credits
-    assert reserved == unit * 4
-
-    def charged(delivered: int) -> int:
-        return settlement_credits(
-            reserved_credits=reserved,
-            operation=Operation.TEXT_TO_IMAGE,
-            requested_duration_seconds=0,
-            delivered_duration_ms=None,
-            requested_outputs=4,
-            delivered_outputs=delivered,
-        )
-
-    assert charged(4) == reserved
-    assert charged(3) == unit * 3
-    assert charged(1) == unit

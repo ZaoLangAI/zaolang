@@ -24,17 +24,17 @@
 ## `execute_asset_planning` rules (`back/app/workflows/nodes.py`)
 
 1. Every entry resets `ctx.prompt` / `negative_prompt` to the originals (`_ORIGINAL_PROMPT_STATE_KEY`, `_ORIGINAL_NEGATIVE_PROMPT_STATE_KEY`) so views don't inherit each other's text.
-2. Then `prompt_builder.compose` for the pass from `prompt_builder.resolve_pass` (side/back completion override, sheet + outfit, expression grid, scene presets / variant group) — rules in `zaolang-agent-gateway` › `reference-prompts.md` › Prompt builder. Completion passes skip the medium lock.
-3. A variant group stores `ctx.state["group_labels"]` (`GROUP_LABELS_STATE_KEY`).
+2. Then `prompt_builder.compose` for the pass from `prompt_builder.resolve_pass` (side/back completion override, sheet + outfit, expression grid, scene presets — a variant set's current combo via `_pass_params`) — rules in `zaolang-agent-gateway` › `reference-prompts.md` › Prompt builder. Completion passes skip the medium lock.
+3. A scene variant set's current pass index lives in `SCENE_VARIANT_STATE_KEY`.
 4. Then calls `planner.plan_asset` (image) or `planner.plan_video_asset` (video) and folds `prompt_enhancements` / `negative_prompt_suggestions` in. Planner briefs and view prompt text: see `zaolang-agent-gateway`.
 5. `_planned_prompt` ignores the generic `planning` node's plan whenever `_asset_axis` is set — that plan is view-blind and runs once before the loop.
 6. `asset_graph` seeds `planning.config.allow_followup_question = False` (clarify can't see asset kind/view); `default_graph` keeps it on. Live templates need a data migration to change (e.g. `back/alembic/versions/20260818_2000_disable_asset_planning_followup.py`).
 
-## Scene variant groups
+## Scene variant sets
 
-1. `scene_variants` (2–4) → one provider call with `GenerationRequest.output_count = N` (`nodes._requested_group_outputs`); only `max_outputs_per_call >= N` candidates survive routing. A pending group result is treated as `PROVIDER_INVALID_RESPONSE` (groups are synchronous).
-2. `quality_check` registers every delivered image (`_register_group_outputs` → `GROUP_OUTPUTS_STATE_KEY`, labels from `GROUP_LABELS_STATE_KEY` in order); `asset_output_advance` records them all, `settle_success` falls back to them when no advance node ran. QC reject regenerates the whole group.
-3. Billing: `settlement_credits(requested_outputs, delivered_outputs)` charges the delivered share; attempt cost uses `generated_images=delivered`. Time limit adds `_IMAGE_EXTRA_GROUP_OUTPUT` per extra image (capped).
+1. `scene_variants` (2–4) loop like character views: one SCENE pass per variant. `nodes._pass_params` folds the current combo (`SCENE_VARIANT_STATE_KEY`) into `scene_*` for the builder/planner/sanitizer; `asset_output_advance` records `{asset_id, view, label}` per pass and loops via `next`. Any single-output model serves them.
+2. Priced `unit × N` (`requested_output_count`); each pass captures in full like a multi-view job; time limit adds `_IMAGE_EXTRA_VIEW` per extra variant (capped). Progress rescales per pass (`_pass_position`).
+3. Not a provider group call: a live check showed DMXAPI Seedream returns one image for `sequential_image_generation` `max_images=2`, so `ImageModelProfile.max_group_outputs` stays 1.
 
 ## Write-back (`execute_asset_output_link`)
 
