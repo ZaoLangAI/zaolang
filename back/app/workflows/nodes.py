@@ -1570,6 +1570,25 @@ def _preview_url_for(object_key: str) -> str:
     return s3.presign_get(object_key, expires_in=get_settings().download_url_ttl_seconds)
 
 
+def _with_reference_legend(
+    prompt: str, references: list[Any], capability: Any, ctx: WorkflowContext
+) -> str:
+    """Prefixes the "参考图说明" legend naming each labelled reference image
+    the provider will receive (`prompt_builder.reference_legend`)."""
+    raw_labels = ctx.params.get("reference_labels")
+    labels = {
+        str(item.get("asset_id")): str(item.get("label"))
+        for item in raw_labels or []
+        if isinstance(item, dict) and item.get("asset_id") and item.get("label")
+    }
+    if not labels:
+        return prompt
+    legend = prompt_builder.reference_legend(
+        references, labels, cap=getattr(capability, "max_image_references", None)
+    )
+    return f"{legend}{prompt}" if legend else prompt
+
+
 def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationResult:
     """Calls the selected provider without writing job/attempt/ledger rows.
 
@@ -1605,6 +1624,9 @@ def _sandbox_live_generate(ctx: WorkflowContext, decision: Any) -> GenerationRes
         )
 
     effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
+    effective_prompt = _with_reference_legend(
+        effective_prompt, references, decision.capability, ctx
+    )
     request = GenerationRequest(
         job_id=ctx.job.id,
         operation=operation,
@@ -1697,6 +1719,17 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
         if ctx.job.status == JobStatus.QUEUED:
             ctx.job = sm.transition(ctx.session, ctx.job.id, JobStatus.SUBMITTED)
         effective_prompt, effective_negative_prompt = _plan_enhancements(ctx)
+        # Resolved before the GENERATING event so the logged prompt is
+        # exactly what the provider gets, legend included.
+        references = media_service.provider_references_for(
+            ctx.session,
+            user_id=ctx.job.user_id,
+            asset_ids=ctx.params.get("reference_asset_ids") or [],
+            video_options=ctx.params.get("video_options"),
+            source_work_version_id=ctx.job.source_work_version_id,
+        )
+        base_prompt = effective_prompt
+        effective_prompt = _with_reference_legend(effective_prompt, references, capability, ctx)
         _emit(
             ctx,
             JobEventType.GENERATING,
@@ -1705,6 +1738,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             40,
             payload={
                 "prompt": effective_prompt,
+                "base_prompt": base_prompt,
                 "negative_prompt": effective_negative_prompt,
                 **_resolution_adapt_fields(capability, ctx.params),
             },
@@ -1732,13 +1766,7 @@ def execute_provider_generate(ctx: WorkflowContext, config: ProviderGenerateConf
             # still receives exactly the spelling its profile table declares
             # (`768P`, `1080p`, …), never the leftover studio token.
             resolution=_vendor_resolution_for(capability, ctx.params),
-            references=media_service.provider_references_for(
-                ctx.session,
-                user_id=ctx.job.user_id,
-                asset_ids=ctx.params.get("reference_asset_ids") or [],
-                video_options=ctx.params.get("video_options"),
-                source_work_version_id=ctx.job.source_work_version_id,
-            ),
+            references=references,
             extra=dict(ctx.params.get("extra") or {}),
             attempt_number=attempt_number,
         )

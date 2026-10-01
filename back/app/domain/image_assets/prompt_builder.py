@@ -352,3 +352,49 @@ def sanitize_enhancements(
             continue
         kept.append(text)
     return kept
+
+
+# ---- reference legend ------------------------------------------------------
+
+REFERENCE_LEGEND_PREFIX = "参考图说明："
+GENERIC_REFERENCE_LABEL = "参考图"
+
+
+def reference_legend(references: Iterable[Any], labels: dict[str, str], *, cap: int | None) -> str:
+    """`参考图说明：图1 是…；图2 是…。` naming the images the provider receives.
+
+    Only generic image references (no `frame_type`) are numbered, truncated
+    to `cap` — adapters keep the front of the list — so a number never
+    names an image the model doesn't get. Silent (`""`) when the cap is
+    unknown, a first/last frame is present (positional frames, not a
+    labelled set), fewer than two images survive, or no image has a
+    meaningful label.
+    """
+    if cap is None or cap < 2:
+        return ""
+    refs = list(references)
+    if any(getattr(ref, "frame_type", None) in ("first_frame", "last_frame") for ref in refs):
+        return ""
+    images = [
+        ref
+        for ref in refs
+        if getattr(ref, "media_type", None) == "image" and getattr(ref, "frame_type", None) is None
+    ][:cap]
+    if len(images) < 2:
+        return ""
+    names = [
+        labels.get(str(getattr(ref, "asset_id", "") or ""), GENERIC_REFERENCE_LABEL)
+        for ref in images
+    ]
+    if all(name == GENERIC_REFERENCE_LABEL for name in names):
+        return ""
+    parts = "；".join(f"图{index} 是{name}" for index, name in enumerate(names, 1))
+    return f"{REFERENCE_LEGEND_PREFIX}{parts}。请按以上对应关系使用各参考图。\n"
+
+
+def strip_reference_legend(prompt: str) -> str:
+    """Undoes `reference_legend` on a logged prompt (fast retry reads one back
+    and must not end up with two legends)."""
+    if prompt.startswith(REFERENCE_LEGEND_PREFIX) and "\n" in prompt:
+        return prompt.split("\n", 1)[1]
+    return prompt

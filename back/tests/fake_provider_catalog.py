@@ -38,6 +38,8 @@ def build_fake_catalog() -> dict[str, ProviderCapability]:
             typical_latency_ms=22_000,
             unit_cost_micro_usd=180000,
             model_or_workflow="paid-video-v3",
+            # Takes a labelled multi-image reference set (reference legend tests).
+            max_image_references=9,
             provider_factory=lambda: fake_providers.get_provider("fake_paid_api"),
         ),
         "fake_video_analysis": ProviderCapability(

@@ -157,6 +157,10 @@ class ProviderReference:
     object_key: str
     media_type: str
     frame_type: str | None = None
+    # Which platform `Asset` this came from — lets the prompt's reference
+    # legend name the exact images the provider receives, in order. `None`
+    # on checkpoints written before the field existed.
+    asset_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -333,6 +337,12 @@ class ProviderCapability:
     # blockout clip must reach a model that reads it as guidance, never one
     # that silently drops it or (an edit model) restyles it as the output.
     accepts_video_reference: bool = False
+    # How many generic (non-frame) *image* references this model actually
+    # receives, front-first — adapters truncate `references` from the front
+    # (`keys[:N]`), so the first N are exactly what it sees. `None` = unknown,
+    # which makes the reference legend stay silent rather than name an
+    # image the model may never get (`prompt_builder.reference_legend`).
+    max_image_references: int | None = None
 
 
 def probe_audio_duration_ms(payload: bytes, mime_type: str) -> int | None:

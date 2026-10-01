@@ -1230,6 +1230,17 @@ def _flatten_content_parts(content: object) -> str:
     return "\n".join(parts)
 
 
+def image_reference_cap(model: str) -> int:
+    """Generic image references this adapter forwards for `model`, front-first:
+    gpt-image-2's `/v1/images/edits` takes one source image, Qwen edit up to
+    `_QWEN_EDIT_MAX_REFERENCES`, everything else `_MAX_INPUT_REFERENCES`."""
+    if is_gpt_image_2(model):
+        return 1
+    if _is_qwen_model(model):
+        return _QWEN_EDIT_MAX_REFERENCES
+    return _MAX_INPUT_REFERENCES
+
+
 def _image_reference_keys(request: GenerationRequest) -> list[str]:
     keys: list[str] = []
     for ref in request.references:

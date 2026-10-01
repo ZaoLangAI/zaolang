@@ -409,6 +409,77 @@ def test_every_character_view_gets_its_own_route_budget(
     assert len(object_keys) == 3
 
 
+def test_labelled_references_reach_the_provider_with_a_legend(db: Session, funded: User) -> None:
+    """A job that pulls a character's sheet and a scene's master plate names
+    each image in the prompt, in the order the provider receives them; the
+    GENERATING event keeps the un-prefixed `base_prompt` for fast retry."""
+    from app.domain.characters import service as characters_service
+    from app.domain.scenes import service as scenes_service
+
+    def _image() -> Asset:
+        asset = Asset(
+            owner_user_id=funded.id,
+            object_key=f"test/{funded.id}/{new_id('obj')}.png",
+            media_type=MediaType.IMAGE,
+            mime_type="image/png",
+            size_bytes=1024,
+            checksum_sha256="b" * 64,
+            role=AssetRole.GENERATION_OUTPUT,
+        )
+        db.add(asset)
+        db.flush()
+        return asset
+
+    character = characters_service.create_character(
+        db,
+        user_id=funded.id,
+        name="林夏",
+        description=None,
+        reference_asset_ids=[],
+        voice_description=None,
+    )
+    sheet = _image()
+    characters_service.append_reference_asset(
+        db, user_id=funded.id, character_id=character.id, asset_id=sheet.id, view="front"
+    )
+    scene = scenes_service.create_scene(
+        db, user_id=funded.id, name="客厅", description=None, reference_asset_ids=[]
+    )
+    plate = _image()
+    scenes_service.append_reference_asset(
+        db, user_id=funded.id, scene_id=scene.id, asset_id=plate.id
+    )
+
+    job = jobs_service.submit(
+        db,
+        user_id=funded.id,
+        operation=Operation.IMAGE_TO_IMAGE,
+        quality_tier=QualityTier.STANDARD,
+        params={
+            "prompt": "林夏站在客厅窗前",
+            "aspect_ratio": "16:9",
+            "character_ids": [character.id],
+            "scene_ids": [scene.id],
+        },
+        idempotency_key=new_id("idk"),
+    ).job
+    assert job.request_json["reference_labels"] == [
+        {"asset_id": sheet.id, "label": "角色「林夏」设定图"},
+        {"asset_id": plate.id, "label": "场景「客厅」主图"},
+    ]
+
+    pipeline.run_generation_pipeline(db, job.id)
+
+    event = db.scalar(
+        select(JobEvent).where(JobEvent.job_id == job.id, JobEvent.event_type == "generating")
+    )
+    assert event is not None
+    prompt = event.payload_json["prompt"]
+    assert prompt.startswith("参考图说明：图1 是角色「林夏」设定图；图2 是场景「客厅」主图")
+    assert not event.payload_json["base_prompt"].startswith("参考图说明")
+    assert prompt.endswith(event.payload_json["base_prompt"])
+
+
 def _park_awaiting_input(db: Session, job: GenerationJob) -> None:
     from app.domain.jobs import input_requests
 
